@@ -1,0 +1,14 @@
+{
+  "name": "boxen",
+  "private": true,
+  "type": "module",
+  "description": "Open-source UI for Oxen (oxen-server)",
+  "scripts": {
+    "test": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:ui": "playwright test -c e2e/playwright.config.ts --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0"
+  }
+}

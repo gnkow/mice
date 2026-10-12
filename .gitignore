@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.DS_Store
+*.log
+.vite/
+coverage/
+oxen-server-docker-*.tar
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
