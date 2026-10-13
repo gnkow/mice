@@ -1,23 +1,12 @@
-import { useMemo, useState } from 'react'
-import { loadSettings } from '../lib/oxen/settings'
+import { useEffect, useMemo, useState } from 'react'
+import { fetchCliInfo, viteOxenRemote } from '../lib/tokens'
 
 type Props = {
   namespace: string
   repo: string
 }
 
-type SectionKey = 'oxen' | 'python'
-
-function cloneTarget(apiBase: string, namespace: string, repo: string): string {
-  const path = `${namespace}/${repo}`
-  if (apiBase) {
-    return `${apiBase.replace(/\/$/, '')}/${path}`
-  }
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/${path}`
-  }
-  return path
-}
+type SectionKey = 'oxen' | 'python' | 'auth'
 
 function CopyIcon({ size = 16 }: { size?: number }) {
   return (
@@ -34,11 +23,33 @@ function CopyIcon({ size = 16 }: { size?: number }) {
 
 export function CloneBox({ namespace, repo }: Props) {
   const [copied, setCopied] = useState<SectionKey | null>(null)
-  const target = useMemo(() => {
-    const { apiBase } = loadSettings()
-    return cloneTarget(apiBase, namespace, repo)
-  }, [namespace, repo])
+  const [remote, setRemote] = useState(
+    () => viteOxenRemote() ?? 'http://localhost:8080',
+  )
+  const [authHost, setAuthHost] = useState('localhost:8080')
 
+  useEffect(() => {
+    let cancelled = false
+    fetchCliInfo()
+      .then((info) => {
+        if (cancelled) return
+        setRemote(info.remote)
+        setAuthHost(info.authHost)
+      })
+      .catch(() => {
+        /* keep defaults */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const target = useMemo(
+    () => `${remote.replace(/\/$/, '')}/${namespace}/${repo}`,
+    [remote, namespace, repo],
+  )
+
+  const authCmd = `oxen config --auth ${authHost} <PAT>`
   const oxenCmd = `oxen clone ${target}`
   const pythonCmd = `import oxen\noxen.clone("${target}")`
 
@@ -54,6 +65,31 @@ export function CloneBox({ namespace, repo }: Props) {
 
   return (
     <div className="clone-box" role="menu" aria-label="Clone repository">
+      <section className="clone-section">
+        <div className="clone-section-head">
+          <b>Auth (CLI token)</b>
+          <button
+            type="button"
+            className="clone-copy"
+            onClick={() => void copy('auth', authCmd)}
+            title={copied === 'auth' ? 'Copied' : 'Copy'}
+            aria-label={
+              copied === 'auth' ? 'Copied auth command' : 'Copy auth command'
+            }
+          >
+            <span className="clone-copy-label">{copied === 'auth' ? 'Copied' : ''}</span>
+            <CopyIcon />
+          </button>
+        </div>
+        <pre className="clone-code mono">
+          <code>{authCmd}</code>
+        </pre>
+        <p className="clone-hint muted small">
+          Create a PAT under Settings → CLI tokens. All CLI traffic goes through
+          the auth BFF (not raw oxen-server).
+        </p>
+      </section>
+
       <section className="clone-section">
         <div className="clone-section-head">
           <b>Oxen</b>

@@ -1,0 +1,54 @@
+{
+  "realm": "boxen",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "clients": [
+    {
+      "clientId": "boxen-auth",
+      "name": "Boxen Auth BFF",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "boxen-auth-secret",
+      "redirectUris": [
+        "http://localhost:5173/auth/callback",
+        "http://127.0.0.1:5173/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/login##http://127.0.0.1:5173/login##http://localhost:5173/*##http://127.0.0.1:5173/*"
+      },
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true
+    }
+  ],
+  "users": [
+    {
+      "username": "boxen",
+      "enabled": true,
+      "email": "boxen@example.com",
+      "emailVerified": true,
+      "firstName": "Boxen",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "boxen",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

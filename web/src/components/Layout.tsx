@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
+import { fetchAuthMe, logout, type AuthUser } from '../lib/auth'
 import { fetchServerVersion } from '../lib/oxen/api'
 import { loadSettings, subscribeSettings } from '../lib/oxen/settings'
 import {
@@ -33,6 +34,7 @@ export function Layout() {
   const [version, setVersion] = useState<string | null>(null)
   const [connected, setConnected] = useState<boolean | null>(null)
   const [settings, setSettings] = useState(() => loadSettings())
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance())
   const [query, setQuery] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -49,6 +51,21 @@ export function Layout() {
 
   useEffect(() => {
     return subscribeAppearance(() => setAppearance(loadAppearance()))
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchAuthMe()
+      .then((me) => {
+        if (cancelled) return
+        setUser(me.authenticated ? me.user : null)
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -80,7 +97,7 @@ export function Layout() {
       controller.abort()
       unsub()
     }
-  }, [])
+  }, [user])
 
   useEffect(() => {
     if (!drawerOpen) return
@@ -91,10 +108,22 @@ export function Layout() {
     return () => document.removeEventListener('keydown', onKey)
   }, [drawerOpen])
 
-  const avatar = useMemo(
-    () => initials(settings.authorName),
-    [settings.authorName],
-  )
+  const displayName = user?.name ?? 'Sign in'
+  const avatar = useMemo(() => initials(displayName), [displayName])
+
+  async function onLogout() {
+    if (menuRef.current) menuRef.current.open = false
+    const result = await logout()
+    setUser(null)
+    setConnected(false)
+    setVersion(null)
+    // Full navigation clears IdP SSO so the next "Sign in with SSO" shows credentials.
+    if (result.idpLogoutUrl) {
+      window.location.assign(result.idpLogoutUrl)
+      return
+    }
+    window.location.assign('/login')
+  }
 
   function onSearch(e: FormEvent) {
     e.preventDefault()
@@ -282,14 +311,30 @@ export function Layout() {
             <summary
               className="avatar-btn"
               aria-label="Account menu"
-              title={settings.authorName}
+              title={displayName}
             >
               <span className="avatar-circle">{avatar}</span>
             </summary>
             <div className="profile-menu-panel">
-              <p className="muted small">
-                Signed as <strong>{settings.authorName}</strong>
-              </p>
+              {user ? (
+                <p className="muted small">
+                  Signed as <strong>{user.name}</strong>
+                  <br />
+                  <span>{user.email}</span>
+                </p>
+              ) : (
+                <p className="muted small">Not signed in</p>
+              )}
+              {!user && (
+                <NavLink
+                  to="/login"
+                  onClick={() => {
+                    if (menuRef.current) menuRef.current.open = false
+                  }}
+                >
+                  Sign in
+                </NavLink>
+              )}
               <NavLink
                 to="/settings"
                 onClick={() => {
@@ -298,6 +343,11 @@ export function Layout() {
               >
                 Settings
               </NavLink>
+              {user && (
+                <button type="button" className="linkish" onClick={onLogout}>
+                  Sign out
+                </button>
+              )}
               <div className="profile-menu-footer">
                 <p className="muted small">
                   {connected === true
@@ -312,8 +362,14 @@ export function Layout() {
         </header>
         {connected === false && (
           <div className="offline-banner flash flash-error" role="alert">
-            Cannot reach oxen-server.
-            <NavLink to="/settings">Check Settings</NavLink>
+            {user
+              ? 'Cannot reach oxen-server via the auth BFF.'
+              : 'Sign in required to reach oxen-server.'}
+            {user ? (
+              <NavLink to="/settings">Check Settings</NavLink>
+            ) : (
+              <NavLink to="/login">Sign in</NavLink>
+            )}
           </div>
         )}
         <div className="app-body">

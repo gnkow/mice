@@ -35,7 +35,25 @@ async function makeRepo(seeded: boolean): Promise<RepoFixture> {
   return { namespace, repo, seeded }
 }
 
+const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+
+/** Establish a BFF session (AUTH_DEV_MODE) before UI tests hit /api. */
+async function ensureDevSession(page: import('@playwright/test').Page) {
+  const res = await page.request.post(`${BASE_URL}/auth/dev-login`, {
+    data: {},
+  })
+  if (!res.ok()) {
+    throw new Error(
+      `auth/dev-login failed (${res.status()}). Is AUTH_DEV_MODE=true and the auth BFF up?`,
+    )
+  }
+}
+
 export const test = base.extend<Fixtures>({
+  page: async ({ page }, use) => {
+    await ensureDevSession(page)
+    await use(page)
+  },
   emptyRepo: async ({}, use) => {
     await waitForOxen()
     const ctx = await makeRepo(false)

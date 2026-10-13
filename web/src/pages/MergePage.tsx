@@ -85,8 +85,9 @@ export function MergePage() {
     if (branches.kind !== 'ok' || didAutoRange.current) return
     const names = branches.data.branches.map((b) => b.name)
     const resolvedBase = names.includes(base) ? base : defaultBranch
-    const headOk = names.includes(head) && head !== resolvedBase
-    if (headOk && resolvedBase === base) {
+    const headInList = Boolean(head) && names.includes(head)
+    // Keep any valid explicit head, including same-branch empty state.
+    if (resolvedBase === base && headInList) {
       didAutoRange.current = true
       return
     }

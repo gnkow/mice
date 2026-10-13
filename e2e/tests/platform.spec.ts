@@ -47,25 +47,25 @@ test.describe('platform (P-03 P-04)', () => {
 
     await page.goto('/')
     await expect(page.getByLabel('Loading')).toBeVisible()
+    // Scope by namespace — many e2e fixtures use repo name "repo".
     await expect(
-      page.locator('.dash-repo-cards').getByRole('link', {
-        name: new RegExp(`^${seededRepo.repo}\\b`),
-      }),
+      page.locator(
+        `.dash-repo-cards a.repo-summary-card[href*="/n/${encodeURIComponent(seededRepo.namespace)}/"]`,
+      ),
     ).toBeVisible({ timeout: 15_000 })
   })
 
-  test('TC-SET-01: Settings author used on merge commit', async ({
+  test('TC-AUTH-01: BFF injects session author on merge commit', async ({
     page,
     seededRepo,
   }) => {
-    const authorName = 'E2E Merge Author'
-    const authorEmail = 'e2e-merge@author.test'
+    const authorName = 'E2E Session Author'
+    const authorEmail = 'e2e-session@author.test'
 
-    await page.goto('/settings')
-    await page.getByLabel('Commit author name').fill(authorName)
-    await page.getByLabel('Commit author email').fill(authorEmail)
-    await page.getByRole('button', { name: 'Save' }).click()
-    await expect(page.getByText('Saved.')).toBeVisible()
+    // Override the default fixture session with a known identity
+    await page.request.post('/auth/dev-login', {
+      data: { name: authorName, email: authorEmail, sub: 'e2e-author', iss: 'boxen-dev' },
+    })
 
     await createBranch(
       seededRepo.namespace,
@@ -113,36 +113,29 @@ test.describe('platform (P-03 P-04)', () => {
     )
     expect(commit?.author).toBe(authorName)
     expect(commit?.email).toBe(authorEmail)
-
-    // restore defaults for other tests in this worker
-    await page.goto('/settings')
-    await page.getByLabel('Commit author name').fill('Boxen')
-    await page.getByLabel('Commit author email').fill('boxen@localhost')
-    await page.getByRole('button', { name: 'Save' }).click()
   })
 
-  test('P-03: bearer token from Settings is sent on API requests', async ({
+  test('P-03: break-glass bearer reaches /api without a session cookie', async ({
     page,
   }) => {
-    let sawAuth = false
-    await page.route('**/api/**', async (route) => {
-      const auth = route.request().headers()['authorization']
-      if (auth === 'Bearer e2e-test-token') sawAuth = true
-      await route.continue()
+    await page.context().clearCookies()
+    // App UI requires SSO; break-glass is for automation against the BFF.
+    const res = await page.request.get('/api/version', {
+      headers: { Authorization: 'Bearer e2e-test-token' },
     })
+    expect(res.ok()).toBeTruthy()
+    const body = await res.json()
+    expect(body.oxen_version || body.status).toBeTruthy()
+  })
 
-    await page.goto('/settings')
-    await page.getByLabel('Bearer token').fill('e2e-test-token')
-    await page.getByRole('button', { name: 'Save' }).click()
-    await expect(page.getByText('Saved.')).toBeVisible()
-
-    await page.getByRole('button', { name: 'Test connection' }).click()
-    await expect(page.locator('main').getByText(/Connected · oxen-server v/)).toBeVisible()
-    expect(sawAuth).toBe(true)
-
-    // Clear token so later tests are unaffected (same browser context is per-test by default)
-    await page.getByLabel('Bearer token').fill('')
-    await page.getByRole('button', { name: 'Save' }).click()
+  test('TC-AUTH-07: unsigned visitor is redirected to login (no app chrome)', async ({
+    page,
+  }) => {
+    await page.context().clearCookies()
+    await page.goto('/projects')
+    await expect(page).toHaveURL(/\/login/)
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+    await expect(page.locator('header.topbar')).toHaveCount(0)
   })
 
   test('P-04: bad API base shows offline / error state', async ({ page }) => {

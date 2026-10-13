@@ -18,10 +18,17 @@ export default defineConfig({
       interval: 300,
     },
     proxy: {
-      // Browser → Vite → oxen-server (avoids CORS in local/Compose setups)
+      // Browser → Vite → auth BFF → oxen-server
+      // Do not follow upstream redirects (OIDC 302 to Keycloak must reach the browser).
       '/api': {
-        target: process.env.OXEN_PROXY_TARGET ?? 'http://localhost:3001',
+        target: process.env.AUTH_PROXY_TARGET ?? 'http://localhost:8080',
         changeOrigin: true,
+        followRedirects: false,
+      },
+      '/auth': {
+        target: process.env.AUTH_PROXY_TARGET ?? 'http://localhost:8080',
+        changeOrigin: true,
+        followRedirects: false,
       },
     },
   },

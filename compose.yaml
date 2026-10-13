@@ -1,5 +1,8 @@
 # Composable Oxen stack for Boxen.
 # Full stack: docker compose up --build
+#
+# Browser → web (Vite) → auth (Hono BFF) → oxen-server
+# Keycloak provides OIDC for Phase 1 (optional when AUTH_DEV_MODE=true).
 
 name: boxen
 
@@ -7,12 +10,68 @@ services:
   oxen-server:
     image: oxen/oxen-server:latest
     ports:
+      # Published for e2e setup helpers (OXEN_URL). Browser traffic must use the BFF.
       - "${OXEN_PORT:-3001}:3001"
     volumes:
       - oxen-data:/var/oxen/data
     environment:
       SYNC_DIR: /var/oxen/data
     restart: unless-stopped
+    networks:
+      - boxen
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: ${KEYCLOAK_PORT:-8180}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./auth/keycloak/realm-boxen.json:/opt/keycloak/data/import/realm-boxen.json:ro
+    networks:
+      - boxen
+
+  auth:
+    build:
+      context: ./auth
+      target: dev
+    ports:
+      - "${AUTH_PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      OXEN_UPSTREAM: http://oxen-server:3001
+      AUTH_DATA_DIR: /data
+      PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-boxen-session-secret}
+      AUTH_DEV_MODE: ${AUTH_DEV_MODE:-true}
+      AUTH_BREAKGLASS_TOKEN: ${AUTH_BREAKGLASS_TOKEN:-e2e-test-token}
+      AUTH_DEV_NAME: ${AUTH_DEV_NAME:-Boxen Dev}
+      AUTH_DEV_EMAIL: ${AUTH_DEV_EMAIL:-dev@boxen.local}
+      # Server-side discovery inside Compose
+      OIDC_ISSUER: http://keycloak:8080/realms/boxen
+      # Browser-facing issuer / authorize host
+      OIDC_ISSUER_PUBLIC: http://localhost:${KEYCLOAK_PORT:-8180}/realms/boxen
+      OIDC_CLIENT_ID: boxen-auth
+      OIDC_CLIENT_SECRET: boxen-auth-secret
+      OIDC_REDIRECT_URI: http://localhost:${WEB_PORT:-5173}/auth/callback
+      OIDC_POST_LOGOUT_REDIRECT_URI: http://localhost:${WEB_PORT:-5173}/login
+      COOKIE_SECURE: "false"
+      # Corporate TLS intercepts break npm inside the image; prefer host node_modules.
+      NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-0}
+    volumes:
+      - ./auth:/app
+      - auth_node_modules:/app/node_modules
+      - auth_data:/data
+    depends_on:
+      - oxen-server
+      - keycloak
     networks:
       - boxen
 
@@ -23,13 +82,16 @@ services:
     ports:
       - "${WEB_PORT:-5173}:5173"
     environment:
-      # Browser calls same-origin /api; Vite proxies to the compose service name.
-      OXEN_PROXY_TARGET: http://oxen-server:3001
+      # Browser calls same-origin /api and /auth; Vite proxies to the BFF.
+      AUTH_PROXY_TARGET: http://auth:8080
+      WEB_PORT: ${WEB_PORT:-5173}
+      # Oxen CLI remote shown in Clone box (BFF, not raw oxen-server).
+      VITE_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
     volumes:
       - ./web:/app
       - web_node_modules:/app/node_modules
     depends_on:
-      - oxen-server
+      - auth
     networks:
       - boxen
 
@@ -39,3 +101,5 @@ networks:
 volumes:
   oxen-data:
   web_node_modules:
+  auth_node_modules:
+  auth_data:

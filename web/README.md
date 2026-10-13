@@ -7,4 +7,4 @@ npm install
 npm run dev
 ```
 
-Proxies `/api` to `oxen-server` (`localhost:3001` locally, or `OXEN_PROXY_TARGET` in Compose). See the repo root [`README.md`](../README.md) and [`FEATURES.md`](../FEATURES.md).
+Proxies `/api` and `/auth` to the auth BFF (`localhost:8080`, or `AUTH_PROXY_TARGET` in Compose). See the repo root [`README.md`](../README.md), [`AUTH.md`](../AUTH.md), and [`EPICS.md`](../EPICS.md).

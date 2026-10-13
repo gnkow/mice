@@ -52,6 +52,7 @@ export async function oxenFetch<T>(
     headers,
     body,
     signal: options.signal,
+    credentials: 'same-origin',
   })
 
   if (options.raw) {

@@ -6,9 +6,11 @@ Open-source web UI for [Oxen](https://www.oxen.ai) / self-hosted [`oxen-server`]
 
 | Path | Role |
 | --- | --- |
-| `compose.yaml` | Composable stack: `oxen-server` (+ optional `web` profile) |
-| `web/` | Vite + React + TypeScript UI scaffold |
-| `FEATURES.md` | Checklist of Oxen capabilities to expose in the UI |
+| `compose.yaml` | Stack: `oxen-server`, `auth` (Hono BFF), `keycloak`, `web` |
+| `auth/` | Auth BFF — OIDC/session, author injection, proxy to oxen-server |
+| `web/` | Vite + React + TypeScript UI |
+| `EPICS.md` | Top-level platform epic TODO list |
+| `AUTH.md` | PLAT-AUTH design + implementation plan |
 | `TESTS.md` | Test plan + recommended frameworks for full coverage |
 
 ## Prerequisites
@@ -27,30 +29,41 @@ docker load < /tmp/oxen-server-docker-arm64.tar
 ## Run
 
 ```bash
+cp .env.example .env   # optional
+cd auth && npm install && cd ..   # host tooling / IDE; Compose installs Linux deps in the auth volume
 docker compose up --build
-# → UI  http://localhost:5173
-# → API http://localhost:3001
+# → UI        http://localhost:5173
+# → Auth BFF  http://localhost:8080
+# → Keycloak  http://localhost:8180  (admin/admin; user boxen / boxen)
+# → oxen API  http://localhost:3001  (direct; browser uses BFF)
 ```
 
-Or develop the UI against a running server:
+Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `boxen` / `boxen`), or **Dev login** when `AUTH_DEV_MODE=true`. Sign out clears the Boxen session and the Keycloak SSO session so the next SSO prompt asks for credentials again.
+
+Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session.
+
+### Oxen CLI (through the BFF)
 
 ```bash
-docker compose up -d oxen-server
-cd web && npm install && npm run dev
+# Settings → CLI tokens → Create token, then:
+oxen config --auth localhost:8080 boxen_pat_…
+oxen clone http://localhost:8080/<namespace>/<repo>
 ```
+
+Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
 
 ## Tests
 
 ```bash
 make up         # start stack
-make test       # headless E2E
+make test       # headless E2E (auto dev-login)
 make smoke      # smoke suite only
 make test-view  # headed + slow-mo (watch in browser)
 make clean      # stop stack, wipe volumes + deps + test artifacts
 ```
 
-Atomic E2E case catalog (per FEATURES ID, with coverage + backlog): [`TESTS.md`](./TESTS.md).
+Atomic E2E case catalog: [`TESTS.md`](./TESTS.md).
 
 ## Progress
 
-Track UI coverage in [`FEATURES.md`](./FEATURES.md) and the Playwright case catalog in [`TESTS.md`](./TESTS.md). Hub-only surfaces (inference, fine-tuning, SSO) are listed in `FEATURES.md` as out of scope for OSS `oxen-server`.
+Track platform epics in [`EPICS.md`](./EPICS.md), auth design in [`AUTH.md`](./AUTH.md), and Playwright in [`TESTS.md`](./TESTS.md).

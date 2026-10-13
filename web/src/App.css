@@ -1547,7 +1547,8 @@ a.btn.primary:hover {
 
 .menu-pop-panel a,
 .menu-item,
-.profile-menu-panel a {
+.profile-menu-panel a,
+.profile-menu-panel button.linkish {
   color: var(--fg);
   text-decoration: none;
   font-size: 0.875rem;
@@ -1558,13 +1559,132 @@ a.btn.primary:hover {
   text-align: left;
   font: inherit;
   cursor: pointer;
+  display: block;
+  width: 100%;
 }
 
 .menu-pop-panel a:hover,
 .menu-item:hover:not(:disabled),
-.profile-menu-panel a:hover {
+.profile-menu-panel a:hover,
+.profile-menu-panel button.linkish:hover {
   background: var(--canvas-subtle);
   text-decoration: none;
+}
+
+.settings-advanced {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem 1rem;
+  margin: 1rem 0;
+}
+
+.settings-advanced legend {
+  padding: 0 0.35rem;
+  font-weight: 600;
+}
+
+.settings-section {
+  margin: 0 0 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-section h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.settings-code {
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.token-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.token-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.clone-hint {
+  margin: 0.35rem 0 0;
+}
+
+.auth-boot {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--canvas-subtle);
+}
+
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--canvas-subtle);
+  padding: 2rem 1rem;
+}
+
+.login-page {
+  width: min(100%, 22rem);
+  padding: 2rem 1.75rem 2.25rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 0.15rem);
+  box-shadow: var(--shadow);
+}
+
+.login-page.page.narrow {
+  max-width: 22rem;
+  margin: 0;
+}
+
+.login-brand {
+  margin: 0 0 1.25rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.login-page h1 {
+  margin: 0 0 0.65rem;
+  font-size: 1.65rem;
+  line-height: 1.2;
+}
+
+.login-page .lede {
+  margin: 0 0 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.login-page .btn-row {
+  margin: 0;
+  gap: 0.75rem;
+}
+
+.login-page .flash {
+  margin: 0 0 1rem;
 }
 
 .menu-item:disabled {
@@ -1640,6 +1760,11 @@ a.btn.primary:hover {
   background: color-mix(in srgb, #9a6700 12%, var(--bg));
   color: var(--fg);
   margin: 0.5rem 1.25rem 0;
+}
+
+.settings-section .flash-warn {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
 }
 
 .repo-shell-chrome {

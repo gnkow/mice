@@ -40,9 +40,9 @@ function repoBase(namespace: string, repo: string) {
   return `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}`
 }
 
+/** Placeholder author fields; the auth BFF overwrites these from the session. */
 function authorFields() {
-  const { authorName, authorEmail } = loadSettings()
-  return { name: authorName, email: authorEmail }
+  return { name: 'boxen', email: 'boxen@localhost' }
 }
 
 export function fetchServerVersion(signal?: AbortSignal) {
@@ -1100,6 +1100,7 @@ export async function uploadLargeFile(
       headers,
       body: bytes,
       signal,
+      credentials: 'same-origin',
     })
     if (!res.ok) {
       const text = await res.text()
