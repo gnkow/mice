@@ -30,8 +30,14 @@
       },
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": false,
+      "serviceAccountsEnabled": true,
       "frontchannelLogout": true
+    }
+  ],
+  "groups": [
+    {
+      "name": "engineering",
+      "path": "/engineering"
     }
   ],
   "users": [
@@ -49,6 +55,19 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "username": "service-account-boxen-auth",
+      "enabled": true,
+      "serviceAccountClientId": "boxen-auth",
+      "clientRoles": {
+        "realm-management": [
+          "view-users",
+          "query-users",
+          "view-groups",
+          "query-groups"
+        ]
+      }
     }
   ]
 }

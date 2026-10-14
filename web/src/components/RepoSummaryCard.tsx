@@ -54,7 +54,7 @@ export function RepoSummaryCard({ namespace, name }: Props) {
     <Link className="repo-summary-card" to={href}>
       <span className="repo-summary-main">
         <span className="card-title">{name}</span>
-        <span className="card-meta">{meta || 'Open project →'}</span>
+        <span className="card-meta">{meta || 'Open repository →'}</span>
       </span>
       <span className="repo-summary-badges">
         <VisibilityPill />

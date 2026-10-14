@@ -25,6 +25,29 @@ export async function fetchAuthMe(signal?: AbortSignal): Promise<AuthMe> {
   return (await res.json()) as AuthMe
 }
 
+export type AuthzMe = {
+  enforce: boolean
+  pending: boolean
+  instanceAdmin: boolean
+  permissions: {
+    create_namespace: boolean
+    view_audit: boolean
+    manage_breakglass: boolean
+  }
+  hasAnyGrant: boolean
+  trainingCompleted?: boolean
+  requireTraining?: boolean
+}
+
+export async function fetchAuthzMe(signal?: AbortSignal): Promise<AuthzMe | null> {
+  const res = await fetch('/auth/me/authz', {
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) return null
+  return (await res.json()) as AuthzMe
+}
+
 export async function logout(): Promise<LogoutResult> {
   const res = await fetch('/auth/logout', {
     method: 'POST',

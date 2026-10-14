@@ -12,6 +12,7 @@ import {
   deleteFile,
   downloadFile,
   downloadFileText,
+  getRepository,
   listAllCommits,
   listBranches,
   listDirectory,
@@ -34,6 +35,11 @@ function findReadme(names: string[]): string | null {
   return null
 }
 
+/** Oxen returns this when the revision/branch does not exist yet (empty repo). */
+function isMissingRevisionError(message: string): boolean {
+  return /could not find path/i.test(message)
+}
+
 export function TreePage() {
   const { namespace = '', repo = '', branch = 'main', '*': splat } = useParams()
   const path = splat ?? ''
@@ -41,6 +47,10 @@ export function TreePage() {
 
   const branches = useAsync(
     (signal) => listBranches(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const repoDetail = useAsync(
+    (signal) => getRepository(namespace, repo, signal),
     [namespace, repo],
   )
   const listing = useAsync(
@@ -218,7 +228,28 @@ export function TreePage() {
       ? branches.data.branches.map((b) => b.name)
       : [branch]
 
-  const emptyMessage = (
+  const repoIsEmpty =
+    (repoDetail.kind === 'ok' && repoDetail.data.repository.is_empty) ||
+    (listing.kind === 'error' &&
+      !path &&
+      isMissingRevisionError(listing.message))
+
+  const listingError =
+    listing.kind === 'error' && !repoIsEmpty ? listing.message : null
+
+  const showEmpty =
+    repoIsEmpty ||
+    (listing.kind === 'ok' && listing.data.entries.length === 0)
+
+  const emptyMessage = repoIsEmpty ? (
+    <div>
+      <p className="muted">This repository is empty.</p>
+      <p className="muted small">
+        Use <strong>Manage Files</strong> to upload a file and create the first
+        commit on <code>{branch}</code>.
+      </p>
+    </div>
+  ) : (
     <div>
       <p className="muted">This directory is empty.</p>
       <p className="muted small">Use Manage Files to upload or import.</p>
@@ -250,7 +281,10 @@ export function TreePage() {
             repo={repo}
             branch={branch}
             path={path}
-            onDone={() => listing.reload()}
+            onDone={() => {
+              listing.reload()
+              repoDetail.reload()
+            }}
           />
           <div className="view-toggle" role="group" aria-label="Directory view">
             <button
@@ -359,10 +393,13 @@ export function TreePage() {
       </nav>
 
       <StateBlock
-        loading={listing.kind === 'loading'}
-        error={listing.kind === 'error' ? listing.message : null}
-        onRetry={() => listing.reload()}
-        empty={listing.kind === 'ok' && listing.data.entries.length === 0}
+        loading={listing.kind === 'loading' && !repoIsEmpty}
+        error={listingError}
+        onRetry={() => {
+          listing.reload()
+          repoDetail.reload()
+        }}
+        empty={showEmpty}
         emptyMessage={emptyMessage}
       >
         {listing.kind === 'ok' && (

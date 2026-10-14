@@ -6,7 +6,7 @@ import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { loadCatalog } from '../lib/catalog'
 
-export function ProjectsListPage() {
+export function RepositoriesListPage() {
   const state = useAsync((signal) => loadCatalog(signal), [])
   const [params, setParams] = useSearchParams()
   const q = (params.get('q') ?? '').trim().toLowerCase()
@@ -15,8 +15,8 @@ export function ProjectsListPage() {
 
   const filtered = useMemo(() => {
     if (state.kind !== 'ok') return []
-    if (!q) return state.data.projects
-    return state.data.projects.filter(
+    if (!q) return state.data.repositories
+    return state.data.repositories.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.namespace.toLowerCase().includes(q),
@@ -36,11 +36,11 @@ export function ProjectsListPage() {
     <main className="page wide">
       <div className="page-head">
         <div>
-          <h1>Projects</h1>
+          <h1>Repositories</h1>
           <p className="lede">All repositories across namespaces.</p>
         </div>
         <Link className="btn primary" to="/repos/new">
-          + New project
+          + New repository
         </Link>
       </div>
 
@@ -51,8 +51,8 @@ export function ProjectsListPage() {
         empty={state.kind === 'ok' && filtered.length === 0}
         emptyMessage={
           q
-            ? `No projects match “${params.get('q')}”.`
-            : 'No projects yet. Create one to get started.'
+            ? `No repositories match “${params.get('q')}”.`
+            : 'No repositories yet. Create one to get started.'
         }
       >
         {state.kind === 'ok' && (
@@ -74,7 +74,7 @@ export function ProjectsListPage() {
               page={slice.page}
               pageCount={slice.pageCount}
               onPageChange={goPage}
-              label="Projects pages"
+              label="Repositories pages"
             />
           </>
         )}

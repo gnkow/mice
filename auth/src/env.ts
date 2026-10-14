@@ -25,6 +25,25 @@ export const env = {
   breakglassToken: process.env.AUTH_BREAKGLASS_TOKEN ?? '',
   /** Directory for PAT store (pats.json). */
   dataDir: (process.env.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
+  /**
+   * AuthZ enforcement override: 'true' | 'false' | '' (use store flag).
+   * Default empty → store `enforce` (starts false until bootstrap).
+   */
+  authzEnforce: (process.env.AUTHZ_ENFORCE ?? '').toLowerCase(),
+  /** Comma-separated emails or subject IDs for first instance admin. */
+  authzBootstrapAdmins: process.env.AUTHZ_BOOTSTRAP_ADMINS ?? '',
+  /**
+   * When AUTH_DEV_MODE, grant instance admin to every authenticated user.
+   * Default on in dev so existing e2e keeps working with enforce enabled.
+   */
+  authzDevGrantAll:
+    process.env.AUTHZ_DEV_GRANT_ALL === 'true' ||
+    (process.env.AUTHZ_DEV_GRANT_ALL !== 'false' &&
+      process.env.AUTH_DEV_MODE === 'true'),
+  /** JSON map for IdP group / email → namespace or instance grants. */
+  authzGroupBootstrap: process.env.AUTHZ_GROUP_BOOTSTRAP ?? '',
+  /** Phase 3: require training completion before product /api. */
+  authzRequireTraining: process.env.AUTHZ_REQUIRE_TRAINING === 'true',
   /** Public base URL clients use for oxen CLI (scheme+host+port, no path). */
   publicOxenRemote:
     process.env.PUBLIC_OXEN_REMOTE?.replace(/\/$/, '') ??
@@ -40,6 +59,20 @@ export const env = {
     process.env.OIDC_POST_LOGOUT_REDIRECT_URI ??
     process.env.OIDC_REDIRECT_URI?.replace(/\/auth\/callback$/, '/login') ??
     'http://localhost:5173/login',
+  /** Id token claim name for IdP groups (string or string[]). */
+  oidcGroupsClaim: process.env.OIDC_GROUPS_CLAIM ?? 'groups',
+  /**
+   * Directory search backend: `keycloak` | `none`.
+   * Empty → keycloak when KEYCLOAK_ADMIN_URL is set, else none (store-only).
+   */
+  directoryProvider: (() => {
+    const raw = (process.env.DIRECTORY_PROVIDER ?? '').toLowerCase()
+    if (raw === 'keycloak' || raw === 'none') return raw
+    return process.env.KEYCLOAK_ADMIN_URL ? 'keycloak' : 'none'
+  })(),
+  /** Keycloak base URL for Admin API (no /realms path), e.g. http://keycloak:8080 */
+  keycloakAdminUrl: (process.env.KEYCLOAK_ADMIN_URL ?? '').replace(/\/$/, ''),
+  keycloakRealm: process.env.KEYCLOAK_REALM ?? 'boxen',
   /** Default author when AUTH_DEV_MODE login is used. */
   devUser: {
     sub: process.env.AUTH_DEV_SUB ?? 'dev-user',

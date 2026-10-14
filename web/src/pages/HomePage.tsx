@@ -4,32 +4,51 @@ import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { RepoSummaryCard } from '../components/RepoSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
+import { listAuthzNamespaces } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
+import { mergeNamespaces } from '../lib/mergeNamespaces'
 import { formatBytes } from '../lib/oxen/client'
 
 export function HomePage() {
-  const state = useAsync((signal) => loadCatalog(signal), [])
+  const catalog = useAsync((signal) => loadCatalog(signal), [])
+  const authzNs = useAsync((signal) => listAuthzNamespaces(signal), [])
   const [params, setParams] = useSearchParams()
   const q = (params.get('q') ?? '').trim().toLowerCase()
   const pageParam = Number(params.get('page') || '1')
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
 
-  const filteredProjects = useMemo(() => {
-    if (state.kind !== 'ok') return []
-    if (!q) return state.data.projects
-    return state.data.projects.filter(
+  const mergedNamespaces = useMemo(() => {
+    const oxen = catalog.kind === 'ok' ? catalog.data.namespaces : []
+    const authz = authzNs.kind === 'ok' ? authzNs.data.namespaces : []
+    return mergeNamespaces(oxen, authz)
+  }, [catalog, authzNs])
+
+  const repositories =
+    catalog.kind === 'ok' ? catalog.data.repositories : []
+  const workspaces = catalog.kind === 'ok' ? catalog.data.workspaces : []
+  const storageBytes = catalog.kind === 'ok' ? catalog.data.storageBytes : 0
+
+  const filteredRepos = useMemo(() => {
+    if (!q) return repositories
+    return repositories.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.namespace.toLowerCase().includes(q),
     )
-  }, [state, q])
+  }, [repositories, q])
 
-  const slice = paginate(filteredProjects, page, PAGE_SIZE)
+  const slice = paginate(filteredRepos, page, PAGE_SIZE)
 
   const storagePct =
-    state.kind === 'ok' && state.data.storageBytes > 0
-      ? Math.min(100, (state.data.storageBytes / (50 * 1024 ** 3)) * 100)
+    storageBytes > 0
+      ? Math.min(100, (storageBytes / (50 * 1024 ** 3)) * 100)
       : 0
+
+  // Wait for AuthZ so empty (AuthZ-only) namespaces are included in the count.
+  const loading =
+    catalog.kind === 'loading' ||
+    (authzNs.kind === 'loading' && catalog.kind !== 'error')
+  const error = catalog.kind === 'error' ? catalog.message : null
 
   function goPage(next: number) {
     const nextParams = new URLSearchParams(params)
@@ -44,12 +63,12 @@ export function HomePage() {
         <div>
           <h1>Home</h1>
         </div>
-        {state.kind === 'ok' && (
+        {!loading && !error && (
           <div className="storage-meter" title="Reported storage from oxen-server">
             <span className="storage-meter-label">Storage</span>
             <strong className="small">
-              {formatBytes(state.data.storageBytes)}
-              {state.data.namespaces.length > 0 ? ' reported' : ''}
+              {formatBytes(storageBytes)}
+              {mergedNamespaces.length > 0 ? ' reported' : ''}
             </strong>
             <div className="storage-meter-bar" aria-hidden>
               <span style={{ width: `${storagePct || 2}%` }} />
@@ -59,62 +78,60 @@ export function HomePage() {
       </div>
 
       <StateBlock
-        loading={state.kind === 'loading'}
-        error={state.kind === 'error' ? state.message : null}
-        onRetry={() => state.reload()}
-        empty={state.kind === 'ok' && state.data.namespaces.length === 0}
-        emptyMessage={
-          <div>
-            <p className="muted">
-              No projects yet. Create your first project to start versioning
-              data.
-            </p>
-            <p>
-              <Link className="btn primary" to="/repos/new">
-                + New project
-              </Link>
-            </p>
-          </div>
-        }
+        loading={loading}
+        error={error}
+        onRetry={() => {
+          catalog.reload()
+          authzNs.reload()
+        }}
       >
-        {state.kind === 'ok' && (
+        {!loading && !error && (
           <>
             <div className="dash-stats" role="navigation" aria-label="Browse">
               <Link className="dash-stat dash-stat-link" to="/namespaces">
                 <span className="dash-stat-value">
-                  {state.data.namespaces.length}
+                  {mergedNamespaces.length}
                 </span>
                 <span className="dash-stat-label">Namespaces</span>
               </Link>
-              <Link className="dash-stat dash-stat-link" to="/projects">
-                <span className="dash-stat-value">
-                  {state.data.projects.length}
-                </span>
-                <span className="dash-stat-label">Projects</span>
+              <Link className="dash-stat dash-stat-link" to="/repositories">
+                <span className="dash-stat-value">{repositories.length}</span>
+                <span className="dash-stat-label">Repositories</span>
               </Link>
               <Link className="dash-stat dash-stat-link" to="/workspaces">
-                <span className="dash-stat-value">
-                  {state.data.workspaces.length}
-                </span>
+                <span className="dash-stat-value">{workspaces.length}</span>
                 <span className="dash-stat-label">Workspaces</span>
               </Link>
             </div>
 
             {q && (
               <p className="muted small">
-                Filtering projects for “{params.get('q')}”.
+                Filtering repositories for “{params.get('q')}”.
               </p>
             )}
 
             <div className="projects-head">
-              <h2>Projects</h2>
+              <h2>Repositories</h2>
               <Link className="btn primary" to="/repos/new">
-                + New project
+                + New repository
               </Link>
             </div>
 
-            {filteredProjects.length === 0 ? (
-              <p className="muted small">No projects match this filter.</p>
+            {filteredRepos.length === 0 ? (
+              q ? (
+                <p className="muted small">No repositories match this filter.</p>
+              ) : mergedNamespaces.length > 0 ? (
+                <p className="muted">
+                  No repositories yet. Add one in{' '}
+                  <Link to="/namespaces">a namespace</Link> to start versioning
+                  data.
+                </p>
+              ) : (
+                <p className="muted">
+                  No repositories yet. Create your first repository to start
+                  versioning data.
+                </p>
+              )
             ) : (
               <>
                 <ul className="card-list dash-repo-cards">
@@ -128,7 +145,7 @@ export function HomePage() {
                   page={slice.page}
                   pageCount={slice.pageCount}
                   onPageChange={goPage}
-                  label="Home projects pages"
+                  label="Home repositories pages"
                 />
               </>
             )}

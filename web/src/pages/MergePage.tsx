@@ -166,7 +166,7 @@ export function MergePage() {
           <h1 className="merge-title">Merge</h1>
           <p className="merge-subtitle muted">
             Bring commits from one branch into another on this oxen-server
-            project.
+            repository.
           </p>
         </div>
         <Link

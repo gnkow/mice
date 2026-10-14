@@ -4,6 +4,13 @@ import type { Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { env } from './env.js'
 
+export type PatScope = {
+  namespace: string
+  /** Omit = all repos in namespace. */
+  repo?: string
+  maxRole: 'read' | 'triage' | 'write' | 'maintain' | 'admin'
+}
+
 export type SessionUser = {
   sub: string
   iss: string
@@ -11,6 +18,13 @@ export type SessionUser = {
   name: string
   /** OIDC id_token for RP-initiated logout (optional). */
   idToken?: string
+  /** IdP groups / roles claims (optional; used by AUTHZ_GROUP_BOOTSTRAP). */
+  groups?: string[]
+  /**
+   * Fine-grained PAT resource scopes (Phase 2). Empty/undefined = full user
+   * effective access. Never exceeds the user's grants.
+   */
+  patScopes?: PatScope[]
 }
 
 function secretKey() {
@@ -24,6 +38,7 @@ export async function sealSession(user: SessionUser): Promise<string> {
     email: user.email,
     name: user.name,
     id_token: user.idToken ?? '',
+    groups: user.groups ?? [],
   })
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
     .setIssuedAt()
@@ -40,7 +55,21 @@ export async function openSession(token: string): Promise<SessionUser | null> {
     const name = String(payload.name ?? '')
     const idToken = String(payload.id_token ?? '')
     if (!sub || !iss || !email || !name) return null
-    return { sub, iss, email, name, idToken: idToken || undefined }
+    const groupsRaw = payload.groups
+    const groups = Array.isArray(groupsRaw)
+      ? groupsRaw
+          .filter((g): g is string => typeof g === 'string')
+          .map((g) => g.trim().toLowerCase())
+          .filter(Boolean)
+      : undefined
+    return {
+      sub,
+      iss,
+      email,
+      name,
+      idToken: idToken || undefined,
+      ...(groups?.length ? { groups } : {}),
+    }
   } catch {
     return null
   }

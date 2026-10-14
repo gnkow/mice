@@ -7,12 +7,13 @@
 # Slow-mo delay (ms) for make test-view
 SLOWMO ?= 500
 
-.PHONY: help up down install test smoke test-view test-ui clean clear
+.PHONY: help up down install test smoke test-view test-ui reset clean clear
 
 help:
 	@echo "Targets:"
 	@echo "  make up         Start oxen-server + web (detached)"
 	@echo "  make down       Stop Compose stack (keep volumes)"
+	@echo "  make reset      Wipe oxen + auth data volumes, restart stack"
 	@echo "  make clean      Stop stack, wipe volumes + deps + test artifacts"
 	@echo "  make install    npm install + Playwright Chromium"
 	@echo "  make test       Run Playwright E2E headless (stack must be up)"
@@ -46,6 +47,13 @@ test-view: install
 
 test-ui: install
 	npm run test:e2e:ui -- $(ARGS)
+
+# Wipe persisted server data (repos + authz/PATs/audit), keep node_modules.
+reset:
+	docker compose down --remove-orphans
+	-docker volume rm boxen_oxen-data boxen_auth_data
+	docker compose up -d --build
+	@echo "Reset oxen + auth data volumes and restarted the stack."
 
 # Tear down Compose (including oxen data + web node_modules volumes),
 # and remove local install / Playwright artifacts.

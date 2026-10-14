@@ -147,7 +147,7 @@ export function RepoAside() {
         {repository && (
           <>
             <p className="hub-aside-desc muted small">
-              Self-hosted project on oxen-server
+              Self-hosted repository on oxen-server
               {repository.is_empty ? ' · empty' : ''}.
             </p>
             <ul className="hub-aside-meta">
@@ -211,7 +211,7 @@ export function RepoAside() {
 
       {repository && (repository.data_types?.length ?? 0) > 0 && (
         <section className="repo-aside-panel hub-aside-card">
-          <h3 className="hub-aside-heading">Project contents</h3>
+          <h3 className="hub-aside-heading">Repository contents</h3>
           <div className="composition-bar" aria-hidden>
             {(() => {
               const total = repository.data_types.reduce(

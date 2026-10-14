@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { env } from './env.js'
-import type { SessionUser } from './session.js'
+import type { PatScope, SessionUser } from './session.js'
 
 export type PatPublic = {
   id: string
@@ -10,6 +10,7 @@ export type PatPublic = {
   prefix: string
   createdAt: string
   lastUsedAt?: string
+  scopes?: PatScope[]
 }
 
 type PatRecord = PatPublic & {
@@ -18,6 +19,9 @@ type PatRecord = PatPublic & {
   iss: string
   email: string
   name: string
+  scopes?: PatScope[]
+  /** IdP groups snapshotted at mint time for live group AuthZ. */
+  groups?: string[]
 }
 
 type StoreFile = { version: 1; tokens: PatRecord[] }
@@ -59,6 +63,7 @@ function toPublic(rec: PatRecord): PatPublic {
     prefix: rec.prefix,
     createdAt: rec.createdAt,
     lastUsedAt: rec.lastUsedAt,
+    ...(rec.scopes?.length ? { scopes: rec.scopes } : {}),
   }
 }
 
@@ -73,6 +78,7 @@ export function listPatsForUser(user: SessionUser): PatPublic[] {
 export function createPat(
   user: SessionUser,
   label: string,
+  scopes?: PatScope[],
 ): { token: string; pat: PatPublic } {
   const id = randomBytes(8).toString('hex')
   const secret = randomBytes(24).toString('base64url')
@@ -87,6 +93,8 @@ export function createPat(
     email: user.email,
     name: user.name,
     createdAt: new Date().toISOString(),
+    ...(scopes?.length ? { scopes } : {}),
+    ...(user.groups?.length ? { groups: [...user.groups] } : {}),
   }
   const store = readStore()
   store.tokens.push(rec)
@@ -120,6 +128,8 @@ export function resolvePat(rawBearer: string): SessionUser | null {
     iss: rec.iss,
     email: rec.email,
     name: rec.name,
+    ...(rec.scopes?.length ? { patScopes: rec.scopes } : {}),
+    ...(rec.groups?.length ? { groups: [...rec.groups] } : {}),
   }
 }
 

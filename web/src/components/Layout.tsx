@@ -129,7 +129,9 @@ export function Layout() {
     e.preventDefault()
     const q = query.trim()
     if (searchRef.current) searchRef.current.open = false
-    navigate(q ? `/projects?q=${encodeURIComponent(q)}` : '/projects')
+    navigate(
+      q ? `/repositories?q=${encodeURIComponent(q)}` : '/repositories',
+    )
   }
 
   function setColorMode(colorMode: ColorMode) {
@@ -193,11 +195,14 @@ export function Layout() {
                 <NavLink to="/namespaces" onClick={closeDrawer}>
                   Namespaces
                 </NavLink>
-                <NavLink to="/projects" onClick={closeDrawer}>
-                  Projects
+                <NavLink to="/repositories" onClick={closeDrawer}>
+                  Repositories
                 </NavLink>
                 <NavLink to="/workspaces" onClick={closeDrawer}>
                   Workspaces
+                </NavLink>
+                <NavLink to="/audit" onClick={closeDrawer}>
+                  Audit
                 </NavLink>
                 <NavLink to="/docs" onClick={closeDrawer}>
                   Docs
@@ -246,8 +251,8 @@ export function Layout() {
             <form className="search-pop-panel" role="search" onSubmit={onSearch}>
               <input
                 type="search"
-                placeholder="Search projects…"
-                aria-label="Search projects"
+                placeholder="Search repositories…"
+                aria-label="Search repositories"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 autoFocus

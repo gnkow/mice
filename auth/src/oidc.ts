@@ -1,3 +1,4 @@
+import { normalizeGroupsClaim } from './authzTypes.js'
 import { env, oidcConfigured } from './env.js'
 
 export type OidcConfig = {
@@ -129,6 +130,7 @@ export async function exchangeCode(opts: {
   email: string
   name: string
   idToken: string
+  groups: string[]
 }> {
   const conf = await loadOidcConfig()
   const body = new URLSearchParams({
@@ -165,22 +167,25 @@ export async function exchangeCode(opts: {
       payloadPart.replace(/-/g, '+').replace(/_/g, '/'),
       'base64',
     ).toString('utf8'),
-  ) as {
-    sub?: string
-    iss?: string
-    email?: string
-    name?: string
-    preferred_username?: string
-  }
+  ) as Record<string, unknown>
 
-  const sub = payload.sub ?? ''
-  const iss = payload.iss ?? conf.issuer
-  const email = payload.email ?? `${sub}@users.local`
+  const sub = typeof payload.sub === 'string' ? payload.sub : ''
+  const iss =
+    typeof payload.iss === 'string' ? payload.iss : conf.issuer
+  const email =
+    typeof payload.email === 'string'
+      ? payload.email
+      : `${sub}@users.local`
+  const preferred =
+    typeof payload.preferred_username === 'string'
+      ? payload.preferred_username
+      : ''
   const name =
-    payload.name ||
-    payload.preferred_username ||
+    (typeof payload.name === 'string' ? payload.name : '') ||
+    preferred ||
     email.split('@')[0] ||
     sub
   if (!sub) throw new Error('id_token missing sub')
-  return { sub, iss, email, name, idToken }
+  const groups = normalizeGroupsClaim(payload[env.oidcGroupsClaim])
+  return { sub, iss, email, name, idToken, groups }
 }

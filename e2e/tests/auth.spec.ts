@@ -15,7 +15,7 @@ async function uiDevLogin(page: import('@playwright/test').Page) {
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   await page.getByRole('button', { name: 'Dev login' }).click()
-  await expect(page).toHaveURL(/\/$|\/projects|\/namespaces/)
+  await expect(page).toHaveURL(/\/$|\/repositories|\/projects|\/namespaces/)
   await expect(page.locator('header.topbar')).toBeVisible()
 }
 
@@ -136,7 +136,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     expect(me.status()).toBe(401)
 
     // Must not bounce back into the app if the cookie was not cleared
-    await page.goto('/projects')
+    await page.goto('/repositories')
     await expect(page).toHaveURL(/\/login/)
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     await expect(page.locator('header.topbar')).toHaveCount(0)

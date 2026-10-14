@@ -54,6 +54,12 @@ services:
       AUTH_BREAKGLASS_TOKEN: ${AUTH_BREAKGLASS_TOKEN:-e2e-test-token}
       AUTH_DEV_NAME: ${AUTH_DEV_NAME:-Boxen Dev}
       AUTH_DEV_EMAIL: ${AUTH_DEV_EMAIL:-dev@boxen.local}
+      # PLAT-AUTHO: unset = store flag (off until bootstrap). Dev grants instance admin to all users.
+      AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}
+      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-}
+      AUTHZ_DEV_GRANT_ALL: ${AUTHZ_DEV_GRANT_ALL:-}
+      AUTHZ_GROUP_BOOTSTRAP: ${AUTHZ_GROUP_BOOTSTRAP:-}
+      AUTHZ_REQUIRE_TRAINING: ${AUTHZ_REQUIRE_TRAINING:-false}
       # Server-side discovery inside Compose
       OIDC_ISSUER: http://keycloak:8080/realms/boxen
       # Browser-facing issuer / authorize host
@@ -62,6 +68,10 @@ services:
       OIDC_CLIENT_SECRET: boxen-auth-secret
       OIDC_REDIRECT_URI: http://localhost:${WEB_PORT:-5173}/auth/callback
       OIDC_POST_LOGOUT_REDIRECT_URI: http://localhost:${WEB_PORT:-5173}/login
+      # Directory search via Keycloak Admin API (service account on boxen-auth)
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_REALM: boxen
+      DIRECTORY_PROVIDER: ${DIRECTORY_PROVIDER:-keycloak}
       COOKIE_SECURE: "false"
       # Corporate TLS intercepts break npm inside the image; prefer host node_modules.
       NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-0}

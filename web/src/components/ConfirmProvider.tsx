@@ -21,6 +21,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [typed, setTyped] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const titleId = useId()
+  const detailId = useId()
+  const hintId = useId()
+  const inputId = useId()
 
   useEffect(() => {
     registerConfirmOpener(
@@ -41,7 +44,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', onKey)
     const t = window.setTimeout(() => {
       if (pending.options.requireTypedConfirm !== false) {
-        inputRef.current?.focus()
+        const el = inputRef.current
+        if (el) {
+          el.focus()
+          el.select()
+        }
       }
     }, 0)
     return () => {
@@ -69,6 +76,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const word = pending?.options.confirmWord ?? 'DELETE'
   const needType = pending?.options.requireTypedConfirm !== false
   const canConfirm = !needType || typed === word
+  const mismatch = needType && typed.length > 0 && typed !== word
 
   return (
     <>
@@ -86,24 +94,50 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
+            aria-describedby={detailId}
             onSubmit={onSubmit}
           >
             <h2 id={titleId} className="modal-title">
               {pending.options.title}
             </h2>
-            <p className="muted">{pending.options.detail}</p>
+            <p id={detailId} className="muted">
+              {pending.options.detail}
+            </p>
             <p className="muted small">This cannot be undone.</p>
             {needType && (
-              <label>
-                Type <code>{word}</code> to confirm
+              <div className="confirm-type">
+                <label className="confirm-type-label" htmlFor={inputId}>
+                  To confirm, type{' '}
+                  <code className="confirm-type-word" title="Confirmation text">
+                    {word}
+                  </code>{' '}
+                  below
+                </label>
                 <input
+                  id={inputId}
                   ref={inputRef}
+                  className={
+                    mismatch
+                      ? 'confirm-type-input confirm-type-input-mismatch'
+                      : 'confirm-type-input'
+                  }
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  placeholder={word}
                   autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
                   spellCheck={false}
+                  aria-invalid={mismatch || undefined}
+                  aria-describedby={hintId}
                 />
-              </label>
+                <p id={hintId} className="confirm-type-hint muted small">
+                  {mismatch
+                    ? 'Text does not match yet.'
+                    : 'Exact match required, including capitalization.'}
+                </p>
+              </div>
             )}
             <div className="btn-row modal-actions">
               <button

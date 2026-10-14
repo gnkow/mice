@@ -7,10 +7,8 @@ Open-source web UI for [Oxen](https://www.oxen.ai) / self-hosted [`oxen-server`]
 | Path | Role |
 | --- | --- |
 | `compose.yaml` | Stack: `oxen-server`, `auth` (Hono BFF), `keycloak`, `web` |
-| `auth/` | Auth BFF — OIDC/session, author injection, proxy to oxen-server |
+| `auth/` | Auth BFF — OIDC/session, AuthZ, author injection, audit JSONL, proxy to oxen-server |
 | `web/` | Vite + React + TypeScript UI |
-| `EPICS.md` | Top-level platform epic TODO list |
-| `AUTH.md` | PLAT-AUTH design + implementation plan |
 | `TESTS.md` | Test plan + recommended frameworks for full coverage |
 
 ## Prerequisites
@@ -38,9 +36,9 @@ docker compose up --build
 # → oxen API  http://localhost:3001  (direct; browser uses BFF)
 ```
 
-Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `boxen` / `boxen`), or **Dev login** when `AUTH_DEV_MODE=true`. Sign out clears the Boxen session and the Keycloak SSO session so the next SSO prompt asks for credentials again.
+Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `boxen` / `boxen`), or **Dev login** when `AUTH_DEV_MODE=true`. Sign out clears the Boxen session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
 
-Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session.
+Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI).
 
 ### Oxen CLI (through the BFF)
 
@@ -66,4 +64,4 @@ Atomic E2E case catalog: [`TESTS.md`](./TESTS.md).
 
 ## Progress
 
-Track platform epics in [`EPICS.md`](./EPICS.md), auth design in [`AUTH.md`](./AUTH.md), and Playwright in [`TESTS.md`](./TESTS.md).
+Playwright case catalog: [`TESTS.md`](./TESTS.md). Local epic/design notes (AuthN, AuthZ, audit, GxP) live under `plans/` when present (gitignored).

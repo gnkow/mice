@@ -27,7 +27,7 @@ export function WorkspacesListPage() {
         <div>
           <h1 className="workspaces-title">Workspaces</h1>
           <p className="workspaces-subtitle muted">
-            Remote staging workspaces across all projects on this server.
+            Remote staging workspaces across all repositories on this server.
           </p>
         </div>
       </div>
@@ -37,7 +37,7 @@ export function WorkspacesListPage() {
         error={state.kind === 'error' ? state.message : null}
         onRetry={() => state.reload()}
         empty={state.kind === 'ok' && state.data.workspaces.length === 0}
-        emptyMessage="No workspaces yet. Open a project and create one from its Workspaces tab."
+        emptyMessage="No workspaces yet. Open a repository and create one from its Workspaces tab."
       >
         {state.kind === 'ok' && slice && (
           <>

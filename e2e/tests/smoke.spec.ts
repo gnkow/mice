@@ -40,10 +40,18 @@ test.describe('smoke (P/N/R/F)', () => {
     const name = 'from-ui'
 
     await page.goto('/repos/new')
-    await page.getByLabel('Namespace').fill(ns)
+    const nsSelect = page.getByRole('combobox', { name: 'Namespace' })
+    // Wait until oxen/AuthZ lists hydrate (effect may reset the default choice).
+    await expect(nsSelect.locator('option').filter({ hasText: 'New namespace…' })).toBeAttached()
+    await expect
+      .poll(async () => nsSelect.locator('option').count())
+      .toBeGreaterThan(1)
+    await nsSelect.selectOption({ label: 'New namespace…' })
+    await expect(page.getByLabel('New namespace name')).toBeVisible()
+    await page.getByLabel('New namespace name').fill(ns)
     await page.getByLabel('Name', { exact: true }).fill(name)
     await page.getByLabel('Description').fill('e2e created')
-    await page.getByRole('button', { name: 'Create project' }).click()
+    await page.getByRole('button', { name: 'Create repository' }).click()
 
     await expect(page).toHaveURL(new RegExp(`/n/${ns}/r/${name}/tree/main`))
     await expect(repoTitle(page, name)).toBeVisible()
@@ -68,7 +76,9 @@ test.describe('smoke (P/N/R/F)', () => {
     await expect(
       page.getByRole('heading', { name: seededRepo.namespace }),
     ).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Repositories' }),
+    ).toBeVisible()
     await expect(
       page.locator('.card-list').getByRole('link', {
         name: new RegExp(`^${seededRepo.repo}\\b`),
@@ -80,9 +90,12 @@ test.describe('smoke (P/N/R/F)', () => {
     page,
     emptyRepo,
   }) => {
-    await page.goto(repoPath(emptyRepo, '/tree/main?manage=upload'))
+    await page.goto(repoPath(emptyRepo, '/tree/main'))
     await expect(repoTitle(page, emptyRepo.repo)).toBeVisible()
+    await expect(page.getByText('This repository is empty.')).toBeVisible()
+    await expect(page.getByText(/Could not find path/i)).toHaveCount(0)
 
+    await page.goto(repoPath(emptyRepo, '/tree/main?manage=upload'))
     const dialog = page.getByRole('dialog', { name: 'Upload' })
     await expect(dialog).toBeVisible({ timeout: 15_000 })
     await dialog.getByLabel('Commit message').fill('add sample.txt')
@@ -118,6 +131,6 @@ test.describe('smoke (P/N/R/F)', () => {
       .click()
     await page.getByRole('button', { name: 'Delete repository' }).click()
     await acceptConfirmModal(page, seededRepo.repo)
-    await expect(page).toHaveURL(new RegExp(`/n/${seededRepo.namespace}$`))
+    await expect(page).toHaveURL(/\/repositories\/?$/)
   })
 })

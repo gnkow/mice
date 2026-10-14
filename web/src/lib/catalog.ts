@@ -5,7 +5,7 @@ import {
   listWorkspaces,
 } from './oxen/api'
 
-export type CatalogProject = {
+export type CatalogRepo = {
   namespace: string
   name: string
 }
@@ -15,7 +15,7 @@ export type CatalogNamespace = {
   storageGb: number
   repoCount: number
   workspaceCount: number
-  repos: CatalogProject[]
+  repos: CatalogRepo[]
 }
 
 export type CatalogWorkspace = {
@@ -27,7 +27,7 @@ export type CatalogWorkspace = {
 
 export type Catalog = {
   namespaces: CatalogNamespace[]
-  projects: CatalogProject[]
+  repositories: CatalogRepo[]
   workspaces: CatalogWorkspace[]
   storageBytes: number
 }
@@ -35,7 +35,7 @@ export type Catalog = {
 export async function loadCatalog(signal: AbortSignal): Promise<Catalog> {
   const nsRes = await listNamespaces(signal)
   const namespaces: CatalogNamespace[] = []
-  const projects: CatalogProject[] = []
+  const repositories: CatalogRepo[] = []
   const workspaces: CatalogWorkspace[] = []
   let storageBytes = 0
 
@@ -50,7 +50,7 @@ export async function loadCatalog(signal: AbortSignal): Promise<Catalog> {
       namespace: ns.namespace,
       name: r.name,
     }))
-    projects.push(...repos)
+    repositories.push(...repos)
 
     const wsLists = await Promise.all(
       repos.map((r) =>
@@ -78,5 +78,5 @@ export async function loadCatalog(signal: AbortSignal): Promise<Catalog> {
     })
   }
 
-  return { namespaces, projects, workspaces, storageBytes }
+  return { namespaces, repositories, workspaces, storageBytes }
 }

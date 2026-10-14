@@ -23,16 +23,34 @@ test.describe('platform (P-03 P-04)', () => {
         }),
       })
     })
+    // AuthZ-only namespaces also feed Home browse counts / empty copy.
+    await page.route('**/auth/namespaces', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ namespaces: [] }),
+      })
+    })
 
     await page.goto('/')
+    const browse = page.getByRole('navigation', { name: 'Browse' })
+    await expect(browse).toBeVisible({ timeout: 15_000 })
+    await expect(browse.getByText('0').first()).toBeVisible()
+    await expect(browse.getByText('Namespaces')).toBeVisible()
+    await expect(browse.getByText('Repositories')).toBeVisible()
+    await expect(browse.getByText('Workspaces')).toBeVisible()
     await expect(
       page.getByText(
-        'No projects yet. Create your first project to start versioning data.',
+        'No repositories yet. Create your first repository to start versioning data.',
       ),
-    ).toBeVisible({ timeout: 15_000 })
+    ).toBeVisible()
   })
 
-  test('TC-P-04c: Home shows loading then project list', async ({
+  test('TC-P-04c: Home shows loading then repository list', async ({
     page,
     seededRepo,
   }) => {
@@ -132,7 +150,7 @@ test.describe('platform (P-03 P-04)', () => {
     page,
   }) => {
     await page.context().clearCookies()
-    await page.goto('/projects')
+    await page.goto('/repositories')
     await expect(page).toHaveURL(/\/login/)
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     await expect(page.locator('header.topbar')).toHaveCount(0)
