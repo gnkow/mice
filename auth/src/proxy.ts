@@ -11,6 +11,13 @@ import {
   extractRepoCreateFromJson,
   type AuditVia,
 } from './audit.js'
+import {
+  buildExplicitFileOp,
+  classifyFileLineageOp,
+  fetchFileEntrySnapshot,
+  parseCommitIdFromJson,
+  type FileEntrySnapshot,
+} from './lineage.js'
 import { authorizeApiRequest } from './authz.js'
 import {
   ensureNamespaceForCreate,
@@ -63,11 +70,25 @@ export async function proxyToOxen(
   let message: string | undefined
   let createNs: string | undefined
   let createRepo: string | undefined
+  let moveNewPath: string | undefined
+  let copyFrom: string | undefined
+  let restoreFrom: string | undefined
 
   if (method !== 'GET' && method !== 'HEAD') {
     if (contentType.includes('multipart/form-data')) {
       const form = await c.req.formData()
       message = extractMessageFromForm(form)
+      const copyField = form.get('copy_from')
+      if (typeof copyField === 'string' && copyField.trim()) {
+        copyFrom = copyField.trim().replace(/^\/+|\/+$/g, '')
+      }
+      const restoreField = form.get('restore_from')
+      if (typeof restoreField === 'string' && restoreField.trim()) {
+        restoreFrom = restoreField.trim()
+      }
+      // Boxen-only hints for lineage; oxen-server must not see them.
+      form.delete('copy_from')
+      form.delete('restore_from')
       body = injectAuthorFormData(form, user)
       // Let fetch set multipart boundary
       reqHeaders.delete('content-type')
@@ -80,6 +101,9 @@ export async function proxyToOxen(
           const created = extractRepoCreateFromJson(parsed)
           createNs = created.namespace
           createRepo = created.repo
+          if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
+            moveNewPath = parsed.new_path.trim()
+          }
           body = JSON.stringify(injectAuthorJson(parsed, user))
           reqHeaders.set('content-type', 'application/json')
         } catch {
@@ -131,6 +155,39 @@ export async function proxyToOxen(
     })
   }
 
+  // Before file mutate: snapshot prior entry so PUT can be upload vs edit
+  // (or source entry for explicit copy / restore).
+  let priorSnapshot: FileEntrySnapshot | null = null
+  const tentativeFileOp = classifyFileLineageOp(method, pathname, {
+    newPath: moveNewPath,
+    copyFrom,
+    restoreFrom,
+  })
+  if (
+    method !== 'GET' &&
+    method !== 'HEAD' &&
+    tentativeFileOp.namespace &&
+    tentativeFileOp.repo &&
+    tentativeFileOp.path &&
+    (method === 'PUT' ||
+      method === 'POST' ||
+      method === 'DELETE' ||
+      method === 'PATCH')
+  ) {
+    const snapshotRevision =
+      tentativeFileOp.kind === 'restore' && restoreFrom
+        ? restoreFrom
+        : tentativeFileOp.branch
+    if (snapshotRevision) {
+      priorSnapshot = await fetchFileEntrySnapshot(
+        tentativeFileOp.namespace,
+        tentativeFileOp.repo,
+        snapshotRevision,
+        tentativeFileOp.path,
+      )
+    }
+  }
+
   const upstream = await fetch(
     `${env.oxenUpstream}${pathname}${url.search}`,
     {
@@ -141,11 +198,39 @@ export async function proxyToOxen(
     },
   )
 
+  let responseBody: BodyInit | null = upstream.body
+  let commitId: string | undefined
+
   if (method !== 'GET' && method !== 'HEAD') {
     const classified = classifyPath(method, pathname)
     const ns = classified.namespace ?? createNs
     const repo = classified.repo ?? createRepo
-    appendAudit({
+    const fileOp = classifyFileLineageOp(method, pathname, {
+      newPath: moveNewPath,
+      priorExists: priorSnapshot != null,
+      copyFrom,
+      restoreFrom,
+    })
+
+    // Buffer small JSON mutate responses so we can parse commit id for lineage.
+    if (upstream.ok && fileOp.kind) {
+      const ct = upstream.headers.get('content-type') ?? ''
+      if (ct.includes('application/json')) {
+        try {
+          const text = await upstream.text()
+          responseBody = text
+          try {
+            commitId = parseCommitIdFromJson(JSON.parse(text) as unknown)
+          } catch {
+            /* ignore parse errors */
+          }
+        } catch {
+          responseBody = upstream.body
+        }
+      }
+    }
+
+    const auditEvent = appendAudit({
       actor: actorFromUser(user),
       via,
       method,
@@ -155,8 +240,62 @@ export async function proxyToOxen(
       namespace: ns,
       repo,
       message,
-      detail: classified.detail,
+      detail: {
+        ...classified.detail,
+        ...(moveNewPath ? { new_path: moveNewPath } : {}),
+        ...(copyFrom ? { copy_from: copyFrom } : {}),
+        ...(restoreFrom ? { restore_from: restoreFrom } : {}),
+        ...(fileOp.kind ? { lineage_kind: fileOp.kind } : {}),
+      },
     })
+
+    if (upstream.ok && fileOp.kind && fileOp.namespace && fileOp.repo) {
+      let contentHash: string | undefined
+      // After write, resolve new content hash at branch tip (or new path for moves/copies).
+      if (
+        (fileOp.kind === 'upload' ||
+          fileOp.kind === 'edit' ||
+          fileOp.kind === 'restore' ||
+          fileOp.kind === 'move' ||
+          fileOp.kind === 'rename' ||
+          fileOp.kind === 'copy') &&
+        fileOp.branch
+      ) {
+        const outPath =
+          fileOp.kind === 'move' ||
+          fileOp.kind === 'rename' ||
+          fileOp.kind === 'copy'
+            ? (fileOp.newPath ?? moveNewPath)
+            : fileOp.path
+        if (outPath) {
+          const after = await fetchFileEntrySnapshot(
+            fileOp.namespace,
+            fileOp.repo,
+            fileOp.branch,
+            outPath,
+          )
+          contentHash = after?.contentHash
+        }
+      }
+
+      buildExplicitFileOp({
+        kind: fileOp.kind,
+        namespace: fileOp.namespace,
+        repo: fileOp.repo,
+        branch: fileOp.branch,
+        path: fileOp.path,
+        newPath: fileOp.newPath ?? moveNewPath,
+        commitId,
+        contentHash,
+        priorContentHash: priorSnapshot?.contentHash,
+        priorCommitId:
+          priorSnapshot?.commitId ??
+          (fileOp.kind === 'restore' ? restoreFrom : undefined),
+        actor: actorFromUser(user),
+        via,
+        auditEventId: auditEvent?.id,
+      })
+    }
 
     // After successful repo create: seed AuthZ namespace + creator Admin
     if (
@@ -182,7 +321,7 @@ export async function proxyToOxen(
     resHeaders.set(key, value)
   })
 
-  return new Response(upstream.body, {
+  return new Response(responseBody, {
     status: upstream.status,
     statusText: upstream.statusText,
     headers: resHeaders,

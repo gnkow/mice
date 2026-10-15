@@ -5,7 +5,6 @@ import { RequireAuthz } from './components/RequireAuthz'
 import { RepoIndexRedirect, RepoLayout } from './components/RepoLayout'
 import { BlobPage } from './pages/BlobPage'
 import { BranchesPage } from './pages/BranchesPage'
-import { CommitPage } from './pages/CommitPage'
 import { CommitsPage } from './pages/CommitsPage'
 import { ComparePage } from './pages/ComparePage'
 import { DataFrameComparePage } from './pages/DataFrameComparePage'
@@ -68,7 +67,7 @@ export default function App() {
                 <Route path="blob/:branch/*" element={<BlobPage />} />
                 <Route path="branches" element={<BranchesPage />} />
                 <Route path="commits" element={<CommitsPage />} />
-                <Route path="commits/:commitId" element={<CommitPage />} />
+                <Route path="commits/:commitId" element={<CommitsPage />} />
                 <Route path="compare" element={<ComparePage />} />
                 <Route path="df-compare" element={<DataFrameComparePage />} />
                 <Route path="merge" element={<MergePage />} />

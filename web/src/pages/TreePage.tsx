@@ -3,26 +3,39 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AuthorAvatar } from '../components/AuthorAvatar'
 import { BranchSwitcher } from '../components/BranchSwitcher'
 import { FileIcon } from '../components/FileIcon'
-import { DataTypeIcon } from '../components/icons'
+import { DataTypeIcon, RestoreIcon } from '../components/icons'
 import { ManageFilesMenu } from '../components/ManageFilesMenu'
 import { Markdown } from '../components/Markdown'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import {
+  copyFile,
   deleteFile,
   downloadFile,
   downloadFileText,
   getRepository,
   listAllCommits,
   listBranches,
+  listDeletedInLatestCommit,
   listDirectory,
   moveFile,
+  restoreFile,
   triggerDownload,
 } from '../lib/oxen/api'
 import { confirmDelete } from '../lib/confirmDelete'
 import { formatBytes } from '../lib/oxen/client'
-import { rememberBranch } from '../lib/lastBranch'
-import { joinPath, parentPath } from '../lib/oxen/paths'
+import {
+  lastBranch,
+  rememberBranch,
+  resolveDefaultBranch,
+} from '../lib/lastBranch'
+import {
+  baseName,
+  isRenamePathChange,
+  joinPath,
+  looksLikeCommitId,
+  parentPath,
+} from '../lib/oxen/paths'
 import { OxenApiError } from '../lib/oxen/types'
 import { formatRelativeTime } from '../lib/time'
 
@@ -61,8 +74,12 @@ export function TreePage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
-  const [renameTo, setRenameTo] = useState('')
-  const [renameFrom, setRenameFrom] = useState<string | null>(null)
+  const [mutateTick, setMutateTick] = useState(0)
+  const [pathChange, setPathChange] = useState<{
+    mode: 'rename' | 'move' | 'copy'
+    from: string
+  } | null>(null)
+  const [pathChangeTo, setPathChangeTo] = useState('')
   const [nameFilter, setNameFilter] = useState('')
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [sortAsc, setSortAsc] = useState(true)
@@ -133,6 +150,7 @@ export function TreePage() {
       await action()
       listing.reload()
       branches.reload()
+      setMutateTick((t) => t + 1)
     } catch (err) {
       setError(
         err instanceof OxenApiError
@@ -147,13 +165,17 @@ export function TreePage() {
   }
 
   async function onDelete(entryPath: string, isDir: boolean) {
+    if (onCommitRef) {
+      setError('Delete requires a branch tip. Switch to a branch first.')
+      return
+    }
     const label = isDir ? `directory ${entryPath}/` : `file ${entryPath}`
     if (
       !(await confirmDelete({
         title: `Delete ${label}`,
         detail: isDir
-          ? `All files and subdirectories under “${entryPath}” on branch “${branch}” will be removed in a new commit.`
-          : `“${entryPath}” on branch “${branch}” will be removed in a new commit.`,
+          ? `All files and subdirectories under “${entryPath}” on branch “${writeBranch}” will be removed in a new commit.`
+          : `“${entryPath}” on branch “${writeBranch}” will be removed in a new commit.`,
         requireTypedConfirm: false,
       }))
     ) {
@@ -163,29 +185,111 @@ export function TreePage() {
       await deleteFile(
         namespace,
         repo,
-        branch,
+        writeBranch,
         entryPath,
         `Delete ${entryPath}`,
       )
     })
   }
 
-  function onRename(e: FormEvent) {
+  function openPathChange(
+    mode: 'rename' | 'move' | 'copy',
+    entryPath: string,
+  ) {
+    for (const el of document.querySelectorAll('.row-more[open]')) {
+      el.removeAttribute('open')
+    }
+    setPathChange({ mode, from: entryPath })
+    if (mode === 'rename') {
+      setPathChangeTo(baseName(entryPath))
+    } else if (mode === 'copy') {
+      setPathChangeTo(joinPath('copy', baseName(entryPath)))
+    } else {
+      setPathChangeTo(entryPath)
+    }
+    setError(null)
+    setInfo(null)
+  }
+
+  function closePathChange() {
+    setPathChange(null)
+    setPathChangeTo('')
+  }
+
+  function onPathChangeSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!renameFrom) return
-    const next = renameTo.trim()
-    if (!next) return
-    void run(async () => {
-      await moveFile(
-        namespace,
-        repo,
-        branch,
-        renameFrom,
-        next,
-        `Move ${renameFrom} → ${next}`,
+    if (!pathChange) return
+    const from = pathChange.from
+    let next =
+      pathChange.mode === 'rename'
+        ? joinPath(parentPath(from), pathChangeTo.trim())
+        : pathChangeTo.trim().replace(/^\/+/, '')
+    if (!next || next === from) {
+      setError(
+        pathChange.mode === 'rename'
+          ? 'Enter a new file name.'
+          : 'Enter a different destination path.',
       )
-      setRenameFrom(null)
-      setRenameTo('')
+      return
+    }
+    if (pathChange.mode === 'rename' && !isRenamePathChange(from, next)) {
+      setError('Rename must keep the same folder; only change the file name.')
+      return
+    }
+    if (pathChange.mode === 'copy' && baseName(from) !== baseName(next)) {
+      setError('Copy must keep the same file name; only change the folder.')
+      return
+    }
+    if (pathChange.mode === 'move' && isRenamePathChange(from, next)) {
+      // Same-folder target: treat as rename for the commit message / UX.
+      // BFF lineage will classify as rename from path geometry either way.
+    }
+
+    if (pathChange.mode === 'copy') {
+      if (looksLikeCommitId(writeBranch)) {
+        setError('Select a branch before copying (current view is a commit).')
+        return
+      }
+      const message = `Copy ${from} → ${next}`
+      void run(async () => {
+        await copyFile(namespace, repo, branch, from, next, message, undefined, {
+          targetBranch: writeBranch,
+        })
+        closePathChange()
+        setInfo(
+          onCommitRef
+            ? `Copied to ${next} on branch ${writeBranch}.`
+            : `Copied to ${next}.`,
+        )
+        if (onCommitRef) {
+          navigate(
+            `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/tree/${encodeURIComponent(writeBranch)}${path ? `/${path}` : ''}`,
+          )
+        }
+      })
+      return
+    }
+
+    if (onCommitRef) {
+      setError(
+        'Rename and move require a branch tip. Switch to a branch first.',
+      )
+      return
+    }
+
+    const kind = isRenamePathChange(from, next) ? 'rename' : 'move'
+    const message =
+      kind === 'rename'
+        ? `Rename ${baseName(from)} → ${baseName(next)}`
+        : `Move ${from} → ${next}`
+    void run(async () => {
+      await moveFile(namespace, repo, writeBranch, from, next, message)
+      closePathChange()
+      setInfo(
+        kind === 'rename'
+          ? `Renamed to ${baseName(next)}.`
+          : `Moved to ${next}.`,
+      )
     })
   }
 
@@ -226,20 +330,102 @@ export function TreePage() {
   const branchNames =
     branches.kind === 'ok'
       ? branches.data.branches.map((b) => b.name)
-      : [branch]
+      : looksLikeCommitId(branch)
+        ? []
+        : [branch]
 
-  const repoIsEmpty =
+  /** URL ref may be a commit hash; mutations must target a real branch. */
+  const onCommitRef = looksLikeCommitId(branch)
+  const writeBranch = onCommitRef
+    ? resolveDefaultBranch(
+        branchNames.length > 0
+          ? branchNames
+          : [lastBranch(namespace, repo, 'main')].filter(
+              (b) => !looksLikeCommitId(b),
+            ),
+        namespace,
+        repo,
+      )
+    : branch
+
+  /** Files removed in the viewed revision (vs its parent) in this directory. */
+  const deletedHint = useAsync(
+    async (signal) => {
+      try {
+        return await listDeletedInLatestCommit(
+          namespace,
+          repo,
+          branch,
+          path,
+          signal,
+        )
+      } catch {
+        return []
+      }
+    },
+    [namespace, repo, branch, path, mutateTick],
+  )
+
+  const deletedEntries =
+    deletedHint.kind === 'ok'
+      ? deletedHint.data.filter((d) =>
+          d.filename.toLowerCase().includes(nameFilter.trim().toLowerCase()),
+        )
+      : []
+
+  function onRestoreDeleted(entryPath: string, sourceRevision: string) {
+    if (looksLikeCommitId(writeBranch)) {
+      setError('Select a branch before restoring.')
+      return
+    }
+    void run(async () => {
+      await restoreFile(
+        namespace,
+        repo,
+        writeBranch,
+        entryPath,
+        sourceRevision,
+        `Restore ${entryPath}`,
+      )
+      setInfo(`Restored “${entryPath}” on ${writeBranch}.`)
+      // Historical commit trees stay frozen; jump to the branch tip so the
+      // restored file appears in the listing.
+      if (onCommitRef) {
+        const suffix = path ? `/${path}` : ''
+        navigate(
+          `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/tree/${encodeURIComponent(writeBranch)}${suffix}`,
+        )
+      } else {
+        deletedHint.reload()
+      }
+    })
+  }
+
+  const hasDeleted = deletedEntries.length > 0
+  const deletedPending = deletedHint.kind === 'loading'
+
+  const looksUninitialized =
     (repoDetail.kind === 'ok' && repoDetail.data.repository.is_empty) ||
     (listing.kind === 'error' &&
       !path &&
       isMissingRevisionError(listing.message))
 
+  // Wait for deleted-file probe before calling the tree "empty" — otherwise
+  // deleting the last file flashes the empty state and hides Restore.
+  const repoIsEmpty =
+    !hasDeleted && !deletedPending && looksUninitialized
+
   const listingError =
-    listing.kind === 'error' && !repoIsEmpty ? listing.message : null
+    listing.kind === 'error' && !repoIsEmpty && !hasDeleted && !deletedPending
+      ? listing.message
+      : null
 
   const showEmpty =
-    repoIsEmpty ||
-    (listing.kind === 'ok' && listing.data.entries.length === 0)
+    !hasDeleted &&
+    !deletedPending &&
+    (repoIsEmpty ||
+      (listing.kind === 'ok' && listing.data.entries.length === 0) ||
+      looksUninitialized)
 
   const emptyMessage = repoIsEmpty ? (
     <div>
@@ -255,6 +441,9 @@ export function TreePage() {
       <p className="muted small">Use Manage Files to upload or import.</p>
     </div>
   )
+
+  const showBrowser =
+    listing.kind === 'ok' || hasDeleted || deletedHint.kind === 'loading'
 
   return (
     <main className="page wide repo-data-page">
@@ -284,6 +473,7 @@ export function TreePage() {
             onDone={() => {
               listing.reload()
               repoDetail.reload()
+              setMutateTick((t) => t + 1)
             }}
           />
           <div className="view-toggle" role="group" aria-label="Directory view">
@@ -393,18 +583,21 @@ export function TreePage() {
       </nav>
 
       <StateBlock
-        loading={listing.kind === 'loading' && !repoIsEmpty}
+        loading={
+          (listing.kind === 'loading' || deletedPending) && !hasDeleted
+        }
         error={listingError}
         onRetry={() => {
           listing.reload()
           repoDetail.reload()
+          setMutateTick((t) => t + 1)
         }}
         empty={showEmpty}
         emptyMessage={emptyMessage}
       >
-        {listing.kind === 'ok' && (
+        {showBrowser && (
           <div className="file-browser">
-            {latestCommit && (
+            {listing.kind === 'ok' && latestCommit && (
               <div className="latest-commit">
                 <AuthorAvatar name={latestCommit.author || 'unknown'} />
                 <span className="latest-commit-author">
@@ -546,14 +739,30 @@ export function TreePage() {
                               <button
                                 type="button"
                                 disabled={busy}
-                                onClick={() => {
-                                  setRenameFrom(entryPath)
-                                  setRenameTo(entryPath)
-                                }}
+                                onClick={() => openPathChange('rename', entryPath)}
+                              >
+                                Rename
+                              </button>
+                            )}
+                            {!entry.is_dir && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => openPathChange('move', entryPath)}
                               >
                                 Move
                               </button>
                             )}
+                            {!entry.is_dir && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => openPathChange('copy', entryPath)}
+                              >
+                                Copy
+                              </button>
+                            )}
+                            <hr className="menu-sep" />
                             <button
                               type="button"
                               className="danger-text"
@@ -580,6 +789,48 @@ export function TreePage() {
                     </li>
                   )
                 })}
+                {deletedEntries.map((d) => (
+                  <li
+                    key={`deleted:${d.path}`}
+                    className="file-row file-row-deleted"
+                    data-testid="file-row-deleted"
+                  >
+                    <span className="file-row-name">
+                      <FileIcon isDir={false} filename={d.filename} />
+                      <span className="file-row-name-text">
+                        <Link
+                          to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/blob/${encodeURIComponent(d.sourceRevision)}/${d.path}`}
+                          className="file-name-link file-name-deleted"
+                          title={`${d.filename} (deleted)`}
+                        >
+                          {d.filename}
+                        </Link>
+                        <span className="file-deleted-badge">Deleted</span>
+                      </span>
+                    </span>
+                    <span className="file-row-size muted">
+                      {d.size != null ? formatBytes(d.size) : ''}
+                    </span>
+                    <span className="file-row-msg muted">
+                      Removed in this commit
+                    </span>
+                    <span className="file-row-actions">
+                      <button
+                        type="button"
+                        className="btn ghost small file-restore-btn"
+                        disabled={busy}
+                        title={`Restore to ${writeBranch}`}
+                        onClick={() =>
+                          onRestoreDeleted(d.path, d.sourceRevision)
+                        }
+                      >
+                        <RestoreIcon size={13} />
+                        Restore
+                      </button>
+                    </span>
+                    <span className="file-row-age muted">—</span>
+                  </li>
+                ))}
               </ul>
             ) : (
               <ul className="file-grid">
@@ -603,6 +854,31 @@ export function TreePage() {
                     </li>
                   )
                 })}
+                {deletedEntries.map((d) => (
+                  <li key={`deleted:${d.path}`}>
+                    <div
+                      className="file-grid-card file-grid-card-deleted"
+                      data-testid="file-grid-deleted"
+                    >
+                      <FileIcon isDir={false} filename={d.filename} />
+                      <span className="file-grid-name file-name-deleted">
+                        {d.filename}
+                      </span>
+                      <span className="file-deleted-badge">Deleted</span>
+                      <button
+                        type="button"
+                        className="btn ghost small file-restore-btn"
+                        disabled={busy}
+                        onClick={() =>
+                          onRestoreDeleted(d.path, d.sourceRevision)
+                        }
+                      >
+                        <RestoreIcon size={13} />
+                        Restore
+                      </button>
+                    </div>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
@@ -622,29 +898,79 @@ export function TreePage() {
         </section>
       )}
 
-      {renameFrom && (
-        <section className="panel">
-          <h2 className="section-label">Move / rename</h2>
-          <form className="form" onSubmit={onRename}>
+      {pathChange && (
+        <section
+          className="panel path-change-panel"
+          data-testid={`path-change-${pathChange.mode}`}
+        >
+          <h2 className="section-label">
+            {pathChange.mode === 'rename'
+              ? 'Rename file'
+              : pathChange.mode === 'copy'
+                ? 'Copy file'
+                : 'Move file'}
+          </h2>
+          <p className="muted small path-change-from">
+            From <code className="mono">{pathChange.from}</code>
+            {pathChange.mode === 'rename' && parentPath(pathChange.from) && (
+              <>
+                {' '}
+                in <code className="mono">{parentPath(pathChange.from)}/</code>
+              </>
+            )}
+          </p>
+          <form className="form" onSubmit={onPathChangeSubmit}>
+            {pathChange.mode === 'rename' ? (
+              <label>
+                New name
+                <input
+                  value={pathChangeTo}
+                  onChange={(e) => setPathChangeTo(e.target.value)}
+                  required
+                  autoFocus
+                  spellCheck={false}
+                  placeholder={baseName(pathChange.from)}
+                />
+              </label>
+            ) : (
+              <label>
+                Destination path
+                <input
+                  value={pathChangeTo}
+                  onChange={(e) => setPathChangeTo(e.target.value)}
+                  required
+                  autoFocus
+                  spellCheck={false}
+                  placeholder={
+                    pathChange.mode === 'copy'
+                      ? `folder/${baseName(pathChange.from)}`
+                      : 'folder/new-name.ext'
+                  }
+                />
+              </label>
+            )}
             <p className="muted small">
-              From <code>{renameFrom}</code>
+              {pathChange.mode === 'rename'
+                ? 'Keeps the file in the same folder. Lineage records a rename.'
+                : pathChange.mode === 'copy'
+                  ? onCommitRef
+                    ? `Keeps the same file name in another folder. Reads this commit; writes to branch ${writeBranch}.`
+                    : 'Keeps the same file name in another folder. Original stays; lineage records a copy.'
+                  : 'Change folder and/or name. Same-folder targets are recorded as rename.'}
             </p>
-            <label>
-              New path
-              <input
-                value={renameTo}
-                onChange={(e) => setRenameTo(e.target.value)}
-                required
-              />
-            </label>
             <div className="btn-row">
               <button className="btn" type="submit" disabled={busy}>
-                Move
+                {pathChange.mode === 'rename'
+                  ? 'Rename'
+                  : pathChange.mode === 'copy'
+                    ? 'Copy'
+                    : 'Move'}
               </button>
               <button
                 className="btn ghost"
                 type="button"
-                onClick={() => setRenameFrom(null)}
+                onClick={closePathChange}
+                disabled={busy}
               >
                 Cancel
               </button>

@@ -228,3 +228,135 @@ export function visibilityLabel(visibility: 'local' | 'private' | 'public') {
   if (visibility === 'private') return 'private'
   return 'local'
 }
+
+/** Download arrow into tray. */
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M8.75 2.75a.75.75 0 0 0-1.5 0v6.19L5.03 6.72a.75.75 0 0 0-1.06 1.06l3.5 3.5a.75.75 0 0 0 1.06 0l3.5-3.5a.75.75 0 1 0-1.06-1.06L8.75 8.94V2.75ZM2.75 12a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"
+      />
+    </Svg>
+  )
+}
+
+/** Clock / history. */
+export function HistoryIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M1.5 8a6.5 6.5 0 1 1 2.02 4.64.75.75 0 0 1-.04-1.06.75.75 0 0 1 1.06-.04A5 5 0 1 0 3 8H4.5a.75.75 0 0 1 .53 1.28l-2 2a.75.75 0 0 1-1.06 0l-2-2A.75.75 0 0 1 .75 8H1.5Zm6.75-3a.75.75 0 0 1 .75.75v2.69l1.78 1.78a.75.75 0 1 1-1.06 1.06l-2-2A.75.75 0 0 1 7.5 8.75v-3A.75.75 0 0 1 8.25 5Z"
+      />
+    </Svg>
+  )
+}
+
+/** External / raw view. */
+export function RawIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M3.75 2A1.75 1.75 0 0 0 2 3.75v8.5C2 13.22 2.78 14 3.75 14h8.5A1.75 1.75 0 0 0 14 12.25v-2.5a.75.75 0 0 0-1.5 0v2.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5c0-.14.11-.25.25-.25H6a.75.75 0 0 0 0-1.5H3.75Zm6.47.22a.75.75 0 0 1 1.06 0l3.5 3.5a.75.75 0 0 1 0 1.06l-3.5 3.5a.75.75 0 1 1-1.06-1.06L12.44 7H8.75a.75.75 0 0 1 0-1.5h3.69L10.22 3.28a.75.75 0 0 1 0-1.06Z"
+      />
+    </Svg>
+  )
+}
+
+/** Refresh / sync. */
+export function RefreshIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M8 2.5a5.5 5.5 0 0 0-4.66 2.5H4.5a.75.75 0 0 1 0 1.5h-3A.75.75 0 0 1 .75 5.75v-3a.75.75 0 0 1 1.5 0v.84A7 7 0 1 1 1 8a.75.75 0 0 1 1.5 0A5.5 5.5 0 1 0 8 2.5Z"
+      />
+    </Svg>
+  )
+}
+
+/** Trash / delete. */
+export function TrashIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M6.5 1.75A.75.75 0 0 1 7.25 1h1.5a.75.75 0 0 1 .75.75V3h3.75a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H6.5V1.75ZM3.87 5.5h8.26l-.45 8.09a1.75 1.75 0 0 1-1.75 1.66H6.07a1.75 1.75 0 0 1-1.75-1.66L3.87 5.5Zm2.01 1.75a.75.75 0 0 0-1.5.08l.3 5.5a.75.75 0 0 0 1.5-.08l-.3-5.5Zm3.62-.67a.75.75 0 0 0-1.5 0v5.5a.75.75 0 0 0 1.5 0v-5.5Zm1.97.75a.75.75 0 1 0-1.5-.08l.3 5.5a.75.75 0 0 0 1.5-.08l-.3-5.34Z"
+      />
+    </Svg>
+  )
+}
+
+/** Restore / bring back. */
+export function RestoreIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M1.5 8a6.5 6.5 0 0 1 11.14-4.56.75.75 0 0 1-1.02 1.1A5 5 0 1 0 8 13H4.56l1.22-1.22a.75.75 0 1 0-1.06-1.06l-2.5 2.5a.75.75 0 0 0 0 1.06l2.5 2.5a.75.75 0 1 0 1.06-1.06L4.56 14.5H8A6.5 6.5 0 0 1 1.5 8Z"
+      />
+    </Svg>
+  )
+}
+
+/** Ellipsis / more. */
+export function MoreIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M3 8a1.25 1.25 0 1 1-2.5 0A1.25 1.25 0 0 1 3 8Zm6.25 0a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0ZM14.5 9.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"
+      />
+    </Svg>
+  )
+}
+
+/** Hash / fingerprint. */
+export function HashIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M5.09 3.75a.75.75 0 0 1 .74.64l.24 1.61h3.7l.28-1.86a.75.75 0 1 1 1.48.22l-.25 1.64h1.47a.75.75 0 0 1 0 1.5h-1.7l-.45 3h1.65a.75.75 0 0 1 0 1.5h-1.87l-.28 1.86a.75.75 0 1 1-1.48-.22l.25-1.64h-3.7l-.28 1.86a.75.75 0 1 1-1.48-.22l.25-1.64H2.75a.75.75 0 0 1 0-1.5h1.7l.45-3H3.25a.75.75 0 0 1 0-1.5h1.87l.28-1.86a.75.75 0 0 1 .69-.54Zm.98 3.75-.45 3h3.7l.45-3h-3.7Z"
+      />
+    </Svg>
+  )
+}
+
+/** Package / version store. */
+export function PackageIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M7.68 1.35a1.5 1.5 0 0 1 1.64.03l4.5 2.88A1.5 1.5 0 0 1 14.5 5.5v5a1.5 1.5 0 0 1-.68 1.24l-4.5 2.88a1.5 1.5 0 0 1-1.64 0l-4.5-2.88A1.5 1.5 0 0 1 2.5 10.5v-5c0-.52.27-1 .68-1.24l4.5-2.91ZM8.5 2.7 4 5.58v.4l4.5 2.7 4.5-2.7v-.4L8.5 2.7Zm4 4.32-3.75 2.25v4.36l3.75-2.4V7.02Zm-5.25 2.25L3.5 7.02v4.21l3.75 2.4V9.27Z"
+      />
+    </Svg>
+  )
+}
+
+/** Graph / lineage. */
+export function GraphIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M4.5 2.75a1.75 1.75 0 1 1-1.3 2.92L2.06 7.25a1.75 1.75 0 1 1 0 1.5l1.14 1.58A1.75 1.75 0 1 1 4.5 13.25a1.75 1.75 0 0 1-.2-3.48l1.14-1.58a1.76 1.76 0 0 1 1.62-.19l2.2 1.1a1.75 1.75 0 1 1-.1 1.4l-2.2-1.1a.25.25 0 0 0-.23.03l-1.2 1.66c.1.2.17.42.17.66a1.75 1.75 0 1 1-1.3-2.92L5.34 7.9a.25.25 0 0 0 .23-.03l2.2-1.1a1.75 1.75 0 1 1 .1-1.4l-2.2 1.1a.25.25 0 0 0-.23-.03L4.3 4.78c.1-.2.17-.42.17-.66a1.75 1.75 0 0 1 .03-1.37Z"
+      />
+    </Svg>
+  )
+}
+
+/** Pencil / edit. */
+export function EditIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path
+        fill="currentColor"
+        d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.939-3.23c.082-.28.235-.537.445-.747l8.6-8.64Zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086ZM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.92 1.93-.552a.25.25 0 0 0 .106-.063l6.31-6.26Z"
+      />
+    </Svg>
+  )
+}

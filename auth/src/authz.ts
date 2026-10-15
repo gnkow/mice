@@ -247,9 +247,6 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
 
   if (!isAuthzEnforce()) return allow()
 
-  // Breakglass: full access (operational escape hatch)
-  if (via === 'breakglass') return allow()
-
   if (isPendingUser(user)) {
     return deny('Access pending: no namespace membership or grants')
   }
@@ -390,4 +387,45 @@ export function authorizeAuditQuery(
     allow: true,
     ownedOnly: scoped,
   }
+}
+
+/** Lineage read: repo `read`, or instance admin / `view_audit` for cross-repo. */
+export function authorizeLineageQuery(
+  user: SessionUser,
+  namespace?: string,
+  repo?: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) {
+    return { allow: true }
+  }
+  if (!namespace || !repo) {
+    if (isInstanceAdmin(user) || hasInstancePermission(user, 'view_audit')) {
+      return { allow: true }
+    }
+    return {
+      allow: false,
+      reason: 'namespace and repo required (or view_audit / admin)',
+    }
+  }
+  const check = hasRepoPermission(user, namespace, repo, 'read')
+  if (check.ok) return { allow: true }
+  return { allow: false, reason: 'Requires repository read access' }
+}
+
+/** Lineage rebuild: repo admin (or Owner / instance admin). */
+export function authorizeLineageRebuild(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) {
+    return { allow: true }
+  }
+  if (isInstanceAdmin(user)) return { allow: true }
+  if (resolveNamespaceRole(namespace, user) === 'owner') return { allow: true }
+  const check = hasRepoPermission(user, namespace, repo, 'admin')
+  if (check.ok) return { allow: true }
+  return { allow: false, reason: 'Requires repository admin' }
 }

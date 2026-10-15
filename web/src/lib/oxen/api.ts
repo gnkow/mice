@@ -1,5 +1,10 @@
 import { oxenFetch } from './client'
-import { baseHead, resourcePath } from './paths'
+import {
+  baseHead,
+  baseName,
+  looksLikeCommitId,
+  resourcePath,
+} from './paths'
 import { loadSettings } from './settings'
 import { extractGzipTar } from './tar'
 import type {
@@ -34,6 +39,7 @@ import type {
   VersionFileResponse,
   WorkspaceResponse,
 } from './types'
+import { OxenApiError } from './types'
 import { xxh128File } from './hash'
 
 function repoBase(namespace: string, repo: string) {
@@ -244,6 +250,7 @@ export function uploadFile(
   file: File,
   message: string,
   signal?: AbortSignal,
+  opts?: { copyFrom?: string; restoreFrom?: string },
 ) {
   const resource = resourcePath(branch, destPath)
   const form = new FormData()
@@ -252,10 +259,120 @@ export function uploadFile(
   const author = authorFields()
   form.append('name', author.name)
   form.append('email', author.email)
+  if (opts?.copyFrom?.trim()) {
+    form.append('copy_from', opts.copyFrom.trim().replace(/^\/+/, ''))
+  }
+  if (opts?.restoreFrom?.trim()) {
+    form.append('restore_from', opts.restoreFrom.trim())
+  }
   return oxenFetch<CommitResponse>(
     `${repoBase(namespace, repo)}/file/${resource}`,
     { method: 'PUT', formData: form, signal },
   )
+}
+
+/**
+ * Restore a deleted path on `targetBranch` from a historical revision
+ * (commit id or branch tip that still has the file). Same path only.
+ */
+export async function restoreFile(
+  namespace: string,
+  repo: string,
+  targetBranch: string,
+  path: string,
+  sourceRevision: string,
+  message: string,
+  signal?: AbortSignal,
+) {
+  const dest = path.replace(/^\/+/, '')
+  const revision = sourceRevision.trim()
+  if (!dest || !revision) {
+    throw new OxenApiError('Restore requires a path and source revision', 400, null)
+  }
+  if (looksLikeCommitId(targetBranch)) {
+    throw new OxenApiError(
+      'Restore requires a branch to write to (not a commit hash)',
+      400,
+      null,
+    )
+  }
+  let blob: Blob
+  try {
+    blob = await downloadFile(namespace, repo, revision, dest, signal)
+  } catch {
+    blob = await downloadVersionResource(
+      namespace,
+      repo,
+      revision,
+      dest,
+      signal,
+    )
+  }
+  const file = new File([blob], baseName(dest), {
+    type: blob.type || 'application/octet-stream',
+  })
+  return uploadFile(
+    namespace,
+    repo,
+    targetBranch,
+    dest,
+    file,
+    message,
+    signal,
+    { restoreFrom: revision },
+  )
+}
+
+/**
+ * Copy a file to a new path (same basename required). Implemented as
+ * download + upload; BFF records explicit lineage via `copy_from`.
+ *
+ * `sourceRevision` may be a branch or commit hash (read). Writes always go to
+ * `targetBranch` (must be a real branch — oxen rejects PUT on a commit id).
+ */
+export async function copyFile(
+  namespace: string,
+  repo: string,
+  sourceRevision: string,
+  fromPath: string,
+  toPath: string,
+  message: string,
+  signal?: AbortSignal,
+  opts?: { targetBranch?: string },
+) {
+  const from = fromPath.replace(/^\/+/, '')
+  const to = toPath.replace(/^\/+/, '')
+  if (!from || !to || from === to) {
+    throw new OxenApiError('Copy requires a different destination path', 400, null)
+  }
+  if (baseName(from) !== baseName(to)) {
+    throw new OxenApiError(
+      'Copy must keep the same file name; only change the folder',
+      400,
+      null,
+    )
+  }
+  const targetBranch = (opts?.targetBranch ?? sourceRevision).trim()
+  if (!targetBranch || looksLikeCommitId(targetBranch)) {
+    throw new OxenApiError(
+      'Copy requires a branch to write to (not a commit hash)',
+      400,
+      null,
+    )
+  }
+  const blob = await downloadFile(
+    namespace,
+    repo,
+    sourceRevision,
+    from,
+    signal,
+  )
+  const file = new File([blob], baseName(to), {
+    type: blob.type || 'application/octet-stream',
+  })
+  return uploadFile(namespace, repo, targetBranch, to, file, message, signal, {
+    copyFrom: from,
+  })
 }
 
 export function deleteFile(
@@ -487,6 +604,91 @@ export function compareEntries(
     `${repoBase(namespace, repo)}/compare/entries/${baseHead(base, head)}${suffix}`,
     { signal },
   )
+}
+
+export type DeletedPathHint = {
+  path: string
+  filename: string
+  /** Revision where the file still existed (parent of tip). */
+  sourceRevision: string
+  size?: number
+  dataType?: string
+}
+
+/**
+ * Files removed in `revision` (branch or commit) relative to its first parent,
+ * scoped to a directory (direct children only). Used to offer Restore in the
+ * tree UI when browsing a tip or a historical commit.
+ *
+ * Note: oxen `GET …/commits/{ref}/parents` returns the ancestry list starting
+ * with the tip itself — use `tip.parent_ids[0]`, not `commits[0].id`.
+ */
+export async function listDeletedInLatestCommit(
+  namespace: string,
+  repo: string,
+  revision: string,
+  directory = '',
+  signal?: AbortSignal,
+): Promise<DeletedPathHint[]> {
+  const ancestry = await getCommitParents(namespace, repo, revision, signal)
+  const tip = ancestry.commits[0]
+  const parentId = tip?.parent_ids?.[0]
+  // Prefer the resolved commit id so compare works the same for branch names
+  // and when the tree URL already points at a commit hash.
+  const head = tip?.id?.trim() || revision
+  if (!parentId) return []
+
+  const dir = directory.replace(/^\/+|\/+$/g, '')
+  let entries
+  try {
+    const cmp = await compareEntries(
+      namespace,
+      repo,
+      parentId,
+      head,
+      signal,
+      dir || undefined,
+    )
+    entries = cmp.compare.entries
+  } catch {
+    // Fallback: unscoped compare, then filter to this directory.
+    const cmp = await compareEntries(
+      namespace,
+      repo,
+      parentId,
+      head,
+      signal,
+    )
+    entries = cmp.compare.entries
+  }
+
+  const out: DeletedPathHint[] = []
+  for (const e of entries) {
+    if (e.status !== 'removed' || e.is_dir) continue
+    const full = e.filename.replace(/^\/+/, '')
+    let path = full
+    if (dir) {
+      if (full === dir || full.startsWith(`${dir}/`)) {
+        const rest = full.slice(dir.length).replace(/^\//, '')
+        if (!rest || rest.includes('/')) continue
+        path = full
+      } else if (!full.includes('/')) {
+        path = [dir, full].filter(Boolean).join('/')
+      } else {
+        continue
+      }
+    } else if (full.includes('/')) {
+      continue
+    }
+    out.push({
+      path,
+      filename: baseName(path),
+      sourceRevision: parentId,
+      size: e.base_entry?.size ?? e.size,
+      dataType: e.data_type,
+    })
+  }
+  return out
 }
 
 export function compareFile(
@@ -880,22 +1082,63 @@ export function uploadZipArchive(
   )
 }
 
-export function listFileVersions(
+/**
+ * File version history for a path. Oxen's `/branches/{name}/versions/…` only
+ * accepts branch names; when `revision` is a commit hash (or the branch call
+ * 404s), fall back to path-scoped commit history.
+ */
+export async function listFileVersions(
   namespace: string,
   repo: string,
-  branch: string,
+  revision: string,
   path: string,
   signal?: AbortSignal,
-) {
+): Promise<PaginatedEntryVersionsResponse> {
   const encodedPath = path
     .split('/')
     .filter(Boolean)
     .map(encodeURIComponent)
     .join('/')
-  return oxenFetch<PaginatedEntryVersionsResponse>(
-    `${repoBase(namespace, repo)}/branches/${encodeURIComponent(branch)}/versions/${encodedPath}`,
-    { signal },
-  )
+
+  async function fromCommitHistory(): Promise<PaginatedEntryVersionsResponse> {
+    const hist = await listCommitHistory(
+      namespace,
+      repo,
+      revision,
+      signal,
+      path,
+    )
+    return {
+      status: hist.status,
+      status_message: hist.status_message,
+      versions: hist.commits.map((commit) => ({
+        commit,
+        resource: { path, version: commit.id },
+      })),
+      page_number: hist.page_number,
+      page_size: hist.page_size,
+      total_pages: hist.total_pages,
+      total_entries: hist.total_entries,
+      branch: { name: revision, commit_id: revision },
+      path,
+    }
+  }
+
+  if (looksLikeCommitId(revision)) {
+    return fromCommitHistory()
+  }
+
+  try {
+    return await oxenFetch<PaginatedEntryVersionsResponse>(
+      `${repoBase(namespace, repo)}/branches/${encodeURIComponent(revision)}/versions/${encodedPath}`,
+      { signal },
+    )
+  } catch (err) {
+    if (err instanceof OxenApiError && (err.status === 404 || err.status === 400)) {
+      return fromCommitHistory()
+    }
+    throw err
+  }
 }
 
 export function triggerDownload(blob: Blob, filename: string) {
@@ -1089,11 +1332,10 @@ export async function uploadLargeFile(
     const end = Math.min(offset + LARGE_CHUNK, file.size)
     const chunk = file.slice(offset, end)
     const bytes = new Uint8Array(await chunk.arrayBuffer())
-    const { token, apiBase } = loadSettings()
+    const { apiBase } = loadSettings()
     const headers: Record<string, string> = {
       'Content-Type': 'application/octet-stream',
     }
-    if (token) headers.Authorization = `Bearer ${token}`
     const url = `${apiBase}${repoBase(namespace, repo)}/versions/${encodeURIComponent(versionId)}/chunks?offset=${offset}`
     const res = await fetch(url, {
       method: 'PUT',

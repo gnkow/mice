@@ -21,6 +21,10 @@ export function RepoNav() {
     location.pathname.includes('/blob/') ||
     location.pathname.includes('/df/')
 
+  const onHistory =
+    location.pathname === `${base}/commits` ||
+    location.pathname.startsWith(`${base}/commits/`)
+
   const onSettings = location.pathname === `${base}/settings`
   const onWorkspaces =
     location.pathname === `${base}/workspaces` ||
@@ -40,6 +44,18 @@ export function RepoNav() {
           />
         </TabIcon>
         Data
+      </NavLink>
+      <NavLink
+        to={`${base}/commits?branch=${encodeURIComponent(filesBranch)}`}
+        className={() => (onHistory ? 'active' : undefined)}
+      >
+        <TabIcon>
+          <path
+            fill="currentColor"
+            d="M1.5 8a6.5 6.5 0 1 1 2.02 4.64.75.75 0 0 1-.04-1.06.75.75 0 0 1 1.06-.04A5 5 0 1 0 3 8H4.5a.75.75 0 0 1 .53 1.28l-2 2a.75.75 0 0 1-1.06 0l-2-2A.75.75 0 0 1 .75 8H1.5Zm6.75-3a.75.75 0 0 1 .75.75v2.69l1.78 1.78a.75.75 0 1 1-1.06 1.06l-2-2A.75.75 0 0 1 7.5 8.75v-3A.75.75 0 0 1 8.25 5Z"
+          />
+        </TabIcon>
+        History
       </NavLink>
       <NavLink to={`${base}/branches`}>
         <TabIcon>

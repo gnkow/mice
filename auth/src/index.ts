@@ -24,6 +24,12 @@ import {
   queryAudit,
 } from './audit.js'
 import {
+  deriveOpsFromPathHistory,
+  queryLineage,
+  type LineageKind,
+  type PathVersionHint,
+} from './lineage.js'
+import {
   canReviewAccessRequests,
   listAccessRequests,
   resolveAccessRequest,
@@ -31,6 +37,8 @@ import {
 } from './accessRequests.js'
 import {
   authorizeAuditQuery,
+  authorizeLineageQuery,
+  authorizeLineageRebuild,
   canManageRepoCollaborators,
   isPendingUser,
   preparePrincipal,
@@ -157,7 +165,6 @@ app.get('/auth/me/authz', async (c) => {
     permissions: {
       create_namespace: hasInstancePermission(session, 'create_namespace'),
       view_audit: hasInstancePermission(session, 'view_audit'),
-      manage_breakglass: hasInstancePermission(session, 'manage_breakglass'),
     },
     hasAnyGrant: userHasAnyGrant(session),
     trainingCompleted: hasCompletedTraining(session),
@@ -327,28 +334,21 @@ app.delete('/auth/tokens/:id', async (c) => {
   return c.json({ ok: true })
 })
 
-/** Query append-only audit log (session or breakglass). */
+/** Query append-only audit log (session required). */
 app.get('/auth/audit', async (c) => {
   const session = await getSession(c)
-  const auth = c.req.header('authorization') ?? ''
-  const breakglassOk =
-    Boolean(env.breakglassToken) &&
-    auth === `Bearer ${env.breakglassToken}`
-  if (!session && !breakglassOk) {
+  if (!session) {
     return c.json({ error: 'Authentication required' }, 401)
   }
 
+  preparePrincipal(session)
   let namespace = c.req.query('namespace') || undefined
-  let ownedOnly: string[] | undefined
-  if (session) {
-    preparePrincipal(session)
-    const gate = authorizeAuditQuery(session, namespace)
-    if (!gate.allow) {
-      return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
-    }
-    if (gate.forceNamespace) namespace = gate.forceNamespace
-    ownedOnly = gate.ownedOnly
+  const gate = authorizeAuditQuery(session, namespace)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
   }
+  if (gate.forceNamespace) namespace = gate.forceNamespace
+  const ownedOnly = gate.ownedOnly
 
   const limitRaw = c.req.query('limit')
   const limit = limitRaw ? Number(limitRaw) : undefined
@@ -369,40 +369,180 @@ app.get('/auth/audit', async (c) => {
   return c.json({ events: filtered, nextCursor })
 })
 
-app.post('/auth/dev-login', async (c) => {
-  if (!env.authDevMode) {
-    return c.json({ error: 'AUTH_DEV_MODE is disabled' }, 404)
+/** Query file lineage graph for a repo (session required; repo read). */
+app.get('/auth/lineage', async (c) => {
+  const session = await getSession(c)
+  if (!session) {
+    return c.json({ error: 'Authentication required' }, 401)
   }
-  let override: Partial<SessionUser> = {}
+
+  preparePrincipal(session)
+  const namespace = c.req.query('namespace') || undefined
+  const repo = c.req.query('repo') || undefined
+  const gate = authorizeLineageQuery(session, namespace, repo)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+  }
+  if (!namespace || !repo) {
+    return c.json({ error: 'namespace and repo are required' }, 400)
+  }
+
+  const limitRaw = c.req.query('limit')
+  const limit = limitRaw ? Number(limitRaw) : undefined
+  const depthRaw = c.req.query('depth')
+  const depth = depthRaw ? Number(depthRaw) : undefined
+  const directionRaw = c.req.query('direction')
+  const direction =
+    directionRaw === 'ancestors' ||
+    directionRaw === 'descendants' ||
+    directionRaw === 'both'
+      ? directionRaw
+      : undefined
+  const kindRaw = c.req.query('kind')
+  const kind = kindRaw as LineageKind | undefined
+
+  const { operations, nextCursor } = queryLineage({
+    namespace,
+    repo,
+    path: c.req.query('path') || undefined,
+    contentHash: c.req.query('contentHash') || undefined,
+    direction,
+    depth: Number.isFinite(depth) ? depth : undefined,
+    since: c.req.query('since') || undefined,
+    until: c.req.query('until') || undefined,
+    cursor: c.req.query('cursor') || undefined,
+    limit: Number.isFinite(limit) ? limit : undefined,
+    kind,
+  })
+  return c.json({ operations, nextCursor })
+})
+
+/**
+ * Rebuild derived lineage for a path from oxen path-version history.
+ * Body: { namespace, repo, branch?, path }
+ */
+app.post('/auth/lineage/rebuild', async (c) => {
+  const session = await getSession(c)
+  if (!session) {
+    return c.json({ error: 'Authentication required' }, 401)
+  }
+
+  preparePrincipal(session)
+  let body: {
+    namespace?: string
+    repo?: string
+    branch?: string
+    path?: string
+  }
   try {
-    override = (await c.req.json()) as Partial<SessionUser>
+    body = (await c.req.json()) as typeof body
   } catch {
-    /* empty body ok */
+    return c.json({ error: 'Invalid JSON body' }, 400)
   }
-  const groups = Array.isArray(override.groups)
-    ? override.groups
-        .filter((g): g is string => typeof g === 'string')
-        .map((g) => g.trim().toLowerCase())
-        .filter(Boolean)
-    : undefined
-  const user: SessionUser = {
-    sub: override.sub || env.devUser.sub,
-    iss: override.iss || env.devUser.iss,
-    email: override.email || env.devUser.email,
-    name: override.name || env.devUser.name,
-    ...(groups?.length ? { groups } : {}),
+  const namespace = body.namespace?.trim()
+  const repo = body.repo?.trim()
+  const path = body.path?.trim()
+  const branch = (body.branch?.trim() || 'main')
+  if (!namespace || !repo || !path) {
+    return c.json({ error: 'namespace, repo, and path are required' }, 400)
   }
-  preparePrincipal(user)
-  await setSessionCookie(c, user)
-  deleteCookie(c, PROMPT_LOGIN_COOKIE, { path: '/' })
-  return c.json({ ok: true, user })
+
+  const gate = authorizeLineageRebuild(session, namespace, repo)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+  }
+
+  const resource = path
+    .split('/')
+    .filter(Boolean)
+    .map((p) => encodeURIComponent(p))
+    .join('/')
+  const repoApi = `${env.oxenUpstream}/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}`
+  const looksLikeCommitId = /^[0-9a-f]{16,64}$/i.test(branch)
+  const branchVersionsUrl = `${repoApi}/branches/${encodeURIComponent(branch)}/versions/${resource}?page=1&page_size=100`
+  const historyUrl = `${repoApi}/commits/history/${[branch, ...path.split('/').filter(Boolean)].map(encodeURIComponent).join('/')}?page=1&page_size=100`
+
+  type VersionRow = {
+    commit?: { id?: string; timestamp?: string }
+    resource?: { path?: string; version?: string }
+  }
+  type HistoryRow = {
+    id?: string
+    timestamp?: string
+  }
+
+  async function fetchJson(url: string): Promise<{ ok: boolean; status: number; json: unknown }> {
+    try {
+      const upstream = await fetch(url)
+      let json: unknown = null
+      try {
+        json = await upstream.json()
+      } catch {
+        json = null
+      }
+      return { ok: upstream.ok, status: upstream.status, json }
+    } catch (err) {
+      console.error('[boxen-auth] lineage rebuild fetch failed', err)
+      return { ok: false, status: 502, json: null }
+    }
+  }
+
+  let hints: PathVersionHint[] = []
+  if (!looksLikeCommitId) {
+    const branchRes = await fetchJson(branchVersionsUrl)
+    if (branchRes.ok && branchRes.json && typeof branchRes.json === 'object') {
+      const rows =
+        (branchRes.json as { versions?: VersionRow[] }).versions ?? []
+      // API returns newest-first typically; normalize to oldest-first.
+      hints = rows
+        .map((v) => ({
+          path: v.resource?.path || path,
+          contentHash: v.resource?.version,
+          commitId: v.commit?.id,
+          ts: v.commit?.timestamp,
+        }))
+        .reverse()
+    } else if (branchRes.status !== 404 && branchRes.status !== 400) {
+      return c.json(
+        { error: `oxen versions failed (${branchRes.status})` },
+        502,
+      )
+    }
+  }
+
+  if (hints.length === 0) {
+    const histRes = await fetchJson(historyUrl)
+    if (!histRes.ok) {
+      return c.json(
+        { error: `oxen versions failed (${histRes.status})` },
+        502,
+      )
+    }
+    if (!histRes.json || typeof histRes.json !== 'object') {
+      return c.json({ error: 'Invalid oxen versions response' }, 502)
+    }
+    const commits =
+      (histRes.json as { commits?: HistoryRow[] }).commits ?? []
+    hints = commits
+      .map((commit) => ({
+        path,
+        commitId: commit.id,
+        ts: commit.timestamp,
+      }))
+      .reverse()
+  }
+
+  const created = deriveOpsFromPathHistory(namespace, repo, branch, hints)
+  return c.json({
+    created: created.length,
+    operations: created,
+    // Re-running rebuild is a no-op once each version has a single producer.
+    idempotent: created.length === 0,
+  })
 })
 
 app.get('/auth/login', async (c) => {
   if (!oidcConfigured()) {
-    if (env.authDevMode) {
-      return c.redirect('/auth/dev-login-page')
-    }
     return c.json({ error: 'OIDC is not configured' }, 503)
   }
   await loadOidcConfig()
@@ -429,24 +569,6 @@ app.get('/auth/login', async (c) => {
       promptLogin: true,
     }),
   )
-})
-
-/** Tiny HTML form when OIDC is off but DEV mode is on (manual browser login). */
-app.get('/auth/dev-login-page', async (c) => {
-  if (!env.authDevMode) return c.text('Not found', 404)
-  return c.html(`<!doctype html>
-<html><head><meta charset="utf-8"><title>Boxen dev login</title></head>
-<body>
-  <h1>Boxen dev login</h1>
-  <p>AUTH_DEV_MODE is enabled (no IdP).</p>
-  <button id="go">Sign in as ${env.devUser.name}</button>
-  <script>
-    document.getElementById('go').onclick = async () => {
-      await fetch('/auth/dev-login', { method: 'POST', credentials: 'same-origin' })
-      location.href = '/'
-    }
-  </script>
-</body></html>`)
 })
 
 app.get('/auth/callback', async (c) => {
@@ -508,7 +630,7 @@ async function finishLogout(c: Parameters<typeof getSession>[0]) {
     maxAge: 600,
   })
 
-  // Only RP-initiated IdP logout when we have a real OIDC id_token (not AUTH_DEV_MODE).
+  // RP-initiated IdP logout when we have an OIDC id_token.
   let idpLogoutUrl: string | null = null
   if (session?.idToken && oidcConfigured()) {
     try {
@@ -549,17 +671,6 @@ async function requireAuth(c: Parameters<typeof proxyToOxen>[0]) {
     }
   }
 
-  if (env.breakglassToken && auth === `Bearer ${env.breakglassToken}`) {
-    return {
-      user: {
-        sub: 'breakglass',
-        iss: 'boxen-breakglass',
-        email: 'breakglass@boxen.local',
-        name: 'Breakglass',
-      } satisfies SessionUser,
-      via: 'breakglass' as const,
-    }
-  }
   return null
 }
 
@@ -589,7 +700,6 @@ app.get('/auth/instance', async (c) => {
     enforce: isAuthzEnforce(),
     admins: listInstanceAdmins(),
     permissions: listInstancePermissionGrants(),
-    devMode: env.authDevMode,
   })
 })
 
@@ -598,9 +708,6 @@ app.patch('/auth/instance', async (c) => {
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
   if (!isInstanceAdmin(session)) return c.json({ error: 'Forbidden' }, 403)
-  if (!env.authDevMode) {
-    return c.json({ error: 'enforce toggle only in AUTH_DEV_MODE' }, 403)
-  }
   try {
     const body = (await c.req.json()) as { enforce?: boolean }
     if (typeof body.enforce === 'boolean') setAuthzEnforce(body.enforce)
@@ -1209,7 +1316,7 @@ app.all('/api/*', async (c) => {
 
 console.log(
   `[boxen-auth] listening on :${env.port} → oxen ${env.oxenUpstream}` +
-    ` (dev=${env.authDevMode} oidc=${oidcConfigured()})`,
+    ` (oidc=${oidcConfigured()})`,
 )
 
 serve({ fetch: app.fetch, port: env.port })

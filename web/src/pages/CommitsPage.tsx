@@ -1,38 +1,57 @@
-import { useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom'
+import { AuthorAvatar } from '../components/AuthorAvatar'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { CommitList } from '../components/CommitList'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import {
+  getCommit,
   getRootCommit,
   listAllCommits,
   listBranches,
   listCommitHistory,
 } from '../lib/oxen/api'
+import { formatRelativeTime } from '../lib/time'
 
 export function CommitsPage() {
-  const { namespace = '', repo = '' } = useParams()
+  const { namespace = '', repo = '', commitId = '' } = useParams()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [mode, setMode] = useState<'history' | 'all'>('history')
-  const branch = params.get('branch') || 'main'
+  const revision = params.get('branch') || 'main'
   const pathFilter = params.get('path') || ''
   const [pathDraft, setPathDraft] = useState(pathFilter)
+
+  useEffect(() => {
+    setPathDraft(pathFilter)
+  }, [pathFilter])
 
   const branches = useAsync(
     (signal) => listBranches(namespace, repo, signal),
     [namespace, repo],
   )
+  const branchNames =
+    branches.kind === 'ok'
+      ? branches.data.branches.map((b) => b.name)
+      : []
+  const revisionIsBranch = branchNames.includes(revision)
+
   const history = useAsync(
     (signal) =>
       listCommitHistory(
         namespace,
         repo,
-        branch,
+        revision,
         signal,
         pathFilter.trim() || undefined,
       ),
-    [namespace, repo, branch, pathFilter],
+    [namespace, repo, revision, pathFilter],
   )
   const all = useAsync(
     (signal) => listAllCommits(namespace, repo, signal),
@@ -45,131 +64,268 @@ export function CommitsPage() {
 
   const active = mode === 'history' ? history : all
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
+  const linkSearch = params.toString() ? `?${params.toString()}` : ''
+  const listHref = `${base}/commits${linkSearch}`
 
-  function setHistoryParams(nextBranch: string, nextPath: string) {
-    const next: Record<string, string> = { branch: nextBranch }
+  // Desktop: always keep a commit selected so the inspector isn’t empty.
+  // Narrow: stay on the list until the user picks one.
+  useEffect(() => {
+    if (active.kind !== 'ok') return
+    const commits = active.data.commits
+    if (commits.length === 0) return
+    const stillVisible = Boolean(
+      commitId && commits.some((c) => c.id === commitId),
+    )
+    if (stillVisible) return
+
+    const narrow =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 900px)').matches
+
+    if (narrow) {
+      if (commitId) navigate(listHref, { replace: true })
+      return
+    }
+
+    const next = commits[0]!
+    navigate(
+      `${base}/commits/${encodeURIComponent(next.id)}${linkSearch}`,
+      { replace: true },
+    )
+  }, [active, commitId, base, linkSearch, listHref, navigate])
+
+  const detail = useAsync(
+    (signal) =>
+      commitId
+        ? getCommit(namespace, repo, commitId, signal)
+        : Promise.resolve(null),
+    [namespace, repo, commitId],
+  )
+
+  function setHistoryParams(nextRevision: string, nextPath: string) {
+    const next: Record<string, string> = { branch: nextRevision }
     if (nextPath.trim()) next.path = nextPath.trim()
     setParams(next)
   }
 
+  const revisionLabel = revisionIsBranch
+    ? revision
+    : `${revision.slice(0, 8)}${revision.length > 8 ? '…' : ''}`
+
+  const commit = detail.kind === 'ok' ? detail.data?.commit ?? null : null
+
   return (
-    <main className="page">
-      <div className="page-head">
-        <div>
-          <Breadcrumbs items={repoCrumbs(namespace, repo, { label: 'Commits' })} />
-          <h1>Commits</h1>
+    <main
+      className={
+        commitId
+          ? 'page wide history-page has-detail'
+          : 'page wide history-page'
+      }
+    >
+      <header className="history-page-head">
+        <div className="history-page-head-main">
+          <Breadcrumbs
+            items={repoCrumbs(namespace, repo, {
+              label: 'History',
+              to: listHref,
+            })}
+          />
+          <h1>History</h1>
           {root.kind === 'ok' && (
-            <p className="lede">
+            <p className="history-root muted small">
               Root{' '}
               <Link
                 className="mono"
-                to={`${base}/commits/${encodeURIComponent(root.data.commit.id)}`}
+                to={`${base}/commits/${encodeURIComponent(root.data.commit.id)}${linkSearch}`}
               >
                 {root.data.commit.id.slice(0, 8)}
               </Link>
-              {' — '}
+              {' · '}
               {root.data.commit.message}
             </p>
           )}
         </div>
-      </div>
 
-      <div className="toolbar">
-        <div className="seg">
-          <button
-            type="button"
-            className={mode === 'history' ? 'active' : ''}
-            onClick={() => setMode('history')}
-          >
-            Branch history
-          </button>
-          <button
-            type="button"
-            className={mode === 'all' ? 'active' : ''}
-            onClick={() => setMode('all')}
-          >
-            All commits
-          </button>
-        </div>
-        {mode === 'history' && (
-          <>
-            <label className="branch-pick">
-              Branch
-              <select
-                value={branch}
-                onChange={(e) => setHistoryParams(e.target.value, pathFilter)}
-              >
-                {branches.kind === 'ok' ? (
-                  branches.data.branches.map((b) => (
-                    <option key={b.name} value={b.name}>
-                      {b.name}
+        <div className="history-toolbar">
+          <div className="seg" role="tablist" aria-label="History mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'history'}
+              className={mode === 'history' ? 'active' : ''}
+              onClick={() => setMode('history')}
+            >
+              Revision history
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'all'}
+              className={mode === 'all' ? 'active' : ''}
+              onClick={() => setMode('all')}
+            >
+              All commits
+            </button>
+          </div>
+
+          {mode === 'history' && (
+            <div className="history-filters">
+              <label className="branch-pick">
+                Revision
+                <select
+                  value={revision}
+                  onChange={(e) => setHistoryParams(e.target.value, pathFilter)}
+                >
+                  {!revisionIsBranch && (
+                    <option value={revision}>
+                      {revisionLabel} (commit)
                     </option>
-                  ))
-                ) : (
-                  <option value={branch}>{branch}</option>
-                )}
-              </select>
-            </label>
-            <label className="branch-pick">
-              Path filter
-              <input
-                value={pathDraft}
-                onChange={(e) => setPathDraft(e.target.value)}
-                onBlur={() => {
-                  if (pathDraft.trim() !== pathFilter.trim()) {
-                    setHistoryParams(branch, pathDraft)
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    setHistoryParams(branch, pathDraft)
-                  }
-                }}
-                placeholder="e.g. data or README.md"
-              />
-            </label>
-            {pathFilter.trim() && (
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => {
-                  setPathDraft('')
-                  setHistoryParams(branch, '')
-                }}
-              >
-                Clear path
-              </button>
-            )}
-          </>
-        )}
-      </div>
+                  )}
+                  {branchNames.length > 0 ? (
+                    branchNames.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={revision}>{revision}</option>
+                  )}
+                </select>
+              </label>
+              <label className="branch-pick history-path-pick">
+                Path
+                <input
+                  value={pathDraft}
+                  onChange={(e) => setPathDraft(e.target.value)}
+                  onBlur={() => {
+                    if (pathDraft.trim() !== pathFilter.trim()) {
+                      setHistoryParams(revision, pathDraft)
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      setHistoryParams(revision, pathDraft)
+                    }
+                  }}
+                  placeholder="e.g. data or README.md"
+                />
+              </label>
+              {pathFilter.trim() && (
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  onClick={() => {
+                    setPathDraft('')
+                    setHistoryParams(revision, '')
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
 
       {mode === 'history' && pathFilter.trim() && (
-        <p className="muted small">
+        <p className="history-filter-note muted small">
           Showing commits that touch <code>{pathFilter.trim()}</code> on{' '}
-          <code>{branch}</code>.
+          <code>{revisionLabel}</code>.
         </p>
       )}
 
-      <StateBlock
-        loading={active.kind === 'loading'}
-        error={active.kind === 'error' ? active.message : null}
-        empty={active.kind === 'ok' && active.data.commits.length === 0}
-        emptyMessage={
-          mode === 'history' && pathFilter.trim()
-            ? `No commits touch “${pathFilter.trim()}” on ${branch}.`
-            : 'No commits yet.'
-        }
-      >
-        {active.kind === 'ok' && (
-          <CommitList
-            namespace={namespace}
-            repo={repo}
-            commits={active.data.commits}
-          />
+      <div className="history-layout">
+        <section className="history-list" aria-label="Commit list">
+          <StateBlock
+            loading={active.kind === 'loading'}
+            error={active.kind === 'error' ? active.message : null}
+            empty={active.kind === 'ok' && active.data.commits.length === 0}
+            emptyMessage={
+              mode === 'history' && pathFilter.trim()
+                ? `No commits touch “${pathFilter.trim()}” on ${revisionLabel}.`
+                : 'No commits yet.'
+            }
+          >
+            {active.kind === 'ok' && (
+              <CommitList
+                namespace={namespace}
+                repo={repo}
+                commits={active.data.commits}
+                selectedId={commitId || undefined}
+                linkSearch={linkSearch}
+              />
+            )}
+          </StateBlock>
+        </section>
+
+        {commitId && (
+          <aside className="history-detail" aria-label="Commit detail">
+            <Link className="history-detail-back muted small" to={listHref}>
+              ← All commits
+            </Link>
+
+            <StateBlock
+              loading={detail.kind === 'loading'}
+              error={detail.kind === 'error' ? detail.message : null}
+            >
+              {commit && (
+                <>
+                  <div className="history-detail-top">
+                    <h2 className="history-detail-title">{commit.message}</h2>
+                    <Link
+                      className="btn ghost small"
+                      to={`${base}/tree/${commit.id}`}
+                    >
+                      Browse tree
+                    </Link>
+                  </div>
+
+                  <div className="history-detail-identity">
+                    <AuthorAvatar name={commit.author} />
+                    <p className="history-detail-byline muted small">
+                      <span>{commit.author}</span>
+                      {commit.email ? (
+                        <span className="mono">&lt;{commit.email}&gt;</span>
+                      ) : null}
+                      <time
+                        dateTime={commit.timestamp}
+                        title={new Date(commit.timestamp).toLocaleString()}
+                      >
+                        {formatRelativeTime(commit.timestamp)}
+                      </time>
+                    </p>
+                  </div>
+
+                  <p className="history-detail-meta muted small">
+                    <span className="commit-sha mono" title={commitId}>
+                      {commitId.slice(0, 12)}
+                    </span>
+                    <span className="history-parents">
+                      <span>Parents</span>
+                      {commit.parent_ids.length === 0 ? (
+                        <span>—</span>
+                      ) : (
+                        <span className="history-parent-links">
+                          {commit.parent_ids.map((id) => (
+                            <Link
+                              key={id}
+                              className="mono"
+                              to={`${base}/commits/${encodeURIComponent(id)}${linkSearch}`}
+                            >
+                              {id.slice(0, 8)}
+                            </Link>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </p>
+                </>
+              )}
+            </StateBlock>
+          </aside>
         )}
-      </StateBlock>
+      </div>
     </main>
   )
 }

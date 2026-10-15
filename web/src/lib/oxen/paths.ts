@@ -24,3 +24,24 @@ export function parentPath(path: string): string {
   parts.pop()
   return parts.join('/')
 }
+
+export function baseName(path: string): string {
+  const parts = path.split('/').filter(Boolean)
+  return parts[parts.length - 1] || path
+}
+
+/**
+ * Oxen commit ids are lowercase hex (typically 32 chars). Used to avoid
+ * calling branch-only endpoints with a revision hash.
+ */
+export function looksLikeCommitId(ref: string): boolean {
+  return /^[0-9a-f]{16,64}$/i.test(ref.trim())
+}
+
+/** Same parent directory + different basename → rename; else move. */
+export function isRenamePathChange(fromPath: string, toPath: string): boolean {
+  const from = fromPath.replace(/^\/+|\/+$/g, '')
+  const to = toPath.replace(/^\/+|\/+$/g, '')
+  if (!from || !to || from === to) return false
+  return parentPath(from) === parentPath(to) && baseName(from) !== baseName(to)
+}

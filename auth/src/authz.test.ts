@@ -8,7 +8,6 @@ const dataDir = mkdtempSync(join(tmpdir(), 'boxen-authz-'))
 
 process.env.AUTH_DATA_DIR = dataDir
 process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTH_DEV_MODE = 'false'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@boxen.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
@@ -26,6 +25,8 @@ process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 const {
   authorizeApiRequest,
   authorizeAuditQuery,
+  authorizeLineageQuery,
+  authorizeLineageRebuild,
   canManageRepoCollaborators,
   canSkipPendingGate,
   effectiveRepoRole,
@@ -502,18 +503,6 @@ describe('Phase 2–3 extras', () => {
 })
 
 describe('enforcement gates', () => {
-  it('breakglass via allows pending users', () => {
-    const stranger = mkUser('breakglass-user')
-    assert.equal(isPendingUser(stranger), true)
-    const d = authorizeApiRequest({
-      user: stranger,
-      via: 'breakglass',
-      method: 'GET',
-      pathname: '/api/repos/ns/repo',
-    })
-    assert.equal(d.allow, true)
-  })
-
   it('enforce off allows all /api decisions', () => {
     const stranger = mkUser('enforce-off-user')
     const prev = env.authzEnforce
@@ -544,11 +533,11 @@ describe('enforcement gates', () => {
     assert.equal(hasInstancePermission(u, 'create_namespace'), true)
   })
 
-  it('manage_breakglass is an instance permission grant', () => {
-    const u = mkUser('bg-mgr')
-    writeInstancePermissions(u, ['manage_breakglass'])
-    assert.equal(hasInstancePermission(u, 'manage_breakglass'), true)
-    assert.equal(hasInstancePermission(u, 'view_audit'), false)
+  it('view_audit is an instance permission grant', () => {
+    const u = mkUser('audit-mgr')
+    writeInstancePermissions(u, ['view_audit'])
+    assert.equal(hasInstancePermission(u, 'view_audit'), true)
+    assert.equal(hasInstancePermission(u, 'create_namespace'), false)
   })
 
   it('setInstancePermissions requires instance admin actor', () => {
@@ -806,6 +795,65 @@ describe('custom roles CRUD and capabilities', () => {
     assert.equal(finePermissionForAction('POST', 'workspace.create'), 'workspaces')
     assert.equal(finePermissionForAction('POST', 'repo.create'), null)
     assert.equal(finePermissionForAction('PATCH', 'mystery'), 'other_mutate')
+  })
+})
+
+describe('lineage ACL', () => {
+  it('authorizeLineageQuery: enforce off → allow; outsider denied; reader allowed', () => {
+    const ns = 'tc-lineage-acl'
+    const repo = 'r1'
+    createNamespaceAuthz(admin, ns, 'none', true)
+    setRepoCollaborator(ns, repo, alice, 'read')
+
+    const prev = env.authzEnforce
+    env.authzEnforce = 'false'
+    try {
+      assert.equal(authorizeLineageQuery(mkUser('anyone'), ns, repo).allow, true)
+    } finally {
+      env.authzEnforce = prev
+      setAuthzEnforce(true)
+    }
+
+    const outsider = mkUser('lin-outsider')
+    writeInstancePermissions(outsider, [])
+    assert.equal(authorizeLineageQuery(outsider, ns, repo).allow, false)
+
+    assert.equal(authorizeLineageQuery(alice, ns, repo).allow, true)
+
+    const missingNs = authorizeLineageQuery(alice, undefined, undefined)
+    assert.equal(missingNs.allow, false)
+
+    writeInstancePermissions(bob, ['view_audit'])
+    assert.equal(authorizeLineageQuery(bob, undefined, undefined).allow, true)
+    writeInstancePermissions(bob, [])
+  })
+
+  it('authorizeLineageRebuild: requires repo admin (or owner / instance admin)', () => {
+    const ns = 'tc-lineage-rebuild'
+    const repo = 'r1'
+    createNamespaceAuthz(admin, ns, 'none', true)
+    setNamespaceMember(ns, alice, 'owner')
+    setRepoCollaborator(ns, repo, bob, 'write')
+
+    setAuthzEnforce(true)
+    assert.equal(authorizeLineageRebuild(bob, ns, repo).allow, false)
+    assert.equal(authorizeLineageRebuild(alice, ns, repo).allow, true)
+    assert.equal(authorizeLineageRebuild(admin, ns, repo).allow, true)
+
+    setRepoCollaborator(ns, repo, bob, 'admin')
+    assert.equal(authorizeLineageRebuild(bob, ns, repo).allow, true)
+
+    const prev = env.authzEnforce
+    env.authzEnforce = 'false'
+    try {
+      assert.equal(
+        authorizeLineageRebuild(mkUser('stranger'), ns, repo).allow,
+        true,
+      )
+    } finally {
+      env.authzEnforce = prev
+      setAuthzEnforce(true)
+    }
   })
 })
 

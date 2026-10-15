@@ -102,13 +102,15 @@ test.describe('branches advanced (B-04 B-06 C-04)', () => {
 
     await page.goto(repoPath(seededRepo, '/commits'))
     await page.getByRole('button', { name: 'All commits' }).click()
-    await page.getByRole('link', { name: /^child\b/ }).click()
+    await page.locator('.history-list').getByRole('link', { name: /^child\b/ }).click()
 
-    await expect(page.getByRole('heading', { name: 'child' })).toBeVisible()
+    await expect(
+      page.locator('.history-detail').getByRole('heading', { name: 'child' }),
+    ).toBeVisible()
     await expect(page.getByText('Parents')).toBeVisible()
     // Non-root commit should link a parent id
-    await expect(page.locator('dd a.mono').first()).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Ancestry' })).toBeVisible()
-    await expect(page.locator('.commit-list a').first()).toBeVisible()
+    await expect(
+      page.locator('.history-parent-links a.mono').first(),
+    ).toBeVisible()
   })
 })

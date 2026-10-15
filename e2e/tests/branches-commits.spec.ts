@@ -50,23 +50,26 @@ test.describe('branches & commits (B/C)', () => {
     )
 
     await page.goto(repoPath(seededRepo, '/commits'))
-    await expect(page.getByRole('heading', { name: 'Commits' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'History' })).toBeVisible()
     await expect(page.getByText(/Root/)).toBeVisible()
 
     await page.getByRole('button', { name: 'All commits' }).click()
     await expect(page.getByRole('link', { name: /add note/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /seed readme/ })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Branch history' }).click()
+    await page.getByRole('button', { name: 'Revision history' }).click()
     const pathFilter = page.getByPlaceholder('e.g. data or README.md')
     await pathFilter.fill('notes')
     await pathFilter.press('Enter')
     await expect(page.getByText(/Showing commits that touch/)).toBeVisible()
     await expect(page.getByText('add note')).toBeVisible()
 
-    await page.locator('.commit-list a').first().click()
+    await page.locator('.history-list .commit-list a').first().click()
     await expect(page).toHaveURL(/\/commits\/[a-f0-9]+/)
-    await expect(page.getByRole('heading').first()).toBeVisible()
+    await expect(
+      page.locator('.history-detail').getByRole('heading').first(),
+    ).toBeVisible()
+    await expect(page.getByText('Parents')).toBeVisible()
   })
 
   test('D-01 D-02 C-06: compare branches shows commits and entries', async ({

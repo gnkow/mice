@@ -1,5 +1,7 @@
 /** Remember last browsed branch per repo for Files nav. */
 
+import { looksLikeCommitId } from './oxen/paths'
+
 function key(namespace: string, repo: string) {
   return `boxen.lastBranch.${namespace}/${repo}`
 }
@@ -10,6 +12,8 @@ export function rememberBranch(
   branch: string,
 ) {
   if (!namespace || !repo || !branch) return
+  // Detached commit browsing must not overwrite the last real branch.
+  if (looksLikeCommitId(branch)) return
   try {
     localStorage.setItem(key(namespace, repo), branch)
   } catch {
