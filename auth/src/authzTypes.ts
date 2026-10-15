@@ -7,7 +7,6 @@ export type BasePermission = 'none' | RepoRole
 export type InstancePermission =
   | 'create_namespace'
   | 'view_audit'
-  | 'manage_breakglass'
 
 /** Stored membership role: predefined or custom namespace role id. */
 export type MemberRoleRef = NamespaceRole | string

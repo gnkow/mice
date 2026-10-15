@@ -20,19 +20,11 @@ function resolveUrl(path: string): string {
   return `${apiBase}${normalized}`
 }
 
-function authHeaders(): Record<string, string> {
-  const { token } = loadSettings()
-  const headers: Record<string, string> = {}
-  if (token) headers.Authorization = `Bearer ${token}`
-  return headers
-}
-
 export async function oxenFetch<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
   const headers: Record<string, string> = {
-    ...authHeaders(),
     Accept: options.accept ?? 'application/json',
   }
 

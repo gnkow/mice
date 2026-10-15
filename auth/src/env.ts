@@ -20,9 +20,6 @@ export const env = {
   sessionTtlSec: Number(process.env.SESSION_TTL_SEC ?? 60 * 60 * 8),
   cookieName: process.env.SESSION_COOKIE_NAME ?? 'boxen_session',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
-  authDevMode: process.env.AUTH_DEV_MODE === 'true',
-  /** Optional Bearer that grants proxy access without a session (automation). */
-  breakglassToken: process.env.AUTH_BREAKGLASS_TOKEN ?? '',
   /** Directory for PAT store (pats.json). */
   dataDir: (process.env.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
   /**
@@ -33,13 +30,10 @@ export const env = {
   /** Comma-separated emails or subject IDs for first instance admin. */
   authzBootstrapAdmins: process.env.AUTHZ_BOOTSTRAP_ADMINS ?? '',
   /**
-   * When AUTH_DEV_MODE, grant instance admin to every authenticated user.
-   * Default on in dev so existing e2e keeps working with enforce enabled.
+   * When true, grant instance admin to every authenticated user.
+   * Useful for local Compose / e2e; keep off in shared environments.
    */
-  authzDevGrantAll:
-    process.env.AUTHZ_DEV_GRANT_ALL === 'true' ||
-    (process.env.AUTHZ_DEV_GRANT_ALL !== 'false' &&
-      process.env.AUTH_DEV_MODE === 'true'),
+  authzDevGrantAll: process.env.AUTHZ_DEV_GRANT_ALL === 'true',
   /** JSON map for IdP group / email → namespace or instance grants. */
   authzGroupBootstrap: process.env.AUTHZ_GROUP_BOOTSTRAP ?? '',
   /** Phase 3: require training completion before product /api. */
@@ -73,13 +67,6 @@ export const env = {
   /** Keycloak base URL for Admin API (no /realms path), e.g. http://keycloak:8080 */
   keycloakAdminUrl: (process.env.KEYCLOAK_ADMIN_URL ?? '').replace(/\/$/, ''),
   keycloakRealm: process.env.KEYCLOAK_REALM ?? 'boxen',
-  /** Default author when AUTH_DEV_MODE login is used. */
-  devUser: {
-    sub: process.env.AUTH_DEV_SUB ?? 'dev-user',
-    iss: process.env.AUTH_DEV_ISS ?? 'boxen-dev',
-    email: process.env.AUTH_DEV_EMAIL ?? 'dev@boxen.local',
-    name: process.env.AUTH_DEV_NAME ?? 'Boxen Dev',
-  },
 }
 
 export function oidcConfigured(): boolean {

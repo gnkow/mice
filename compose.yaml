@@ -2,7 +2,7 @@
 # Full stack: docker compose up --build
 #
 # Browser → web (Vite) → auth (Hono BFF) → oxen-server
-# Keycloak provides OIDC for Phase 1 (optional when AUTH_DEV_MODE=true).
+# Keycloak provides OIDC locally. Point OIDC_* at another IdP to replace it.
 
 name: boxen
 
@@ -50,27 +50,24 @@ services:
       AUTH_DATA_DIR: /data
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-boxen-session-secret}
-      AUTH_DEV_MODE: ${AUTH_DEV_MODE:-true}
-      AUTH_BREAKGLASS_TOKEN: ${AUTH_BREAKGLASS_TOKEN:-e2e-test-token}
-      AUTH_DEV_NAME: ${AUTH_DEV_NAME:-Boxen Dev}
-      AUTH_DEV_EMAIL: ${AUTH_DEV_EMAIL:-dev@boxen.local}
-      # PLAT-AUTHO: unset = store flag (off until bootstrap). Dev grants instance admin to all users.
+      # PLAT-AUTHO: unset = store flag (off until bootstrap).
       AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}
-      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-}
-      AUTHZ_DEV_GRANT_ALL: ${AUTHZ_DEV_GRANT_ALL:-}
+      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-boxen@example.com}
+      AUTHZ_DEV_GRANT_ALL: ${AUTHZ_DEV_GRANT_ALL:-true}
       AUTHZ_GROUP_BOOTSTRAP: ${AUTHZ_GROUP_BOOTSTRAP:-}
       AUTHZ_REQUIRE_TRAINING: ${AUTHZ_REQUIRE_TRAINING:-false}
-      # Server-side discovery inside Compose
-      OIDC_ISSUER: http://keycloak:8080/realms/boxen
+      # Server-side discovery inside Compose (override all OIDC_* for another IdP)
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/boxen}
       # Browser-facing issuer / authorize host
-      OIDC_ISSUER_PUBLIC: http://localhost:${KEYCLOAK_PORT:-8180}/realms/boxen
-      OIDC_CLIENT_ID: boxen-auth
-      OIDC_CLIENT_SECRET: boxen-auth-secret
-      OIDC_REDIRECT_URI: http://localhost:${WEB_PORT:-5173}/auth/callback
-      OIDC_POST_LOGOUT_REDIRECT_URI: http://localhost:${WEB_PORT:-5173}/login
+      OIDC_ISSUER_PUBLIC: ${OIDC_ISSUER_PUBLIC:-http://localhost:${KEYCLOAK_PORT:-8180}/realms/boxen}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-boxen-auth}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-boxen-auth-secret}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:${WEB_PORT:-5173}/auth/callback}
+      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:${WEB_PORT:-5173}/login}
+      OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
       # Directory search via Keycloak Admin API (service account on boxen-auth)
-      KEYCLOAK_ADMIN_URL: http://keycloak:8080
-      KEYCLOAK_REALM: boxen
+      KEYCLOAK_ADMIN_URL: ${KEYCLOAK_ADMIN_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-boxen}
       DIRECTORY_PROVIDER: ${DIRECTORY_PROVIDER:-keycloak}
       COOKIE_SECURE: "false"
       # Corporate TLS intercepts break npm inside the image; prefer host node_modules.

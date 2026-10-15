@@ -32,7 +32,6 @@ export type AuthzMe = {
   permissions: {
     create_namespace: boolean
     view_audit: boolean
-    manage_breakglass: boolean
   }
   hasAnyGrant: boolean
   trainingCompleted?: boolean
@@ -61,13 +60,3 @@ export async function logout(): Promise<LogoutResult> {
   }
 }
 
-/** Dev-only: establish a session without Keycloak when AUTH_DEV_MODE is on. */
-export async function devLogin(body?: Partial<AuthUser>): Promise<boolean> {
-  const res = await fetch('/auth/dev-login', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  })
-  return res.ok
-}

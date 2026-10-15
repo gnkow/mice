@@ -1,5 +1,6 @@
 import { test as base, expect } from '@playwright/test'
 import { createRepo, deleteRepo, uniqueId } from '../helpers/oxenApi'
+import { mintSession } from '../helpers/session'
 
 const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
@@ -11,15 +12,12 @@ async function sessionLogin(
   page: import('@playwright/test').Page,
   identity?: { name?: string; email?: string; sub?: string },
 ) {
-  const res = await page.request.post(`${BASE_URL}/auth/dev-login`, {
-    data: {
-      name: identity?.name ?? 'CLI User',
-      email: identity?.email ?? 'cli@boxen.local',
-      sub: identity?.sub ?? 'cli-user',
-      iss: 'boxen-dev',
-    },
+  await mintSession(page, {
+    name: identity?.name,
+    email: identity?.email,
+    sub: identity?.sub,
+    iss: 'boxen-e2e',
   })
-  expect(res.ok()).toBeTruthy()
 }
 
 test.describe('CLI auth via BFF PATs (PLAT-AUTH)', () => {

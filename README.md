@@ -36,9 +36,9 @@ docker compose up --build
 # → oxen API  http://localhost:3001  (direct; browser uses BFF)
 ```
 
-Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `boxen` / `boxen`), or **Dev login** when `AUTH_DEV_MODE=true`. Sign out clears the Boxen session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
+Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `boxen` / `boxen`). Sign out clears the Boxen session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
 
-Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI).
+Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Automation uses **CLI PATs** (`Settings → CLI tokens`), not a shared break-glass bearer.
 
 ### Oxen CLI (through the BFF)
 
@@ -50,11 +50,49 @@ oxen clone http://localhost:8080/<namespace>/<repo>
 
 Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
 
+### Use another OIDC IdP
+
+Compose ships Keycloak for local SSO. The BFF speaks standard OIDC Authorization Code + PKCE; any IdP that supports that flow works.
+
+1. Register a confidential (or public) client with:
+   - **Redirect URI:** `http://localhost:5173/auth/callback` (or your deployed UI origin + `/auth/callback`)
+   - **Post-logout redirect:** `http://localhost:5173/login` (must match `OIDC_POST_LOGOUT_REDIRECT_URI`)
+   - **PKCE:** S256
+   - Scopes: `openid` (profile/email recommended)
+2. Set these on the `auth` service (via `.env` / Compose overrides):
+
+   | Variable | Purpose |
+   | --- | --- |
+   | `OIDC_ISSUER` | Issuer URL the **BFF** uses for discovery (container-reachable) |
+   | `OIDC_ISSUER_PUBLIC` | Issuer/authorize host the **browser** uses (if different from `OIDC_ISSUER`) |
+   | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Client credentials |
+   | `OIDC_REDIRECT_URI` | Must match the IdP allow-list |
+   | `OIDC_POST_LOGOUT_REDIRECT_URI` | RP-initiated logout return URL |
+   | `OIDC_GROUPS_CLAIM` | Id token claim for groups (default `groups`) |
+
+3. Directory search is Keycloak-specific today. For Entra / Okta / etc., set `DIRECTORY_PROVIDER=none` (pickers still find principals already stored in AuthZ). Optional: leave the `keycloak` service stopped (`docker compose up --build --scale keycloak=0` or remove it from your override).
+4. Bootstrap the first instance admin with `AUTHZ_BOOTSTRAP_ADMINS=<email-or-sub>` matching an IdP user. Keep `AUTHZ_DEV_GRANT_ALL` off outside local/e2e.
+
+Example `.env` fragment (Entra-style issuer; adjust tenant/app values):
+
+```bash
+OIDC_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
+OIDC_ISSUER_PUBLIC=https://login.microsoftonline.com/<tenant>/v2.0
+OIDC_CLIENT_ID=<app-id>
+OIDC_CLIENT_SECRET=<secret>
+OIDC_REDIRECT_URI=https://boxen.example.com/auth/callback
+OIDC_POST_LOGOUT_REDIRECT_URI=https://boxen.example.com/login
+OIDC_GROUPS_CLAIM=groups
+DIRECTORY_PROVIDER=none
+AUTHZ_BOOTSTRAP_ADMINS=admin@example.com
+AUTHZ_DEV_GRANT_ALL=false
+```
+
 ## Tests
 
 ```bash
 make up         # start stack
-make test       # headless E2E (auto dev-login)
+make test       # headless E2E (OIDC session cookie + Keycloak SSO where needed)
 make smoke      # smoke suite only
 make test-view  # headed + slow-mo (watch in browser)
 make clean      # stop stack, wipe volumes + deps + test artifacts

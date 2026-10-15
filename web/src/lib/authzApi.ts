@@ -19,7 +19,6 @@ export type CollaboratorRoleRef = RepoRole | string
 export type InstancePermission =
   | 'create_namespace'
   | 'view_audit'
-  | 'manage_breakglass'
 
 export type NamespaceCapability =
   | 'manage_members'
@@ -404,7 +403,6 @@ export function fetchInstance(signal?: AbortSignal) {
       iss: string
       permissions: InstancePermission[]
     }>
-    devMode: boolean
   }>('/auth/instance', { signal })
 }
 

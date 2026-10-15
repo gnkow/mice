@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { env } from './env.js'
 import type { SessionUser } from './session.js'
 
-export type AuditVia = 'session' | 'pat' | 'breakglass'
+export type AuditVia = 'session' | 'pat'
 
 export type AuditActor = {
   sub: string

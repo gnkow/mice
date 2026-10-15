@@ -5,6 +5,7 @@ import {
   listBranches,
   putFile,
 } from '../helpers/oxenApi'
+import { mintSession } from '../helpers/session'
 
 test.describe('platform (P-03 P-04)', () => {
   test('TC-P-04b: empty namespaces state copy', async ({ page }) => {
@@ -81,9 +82,7 @@ test.describe('platform (P-03 P-04)', () => {
     const authorEmail = 'e2e-session@author.test'
 
     // Override the default fixture session with a known identity
-    await page.request.post('/auth/dev-login', {
-      data: { name: authorName, email: authorEmail, sub: 'e2e-author', iss: 'boxen-dev' },
-    })
+    await mintSession(page, { name: authorName, email: authorEmail, sub: 'e2e-author', iss: 'boxen-e2e' })
 
     await createBranch(
       seededRepo.namespace,
@@ -133,13 +132,17 @@ test.describe('platform (P-03 P-04)', () => {
     expect(commit?.email).toBe(authorEmail)
   })
 
-  test('P-03: break-glass bearer reaches /api without a session cookie', async ({
+  test('P-03: PAT bearer reaches /api without a session cookie', async ({
     page,
   }) => {
+    const created = await page.request.post('/auth/tokens', {
+      data: { label: 'p-03' },
+    })
+    expect(created.ok()).toBeTruthy()
+    const { token } = (await created.json()) as { token: string }
     await page.context().clearCookies()
-    // App UI requires SSO; break-glass is for automation against the BFF.
     const res = await page.request.get('/api/version', {
-      headers: { Authorization: 'Bearer e2e-test-token' },
+      headers: { Authorization: `Bearer ${token}` },
     })
     expect(res.ok()).toBeTruthy()
     const body = await res.json()

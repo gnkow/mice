@@ -222,7 +222,7 @@ export function listInstanceAdmins(): UserKey[] {
 
 export function instancePermissions(user: UserKey): InstancePermission[] {
   if (isInstanceAdmin(user)) {
-    return ['create_namespace', 'view_audit', 'manage_breakglass']
+    return ['create_namespace', 'view_audit']
   }
   return readInstance().permissions[userKey(user)] ?? []
 }
@@ -249,11 +249,11 @@ export function maybeBootstrapInstanceAdmin(user: SessionUser): boolean {
 }
 
 /**
- * AUTH_DEV_MODE helper: grant instance admin to every authenticated user when
- * AUTHZ_DEV_GRANT_ALL is enabled (keeps local/e2e usable with enforce on).
+ * When AUTHZ_DEV_GRANT_ALL is enabled, grant instance admin to every
+ * authenticated user (keeps local/e2e usable with enforce on).
  */
 export function maybeDevGrantAll(user: SessionUser): void {
-  if (!env.authDevMode || !env.authzDevGrantAll) return
+  if (!env.authzDevGrantAll) return
   const s = readInstance()
   const key = userKey(user)
   if (s.admins.includes(key)) return

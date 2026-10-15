@@ -9,7 +9,7 @@ export type AuditEvent = {
   id: string
   ts: string
   actor: AuditActor
-  via: 'session' | 'pat' | 'breakglass'
+  via: 'session' | 'pat'
   method: string
   path: string
   status: number

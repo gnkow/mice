@@ -1,6 +1,7 @@
 import { test as base, expect } from '@playwright/test'
 import { acceptConfirmModal } from '../fixtures'
 import { uniqueId } from '../helpers/oxenApi'
+import { mintSession } from '../helpers/session'
 
 const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
@@ -16,10 +17,7 @@ async function sessionLogin(
     groups?: string[]
   },
 ) {
-  const res = await page.request.post(`${BASE_URL}/auth/dev-login`, {
-    data: { ...identity, iss: 'boxen-dev' },
-  })
-  expect(res.ok()).toBeTruthy()
+  await mintSession(page, { ...identity, iss: 'boxen-e2e' })
 }
 
 test.describe('authorization (PLAT-AUTHO)', () => {
@@ -65,7 +63,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
 
     const put = await page.request.put(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators`,
-      { data: { sub: 'outsider', iss: 'boxen-dev', role: 'write' } },
+      { data: { sub: 'outsider', iss: 'boxen-e2e', role: 'write' } },
     )
     expect(put.ok()).toBeTruthy()
   })
@@ -152,7 +150,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     })
     const del = await page.request.delete(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/members`,
-      { data: { sub, iss: 'boxen-dev' } },
+      { data: { sub, iss: 'boxen-e2e' } },
     )
     expect(del.status()).toBe(400)
   })
@@ -256,7 +254,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           sub: 'merger-user',
-          iss: 'boxen-dev',
+          iss: 'boxen-e2e',
           role: roleId,
         },
       },
@@ -434,7 +432,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           sub: targetSub,
-          iss: 'boxen-dev',
+          iss: 'boxen-e2e',
           permissions: ['create_namespace', 'view_audit'],
         },
       },
@@ -442,7 +440,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     expect(putPerms.ok()).toBeTruthy()
 
     const addAdmin = await page.request.post(`${AUTH_URL}/auth/instance/admins`, {
-      data: { sub: uniqueId('extra-admin'), iss: 'boxen-dev' },
+      data: { sub: uniqueId('extra-admin'), iss: 'boxen-e2e' },
     })
     expect(addAdmin.ok()).toBeTruthy()
 
@@ -483,7 +481,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           sub: 'auditor-user',
-          iss: 'boxen-dev',
+          iss: 'boxen-e2e',
           role: roleId,
         },
       },
@@ -545,23 +543,13 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     expect(createRepo.ok()).toBeTruthy()
     await page.request.put(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators`,
-      { data: { sub: 'temp-collab', iss: 'boxen-dev', role: 'write' } },
+      { data: { sub: 'temp-collab', iss: 'boxen-e2e', role: 'write' } },
     )
     const del = await page.request.delete(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators`,
-      { data: { sub: 'temp-collab', iss: 'boxen-dev' } },
+      { data: { sub: 'temp-collab', iss: 'boxen-e2e' } },
     )
     expect(del.ok()).toBeTruthy()
-  })
-
-  test('TC-AUTHO-breakglass: bearer token reaches /api', async ({
-    request,
-  }) => {
-    const token = process.env.AUTH_BREAKGLASS_TOKEN ?? 'e2e-test-token'
-    const res = await request.get(`${AUTH_URL}/api/version`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(res.ok()).toBeTruthy()
   })
 
   test('TC-AUTHO-access-approve-perm: grant create_namespace', async ({
@@ -625,7 +613,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
         data: {
           kind: 'user',
           sub: memberSub,
-          iss: 'boxen-dev',
+          iss: 'boxen-e2e',
           role: 'member',
         },
       },

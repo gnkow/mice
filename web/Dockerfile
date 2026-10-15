@@ -1,14 +1,16 @@
+# Dev: install at container start (named volume overlays node_modules).
+# --strict-ssl=false: corp TLS intercepts break npm inside the image.
+FROM node:22-alpine AS dev
+WORKDIR /app
+COPY package.json package-lock.json* ./
+COPY . .
+EXPOSE 5173
+CMD ["sh", "-c", "npm install --strict-ssl=false && npm run dev -- --host 0.0.0.0 --port 5173"]
+
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install
-
-FROM deps AS dev
-WORKDIR /app
-COPY . .
-EXPOSE 5173
-# Reconcile volume-mounted node_modules with package.json on start
-CMD ["sh", "-c", "npm install && npm run dev -- --host 0.0.0.0 --port 5173"]
+RUN npm install --strict-ssl=false
 
 FROM deps AS build
 WORKDIR /app

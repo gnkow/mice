@@ -71,7 +71,7 @@ export function canSearchDirectory(user: SessionUser): boolean {
 }
 
 function issuerForHits(): string {
-  return (env.oidcIssuerPublic || env.oidcIssuer || env.devUser.iss).replace(
+  return (env.oidcIssuerPublic || env.oidcIssuer || 'unknown').replace(
     /\/$/,
     '',
   )
@@ -119,7 +119,7 @@ export function searchStoreDirectory(
   }
 
   const users = new Map<string, DirectoryUserHit>()
-  const issDefault = env.devUser.iss
+  const issDefault = issuerForHits()
 
   function addUser(u: {
     sub: string

@@ -31,7 +31,6 @@ import {
 const INSTANCE_PERMS: InstancePermission[] = [
   'create_namespace',
   'view_audit',
-  'manage_breakglass',
 ]
 
 export function SettingsPage() {
@@ -230,7 +229,7 @@ oxen clone http://localhost:8080/<namespace>/<repo>`}
             <div>
               <h2 id="connection-heading">Connection</h2>
               <p className="muted small">
-                Optional overrides for API base and break-glass bearer.
+                Optional override for API base URL.
               </p>
             </div>
           </div>
@@ -246,23 +245,6 @@ oxen clone http://localhost:8080/<namespace>/<repo>`}
                   placeholder="(empty = same-origin /api)"
                   autoComplete="off"
                 />
-              </label>
-              <label className="ns-settings-field">
-                <span className="ns-settings-label">Bearer token</span>
-                <input
-                  type="password"
-                  value={form.token}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, token: e.target.value }))
-                  }
-                  placeholder="Optional break-glass token"
-                  autoComplete="off"
-                />
-                <span className="muted small">
-                  Accepted by the BFF when configured as{' '}
-                  <code>AUTH_BREAKGLASS_TOKEN</code>. Prefer CLI tokens above
-                  for normal automation.
-                </span>
               </label>
             </div>
             <div className="btn-row ns-settings-actions">
@@ -591,7 +573,7 @@ function InstanceAdminSection() {
   }
 
   async function onToggleEnforce() {
-    if (!data?.devMode) return
+    if (!data) return
     setBusy(true)
     setError(null)
     try {
@@ -614,8 +596,7 @@ function InstanceAdminSection() {
           <h2 id="instance-admin-heading">Instance admin</h2>
           <p className="muted small">
             Instance admins and delegated permissions (
-            <code>create_namespace</code>, <code>view_audit</code>,{' '}
-            <code>manage_breakglass</code>).
+            <code>create_namespace</code>, <code>view_audit</code>).
           </p>
         </div>
       </div>
@@ -623,23 +604,21 @@ function InstanceAdminSection() {
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {data && (
         <>
-          {data.devMode && (
-            <label className="ns-settings-toggle">
-              <input
-                type="checkbox"
-                checked={data.enforce}
-                disabled={busy}
-                onChange={() => void onToggleEnforce()}
-              />
-              <span>
-                <span className="ns-settings-label">AuthZ enforce (dev)</span>
-                <span className="muted small">
-                  Currently {data.enforce ? 'on' : 'off'}. Toggle only available
-                  in <code>AUTH_DEV_MODE</code>.
-                </span>
+          <label className="ns-settings-toggle">
+            <input
+              type="checkbox"
+              checked={data.enforce}
+              disabled={busy}
+              onChange={() => void onToggleEnforce()}
+            />
+            <span>
+              <span className="ns-settings-label">AuthZ enforce</span>
+              <span className="muted small">
+                Currently {data.enforce ? 'on' : 'off'}. Env{' '}
+                <code>AUTHZ_ENFORCE</code> overrides this store flag when set.
               </span>
-            </label>
-          )}
+            </span>
+          </label>
 
           <div className="ns-settings-section-head ns-settings-section-head-tight">
             <div>

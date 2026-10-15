@@ -5,19 +5,12 @@ import {
   signInWithSsoViaKeycloak,
   signOutViaUi,
 } from '../helpers/keycloak'
+import { mintSession } from '../helpers/session'
 
 const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
 
 /** Auth tests control their own session (do not use the auto-login fixture). */
 const test = base
-
-async function uiDevLogin(page: import('@playwright/test').Page) {
-  await page.goto('/login')
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
-  await page.getByRole('button', { name: 'Dev login' }).click()
-  await expect(page).toHaveURL(/\/$|\/repositories|\/projects|\/namespaces/)
-  await expect(page.locator('header.topbar')).toBeVisible()
-}
 
 test.describe('auth BFF (PLAT-AUTH)', () => {
   test('TC-AUTH-02: unauthenticated /api returns 401', async ({ request }) => {
@@ -27,18 +20,15 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     expect(body.status).toBe('error')
   })
 
-  test('TC-AUTH-03: dev-login then /auth/me and /api/version succeed', async ({
+  test('TC-AUTH-03: session then /auth/me and /api/version succeed', async ({
     page,
   }) => {
-    const login = await page.request.post(`${BASE_URL}/auth/dev-login`, {
-      data: {
-        name: 'Auth Spec',
-        email: 'auth-spec@boxen.local',
-        sub: 'auth-spec',
-        iss: 'boxen-dev',
-      },
+    await mintSession(page, {
+      name: 'Auth Spec',
+      email: 'auth-spec@boxen.local',
+      sub: 'auth-spec',
+      iss: 'boxen-e2e',
     })
-    expect(login.ok()).toBeTruthy()
 
     const me = await page.request.get(`${BASE_URL}/auth/me`)
     expect(me.ok()).toBeTruthy()
@@ -53,7 +43,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
   test('TC-AUTH-04: POST /auth/logout clears session cookie', async ({
     page,
   }) => {
-    await page.request.post(`${BASE_URL}/auth/dev-login`, { data: {} })
+    await mintSession(page)
     const before = await page.context().cookies()
     expect(before.some((c) => c.name === 'boxen_session')).toBeTruthy()
 
@@ -92,22 +82,20 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     await expect(
       page.getByRole('link', { name: 'Sign in with SSO' }),
     ).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Dev login' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Dev login' })).toHaveCount(0)
     await expect(page.locator('header.topbar')).toHaveCount(0)
     await expect(page.locator('.login-shell')).toBeVisible()
     await expect(page.locator('main.login-page')).toBeVisible()
   })
 
-  test('TC-AUTH-08: UI Dev login reaches app and shows identity', async ({
+  test('TC-AUTH-08: UI session shows identity in account menu', async ({
     page,
   }) => {
-    await page.request.post(`${BASE_URL}/auth/dev-login`, {
-      data: {
-        name: 'UI Login User',
-        email: 'ui-login@boxen.local',
-        sub: 'ui-login',
-        iss: 'boxen-dev',
-      },
+    await mintSession(page, {
+      name: 'UI Login User',
+      email: 'ui-login@boxen.local',
+      sub: 'ui-login',
+      iss: 'boxen-e2e',
     })
     await page.goto('/')
     await expect(page.locator('header.topbar')).toBeVisible()
@@ -123,7 +111,9 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
   test('TC-AUTH-09: UI Sign out returns to login and blocks app', async ({
     page,
   }) => {
-    await uiDevLogin(page)
+    await mintSession(page)
+    await page.goto('/')
+    await expect(page.locator('header.topbar')).toBeVisible()
 
     await openAccountMenu(page)
     await page.getByRole('button', { name: 'Sign out' }).click()
@@ -145,11 +135,11 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     expect(api.status()).toBe(401)
   })
 
-  test('TC-AUTH-10: login?next= returns to deep link after Dev login', async ({
+  test('TC-AUTH-10: login?next= returns to deep link when already signed in', async ({
     page,
   }) => {
+    await mintSession(page)
     await page.goto('/login?next=%2Fnamespaces')
-    await page.getByRole('button', { name: 'Dev login' }).click()
     await expect(page).toHaveURL(/\/namespaces/)
     await expect(page.locator('header.topbar')).toBeVisible()
   })
@@ -157,7 +147,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
   test('TC-AUTH-11: signed-in user visiting /login is sent into the app', async ({
     page,
   }) => {
-    await page.request.post(`${BASE_URL}/auth/dev-login`, { data: {} })
+    await mintSession(page)
     await page.goto('/login')
     await expect(page).not.toHaveURL(/\/login/)
     await expect(page.locator('header.topbar')).toBeVisible()

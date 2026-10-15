@@ -8,7 +8,6 @@ const dataDir = mkdtempSync(join(tmpdir(), 'boxen-directory-'))
 
 process.env.AUTH_DATA_DIR = dataDir
 process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTH_DEV_MODE = 'false'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@boxen.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
