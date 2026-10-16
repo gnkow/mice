@@ -33,6 +33,8 @@ export type RepoFinePermission =
   | 'manage_repo_metadata'
   | 'repo_delete'
   | 'other_mutate'
+  | 'job_submit'
+  | 'job_read'
 
 export type UserKey = { sub: string; iss: string }
 

@@ -201,6 +201,9 @@ export function Layout() {
                 <NavLink to="/workspaces" onClick={closeDrawer}>
                   Workspaces
                 </NavLink>
+                <NavLink to="/jobs" onClick={closeDrawer}>
+                  Jobs
+                </NavLink>
                 <NavLink to="/audit" onClick={closeDrawer}>
                   Audit
                 </NavLink>

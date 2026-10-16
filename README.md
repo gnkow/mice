@@ -50,6 +50,35 @@ oxen clone http://localhost:8080/<namespace>/<repo>
 
 Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
 
+### Local jobs CLI (`boxen`)
+
+Jobs run on the auth host’s Docker runner. The UI monitors status/logs; submit via CLI with a PAT:
+
+```bash
+# From the repo root (links the `boxen` binary), or: npm link
+npm install
+# Settings → CLI tokens → Create token, then:
+export BOXEN_PAT=boxen_pat_…
+export BOXEN_REMOTE=http://localhost:8080
+
+# From inside an oxen clone (ns/repo/source autodected):
+oxen clone http://localhost:8080/<ns>/<repo>
+cd <repo>
+
+boxen job run \
+  --image alpine:3.20 \
+  -- touch out.txt
+
+# Commits locally on the source branch. Add --sync to push when FF or
+# clean merge onto that branch tip is possible; otherwise the CLI explains
+# and leaves the remote unchanged.
+
+boxen job sync              # sync latest local job (+ ancestors)
+boxen job reset             # clear stuck/failed job + restore dirty worktree
+boxen job status --id <jobId>
+boxen job logs --id <jobId>
+```
+
 ### Use another OIDC IdP
 
 Compose ships Keycloak for local SSO. The BFF speaks standard OIDC Authorization Code + PKCE; any IdP that supports that flow works.

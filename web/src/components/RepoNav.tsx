@@ -29,6 +29,7 @@ export function RepoNav() {
   const onWorkspaces =
     location.pathname === `${base}/workspaces` ||
     location.pathname.startsWith(`${base}/workspaces/`)
+  const onJobs = location.pathname === `${base}/jobs`
 
   return (
     <nav className="repo-nav" aria-label="Repository">
@@ -86,6 +87,18 @@ export function RepoNav() {
           />
         </TabIcon>
         Workspaces
+      </NavLink>
+      <NavLink
+        to={`${base}/jobs`}
+        className={() => (onJobs ? 'active' : undefined)}
+      >
+        <TabIcon>
+          <path
+            fill="currentColor"
+            d="M1.5 2.75A.75.75 0 0 1 2.25 2h11.5a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-.75.75H12v7.25a.75.75 0 0 1-.75.75h-6.5a.75.75 0 0 1-.75-.75V5.5H2.25a.75.75 0 0 1-.75-.75v-2ZM5.5 5.5v6.5h5V5.5h-5Zm-2.5-2v.5h10v-.5H3Z"
+          />
+        </TabIcon>
+        Jobs
       </NavLink>
       <NavLink
         to={`${base}/settings`}

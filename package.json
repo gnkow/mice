@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "description": "Open-source UI for Oxen (oxen-server)",
+  "bin": {
+    "boxen": "./cli/boxen.mjs"
+  },
   "scripts": {
+    "boxen": "node cli/boxen.mjs",
     "test": "playwright test -c e2e/playwright.config.ts",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test -c e2e/playwright.config.ts --ui"

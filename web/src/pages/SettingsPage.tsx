@@ -137,9 +137,9 @@ export function SettingsPage() {
             <div>
               <h2 id="cli-tokens-heading">CLI tokens</h2>
               <p className="muted small">
-                Personal access tokens for the Oxen CLI and Python client. Point
-                the CLI at the <strong>auth BFF</strong> (not raw oxen-server
-                :3001):
+                Personal access tokens for the Oxen CLI, Python client, and{' '}
+                <span className="mono">boxen</span>. Point clients at the{' '}
+                <strong>auth BFF</strong> (not raw oxen-server :3001):
               </p>
             </div>
             <p className="muted small ns-settings-count">
@@ -148,7 +148,15 @@ export function SettingsPage() {
           </div>
           <pre className="settings-code mono">
             {`oxen config --auth localhost:8080 <PAT>
-oxen clone http://localhost:8080/<namespace>/<repo>`}
+oxen clone http://localhost:8080/<namespace>/<repo>
+
+export BOXEN_PAT=<PAT>
+export BOXEN_REMOTE=http://localhost:8080
+oxen clone http://localhost:8080/<namespace>/<repo>
+cd <repo>
+boxen job run --image alpine:3.20 -- touch out.txt
+# local commit on source branch; add --sync to push when possible
+# later: boxen job sync`}
           </pre>
 
           <form className="ns-member-form" onSubmit={onCreateToken}>

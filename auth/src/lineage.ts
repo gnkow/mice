@@ -13,6 +13,8 @@ export type LineageKind =
   | 'copy'
   | 'delete'
   | 'restore'
+  /** Container job run: inputs = observed reads @ pin; outputs = written @ result (either may be empty). */
+  | 'job'
 
 /** Same parent dir + different basename → rename; otherwise move. */
 export function isRenamePathChange(fromPath: string, toPath: string): boolean {
@@ -139,6 +141,10 @@ export type LineageQuery = {
   limit?: number
   cursor?: string
   kind?: LineageKind
+  /** Filter job ops by JobRun id (detail.job_id). */
+  jobId?: string
+  /** Filter ops that reference this commit (pin or result). */
+  commit?: string
 }
 
 const MAX_LIMIT = 200
@@ -306,6 +312,9 @@ export function validateArity(
     case 'delete':
       if (inputs.length !== 1) return 'delete must have exactly 1 input'
       if (outputs.length !== 0) return 'delete must have no outputs'
+      return null
+    case 'job':
+      // Read-only / no-op jobs are valid (0 inputs and/or 0 outputs).
       return null
     default:
       return 'unknown kind'
@@ -610,6 +619,27 @@ export function queryLineage(q: LineageQuery): {
   )
 
   if (q.kind) ops = ops.filter((o) => o.kind === q.kind)
+  if (q.jobId) {
+    const jobId = q.jobId
+    ops = ops.filter(
+      (o) =>
+        o.kind === 'job' &&
+        o.detail &&
+        typeof o.detail.job_id === 'string' &&
+        o.detail.job_id === jobId,
+    )
+  }
+  if (q.commit) {
+    const commit = q.commit
+    ops = ops.filter(
+      (o) =>
+        o.commitId === commit ||
+        o.detail?.pin_commit === commit ||
+        o.detail?.result_commit === commit ||
+        o.inputs.some((v) => v.commitId === commit) ||
+        o.outputs.some((v) => v.commitId === commit),
+    )
+  }
   if (q.since) {
     const since = q.since
     ops = ops.filter((o) => o.ts >= since)

@@ -29,6 +29,9 @@ import { TreePage } from './pages/TreePage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { WorkspacesListPage } from './pages/WorkspacesListPage'
 import { WorkspacesPage } from './pages/WorkspacesPage'
+import { JobPage } from './pages/JobPage'
+import { JobsPage } from './pages/JobsPage'
+import { JobsListPage } from './pages/JobsListPage'
 import './App.css'
 
 export default function App() {
@@ -49,6 +52,7 @@ export default function App() {
                 element={<Navigate to="/repositories" replace />}
               />
               <Route path="workspaces" element={<WorkspacesListPage />} />
+              <Route path="jobs" element={<JobsListPage />} />
               <Route path="audit" element={<AuditPage />} />
               <Route path="docs" element={<DocsPage />} />
               <Route path="n/:namespace" element={<NamespacePage />} />
@@ -77,6 +81,8 @@ export default function App() {
                   path="workspaces/:workspaceId"
                   element={<WorkspacePage />}
                 />
+                <Route path="jobs" element={<JobsPage />} />
+                <Route path="jobs/:jobId" element={<JobPage />} />
                 <Route path="df/:branch/*" element={<DataFramePage />} />
                 <Route path="import" element={<ImportExportPage />} />
                 <Route path="upload" element={<LargeUploadPage />} />

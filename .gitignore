@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 auth/data/
+.data/
 .DS_Store
 *.log
 .vite/

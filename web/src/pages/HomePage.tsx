@@ -6,12 +6,14 @@ import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { listAuthzNamespaces } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
+import { listJobs } from '../lib/jobs'
 import { mergeNamespaces } from '../lib/mergeNamespaces'
 import { formatBytes } from '../lib/oxen/client'
 
 export function HomePage() {
   const catalog = useAsync((signal) => loadCatalog(signal), [])
   const authzNs = useAsync((signal) => listAuthzNamespaces(signal), [])
+  const jobs = useAsync((signal) => listJobs({ limit: 100 }, signal), [])
   const [params, setParams] = useSearchParams()
   const q = (params.get('q') ?? '').trim().toLowerCase()
   const pageParam = Number(params.get('page') || '1')
@@ -27,6 +29,7 @@ export function HomePage() {
     catalog.kind === 'ok' ? catalog.data.repositories : []
   const workspaces = catalog.kind === 'ok' ? catalog.data.workspaces : []
   const storageBytes = catalog.kind === 'ok' ? catalog.data.storageBytes : 0
+  const jobCount = jobs.kind === 'ok' ? jobs.data.jobs.length : 0
 
   const filteredRepos = useMemo(() => {
     if (!q) return repositories
@@ -101,6 +104,12 @@ export function HomePage() {
               <Link className="dash-stat dash-stat-link" to="/workspaces">
                 <span className="dash-stat-value">{workspaces.length}</span>
                 <span className="dash-stat-label">Workspaces</span>
+              </Link>
+              <Link className="dash-stat dash-stat-link" to="/jobs">
+                <span className="dash-stat-value">
+                  {jobs.kind === 'loading' ? '…' : jobCount}
+                </span>
+                <span className="dash-stat-label">Jobs</span>
               </Link>
             </div>
 

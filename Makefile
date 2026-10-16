@@ -7,7 +7,10 @@
 # Slow-mo delay (ms) for make test-view
 SLOWMO ?= 500
 
-.PHONY: help up down install test smoke test-view test-ui reset clean clear
+# Host path for job workdirs (Docker Desktop must see this for `docker run -v`).
+export JOBS_HOST_DATA_DIR ?= $(CURDIR)/.data/jobs
+
+.PHONY: help up down install test smoke test-view test-ui reset clean clear readwatch
 
 help:
 	@echo "Targets:"
@@ -20,12 +23,24 @@ help:
 	@echo "  make smoke      Run smoke E2E suite only"
 	@echo "  make test-view  Run E2E headed + slow-mo (watch in browser)"
 	@echo "  make test-ui    Interactive Playwright UI mode"
+	@echo "  make readwatch  Build linux boxen-readwatch binaries (jobs input detection)"
 	@echo ""
 	@echo "Pass extra Playwright flags via ARGS, e.g.:"
 	@echo "  make test ARGS='--headed'"
 	@echo "  make test-view ARGS='-g smoke' SLOWMO=1000"
 
+# Static inotify helper for job input observation (auth container is Linux).
+readwatch:
+	cd auth/cmd/boxen-readwatch && \
+	  go mod tidy && \
+	  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags='-s -w' -o ../../bin/linux-arm64/boxen-readwatch . && \
+	  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o ../../bin/linux-amd64/boxen-readwatch .
+
 up:
+	@if [ ! -x auth/bin/linux-arm64/boxen-readwatch ] || [ ! -x auth/bin/linux-amd64/boxen-readwatch ]; then \
+	  $(MAKE) readwatch; \
+	fi
+	mkdir -p "$(JOBS_HOST_DATA_DIR)"
 	docker compose up -d --build
 
 down:
@@ -52,6 +67,8 @@ test-ui: install
 reset:
 	docker compose down --remove-orphans
 	-docker volume rm boxen_oxen-data boxen_auth_data
+	rm -rf "$(JOBS_HOST_DATA_DIR)"
+	mkdir -p "$(JOBS_HOST_DATA_DIR)"
 	docker compose up -d --build
 	@echo "Reset oxen + auth data volumes and restarted the stack."
 
@@ -59,6 +76,7 @@ reset:
 # and remove local install / Playwright artifacts.
 clean clear:
 	docker compose down -v --remove-orphans
+	rm -rf "$(JOBS_HOST_DATA_DIR)"
 	rm -rf test-results playwright-report blob-report
 	rm -rf node_modules web/node_modules web/dist
 	@echo "Cleared stack volumes, node_modules, and test artifacts."

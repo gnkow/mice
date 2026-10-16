@@ -5139,6 +5139,196 @@ a.btn[aria-disabled='true'] {
   }
 }
 
+/* PLAT-JOB */
+.jobs-layout {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 960px) {
+  .jobs-layout {
+    grid-template-columns: 1fr 1fr 1.2fr;
+    align-items: start;
+  }
+
+  .jobs-layout-monitor {
+    grid-template-columns: 1fr 1.4fr;
+  }
+}
+
+.jobs-cli-hint {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.jobs-panel {
+  min-width: 0;
+}
+
+.jobs-panel h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.jobs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.jobs-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.jobs-form-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.jobs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.jobs-list-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 0.2rem 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border, #ddd);
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.jobs-list-item:hover {
+  border-color: var(--accent, #0969da);
+}
+
+.jobs-list-page {
+  max-width: 52rem;
+}
+
+.jobs-list-item.active {
+  border-color: var(--accent, #0969da);
+}
+
+.jobs-list-cmd {
+  grid-column: 1 / -1;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.jobs-list-refs,
+.jobs-card-refs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.jobs-ref-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.jobs-ref-arrow {
+  opacity: 0.45;
+}
+
+.jobs-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.jobs-meta dt {
+  opacity: 0.7;
+}
+
+.jobs-logs {
+  max-height: 240px;
+  overflow: auto;
+  font-size: 0.8rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  background: var(--code-bg, #f6f8fa);
+}
+
+.jobs-list-card .card-title,
+.jobs-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.jobs-card-name {
+  font-size: 1rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.jobs-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0;
+}
+
+.pill.ok {
+  background: #dafbe1;
+  color: #1a7f37;
+}
+
+.pill.bad {
+  background: #ffebe9;
+  color: #cf222e;
+}
+
+.pill.warn {
+  background: #fff8c5;
+  color: #9a6700;
+}
+
+/* Job execution venue: local Docker host vs Kubernetes cluster */
+.pill.runner-local {
+  background: #ddf4ff;
+  color: #0969da;
+}
+
+.pill.runner-cluster {
+  background: #eaeef2;
+  color: #24292f;
+  border: 1px solid var(--border, #d0d7de);
+}
+
 @media (max-width: 640px) {
   .topbar-search {
     display: none;

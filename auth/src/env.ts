@@ -22,6 +22,39 @@ export const env = {
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   /** Directory for PAT store (pats.json). */
   dataDir: (process.env.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
+  /** Job JSONL + work/logs (defaults under AUTH_DATA_DIR/jobs). */
+  jobsDataDir: (
+    process.env.JOBS_DATA_DIR ??
+    `${(process.env.AUTH_DATA_DIR ?? './data').replace(/\/$/, '')}/jobs`
+  ).replace(/\/$/, ''),
+  /** docker | kubernetes */
+  jobsRunner: (process.env.JOBS_RUNNER ?? 'docker').toLowerCase() as
+    | 'docker'
+    | 'kubernetes',
+  jobsDockerBin: process.env.JOBS_DOCKER_BIN ?? 'docker',
+  jobsDockerSocket: process.env.JOBS_DOCKER_SOCKET ?? '/var/run/docker.sock',
+  /**
+   * Host path that corresponds to `jobsDataDir` inside the auth container.
+   * Required when the Docker runner uses the host engine (socket mount):
+   * `docker run -v` must use a host-visible path, not the container path.
+   */
+  jobsHostDataDir: (process.env.JOBS_HOST_DATA_DIR ?? '').replace(/\/$/, ''),
+  jobsDefaultTimeoutSec: Number(process.env.JOBS_DEFAULT_TIMEOUT_SEC ?? 3600),
+  jobsDefaultCpu: process.env.JOBS_DEFAULT_CPU ?? '1',
+  jobsDefaultMemory: process.env.JOBS_DEFAULT_MEMORY ?? '2g',
+  jobsDefaultDisk: process.env.JOBS_DEFAULT_DISK ?? '20g',
+  jobsDefaultMaxLogBytes: Number(
+    process.env.JOBS_DEFAULT_MAX_LOG_BYTES ?? 10 * 1024 * 1024,
+  ),
+  /** Comma-separated registry hosts allowed for image pull (empty = any). */
+  jobsImagePullAllowlist: (process.env.JOBS_IMAGE_PULL_ALLOWLIST ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  jobsMaxConcurrent: Number(process.env.JOBS_MAX_CONCURRENT ?? 2),
+  /** Kubernetes namespace for Job objects when JOBS_RUNNER=kubernetes. */
+  jobsK8sNamespace: process.env.JOBS_K8S_NAMESPACE ?? 'boxen-jobs',
+  jobsKubectlBin: process.env.JOBS_KUBECTL_BIN ?? 'kubectl',
   /**
    * AuthZ enforcement override: 'true' | 'false' | '' (use store flag).
    * Default empty → store `enforce` (starts false until bootstrap).

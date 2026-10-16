@@ -72,10 +72,23 @@ services:
       COOKIE_SECURE: "false"
       # Corporate TLS intercepts break npm inside the image; prefer host node_modules.
       NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-0}
+      # PLAT-JOB — host path required so `docker run -v` can mount job workdirs
+      # (Docker Desktop cannot mount paths that only exist inside auth_data).
+      JOBS_DATA_DIR: /data/jobs
+      # Prefer absolute path from `make up` / `make reset` (see Makefile).
+      JOBS_HOST_DATA_DIR: ${JOBS_HOST_DATA_DIR:-./.data/jobs}
+      JOBS_RUNNER: ${JOBS_RUNNER:-docker}
+      JOBS_DOCKER_SOCKET: /var/run/docker.sock
+      JOBS_IMAGE_PULL_ALLOWLIST: ${JOBS_IMAGE_PULL_ALLOWLIST:-}
+      JOBS_MAX_CONCURRENT: ${JOBS_MAX_CONCURRENT:-2}
     volumes:
       - ./auth:/app
       - auth_node_modules:/app/node_modules
       - auth_data:/data
+      # Bind-mount so host Docker can re-bind job workdirs into runner containers.
+      - ${JOBS_HOST_DATA_DIR:-./.data/jobs}:/data/jobs
+      # Local (Docker) runner. Set JOBS_RUNNER=kubernetes for Cluster jobs.
+      - ${JOBS_DOCKER_SOCKET_HOST:-/var/run/docker.sock}:/var/run/docker.sock
     depends_on:
       - oxen-server
       - keycloak

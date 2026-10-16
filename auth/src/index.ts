@@ -104,6 +104,8 @@ import type {
   RepoFinePermission,
 } from './authzTypes.js'
 import { createPat, listPatsForUser, resolvePat, revokePat } from './tokens.js'
+import { registerJobRoutes } from './jobsRoutes.js'
+import { resumeQueuedJobs } from './jobs.js'
 
 const PKCE_COOKIE = 'boxen_oidc_pkce'
 /** After Boxen logout, next /auth/login must show IdP credentials (no silent SSO). */
@@ -413,6 +415,8 @@ app.get('/auth/lineage', async (c) => {
     cursor: c.req.query('cursor') || undefined,
     limit: Number.isFinite(limit) ? limit : undefined,
     kind,
+    jobId: c.req.query('jobId') || undefined,
+    commit: c.req.query('commit') || undefined,
   })
   return c.json({ operations, nextCursor })
 })
@@ -1314,9 +1318,12 @@ app.all('/api/*', async (c) => {
   return proxyToOxen(c, { user: authed.user, via: authed.via })
 })
 
+registerJobRoutes(app)
+resumeQueuedJobs()
+
 console.log(
   `[boxen-auth] listening on :${env.port} → oxen ${env.oxenUpstream}` +
-    ` (oidc=${oidcConfigured()})`,
+    ` (oidc=${oidcConfigured()}; jobs=${env.jobsRunner})`,
 )
 
 serve({ fetch: app.fetch, port: env.port })

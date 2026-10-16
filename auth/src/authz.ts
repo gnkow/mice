@@ -429,3 +429,40 @@ export function authorizeLineageRebuild(
   if (check.ok) return { allow: true }
   return { allow: false, reason: 'Requires repository admin' }
 }
+
+/**
+ * job.submit: dedicated capability dependent on repo write
+ * (write role implies job_submit; custom roles may list job_submit only if base ≥ write).
+ */
+export function authorizeJobSubmit(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  // Dependent on repo write; write (and custom roles with base≥write) imply job_submit.
+  const write = hasRepoPermission(user, namespace, repo, 'write', {
+    method: 'POST',
+    action: 'job.submit',
+  })
+  if (!write.ok) {
+    return { allow: false, reason: 'job.submit requires repository write' }
+  }
+  return { allow: true }
+}
+
+/** job.read: dedicated capability dependent on repo read. */
+export function authorizeJobRead(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  const read = hasRepoPermission(user, namespace, repo, 'read')
+  if (!read.ok) {
+    return { allow: false, reason: 'job.read requires repository read' }
+  }
+  return { allow: true }
+}

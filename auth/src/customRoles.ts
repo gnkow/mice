@@ -62,6 +62,8 @@ export const ALL_REPO_FINE_PERMISSIONS: RepoFinePermission[] = [
   'manage_repo_metadata',
   'repo_delete',
   'other_mutate',
+  'job_submit',
+  'job_read',
 ]
 
 /** Minimum predefined role that already implies each fine permission. */
@@ -75,6 +77,8 @@ export const REPO_FINE_IMPLIED_MIN: Record<RepoFinePermission, RepoRole> = {
   manage_repo_metadata: 'admin',
   repo_delete: 'admin',
   other_mutate: 'admin',
+  job_submit: 'write',
+  job_read: 'read',
 }
 
 function path() {
@@ -423,6 +427,8 @@ export function finePermissionForAction(
     return 'contents_write'
   }
   if (action.startsWith('workspace')) return 'workspaces'
+  if (action === 'job.submit') return 'job_submit'
+  if (action === 'job.read') return 'job_read'
   if (action === 'repo.create') return null // namespace-gated
   if (m !== 'GET' && m !== 'HEAD') return 'other_mutate'
   return 'contents_read'
