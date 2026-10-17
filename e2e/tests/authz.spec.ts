@@ -336,9 +336,11 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     await page.getByLabel('Name').fill(ns)
     await page.getByRole('button', { name: 'Create namespace' }).click()
     await expect(page).toHaveURL(new RegExp(`/n/${ns}/settings`))
-    await page.goto(`${BASE_URL}/namespaces`)
-    await expect(page.getByText(ns)).toBeVisible()
-    await expect(page.getByText('Empty').first()).toBeVisible()
+    // List is paginated; filter so the new empty AuthZ-only ns is on-screen.
+    await page.goto(`${BASE_URL}/namespaces?q=${encodeURIComponent(ns)}`)
+    const card = page.locator('article.ns-card').filter({ hasText: ns })
+    await expect(card).toBeVisible()
+    await expect(card.locator('.ns-tag', { hasText: 'Empty' })).toBeVisible()
   })
 
   test('TC-AUTHO-ui: delete namespace from list', async ({ page }) => {
@@ -351,7 +353,8 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     await page.request.post(`${AUTH_URL}/auth/namespaces`, {
       data: { name: ns, basePermission: 'none' },
     })
-    await page.goto(`${BASE_URL}/namespaces`)
+    // List is paginated; filter so the new ns is on-screen.
+    await page.goto(`${BASE_URL}/namespaces?q=${encodeURIComponent(ns)}`)
     const card = page.locator('article.ns-card').filter({ hasText: ns })
     await expect(card).toBeVisible()
     await card.getByRole('button', { name: 'Delete' }).click()

@@ -53,11 +53,11 @@ test.describe('branches & commits (B/C)', () => {
     await expect(page.getByRole('heading', { name: 'History' })).toBeVisible()
     await expect(page.getByText(/Root/)).toBeVisible()
 
-    await page.getByRole('button', { name: 'All commits' }).click()
+    await page.getByRole('tab', { name: 'All commits' }).click()
     await expect(page.getByRole('link', { name: /add note/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /seed readme/ })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Revision history' }).click()
+    await page.getByRole('tab', { name: 'Revision history' }).click()
     const pathFilter = page.getByPlaceholder('e.g. data or README.md')
     await pathFilter.fill('notes')
     await pathFilter.press('Enter')

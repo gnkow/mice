@@ -56,7 +56,7 @@ test.describe('smoke (P/N/R/F)', () => {
     await expect(page).toHaveURL(new RegExp(`/n/${ns}/r/${name}/tree/main`))
     await expect(repoTitle(page, name)).toBeVisible()
 
-    await page.goto('/namespaces')
+    await page.goto(`/namespaces?q=${encodeURIComponent(ns)}`)
     await expect(page.getByRole('link', { name: ns })).toBeVisible()
     await page.getByRole('link', { name: ns }).first().click()
     await expect(
@@ -121,9 +121,15 @@ test.describe('smoke (P/N/R/F)', () => {
     await fileRowAction(page, 'readme.txt', 'Delete')
     await acceptConfirmModal(page)
 
-    await expect(fileNameLink(page, 'readme.txt')).toHaveCount(0, {
-      timeout: 30_000,
-    })
+    // Deleted paths stay visible as hint rows until the next commit clears them.
+    await expect(
+      page.locator('a.file-name-link:not(.file-name-deleted)', {
+        hasText: /^readme\.txt$/,
+      }),
+    ).toHaveCount(0, { timeout: 30_000 })
+    await expect(page.getByTestId('file-row-deleted')).toContainText(
+      'readme.txt',
+    )
 
     await page
       .locator('nav.repo-nav')

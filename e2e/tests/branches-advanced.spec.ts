@@ -101,7 +101,7 @@ test.describe('branches advanced (B-04 B-06 C-04)', () => {
     )
 
     await page.goto(repoPath(seededRepo, '/commits'))
-    await page.getByRole('button', { name: 'All commits' }).click()
+    await page.getByRole('tab', { name: 'All commits' }).click()
     await page.locator('.history-list').getByRole('link', { name: /^child\b/ }).click()
 
     await expect(

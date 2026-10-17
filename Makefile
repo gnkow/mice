@@ -10,7 +10,7 @@ SLOWMO ?= 500
 # Host path for job workdirs (Docker Desktop must see this for `docker run -v`).
 export JOBS_HOST_DATA_DIR ?= $(CURDIR)/.data/jobs
 
-.PHONY: help up down install test smoke test-view test-ui reset clean clear readwatch
+.PHONY: help up down install test test-unit smoke test-view test-ui reset clean clear readwatch
 
 help:
 	@echo "Targets:"
@@ -19,6 +19,7 @@ help:
 	@echo "  make reset      Wipe oxen + auth data volumes, restart stack"
 	@echo "  make clean      Stop stack, wipe volumes + deps + test artifacts"
 	@echo "  make install    npm install + Playwright Chromium"
+	@echo "  make test-unit  Auth + CLI unit tests (no stack required)"
 	@echo "  make test       Run Playwright E2E headless (stack must be up)"
 	@echo "  make smoke      Run smoke E2E suite only"
 	@echo "  make test-view  Run E2E headed + slow-mo (watch in browser)"
@@ -49,6 +50,9 @@ down:
 install:
 	npm install
 	npx playwright install chromium
+
+test-unit:
+	npm run test:unit
 
 test: install
 	npm test -- $(ARGS)

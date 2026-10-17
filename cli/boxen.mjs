@@ -308,15 +308,17 @@ async function cmdRun(flags, command) {
     outputs = pathHashesFromSnapshot(changed, result.after)
 
     if (exitCode === 0 && changed.length) {
+      applyOutputsToClone(ctx.root, workDir, changed)
       const ident = ensureOxenIdentity(ctx.root, job.actor || {})
       if (!ident.ok) {
         throw new Error(ident.detail)
       }
-      applyOutputsToClone(ctx.root, workDir, changed)
-      oxenAdd(ctx.root, changed)
+      const oxenOpts = { oxenConfigDir: ident.oxenConfigDir }
+      oxenAdd(ctx.root, changed, oxenOpts)
       resultCommit = oxenCommit(
         ctx.root,
         `boxen-job ${job.id} (pin ${(job.pin_commit || '').slice(0, 12)})`,
+        oxenOpts,
       )
     } else if (exitCode === 0) {
       resultCommit = job.pin_commit

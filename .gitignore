@@ -3,6 +3,7 @@ dist/
 .env
 auth/data/
 .data/
+.tmp/
 .DS_Store
 *.log
 .vite/

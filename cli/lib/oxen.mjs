@@ -2,16 +2,31 @@
  * Thin wrappers around the `oxen` CLI for clone detection and local commits.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 
+/**
+ * @param {string[]} args
+ * @param {{ cwd?: string, env?: NodeJS.ProcessEnv, oxenConfigDir?: string }} [opts]
+ */
 export function runOxen(args, opts = {}) {
   const cwd = opts.cwd || process.cwd()
+  const env = { ...(opts.env || process.env) }
+  if (opts.oxenConfigDir) {
+    env.OXEN_CONFIG_DIR = opts.oxenConfigDir
+  }
   const r = spawnSync('oxen', args, {
     cwd,
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
-    env: process.env,
+    env,
   })
   return {
     code: r.status ?? 1,
@@ -168,49 +183,98 @@ export function isWorktreeClean(root) {
   return { clean: false, detail: r.stdout || 'worktree not clean' }
 }
 
-export function oxenAdd(root, paths) {
+export function oxenAdd(root, paths, opts = {}) {
   const args = ['add', ...paths]
-  const r = runOxen(args, { cwd: root })
+  const r = runOxen(args, { cwd: root, oxenConfigDir: opts.oxenConfigDir })
   if (r.code !== 0) {
     throw new Error(`oxen add failed: ${r.stderr || r.stdout}`)
   }
 }
 
 /**
- * Ensure oxen has commit author identity. Prefers existing config; otherwise
- * sets name/email from the provided actor (PAT / session).
+ * Job/local commits use a dedicated config dir under `.boxen/` so we are not
+ * broken by a stale ambient `OXEN_CONFIG_DIR`, missing home config, or the
+ * unsupported `oxen config --list` flag.
+ */
+export function oxenIdentityDir(root) {
+  return join(root, '.boxen', 'oxen-config')
+}
+
+export function userConfigPath(root) {
+  return join(oxenIdentityDir(root), 'user_config.toml')
+}
+
+/** Strip characters that break a simple TOML basic string. */
+function sanitizeIdentField(value) {
+  return String(value)
+    .replace(/[\r\n"]/g, ' ')
+    .trim()
+}
+
+/** @returns {{ name: string, email: string } | null} */
+export function readOxenIdentity(root) {
+  const path = userConfigPath(root)
+  if (!existsSync(path)) return null
+  try {
+    const text = readFileSync(path, 'utf8')
+    const name = text.match(/^\s*name\s*=\s*"([^"]*)"/m)?.[1]?.trim()
+    const email = text.match(/^\s*email\s*=\s*"([^"]*)"/m)?.[1]?.trim()
+    if (name && email) return { name, email }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/**
+ * Ensure commit author identity for `oxen commit` via OXEN_CONFIG_DIR.
+ * Returns `{ oxenConfigDir }` that callers must pass to subsequent oxen calls.
  */
 export function ensureOxenIdentity(root, actor = {}) {
-  const probe = runOxen(['config', '--list'], { cwd: root })
-  const listed = `${probe.stdout}\n${probe.stderr}`
-  const hasName = /(?:^|\n)\s*name\s*=\s*\S+/i.test(listed)
-  const hasEmail = /(?:^|\n)\s*email\s*=\s*\S+/i.test(listed)
-  if (hasName && hasEmail) return { ok: true, configured: false }
+  const configDir = oxenIdentityDir(root)
+  const existing = readOxenIdentity(root)
+  if (existing) {
+    return {
+      ok: true,
+      configured: false,
+      oxenConfigDir: configDir,
+      ...existing,
+    }
+  }
 
-  const name = String(actor.name || actor.email || '').trim() || 'boxen'
-  const email = String(actor.email || '').trim() || 'boxen@localhost'
+  const name =
+    sanitizeIdentField(actor.name || actor.email || '') || 'boxen'
+  const email = sanitizeIdentField(actor.email || '') || 'boxen@localhost'
+  const body = `name = "${name}"\nemail = "${email}"\n`
 
-  const n = runOxen(['config', '--name', name], { cwd: root })
-  if (n.code !== 0) {
+  try {
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(userConfigPath(root), body, 'utf8')
+  } catch (err) {
     return {
       ok: false,
       detail:
-        n.stderr ||
-        n.stdout ||
-        'oxen config --name failed; run: oxen config --name YOUR_NAME --email YOUR_EMAIL',
+        err instanceof Error
+          ? err.message
+          : 'failed to write user_config.toml',
     }
   }
-  const e = runOxen(['config', '--email', email], { cwd: root })
-  if (e.code !== 0) {
+
+  const verified = readOxenIdentity(root)
+  if (!verified) {
     return {
       ok: false,
       detail:
-        e.stderr ||
-        e.stdout ||
-        'oxen config --email failed; run: oxen config --name YOUR_NAME --email YOUR_EMAIL',
+        'oxen identity missing after write; run: oxen config --name YOUR_NAME --email YOUR_EMAIL',
     }
   }
-  return { ok: true, configured: true, name, email }
+  return {
+    ok: true,
+    configured: true,
+    oxenConfigDir: configDir,
+    name: verified.name,
+    email: verified.email,
+  }
 }
 
 /** Restore working tree to HEAD (discard uncommitted changes). */
@@ -229,8 +293,11 @@ export function oxenRestore(root, path = '.') {
   return { ok: true, detail: '' }
 }
 
-export function oxenCommit(root, message) {
-  const r = runOxen(['commit', '-m', message], { cwd: root })
+export function oxenCommit(root, message, opts = {}) {
+  const r = runOxen(['commit', '-m', message], {
+    cwd: root,
+    oxenConfigDir: opts.oxenConfigDir,
+  })
   if (r.code !== 0) {
     throw new Error(`oxen commit failed: ${r.stderr || r.stdout}`)
   }

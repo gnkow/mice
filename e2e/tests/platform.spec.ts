@@ -64,9 +64,9 @@ test.describe('platform (P-03 P-04)', () => {
       await route.continue()
     })
 
-    await page.goto('/')
+    // Home paginates repos (12/page); filter by namespace so the fixture is on-screen.
+    await page.goto(`/?q=${encodeURIComponent(seededRepo.namespace)}`)
     await expect(page.getByLabel('Loading')).toBeVisible()
-    // Scope by namespace — many e2e fixtures use repo name "repo".
     await expect(
       page.locator(
         `.dash-repo-cards a.repo-summary-card[href*="/n/${encodeURIComponent(seededRepo.namespace)}/"]`,

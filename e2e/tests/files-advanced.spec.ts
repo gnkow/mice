@@ -71,21 +71,23 @@ test.describe('files advanced (F-05–F-15)', () => {
     await fileRowAction(page, 'nested', 'Delete')
     await acceptConfirmModal(page)
 
-    await expect(fileNameLink(page, 'nested')).toHaveCount(0, {
-      timeout: 30_000,
-    })
+    // Directory deletes remove the folder row (no deleted-hint stub for dirs).
+    await expect(
+      page.locator('a.file-name-link', { hasText: /^nested$/ }),
+    ).toHaveCount(0, { timeout: 30_000 })
   })
 
   test('TC-F-16: Download (version store)', async ({ page, seededRepo }) => {
     await page.goto(repoPath(seededRepo, '/blob/main/readme.txt'))
-    await expect(page.locator('dt', { hasText: 'Version store' })).toBeVisible({
+    await page.getByTestId('blob-tab-metadata').click()
+    await expect(page.locator('dt', { hasText: 'Hash' })).toBeVisible({
       timeout: 15_000,
     })
 
-    await page.locator('details.more-actions').getByText('Advanced').click()
+    await page.locator('details.blob-ops-menu').getByText('More').click()
     const downloadPromise = page.waitForEvent('download', { timeout: 30_000 })
     await page
-      .getByRole('button', { name: 'Download (version store)' })
+      .getByRole('menuitem', { name: 'Download (version store)' })
       .click()
 
     const downloadOrError = await Promise.race([
@@ -110,18 +112,20 @@ test.describe('files advanced (F-05–F-15)', () => {
     await page.goto(repoPath(seededRepo, '/tree/main'))
     await fileRowAction(page, 'readme.txt', 'Move')
 
-    await expect(page.getByRole('heading', { name: 'Move / rename' })).toBeVisible()
-    await page.getByLabel('New path').fill('docs/readme.txt')
+    await expect(page.getByTestId('path-change-move')).toBeVisible()
+    await page.getByLabel('Destination path').fill('docs/readme.txt')
     await page
-      .locator('section', { hasText: 'Move / rename' })
+      .getByTestId('path-change-move')
       .getByRole('button', { name: 'Move' })
       .click()
 
-    await expect(page.getByRole('link', { name: /docs/ })).toBeVisible({
+    await expect(page.locator('main p.ok')).toContainText(/Moved/i, {
       timeout: 30_000,
     })
-    await page.getByRole('link', { name: /docs/ }).click()
-    await expect(page.getByRole('link', { name: 'readme.txt' })).toBeVisible()
+    await page.goto(repoPath(seededRepo, '/tree/main/docs'))
+    await expect(fileNameLink(page, 'readme.txt')).toBeVisible({
+      timeout: 15_000,
+    })
   })
 
   test('F-06 F-07 F-12 F-15: blob metadata, refresh, version store, history', async ({
@@ -139,10 +143,12 @@ test.describe('files advanced (F-05–F-15)', () => {
 
     await page.goto(repoPath(seededRepo, '/blob/main/readme.txt'))
     await expect(page.getByRole('heading', { name: 'readme.txt' })).toBeVisible()
+    await page.getByTestId('blob-tab-metadata').click()
     await expect(page.locator('dt', { hasText: 'Hash' })).toBeVisible()
     await expect(page.locator('dd.mono').first()).not.toHaveText('')
 
-    await page.getByRole('button', { name: 'Refresh metadata' }).click()
+    await page.locator('details.blob-ops-menu').getByText('More').click()
+    await page.getByRole('menuitem', { name: 'Refresh metadata' }).click()
     await expect(page.locator('main p.ok')).toContainText(/Derived metadata refreshed/i, {
       timeout: 30_000,
     })
@@ -150,7 +156,8 @@ test.describe('files advanced (F-05–F-15)', () => {
     await expect(page.locator('dt', { hasText: 'Version store' })).toBeVisible({
       timeout: 15_000,
     })
-    await expect(page.getByRole('heading', { name: /History on main/ })).toBeVisible()
+    await page.getByTestId('blob-tab-history').click()
+    await expect(page.getByRole('heading', { name: /Versions from/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /update readme/ })).toBeVisible()
   })
 
@@ -229,9 +236,9 @@ test.describe('files advanced (F-05–F-15)', () => {
 
   test('F-11: download by hash from blob page', async ({ page, seededRepo }) => {
     await page.goto(repoPath(seededRepo, '/blob/main/readme.txt'))
-    await page.locator('details.more-actions').getByText('Advanced').click()
+    await page.locator('details.blob-ops-menu').getByText('More').click()
     const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: 'Download by hash' }).click()
+    await page.getByRole('menuitem', { name: 'Download by hash' }).click()
     const download = await downloadPromise
     expect(await download.failure()).toBeNull()
     await expect(page.locator('main p.ok')).toContainText(/Downloaded .* by content hash/i, {
