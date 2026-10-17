@@ -137,9 +137,9 @@ export function SettingsPage() {
             <div>
               <h2 id="cli-tokens-heading">CLI tokens</h2>
               <p className="muted small">
-                Personal access tokens for the Oxen CLI and Python client. Point
-                the CLI at the <strong>auth BFF</strong> (not raw oxen-server
-                :3001):
+                Day-to-day: run <code className="mono">boxen login</code> (browser
+                authorize). For CI / automation, mint a PAT below and point oxen
+                at the <strong>auth BFF</strong> (not raw oxen-server :3001):
               </p>
             </div>
             <p className="muted small ns-settings-count">
@@ -147,7 +147,11 @@ export function SettingsPage() {
             </p>
           </div>
           <pre className="settings-code mono">
-            {`oxen config --auth localhost:8080 <PAT>
+            {`boxen login
+boxen clone http://localhost:8080/<namespace>/<repo>
+
+# Automation / CI
+oxen config --auth localhost:8080 <PAT>
 oxen clone http://localhost:8080/<namespace>/<repo>`}
           </pre>
 

@@ -15,8 +15,10 @@ export type CreatePatResponse = {
 export type CliInfo = {
   remote: string
   authHost: string
-  configExample: string
+  loginExample?: string
   cloneExample: string
+  configExample: string
+  oxenCloneExample?: string
 }
 
 export async function fetchCliInfo(signal?: AbortSignal): Promise<CliInfo> {

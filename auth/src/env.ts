@@ -42,6 +42,21 @@ export const env = {
   publicOxenRemote:
     process.env.PUBLIC_OXEN_REMOTE?.replace(/\/$/, '') ??
     `http://localhost:${process.env.AUTH_PORT ?? process.env.PORT ?? 8080}`,
+  /**
+   * Browser UI origin for CLI device verification links.
+   * Defaults from OIDC_REDIRECT_URI origin, else localhost:5173.
+   */
+  publicWebOrigin: (() => {
+    const explicit = process.env.PUBLIC_WEB_ORIGIN?.replace(/\/$/, '')
+    if (explicit) return explicit
+    const redirect = process.env.OIDC_REDIRECT_URI ?? ''
+    try {
+      if (redirect) return new URL(redirect).origin
+    } catch {
+      /* fall through */
+    }
+    return `http://localhost:${process.env.WEB_PORT ?? 5173}`
+  })(),
   oidcIssuer: process.env.OIDC_ISSUER ?? '',
   /** Issuer URL as seen by the browser (Keycloak published hostname). */
   oidcIssuerPublic: process.env.OIDC_ISSUER_PUBLIC ?? process.env.OIDC_ISSUER ?? '',

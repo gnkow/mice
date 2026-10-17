@@ -9,6 +9,7 @@ Open-source web UI for [Oxen](https://www.oxen.ai) / self-hosted [`oxen-server`]
 | `compose.yaml` | Stack: `oxen-server`, `auth` (Hono BFF), `keycloak`, `web` |
 | `auth/` | Auth BFF — OIDC/session, AuthZ, author injection, audit JSONL, proxy to oxen-server |
 | `web/` | Vite + React + TypeScript UI |
+| `cli/` | `boxen` CLI — login/logout + Oxen command passthrough via the BFF |
 | `TESTS.md` | Test plan + recommended frameworks for full coverage |
 
 ## Prerequisites
@@ -38,17 +39,33 @@ docker compose up --build
 
 Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `boxen` / `boxen`). Sign out clears the Boxen session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
 
-Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Automation uses **CLI PATs** (`Settings → CLI tokens`), not a shared break-glass bearer.
+Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Day-to-day CLI auth uses **`boxen login`** (browser device pairing). Automation may still mint **CLI PATs** (`Settings → CLI tokens`).
 
-### Oxen CLI (through the BFF)
+### Boxen CLI (through the BFF)
+
+Requires the [Oxen CLI](https://docs.oxen.ai) on `PATH`. From the repo root (or after `npm link`):
+
+```bash
+# Interactive login — opens the UI to approve a device code (no PAT copy-paste)
+boxen login
+boxen clone http://localhost:8080/<namespace>/<repo>
+boxen whoami
+# …any other oxen subcommand:
+boxen status
+boxen push origin main
+```
+
+`boxen` forwards Oxen commands to the `oxen` binary after configuring Bearer auth for the BFF host. Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
+
+#### Automation / CI (PAT)
 
 ```bash
 # Settings → CLI tokens → Create token, then:
+export BOXEN_PAT=boxen_pat_…
+# or:
 oxen config --auth localhost:8080 boxen_pat_…
 oxen clone http://localhost:8080/<namespace>/<repo>
 ```
-
-Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
 
 ### Use another OIDC IdP
 
@@ -91,11 +108,13 @@ AUTHZ_DEV_GRANT_ALL=false
 ## Tests
 
 ```bash
-make up         # start stack
-make test       # headless E2E (OIDC session cookie + Keycloak SSO where needed)
-make smoke      # smoke suite only
-make test-view  # headed + slow-mo (watch in browser)
-make clean      # stop stack, wipe volumes + deps + test artifacts
+make up              # start stack
+make test-unit       # auth + CLI + web unit tests (+ live BFF integration if up)
+make test-cli        # CLI/PAT/device Playwright suite (stack must be up)
+make test            # full Playwright E2E
+make smoke           # smoke suite only
+make test-view       # headed + slow-mo (watch in browser)
+make clean           # stop stack, wipe volumes + deps + test artifacts
 ```
 
 Atomic E2E case catalog: [`TESTS.md`](./TESTS.md).

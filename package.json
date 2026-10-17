@@ -3,10 +3,19 @@
   "private": true,
   "type": "module",
   "description": "Open-source UI for Oxen (oxen-server)",
+  "bin": {
+    "boxen": "./cli/boxen.mjs"
+  },
   "scripts": {
     "test": "playwright test -c e2e/playwright.config.ts",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
-    "test:e2e:ui": "playwright test -c e2e/playwright.config.ts --ui"
+    "test:e2e:ui": "playwright test -c e2e/playwright.config.ts --ui",
+    "test:e2e:cli": "playwright test -c e2e/playwright.config.ts e2e/tests/cli-auth.spec.ts e2e/tests/cli-device-ui.spec.ts",
+    "test:unit": "npm run test:unit:auth && npm run test:unit:cli && npm run test:unit:web",
+    "test:unit:auth": "npm test --prefix auth",
+    "test:unit:cli": "node --test cli/lib/*.test.mjs",
+    "test:unit:web": "npm test --prefix web",
+    "test:cli:integration": "node --test cli/integration/device-login.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",

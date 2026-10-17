@@ -6,7 +6,7 @@ type Props = {
   repo: string
 }
 
-type SectionKey = 'oxen' | 'python' | 'auth'
+type SectionKey = 'login' | 'oxen' | 'python' | 'auth'
 
 function CopyIcon({ size = 16 }: { size?: number }) {
   return (
@@ -49,8 +49,9 @@ export function CloneBox({ namespace, repo }: Props) {
     [remote, namespace, repo],
   )
 
+  const loginCmd = 'boxen login'
+  const boxenCloneCmd = `boxen clone ${target}`
   const authCmd = `oxen config --auth ${authHost} <PAT>`
-  const oxenCmd = `oxen clone ${target}`
   const pythonCmd = `import oxen\noxen.clone("${target}")`
 
   async function copy(key: SectionKey, text: string) {
@@ -67,7 +68,78 @@ export function CloneBox({ namespace, repo }: Props) {
     <div className="clone-box" role="menu" aria-label="Clone repository">
       <section className="clone-section">
         <div className="clone-section-head">
-          <b>Auth (CLI token)</b>
+          <b>Sign in (CLI)</b>
+          <button
+            type="button"
+            className="clone-copy"
+            onClick={() => void copy('login', loginCmd)}
+            title={copied === 'login' ? 'Copied' : 'Copy'}
+            aria-label={
+              copied === 'login' ? 'Copied login command' : 'Copy login command'
+            }
+          >
+            <span className="clone-copy-label">{copied === 'login' ? 'Copied' : ''}</span>
+            <CopyIcon />
+          </button>
+        </div>
+        <pre className="clone-code mono">
+          <code>{loginCmd}</code>
+        </pre>
+        <p className="clone-hint muted small">
+          Opens a browser to authorize the Boxen CLI. Traffic goes through the
+          auth BFF (not raw oxen-server).
+        </p>
+      </section>
+
+      <section className="clone-section">
+        <div className="clone-section-head">
+          <b>Boxen</b>
+          <button
+            type="button"
+            className="clone-copy"
+            onClick={() => void copy('oxen', boxenCloneCmd)}
+            title={copied === 'oxen' ? 'Copied' : 'Copy'}
+            aria-label={
+              copied === 'oxen' ? 'Copied clone command' : 'Copy clone command'
+            }
+          >
+            <span className="clone-copy-label">{copied === 'oxen' ? 'Copied' : ''}</span>
+            <CopyIcon />
+          </button>
+        </div>
+        <pre className="clone-code mono">
+          <code>{boxenCloneCmd}</code>
+        </pre>
+      </section>
+
+      <section className="clone-section">
+        <div className="clone-section-head">
+          <b>Python</b>
+          <button
+            type="button"
+            className="clone-copy"
+            onClick={() => void copy('python', pythonCmd)}
+            title={copied === 'python' ? 'Copied' : 'Copy'}
+            aria-label={
+              copied === 'python'
+                ? 'Copied Python snippet'
+                : 'Copy Python snippet'
+            }
+          >
+            <span className="clone-copy-label">
+              {copied === 'python' ? 'Copied' : ''}
+            </span>
+            <CopyIcon />
+          </button>
+        </div>
+        <pre className="clone-code mono">
+          <code>{pythonCmd}</code>
+        </pre>
+      </section>
+
+      <section className="clone-section">
+        <div className="clone-section-head">
+          <b>Automation PAT</b>
           <button
             type="button"
             className="clone-copy"
@@ -85,68 +157,9 @@ export function CloneBox({ namespace, repo }: Props) {
           <code>{authCmd}</code>
         </pre>
         <p className="clone-hint muted small">
-          Create a PAT under Settings → CLI tokens. All CLI traffic goes through
-          the auth BFF (not raw oxen-server).
+          For CI: create a PAT under Settings → CLI tokens, then configure oxen
+          against the BFF host.
         </p>
-      </section>
-
-      <section className="clone-section">
-        <div className="clone-section-head">
-          <b>Oxen</b>
-          <button
-            type="button"
-            className="clone-copy"
-            onClick={() => void copy('oxen', oxenCmd)}
-            title={copied === 'oxen' ? 'Copied' : 'Copy'}
-            aria-label={copied === 'oxen' ? 'Copied Oxen clone command' : 'Copy Oxen clone command'}
-          >
-            <span className="clone-copy-label">{copied === 'oxen' ? 'Copied' : ''}</span>
-            <CopyIcon />
-          </button>
-        </div>
-        <pre className="clone-code mono">
-          <code>{oxenCmd}</code>
-        </pre>
-        <a
-          className="clone-docs-link"
-          href="https://docs.oxen.ai/getting-started/install#command-line-tools"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Oxen CLI documentation
-        </a>
-      </section>
-
-      <section className="clone-section">
-        <div className="clone-section-head">
-          <b>Python</b>
-          <button
-            type="button"
-            className="clone-copy"
-            onClick={() => void copy('python', pythonCmd)}
-            title={copied === 'python' ? 'Copied' : 'Copy'}
-            aria-label={
-              copied === 'python' ? 'Copied Python clone snippet' : 'Copy Python clone snippet'
-            }
-          >
-            <span className="clone-copy-label">{copied === 'python' ? 'Copied' : ''}</span>
-            <CopyIcon />
-          </button>
-        </div>
-        <pre className="clone-code mono">
-          <code>
-            <span className="clone-kw">import</span> oxen{'\n'}
-            oxen.clone(<span className="clone-str">"{target}"</span>)
-          </code>
-        </pre>
-        <a
-          className="clone-docs-link"
-          href="https://docs.oxen.ai/getting-started/python"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Oxen Python library documentation
-        </a>
       </section>
     </div>
   )

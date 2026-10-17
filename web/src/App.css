@@ -2793,6 +2793,30 @@ a.btn.primary:hover {
   margin: 0 0 1rem;
 }
 
+.cli-device-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+
+.cli-device-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.cli-device-form input {
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  padding: 0.55rem 0.7rem;
+}
+
+.cli-device-status {
+  margin: 0 0 1rem;
+}
+
 .menu-item:disabled {
   opacity: 0.5;
   cursor: not-allowed;
