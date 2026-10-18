@@ -4,16 +4,16 @@
  *
  * Typical flow (inside a clone):
  *   boxen job run --image alpine:3.20 -- touch out.txt
- *   boxen job run --sync --image alpine:3.20 -- touch out.txt
- *   boxen job sync              # sync latest job to its source branch
- *   boxen job sync main --id <id>
+ *   boxen push                  # pushes commits via BFF + publishes job meta
+ *
+ * Local job metadata: ~/.boxen/jobs/ (not in the repository).
+ * Jobs appear on the remote/UI when their result commit is pushed via boxen.
  *
  * Autodetects namespace, repo, cwd, and source branch:commit from the clone.
- * Overrides: --namespace --repo --source
- *
- * Auth: BOXEN_PAT or --token (Settings → CLI tokens).
+ * Auth (boxen login / BOXEN_PAT) is required to push / talk to the BFF.
  */
 
+import { randomBytes } from 'node:crypto'
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs, requireFlag } from './lib/args.mjs'
@@ -26,6 +26,7 @@ import {
 import { cmdLogin, cmdLogout, cmdWhoami } from './lib/login.mjs'
 import {
   materializeWorkCopy,
+  inferCommandInputPaths,
   pathHashesFromSnapshot,
   pullImage,
   runDockerJob,
@@ -37,6 +38,7 @@ import {
   isResettableLocalJob,
   listLocalJobs,
   readLocalJob,
+  readLocalJobLog,
   removeLocalJob,
   writeLocalJob,
 } from './lib/localStore.mjs'
@@ -51,13 +53,19 @@ import {
   looksLikeDirectOxenServer,
   oxenAdd,
   oxenCommit,
+  oxenPush,
   oxenRestore,
   oxenVersion,
   relWorkdir,
   rewriteArgsForBff,
   runOxenPassthrough,
 } from './lib/oxen.mjs'
-import { pickJobForSync, syncJob } from './lib/sync.mjs'
+import { confirmOrExit } from './lib/confirm.mjs'
+import {
+  commitsEqual,
+  parsePushRef,
+  publishJobsAfterPush,
+} from './lib/publish.mjs'
 
 function usage(code = 1) {
   console.error(`boxen — Oxen CLI via the Boxen auth BFF + local jobs
@@ -70,19 +78,17 @@ Usage:
   boxen version
   boxen <oxen command> [args…]
 
-  boxen job run    [--remote <url>] [--token <pat>]
-                   [--namespace <ns>] [--repo <repo>]
+  boxen job run    [--namespace <ns>] [--repo <repo>]
                    [--source <branch|commit|branch:commit>]
-                   [--name <label>] [--sync]
+                   [--name <label>] [--push]
                    --image <image>
                    [--timeout <sec>] [--cpu <n>] [--memory <size>]
                    -- <command> [args...]
 
-  boxen job sync   [<branch>] [--id <jobId>]
+  boxen job reset  [--id <jobId>] [--all] [--purge] [--yes]
                    [--remote <url>] [--token <pat>]
 
-  boxen job reset  [--id <jobId>] [--all] [--purge]
-                   [--remote <url>] [--token <pat>]
+  boxen push       # oxen push via BFF; also publishes pending job metadata
 
   boxen job list   [--remote <url>] [--token <pat>]
                    [--namespace <ns>] [--repo <repo>]
@@ -90,18 +96,15 @@ Usage:
   boxen job logs   --id <jobId> [--remote <url>] [--token <pat>]
   boxen job cancel --id <jobId> [--remote <url>] [--token <pat>]
 
-Env: BOXEN_REMOTE, BOXEN_PAT
+Env: BOXEN_REMOTE, BOXEN_PAT, BOXEN_HOME (default ~/.boxen), BOXEN_YES
 
 Inside an oxen clone, namespace/repo/source are detected automatically.
-Results commit locally on the source branch (no boxen/job/* branches).
---sync pushes to the source branch when FF or clean merge is possible.
+Job metadata is cached under ~/.boxen/jobs/ (not in the repo).
+Results commit locally on the source branch. When you boxen push, matching
+job metadata is published to the BFF/UI automatically.
 
-boxen job sync [<branch>] syncs the latest (or --id) local job and its
-ancestor jobs in the sequential chain.
-
-boxen job reset clears stuck/failed local job state after a run or sync
-error (work dir, BFF running→failed, dirty worktree). --purge deletes
-local job metadata; --all resets every resettable local job.
+boxen job reset clears stuck/failed local job state (and may restore a dirty
+worktree). Destructive resets require confirmation unless --yes is set.
 `)
   process.exit(code)
 }
@@ -206,8 +209,15 @@ function detectContext(flags) {
 }
 
 async function cmdRun(flags, command) {
-  const { remote, token } = resolveAuth(flags)
   const ctx = detectContext(flags)
+  const wantPush = !!flags.push || !!flags.sync // --sync kept as alias for --push
+
+  // Auth is only required when pushing (which also publishes job meta).
+  let remote = ''
+  let token = ''
+  if (wantPush) {
+    ;({ remote, token } = resolveAuth(flags))
+  }
 
   if (ctx.fromClone) {
     const clean = isWorktreeClean(ctx.root)
@@ -222,9 +232,9 @@ async function cmdRun(flags, command) {
     console.error('Provide a command after --')
     usage(1)
   }
-  if (flags.target || flags.push || flags.merge) {
+  if (flags.target || flags.merge) {
     console.error(
-      'Deprecated: use --sync (and boxen job sync), not --target/--push/--merge',
+      'Deprecated: push with boxen push (or job run --push), not --target/--merge',
     )
     usage(1)
   }
@@ -232,71 +242,79 @@ async function cmdRun(flags, command) {
     console.error('Deprecated: use --source, not --branch/--pin')
     usage(1)
   }
-
-  const body = {
-    namespace: ctx.namespace,
-    repo: ctx.repo,
-    source: ctx.sourceSpec,
-    image,
-    command: [command[0]],
-    args: command.slice(1),
-    runner: 'cli',
-    workdir: '/data',
-  }
-  if (flags.name) body.name = String(flags.name)
-  if (flags.timeout) body.timeout_seconds = Number(flags.timeout)
-  if (flags.cpu || flags.memory) {
-    body.resources = {
-      ...(flags.cpu ? { cpu: String(flags.cpu) } : {}),
-      ...(flags.memory ? { memory: String(flags.memory) } : {}),
-    }
+  if (flags.sync) {
+    console.error('note: --sync is deprecated; use --push (or boxen push)')
   }
 
-  const data = await api(remote, token, '/auth/jobs', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-  let job = data.job
   const sourceBranch =
-    (job.source_ref || '').split(':')[0] || ctx.sourceBranch || ''
+    ctx.sourceBranch ||
+    (ctx.sourceSpec.includes(':')
+      ? ctx.sourceSpec.split(':')[0]
+      : ctx.sourceSpec) ||
+    ''
+  const pinCommit = (
+    ctx.pinCommit ||
+    (ctx.sourceSpec.includes(':')
+      ? ctx.sourceSpec.slice(ctx.sourceSpec.indexOf(':') + 1)
+      : ctx.sourceSpec) ||
+    ''
+  ).toLowerCase()
+  const sourceRef =
+    sourceBranch && pinCommit
+      ? `${sourceBranch}:${pinCommit}`
+      : ctx.sourceSpec
+
+  const jobId = randomBytes(8).toString('hex')
+  const createdAt = new Date().toISOString()
 
   const prev = listLocalJobs(ctx.root, {
     namespace: ctx.namespace,
     repo: ctx.repo,
   }).find((j) => j.status === 'succeeded' && j.result_commit)
+  const head = headCommit(ctx.root)
   const parent_job_id =
-    prev && prev.result_commit === (job.pin_commit || ctx.pinCommit)
+    prev &&
+    (commitsEqual(prev.result_commit, pinCommit) ||
+      commitsEqual(prev.result_commit, head))
       ? prev.id
-      : prev && headCommit(ctx.root) === prev.result_commit
-        ? prev.id
-        : null
+      : null
 
   const local = {
-    id: job.id,
-    name: job.name || '',
+    id: jobId,
+    name: flags.name ? String(flags.name) : '',
     status: 'running',
-    namespace: job.namespace,
-    repo: job.repo,
-    source_ref: job.source_ref,
+    namespace: ctx.namespace,
+    repo: ctx.repo,
+    source_ref: sourceRef,
     source_branch: sourceBranch,
-    pin_commit: job.pin_commit,
+    pin_commit: pinCommit,
     result_commit: null,
     result_branch: null,
     sync_branch: '',
+    published: false,
     parent_job_id,
-    image: job.image,
-    command: job.command,
-    args: job.args || [],
-    created_at: job.created_at || new Date().toISOString(),
+    image,
+    command: [command[0]],
+    args: command.slice(1),
+    created_at: createdAt,
+    started_at: createdAt,
     workdir_rel: ctx.workdirRel,
+    runner: 'cli',
+    timeout_seconds: flags.timeout ? Number(flags.timeout) : 3600,
+    resources: {
+      cpu: flags.cpu ? String(flags.cpu) : '1',
+      memory: flags.memory ? String(flags.memory) : '512m',
+    },
   }
   writeLocalJob(ctx.root, local)
 
-  const jobPath = ensureJobDir(ctx.root, job.id)
+  const jobPath = ensureJobDir(ctx.root, jobId)
   const workDir = join(jobPath, 'work')
   const logPath = join(jobPath, 'job.log')
 
-  console.error(`running ${job.id} (local) source=${job.source_ref}`)
+  console.error(
+    `running ${jobId} (local, ~/.boxen cache) source=${sourceRef}`,
+  )
 
   let exitCode = 1
   let changed = []
@@ -310,28 +328,32 @@ async function cmdRun(flags, command) {
     pullImage(image)
     materializeWorkCopy(ctx.root, workDir)
     const result = await runDockerJob({
-      jobId: job.id,
+      jobId,
       image,
-      command: job.command,
-      args: job.args || [],
+      command: local.command,
+      args: local.args,
       workDir,
       workdir: '/data',
-      cpu: job.resources?.cpu || flags.cpu || '1',
-      memory: job.resources?.memory || flags.memory || '512m',
-      timeoutSeconds: Number(flags.timeout || job.timeout_seconds || 3600),
-      maxLogBytes: job.max_log_bytes || 2_000_000,
+      cpu: local.resources.cpu,
+      memory: local.resources.memory,
+      timeoutSeconds: local.timeout_seconds,
+      maxLogBytes: 2_000_000,
       logPath,
     })
     exitCode = result.exitCode
     changed = result.changed
     imageDigest = result.imageDigest
-    // Without readwatch on CLI yet, inputs stay empty; outputs = changed files.
-    inputs = []
+    // Without readwatch: treat pre-job files mentioned in the command as inputs
+    // (avoids claiming every repo file, e.g. README.md, as a dependency).
+    inputs = pathHashesFromSnapshot(
+      inferCommandInputPaths(result.before, local.command, local.args),
+      result.before,
+    )
     outputs = pathHashesFromSnapshot(changed, result.after)
 
     if (exitCode === 0 && changed.length) {
       applyOutputsToClone(ctx.root, workDir, changed)
-      const ident = ensureOxenIdentity(ctx.root, job.actor || {})
+      const ident = ensureOxenIdentity(ctx.root, {})
       if (!ident.ok) {
         throw new Error(ident.detail)
       }
@@ -339,11 +361,11 @@ async function cmdRun(flags, command) {
       oxenAdd(ctx.root, changed, oxenOpts)
       resultCommit = oxenCommit(
         ctx.root,
-        `boxen-job ${job.id} (pin ${(job.pin_commit || '').slice(0, 12)})`,
+        `boxen-job ${jobId} (pin ${pinCommit.slice(0, 12)})`,
         oxenOpts,
       )
     } else if (exitCode === 0) {
-      resultCommit = job.pin_commit
+      resultCommit = pinCommit
     } else {
       completeError = `exit code ${exitCode}`
       try {
@@ -364,9 +386,9 @@ async function cmdRun(flags, command) {
     }
   }
 
-  const status =
-    exitCode === 0 ? 'succeeded' : completeError ? 'failed' : 'failed'
+  const status = exitCode === 0 ? 'succeeded' : 'failed'
   const resultBranch = exitCode === 0 && changed.length ? sourceBranch : null
+  const finishedAt = new Date().toISOString()
 
   local.status = status
   local.result_commit = resultCommit
@@ -375,121 +397,83 @@ async function cmdRun(flags, command) {
   local.error = completeError
   local.inputs = inputs
   local.outputs = outputs
+  local.image_digest = imageDigest
+  local.finished_at = finishedAt
   writeLocalJob(ctx.root, local)
 
-  let logText = ''
-  try {
-    logText = readFileSync(logPath, 'utf8')
-  } catch {
-    /* ignore */
-  }
-
-  try {
-    const completed = await api(
-      remote,
-      token,
-      `/auth/jobs/${encodeURIComponent(job.id)}/complete`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          status,
-          exit_code: exitCode,
-          error: completeError,
-          result_commit: resultCommit,
-          result_branch: resultBranch,
-          inputs,
-          outputs,
-          image_digest: imageDigest,
-          log_text: logText,
-        }),
-      },
-    )
-    if (!completed?.job) {
-      throw new Error('complete response missing job')
+  let pushExtra = {}
+  if (wantPush && status === 'succeeded' && resultCommit) {
+    const branch = sourceBranch || currentBranch(ctx.root)
+    try {
+      oxenPush(ctx.root, 'origin', branch || undefined)
+      const pub = await publishJobsAfterPush({
+        root: ctx.root,
+        remote,
+        token,
+        branch,
+      })
+      pushExtra = {
+        push_ok: pub.ok,
+        push_branch: pub.branch,
+        published_job_ids: pub.published,
+        publish_message: pub.message || pub.skipped || null,
+      }
+      if (!pub.ok) {
+        console.error(`push succeeded but job publish failed: ${pub.message}`)
+      } else if (pub.published?.length) {
+        console.error(pub.message)
+      }
+    } catch (err) {
+      pushExtra = {
+        push_ok: false,
+        push_message: err instanceof Error ? err.message : String(err),
+      }
+      console.error(pushExtra.push_message)
     }
-    job = completed.job
-  } catch (err) {
+  } else if (status === 'succeeded') {
     console.error(
-      `warning: failed to report completion to BFF: ${
-        err instanceof Error ? err.message : err
-      }`,
+      'local only — job appears on the remote/UI after: boxen push',
     )
-    job = { ...job, ...local, status, result_commit: resultCommit }
   }
 
-  let syncExtra = {}
-  if (flags.sync && status === 'succeeded' && resultCommit) {
-    const syncResult = await syncJob({
-      root: ctx.root,
-      remote,
-      token,
-      job: { ...local, result_commit: resultCommit, source_ref: job.source_ref },
-      explicitBranch: '',
-    })
-    syncExtra = {
-      sync_ok: syncResult.ok,
-      sync_message: syncResult.message,
-      sync_branch: syncResult.sync_branch,
-      synced_job_ids: syncResult.job_ids,
-    }
-    if (!syncResult.ok) {
-      console.error(syncResult.message)
-    } else {
-      console.error(syncResult.message)
-    }
-  }
-
-  console.log(JSON.stringify(jobSummary(job, syncExtra), null, 2))
-  if (status !== 'succeeded') process.exit(1)
-  if (flags.sync && syncExtra.sync_ok === false) process.exit(1)
-}
-
-async function cmdSync(flags, positionals) {
-  const { remote, token } = resolveAuth(flags)
-  const root = findOxenRoot(process.cwd())
-  if (!root) {
-    console.error('boxen job sync must be run inside an oxen clone')
-    process.exit(1)
-  }
-  const explicitBranch = positionals[0] ? String(positionals[0]) : ''
-  const job = pickJobForSync(root, flags)
-  const result = await syncJob({
-    root,
-    remote,
-    token,
-    job,
-    explicitBranch,
-  })
   console.log(
     JSON.stringify(
-      {
-        ok: result.ok,
-        message: result.message,
-        sync_branch: result.sync_branch,
-        job_ids: result.job_ids,
-        job_id: job.id,
-      },
+      jobSummary(
+        {
+          ...local,
+          runner: 'cli',
+        },
+        pushExtra,
+      ),
       null,
       2,
     ),
   )
-  if (!result.ok) process.exit(1)
+  if (status !== 'succeeded') process.exit(1)
+  if (wantPush && pushExtra.push_ok === false) process.exit(1)
 }
 
 /**
- * Reset stuck/failed job state after a run or sync error:
+ * Reset stuck/failed job state:
  * - remove disposable work/
  * - mark BFF job failed if still running/queued
  * - mark local job failed (or --purge delete metadata)
  * - restore dirty worktree to HEAD so the next run can start
+ *
+ * Requires confirmation when job metadata would be changed/removed or the
+ * worktree restored (unless --yes).
  */
 async function cmdReset(flags) {
-  const { remote, token } = resolveAuth(flags)
   const root = findOxenRoot(process.cwd())
   if (!root) {
     console.error('boxen job reset must be run inside an oxen clone')
     process.exit(1)
   }
+  // Soft auth: only needed if a published/remote job must be marked failed.
+  const remote = resolveRemote({
+    remote: flags.remote ? String(flags.remote) : undefined,
+  })
+  const token = String(flags.token || resolveToken() || '')
 
   const purge = !!flags.purge
   const all = !!flags.all
@@ -514,6 +498,23 @@ async function cmdReset(flags) {
     }
     targets = [latest]
   }
+
+  const dirty = isWorktreeClean(root)
+  const idList = targets.map((j) => j.id).join(', ')
+  const actions = [
+    purge
+      ? `DELETE local job metadata for: ${idList}`
+      : `mark job(s) failed and keep metadata for: ${idList}`,
+  ]
+  if (!dirty.clean) {
+    actions.push(
+      'restore dirty worktree to HEAD (discards uncommitted changes)',
+    )
+  }
+  await confirmOrExit(
+    `Destructive job reset:\n  - ${actions.join('\n  - ')}`,
+    flags,
+  )
 
   const results = []
   for (const job of targets) {
@@ -665,16 +666,16 @@ async function cmdJob(jobArgv) {
   }
 
   if (cmd === 'sync') {
-    await cmdSync(flags, rest)
-    return
+    console.error(
+      'boxen job sync is removed. Push commits with `boxen push` — job metadata is published automatically.',
+    )
+    process.exit(1)
   }
 
   if (cmd === 'reset') {
     await cmdReset(flags)
     return
   }
-
-  const { remote, token } = resolveAuth(flags)
 
   if (cmd === 'list') {
     const root = findOxenRoot()
@@ -683,28 +684,32 @@ async function cmdJob(jobArgv) {
       ? String(flags.namespace)
       : detected?.namespace
     const repo = flags.repo ? String(flags.repo) : detected?.repo
+    if (!root) {
+      console.error('boxen job list must be run inside an oxen clone')
+      usage(1)
+    }
     if (!namespace || !repo) {
       console.error('Need --namespace and --repo (or run inside a clone)')
       usage(1)
     }
-    const qs = new URLSearchParams({ namespace, repo })
-    if (flags.status) qs.set('status', String(flags.status))
-    const data = await api(remote, token, `/auth/jobs?${qs}`)
-    const rows = (data.jobs || []).map((j) => ({
-      id: j.id,
-      status: j.status,
-      source_ref: j.source_ref,
-      sync_branch: j.sync_branch || null,
-      result_branch: j.result_branch || null,
-      command: [...(j.command || []), ...(j.args || [])].join(' '),
-    }))
+    const rows = listLocalJobs(root, { namespace, repo })
+      .filter((j) => !flags.status || j.status === String(flags.status))
+      .map((j) => ({
+        id: j.id,
+        status: j.status,
+        source_ref: j.source_ref,
+        sync_branch: j.sync_branch || null,
+        published: !!j.published || !!j.sync_branch,
+        result_branch: j.result_branch || null,
+        result_commit: j.result_commit || null,
+        command: [...(j.command || []), ...(j.args || [])].join(' '),
+      }))
     console.log(JSON.stringify(rows, null, 2))
     return
   }
 
   if (cmd === 'status') {
     const id = requireFlag(flags, 'id', usage)
-    // Prefer local metadata when present
     const root = findOxenRoot()
     if (root) {
       const local = readLocalJob(root, id)
@@ -713,6 +718,7 @@ async function cmdJob(jobArgv) {
         return
       }
     }
+    const { remote, token } = resolveAuth(flags)
     const data = await api(remote, token, `/auth/jobs/${encodeURIComponent(id)}`)
     console.log(JSON.stringify(data.job, null, 2))
     return
@@ -722,14 +728,14 @@ async function cmdJob(jobArgv) {
     const id = requireFlag(flags, 'id', usage)
     const root = findOxenRoot()
     if (root) {
-      const logPath = join(ensureJobDir(root, id), 'job.log')
-      try {
-        process.stdout.write(readFileSync(logPath, 'utf8'))
+      const text = readLocalJobLog(root, id)
+      if (text) {
+        process.stdout.write(text)
+        if (!text.endsWith('\n')) process.stdout.write('\n')
         return
-      } catch {
-        /* fall through to BFF */
       }
     }
+    const { remote, token } = resolveAuth(flags)
     const text = await api(
       remote,
       token,
@@ -744,6 +750,21 @@ async function cmdJob(jobArgv) {
 
   if (cmd === 'cancel') {
     const id = requireFlag(flags, 'id', usage)
+    const root = findOxenRoot()
+    if (root) {
+      const local = readLocalJob(root, id)
+      if (local && !local.published && !local.sync_branch) {
+        writeLocalJob(root, {
+          ...local,
+          status: 'cancelled',
+          error: local.error || 'cancelled locally',
+          finished_at: new Date().toISOString(),
+        })
+        console.log(JSON.stringify(readLocalJob(root, id), null, 2))
+        return
+      }
+    }
+    const { remote, token } = resolveAuth(flags)
     const data = await api(
       remote,
       token,
@@ -753,7 +774,6 @@ async function cmdJob(jobArgv) {
     console.log(JSON.stringify(data.job, null, 2))
     return
   }
-
   console.error(`Unknown job command: ${cmd}`)
   usage(1)
 }
@@ -829,6 +849,32 @@ async function main() {
 
   const code = await runOxenPassthrough(args)
   process.exitCode = code
+
+  // After a successful push through the BFF, publish local job metadata
+  // for result commits that are now on the pushed tip.
+  if (code === 0 && args[0] === 'push') {
+    const root = findOxenRoot(process.cwd())
+    if (root) {
+      const { branch } = parsePushRef(args)
+      const token = resolveToken()
+      if (token) {
+        const pub = await publishJobsAfterPush({
+          root,
+          remote,
+          token,
+          branch: branch || currentBranch(root),
+        })
+        if (!pub.ok) {
+          console.error(
+            `boxen: commits pushed, but job publish failed: ${pub.message}`,
+          )
+          process.exitCode = 1
+        } else if (pub.published?.length) {
+          console.error(`boxen: ${pub.message}`)
+        }
+      }
+    }
+  }
 }
 
 main().catch((err) => {

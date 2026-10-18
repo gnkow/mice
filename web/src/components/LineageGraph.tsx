@@ -241,10 +241,10 @@ function buildGraph(operations: LineageOp[]): {
 }
 
 const COL_W = 168
-const ROW_H = 88
+const ROW_H = 72
 const NODE_W = 132
-const NODE_H_V = 52
-const NODE_H_OP = 40
+/** Shared height so version boxes and op pills share one horizontal band. */
+const NODE_H = 52
 const PAD_X = 24
 const PAD_Y = 20
 
@@ -264,20 +264,36 @@ export function LineageGraph({
   const width = PAD_X * 2 + (maxLayer + 1) * COL_W
   const height = PAD_Y * 2 + (maxRow + 1) * ROW_H
 
-  const pos = new Map<string, { x: number; y: number; h: number }>()
+  const pos = new Map<string, { x: number; y: number }>()
   for (const n of nodes) {
-    const h = n.type === 'op' ? NODE_H_OP : NODE_H_V
     pos.set(n.id, {
       x: PAD_X + n.layer * COL_W + (COL_W - NODE_W) / 2,
-      y: PAD_Y + n.row * ROW_H + (ROW_H - h) / 2,
-      h,
+      y: PAD_Y + n.row * ROW_H + (ROW_H - NODE_H) / 2,
     })
   }
 
   function goToVersion(v: FileVersion) {
+    const ns = v.namespace || namespace
+    const r = v.repo || repo
+    // Stay on the viewing branch so lineage stays explorable; ops still link to commits.
     navigate(
-      `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/blob/${encodeURIComponent(branch)}/${v.path}`,
+      `/n/${encodeURIComponent(ns)}/r/${encodeURIComponent(r)}/blob/${encodeURIComponent(branch)}/${v.path}?tab=lineage`,
     )
+  }
+
+  function goToOp(op: LineageOp) {
+    const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
+    if (op.kind === 'job') {
+      const jobId =
+        typeof op.detail?.job_id === 'string' ? op.detail.job_id : null
+      if (jobId) {
+        navigate(`${base}/jobs/${encodeURIComponent(jobId)}`)
+        return
+      }
+    }
+    if (op.commitId) {
+      navigate(`${base}/commits/${encodeURIComponent(op.commitId)}`)
+    }
   }
 
   return (
@@ -309,9 +325,9 @@ export function LineageGraph({
           const b = pos.get(e.to)
           if (!a || !b) return null
           const x1 = a.x + NODE_W
-          const y1 = a.y + a.h / 2
+          const y1 = a.y + NODE_H / 2
           const x2 = b.x
-          const y2 = b.y + b.h / 2
+          const y2 = b.y + NODE_H / 2
           const mx = (x1 + x2) / 2
           return (
             <path
@@ -329,22 +345,41 @@ export function LineageGraph({
           if (n.type === 'op') {
             const low = n.op.confidence === 'low'
             const derived = n.op.source === 'derived'
+            const jobId =
+              n.op.kind === 'job' && typeof n.op.detail?.job_id === 'string'
+                ? n.op.detail.job_id
+                : null
+            const canNavigate = Boolean(jobId || n.op.commitId)
             return (
               <g
                 key={n.id}
                 transform={`translate(${p.x}, ${p.y})`}
                 data-lineage-id={n.op.id}
+                className={canNavigate ? 'lineage-node-link' : undefined}
+                role={canNavigate ? 'link' : undefined}
+                tabIndex={canNavigate ? 0 : undefined}
+                onClick={canNavigate ? () => goToOp(n.op) : undefined}
+                onKeyDown={
+                  canNavigate
+                    ? (ev) => {
+                        if (ev.key === 'Enter' || ev.key === ' ') {
+                          ev.preventDefault()
+                          goToOp(n.op)
+                        }
+                      }
+                    : undefined
+                }
               >
                 <rect
                   className={`lineage-node-op lineage-${n.op.kind}${low ? ' low' : ''}`}
                   width={NODE_W}
-                  height={NODE_H_OP}
-                  rx={NODE_H_OP / 2}
+                  height={NODE_H}
+                  rx={NODE_H / 2}
                 />
                 <text
                   className="lineage-node-op-label"
                   x={NODE_W / 2}
-                  y={NODE_H_OP / 2 + 1}
+                  y={NODE_H / 2 + 1}
                   textAnchor="middle"
                   dominantBaseline="middle"
                 >
@@ -352,7 +387,7 @@ export function LineageGraph({
                   {derived ? '*' : ''}
                 </text>
                 <title>
-                  {`${n.op.kind} · ${n.op.source}${low ? ' · low confidence' : ''} · ${new Date(n.op.ts).toLocaleString()}`}
+                  {`${n.op.kind} · ${n.op.source}${low ? ' · low confidence' : ''} · ${new Date(n.op.ts).toLocaleString()}${jobId ? ` · job ${jobId}` : n.op.commitId ? ` · commit ${n.op.commitId.slice(0, 8)}` : ''}`}
                 </title>
               </g>
             )
@@ -379,7 +414,7 @@ export function LineageGraph({
               <rect
                 className={`lineage-node-version${focused ? ' focus' : ''}`}
                 width={NODE_W}
-                height={NODE_H_V}
+                height={NODE_H}
                 rx={8}
               />
               <text
@@ -406,8 +441,8 @@ export function LineageGraph({
         })}
       </svg>
       <p className="muted small lineage-graph-legend">
-        Rectangles are file versions; pills are operations. * = derived from
-        history.
+        Rectangles are file versions (→ that file’s lineage); pills are
+        operations (→ commit, or job page for job). * = derived from history.
         {operations[0] && (
           <>
             {' '}

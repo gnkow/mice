@@ -1,6 +1,8 @@
 /**
- * Local job metadata under `<oxen-root>/.boxen/jobs/`.
+ * Local job metadata under `~/.boxen/jobs/<repoKey>/<jobId>/`
+ * (not inside the repository). Override home with BOXEN_HOME.
  */
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -9,17 +11,59 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
+
+/** @returns {string} */
+export function boxenHome() {
+  const fromEnv = process.env.BOXEN_HOME?.trim()
+  if (fromEnv) return fromEnv.replace(/\/$/, '')
+  return join(homedir(), '.boxen')
+}
+
+/** Stable key for a clone root path. */
+export function repoJobsKey(root) {
+  const abs = resolve(root)
+  return createHash('sha256').update(abs).digest('hex').slice(0, 16)
+}
+
+function legacyJobsDir(root) {
+  return join(root, '.boxen', 'jobs')
+}
 
 export function jobsDir(root) {
-  return join(root, '.boxen', 'jobs')
+  return join(boxenHome(), 'jobs', repoJobsKey(root))
 }
 
 export function jobDir(root, jobId) {
   return join(jobsDir(root), jobId)
 }
 
+function legacyJobDir(root, jobId) {
+  return join(legacyJobsDir(root), jobId)
+}
+
+/** Remember which clone path this cache key belongs to. */
+function writeClonePointer(root) {
+  const base = jobsDir(root)
+  mkdirSync(base, { recursive: true })
+  const pointer = join(base, 'clone.json')
+  writeFileSync(
+    pointer,
+    JSON.stringify(
+      {
+        root: resolve(root),
+        updated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+}
+
 export function ensureJobDir(root, jobId) {
+  writeClonePointer(root)
   const d = jobDir(root, jobId)
   mkdirSync(join(d, 'work'), { recursive: true })
   return d
@@ -27,12 +71,16 @@ export function ensureJobDir(root, jobId) {
 
 export function writeLocalJob(root, job) {
   const d = ensureJobDir(root, job.id)
-  writeFileSync(join(d, 'job.json'), JSON.stringify(job, null, 2), 'utf8')
+  const record = {
+    ...job,
+    clone_root: resolve(root),
+  }
+  writeFileSync(join(d, 'job.json'), JSON.stringify(record, null, 2), 'utf8')
   return d
 }
 
-export function readLocalJob(root, jobId) {
-  const p = join(jobDir(root, jobId), 'job.json')
+function readJobJson(dir) {
+  const p = join(dir, 'job.json')
   if (!existsSync(p)) return null
   try {
     return JSON.parse(readFileSync(p, 'utf8'))
@@ -41,24 +89,57 @@ export function readLocalJob(root, jobId) {
   }
 }
 
+export function readLocalJob(root, jobId) {
+  const modern = readJobJson(jobDir(root, jobId))
+  if (modern) return modern
+  return readJobJson(legacyJobDir(root, jobId))
+}
+
 export function listLocalJobs(root, opts = {}) {
-  const base = jobsDir(root)
-  if (!existsSync(base)) return []
-  const ids = readdirSync(base, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-  const jobs = []
-  for (const id of ids) {
-    const j = readLocalJob(root, id)
-    if (!j) continue
-    if (opts.namespace && j.namespace !== opts.namespace) continue
-    if (opts.repo && j.repo !== opts.repo) continue
-    jobs.push(j)
+  const dirs = []
+  const modern = jobsDir(root)
+  if (existsSync(modern)) dirs.push(modern)
+  const legacy = legacyJobsDir(root)
+  if (existsSync(legacy) && legacy !== modern) dirs.push(legacy)
+
+  const byId = new Map()
+  for (const base of dirs) {
+    let ids
+    try {
+      ids = readdirSync(base, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
+    } catch {
+      continue
+    }
+    for (const id of ids) {
+      if (byId.has(id)) continue
+      const j = readJobJson(join(base, id))
+      if (!j) continue
+      if (opts.namespace && j.namespace !== opts.namespace) continue
+      if (opts.repo && j.repo !== opts.repo) continue
+      byId.set(id, j)
+    }
   }
+
+  const jobs = [...byId.values()]
   jobs.sort((a, b) =>
     String(b.created_at || '').localeCompare(String(a.created_at || '')),
   )
   return jobs
+}
+
+function commitsEqualLocal(a, b) {
+  const x = String(a || '')
+    .trim()
+    .toLowerCase()
+  const y = String(b || '')
+    .trim()
+    .toLowerCase()
+  if (!x || !y) return false
+  if (x === y) return true
+  const n = Math.min(x.length, y.length)
+  return n >= 7 && (x.startsWith(y) || y.startsWith(x))
 }
 
 /**
@@ -98,7 +179,7 @@ export function collectAncestorJobs(root, tipJob) {
         const next = seq[0]
         if (
           prev.result_commit &&
-          (next.pin_commit === prev.result_commit ||
+          (commitsEqualLocal(next.pin_commit, prev.result_commit) ||
             next.parent_job_id === prev.id)
         ) {
           seq.unshift(prev)
@@ -110,23 +191,38 @@ export function collectAncestorJobs(root, tipJob) {
   return chain.reverse()
 }
 
-export function markLocalSynced(root, jobIds, syncBranch) {
+/** Mark jobs as published to the BFF after a successful push. */
+export function markLocalPublished(root, jobIds, pushBranch) {
   for (const id of jobIds) {
     const j = readLocalJob(root, id)
     if (!j) continue
-    writeLocalJob(root, { ...j, sync_branch: syncBranch, synced_at: new Date().toISOString() })
+    writeLocalJob(root, {
+      ...j,
+      sync_branch: pushBranch,
+      published: true,
+      published_at: new Date().toISOString(),
+      synced_at: new Date().toISOString(),
+    })
   }
+}
+
+/** @deprecated use markLocalPublished */
+export function markLocalSynced(root, jobIds, syncBranch) {
+  return markLocalPublished(root, jobIds, syncBranch)
 }
 
 /** Remove disposable work/ copy for a job (keeps job.json + logs). */
 export function cleanJobWork(root, jobId) {
   const work = join(jobDir(root, jobId), 'work')
   rmSync(work, { recursive: true, force: true })
+  const legacyWork = join(legacyJobDir(root, jobId), 'work')
+  rmSync(legacyWork, { recursive: true, force: true })
 }
 
 /** Delete the entire local job directory. */
 export function removeLocalJob(root, jobId) {
   rmSync(jobDir(root, jobId), { recursive: true, force: true })
+  rmSync(legacyJobDir(root, jobId), { recursive: true, force: true })
 }
 
 /** Jobs that are stuck or failed and may need reset. */
@@ -134,4 +230,18 @@ export function isResettableLocalJob(job) {
   if (!job) return false
   const s = job.status
   return s === 'running' || s === 'queued' || s === 'failed' || s === 'cancelled'
+}
+
+/** Read local job.log if present. */
+export function readLocalJobLog(root, jobId) {
+  for (const dir of [jobDir(root, jobId), legacyJobDir(root, jobId)]) {
+    const p = join(dir, 'job.log')
+    if (!existsSync(p)) continue
+    try {
+      return readFileSync(p, 'utf8')
+    } catch {
+      /* try next */
+    }
+  }
+  return ''
 }

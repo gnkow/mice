@@ -6,15 +6,22 @@ type Props = {
   pageCount: number
   onPageChange: (page: number) => void
   label?: string
+  /** Optional total item count shown next to the page status. */
+  total?: number
 }
 
+/** Always visible; Previous/Next disable when at the ends. */
 export function Pagination({
   page,
   pageCount,
   onPageChange,
   label = 'Pagination',
+  total,
 }: Props) {
-  if (pageCount <= 1) return null
+  const status =
+    total != null
+      ? `${total} · Page ${page} of ${pageCount}`
+      : `Page ${page} of ${pageCount}`
 
   return (
     <nav className="pagination" aria-label={label}>
@@ -26,9 +33,7 @@ export function Pagination({
       >
         Previous
       </button>
-      <span className="pagination-status muted small">
-        Page {page} of {pageCount}
-      </span>
+      <span className="pagination-status muted small">{status}</span>
       <button
         type="button"
         className="btn ghost"

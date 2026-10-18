@@ -14,9 +14,12 @@ process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@boxen.local'
 
-const { parseSubmitBody, publicJob, branchFromSourceRef } = await import(
-  './jobs.js'
-)
+const {
+  parseSubmitBody,
+  publicJob,
+  branchFromSourceRef,
+  publishSyncedCliJobs,
+} = await import('./jobs.js')
 const { parseSourceSpec } = await import('./jobsSource.js')
 const { matchGlobs, toDockerHostPath, resolveReadWatchBin } = await import(
   './jobsRunner.js'
@@ -354,5 +357,65 @@ describe('job id rekey', () => {
     assert.equal(getJob(provisional)?.id, commit)
     assert.equal(getJob(commit)?.id, commit)
     assert.equal(getJob(commit)?.result_commit, commit)
+  })
+})
+
+describe('publishSyncedCliJobs', () => {
+  it('creates terminal CLI jobs and sets sync_branch', () => {
+    const pin = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const result = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    const published = publishSyncedCliJobs(
+      admin,
+      'pat',
+      [
+        {
+          id: 'a1b2c3d4e5f67890',
+          namespace: 'pubns',
+          repo: 'pubrepo',
+          name: 'demo',
+          source_ref: `main:${pin}`,
+          pin_commit: pin,
+          image: 'alpine:3.20',
+          command: ['sh', '-c'],
+          args: ['echo hi'],
+          status: 'succeeded',
+          exit_code: 0,
+          result_commit: result,
+          result_branch: 'main',
+          log_text: 'hello from local\n',
+        },
+      ],
+      'main',
+    )
+    assert.ok(!('error' in published), 'error' in published ? published.error : '')
+    assert.equal(published.jobs.length, 1)
+    const job = getJob('a1b2c3d4e5f67890')
+    assert.ok(job)
+    assert.equal(job.runner, 'cli')
+    assert.equal(job.status, 'succeeded')
+    assert.equal(job.sync_branch, 'main')
+    assert.equal(job.result_commit, result)
+  })
+
+  it('rejects path-traversal job ids', () => {
+    const bad = publishSyncedCliJobs(
+      admin,
+      'pat',
+      [
+        {
+          id: '../../../../tmp/evil',
+          namespace: 'pubns',
+          repo: 'pubrepo',
+          source_ref: 'main:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pin_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          image: 'alpine:3.20',
+          command: ['true'],
+          status: 'succeeded',
+        },
+      ],
+      'main',
+    )
+    assert.ok('error' in bad)
+    assert.match(bad.error, /invalid job id/i)
   })
 })

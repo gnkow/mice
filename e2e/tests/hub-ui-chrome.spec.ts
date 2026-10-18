@@ -276,6 +276,7 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     )
     await expect(page.getByRole('heading', { name: 'staged-ui' })).toBeVisible()
 
+    await page.getByRole('tab', { name: 'Stage' }).click()
     const uploadSection = page.locator('section', { hasText: 'Upload file' })
     await uploadSection.locator('input[name="file"]').setInputFiles({
       name: 'ui-stage.txt',
@@ -287,9 +288,7 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     await expect(
       page.getByText('1 staged change', { exact: true }),
     ).toBeVisible({ timeout: 30_000 })
-    await expect(
-      page.getByRole('link', { name: 'Jump to commit' }),
-    ).toHaveAttribute('href', '#workspace-commit')
+    await page.getByRole('button', { name: 'Jump to commit' }).click()
     await expect(
       page.locator('#workspace-commit').getByText(/Mergeable into main/i),
     ).toBeVisible({ timeout: 30_000 })

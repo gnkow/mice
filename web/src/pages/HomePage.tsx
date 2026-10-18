@@ -155,6 +155,7 @@ export function HomePage() {
                   pageCount={slice.pageCount}
                   onPageChange={goPage}
                   label="Home repositories pages"
+                  total={slice.total}
                 />
               </>
             )}

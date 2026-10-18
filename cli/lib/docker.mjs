@@ -161,6 +161,25 @@ export function pathHashesFromSnapshot(paths, snap) {
   }))
 }
 
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Pre-job paths whose basename/path appears in the job command/args. */
+export function inferCommandInputPaths(before, command, args = []) {
+  const cmdText = [...(command || []), ...(args || [])].join(' ')
+  if (!cmdText.trim() || !(before instanceof Map)) return []
+  return [...before.keys()].filter((p) => {
+    const base = p.split('/').filter(Boolean).pop() || p
+    if (cmdText.includes(p)) return true
+    if (base.length < 2) return false
+    const re = new RegExp(
+      `(?:^|\\s|[/"'])${escapeRegExp(base)}(?:$|\\s|[/"'])`,
+    )
+    return re.test(cmdText)
+  })
+}
+
 export function pullImage(image) {
   const r = runCmd(DOCKER, ['pull', image])
   if (r.code !== 0) {

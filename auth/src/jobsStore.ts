@@ -51,12 +51,23 @@ export function resolveJobId(id: string): string {
   return cur
 }
 
+/** Server / CLI job ids are hex only (blocks path traversal). */
+export function assertSafeJobId(jobId: string): string {
+  const id = String(jobId || '').trim().toLowerCase()
+  if (!/^[0-9a-f]{8,64}$/.test(id)) {
+    throw new Error('invalid job id')
+  }
+  return id
+}
+
 export function jobsWorkDir(jobId: string): string {
-  return join(env.jobsDataDir, 'work', jobId)
+  const id = assertSafeJobId(jobId)
+  return join(env.jobsDataDir, 'work', id)
 }
 
 export function jobsLogPath(jobId: string): string {
-  return join(env.jobsDataDir, 'logs', `${jobId}.log`)
+  const id = assertSafeJobId(jobId)
+  return join(env.jobsDataDir, 'logs', `${id}.log`)
 }
 
 export function appendJob(job: JobRun): void {
@@ -150,7 +161,8 @@ export function listJobs(q: JobListQuery): {
   jobs: JobRun[]
   nextCursor: string | null
 } {
-  const limit = Math.min(Math.max(1, q.limit ?? 50), 100)
+  // Allow higher ceiling for ACL over-fetch on global list routes.
+  const limit = Math.min(Math.max(1, q.limit ?? 50), 500)
   let jobs = readAll().sort((a, b) => b.created_at.localeCompare(a.created_at))
   if (q.namespace) jobs = jobs.filter((j) => j.namespace === q.namespace)
   if (q.repo) jobs = jobs.filter((j) => j.repo === q.repo)

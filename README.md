@@ -69,28 +69,29 @@ oxen clone http://localhost:8080/<namespace>/<repo>
 
 ### Local jobs CLI
 
-Jobs run on the auth host’s Docker runner. The UI monitors status/logs; submit via CLI after `boxen login` or with a PAT:
+Local jobs run Docker on your machine. Metadata is cached under `~/.boxen/jobs/` (not in the repository). When you `boxen push` (through the auth BFF), job metadata for result commits on the tip is published automatically — no separate sync step:
 
 ```bash
 # From the repo root (links the `boxen` binary), or: npm link
 npm install
-boxen login
-# or: export BOXEN_PAT=boxen_pat_… && export BOXEN_REMOTE=http://localhost:8080
+boxen login   # or: export BOXEN_PAT=… BOXEN_REMOTE=http://localhost:8080
 
 # From inside an oxen clone (ns/repo/source autodected):
 boxen clone http://localhost:8080/<ns>/<repo>
 cd <repo>
 
+# Local-only run (no remote/UI entry yet):
 boxen job run \
   --image alpine:3.20 \
   -- touch out.txt
 
-# Commits locally on the source branch. Add --sync to push when FF or
-# clean merge onto that branch tip is possible; otherwise the CLI explains
-# and leaves the remote unchanged.
+# Push commits via BFF — also publishes pending job metadata:
+boxen push
 
-boxen job sync              # sync latest local job (+ ancestors)
-boxen job reset             # clear stuck/failed job + restore dirty worktree
+# Or combine: boxen job run --push --image alpine:3.20 -- touch out.txt
+
+boxen job list              # local cache for this clone
+boxen job reset --yes       # clear stuck/failed local job (+ confirm unless --yes)
 boxen job status --id <jobId>
 boxen job logs --id <jobId>
 ```

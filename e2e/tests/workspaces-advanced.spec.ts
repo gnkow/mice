@@ -26,6 +26,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
       page.locator('.workspace-meta-row code[title]').first(),
     ).toHaveAttribute('title', ws.id)
 
+    await page.getByRole('tab', { name: 'Stage' }).click()
     const upload = page.locator('section', { hasText: 'Upload file' })
     await upload.locator('input[name="file"]').setInputFiles(wsNote)
     await upload.getByRole('button', { name: 'Stage upload' }).click()
@@ -43,6 +44,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
       timeout: 30_000,
     })
 
+    await page.getByRole('tab', { name: 'Stage' }).click()
     await page
       .locator('section', { hasText: 'Stage removal' })
       .getByLabel('Path')
@@ -79,6 +81,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
       repoPath(seededRepo, `/workspaces/${encodeURIComponent(ws.id)}`),
     )
 
+    await page.getByRole('tab', { name: 'Stage' }).click()
     const upload = page.locator('section', { hasText: 'Upload file' })
     await upload.getByLabel('Directory').fill('notes')
     await upload.locator('input[name="file"]').setInputFiles(wsNote)
@@ -91,6 +94,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
     await page.getByRole('button', { name: 'Filter' }).click()
     await expect(page.getByText(/Showing under/)).toBeVisible()
 
+    await page.getByRole('tab', { name: 'Commit' }).click()
     await expect(page.getByText(/Mergeable into main/i)).toBeVisible()
 
     await page.getByRole('button', { name: 'Delete', exact: true }).click()

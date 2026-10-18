@@ -75,6 +75,7 @@ export function RepositoriesListPage() {
               pageCount={slice.pageCount}
               onPageChange={goPage}
               label="Repositories pages"
+              total={slice.total}
             />
           </>
         )}

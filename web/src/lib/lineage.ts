@@ -7,6 +7,7 @@ export type LineageKind =
   | 'copy'
   | 'delete'
   | 'restore'
+  | 'job'
 
 export type FileVersion = {
   namespace: string

@@ -6,20 +6,37 @@ import {
   cancelJob,
   fetchJobLogs,
   getJob,
+  jobCommandLabel,
+  jobOutcomeRefLabel,
   jobRunnerClass,
   jobRunnerDetail,
   jobRunnerLabel,
   jobSourceLabel,
   jobTargetLabel,
+  shortenJobRef,
   type JobRun,
 } from '../lib/jobs'
 import { formatRelativeTime } from '../lib/time'
+
+type JobTab = 'overview' | 'files' | 'logs'
+
+const TABS: { id: JobTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'files', label: 'Files' },
+  { id: 'logs', label: 'Logs' },
+]
 
 function statusClass(s: JobRun['status']) {
   if (s === 'succeeded') return 'pill ok'
   if (s === 'failed' || s === 'cancelled') return 'pill bad'
   if (s === 'running') return 'pill warn'
   return 'pill'
+}
+
+function runnerBackend(job: JobRun): string {
+  if (job.runner === 'kubernetes') return 'Kubernetes'
+  if (job.runner === 'cli') return 'CLI'
+  return 'Docker'
 }
 
 /** Single job detail (status, I/O, logs, cancel). */
@@ -29,6 +46,7 @@ export function JobPage() {
   const detailReload = detail.reload
   const [logs, setLogs] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [tab, setTab] = useState<JobTab>('overview')
 
   useEffect(() => {
     let cancelled = false
@@ -74,144 +92,268 @@ export function JobPage() {
   }
 
   const job = detail.data.job
+  const title = job.name?.trim() || `Job ${job.id.slice(0, 10)}`
+  const hasName = Boolean(job.name?.trim())
+  const sourceFull = jobSourceLabel(job)
+  const resultFull = jobOutcomeRefLabel(job)
+  const syncTo = jobTargetLabel(job)
+  const command = jobCommandLabel(job, 120)
+  const canCancel = job.status === 'queued' || job.status === 'running'
+  const actor =
+    job.actor?.name?.trim() || job.actor?.email?.trim() || ''
+
+  async function onCancel() {
+    setCancelling(true)
+    try {
+      await cancelJob(job.id)
+      detailReload()
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   return (
-    <div className="page-stack">
-      <header className="page-header">
-        <p className="muted">
+    <div className="page-stack job-page">
+      <header className="job-page-head">
+        <p className="muted small">
           <Link to={jobsHref}>← Jobs</Link>
         </p>
-        <h1>
-          <span
-            className={jobRunnerClass(job)}
-            title={jobRunnerDetail(job)}
-          >
-            {jobRunnerLabel(job)}
-          </span>{' '}
-          <span className={statusClass(job.status)}>{job.status}</span>{' '}
-          {job.name?.trim() ? (
-            <>
-              <span>{job.name.trim()}</span>{' '}
-              <span className="mono muted small">{job.id}</span>
-            </>
-          ) : (
-            <span className="mono">Job {job.id}</span>
-          )}
-        </h1>
-        <p className="muted">
-          Created {formatRelativeTime(job.created_at)}
-          {job.started_at
-            ? ` · started ${formatRelativeTime(job.started_at)}`
-            : ''}
+
+        <div className="job-page-title-row">
+          <div className="job-page-title-main">
+            <h1 className="job-page-title">{title}</h1>
+            {hasName ? (
+              <span className="job-page-id mono muted" title={job.id}>
+                {job.id.slice(0, 12)}
+              </span>
+            ) : null}
+            <span className="job-page-tags">
+              <span
+                className={jobRunnerClass(job)}
+                title={jobRunnerDetail(job)}
+              >
+                {jobRunnerLabel(job)}
+              </span>
+              <span className={statusClass(job.status)}>{job.status}</span>
+            </span>
+          </div>
+          {canCancel ? (
+            <button
+              type="button"
+              className="btn"
+              disabled={cancelling}
+              onClick={() => void onCancel()}
+            >
+              {cancelling ? 'Cancelling…' : 'Cancel'}
+            </button>
+          ) : null}
+        </div>
+
+        <p className="job-page-byline muted small">
           {job.finished_at
-            ? ` · finished ${formatRelativeTime(job.finished_at)}`
+            ? `Finished ${formatRelativeTime(job.finished_at)}`
+            : job.started_at
+              ? `Started ${formatRelativeTime(job.started_at)}`
+              : `Created ${formatRelativeTime(job.created_at)}`}
+          {actor ? ` · ${actor}` : ''}
+          {job.exit_code != null && job.status !== 'running'
+            ? ` · exit ${job.exit_code}`
             : ''}
         </p>
       </header>
 
-      <div className="jobs-detail-body">
-        <dl className="jobs-meta">
-          <dt>Runner</dt>
-          <dd>
-            <span className={jobRunnerClass(job)}>{jobRunnerLabel(job)}</span>{' '}
-            <span className="muted small">
-              {job.runner === 'kubernetes'
-                ? 'Kubernetes'
-                : job.runner === 'cli'
-                  ? 'CLI'
-                  : 'Docker'}
-            </span>
-          </dd>
-          <dt>Image</dt>
-          <dd className="mono">{job.image}</dd>
-          {job.image_digest && (
+      {job.error ? (
+        <p className="flash flash-error job-page-error" role="status">
+          {job.error}
+        </p>
+      ) : null}
+
+      <section className="job-page-summary" aria-label="Run summary">
+        <p className="job-page-cmd mono" title={[job.image, command].filter(Boolean).join(' · ')}>
+          <span className="job-page-cmd-image">{job.image || '—'}</span>
+          {command ? (
             <>
-              <dt>Digest</dt>
-              <dd className="mono">{job.image_digest}</dd>
+              <span className="job-page-cmd-sep" aria-hidden>
+                ·
+              </span>
+              <span>{command}</span>
             </>
-          )}
-          <dt>Command</dt>
-          <dd className="mono">{[...job.command, ...job.args].join(' ')}</dd>
-          <dt>Source pin</dt>
-          <dd className="mono">
-            <Link to={`${base}/commits/${job.pin_commit}`}>
-              {jobSourceLabel(job)}
-            </Link>
-          </dd>
-          <dt>Result branch</dt>
-          <dd className="mono">
-            {job.result_branch ? (
+          ) : null}
+        </p>
+        <div className="jobs-card-refs job-page-refs">
+          <span className="jobs-ref">
+            <span className="jobs-ref-label">Source</span>
+            {job.pin_commit ? (
               <Link
-                to={`${base}/tree/${encodeURIComponent(job.result_branch)}`}
+                className="mono"
+                to={`${base}/commits/${encodeURIComponent(job.pin_commit)}`}
+                title={sourceFull}
               >
-                {job.result_branch}
+                {shortenJobRef(sourceFull)}
               </Link>
             ) : (
-              <span className="muted">pending</span>
+              <span className="mono" title={sourceFull}>
+                {shortenJobRef(sourceFull)}
+              </span>
             )}
-          </dd>
-          <dt>Synced to</dt>
-          <dd className="mono">
-            {jobTargetLabel(job) !== '—' ? (
-              <Link
-                to={`${base}/tree/${encodeURIComponent(jobTargetLabel(job))}`}
-              >
-                {jobTargetLabel(job)}
-              </Link>
-            ) : (
-              <span className="muted">— (local only; use boxen job sync)</span>
-            )}
-          </dd>
-          <dt>Result</dt>
-          <dd>
+          </span>
+          <span className="jobs-ref-arrow" aria-hidden>
+            →
+          </span>
+          <span className="jobs-ref">
+            <span className="jobs-ref-label">Result</span>
             {job.result_commit ? (
               <Link
                 className="mono"
-                to={`${base}/commits/${job.result_commit}`}
+                to={`${base}/commits/${encodeURIComponent(job.result_commit)}`}
+                title={resultFull}
               >
-                {job.result_commit.slice(0, 12)}
+                {shortenJobRef(resultFull)}
               </Link>
             ) : (
-              <span className="muted">—</span>
+              <span className="mono muted" title={resultFull}>
+                {shortenJobRef(resultFull)}
+              </span>
             )}
-          </dd>
-          <dt>Exit</dt>
-          <dd>{job.exit_code ?? '—'}</dd>
-          {job.error && (
-            <>
-              <dt>Error</dt>
-              <dd>{job.error}</dd>
-            </>
-          )}
-        </dl>
+          </span>
+        </div>
+      </section>
 
-        <h2>Inputs ({job.inputs.length})</h2>
-        <PathTable rows={job.inputs} />
-        <h2>Outputs ({job.outputs.length})</h2>
-        <PathTable rows={job.outputs} />
-
-        {(job.status === 'queued' || job.status === 'running') && (
+      <div className="tab-bar" role="tablist" aria-label="Job views">
+        {TABS.map((t) => (
           <button
+            key={t.id}
             type="button"
-            className="btn"
-            disabled={cancelling}
-            onClick={async () => {
-              setCancelling(true)
-              try {
-                await cancelJob(job.id)
-                detailReload()
-              } finally {
-                setCancelling(false)
-              }
-            }}
+            role="tab"
+            id={`job-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`job-panel-${t.id}`}
+            className={tab === t.id ? 'active' : ''}
+            onClick={() => setTab(t.id)}
           >
-            {cancelling ? 'Cancelling…' : 'Cancel'}
+            {t.label}
+            {t.id === 'files'
+              ? ` (${job.inputs.length + job.outputs.length})`
+              : ''}
           </button>
-        )}
-
-        <h2>Logs</h2>
-        <pre className="jobs-logs">{logs || '(empty)'}</pre>
+        ))}
       </div>
+
+      {tab === 'overview' && (
+        <section
+          className="job-page-panel"
+          role="tabpanel"
+          id="job-panel-overview"
+          aria-labelledby="job-tab-overview"
+        >
+          <dl className="jobs-meta job-page-meta">
+            <dt>Runner</dt>
+            <dd>
+              <span className={jobRunnerClass(job)}>{jobRunnerLabel(job)}</span>{' '}
+              <span className="muted small">{runnerBackend(job)}</span>
+            </dd>
+            <dt>Synced to</dt>
+            <dd className="mono">
+              {syncTo !== '—' ? (
+                <Link to={`${base}/tree/${encodeURIComponent(syncTo)}`}>
+                  {syncTo}
+                </Link>
+              ) : (
+                <span className="muted">
+                  Not published — push with <span className="mono">boxen push</span>
+                </span>
+              )}
+            </dd>
+            {job.result_branch ? (
+              <>
+                <dt>Result branch</dt>
+                <dd className="mono">
+                  <Link
+                    to={`${base}/tree/${encodeURIComponent(job.result_branch)}`}
+                  >
+                    {job.result_branch}
+                  </Link>
+                </dd>
+              </>
+            ) : null}
+            <dt>Exit</dt>
+            <dd>{job.exit_code ?? '—'}</dd>
+          </dl>
+
+          <details className="job-page-more">
+            <summary>More details</summary>
+            <dl className="jobs-meta job-page-meta">
+              {job.image_digest ? (
+                <>
+                  <dt>Digest</dt>
+                  <dd className="mono">{job.image_digest}</dd>
+                </>
+              ) : null}
+              <dt>Workdir</dt>
+              <dd className="mono">{job.workdir || '—'}</dd>
+              <dt>Network</dt>
+              <dd className="mono">{job.network || '—'}</dd>
+              <dt>Timeout</dt>
+              <dd>
+                {job.timeout_seconds
+                  ? `${job.timeout_seconds}s`
+                  : '—'}
+              </dd>
+              <dt>Resources</dt>
+              <dd className="mono">
+                cpu {job.resources?.cpu || '—'} · mem{' '}
+                {job.resources?.memory || '—'} · disk{' '}
+                {job.resources?.disk || '—'}
+              </dd>
+              {job.input_globs?.length ? (
+                <>
+                  <dt>Input globs</dt>
+                  <dd className="mono">{job.input_globs.join(', ')}</dd>
+                </>
+              ) : null}
+              {Object.keys(job.env || {}).length > 0 ? (
+                <>
+                  <dt>Env</dt>
+                  <dd className="mono">
+                    {Object.keys(job.env)
+                      .sort()
+                      .join(', ')}
+                  </dd>
+                </>
+              ) : null}
+            </dl>
+          </details>
+        </section>
+      )}
+
+      {tab === 'files' && (
+        <section
+          className="job-page-panel"
+          role="tabpanel"
+          id="job-panel-files"
+          aria-labelledby="job-tab-files"
+        >
+          <h2 className="job-page-section-label">
+            Inputs ({job.inputs.length})
+          </h2>
+          <PathTable rows={job.inputs} />
+          <h2 className="job-page-section-label">
+            Outputs ({job.outputs.length})
+          </h2>
+          <PathTable rows={job.outputs} />
+        </section>
+      )}
+
+      {tab === 'logs' && (
+        <section
+          className="job-page-panel"
+          role="tabpanel"
+          id="job-panel-logs"
+          aria-labelledby="job-tab-logs"
+        >
+          <pre className="jobs-logs">{logs || '(empty)'}</pre>
+        </section>
+      )}
     </div>
   )
 }

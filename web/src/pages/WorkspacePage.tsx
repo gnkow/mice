@@ -19,6 +19,14 @@ import {
 import { OxenApiError, type MetadataEntry } from '../lib/oxen/types'
 import { formatRelativeTime } from '../lib/time'
 
+type WorkspaceTab = 'changes' | 'stage' | 'commit'
+
+const TABS: { id: WorkspaceTab; label: string }[] = [
+  { id: 'changes', label: 'Changes' },
+  { id: 'stage', label: 'Stage' },
+  { id: 'commit', label: 'Commit' },
+]
+
 function EntryList({
   title,
   entries,
@@ -79,6 +87,7 @@ export function WorkspacePage() {
 
   const [changesPath, setChangesPath] = useState('')
   const [changesPathApplied, setChangesPathApplied] = useState('')
+  const [tab, setTab] = useState<WorkspaceTab>('changes')
 
   const changes = useAsync(
     (signal) =>
@@ -175,6 +184,7 @@ export function WorkspacePage() {
       )
       setInfo(`Staged ${res.paths?.join(', ') ?? file.name}`)
       form.reset()
+      setTab('changes')
     })
   }
 
@@ -186,6 +196,7 @@ export function WorkspacePage() {
       await stageWorkspaceRemovals(namespace, repo, workspaceId, [path])
       setRemovePath('')
       setInfo(`Staged removal of ${path}`)
+      setTab('changes')
     })
   }
 
@@ -326,230 +337,267 @@ export function WorkspacePage() {
           <span className="merge-status-pill is-ok">
             {stagedCount} staged change{stagedCount === 1 ? '' : 's'}
           </span>
-          <a className="btn ghost" href="#workspace-commit">
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => setTab('commit')}
+          >
             Jump to commit
-          </a>
+          </button>
         </div>
       )}
 
-      <StateBlock
-        loading={detail.kind === 'loading' || changes.kind === 'loading'}
-        error={
-          detail.kind === 'error'
-            ? detail.message
-            : changes.kind === 'error'
-              ? changes.message
-              : null
-        }
-      >
-        {staged && (
-          <section className="panel">
-            <div className="merge-section-head">
-              <h2 className="section-label">Staged changes</h2>
-            </div>
-            <form
-              className="inline-form"
-              onSubmit={(e) => {
-                e.preventDefault()
-                setChangesPathApplied(changesPath.trim())
-              }}
-            >
-              <input
-                value={changesPath}
-                onChange={(e) => setChangesPath(e.target.value)}
-                placeholder="Filter by directory, e.g. notes"
-              />
-              <button type="submit" className="btn ghost" disabled={busy}>
-                Filter
-              </button>
-              {changesPathApplied && (
-                <button
-                  type="button"
-                  className="btn ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    setChangesPath('')
-                    setChangesPathApplied('')
-                  }}
-                >
-                  Clear
-                </button>
-              )}
-            </form>
-            {changesPathApplied && (
-              <p className="muted small">
-                Showing under <code>{changesPathApplied}</code>
-              </p>
-            )}
-            <EntryList
-              title="Added"
-              entries={staged.added_files.entries}
-              onUnstage={onUnstage}
-              onPreview={onPreview}
-              busy={busy}
-            />
-            <EntryList
-              title="Modified"
-              entries={staged.modified_files.entries}
-              onUnstage={onUnstage}
-              onPreview={onPreview}
-              busy={busy}
-            />
-            <EntryList
-              title="Removed"
-              entries={staged.removed_files.entries}
-              onUnstage={onUnstage}
-              onPreview={onPreview}
-              busy={busy}
-            />
-            {staged.added_files.entries.length === 0 &&
-              staged.modified_files.entries.length === 0 &&
-              staged.removed_files.entries.length === 0 && (
-                <p className="muted">Nothing staged.</p>
-              )}
-          </section>
-        )}
-      </StateBlock>
-
-      {previewPath && (
-        <section className="panel">
-          <div className="merge-section-head">
-            <h2 className="section-label">Preview · {previewPath}</h2>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() => {
-                setPreviewPath(null)
-                setPreviewText(null)
-              }}
-            >
-              Close
-            </button>
-          </div>
-          {previewText == null ? (
-            <p className="muted">Loading…</p>
-          ) : (
-            <pre className="code-preview">{previewText}</pre>
-          )}
-        </section>
-      )}
-
-      <div className="grid-2">
-        <section className="panel">
-          <h2 className="section-label">Upload file</h2>
-          <form className="form" onSubmit={onUpload}>
-            <label>
-              Directory
-              <input
-                value={directory}
-                onChange={(e) => setDirectory(e.target.value)}
-                placeholder="notes (empty = repo root)"
-              />
-            </label>
-            <label>
-              File
-              <input name="file" type="file" required />
-            </label>
-            <button className="btn primary" type="submit" disabled={busy}>
-              Stage upload
-            </button>
-          </form>
-        </section>
-
-        <section className="panel">
-          <h2 className="section-label">Stage removal</h2>
-          <form className="form" onSubmit={onRemove}>
-            <label>
-              Path
-              <input
-                value={removePath}
-                onChange={(e) => setRemovePath(e.target.value)}
-                placeholder="path/to/file"
-                required
-              />
-            </label>
-            <button className="btn ghost" type="submit" disabled={busy}>
-              Stage delete
-            </button>
-          </form>
-        </section>
+      <div className="tab-bar" role="tablist" aria-label="Workspace views">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`workspace-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`workspace-panel-${t.id}`}
+            className={tab === t.id ? 'active' : ''}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+            {t.id === 'changes' && stagedCount > 0 ? ` (${stagedCount})` : ''}
+          </button>
+        ))}
       </div>
-
-      <section id="workspace-commit" className="panel">
-        <h2 className="section-label">Commit & merge into branch</h2>
-        <StateBlock
-          loading={mergeable.kind === 'loading'}
-          error={mergeable.kind === 'error' ? mergeable.message : null}
-        >
-          {mergeable.kind === 'ok' && (
-            <div className="workspace-summary workspace-summary-inline">
-              <span
-                className={`merge-status-pill ${mergeOk ? 'is-ok' : 'is-bad'}`}
-              >
-                {mergeOk
-                  ? `Mergeable into ${mergeBranch}`
-                  : `Not mergeable into ${mergeBranch}`}
-              </span>
-              {conflictCount > 0 && (
-                <span className="error-text">
-                  {conflictCount} conflict{conflictCount === 1 ? '' : 's'}
-                </span>
-              )}
-            </div>
-          )}
-        </StateBlock>
-        <form className="form" onSubmit={onMerge}>
-          <label>
-            Branch
-            <select
-              value={mergeBranch}
-              onChange={(e) => setMergeBranch(e.target.value)}
-            >
-              {branchNames.length > 0 ? (
-                branchNames.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))
-              ) : (
-                <option value={mergeBranch}>{mergeBranch}</option>
-              )}
-            </select>
-          </label>
-          <label>
-            Commit message
-            <input
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              required
-            />
-          </label>
-          <div className="merge-actions">
-            <button
-              className="btn primary"
-              type="submit"
-              disabled={busy || (mergeable.kind === 'ok' && !mergeOk)}
-            >
-              Commit workspace
-            </button>
-          </div>
-        </form>
-      </section>
-
-      {stagedCount > 0 && (
-        <div className="sticky-commit">
-          <span>
-            <strong>{stagedCount}</strong> staged change
-            {stagedCount === 1 ? '' : 's'} ready to commit
-          </span>
-          <a className="btn primary" href="#workspace-commit">
-            Commit workspace
-          </a>
-        </div>
-      )}
 
       {info && <p className="ok">{info}</p>}
       {error && <p className="error">{error}</p>}
+
+      {tab === 'changes' && (
+        <div
+          className="workspace-page-panel"
+          role="tabpanel"
+          id="workspace-panel-changes"
+          aria-labelledby="workspace-tab-changes"
+        >
+          <StateBlock
+            loading={detail.kind === 'loading' || changes.kind === 'loading'}
+            error={
+              detail.kind === 'error'
+                ? detail.message
+                : changes.kind === 'error'
+                  ? changes.message
+                  : null
+            }
+          >
+            {staged && (
+              <section className="panel">
+                <div className="merge-section-head">
+                  <h2 className="section-label">Staged changes</h2>
+                </div>
+                <form
+                  className="inline-form"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    setChangesPathApplied(changesPath.trim())
+                  }}
+                >
+                  <input
+                    value={changesPath}
+                    onChange={(e) => setChangesPath(e.target.value)}
+                    placeholder="Filter by directory, e.g. notes"
+                  />
+                  <button type="submit" className="btn ghost" disabled={busy}>
+                    Filter
+                  </button>
+                  {changesPathApplied && (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        setChangesPath('')
+                        setChangesPathApplied('')
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </form>
+                {changesPathApplied && (
+                  <p className="muted small">
+                    Showing under <code>{changesPathApplied}</code>
+                  </p>
+                )}
+                <EntryList
+                  title="Added"
+                  entries={staged.added_files.entries}
+                  onUnstage={onUnstage}
+                  onPreview={onPreview}
+                  busy={busy}
+                />
+                <EntryList
+                  title="Modified"
+                  entries={staged.modified_files.entries}
+                  onUnstage={onUnstage}
+                  onPreview={onPreview}
+                  busy={busy}
+                />
+                <EntryList
+                  title="Removed"
+                  entries={staged.removed_files.entries}
+                  onUnstage={onUnstage}
+                  onPreview={onPreview}
+                  busy={busy}
+                />
+                {staged.added_files.entries.length === 0 &&
+                  staged.modified_files.entries.length === 0 &&
+                  staged.removed_files.entries.length === 0 && (
+                    <p className="muted">Nothing staged.</p>
+                  )}
+              </section>
+            )}
+          </StateBlock>
+
+          {previewPath && (
+            <section className="panel">
+              <div className="merge-section-head">
+                <h2 className="section-label">Preview · {previewPath}</h2>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    setPreviewPath(null)
+                    setPreviewText(null)
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+              {previewText == null ? (
+                <p className="muted">Loading…</p>
+              ) : (
+                <pre className="code-preview">{previewText}</pre>
+              )}
+            </section>
+          )}
+        </div>
+      )}
+
+      {tab === 'stage' && (
+        <div
+          className="workspace-page-panel"
+          role="tabpanel"
+          id="workspace-panel-stage"
+          aria-labelledby="workspace-tab-stage"
+        >
+          <div className="grid-2">
+            <section className="panel">
+              <h2 className="section-label">Upload file</h2>
+              <form className="form" onSubmit={onUpload}>
+                <label>
+                  Directory
+                  <input
+                    value={directory}
+                    onChange={(e) => setDirectory(e.target.value)}
+                    placeholder="notes (empty = repo root)"
+                  />
+                </label>
+                <label>
+                  File
+                  <input name="file" type="file" required />
+                </label>
+                <button className="btn primary" type="submit" disabled={busy}>
+                  Stage upload
+                </button>
+              </form>
+            </section>
+
+            <section className="panel">
+              <h2 className="section-label">Stage removal</h2>
+              <form className="form" onSubmit={onRemove}>
+                <label>
+                  Path
+                  <input
+                    value={removePath}
+                    onChange={(e) => setRemovePath(e.target.value)}
+                    placeholder="path/to/file"
+                    required
+                  />
+                </label>
+                <button className="btn ghost" type="submit" disabled={busy}>
+                  Stage delete
+                </button>
+              </form>
+            </section>
+          </div>
+        </div>
+      )}
+
+      {tab === 'commit' && (
+        <div
+          className="workspace-page-panel"
+          role="tabpanel"
+          id="workspace-panel-commit"
+          aria-labelledby="workspace-tab-commit"
+        >
+          <section id="workspace-commit" className="panel">
+            <h2 className="section-label">Commit & merge into branch</h2>
+            <StateBlock
+              loading={mergeable.kind === 'loading'}
+              error={mergeable.kind === 'error' ? mergeable.message : null}
+            >
+              {mergeable.kind === 'ok' && (
+                <div className="workspace-summary workspace-summary-inline">
+                  <span
+                    className={`merge-status-pill ${mergeOk ? 'is-ok' : 'is-bad'}`}
+                  >
+                    {mergeOk
+                      ? `Mergeable into ${mergeBranch}`
+                      : `Not mergeable into ${mergeBranch}`}
+                  </span>
+                  {conflictCount > 0 && (
+                    <span className="error-text">
+                      {conflictCount} conflict{conflictCount === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
+              )}
+            </StateBlock>
+            <form className="form" onSubmit={onMerge}>
+              <label>
+                Branch
+                <select
+                  value={mergeBranch}
+                  onChange={(e) => setMergeBranch(e.target.value)}
+                >
+                  {branchNames.length > 0 ? (
+                    branchNames.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={mergeBranch}>{mergeBranch}</option>
+                  )}
+                </select>
+              </label>
+              <label>
+                Commit message
+                <input
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  required
+                />
+              </label>
+              <div className="merge-actions">
+                <button
+                  className="btn primary"
+                  type="submit"
+                  disabled={busy || (mergeable.kind === 'ok' && !mergeOk)}
+                >
+                  Commit workspace
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

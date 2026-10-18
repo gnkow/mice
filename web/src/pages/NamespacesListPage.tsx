@@ -272,6 +272,7 @@ export function NamespacesListPage() {
               pageCount={slice.pageCount}
               onPageChange={goPage}
               label="Namespaces pages"
+              total={slice.total}
             />
           </>
         )}

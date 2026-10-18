@@ -27,10 +27,10 @@ export function JobsListPage() {
           <h1>Jobs</h1>
           <p className="muted">
             Jobs across repositories you can access — each run is tagged{' '}
-            <span className="pill runner-local">Local</span> or{' '}
-            <span className="pill runner-cluster">Cluster</span>. Submit with{' '}
-            <span className="mono">boxen job run …</span>; open a job for logs
-            and results.
+            <span className="pill runner-local">Local</span> (CLI, after{' '}
+            <span className="mono">boxen push</span>) or{' '}
+            <span className="pill runner-cluster">Cluster</span>. Open a job for
+            logs and results.
           </p>
         </div>
       </div>
@@ -42,8 +42,8 @@ export function JobsListPage() {
         empty={state.kind === 'ok' && jobs.length === 0}
         emptyMessage={
           <>
-            No jobs yet. Submit one with{' '}
-            <span className="mono">boxen job run …</span>.
+            No jobs yet. For local runs: <span className="mono">boxen job run</span>{' '}
+            then <span className="mono">boxen push</span>.
           </>
         }
       >
@@ -61,6 +61,7 @@ export function JobsListPage() {
               pageCount={slice.pageCount}
               onPageChange={goPage}
               label="Jobs pages"
+              total={slice.total}
             />
           </>
         )}

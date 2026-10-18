@@ -16,6 +16,7 @@ import {
   resolveRemote,
   resolveToken,
 } from './config.mjs'
+import { boxenHome } from './localStore.mjs'
 
 /**
  * @param {string[]} args
@@ -197,16 +198,24 @@ export function oxenAdd(root, paths, opts = {}) {
 }
 
 /**
- * Job/local commits use a dedicated config dir under `.boxen/` so we are not
- * broken by a stale ambient `OXEN_CONFIG_DIR`, missing home config, or the
- * unsupported `oxen config --list` flag.
+ * Commit author identity for local jobs lives under `~/.boxen/oxen-config`
+ * (not in the clone), so the worktree stays clean.
+ * `root` is kept for API compat / legacy migration from `<clone>/.boxen/`.
  */
-export function oxenIdentityDir(root) {
+export function oxenIdentityDir(_root) {
+  return join(boxenHome(), 'oxen-config')
+}
+
+function legacyOxenIdentityDir(root) {
   return join(root, '.boxen', 'oxen-config')
 }
 
 export function userConfigPath(root) {
   return join(oxenIdentityDir(root), 'user_config.toml')
+}
+
+function legacyUserConfigPath(root) {
+  return join(legacyOxenIdentityDir(root), 'user_config.toml')
 }
 
 /** Strip characters that break a simple TOML basic string. */
@@ -216,9 +225,7 @@ function sanitizeIdentField(value) {
     .trim()
 }
 
-/** @returns {{ name: string, email: string } | null} */
-export function readOxenIdentity(root) {
-  const path = userConfigPath(root)
+function parseIdentityFile(path) {
   if (!existsSync(path)) return null
   try {
     const text = readFileSync(path, 'utf8')
@@ -231,19 +238,50 @@ export function readOxenIdentity(root) {
   return null
 }
 
+/** @returns {{ name: string, email: string } | null} */
+export function readOxenIdentity(root) {
+  return (
+    parseIdentityFile(userConfigPath(root)) ||
+    parseIdentityFile(legacyUserConfigPath(root))
+  )
+}
+
 /**
  * Ensure commit author identity for `oxen commit` via OXEN_CONFIG_DIR.
  * Returns `{ oxenConfigDir }` that callers must pass to subsequent oxen calls.
  */
 export function ensureOxenIdentity(root, actor = {}) {
   const configDir = oxenIdentityDir(root)
-  const existing = readOxenIdentity(root)
-  if (existing) {
+  const modernPath = userConfigPath(root)
+  const existingModern = parseIdentityFile(modernPath)
+  if (existingModern) {
     return {
       ok: true,
       configured: false,
       oxenConfigDir: configDir,
-      ...existing,
+      ...existingModern,
+    }
+  }
+
+  // One-time migrate from legacy in-clone `.boxen/oxen-config`.
+  const legacy = parseIdentityFile(legacyUserConfigPath(root))
+  if (legacy) {
+    try {
+      mkdirSync(configDir, { recursive: true })
+      writeFileSync(
+        modernPath,
+        `name = "${sanitizeIdentField(legacy.name)}"\nemail = "${sanitizeIdentField(legacy.email)}"\n`,
+        'utf8',
+      )
+      return {
+        ok: true,
+        configured: true,
+        oxenConfigDir: configDir,
+        name: legacy.name,
+        email: legacy.email,
+      }
+    } catch {
+      // Fall through to write from actor / defaults.
     }
   }
 
@@ -254,7 +292,7 @@ export function ensureOxenIdentity(root, actor = {}) {
 
   try {
     mkdirSync(configDir, { recursive: true })
-    writeFileSync(userConfigPath(root), body, 'utf8')
+    writeFileSync(modernPath, body, 'utf8')
   } catch (err) {
     return {
       ok: false,
@@ -265,7 +303,7 @@ export function ensureOxenIdentity(root, actor = {}) {
     }
   }
 
-  const verified = readOxenIdentity(root)
+  const verified = parseIdentityFile(modernPath)
   if (!verified) {
     return {
       ok: false,

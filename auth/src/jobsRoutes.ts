@@ -8,8 +8,10 @@ import {
   markJobsSynced,
   parseSubmitBody,
   publicJob,
+  publishSyncedCliJobs,
   readJobLogs,
   submitJob,
+  type CliJobPublishBody,
   type JobCompleteBody,
 } from './jobs.js'
 import { getJob } from './jobsStore.js'
@@ -242,8 +244,13 @@ export function registerJobRoutes(app: Hono) {
     return c.json({ job: publicJob(result.job) })
   })
 
-  app.post('/auth/jobs/sync', async (c) => {
-    const authed = await requireAuth(c)
+  async function handlePublishOrSync(c: {
+    req: {
+      json: () => Promise<unknown>
+    }
+    json: (data: unknown, status?: number) => Response
+  }) {
+    const authed = await requireAuth(c as never)
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     let body: unknown
     try {
@@ -255,13 +262,114 @@ export function registerJobRoutes(app: Hono) {
       string,
       unknown
     >
-    const syncBranch =
-      typeof b.sync_branch === 'string' ? b.sync_branch.trim() : ''
+    const pushBranch =
+      (typeof b.push_branch === 'string' && b.push_branch.trim()) ||
+      (typeof b.sync_branch === 'string' && b.sync_branch.trim()) ||
+      ''
+    if (!pushBranch) {
+      return c.json({ error: 'push_branch is required' }, 400)
+    }
+
+    // Preferred: publish local CLI job snapshots after push.
+    if (Array.isArray(b.jobs) && b.jobs.length) {
+      const payloads: CliJobPublishBody[] = []
+      for (const raw of b.jobs) {
+        if (!raw || typeof raw !== 'object') {
+          return c.json({ error: 'invalid job payload' }, 400)
+        }
+        const j = raw as Record<string, unknown>
+        const status = j.status
+        if (
+          status !== 'succeeded' &&
+          status !== 'failed' &&
+          status !== 'cancelled'
+        ) {
+          return c.json({ error: 'job status must be terminal' }, 400)
+        }
+        const namespace = typeof j.namespace === 'string' ? j.namespace : ''
+        const repo = typeof j.repo === 'string' ? j.repo : ''
+        const gate = authorizeJobSubmit(authed.user, namespace, repo)
+        if (!gate.allow) {
+          return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+        }
+        const existing = getJob(String(j.id || ''))
+        if (existing) {
+          const gateExisting = authorizeJobSubmit(
+            authed.user,
+            existing.namespace,
+            existing.repo,
+          )
+          if (!gateExisting.allow) {
+            return c.json({ error: gateExisting.reason ?? 'Forbidden' }, 403)
+          }
+        }
+        payloads.push({
+          id: String(j.id || ''),
+          namespace,
+          repo,
+          name: typeof j.name === 'string' ? j.name : undefined,
+          source_ref: String(j.source_ref || ''),
+          pin_commit: String(j.pin_commit || ''),
+          image: String(j.image || ''),
+          command: Array.isArray(j.command) ? j.command.map(String) : [],
+          args: Array.isArray(j.args) ? j.args.map(String) : [],
+          status,
+          exit_code: typeof j.exit_code === 'number' ? j.exit_code : null,
+          error: typeof j.error === 'string' ? j.error : null,
+          result_commit:
+            typeof j.result_commit === 'string' ? j.result_commit : null,
+          result_branch:
+            typeof j.result_branch === 'string' ? j.result_branch : null,
+          image_digest:
+            typeof j.image_digest === 'string' ? j.image_digest : null,
+          created_at: typeof j.created_at === 'string' ? j.created_at : undefined,
+          started_at:
+            typeof j.started_at === 'string' ? j.started_at : undefined,
+          finished_at:
+            typeof j.finished_at === 'string' ? j.finished_at : undefined,
+          log_text: typeof j.log_text === 'string' ? j.log_text : undefined,
+          inputs: Array.isArray(j.inputs)
+            ? j.inputs.filter(
+                (x): x is { path: string; hash: string } =>
+                  !!x &&
+                  typeof x === 'object' &&
+                  typeof (x as { path?: unknown }).path === 'string' &&
+                  typeof (x as { hash?: unknown }).hash === 'string',
+              )
+            : undefined,
+          outputs: Array.isArray(j.outputs)
+            ? j.outputs.filter(
+                (x): x is { path: string; hash: string } =>
+                  !!x &&
+                  typeof x === 'object' &&
+                  typeof (x as { path?: unknown }).path === 'string' &&
+                  typeof (x as { hash?: unknown }).hash === 'string',
+              )
+            : undefined,
+        })
+      }
+      const result = publishSyncedCliJobs(
+        authed.user,
+        authed.via,
+        payloads,
+        pushBranch,
+      )
+      if ('error' in result) {
+        return c.json(
+          { error: result.error },
+          result.status as 400 | 404 | 409,
+        )
+      }
+      return c.json(result)
+    }
+
+    // Legacy: job ids already registered on the BFF.
     const jobIds = Array.isArray(b.job_ids)
       ? b.job_ids.filter((x): x is string => typeof x === 'string' && !!x.trim())
       : []
-    if (!syncBranch) return c.json({ error: 'sync_branch is required' }, 400)
-    if (!jobIds.length) return c.json({ error: 'job_ids required' }, 400)
+    if (!jobIds.length) {
+      return c.json({ error: 'jobs or job_ids required' }, 400)
+    }
 
     for (const id of jobIds) {
       const existing = getJob(id)
@@ -280,11 +388,15 @@ export function registerJobRoutes(app: Hono) {
       authed.user,
       authed.via,
       jobIds,
-      syncBranch,
+      pushBranch,
     )
     if ('error' in result) {
       return c.json({ error: result.error }, result.status as 400 | 404)
     }
     return c.json(result)
-  })
+  }
+
+  app.post('/auth/jobs/publish', (c) => handlePublishOrSync(c))
+  /** @deprecated prefer POST /auth/jobs/publish after boxen push */
+  app.post('/auth/jobs/sync', (c) => handlePublishOrSync(c))
 }

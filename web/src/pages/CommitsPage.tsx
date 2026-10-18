@@ -17,6 +17,7 @@ import {
   listBranches,
   listCommitHistory,
 } from '../lib/oxen/api'
+import { looksLikeCommitId } from '../lib/oxen/paths'
 import { formatRelativeTime } from '../lib/time'
 
 export function CommitsPage() {
@@ -40,7 +41,10 @@ export function CommitsPage() {
     branches.kind === 'ok'
       ? branches.data.branches.map((b) => b.name)
       : []
-  const revisionIsBranch = branchNames.includes(revision)
+  const revisionIsBranch =
+    branches.kind === 'ok'
+      ? branchNames.includes(revision)
+      : !looksLikeCommitId(revision)
 
   const history = useAsync(
     (signal) =>
@@ -147,25 +151,30 @@ export function CommitsPage() {
         </div>
 
         <div className="history-toolbar">
-          <div className="seg" role="tablist" aria-label="History mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'history'}
-              className={mode === 'history' ? 'active' : ''}
-              onClick={() => setMode('history')}
-            >
-              Revision history
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'all'}
-              className={mode === 'all' ? 'active' : ''}
-              onClick={() => setMode('all')}
-            >
-              All commits
-            </button>
+          <div className="history-mode">
+            <span className="history-mode-spacer" aria-hidden>
+              Mode
+            </span>
+            <div className="seg" role="tablist" aria-label="History mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'history'}
+                className={mode === 'history' ? 'active' : ''}
+                onClick={() => setMode('history')}
+              >
+                Revision history
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'all'}
+                className={mode === 'all' ? 'active' : ''}
+                onClick={() => setMode('all')}
+              >
+                All commits
+              </button>
+            </div>
           </div>
 
           {mode === 'history' && (
@@ -176,7 +185,7 @@ export function CommitsPage() {
                   value={revision}
                   onChange={(e) => setHistoryParams(e.target.value, pathFilter)}
                 >
-                  {!revisionIsBranch && (
+                  {branches.kind === 'ok' && !revisionIsBranch && (
                     <option value={revision}>
                       {revisionLabel} (commit)
                     </option>
@@ -188,7 +197,9 @@ export function CommitsPage() {
                       </option>
                     ))
                   ) : (
-                    <option value={revision}>{revision}</option>
+                    <option value={revision}>
+                      {revisionIsBranch ? revision : `${revisionLabel} (commit)`}
+                    </option>
                   )}
                 </select>
               </label>

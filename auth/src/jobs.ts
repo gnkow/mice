@@ -27,6 +27,7 @@ import {
 } from './jobsRunner.js'
 import {
   appendJob,
+  assertSafeJobId,
   ensureJobDirs,
   getJob,
   jobsLogPath,
@@ -428,6 +429,218 @@ export function markJobsSynced(
     status: 200,
     action: 'job.sync',
     detail: { job_ids: jobIds, sync_branch: branch },
+  })
+  return { jobs }
+}
+
+/** Local CLI job snapshot published to the BFF on first sync. */
+export type CliJobPublishBody = {
+  id: string
+  namespace: string
+  repo: string
+  name?: string
+  source_ref: string
+  pin_commit: string
+  image: string
+  command: string[]
+  args?: string[]
+  status: 'succeeded' | 'failed' | 'cancelled'
+  exit_code?: number | null
+  error?: string | null
+  result_commit?: string | null
+  result_branch?: string | null
+  inputs?: { path: string; hash: string }[]
+  outputs?: { path: string; hash: string }[]
+  image_digest?: string | null
+  created_at?: string
+  started_at?: string | null
+  finished_at?: string | null
+  timeout_seconds?: number
+  resources?: { cpu?: string; memory?: string; disk?: string }
+  log_text?: string
+}
+
+/**
+ * Upsert completed local CLI jobs after their result commits were pushed via BFF.
+ * Local runs stay off the remote until this publish-on-push path.
+ */
+export function publishSyncedCliJobs(
+  user: SessionUser,
+  via: AuditVia,
+  payloads: CliJobPublishBody[],
+  pushBranch: string,
+): { jobs: JobRun[] } | { error: string; status: number } {
+  const branch = pushBranch.trim()
+  if (!branch) return { error: 'push_branch is required', status: 400 }
+  if (!payloads.length) return { error: 'jobs required', status: 400 }
+
+  const now = new Date().toISOString()
+  const jobs: JobRun[] = []
+  const maxLog = env.jobsDefaultMaxLogBytes
+
+  for (const p of payloads) {
+    let id: string
+    try {
+      id = assertSafeJobId(p.id)
+    } catch {
+      return { error: `invalid job id: ${String(p.id || '').slice(0, 32)}`, status: 400 }
+    }
+    const namespace = p.namespace?.trim() || ''
+    const repo = p.repo?.trim() || ''
+    if (!namespace || !repo) {
+      return { error: `namespace/repo required for job ${id}`, status: 400 }
+    }
+    if (!p.source_ref?.trim() || !p.pin_commit?.trim()) {
+      return { error: `source_ref/pin_commit required for job ${id}`, status: 400 }
+    }
+    if (!p.image?.trim() || !Array.isArray(p.command) || !p.command.length) {
+      return { error: `image/command required for job ${id}`, status: 400 }
+    }
+    if (
+      p.status !== 'succeeded' &&
+      p.status !== 'failed' &&
+      p.status !== 'cancelled'
+    ) {
+      return { error: `invalid status for job ${id}`, status: 400 }
+    }
+
+    const existing = getJob(id)
+    if (existing) {
+      if (existing.runner !== 'cli') {
+        return {
+          error: `job ${id} exists and is not a CLI job`,
+          status: 409,
+        }
+      }
+      if (existing.namespace !== namespace || existing.repo !== repo) {
+        return {
+          error: `job ${id} already belongs to ${existing.namespace}/${existing.repo}`,
+          status: 409,
+        }
+      }
+    }
+
+    let logPath: string
+    try {
+      logPath = existing?.log_ref && existing.log_ref.includes(id)
+        ? existing.log_ref
+        : jobsLogPath(id)
+    } catch {
+      return { error: `invalid job id: ${id}`, status: 400 }
+    }
+
+    if (p.log_text != null) {
+      try {
+        const text =
+          p.log_text.length > maxLog
+            ? p.log_text.slice(0, maxLog) + '\n…[truncated]\n'
+            : p.log_text
+        mkdirSync(dirname(logPath), { recursive: true })
+        writeFileSync(logPath, text, 'utf8')
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    const base: JobRun = existing
+      ? normalizeJob(existing)
+      : {
+          id,
+          name: '',
+          status: 'succeeded',
+          namespace,
+          repo,
+          source_ref: p.source_ref.trim(),
+          pin_commit: p.pin_commit.trim().toLowerCase(),
+          target_branch: '',
+          sync_branch: '',
+          result_commit: null,
+          result_branch: null,
+          image: p.image.trim(),
+          image_digest: null,
+          command: p.command.map(String),
+          args: [],
+          env: {},
+          workdir: '/data',
+          input_globs: [],
+          timeout_seconds: env.jobsDefaultTimeoutSec,
+          resources: {
+            cpu: env.jobsDefaultCpu,
+            memory: env.jobsDefaultMemory,
+            disk: env.jobsDefaultDisk,
+          },
+          max_log_bytes: env.jobsDefaultMaxLogBytes,
+          network: 'none',
+          actor: actorFromUser(user),
+          via,
+          inputs: [],
+          outputs: [],
+          created_at: now,
+          started_at: null,
+          finished_at: null,
+          exit_code: null,
+          error: null,
+          log_ref: logPath,
+          source: 'commit_clone',
+          workspace_id: null,
+          runtime_id: null,
+          runner: 'cli',
+        }
+
+    const updated: JobRun = {
+      ...base,
+      id,
+      name: (p.name ?? base.name)?.trim() || '',
+      namespace,
+      repo,
+      source_ref: p.source_ref.trim(),
+      pin_commit: p.pin_commit.trim().toLowerCase(),
+      image: p.image.trim(),
+      command: p.command.map(String),
+      args: Array.isArray(p.args) ? p.args.map(String) : base.args,
+      status: p.status,
+      exit_code: p.exit_code ?? base.exit_code,
+      error: p.error ?? null,
+      result_commit: p.result_commit ?? null,
+      result_branch: p.result_branch ?? null,
+      inputs: Array.isArray(p.inputs) ? p.inputs : base.inputs,
+      outputs: Array.isArray(p.outputs) ? p.outputs : base.outputs,
+      image_digest: p.image_digest ?? base.image_digest,
+      created_at: p.created_at || base.created_at || now,
+      started_at: p.started_at ?? base.started_at ?? p.created_at ?? now,
+      finished_at: p.finished_at ?? base.finished_at ?? now,
+      timeout_seconds: p.timeout_seconds ?? base.timeout_seconds,
+      resources: {
+        cpu: p.resources?.cpu ?? base.resources.cpu,
+        memory: p.resources?.memory ?? base.resources.memory,
+        disk: p.resources?.disk ?? base.resources.disk,
+      },
+      actor: base.actor?.sub ? base.actor : actorFromUser(user),
+      via,
+      log_ref: logPath,
+      runner: 'cli',
+      sync_branch: branch,
+    }
+
+    upsertJob(updated)
+    if (updated.status === 'succeeded' && !existing) {
+      appendJobLineage(updated)
+    }
+    jobs.push(publicJob(updated))
+  }
+
+  appendAudit({
+    actor: actorFromUser(user),
+    via,
+    method: 'POST',
+    path: '/auth/jobs/publish',
+    status: 200,
+    action: 'job.publish',
+    detail: {
+      job_ids: jobs.map((j) => j.id),
+      push_branch: branch,
+      published: payloads.length,
+    },
   })
   return { jobs }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { LineageGraph } from '../components/LineageGraph'
 import { StateBlock } from '../components/StateBlock'
@@ -60,12 +60,25 @@ const TABS: { id: BlobTab; label: string }[] = [
   { id: 'lineage', label: 'Lineage' },
 ]
 
+function isBlobTab(value: string | null): value is BlobTab {
+  return (
+    value === 'preview' ||
+    value === 'metadata' ||
+    value === 'history' ||
+    value === 'lineage'
+  )
+}
+
 export function BlobPage() {
   const { namespace = '', repo = '', branch = 'main', '*': splat } = useParams()
   const path = splat ?? ''
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const moreRef = useRef<HTMLDetailsElement>(null)
-  const [tab, setTab] = useState<BlobTab>('preview')
+  const tabParam = searchParams.get('tab')
+  const [tab, setTabState] = useState<BlobTab>(() =>
+    isBlobTab(tabParam) ? tabParam : 'preview',
+  )
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionInfo, setActionInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -74,11 +87,30 @@ export function BlobPage() {
   const [draft, setDraft] = useState('')
   const [commitMessage, setCommitMessage] = useState('')
 
+  function setTab(next: BlobTab) {
+    setTabState(next)
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev)
+        if (next === 'preview') params.delete('tab')
+        else params.set('tab', next)
+        return params
+      },
+      { replace: true },
+    )
+  }
+
   useEffect(() => {
     setEditing(false)
     setDraft('')
     setCommitMessage('')
   }, [namespace, repo, branch, path])
+
+  // Deep-link / graph navigation: keep tab in sync with ?tab=
+  useEffect(() => {
+    if (isBlobTab(tabParam)) setTabState(tabParam)
+    else setTabState('preview')
+  }, [tabParam, path])
 
   const branches = useAsync(
     (signal) => listBranches(namespace, repo, signal),

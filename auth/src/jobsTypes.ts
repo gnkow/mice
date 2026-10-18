@@ -36,8 +36,8 @@ export type JobRun = {
    */
   target_branch: string
   /**
-   * Branch the job result was synced to (set after successful `boxen job sync`
-   * / `run --sync`). Empty = not synced to remote.
+   * Branch that was pushed when this CLI job was published to the BFF.
+   * Empty = not yet published (local-only).
    */
   sync_branch: string
   result_commit: string | null
@@ -87,7 +87,7 @@ export type JobSubmitBody = {
    * Resolved server-side to source_ref + pin_commit.
    */
   source?: string
-  /** @deprecated Legacy server-side merge destination. Prefer CLI `--sync`. */
+  /** @deprecated Legacy server-side merge destination. Prefer `boxen push`. */
   target?: string
   /** @deprecated legacy source branch with pin_commit (not a merge target) */
   branch?: string

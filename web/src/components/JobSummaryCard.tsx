@@ -1,10 +1,13 @@
 import { Link } from 'react-router-dom'
 import {
+  jobCommandLabel,
+  jobImageLabel,
   jobOutcomeRefLabel,
   jobRunnerClass,
   jobRunnerDetail,
   jobRunnerLabel,
   jobSourceLabel,
+  shortenJobRef,
   type JobRun,
 } from '../lib/jobs'
 import { formatRelativeTime } from '../lib/time'
@@ -26,54 +29,83 @@ type Props = {
 export function JobSummaryCard({ job, showRepo }: Props) {
   const href = `/n/${encodeURIComponent(job.namespace)}/r/${encodeURIComponent(job.repo)}/jobs/${encodeURIComponent(job.id)}`
   const title = (job.name || '').trim() || job.id
+  const hasName = Boolean(job.name?.trim())
+  const sourceFull = jobSourceLabel(job)
+  const resultFull = jobOutcomeRefLabel(job)
+  const image = jobImageLabel(job)
+  const command = jobCommandLabel(job)
+  const actor =
+    job.actor?.name?.trim() ||
+    job.actor?.email?.trim() ||
+    ''
+
+  const metaParts = [image, command].filter(Boolean)
 
   return (
     <Link className="repo-summary-card jobs-list-card" to={href}>
-      <span className="repo-summary-main">
-        <span className="card-title jobs-card-title">
-          <span className="jobs-card-name" title={title}>
-            {title}
-          </span>
-          {job.name?.trim() ? (
-            <span className="mono muted small" title={job.id}>
-              {job.id.slice(0, 10)}
+      <span className="jobs-card-body">
+        <span className="jobs-card-top">
+          <span className="jobs-card-heading">
+            <span className="jobs-card-name" title={title}>
+              {title}
             </span>
-          ) : null}
-          <span
-            className={jobRunnerClass(job)}
-            title={jobRunnerDetail(job)}
-          >
-            {jobRunnerLabel(job)}
+            {hasName ? (
+              <span className="jobs-card-id mono muted" title={job.id}>
+                {job.id.slice(0, 10)}
+              </span>
+            ) : null}
           </span>
-          <span className={statusClass(job.status)}>{job.status}</span>
+          <span className="jobs-card-tags">
+            <span
+              className={jobRunnerClass(job)}
+              title={jobRunnerDetail(job)}
+            >
+              {jobRunnerLabel(job)}
+            </span>
+            <span className={statusClass(job.status)}>{job.status}</span>
+          </span>
         </span>
-        <span className="card-meta jobs-card-refs">
-          <span>
-            <span className="jobs-ref-label">source</span>{' '}
-            <span className="mono" title={jobSourceLabel(job)}>
-              {jobSourceLabel(job)}
+
+        {metaParts.length > 0 ? (
+          <span className="jobs-card-meta mono muted" title={metaParts.join(' · ')}>
+            {metaParts.join(' · ')}
+          </span>
+        ) : null}
+
+        <span className="jobs-card-refs">
+          <span className="jobs-ref">
+            <span className="jobs-ref-label">Source</span>
+            <span className="mono" title={sourceFull}>
+              {shortenJobRef(sourceFull)}
             </span>
           </span>
           <span className="jobs-ref-arrow" aria-hidden>
             →
           </span>
-          <span>
-            <span className="jobs-ref-label">result</span>{' '}
-            <span className="mono" title={jobOutcomeRefLabel(job)}>
-              {jobOutcomeRefLabel(job)}
+          <span className="jobs-ref">
+            <span className="jobs-ref-label">Result</span>
+            <span className="mono" title={resultFull}>
+              {shortenJobRef(resultFull)}
             </span>
           </span>
         </span>
-        <span className="card-meta muted jobs-card-footer">
+
+        <span className="jobs-card-footer muted">
           {showRepo ? (
-            <>
-              <span>
-                {job.namespace}/{job.repo}
-              </span>
-              <span aria-hidden> · </span>
-            </>
+            <span className="jobs-card-repo">
+              {job.namespace}/{job.repo}
+            </span>
           ) : null}
           <span>{formatRelativeTime(job.created_at)}</span>
+          {actor ? <span className="jobs-card-actor">{actor}</span> : null}
+          {job.exit_code != null && job.status !== 'running' ? (
+            <span
+              className="jobs-card-exit mono"
+              title={`Exit code ${job.exit_code}`}
+            >
+              exit {job.exit_code}
+            </span>
+          ) : null}
         </span>
       </span>
     </Link>

@@ -22,6 +22,7 @@ test.describe('workspaces & merge (W/M)', () => {
     await expect(page).toHaveURL(/\/workspaces\/[^/]+$/, { timeout: 30_000 })
     await expect(page.getByRole('heading', { name: 'e2e-ws' })).toBeVisible()
 
+    await page.getByRole('tab', { name: 'Stage' }).click()
     const uploadSection = page.locator('section', { hasText: 'Upload file' })
     await uploadSection.locator('input[name="file"]').setInputFiles(wsNote)
     await uploadSection.getByRole('button', { name: 'Stage upload' }).click()
@@ -31,6 +32,7 @@ test.describe('workspaces & merge (W/M)', () => {
     })
     await expect(page.locator('code', { hasText: 'ws-note.txt' })).toBeVisible()
 
+    await page.getByRole('tab', { name: 'Commit' }).click()
     const commitSection = page.locator('section', {
       hasText: 'Commit & merge into branch',
     })

@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { after, describe, it } from 'node:test'
+import { after, before, beforeEach, describe, it } from 'node:test'
 import {
   ensureOxenIdentity,
   looksLikeDirectOxenServer,
@@ -23,8 +23,23 @@ import {
 /** Keep LMDB under the workspace — OS temp dirs often deny oxen mmap. */
 mkdirSync(join(process.cwd(), '.tmp'), { recursive: true })
 const tmpRoot = mkdtempSync(join(process.cwd(), '.tmp', 'oxen-ident-'))
+const prevBoxenHome = process.env.BOXEN_HOME
+
+before(() => {
+  process.env.BOXEN_HOME = join(tmpRoot, 'boxen-home')
+})
+
+beforeEach(() => {
+  // Shared ~/.boxen/oxen-config — reset between cases.
+  rmSync(join(process.env.BOXEN_HOME, 'oxen-config'), {
+    recursive: true,
+    force: true,
+  })
+})
 
 after(() => {
+  if (prevBoxenHome === undefined) delete process.env.BOXEN_HOME
+  else process.env.BOXEN_HOME = prevBoxenHome
   try {
     rmSync(tmpRoot, { recursive: true, force: true })
   } catch {
@@ -48,7 +63,7 @@ describe('readOxenIdentity / ensureOxenIdentity', () => {
     assert.equal(readOxenIdentity(root), null)
   })
 
-  it('writes identity under .boxen/oxen-config from actor', () => {
+  it('writes identity under ~/.boxen/oxen-config from actor (not in clone)', () => {
     const root = join(tmpRoot, 'write-actor')
     mkdirSync(root, { recursive: true })
     const r = ensureOxenIdentity(root, {
@@ -60,11 +75,13 @@ describe('readOxenIdentity / ensureOxenIdentity', () => {
     assert.equal(r.name, 'Job Actor')
     assert.equal(r.email, 'actor@boxen.local')
     assert.equal(r.oxenConfigDir, oxenIdentityDir(root))
+    assert.ok(r.oxenConfigDir.startsWith(process.env.BOXEN_HOME))
+    assert.ok(!r.oxenConfigDir.startsWith(root))
     assert.equal(
       readFileSync(userConfigPath(root), 'utf8'),
       'name = "Job Actor"\nemail = "actor@boxen.local"\n',
     )
-    assert.equal(existsSync(join(root, 'user_config.toml')), false)
+    assert.equal(existsSync(join(root, '.boxen')), false)
   })
 
   it('defaults to boxen@localhost when actor empty', () => {
@@ -78,6 +95,7 @@ describe('readOxenIdentity / ensureOxenIdentity', () => {
 
   it('is a no-op when identity already present', () => {
     const root = join(tmpRoot, 'noop')
+    mkdirSync(root, { recursive: true })
     mkdirSync(oxenIdentityDir(root), { recursive: true })
     writeFileSync(
       userConfigPath(root),
@@ -92,6 +110,23 @@ describe('readOxenIdentity / ensureOxenIdentity', () => {
     assert.equal(r.configured, false)
     assert.equal(r.name, 'Existing')
     assert.equal(r.email, 'ex@ample.com')
+  })
+
+  it('migrates legacy <clone>/.boxen/oxen-config into ~/.boxen', () => {
+    const root = join(tmpRoot, 'legacy-migrate')
+    const legacyDir = join(root, '.boxen', 'oxen-config')
+    mkdirSync(legacyDir, { recursive: true })
+    writeFileSync(
+      join(legacyDir, 'user_config.toml'),
+      'name = "Legacy"\nemail = "legacy@boxen.local"\n',
+      'utf8',
+    )
+    const r = ensureOxenIdentity(root, {})
+    assert.equal(r.ok, true)
+    assert.equal(r.name, 'Legacy')
+    assert.equal(r.email, 'legacy@boxen.local')
+    assert.ok(existsSync(userConfigPath(root)))
+    assert.ok(userConfigPath(root).startsWith(process.env.BOXEN_HOME))
   })
 
   it('sanitizes quotes and newlines in actor fields', () => {

@@ -63,6 +63,7 @@ export function WorkspacesListPage() {
               pageCount={slice.pageCount}
               onPageChange={goPage}
               label="Workspaces pages"
+              total={slice.total}
             />
           </>
         )}

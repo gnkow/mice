@@ -157,8 +157,9 @@ oxen clone http://localhost:8080/<namespace>/<repo>
 
 # Jobs (inside a clone; login or BOXEN_PAT)
 boxen job run --image alpine:3.20 -- touch out.txt
-# local commit on source branch; add --sync to push when possible
-# later: boxen job sync`}
+# local commit + ~/.boxen job cache; then:
+boxen push
+# (publishes job metadata for commits on the tip)`}
           </pre>
 
           <form className="ns-member-form" onSubmit={onCreateToken}>
