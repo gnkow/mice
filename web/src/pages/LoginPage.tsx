@@ -45,7 +45,14 @@ export function LoginPage() {
           and proxies oxen-server on your behalf.
         </p>
         <div className="btn-row">
-          <a className="btn" href="/auth/login?prompt=login">
+          <a
+            className="btn"
+            href={`/auth/login?prompt=login${
+              next && next !== '/'
+                ? `&next=${encodeURIComponent(next)}`
+                : ''
+            }`}
+          >
             Sign in with SSO
           </a>
         </div>

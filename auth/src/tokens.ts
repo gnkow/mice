@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 import { env } from './env.js'
 import type { PatScope, SessionUser } from './session.js'
 
+export type PatSource = 'cli-login' | 'manual'
+
 export type PatPublic = {
   id: string
   label: string
@@ -11,6 +13,7 @@ export type PatPublic = {
   createdAt: string
   lastUsedAt?: string
   scopes?: PatScope[]
+  source?: PatSource
 }
 
 type PatRecord = PatPublic & {
@@ -22,6 +25,7 @@ type PatRecord = PatPublic & {
   scopes?: PatScope[]
   /** IdP groups snapshotted at mint time for live group AuthZ. */
   groups?: string[]
+  source?: PatSource
 }
 
 type StoreFile = { version: 1; tokens: PatRecord[] }
@@ -64,7 +68,13 @@ function toPublic(rec: PatRecord): PatPublic {
     createdAt: rec.createdAt,
     lastUsedAt: rec.lastUsedAt,
     ...(rec.scopes?.length ? { scopes: rec.scopes } : {}),
+    ...(rec.source ? { source: rec.source } : {}),
   }
+}
+
+export type CreatePatOptions = {
+  scopes?: PatScope[]
+  source?: PatSource
 }
 
 export function listPatsForUser(user: SessionUser): PatPublic[] {
@@ -78,8 +88,13 @@ export function listPatsForUser(user: SessionUser): PatPublic[] {
 export function createPat(
   user: SessionUser,
   label: string,
-  scopes?: PatScope[],
+  scopesOrOpts?: PatScope[] | CreatePatOptions,
 ): { token: string; pat: PatPublic } {
+  const opts: CreatePatOptions = Array.isArray(scopesOrOpts)
+    ? { scopes: scopesOrOpts }
+    : (scopesOrOpts ?? {})
+  const scopes = opts.scopes
+  const source = opts.source ?? 'manual'
   const id = randomBytes(8).toString('hex')
   const secret = randomBytes(24).toString('base64url')
   const token = `${TOKEN_PREFIX}${secret}`
@@ -93,6 +108,7 @@ export function createPat(
     email: user.email,
     name: user.name,
     createdAt: new Date().toISOString(),
+    source,
     ...(scopes?.length ? { scopes } : {}),
     ...(user.groups?.length ? { groups: [...user.groups] } : {}),
   }
@@ -108,6 +124,19 @@ export function revokePat(user: SessionUser, id: string): boolean {
   store.tokens = store.tokens.filter(
     (t) => !(t.id === id && t.sub === user.sub && t.iss === user.iss),
   )
+  if (store.tokens.length === before) return false
+  writeStore(store)
+  return true
+}
+
+/** Revoke a PAT by raw bearer value (CLI logout). */
+export function revokePatByToken(rawBearer: string): boolean {
+  const token = rawBearer.trim()
+  if (!token.startsWith(TOKEN_PREFIX)) return false
+  const tokenHash = hashToken(token)
+  const store = readStore()
+  const before = store.tokens.length
+  store.tokens = store.tokens.filter((t) => t.tokenHash !== tokenHash)
   if (store.tokens.length === before) return false
   writeStore(store)
   return true
@@ -131,6 +160,16 @@ export function resolvePat(rawBearer: string): SessionUser | null {
     ...(rec.scopes?.length ? { patScopes: rec.scopes } : {}),
     ...(rec.groups?.length ? { groups: [...rec.groups] } : {}),
   }
+}
+
+/** Look up public PAT metadata by raw bearer (no lastUsed bump). */
+export function findPatByToken(rawBearer: string): PatPublic | null {
+  const token = rawBearer.trim()
+  if (!token.startsWith(TOKEN_PREFIX)) return null
+  const tokenHash = hashToken(token)
+  const store = readStore()
+  const rec = store.tokens.find((t) => t.tokenHash === tokenHash)
+  return rec ? toPublic(rec) : null
 }
 
 export function isPatToken(rawBearer: string): boolean {

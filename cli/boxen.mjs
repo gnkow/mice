@@ -19,6 +19,12 @@ import { join } from 'node:path'
 import { parseArgs, requireFlag } from './lib/args.mjs'
 import { api } from './lib/api.mjs'
 import {
+  authHostFromRemote,
+  resolveRemote,
+  resolveToken,
+} from './lib/config.mjs'
+import { cmdLogin, cmdLogout, cmdWhoami } from './lib/login.mjs'
+import {
   materializeWorkCopy,
   pathHashesFromSnapshot,
   pullImage,
@@ -37,19 +43,33 @@ import {
 import {
   currentBranch,
   detectRemote,
+  ensureOxenAuth,
+  ensureOxenIdentity,
   findOxenRoot,
   headCommit,
   isWorktreeClean,
-  ensureOxenIdentity,
+  looksLikeDirectOxenServer,
   oxenAdd,
   oxenCommit,
   oxenRestore,
+  oxenVersion,
   relWorkdir,
+  rewriteArgsForBff,
+  runOxenPassthrough,
 } from './lib/oxen.mjs'
 import { pickJobForSync, syncJob } from './lib/sync.mjs'
 
 function usage(code = 1) {
-  console.error(`Usage:
+  console.error(`boxen — Oxen CLI via the Boxen auth BFF + local jobs
+
+Usage:
+  boxen login [--remote URL] [--no-open]
+  boxen logout
+  boxen whoami
+  boxen remote
+  boxen version
+  boxen <oxen command> [args…]
+
   boxen job run    [--remote <url>] [--token <pat>]
                    [--namespace <ns>] [--repo <repo>]
                    [--source <branch|commit|branch:commit>]
@@ -106,12 +126,14 @@ function jobSummary(job, extra = {}) {
 }
 
 function resolveAuth(flags) {
-  const remote = String(
-    flags.remote || process.env.BOXEN_REMOTE || 'http://localhost:8080',
+  const remote = resolveRemote({
+    remote: flags.remote ? String(flags.remote) : undefined,
+  })
+  const token = String(
+    flags.token || resolveToken() || '',
   )
-  const token = String(flags.token || process.env.BOXEN_PAT || '')
   if (!token) {
-    console.error('Missing --token or BOXEN_PAT')
+    console.error('Not logged in. Run: boxen login (or set --token / BOXEN_PAT)')
     usage(1)
   }
   return { remote, token }
@@ -610,14 +632,27 @@ async function cmdReset(flags) {
   }
 }
 
-async function main() {
-  const argv = process.argv.slice(2)
-  if (!argv.length || argv[0] === '-h' || argv[0] === '--help') usage(0)
-  if (argv[0] !== 'job') {
-    console.error(`Unknown command: ${argv[0]}`)
-    usage(1)
+const BOXEN_VERSION = '0.1.0'
+
+function parseLoginFlags(argv) {
+  /** @type {{ remote?: string, open: boolean }} */
+  const opts = { open: true }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === '--remote' && argv[i + 1]) {
+      opts.remote = argv[++i]
+    } else if (a.startsWith('--remote=')) {
+      opts.remote = a.slice('--remote='.length)
+    } else if (a === '--no-open') {
+      opts.open = false
+    } else if (a === '--help' || a === '-h') {
+      usage(0)
+    }
   }
-  const jobArgv = argv.slice(1)
+  return opts
+}
+
+async function cmdJob(jobArgv) {
   if (!jobArgv.length || jobArgv[0] === '-h' || jobArgv[0] === '--help') {
     usage(0)
   }
@@ -721,6 +756,79 @@ async function main() {
 
   console.error(`Unknown job command: ${cmd}`)
   usage(1)
+}
+
+async function main() {
+  const argv = process.argv.slice(2)
+  if (!argv.length || argv[0] === '-h' || argv[0] === '--help' || argv[0] === 'help') {
+    usage(0)
+  }
+
+  const cmd = argv[0]
+
+  if (cmd === 'login') {
+    await cmdLogin(parseLoginFlags(argv.slice(1)))
+    return
+  }
+  if (cmd === 'logout') {
+    await cmdLogout(parseLoginFlags(argv.slice(1)))
+    return
+  }
+  if (cmd === 'whoami') {
+    await cmdWhoami(parseLoginFlags(argv.slice(1)))
+    return
+  }
+  if (cmd === 'remote') {
+    const remote = resolveRemote()
+    console.log(remote)
+    console.log(`auth host: ${authHostFromRemote(remote)}`)
+    const token = resolveToken()
+    console.log(token ? 'credentials: present' : 'credentials: none')
+    return
+  }
+  if (cmd === 'version' || cmd === '--version' || cmd === '-V') {
+    console.log(`boxen ${BOXEN_VERSION}`)
+    const ov = oxenVersion()
+    if (ov) console.log(`oxen ${ov}`)
+    else console.log('oxen: not found on PATH')
+    return
+  }
+
+  if (cmd === 'job') {
+    await cmdJob(argv.slice(1))
+    return
+  }
+
+  // --- Oxen passthrough ---
+  const remote = resolveRemote()
+  if (looksLikeDirectOxenServer(remote)) {
+    console.error(
+      `boxen: BOXEN_REMOTE / configured remote looks like raw oxen-server (${remote}).\nUse the auth BFF remote (e.g. http://localhost:8080), not :3001.`,
+    )
+    process.exitCode = 1
+    return
+  }
+
+  try {
+    ensureOxenAuth(remote)
+  } catch (err) {
+    console.error(`boxen: ${err instanceof Error ? err.message : err}`)
+    process.exitCode = 1
+    return
+  }
+
+  const { args, rewritten, blocked } = rewriteArgsForBff(argv, remote)
+  if (blocked) {
+    console.error(`boxen: could not rewrite direct oxen-server URL: ${blocked}`)
+    process.exitCode = 1
+    return
+  }
+  if (rewritten) {
+    console.error(`boxen: rewrote :3001 remote URL(s) to ${remote}`)
+  }
+
+  const code = await runOxenPassthrough(args)
+  process.exitCode = code
 }
 
 main().catch((err) => {

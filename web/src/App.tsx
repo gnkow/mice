@@ -14,6 +14,7 @@ import { HomePage } from './pages/HomePage'
 import { ImportExportPage } from './pages/ImportExportPage'
 import { LargeUploadPage } from './pages/LargeUploadPage'
 import { AuditPage } from './pages/AuditPage'
+import { CliDevicePage } from './pages/CliDevicePage'
 import { LoginPage } from './pages/LoginPage'
 import { PendingAccessPage } from './pages/PendingAccessPage'
 import { MergePage } from './pages/MergePage'
@@ -40,6 +41,7 @@ export default function App() {
       <Routes>
         <Route path="login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
+          <Route path="cli/device" element={<CliDevicePage />} />
           <Route path="pending" element={<PendingAccessPage />} />
           <Route element={<RequireAuthz />}>
             <Route element={<Layout />}>

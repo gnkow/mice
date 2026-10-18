@@ -11,9 +11,12 @@
     "test": "playwright test -c e2e/playwright.config.ts",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test -c e2e/playwright.config.ts --ui",
-    "test:unit": "npm run test:unit:cli && npm run test:unit:auth",
-    "test:unit:cli": "node scripts/test-fail-fast.mjs cli/lib/oxen.test.mjs",
-    "test:unit:auth": "node scripts/test-fail-fast.mjs --tsx auth/src/authz.test.ts auth/src/directory.test.ts auth/src/lineage.test.ts auth/src/jobs.test.ts"
+    "test:e2e:cli": "playwright test -c e2e/playwright.config.ts e2e/tests/cli-auth.spec.ts e2e/tests/cli-device-ui.spec.ts",
+    "test:unit": "npm run test:unit:auth && npm run test:unit:cli && npm run test:unit:web",
+    "test:unit:auth": "npm test --prefix auth",
+    "test:unit:cli": "node scripts/test-fail-fast.mjs cli/lib/oxen.test.mjs cli/lib/config.test.mjs",
+    "test:unit:web": "npm test --prefix web",
+    "test:cli:integration": "node --test cli/integration/device-login.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",

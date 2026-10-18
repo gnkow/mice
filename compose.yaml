@@ -49,6 +49,7 @@ services:
       OXEN_UPSTREAM: http://oxen-server:3001
       AUTH_DATA_DIR: /data
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
+      PUBLIC_WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-boxen-session-secret}
       # PLAT-AUTHO: unset = store flag (off until bootstrap).
       AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}

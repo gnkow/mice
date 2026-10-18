@@ -103,7 +103,21 @@ import type {
   NamespaceCapability,
   RepoFinePermission,
 } from './authzTypes.js'
-import { createPat, listPatsForUser, resolvePat, revokePat } from './tokens.js'
+import {
+  approveDevice,
+  denyDevice,
+  lookupDeviceByUserCode,
+  pollDevice,
+  startDeviceAuth,
+} from './cliDevice.js'
+import {
+  createPat,
+  findPatByToken,
+  listPatsForUser,
+  resolvePat,
+  revokePat,
+  revokePatByToken,
+} from './tokens.js'
 import { registerJobRoutes } from './jobsRoutes.js'
 import { resumeQueuedJobs } from './jobs.js'
 
@@ -115,6 +129,15 @@ type PkceState = {
   verifier: string
   state: string
   nonce: string
+  /** Optional relative path to return to after OIDC (e.g. /cli/device?user_code=…). */
+  next?: string
+}
+
+function safeReturnPath(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined
+  if (!raw.startsWith('/') || raw.startsWith('//')) return undefined
+  if (raw.startsWith('/login') || raw.startsWith('/auth/')) return undefined
+  return raw
 }
 
 const app = new Hono()
@@ -134,8 +157,153 @@ app.get('/auth/cli-info', (c) => {
   return c.json({
     remote,
     authHost,
+    loginExample: 'boxen login',
+    cloneExample: `boxen clone ${remote}/<namespace>/<repo>`,
+    /** Automation / CI still use a manually minted PAT. */
     configExample: `oxen config --auth ${authHost} <PAT>`,
-    cloneExample: `oxen clone ${remote}/<namespace>/<repo>`,
+    oxenCloneExample: `oxen clone ${remote}/<namespace>/<repo>`,
+  })
+})
+
+// --- CLI device login (Boxen-native pairing; no IdP device grant required) ---
+
+app.post('/auth/cli/device/start', (c) => {
+  const started = startDeviceAuth()
+  return c.json(started)
+})
+
+/** Redirect browser to the web UI approve page. */
+app.get('/auth/cli/device', (c) => {
+  const userCode = c.req.query('user_code') ?? ''
+  const target = new URL(`${env.publicWebOrigin}/cli/device`)
+  if (userCode) target.searchParams.set('user_code', userCode)
+  return c.redirect(target.toString())
+})
+
+app.get('/auth/cli/device/status', async (c) => {
+  const session = await requireSession(c)
+  if (!session) return c.json({ error: 'Authentication required' }, 401)
+  const userCode = c.req.query('user_code') ?? ''
+  if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
+  const lookup = lookupDeviceByUserCode(userCode)
+  if (!lookup) return c.json({ error: 'Unknown user code' }, 404)
+  return c.json(lookup)
+})
+
+app.post('/auth/cli/device/approve', async (c) => {
+  const session = await requireSession(c)
+  if (!session) return c.json({ error: 'Authentication required' }, 401)
+  preparePrincipal(session)
+  let userCode = ''
+  try {
+    const body = (await c.req.json()) as { user_code?: string }
+    userCode = body.user_code ?? ''
+  } catch {
+    return c.json({ error: 'Invalid body' }, 400)
+  }
+  if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
+  const result = approveDevice(userCode, session)
+  if (!result.ok) {
+    const status = result.status === 404 ? 404 : 400
+    return c.json({ error: result.error }, status)
+  }
+  return c.json({ ok: true, user_code: result.userCode })
+})
+
+app.post('/auth/cli/device/deny', async (c) => {
+  const session = await requireSession(c)
+  if (!session) return c.json({ error: 'Authentication required' }, 401)
+  let userCode = ''
+  try {
+    const body = (await c.req.json()) as { user_code?: string }
+    userCode = body.user_code ?? ''
+  } catch {
+    return c.json({ error: 'Invalid body' }, 400)
+  }
+  if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
+  const result = denyDevice(userCode)
+  if (!result.ok) {
+    const status = result.status === 404 ? 404 : 400
+    return c.json({ error: result.error }, status)
+  }
+  return c.json({ ok: true })
+})
+
+app.post('/auth/cli/device/poll', async (c) => {
+  let deviceCode = ''
+  try {
+    const body = (await c.req.json()) as { device_code?: string }
+    deviceCode = body.device_code ?? ''
+  } catch {
+    return c.json({ error: 'Invalid body' }, 400)
+  }
+  if (!deviceCode.trim()) return c.json({ error: 'device_code required' }, 400)
+  const result = pollDevice(deviceCode)
+  if (result.status === 'authorization_pending') {
+    return c.json({ status: 'authorization_pending' }, 400)
+  }
+  if (result.status === 'slow_down') {
+    return c.json(
+      { status: 'slow_down', interval: result.interval },
+      400,
+    )
+  }
+  if (result.status === 'expired_token') {
+    return c.json({ status: 'expired_token', error: 'expired_token' }, 400)
+  }
+  if (result.status === 'access_denied') {
+    return c.json({ status: 'access_denied', error: 'access_denied' }, 400)
+  }
+  if (result.status === 'error') {
+    return c.json({ status: 'error', error: result.error }, 400)
+  }
+  return c.json({
+    status: 'approved',
+    access_token: result.token,
+    token: result.token,
+    pat_id: result.patId,
+    remote: result.remote,
+    auth_host: result.authHost,
+    user: result.user,
+  })
+})
+
+app.post('/auth/cli/logout', async (c) => {
+  const auth = c.req.header('authorization') ?? ''
+  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+  if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
+  const ok = revokePatByToken(bearer)
+  if (!ok) return c.json({ error: 'Token not found' }, 404)
+  return c.json({ ok: true })
+})
+
+app.get('/auth/cli/whoami', async (c) => {
+  const auth = c.req.header('authorization') ?? ''
+  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+  if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
+  const user = resolvePat(bearer)
+  if (!user) return c.json({ error: 'Invalid token' }, 401)
+  preparePrincipal(user)
+  const pat = findPatByToken(bearer)
+  const pending = isPendingUser(user)
+  return c.json({
+    authenticated: true,
+    user: {
+      sub: user.sub,
+      iss: user.iss,
+      email: user.email,
+      name: user.name,
+    },
+    pat: pat
+      ? { id: pat.id, label: pat.label, source: pat.source ?? 'manual' }
+      : null,
+    authz: {
+      enforce: isAuthzEnforce(),
+      pending,
+      instanceAdmin: isInstanceAdmin(user),
+      hasAnyGrant: userHasAnyGrant(user),
+    },
+    remote: env.publicOxenRemote,
   })
 })
 
@@ -554,7 +722,13 @@ app.get('/auth/login', async (c) => {
   const state = randomString(16)
   const nonce = randomString(16)
   const challenge = await pkceChallenge(verifier)
-  const pkce: PkceState = { verifier, state, nonce }
+  const next = safeReturnPath(c.req.query('next'))
+  const pkce: PkceState = {
+    verifier,
+    state,
+    nonce,
+    ...(next ? { next } : {}),
+  }
   setCookie(c, PKCE_COOKIE, Buffer.from(JSON.stringify(pkce)).toString('base64url'), {
     httpOnly: true,
     secure: env.cookieSecure,
@@ -616,7 +790,8 @@ app.get('/auth/callback', async (c) => {
     }
     preparePrincipal(sessionUser)
     await setSessionCookie(c, sessionUser)
-    return c.redirect('/')
+    const dest = safeReturnPath(pkce.next) ?? '/'
+    return c.redirect(dest)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'login failed'
     return c.html(`<p>${msg}</p><p><a href="/auth/login">Retry</a></p>`, 500)
