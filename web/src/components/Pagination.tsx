@@ -1,4 +1,4 @@
-/** Shared page size for all list pagination in Boxen. */
+/** Shared page size for all list pagination in Mice. */
 export const PAGE_SIZE = 12
 
 type Props = {

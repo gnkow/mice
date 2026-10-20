@@ -6,7 +6,7 @@ export type Appearance = {
   diffPalette: DiffPalette
 }
 
-const KEY = 'boxen.appearance'
+const KEY = 'mice.appearance'
 
 const DEFAULTS: Appearance = {
   colorMode: 'system',
@@ -35,7 +35,7 @@ export function loadAppearance(): Appearance {
 export function saveAppearance(next: Appearance): void {
   localStorage.setItem(KEY, JSON.stringify(next))
   applyAppearance(next)
-  window.dispatchEvent(new Event('boxen:appearance'))
+  window.dispatchEvent(new Event('mice:appearance'))
 }
 
 export function resolvedColorMode(mode: ColorMode): 'light' | 'dark' {
@@ -57,11 +57,11 @@ export function applyAppearance(next = loadAppearance()): void {
 
 export function subscribeAppearance(onChange: () => void): () => void {
   const handler = () => onChange()
-  window.addEventListener('boxen:appearance', handler)
+  window.addEventListener('mice:appearance', handler)
   const media = window.matchMedia('(prefers-color-scheme: dark)')
   media.addEventListener('change', handler)
   return () => {
-    window.removeEventListener('boxen:appearance', handler)
+    window.removeEventListener('mice:appearance', handler)
     media.removeEventListener('change', handler)
   }
 }

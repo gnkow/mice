@@ -52,7 +52,7 @@ export function NamespaceCreateSettings({
   nameLabel = 'Name',
 }: Props) {
   const [draftSub, setDraftSub] = useState('')
-  const [draftIss, setDraftIss] = useState('boxen-dev')
+  const [draftIss, setDraftIss] = useState('mice-dev')
   const [draftRole, setDraftRole] = useState<NamespaceRole>('member')
 
   function addMember() {
@@ -179,7 +179,7 @@ export function NamespaceCreateSettings({
             kind="user"
             sub={draftSub}
             iss={draftIss}
-            defaultIss="boxen-dev"
+            defaultIss="mice-dev"
             disabled={disabled}
             onChange={({ sub, iss }) => {
               setDraftSub(sub)

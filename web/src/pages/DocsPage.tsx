@@ -50,7 +50,7 @@ export function DocsPage() {
           >
             <span className="repo-summary-main">
               <span className="card-title">API reference</span>
-              <span className="card-meta">HTTP API used by Boxen</span>
+              <span className="card-meta">HTTP API used by Mice</span>
             </span>
           </a>
         </li>

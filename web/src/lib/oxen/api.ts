@@ -48,7 +48,7 @@ function repoBase(namespace: string, repo: string) {
 
 /** Placeholder author fields; the auth BFF overwrites these from the session. */
 function authorFields() {
-  return { name: 'boxen', email: 'boxen@localhost' }
+  return { name: 'mice', email: 'mice@localhost' }
 }
 
 export function fetchServerVersion(signal?: AbortSignal) {

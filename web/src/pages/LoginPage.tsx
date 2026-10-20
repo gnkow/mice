@@ -38,7 +38,7 @@ export function LoginPage() {
   return (
     <div className="login-shell">
       <main className="page narrow login-page">
-        <p className="login-brand">BOXEN</p>
+        <p className="login-brand">MICE</p>
         <h1>Sign in</h1>
         <p className="lede">
           Sign in with your organization IdP. The auth BFF establishes a session

@@ -25,14 +25,22 @@ export async function fetchAuthMe(signal?: AbortSignal): Promise<AuthMe> {
   return (await res.json()) as AuthMe
 }
 
+export type AuthzInstancePermission =
+  | 'create_namespace'
+  | 'view_audit'
+  | 'view_lineage'
+  | 'manage_own_tokens'
+  | 'cli_device_approve'
+  | 'session_create'
+  | 'session_connect'
+  | 'session_admin'
+
 export type AuthzMe = {
   enforce: boolean
   pending: boolean
   instanceAdmin: boolean
-  permissions: {
-    create_namespace: boolean
-    view_audit: boolean
-  }
+  permissions: Record<AuthzInstancePermission, boolean>
+  instancePermissionCatalog?: AuthzInstancePermission[]
   hasAnyGrant: boolean
   trainingCompleted?: boolean
   requireTraining?: boolean

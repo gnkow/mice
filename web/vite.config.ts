@@ -29,6 +29,8 @@ export default defineConfig({
         target: process.env.AUTH_PROXY_TARGET ?? 'http://localhost:8080',
         changeOrigin: true,
         followRedirects: false,
+        // guacamole-lite WebSocket for Sessions desktop
+        ws: true,
       },
     },
   },

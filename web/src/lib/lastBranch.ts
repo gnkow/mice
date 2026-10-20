@@ -3,7 +3,7 @@
 import { looksLikeCommitId } from './oxen/paths'
 
 function key(namespace: string, repo: string) {
-  return `boxen.lastBranch.${namespace}/${repo}`
+  return `mice.lastBranch.${namespace}/${repo}`
 }
 
 export function rememberBranch(
@@ -42,7 +42,7 @@ export function pickOtherBranch(
 }
 
 function defaultBranchKey(namespace: string, repo: string) {
-  return `boxen.defaultBranch.${namespace}/${repo}`
+  return `mice.defaultBranch.${namespace}/${repo}`
 }
 
 /** Optional per-repo default override (browser-local; oxen-server has no default API). */

@@ -216,7 +216,7 @@ export function DirectoryPicker(props: Props) {
               onChange={(e) =>
                 props.onChange({ sub: props.sub, iss: e.target.value })
               }
-              placeholder={props.defaultIss ?? 'boxen-dev'}
+              placeholder={props.defaultIss ?? 'mice-dev'}
               autoComplete="off"
             />
           </label>

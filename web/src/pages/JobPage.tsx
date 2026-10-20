@@ -260,7 +260,7 @@ export function JobPage() {
                 </Link>
               ) : (
                 <span className="muted">
-                  Not published — push with <span className="mono">boxen push</span>
+                  Not published — push with <span className="mono">mice push</span>
                 </span>
               )}
             </dd>

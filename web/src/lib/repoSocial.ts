@@ -1,13 +1,13 @@
 /** Browser-local Star. oxen-server has no social graph. */
 
-export const REPO_SOCIAL_EVENT = 'boxen:repo-social'
+export const REPO_SOCIAL_EVENT = 'mice:repo-social'
 
 type Social = {
   watch: boolean
   star: boolean
 }
 
-const KEY = 'boxen.repoSocial'
+const KEY = 'mice.repoSocial'
 
 function readAll(): Record<string, Social> {
   try {

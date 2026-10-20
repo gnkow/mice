@@ -3,7 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { fetchAuthMe } from '../lib/auth'
 
 /**
- * Blocks the Boxen app chrome until a BFF session exists.
+ * Blocks the Mice app chrome until a BFF session exists.
  * Unauthenticated visitors are sent to /login (with return path).
  */
 export function RequireAuth() {
