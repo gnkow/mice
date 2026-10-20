@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { JobSummaryCard } from '../components/JobSummaryCard'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
@@ -8,15 +9,38 @@ import { listJobs } from '../lib/jobs'
 export function JobsListPage() {
   const state = useAsync((signal) => listJobs({ limit: 100 }, signal), [])
   const [params, setParams] = useSearchParams()
+  const [filter, setFilter] = useState(params.get('q') ?? '')
   const pageParam = Number(params.get('page') || '1')
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
   const jobs = state.kind === 'ok' ? state.data.jobs : []
-  const slice = paginate(jobs, page, PAGE_SIZE)
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return jobs
+    return jobs.filter((job) => {
+      const repo = `${job.namespace}/${job.repo}`
+      return job.name.toLowerCase().includes(q) ||
+             repo.toLowerCase().includes(q) ||
+             job.runner.toLowerCase().includes(q) ||
+             job.status.toLowerCase().includes(q)
+    })
+  }, [jobs, filter])
+
+  const slice = paginate(filtered, page, PAGE_SIZE)
 
   function goPage(next: number) {
     const nextParams = new URLSearchParams(params)
     if (next <= 1) nextParams.delete('page')
     else nextParams.set('page', String(next))
+    setParams(nextParams, { replace: true })
+  }
+
+  function onFilterChange(value: string) {
+    setFilter(value)
+    const nextParams = new URLSearchParams(params)
+    if (value.trim()) nextParams.set('q', value.trim())
+    else nextParams.delete('q')
+    nextParams.delete('page')
     setParams(nextParams, { replace: true })
   }
 
@@ -35,16 +59,71 @@ export function JobsListPage() {
         </div>
       </div>
 
+      <div className="ns-toolbar">
+        <div className="ns-search-field">
+          <label className="ns-search-label" htmlFor="job-filter">
+            Search
+          </label>
+          <div className="ns-search-control">
+            <span className="ns-search-icon" aria-hidden>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M10.5 10.5L14 14"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <input
+              id="job-filter"
+              type="search"
+              value={filter}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder="Filter by name, repository, runner, or status"
+              autoComplete="off"
+            />
+            {filter.trim() ? (
+              <button
+                type="button"
+                className="ns-search-clear"
+                onClick={() => onFilterChange('')}
+                aria-label="Clear search"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {state.kind === 'ok' && (
+          <p className="muted small ns-toolbar-meta">
+            {filtered.length} job{filtered.length === 1 ? '' : 's'}
+            {filter.trim() ? ' matching' : ''}
+          </p>
+        )}
+      </div>
+
       <StateBlock
         loading={state.kind === 'loading'}
         error={state.kind === 'error' ? state.message : null}
         onRetry={() => state.reload()}
-        empty={state.kind === 'ok' && jobs.length === 0}
+        empty={state.kind === 'ok' && filtered.length === 0}
         emptyMessage={
-          <>
-            No jobs yet. For local runs: <span className="mono">mice job run</span>{' '}
-            then <span className="mono">mice push</span>.
-          </>
+          filter.trim() ? (
+            `No jobs match "${filter.trim()}".`
+          ) : (
+            <>
+              No jobs yet. For local runs: <span className="mono">mice job run</span>{' '}
+              then <span className="mono">mice push</span>.
+            </>
+          )
         }
       >
         {state.kind === 'ok' && (

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { SessionCreateModal } from '../components/SessionCreateModal'
@@ -6,16 +6,30 @@ import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe } from '../lib/auth'
-import { listSessions } from '../lib/sessions'
+import { listSessions, sessionMounts } from '../lib/sessions'
 
 export function SessionsListPage() {
   const state = useAsync((signal) => listSessions(signal), [])
   const authz = useAsync((signal) => fetchAuthzMe(signal), [])
   const [params, setParams] = useSearchParams()
+  const [filter, setFilter] = useState(params.get('q') ?? '')
   const pageParam = Number(params.get('page') || '1')
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
   const sessions = state.kind === 'ok' ? state.data.sessions : []
-  const slice = paginate(sessions, page, PAGE_SIZE)
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return sessions
+    return sessions.filter((session) => {
+      const mounts = sessionMounts(session)
+      const mountStrings = mounts.map(m => `${m.namespace}/${m.repo}`)
+      return session.id.toLowerCase().includes(q) ||
+             session.status.toLowerCase().includes(q) ||
+             mountStrings.some(m => m.toLowerCase().includes(q))
+    })
+  }, [sessions, filter])
+
+  const slice = paginate(filtered, page, PAGE_SIZE)
   const [createOpen, setCreateOpen] = useState(false)
   const canCreateSession =
     authz.kind === 'ok' &&
@@ -29,6 +43,15 @@ export function SessionsListPage() {
     const nextParams = new URLSearchParams(params)
     if (next <= 1) nextParams.delete('page')
     else nextParams.set('page', String(next))
+    setParams(nextParams, { replace: true })
+  }
+
+  function onFilterChange(value: string) {
+    setFilter(value)
+    const nextParams = new URLSearchParams(params)
+    if (value.trim()) nextParams.set('q', value.trim())
+    else nextParams.delete('q')
+    nextParams.delete('page')
     setParams(nextParams, { replace: true })
   }
 
@@ -61,12 +84,67 @@ export function SessionsListPage() {
 
       {createOpen && <SessionCreateModal onClose={() => setCreateOpen(false)} />}
 
+      <div className="ns-toolbar">
+        <div className="ns-search-field">
+          <label className="ns-search-label" htmlFor="session-filter">
+            Search
+          </label>
+          <div className="ns-search-control">
+            <span className="ns-search-icon" aria-hidden>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M10.5 10.5L14 14"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <input
+              id="session-filter"
+              type="search"
+              value={filter}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder="Filter by ID, status, or repository"
+              autoComplete="off"
+            />
+            {filter.trim() ? (
+              <button
+                type="button"
+                className="ns-search-clear"
+                onClick={() => onFilterChange('')}
+                aria-label="Clear search"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {state.kind === 'ok' && (
+          <p className="muted small ns-toolbar-meta">
+            {filtered.length} session{filtered.length === 1 ? '' : 's'}
+            {filter.trim() ? ' matching' : ''}
+          </p>
+        )}
+      </div>
+
       <StateBlock
         loading={state.kind === 'loading'}
         error={state.kind === 'error' ? state.message : null}
         onRetry={() => state.reload()}
-        empty={state.kind === 'ok' && sessions.length === 0}
-        emptyMessage={<>No sessions yet. Create one to provision a desktop.</>}
+        empty={state.kind === 'ok' && filtered.length === 0}
+        emptyMessage={
+          filter.trim()
+            ? `No sessions match "${filter.trim()}".`
+            : <>No sessions yet. Create one to provision a desktop.</>
+        }
       >
         {state.kind === 'ok' && (
           <>
