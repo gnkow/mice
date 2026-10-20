@@ -69,19 +69,7 @@ export function RepoSessionsPage() {
         error={state.kind === 'error' ? state.message : null}
         onRetry={() => state.reload()}
         empty={state.kind === 'ok' && sessions.length === 0}
-        emptyMessage={
-          <>
-            <p className="muted">
-              No sessions mount a workspace of this repository yet.
-            </p>
-            <button
-              className="btn primary"
-              onClick={() => setCreateOpen(true)}
-            >
-              New session
-            </button>
-          </>
-        }
+        emptyMessage="No sessions mount a workspace of this repository yet. Use the New session button above to get started."
       >
         {state.kind === 'ok' && sessions.length > 0 && (
           <>

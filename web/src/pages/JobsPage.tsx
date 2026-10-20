@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { JobSummaryCard } from '../components/JobSummaryCard'
 import { Modal } from '../components/Modal'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
@@ -160,40 +160,45 @@ export function JobsPage() {
             logs, and results.
           </p>
         </div>
-        <details className="clone-dropdown submit-job-dropdown">
-          <summary className="btn primary">Submit job</summary>
-          <div className="clone-dropdown-panel submit-job-menu" role="menu">
-            <button
-              type="button"
-              role="menuitem"
-              className="submit-job-option"
-              onClick={(e) => openSubmit('local', e)}
-            >
-              <span className="pill runner-local">Local</span>
-              <span className="submit-job-option-text">
-                <b>Run on your machine</b>
-                <span className="muted small">
-                  <span className="mono">mice job run</span> · Docker + local
-                  commit
+        <div className="btn-row">
+          <details className="clone-dropdown submit-job-dropdown">
+            <summary className="btn primary">New job</summary>
+            <div className="clone-dropdown-panel submit-job-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                className="submit-job-option"
+                onClick={(e) => openSubmit('local', e)}
+              >
+                <span className="pill runner-local">Local</span>
+                <span className="submit-job-option-text">
+                  <b>Run on your machine</b>
+                  <span className="muted small">
+                    <span className="mono">mice job run</span> · Docker + local
+                    commit
+                  </span>
                 </span>
-              </span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="submit-job-option"
-              onClick={(e) => openSubmit('cluster', e)}
-            >
-              <span className="pill runner-cluster">Cluster</span>
-              <span className="submit-job-option-text">
-                <b>Queue on the server</b>
-                <span className="muted small">
-                  Auth BFF · Docker or Kubernetes
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="submit-job-option"
+                onClick={(e) => openSubmit('cluster', e)}
+              >
+                <span className="pill runner-cluster">Cluster</span>
+                <span className="submit-job-option-text">
+                  <b>Queue on the server</b>
+                  <span className="muted small">
+                    Auth BFF · Docker or Kubernetes
+                  </span>
                 </span>
-              </span>
-            </button>
-          </div>
-        </details>
+              </button>
+            </div>
+          </details>
+          <Link className="btn ghost" to="/jobs">
+            All jobs
+          </Link>
+        </div>
       </header>
 
       {hasJobs && (
@@ -312,27 +317,7 @@ export function JobsPage() {
         error={list.kind === 'error' && !jobs.length ? list.message : null}
         onRetry={() => listReload()}
         empty={list.kind === 'ok' && jobs.length === 0}
-        emptyMessage={
-          <>
-            <p className="muted">No jobs yet. Choose Local or Cluster to get started.</p>
-            <div className="submit-job-empty-actions">
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => openSubmit('local')}
-              >
-                Local
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => openSubmit('cluster')}
-              >
-                Cluster
-              </button>
-            </div>
-          </>
-        }
+        emptyMessage="No jobs yet. Use the New job button above to get started."
       >
         {list.kind === 'ok' && jobs.length > 0 && filtered.length === 0 && (
           <p className="muted">No jobs match these filters.</p>
@@ -360,7 +345,7 @@ export function JobsPage() {
       {submitMode && (
         <Modal
           title={
-            submitMode === 'local' ? 'Submit job — Local' : 'Submit job — Cluster'
+            submitMode === 'local' ? 'New job — Local' : 'New job — Cluster'
           }
           onClose={() => setSubmitMode(null)}
           wide

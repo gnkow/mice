@@ -225,14 +225,6 @@ export function WorkspacesPage() {
         <div className="btn-row">
           <button
             type="button"
-            className="btn ghost danger-text"
-            disabled={busy || list.length === 0}
-            onClick={() => void onClear()}
-          >
-            Clear all
-          </button>
-          <button
-            type="button"
             className="btn primary"
             onClick={() => {
               setError(null)
