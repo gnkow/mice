@@ -7,7 +7,7 @@ import {
 } from '../helpers/keycloak'
 import { mintSession } from '../helpers/session'
 
-const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 
 /** Auth tests control their own session (do not use the auto-login fixture). */
 const test = base
@@ -25,16 +25,16 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
   }) => {
     await mintSession(page, {
       name: 'Auth Spec',
-      email: 'auth-spec@boxen.local',
+      email: 'auth-spec@mice.local',
       sub: 'auth-spec',
-      iss: 'boxen-e2e',
+      iss: 'mice-e2e',
     })
 
     const me = await page.request.get(`${BASE_URL}/auth/me`)
     expect(me.ok()).toBeTruthy()
     const meBody = await me.json()
     expect(meBody.authenticated).toBe(true)
-    expect(meBody.user.email).toBe('auth-spec@boxen.local')
+    expect(meBody.user.email).toBe('auth-spec@mice.local')
 
     const version = await page.request.get(`${BASE_URL}/api/version`)
     expect(version.ok()).toBeTruthy()
@@ -45,7 +45,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
   }) => {
     await mintSession(page)
     const before = await page.context().cookies()
-    expect(before.some((c) => c.name === 'boxen_session')).toBeTruthy()
+    expect(before.some((c) => c.name === 'mice_session')).toBeTruthy()
 
     const logout = await page.request.post(`${BASE_URL}/auth/logout`)
     expect(logout.ok()).toBeTruthy()
@@ -56,7 +56,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     expect(api.status()).toBe(401)
 
     const after = await page.context().cookies()
-    const session = after.find((c) => c.name === 'boxen_session')
+    const session = after.find((c) => c.name === 'mice_session')
     expect(!session || !session.value || session.expires === -1).toBeTruthy()
   })
 
@@ -69,7 +69,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     const status = res.status()
     expect([302, 303, 307, 308].includes(status) || status === 200).toBeTruthy()
     const location = res.headers()['location'] ?? res.url()
-    expect(location).toMatch(/realms\/boxen|openid-connect\/auth|keycloak|8180/)
+    expect(location).toMatch(/realms\/mice|openid-connect\/auth|keycloak|8180/)
     expect(location).toMatch(/prompt=login/)
   })
 
@@ -77,7 +77,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     page,
   }) => {
     await page.goto('/login')
-    await expect(page.getByText('BOXEN', { exact: true })).toBeVisible()
+    await expect(page.getByText('MICE', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     await expect(
       page.getByRole('link', { name: 'Sign in with SSO' }),
@@ -93,16 +93,16 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
   }) => {
     await mintSession(page, {
       name: 'UI Login User',
-      email: 'ui-login@boxen.local',
+      email: 'ui-login@mice.local',
       sub: 'ui-login',
-      iss: 'boxen-e2e',
+      iss: 'mice-e2e',
     })
     await page.goto('/')
     await expect(page.locator('header.topbar')).toBeVisible()
     await openAccountMenu(page)
     await expect(page.getByText('Signed as')).toBeVisible()
     await expect(page.getByText('UI Login User')).toBeVisible()
-    await expect(page.getByText('ui-login@boxen.local')).toBeVisible()
+    await expect(page.getByText('ui-login@mice.local')).toBeVisible()
     await expect(
       page.getByRole('button', { name: 'Sign out' }),
     ).toBeVisible()
@@ -156,24 +156,24 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
   test('TC-AUTH-12: SSO → IdP credentials → sign out → SSO shows IdP form again', async ({
     page,
   }) => {
-    // 1–2) Boxen login → SSO → Keycloak username/password → Boxen app
+    // 1–2) Mice login → SSO → Keycloak username/password → Mice app
     await signInWithSsoViaKeycloak(page)
     await openAccountMenu(page)
     const menu = page.locator('.profile-menu-panel')
-    await expect(menu.getByText('Boxen User')).toBeVisible()
-    await expect(menu.getByText('boxen@example.com')).toBeVisible()
+    await expect(menu.getByText('Mice User')).toBeVisible()
+    await expect(menu.getByText('mice@example.com')).toBeVisible()
     // Close menu before signOutViaUi re-opens it (summary toggles)
     await page.locator('details.profile-menu > summary').click()
 
-    // 3) Sign out clears Boxen session and IdP SSO, lands on /login
+    // 3) Sign out clears Mice session and IdP SSO, lands on /login
     await signOutViaUi(page)
 
     // 4) SSO again must show IdP credentials (not silent re-login)
     await page.getByRole('link', { name: 'Sign in with SSO' }).click()
     await expectKeycloakLoginForm(page)
-    await expect(page).toHaveURL(/8180|\/realms\/boxen\//)
+    await expect(page).toHaveURL(/8180|\/realms\/mice\//)
     await expect(page.locator('header.topbar')).toHaveCount(0)
-    // Must be on IdP, not still on Boxen login card
+    // Must be on IdP, not still on Mice login card
     await expect(
       page.getByRole('link', { name: 'Sign in with SSO' }),
     ).toHaveCount(0)

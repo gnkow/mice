@@ -21,7 +21,7 @@ test.describe('repository manage (R-05 R-06 R-07–R-09)', () => {
     page,
     seededRepo,
   }) => {
-    const targetNs = uniqueId('boxen-e2e-xfer')
+    const targetNs = uniqueId('mice-e2e-xfer')
     await page.goto(repoPath(seededRepo, '/settings'))
 
     await page.getByPlaceholder('Target namespace').fill(targetNs)

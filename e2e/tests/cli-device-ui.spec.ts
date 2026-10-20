@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test'
 import { mintSession } from '../helpers/session'
 
-const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
 
 /** Device UI tests manage their own session. */
@@ -13,9 +13,9 @@ async function sessionLogin(
 ) {
   await mintSession(page, {
     name: identity?.name ?? 'Device UI',
-    email: identity?.email ?? 'device-ui@boxen.local',
+    email: identity?.email ?? 'device-ui@mice.local',
     sub: identity?.sub ?? 'device-ui',
-    iss: 'boxen-e2e',
+    iss: 'mice-e2e',
   })
 }
 
@@ -113,7 +113,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     const started = await startDevice(page.request)
     await sessionLogin(page, {
       name: 'API Approve',
-      email: 'api-approve@boxen.local',
+      email: 'api-approve@mice.local',
       sub: 'api-approve',
     })
 
@@ -136,11 +136,11 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     expect(poll.ok()).toBeTruthy()
     const body = await poll.json()
     expect(body.status).toBe('approved')
-    expect(body.token).toMatch(/^boxen_pat_/)
-    expect(body.user.email).toBe('api-approve@boxen.local')
+    expect(body.token).toMatch(/^mice_pat_/)
+    expect(body.user.email).toBe('api-approve@mice.local')
   })
 
-  test('TC-CLI-14: Settings documents boxen login for day-to-day CLI', async ({
+  test('TC-CLI-14: Settings documents mice login for day-to-day CLI', async ({
     page,
   }) => {
     await sessionLogin(page)
@@ -149,7 +149,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
       page.getByRole('heading', { name: 'CLI tokens' }),
     ).toBeVisible()
     const section = page.locator('section[aria-labelledby="cli-tokens-heading"]')
-    await expect(section.locator('pre.settings-code')).toContainText('boxen login')
+    await expect(section.locator('pre.settings-code')).toContainText('mice login')
     await expect(section.locator('pre.settings-code')).toContainText(
       'oxen config --auth',
     )

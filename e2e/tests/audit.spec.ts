@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test'
 import { uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 
-const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
 
 const test = base
@@ -15,7 +15,7 @@ async function sessionLogin(
     name: identity?.name,
     email: identity?.email,
     sub: identity?.sub,
-    iss: 'boxen-e2e',
+    iss: 'mice-e2e',
   })
 }
 
@@ -85,7 +85,7 @@ test.describe('audit log (PLAT-AUDIT)', () => {
   test('TC-AUDIT-02: PAT write records via: pat', async ({ page }) => {
     await sessionLogin(page, {
       name: 'PAT Audit',
-      email: 'pat-audit@boxen.local',
+      email: 'pat-audit@mice.local',
       sub: uniqueId('pat-audit'),
     })
     const created = await page.request.post(`${BASE_URL}/auth/tokens`, {
@@ -146,7 +146,7 @@ test.describe('audit log (PLAT-AUDIT)', () => {
     const sub = uniqueId('audit-ui')
     await sessionLogin(page, {
       name: 'Audit UI User',
-      email: 'audit-ui@boxen.local',
+      email: 'audit-ui@mice.local',
       sub,
     })
     const ns = uniqueId('audit-ui-ns')

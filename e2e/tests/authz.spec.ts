@@ -3,7 +3,7 @@ import { acceptConfirmModal } from '../fixtures'
 import { uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 
-const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
 
 const test = base
@@ -17,14 +17,14 @@ async function sessionLogin(
     groups?: string[]
   },
 ) {
-  await mintSession(page, { ...identity, iss: 'boxen-e2e' })
+  await mintSession(page, { ...identity, iss: 'mice-e2e' })
 }
 
 test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-api: create namespace + me/authz', async ({ page }) => {
     await sessionLogin(page, {
       name: 'AuthZ Admin',
-      email: `admin-${uniqueId('e')}@boxen.local`,
+      email: `admin-${uniqueId('e')}@mice.local`,
       sub: uniqueId('autho-admin'),
     })
 
@@ -47,7 +47,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-collab: repo collaborators API', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Collab Admin',
-      email: `collab-${uniqueId('e')}@boxen.local`,
+      email: `collab-${uniqueId('e')}@mice.local`,
       sub: uniqueId('collab-admin'),
     })
 
@@ -63,7 +63,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
 
     const put = await page.request.put(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators`,
-      { data: { sub: 'outsider', iss: 'boxen-e2e', role: 'write' } },
+      { data: { sub: 'outsider', iss: 'mice-e2e', role: 'write' } },
     )
     expect(put.ok()).toBeTruthy()
   })
@@ -74,7 +74,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const adminSub = uniqueId('grp-admin')
     await sessionLogin(page, {
       name: 'Group Admin',
-      email: `grp-admin-${uniqueId('e')}@boxen.local`,
+      email: `grp-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
 
@@ -93,7 +93,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           kind: 'group',
-          group: 'boxen-readers',
+          group: 'mice-readers',
           role: 'member',
         },
       },
@@ -103,7 +103,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     expect(
       membersBody.members?.some(
         (m: { kind?: string; group?: string }) =>
-          m.kind === 'group' && m.group === 'boxen-readers',
+          m.kind === 'group' && m.group === 'mice-readers',
       ),
     ).toBeTruthy()
 
@@ -112,7 +112,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           kind: 'group',
-          group: 'boxen-writers',
+          group: 'mice-writers',
           role: 'write',
         },
       },
@@ -122,9 +122,9 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     // Group-only user clears hard gate and can read via member base permission
     await sessionLogin(page, {
       name: 'Group Reader',
-      email: `grp-r-${uniqueId('e')}@boxen.local`,
+      email: `grp-r-${uniqueId('e')}@mice.local`,
       sub: uniqueId('grp-reader'),
-      groups: ['boxen-readers'],
+      groups: ['mice-readers'],
     })
     const me = await page.request.get(`${AUTH_URL}/auth/me/authz`)
     expect(me.ok()).toBeTruthy()
@@ -141,7 +141,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const sub = uniqueId('owner')
     await sessionLogin(page, {
       name: 'Solo Owner',
-      email: `owner-${uniqueId('e')}@boxen.local`,
+      email: `owner-${uniqueId('e')}@mice.local`,
       sub,
     })
     const ns = uniqueId('solo-ns')
@@ -150,7 +150,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     })
     const del = await page.request.delete(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/members`,
-      { data: { sub, iss: 'boxen-e2e' } },
+      { data: { sub, iss: 'mice-e2e' } },
     )
     expect(del.status()).toBe(400)
   })
@@ -158,7 +158,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-access-request: submit request', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Requester',
-      email: `req-${uniqueId('e')}@boxen.local`,
+      email: `req-${uniqueId('e')}@mice.local`,
       sub: uniqueId('req'),
     })
     const res = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
@@ -175,7 +175,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const adminSub = uniqueId('rev-admin')
     await sessionLogin(page, {
       name: 'Review Admin',
-      email: `rev-admin-${uniqueId('e')}@boxen.local`,
+      email: `rev-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
     const ns = uniqueId('rev-ns')
@@ -186,7 +186,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const reqSub = uniqueId('rev-req')
     await sessionLogin(page, {
       name: 'Pending User',
-      email: `rev-req-${uniqueId('e')}@boxen.local`,
+      email: `rev-req-${uniqueId('e')}@mice.local`,
       sub: reqSub,
     })
     const submit = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
@@ -198,7 +198,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
 
     await sessionLogin(page, {
       name: 'Review Admin',
-      email: `rev-admin-${uniqueId('e')}@boxen.local`,
+      email: `rev-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
     const approve = await page.request.post(
@@ -221,7 +221,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   }) => {
     await sessionLogin(page, {
       name: 'Custom Admin',
-      email: `custom-${uniqueId('e')}@boxen.local`,
+      email: `custom-${uniqueId('e')}@mice.local`,
       sub: uniqueId('custom-admin'),
     })
     const ns = uniqueId('custom-ns')
@@ -254,7 +254,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           sub: 'merger-user',
-          iss: 'boxen-e2e',
+          iss: 'mice-e2e',
           role: roleId,
         },
       },
@@ -272,7 +272,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const sub = uniqueId('ui-admin')
     await sessionLogin(page, {
       name: 'UI Admin',
-      email: `ui-${uniqueId('e')}@boxen.local`,
+      email: `ui-${uniqueId('e')}@mice.local`,
       sub,
     })
     const ns = uniqueId('ui-ns')
@@ -288,7 +288,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-training: self-complete training', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Trainee',
-      email: `train-${uniqueId('e')}@boxen.local`,
+      email: `train-${uniqueId('e')}@mice.local`,
       sub: uniqueId('train'),
     })
     const res = await page.request.post(`${AUTH_URL}/auth/training`, {
@@ -302,7 +302,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-api: delete namespace', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Ns Deleter',
-      email: `del-${uniqueId('e')}@boxen.local`,
+      email: `del-${uniqueId('e')}@mice.local`,
       sub: uniqueId('ns-del'),
     })
     const ns = uniqueId('del-ns')
@@ -325,7 +325,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   }) => {
     await sessionLogin(page, {
       name: 'Ns Creator',
-      email: `ns-${uniqueId('e')}@boxen.local`,
+      email: `ns-${uniqueId('e')}@mice.local`,
       sub: uniqueId('ns-creator'),
     })
     const ns = uniqueId('empty-ns')
@@ -346,7 +346,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-ui: delete namespace from list', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Ns Remover',
-      email: `rm-${uniqueId('e')}@boxen.local`,
+      email: `rm-${uniqueId('e')}@mice.local`,
       sub: uniqueId('ns-rm'),
     })
     const ns = uniqueId('rm-ns')
@@ -365,7 +365,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-pat-scopes: mint scoped PAT', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Pat User',
-      email: `pat-${uniqueId('e')}@boxen.local`,
+      email: `pat-${uniqueId('e')}@mice.local`,
       sub: uniqueId('pat'),
     })
     const res = await page.request.post(`${AUTH_URL}/auth/tokens`, {
@@ -376,7 +376,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     })
     expect(res.ok()).toBeTruthy()
     const body = await res.json()
-    expect(body.token).toMatch(/^boxen_pat_/)
+    expect(body.token).toMatch(/^mice_pat_/)
     expect(body.pat?.scopes?.[0]?.namespace).toBe('demo')
   })
 
@@ -384,14 +384,14 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const adminSub = uniqueId('deny-admin')
     await sessionLogin(page, {
       name: 'Deny Admin',
-      email: `deny-admin-${uniqueId('e')}@boxen.local`,
+      email: `deny-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
 
     const reqSub = uniqueId('deny-req')
     await sessionLogin(page, {
       name: 'Denied User',
-      email: `deny-req-${uniqueId('e')}@boxen.local`,
+      email: `deny-req-${uniqueId('e')}@mice.local`,
       sub: reqSub,
     })
     const submit = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
@@ -402,7 +402,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
 
     await sessionLogin(page, {
       name: 'Deny Admin',
-      email: `deny-admin-${uniqueId('e')}@boxen.local`,
+      email: `deny-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
     const deny = await page.request.post(
@@ -420,7 +420,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const adminSub = uniqueId('inst-admin')
     await sessionLogin(page, {
       name: 'Instance Admin',
-      email: `inst-${uniqueId('e')}@boxen.local`,
+      email: `inst-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
 
@@ -435,7 +435,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           sub: targetSub,
-          iss: 'boxen-e2e',
+          iss: 'mice-e2e',
           permissions: ['create_namespace', 'view_audit'],
         },
       },
@@ -443,7 +443,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     expect(putPerms.ok()).toBeTruthy()
 
     const addAdmin = await page.request.post(`${AUTH_URL}/auth/instance/admins`, {
-      data: { sub: uniqueId('extra-admin'), iss: 'boxen-e2e' },
+      data: { sub: uniqueId('extra-admin'), iss: 'mice-e2e' },
     })
     expect(addAdmin.ok()).toBeTruthy()
 
@@ -458,7 +458,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   }) => {
     await sessionLogin(page, {
       name: 'Ns Role Admin',
-      email: `nsrole-${uniqueId('e')}@boxen.local`,
+      email: `nsrole-${uniqueId('e')}@mice.local`,
       sub: uniqueId('nsrole-admin'),
     })
     const ns = uniqueId('nsrole-ns')
@@ -484,7 +484,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           sub: 'auditor-user',
-          iss: 'boxen-e2e',
+          iss: 'mice-e2e',
           role: roleId,
         },
       },
@@ -503,7 +503,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-ns-settings: patch base permission', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Settings Admin',
-      email: `set-${uniqueId('e')}@boxen.local`,
+      email: `set-${uniqueId('e')}@mice.local`,
       sub: uniqueId('set-admin'),
     })
     const ns = uniqueId('set-ns')
@@ -532,7 +532,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-collab-remove: delete collaborator', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Collab Remover',
-      email: `crm-${uniqueId('e')}@boxen.local`,
+      email: `crm-${uniqueId('e')}@mice.local`,
       sub: uniqueId('crm-admin'),
     })
     const ns = uniqueId('crm-ns')
@@ -546,11 +546,11 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     expect(createRepo.ok()).toBeTruthy()
     await page.request.put(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators`,
-      { data: { sub: 'temp-collab', iss: 'boxen-e2e', role: 'write' } },
+      { data: { sub: 'temp-collab', iss: 'mice-e2e', role: 'write' } },
     )
     const del = await page.request.delete(
       `${AUTH_URL}/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators`,
-      { data: { sub: 'temp-collab', iss: 'boxen-e2e' } },
+      { data: { sub: 'temp-collab', iss: 'mice-e2e' } },
     )
     expect(del.ok()).toBeTruthy()
   })
@@ -561,14 +561,14 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const adminSub = uniqueId('perm-admin')
     await sessionLogin(page, {
       name: 'Perm Admin',
-      email: `perm-admin-${uniqueId('e')}@boxen.local`,
+      email: `perm-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
 
     const reqSub = uniqueId('perm-req')
     await sessionLogin(page, {
       name: 'Perm Requester',
-      email: `perm-req-${uniqueId('e')}@boxen.local`,
+      email: `perm-req-${uniqueId('e')}@mice.local`,
       sub: reqSub,
     })
     const submit = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
@@ -579,7 +579,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
 
     await sessionLogin(page, {
       name: 'Perm Admin',
-      email: `perm-admin-${uniqueId('e')}@boxen.local`,
+      email: `perm-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
     const approve = await page.request.post(
@@ -601,7 +601,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const adminSub = uniqueId('dir-admin')
     await sessionLogin(page, {
       name: 'Directory Admin',
-      email: `dir-admin-${uniqueId('e')}@boxen.local`,
+      email: `dir-admin-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
 
@@ -616,7 +616,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
         data: {
           kind: 'user',
           sub: memberSub,
-          iss: 'boxen-e2e',
+          iss: 'mice-e2e',
           role: 'member',
         },
       },

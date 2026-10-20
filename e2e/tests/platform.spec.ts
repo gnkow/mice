@@ -82,7 +82,7 @@ test.describe('platform (P-03 P-04)', () => {
     const authorEmail = 'e2e-session@author.test'
 
     // Override the default fixture session with a known identity
-    await mintSession(page, { name: authorName, email: authorEmail, sub: 'e2e-author', iss: 'boxen-e2e' })
+    await mintSession(page, { name: authorName, email: authorEmail, sub: 'e2e-author', iss: 'mice-e2e' })
 
     await createBranch(
       seededRepo.namespace,

@@ -12,7 +12,7 @@ const wsNote = path.join(fixtures, 'ws-note.txt')
 
 /** oxen large-upload threshold is 4 MiB — synthesize a file over that. */
 function makeChunkyTemp(): string {
-  const file = path.join(os.tmpdir(), `boxen-e2e-chunky-${Date.now()}.bin`)
+  const file = path.join(os.tmpdir(), `mice-e2e-chunky-${Date.now()}.bin`)
   const fd = fs.openSync(file, 'w')
   const chunk = Buffer.alloc(1024 * 1024, 0xab)
   for (let i = 0; i < 5; i++) fs.writeSync(fd, chunk)

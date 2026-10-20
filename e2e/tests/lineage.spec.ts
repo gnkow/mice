@@ -2,7 +2,7 @@ import { test as base, expect } from '@playwright/test'
 import { putFile, uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 
-const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
 
 const test = base
@@ -15,7 +15,7 @@ async function sessionLogin(
     name: identity?.name,
     email: identity?.email,
     sub: identity?.sub,
-    iss: 'boxen-e2e',
+    iss: 'mice-e2e',
   })
 }
 
