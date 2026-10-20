@@ -66,7 +66,7 @@ export function NewNamespacePage() {
       )}
 
       {authz.kind === 'ok' && !canCreate && (
-        <p className="error">
+        <p className="flash flash-error" role="status">
           You need the <code>create_namespace</code> permission or instance
           admin to create a namespace.
         </p>
@@ -79,7 +79,7 @@ export function NewNamespacePage() {
             onChange={setSettings}
             disabled={!canCreate || busy}
           />
-          {error && <p className="error">{error}</p>}
+          {error && <p className="flash flash-error" role="status">{error}</p>}
           <div className="btn-row">
             <button
               className="btn primary"

@@ -25,10 +25,10 @@ export function JobsListPage() {
       <div className="page-head">
         <div>
           <h1>Jobs</h1>
-          <p className="muted">
+          <p className="lede">
             Jobs across repositories you can access — each run is tagged{' '}
             <span className="pill runner-local">Local</span> (CLI, after{' '}
-            <span className="mono">boxen push</span>) or{' '}
+            <span className="mono">mice push</span>) or{' '}
             <span className="pill runner-cluster">Cluster</span>. Open a job for
             logs and results.
           </p>
@@ -42,8 +42,8 @@ export function JobsListPage() {
         empty={state.kind === 'ok' && jobs.length === 0}
         emptyMessage={
           <>
-            No jobs yet. For local runs: <span className="mono">boxen job run</span>{' '}
-            then <span className="mono">boxen push</span>.
+            No jobs yet. For local runs: <span className="mono">mice job run</span>{' '}
+            then <span className="mono">mice push</span>.
           </>
         }
       >

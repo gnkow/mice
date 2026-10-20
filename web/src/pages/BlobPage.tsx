@@ -75,6 +75,8 @@ export function BlobPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const moreRef = useRef<HTMLDetailsElement>(null)
+  const editorRef = useRef<HTMLTextAreaElement>(null)
+  const gutterRef = useRef<HTMLDivElement>(null)
   const tabParam = searchParams.get('tab')
   const [tab, setTabState] = useState<BlobTab>(() =>
     isBlobTab(tabParam) ? tabParam : 'preview',
@@ -421,6 +423,17 @@ export function BlobPage() {
     setActionInfo(null)
     setEditing(true)
     setTab('preview')
+    window.requestAnimationFrame(() => {
+      editorRef.current?.focus()
+      editorRef.current?.setSelectionRange(0, 0)
+    })
+  }
+
+  function syncEditorScroll() {
+    const editor = editorRef.current
+    const gutter = gutterRef.current
+    if (!editor || !gutter) return
+    gutter.scrollTop = editor.scrollTop
   }
 
   function cancelEditing() {
@@ -625,8 +638,8 @@ export function BlobPage() {
         </div>
       </div>
 
-      {actionInfo && <p className="ok">{actionInfo}</p>}
-      {actionError && <p className="error">{actionError}</p>}
+      {actionInfo && <p className="flash flash-success" role="status">{actionInfo}</p>}
+      {actionError && <p className="flash flash-error" role="status">{actionError}</p>}
 
       <div className="tab-bar blob-tabs" role="tablist" aria-label="File views">
         {TABS.map((t) => (
@@ -732,18 +745,35 @@ export function BlobPage() {
                       </button>
                     </div>
                   </div>
-                  <textarea
-                    className="blob-editor-textarea"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    disabled={busy}
-                    spellCheck={false}
-                    aria-label={`Edit ${fileName}`}
-                    rows={Math.min(
-                      40,
-                      Math.max(12, draft.split('\n').length + 2),
-                    )}
-                  />
+                  <div className="blob-editor-live blob-code">
+                    <div
+                      className="blob-editor-gutter"
+                      ref={gutterRef}
+                      aria-hidden
+                    >
+                      {Array.from(
+                        {
+                          length: Math.max(1, draft.split('\n').length),
+                        },
+                        (_, i) => (
+                          <span key={i} className="blob-editor-line-num">
+                            {i + 1}
+                          </span>
+                        ),
+                      )}
+                    </div>
+                    <textarea
+                      ref={editorRef}
+                      className="blob-editor-textarea"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onScroll={syncEditorScroll}
+                      disabled={busy}
+                      spellCheck={false}
+                      wrap="off"
+                      aria-label={`Edit ${fileName}`}
+                    />
+                  </div>
                   <p className="muted small blob-editor-hint">
                     Saves a new commit on <code className="mono">{branch}</code>
                     {dirty ? ' · unsaved changes' : ' · no changes yet'}.
@@ -951,7 +981,7 @@ export function BlobPage() {
             empty={
               lineage.kind === 'ok' && lineage.data.operations.length === 0
             }
-            emptyMessage="No lineage ops for this path yet. Upload or edit via Boxen, or rebuild from history."
+            emptyMessage="No lineage ops for this path yet. Upload or edit via Mice, or rebuild from history."
           >
             {lineage.kind === 'ok' && (
               <LineageGraph

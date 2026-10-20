@@ -50,7 +50,7 @@ export function NamespaceSettingsPage() {
   const [busy, setBusy] = useState(false)
   const [principalKind, setPrincipalKind] = useState<'user' | 'group'>('user')
   const [sub, setSub] = useState('')
-  const [iss, setIss] = useState('boxen-dev')
+  const [iss, setIss] = useState('mice-dev')
   const [group, setGroup] = useState('')
   const [role, setRole] = useState<MemberRoleRef>('member')
 
@@ -182,7 +182,7 @@ export function NamespaceSettingsPage() {
         </div>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && <p className="flash flash-error" role="status">{error}</p>}
 
       <StateBlock
         loading={state.kind === 'loading'}
@@ -343,7 +343,7 @@ export function NamespaceSettingsPage() {
                       kind="user"
                       sub={sub}
                       iss={iss}
-                      defaultIss="boxen-dev"
+                      defaultIss="mice-dev"
                       disabled={busy}
                       onChange={({ sub: s, iss: i }) => {
                         setSub(s)

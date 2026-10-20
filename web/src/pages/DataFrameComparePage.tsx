@@ -368,7 +368,7 @@ export function DataFrameComparePage() {
       )}
 
       {diffError && (
-        <p className="error">Derived rows: {diffError}</p>
+        <p className="flash flash-error" role="status">Derived rows: {diffError}</p>
       )}
 
       {diffRows && (
@@ -446,8 +446,8 @@ export function DataFrameComparePage() {
         </section>
       )}
 
-      {info && <p className="ok">{info}</p>}
-      {error && <p className="error">{error}</p>}
+      {info && <p className="flash flash-success" role="status">{info}</p>}
+      {error && <p className="flash flash-error" role="status">{error}</p>}
     </main>
   )
 }

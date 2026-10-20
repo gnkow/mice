@@ -62,7 +62,7 @@ export function NewRepoPage() {
   )
   const [collabKind, setCollabKind] = useState<'user' | 'group'>('user')
   const [collabSub, setCollabSub] = useState('')
-  const [collabIss, setCollabIss] = useState('boxen-dev')
+  const [collabIss, setCollabIss] = useState('mice-dev')
   const [collabGroup, setCollabGroup] = useState('')
   const [collabRole, setCollabRole] = useState<RepoRole>('read')
   const [busy, setBusy] = useState(false)
@@ -242,7 +242,7 @@ export function NewRepoPage() {
           {creatingNewNamespace && (
             <div className="new-repo-new-ns">
               {me.kind === 'ok' && !canCreateNamespace ? (
-                <p className="error">
+                <p className="flash flash-error" role="status">
                   You need <code>create_namespace</code> or instance admin to
                   create a namespace.
                 </p>
@@ -391,7 +391,7 @@ export function NewRepoPage() {
                         <input
                           value={collabIss}
                           onChange={(e) => setCollabIss(e.target.value)}
-                          placeholder="boxen-dev"
+                          placeholder="mice-dev"
                           autoComplete="off"
                           disabled={busy}
                         />
@@ -437,7 +437,7 @@ export function NewRepoPage() {
           </button>
         </section>
 
-        {error && <p className="error">{error}</p>}
+        {error && <p className="flash flash-error" role="status">{error}</p>}
         <div className="btn-row">
           <button
             className="btn primary"

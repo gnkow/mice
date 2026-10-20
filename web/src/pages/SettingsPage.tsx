@@ -31,6 +31,12 @@ import {
 const INSTANCE_PERMS: InstancePermission[] = [
   'create_namespace',
   'view_audit',
+  'view_lineage',
+  'manage_own_tokens',
+  'cli_device_approve',
+  'session_create',
+  'session_connect',
+  'session_admin',
 ]
 
 export function SettingsPage() {
@@ -45,14 +51,24 @@ export function SettingsPage() {
   const [tokenBusy, setTokenBusy] = useState(false)
 
   const isInstanceAdmin = me.kind === 'ok' && !!me.data?.instanceAdmin
+  const canManageTokens =
+    me.kind === 'ok' &&
+    !!me.data &&
+    (!me.data.enforce ||
+      me.data.instanceAdmin ||
+      me.data.permissions.manage_own_tokens)
 
   const reloadTokens = useCallback(async () => {
+    if (!canManageTokens) {
+      setTokens([])
+      return
+    }
     try {
       setTokens(await listTokens())
     } catch {
       setTokens([])
     }
-  }, [])
+  }, [canManageTokens])
 
   useEffect(() => {
     setForm(loadSettings())
@@ -137,9 +153,9 @@ export function SettingsPage() {
             <div>
               <h2 id="cli-tokens-heading">CLI tokens</h2>
               <p className="muted small">
-                Day-to-day: run <code className="mono">boxen login</code> (browser
+                Day-to-day: run <code className="mono">mice login</code> (browser
                 authorize). For CI / automation, mint a PAT below and point oxen
-                / <span className="mono">boxen</span> at the{' '}
+                / <span className="mono">mice</span> at the{' '}
                 <strong>auth BFF</strong> (not raw oxen-server :3001):
               </p>
             </div>
@@ -147,18 +163,25 @@ export function SettingsPage() {
               {tokens.length} token{tokens.length === 1 ? '' : 's'}
             </p>
           </div>
+          {!canManageTokens ? (
+            <p className="muted small">
+              You need the <code className="mono">manage_own_tokens</code>{' '}
+              instance permission to list or create PATs.
+            </p>
+          ) : (
+            <>
           <pre className="settings-code mono">
-            {`boxen login
-boxen clone http://localhost:8080/<namespace>/<repo>
+            {`mice login
+mice clone http://localhost:8080/<namespace>/<repo>
 
 # Automation / CI
 oxen config --auth localhost:8080 <PAT>
 oxen clone http://localhost:8080/<namespace>/<repo>
 
-# Jobs (inside a clone; login or BOXEN_PAT)
-boxen job run --image alpine:3.20 -- touch out.txt
-# local commit + ~/.boxen job cache; then:
-boxen push
+# Jobs (inside a clone; login or MICE_PAT)
+mice job run --image alpine:3.20 -- touch out.txt
+# local commit + ~/.mice job cache; then:
+mice push
 # (publishes job metadata for commits on the tip)`}
           </pre>
 
@@ -199,7 +222,7 @@ boxen push
             </div>
           )}
 
-          {tokenError && <p className="error">{tokenError}</p>}
+          {tokenError && <p className="flash flash-error" role="status">{tokenError}</p>}
 
           {tokens.length > 0 ? (
             <ul className="ns-member-list">
@@ -229,6 +252,8 @@ boxen push
             </ul>
           ) : (
             <p className="muted small">No CLI tokens yet.</p>
+          )}
+            </>
           )}
         </section>
 
@@ -380,7 +405,7 @@ function AccessRequestsSection({
           {requests.length} pending
         </p>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="flash flash-error" role="status">{error}</p>}
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {state.kind === 'ok' && requests.length === 0 && (
         <p className="muted small">No pending requests.</p>
@@ -511,9 +536,9 @@ function InstanceAdminSection() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [adminSub, setAdminSub] = useState('')
-  const [adminIss, setAdminIss] = useState('boxen-dev')
+  const [adminIss, setAdminIss] = useState('mice-dev')
   const [permSub, setPermSub] = useState('')
-  const [permIss, setPermIss] = useState('boxen-dev')
+  const [permIss, setPermIss] = useState('mice-dev')
   const [permChecks, setPermChecks] = useState<InstancePermission[]>([
     'create_namespace',
   ])
@@ -522,7 +547,7 @@ function InstanceAdminSection() {
     return (
       <section className="settings-section">
         <h2>Instance admin</h2>
-        <p className="error">{state.message}</p>
+        <p className="flash flash-error" role="status">{state.message}</p>
       </section>
     )
   }
@@ -607,11 +632,13 @@ function InstanceAdminSection() {
           <h2 id="instance-admin-heading">Instance admin</h2>
           <p className="muted small">
             Instance admins and delegated permissions (
-            <code>create_namespace</code>, <code>view_audit</code>).
+            <code>create_namespace</code>, <code>view_audit</code>,{' '}
+            <code>view_lineage</code>, <code>manage_own_tokens</code>,{' '}
+            <code>cli_device_approve</code>, <code>session_*</code>).
           </p>
         </div>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="flash flash-error" role="status">{error}</p>}
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {data && (
         <>
@@ -668,7 +695,7 @@ function InstanceAdminSection() {
                 kind="user"
                 sub={adminSub}
                 iss={adminIss}
-                defaultIss="boxen-dev"
+                defaultIss="mice-dev"
                 disabled={busy}
                 onChange={({ sub, iss }) => {
                   setAdminSub(sub)
@@ -733,7 +760,7 @@ function InstanceAdminSection() {
                 kind="user"
                 sub={permSub}
                 iss={permIss}
-                defaultIss="boxen-dev"
+                defaultIss="mice-dev"
                 disabled={busy}
                 onChange={({ sub, iss }) => {
                   setPermSub(sub)

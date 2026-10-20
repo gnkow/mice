@@ -328,8 +328,8 @@ export function DataFramePage() {
         </form>
       </details>
 
-      {info && <p className="ok">{info}</p>}
-      {error && <p className="error">{error}</p>}
+      {info && <p className="flash flash-success" role="status">{info}</p>}
+      {error && <p className="flash flash-error" role="status">{error}</p>}
     </main>
   )
 }

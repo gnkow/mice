@@ -42,6 +42,17 @@ export function JobsPage() {
     setQDraft(q)
   }, [q])
 
+  useEffect(() => {
+    const raw = (params.get('submit') || '').trim().toLowerCase()
+    if (!raw) return
+    const mode: SubmitMode =
+      raw === 'local' || raw === 'cluster' ? raw : 'cluster'
+    setSubmitMode(mode)
+    const next = new URLSearchParams(params)
+    next.delete('submit')
+    setParams(next, { replace: true })
+  }, [params, setParams])
+
   const list = useAsync(
     (signal) => listJobs({ namespace, repo, limit: 100 }, signal),
     [namespace, repo],
@@ -140,10 +151,10 @@ export function JobsPage() {
       <header className="page-header page-head">
         <div>
           <h1>Jobs</h1>
-          <p className="muted">
+          <p className="lede">
             Container jobs for this repository —{' '}
             <span className="pill runner-local">Local</span> (CLI; shown here
-            after <span className="mono">boxen push</span>) or{' '}
+            after <span className="mono">mice push</span>) or{' '}
             <span className="pill runner-cluster">Cluster</span> (auth BFF /{' '}
             <span className="mono">JOBS_RUNNER</span>). Open a job for status,
             logs, and results.
@@ -162,7 +173,7 @@ export function JobsPage() {
               <span className="submit-job-option-text">
                 <b>Run on your machine</b>
                 <span className="muted small">
-                  <span className="mono">boxen job run</span> · Docker + local
+                  <span className="mono">mice job run</span> · Docker + local
                   commit
                 </span>
               </span>

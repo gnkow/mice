@@ -16,25 +16,40 @@ import {
   unstageWorkspaceFiles,
   uploadToWorkspace,
 } from '../lib/oxen/api'
+import { formatBytes } from '../lib/oxen/client'
 import { OxenApiError, type MetadataEntry } from '../lib/oxen/types'
+import {
+  getMountDiff,
+  listSessions,
+  sessionMounts,
+  syncSessionMount,
+} from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
 
-type WorkspaceTab = 'changes' | 'stage' | 'commit'
+type WorkspaceTab = 'changes' | 'stage' | 'commit' | 'sessions'
+type StagedKind = 'added' | 'modified' | 'removed'
 
 const TABS: { id: WorkspaceTab; label: string }[] = [
   { id: 'changes', label: 'Changes' },
   { id: 'stage', label: 'Stage' },
   { id: 'commit', label: 'Commit' },
+  { id: 'sessions', label: 'Sessions' },
 ]
 
+const STAGED_KIND_LABEL: Record<StagedKind, string> = {
+  added: 'Added',
+  modified: 'Modified',
+  removed: 'Removed',
+}
+
 function EntryList({
-  title,
+  kind,
   entries,
   onUnstage,
   onPreview,
   busy,
 }: {
-  title: string
+  kind: StagedKind
   entries: MetadataEntry[]
   onUnstage: (path: string) => void
   onPreview: (path: string) => void
@@ -42,34 +57,63 @@ function EntryList({
 }) {
   if (entries.length === 0) return null
   return (
-    <div className="workspace-entry-group">
-      <h3 className="subhead">{title}</h3>
+    <div className={`workspace-entry-group is-${kind}`}>
+      <div className="workspace-entry-group-head">
+        <h3 className="workspace-entry-group-title">
+          {STAGED_KIND_LABEL[kind]}
+        </h3>
+        <span className="muted small workspace-entry-count">
+          {entries.length}
+        </span>
+      </div>
       <ul className="workspace-entry-list">
-        {entries.map((e) => (
-          <li key={e.filename}>
-            <code className="mono">{e.filename}</code>
-            <span className="workspace-entry-actions">
-              {!e.is_dir && (
+        {entries.map((e) => {
+          const name = e.filename.split('/').pop() || e.filename
+          const dir = e.filename.includes('/')
+            ? e.filename.slice(0, e.filename.lastIndexOf('/'))
+            : null
+          return (
+            <li key={e.filename} className="workspace-entry-row">
+              <span
+                className={`workspace-entry-badge is-${kind}`}
+                aria-hidden
+              />
+              <div className="workspace-entry-main">
+                <code className="mono workspace-entry-name" title={e.filename}>
+                  {name}
+                </code>
+                {dir && (
+                  <span className="muted small workspace-entry-dir">{dir}</span>
+                )}
+              </div>
+              {!e.is_dir && e.size > 0 && (
+                <span className="muted small workspace-entry-size">
+                  {formatBytes(e.size)}
+                </span>
+              )}
+              <span className="workspace-entry-actions">
+                {!e.is_dir && kind !== 'removed' && (
+                  <button
+                    type="button"
+                    className="btn ghost small"
+                    disabled={busy}
+                    onClick={() => onPreview(e.filename)}
+                  >
+                    Preview
+                  </button>
+                )}
                 <button
                   type="button"
-                  className="linkish small"
+                  className="btn ghost small"
                   disabled={busy}
-                  onClick={() => onPreview(e.filename)}
+                  onClick={() => onUnstage(e.filename)}
                 >
-                  Preview
+                  Unstage
                 </button>
-              )}
-              <button
-                type="button"
-                className="linkish small"
-                disabled={busy}
-                onClick={() => onUnstage(e.filename)}
-              >
-                Unstage
-              </button>
-            </span>
-          </li>
-        ))}
+              </span>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
@@ -108,7 +152,7 @@ export function WorkspacePage() {
   const [directory, setDirectory] = useState('')
   const [removePath, setRemovePath] = useState('')
   const [mergeBranch, setMergeBranch] = useState('main')
-  const [message, setMessage] = useState('Workspace commit via Boxen')
+  const [message, setMessage] = useState('Workspace commit via Mice')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -292,7 +336,7 @@ export function WorkspacePage() {
     <main className="page workspace-detail-page">
       <div className="workspace-detail-head">
         <div>
-          <p className="workspace-back">
+          <p className="page-back">
             <Link to={`${base}/workspaces`}>← Workspaces</Link>
           </p>
           <h1 className="workspace-detail-title">
@@ -365,8 +409,8 @@ export function WorkspacePage() {
         ))}
       </div>
 
-      {info && <p className="ok">{info}</p>}
-      {error && <p className="error">{error}</p>}
+      {info && <p className="flash flash-success" role="status">{info}</p>}
+      {error && <p className="flash flash-error" role="status">{error}</p>}
 
       {tab === 'changes' && (
         <div
@@ -391,7 +435,7 @@ export function WorkspacePage() {
                   <h2 className="section-label">Staged changes</h2>
                 </div>
                 <form
-                  className="inline-form"
+                  className="inline-form workspace-staged-filter"
                   onSubmit={(e) => {
                     e.preventDefault()
                     setChangesPathApplied(changesPath.trim())
@@ -424,27 +468,29 @@ export function WorkspacePage() {
                     Showing under <code>{changesPathApplied}</code>
                   </p>
                 )}
-                <EntryList
-                  title="Added"
-                  entries={staged.added_files.entries}
-                  onUnstage={onUnstage}
-                  onPreview={onPreview}
-                  busy={busy}
-                />
-                <EntryList
-                  title="Modified"
-                  entries={staged.modified_files.entries}
-                  onUnstage={onUnstage}
-                  onPreview={onPreview}
-                  busy={busy}
-                />
-                <EntryList
-                  title="Removed"
-                  entries={staged.removed_files.entries}
-                  onUnstage={onUnstage}
-                  onPreview={onPreview}
-                  busy={busy}
-                />
+                <div className="workspace-staged-list">
+                  <EntryList
+                    kind="added"
+                    entries={staged.added_files.entries}
+                    onUnstage={onUnstage}
+                    onPreview={onPreview}
+                    busy={busy}
+                  />
+                  <EntryList
+                    kind="modified"
+                    entries={staged.modified_files.entries}
+                    onUnstage={onUnstage}
+                    onPreview={onPreview}
+                    busy={busy}
+                  />
+                  <EntryList
+                    kind="removed"
+                    entries={staged.removed_files.entries}
+                    onUnstage={onUnstage}
+                    onPreview={onPreview}
+                    busy={busy}
+                  />
+                </div>
                 {staged.added_files.entries.length === 0 &&
                   staged.modified_files.entries.length === 0 &&
                   staged.removed_files.entries.length === 0 && (
@@ -598,6 +644,306 @@ export function WorkspacePage() {
           </section>
         </div>
       )}
+
+      {tab === 'sessions' && (
+        <div
+          className="workspace-page-panel"
+          role="tabpanel"
+          id="workspace-panel-sessions"
+          aria-labelledby="workspace-tab-sessions"
+        >
+          <SessionsTab
+            namespace={namespace}
+            repo={repo}
+            workspaceId={workspaceId}
+          />
+        </div>
+      )}
     </main>
+  )
+}
+
+type SessionsTabProps = {
+  namespace: string
+  repo: string
+  workspaceId: string
+}
+
+function SessionsTab({ namespace, repo, workspaceId }: SessionsTabProps) {
+  const sessions = useAsync((signal) => listSessions(signal), [])
+  const sessionsList = sessions.kind === 'ok' ? sessions.data.sessions : []
+
+  // Find sessions that mount this workspace
+  const mountedSessions = useMemo(() => {
+    return sessionsList.filter((session) => {
+      const mounts = sessionMounts(session)
+      return mounts.some(
+        (m) =>
+          m.namespace.toLowerCase() === namespace.toLowerCase() &&
+          m.repo.toLowerCase() === repo.toLowerCase() &&
+          m.workspace_id === workspaceId,
+      )
+    })
+  }, [sessionsList, namespace, repo, workspaceId])
+
+  if (sessions.kind === 'loading') {
+    return <StateBlock loading>{null}</StateBlock>
+  }
+
+  if (sessions.kind === 'error') {
+    return (
+      <StateBlock error={sessions.message} onRetry={() => sessions.reload()}>
+        {null}
+      </StateBlock>
+    )
+  }
+
+  if (mountedSessions.length === 0) {
+    return (
+      <div className="panel">
+        <p className="muted">
+          No sessions are currently mounting this workspace.
+        </p>
+        <p className="muted small">
+          Create a session from the{' '}
+          <Link to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/workspaces`}>
+            workspaces list
+          </Link>{' '}
+          to start working with this workspace in a desktop environment.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="sessions-sync-panel">
+      <p className="muted small workspace-sessions-hint">
+        {mountedSessions.length} session{mountedSessions.length === 1 ? '' : 's'}{' '}
+        mounting this workspace. Sync changes from sessions back to this workspace.
+      </p>
+      {mountedSessions.map((session) => {
+        // Find the mount for this specific workspace
+        const mount = sessionMounts(session).find(
+          (m) =>
+            m.namespace.toLowerCase() === namespace.toLowerCase() &&
+            m.repo.toLowerCase() === repo.toLowerCase() &&
+            m.workspace_id === workspaceId,
+        )
+        if (!mount) return null
+        const mountKey =
+          mount.mount_path.replace(/^\/data\/?/, '').replace(/\//g, '__') ||
+          'm0'
+        return (
+          <SessionMountDiff
+            key={session.id}
+            sessionId={session.id}
+            sessionName={session.template_id || session.id.slice(0, 12)}
+            mountKey={mountKey}
+            mountPath={mount.mount_path}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+type SessionMountDiffProps = {
+  sessionId: string
+  sessionName: string
+  mountKey: string
+  mountPath: string
+}
+
+function SessionMountDiff({
+  sessionId,
+  sessionName,
+  mountKey,
+  mountPath,
+}: SessionMountDiffProps) {
+  const diff = useAsync(
+    (signal) => getMountDiff(sessionId, mountKey, signal),
+    [sessionId, mountKey],
+  )
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+  const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncSuccess, setSyncSuccess] = useState<string | null>(null)
+
+  const allFiles =
+    diff.kind === 'ok'
+      ? [...diff.data.added, ...diff.data.modified, ...diff.data.removed]
+      : []
+
+  const allSelected =
+    allFiles.length > 0 && selectedFiles.size === allFiles.length
+
+  function toggleFile(file: string) {
+    const next = new Set(selectedFiles)
+    if (next.has(file)) {
+      next.delete(file)
+    } else {
+      next.add(file)
+    }
+    setSelectedFiles(next)
+  }
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelectedFiles(new Set())
+    } else {
+      setSelectedFiles(new Set(allFiles))
+    }
+  }
+
+  async function onSync() {
+    if (selectedFiles.size === 0) return
+    setSyncing(true)
+    setSyncError(null)
+    setSyncSuccess(null)
+    try {
+      const result = await syncSessionMount(
+        sessionId,
+        mountKey,
+        Array.from(selectedFiles),
+      )
+      setSyncSuccess(
+        `Synced ${result.uploaded} file(s): ${result.added.length} added, ${result.modified.length} modified, ${result.removed.length} removed`,
+      )
+      setSelectedFiles(new Set())
+      diff.reload()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  if (diff.kind === 'loading') {
+    return (
+      <div className="workspace-mount-diff">
+        <h3 className="workspace-mount-title">
+          Session: {sessionName} · {mountPath}
+        </h3>
+        <StateBlock loading>{null}</StateBlock>
+      </div>
+    )
+  }
+
+  if (diff.kind === 'error') {
+    return (
+      <div className="workspace-mount-diff">
+        <h3 className="workspace-mount-title">
+          Session: {sessionName} · {mountPath}
+        </h3>
+        <StateBlock error={diff.message} onRetry={() => diff.reload()}>
+          {null}
+        </StateBlock>
+      </div>
+    )
+  }
+
+  const hasChanges = allFiles.length > 0
+
+  return (
+    <div className="workspace-mount-diff">
+      <div className="workspace-mount-head">
+        <h3 className="workspace-mount-title">
+          <Link to={`/sessions/${sessionId}`} className="workspace-session-link-title">
+            Session: {sessionName}
+          </Link>
+          <span className="muted"> · {mountPath}</span>
+        </h3>
+        <div className="workspace-mount-actions">
+          <button
+            type="button"
+            className="btn primary"
+            disabled={syncing || selectedFiles.size === 0}
+            onClick={() => void onSync()}
+          >
+            {syncing
+              ? 'Syncing…'
+              : `Sync ${selectedFiles.size > 0 ? `(${selectedFiles.size})` : ''}`}
+          </button>
+        </div>
+      </div>
+
+      {syncSuccess && (
+        <p className="flash flash-success" role="status">
+          {syncSuccess}
+        </p>
+      )}
+      {syncError && (
+        <p className="flash flash-error" role="status">
+          {syncError}
+        </p>
+      )}
+
+      {!hasChanges ? (
+        <p className="muted workspace-no-changes">No changes detected</p>
+      ) : (
+        <div className="workspace-changes">
+          <div className="workspace-changes-head">
+            <label className="workspace-select-all">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+              />
+              <span>
+                {allFiles.length} change{allFiles.length === 1 ? '' : 's'}
+              </span>
+            </label>
+          </div>
+          <ul className="workspace-entry-list">
+            {diff.data.added.map((file) => (
+              <li key={file} className="workspace-entry-row workspace-sync-entry">
+                <input
+                  type="checkbox"
+                  checked={selectedFiles.has(file)}
+                  onChange={() => toggleFile(file)}
+                />
+                <span className="workspace-entry-badge is-added" aria-hidden />
+                <div className="workspace-entry-main">
+                  <code className="mono workspace-entry-name">{file}</code>
+                  <span className="workspace-entry-status muted small">Added</span>
+                </div>
+              </li>
+            ))}
+            {diff.data.modified.map((file) => (
+              <li key={file} className="workspace-entry-row workspace-sync-entry">
+                <input
+                  type="checkbox"
+                  checked={selectedFiles.has(file)}
+                  onChange={() => toggleFile(file)}
+                />
+                <span className="workspace-entry-badge is-modified" aria-hidden />
+                <div className="workspace-entry-main">
+                  <code className="mono workspace-entry-name">{file}</code>
+                  <span className="workspace-entry-status muted small">
+                    Modified
+                  </span>
+                </div>
+              </li>
+            ))}
+            {diff.data.removed.map((file) => (
+              <li key={file} className="workspace-entry-row workspace-sync-entry">
+                <input
+                  type="checkbox"
+                  checked={selectedFiles.has(file)}
+                  onChange={() => toggleFile(file)}
+                />
+                <span className="workspace-entry-badge is-removed" aria-hidden />
+                <div className="workspace-entry-main">
+                  <code className="mono workspace-entry-name">{file}</code>
+                  <span className="workspace-entry-status muted small">
+                    Removed
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   )
 }

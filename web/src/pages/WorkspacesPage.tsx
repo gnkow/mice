@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Modal } from '../components/Modal'
+import { SessionCreateModal } from '../components/SessionCreateModal'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { confirmDelete } from '../lib/confirmDelete'
@@ -13,6 +14,13 @@ import {
   listWorkspaces,
 } from '../lib/oxen/api'
 import { OxenApiError } from '../lib/oxen/types'
+import {
+  listSessions,
+  sessionMounts,
+  shortenSessionId,
+  statusLabel,
+  type DesktopSession,
+} from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
 
 function TrashIcon({ size = 14 }: { size?: number }) {
@@ -29,6 +37,7 @@ function TrashIcon({ size = 14 }: { size?: number }) {
 export function WorkspacesPage() {
   const { namespace = '', repo = '' } = useParams()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
   const workspaces = useAsync(
     (signal) => listWorkspaces(namespace, repo, signal),
     [namespace, repo],
@@ -37,6 +46,7 @@ export function WorkspacesPage() {
     (signal) => listBranches(namespace, repo, signal),
     [namespace, repo],
   )
+  const sessions = useAsync((signal) => listSessions(signal), [])
 
   const [filter, setFilter] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -44,6 +54,20 @@ export function WorkspacesPage() {
   const [branch, setBranch] = useState('main')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sessionCreateWorkspace, setSessionCreateWorkspace] = useState<{
+    namespace: string
+    repo: string
+    workspaceId: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (params.get('new') !== '1') return
+    setError(null)
+    setCreateOpen(true)
+    const next = new URLSearchParams(params)
+    next.delete('new')
+    setParams(next, { replace: true })
+  }, [params, setParams])
 
   const branchNames = useMemo(
     () =>
@@ -63,6 +87,28 @@ export function WorkspacesPage() {
   }, [branchNames, defaultBranch])
 
   const list = workspaces.kind === 'ok' ? workspaces.data.workspaces : []
+  const sessionsList = sessions.kind === 'ok' ? sessions.data.sessions : []
+
+  // Build a map from workspace_id to sessions that mount it
+  const workspaceToSessions = useMemo(() => {
+    const map = new Map<string, DesktopSession[]>()
+    for (const session of sessionsList) {
+      const mounts = sessionMounts(session)
+      for (const mount of mounts) {
+        if (
+          mount.namespace.toLowerCase() === namespace.toLowerCase() &&
+          mount.repo.toLowerCase() === repo.toLowerCase() &&
+          mount.workspace_id
+        ) {
+          const existing = map.get(mount.workspace_id) || []
+          existing.push(session)
+          map.set(mount.workspace_id, existing)
+        }
+      }
+    }
+    return map
+  }, [sessionsList, namespace, repo])
+
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase()
     if (!needle) return list
@@ -163,12 +209,16 @@ export function WorkspacesPage() {
     }
   }
 
+  async function onCreateSession(workspaceId: string) {
+    setSessionCreateWorkspace({ namespace, repo, workspaceId })
+  }
+
   return (
-    <main className="page workspaces-page">
-      <div className="workspaces-page-head">
+    <main className="page">
+      <div className="page-head">
         <div>
-          <h1 className="workspaces-title">Workspaces</h1>
-          <p className="workspaces-subtitle muted">
+          <h1>Workspaces</h1>
+          <p className="lede">
             Stage and commit changes on the server without a full local clone.
           </p>
         </div>
@@ -215,15 +265,16 @@ export function WorkspacesPage() {
         emptyMessage="No workspaces yet. Create one to stage remote changes."
       >
         {workspaces.kind === 'ok' && (
-          <div className="workspaces-table-wrap">
+          <div className="table-container">
             {filtered.length === 0 ? (
               <p className="muted">No matching workspaces.</p>
             ) : (
-              <table className="workspaces-table">
+              <table className="table workspaces-table">
                 <thead>
                   <tr>
                     <th scope="col">Workspace</th>
                     <th scope="col">Base</th>
+                    <th scope="col">Sessions</th>
                     <th scope="col">Created</th>
                     <th scope="col">
                       <span className="sr-only">Actions</span>
@@ -234,6 +285,7 @@ export function WorkspacesPage() {
                   {filtered.map((ws) => {
                     const label = ws.name || ws.id.slice(0, 8)
                     const href = `${base}/workspaces/${encodeURIComponent(ws.id)}`
+                    const mountedSessions = workspaceToSessions.get(ws.id) || []
                     return (
                       <tr key={ws.id} data-workspace={ws.id}>
                         <td>
@@ -259,6 +311,31 @@ export function WorkspacesPage() {
                             </span>
                           </div>
                         </td>
+                        <td>
+                          <div className="workspace-sessions-cell">
+                            {mountedSessions.length === 0 ? (
+                              <span className="muted small">None</span>
+                            ) : (
+                              <div className="workspace-sessions-list">
+                                {mountedSessions.map((session) => (
+                                  <Link
+                                    key={session.id}
+                                    to={`/sessions/${encodeURIComponent(session.id)}`}
+                                    className="workspace-session-link"
+                                    title={`${shortenSessionId(session.id)} · ${statusLabel(session.status)}`}
+                                  >
+                                    <span className="mono">
+                                      {shortenSessionId(session.id, 8)}
+                                    </span>
+                                    <span className="muted small">
+                                      {statusLabel(session.status)}
+                                    </span>
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td className="muted small">
                           {ws.created_at
                             ? formatRelativeTime(ws.created_at)
@@ -269,6 +346,14 @@ export function WorkspacesPage() {
                             <Link className="btn ghost workspace-open-btn" to={href}>
                               Open
                             </Link>
+                            <button
+                              type="button"
+                              className="btn ghost small workspace-new-session-btn"
+                              title={`Create session for ${label}`}
+                              onClick={() => void onCreateSession(ws.id)}
+                            >
+                              New session
+                            </button>
                             <button
                               type="button"
                               className="icon-round workspace-delete"
@@ -333,12 +418,19 @@ export function WorkspacesPage() {
                 {busy ? 'Creating…' : 'Create workspace'}
               </button>
             </div>
-            {error && <p className="error">{error}</p>}
+            {error && <p className="flash flash-error" role="status">{error}</p>}
           </form>
         </Modal>
       )}
 
-      {!createOpen && error && <p className="error">{error}</p>}
+      {sessionCreateWorkspace && (
+        <SessionCreateModal
+          onClose={() => setSessionCreateWorkspace(null)}
+          preselectedWorkspace={sessionCreateWorkspace}
+        />
+      )}
+
+      {!createOpen && error && <p className="flash flash-error" role="status">{error}</p>}
     </main>
   )
 }

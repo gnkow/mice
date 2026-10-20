@@ -267,7 +267,7 @@ export function BranchesPage() {
       <div className="branches-page-head">
         <div>
           <h1 className="branches-title">Branches</h1>
-          <p className="branches-subtitle muted">
+          <p className="lede">
             Maintain multiple versions of your data, without stepping on each
             other&apos;s toes.
           </p>
@@ -412,7 +412,7 @@ export function BranchesPage() {
                           <div className="branch-row-actions">
                             {!isDefault && (
                               <Link
-                                className="linkish small"
+                                className="btn ghost branch-compare-btn"
                                 to={compareHref}
                                 title={`Compare ${b.name} with ${defaultBranch}`}
                               >
@@ -645,8 +645,8 @@ export function BranchesPage() {
         </form>
       </details>
 
-      {info && <p className="ok">{info}</p>}
-      {error && <p className="error">{error}</p>}
+      {info && <p className="flash flash-success" role="status">{info}</p>}
+      {error && <p className="flash flash-error" role="status">{error}</p>}
     </main>
   )
 }

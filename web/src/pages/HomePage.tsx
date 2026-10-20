@@ -1,23 +1,29 @@
 import { useMemo } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
-import { RepoSummaryCard } from '../components/RepoSummaryCard'
+import { Link } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { listAuthzNamespaces } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
 import { listJobs } from '../lib/jobs'
+import { listSessions } from '../lib/sessions'
 import { mergeNamespaces } from '../lib/mergeNamespaces'
 import { formatBytes } from '../lib/oxen/client'
+
+type BrowseTile = {
+  to: string
+  createTo: string
+  createLabel: string
+  value: string | number
+  label: string
+  hint: string
+  span?: 'wide' | 'tall' | 'full'
+}
 
 export function HomePage() {
   const catalog = useAsync((signal) => loadCatalog(signal), [])
   const authzNs = useAsync((signal) => listAuthzNamespaces(signal), [])
   const jobs = useAsync((signal) => listJobs({ limit: 100 }, signal), [])
-  const [params, setParams] = useSearchParams()
-  const q = (params.get('q') ?? '').trim().toLowerCase()
-  const pageParam = Number(params.get('page') || '1')
-  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
+  const sessions = useAsync((signal) => listSessions(signal), [])
 
   const mergedNamespaces = useMemo(() => {
     const oxen = catalog.kind === 'ok' ? catalog.data.namespaces : []
@@ -30,17 +36,13 @@ export function HomePage() {
   const workspaces = catalog.kind === 'ok' ? catalog.data.workspaces : []
   const storageBytes = catalog.kind === 'ok' ? catalog.data.storageBytes : 0
   const jobCount = jobs.kind === 'ok' ? jobs.data.jobs.length : 0
+  const sessionCount =
+    sessions.kind === 'ok' ? sessions.data.sessions.length : 0
 
-  const filteredRepos = useMemo(() => {
-    if (!q) return repositories
-    return repositories.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.namespace.toLowerCase().includes(q),
-    )
-  }, [repositories, q])
-
-  const slice = paginate(filteredRepos, page, PAGE_SIZE)
+  const firstRepo = repositories[0]
+  const firstRepoBase = firstRepo
+    ? `/n/${encodeURIComponent(firstRepo.namespace)}/r/${encodeURIComponent(firstRepo.name)}`
+    : null
 
   const storagePct =
     storageBytes > 0
@@ -53,18 +55,64 @@ export function HomePage() {
     (authzNs.kind === 'loading' && catalog.kind !== 'error')
   const error = catalog.kind === 'error' ? catalog.message : null
 
-  function goPage(next: number) {
-    const nextParams = new URLSearchParams(params)
-    if (next <= 1) nextParams.delete('page')
-    else nextParams.set('page', String(next))
-    setParams(nextParams, { replace: true })
-  }
+  const tiles: BrowseTile[] = [
+    {
+      to: '/namespaces',
+      createTo: '/namespaces/new',
+      createLabel: 'New namespace',
+      value: mergedNamespaces.length,
+      label: 'Namespaces',
+      hint: 'Orgs, members, and access boundaries',
+      span: 'wide',
+    },
+    {
+      to: '/repositories',
+      createTo: '/repos/new',
+      createLabel: 'New repository',
+      value: repositories.length,
+      label: 'Repositories',
+      hint: 'Versioned datasets and files',
+      span: 'tall',
+    },
+    {
+      to: '/workspaces',
+      createTo: firstRepoBase
+        ? `${firstRepoBase}/workspaces?new=1`
+        : '/repositories',
+      createLabel: 'New workspace',
+      value: workspaces.length,
+      label: 'Workspaces',
+      hint: 'Writable mounts on pinned data',
+    },
+    {
+      to: '/jobs',
+      createTo: firstRepoBase
+        ? `${firstRepoBase}/jobs?submit=cluster`
+        : '/repositories',
+      createLabel: 'New job',
+      value: jobs.kind === 'loading' ? '…' : jobCount,
+      label: 'Jobs',
+      hint: 'Batch compute against workspaces',
+    },
+    {
+      to: '/sessions',
+      createTo: '/sessions#sessions-create',
+      createLabel: 'New session',
+      value: sessions.kind === 'loading' ? '…' : sessionCount,
+      label: 'Sessions',
+      hint: 'Interactive Linux desktop containers',
+      span: 'full',
+    },
+  ]
 
   return (
-    <main className="page wide">
+    <main className="page wide home-page">
       <div className="page-head">
         <div>
           <h1>Home</h1>
+          <p className="lede">
+            Jump into namespaces, data, compute, and desktops.
+          </p>
         </div>
         {!loading && !error && (
           <div className="storage-meter" title="Reported storage from oxen-server">
@@ -89,77 +137,37 @@ export function HomePage() {
         }}
       >
         {!loading && !error && (
-          <>
-            <div className="dash-stats" role="navigation" aria-label="Browse">
-              <Link className="dash-stat dash-stat-link" to="/namespaces">
-                <span className="dash-stat-value">
-                  {mergedNamespaces.length}
-                </span>
-                <span className="dash-stat-label">Namespaces</span>
-              </Link>
-              <Link className="dash-stat dash-stat-link" to="/repositories">
-                <span className="dash-stat-value">{repositories.length}</span>
-                <span className="dash-stat-label">Repositories</span>
-              </Link>
-              <Link className="dash-stat dash-stat-link" to="/workspaces">
-                <span className="dash-stat-value">{workspaces.length}</span>
-                <span className="dash-stat-label">Workspaces</span>
-              </Link>
-              <Link className="dash-stat dash-stat-link" to="/jobs">
-                <span className="dash-stat-value">
-                  {jobs.kind === 'loading' ? '…' : jobCount}
-                </span>
-                <span className="dash-stat-label">Jobs</span>
-              </Link>
-            </div>
-
-            {q && (
-              <p className="muted small">
-                Filtering repositories for “{params.get('q')}”.
-              </p>
-            )}
-
-            <div className="projects-head">
-              <h2>Repositories</h2>
-              <Link className="btn primary" to="/repos/new">
-                + New repository
-              </Link>
-            </div>
-
-            {filteredRepos.length === 0 ? (
-              q ? (
-                <p className="muted small">No repositories match this filter.</p>
-              ) : mergedNamespaces.length > 0 ? (
-                <p className="muted">
-                  No repositories yet. Add one in{' '}
-                  <Link to="/namespaces">a namespace</Link> to start versioning
-                  data.
-                </p>
-              ) : (
-                <p className="muted">
-                  No repositories yet. Create your first repository to start
-                  versioning data.
-                </p>
-              )
-            ) : (
-              <>
-                <ul className="card-list dash-repo-cards">
-                  {slice.items.map((p) => (
-                    <li key={`${p.namespace}/${p.name}`}>
-                      <RepoSummaryCard namespace={p.namespace} name={p.name} />
-                    </li>
-                  ))}
-                </ul>
-                <Pagination
-                  page={slice.page}
-                  pageCount={slice.pageCount}
-                  onPageChange={goPage}
-                  label="Home repositories pages"
-                  total={slice.total}
-                />
-              </>
-            )}
-          </>
+          <div className="dash-bento" role="navigation" aria-label="Browse">
+            {tiles.map((tile) => (
+              <div
+                key={tile.to}
+                className={[
+                  'dash-tile',
+                  tile.span === 'wide' ? 'dash-tile-wide' : '',
+                  tile.span === 'tall' ? 'dash-tile-tall' : '',
+                  tile.span === 'full' ? 'dash-tile-full' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                <Link className="dash-tile-main" to={tile.to}>
+                  <span className="dash-tile-value">{tile.value}</span>
+                  <span className="dash-tile-copy">
+                    <span className="dash-tile-label">{tile.label}</span>
+                    <span className="dash-tile-hint">{tile.hint}</span>
+                  </span>
+                </Link>
+                <Link
+                  className="dash-tile-add"
+                  to={tile.createTo}
+                  aria-label={tile.createLabel}
+                  title={tile.createLabel}
+                >
+                  +
+                </Link>
+              </div>
+            ))}
+          </div>
         )}
       </StateBlock>
     </main>

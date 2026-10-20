@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
+import { fetchAuthzMe } from '../lib/auth'
 
 type DeviceStatus = {
   userCode: string
@@ -54,6 +55,13 @@ export function CliDevicePage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [done, setDone] = useState<'approved' | 'denied' | null>(null)
   const [busy, setBusy] = useState(false)
+  const authz = useAsync((signal) => fetchAuthzMe(signal), [])
+  const canApprove =
+    authz.kind === 'ok' &&
+    !!authz.data &&
+    (!authz.data.enforce ||
+      authz.data.instanceAdmin ||
+      authz.data.permissions.cli_device_approve)
 
   const status = useAsync(
     (signal) =>
@@ -106,7 +114,8 @@ export function CliDevicePage() {
 
   const lookup = status.kind === 'ok' ? status.data : null
   const canAct =
-    lookup &&
+    !!canApprove &&
+    !!lookup &&
     !lookup.expired &&
     lookup.status === 'pending' &&
     done === null
@@ -114,12 +123,18 @@ export function CliDevicePage() {
   return (
     <div className="login-shell">
       <main className="page narrow login-page">
-        <p className="login-brand">BOXEN</p>
+        <p className="login-brand">MICE</p>
         <h1>Authorize CLI</h1>
         <p className="lede">
           Enter the code shown in your terminal to link{' '}
-          <code className="mono">boxen login</code> to this account.
+          <code className="mono">mice login</code> to this account.
         </p>
+        {!canApprove && authz.kind === 'ok' && authz.data?.enforce ? (
+          <p className="flash flash-warn" role="status">
+            You need the <code className="mono">cli_device_approve</code>{' '}
+            instance permission to approve CLI logins.
+          </p>
+        ) : null}
 
         <form className="cli-device-form" onSubmit={onLookup}>
           <label>
@@ -142,7 +157,7 @@ export function CliDevicePage() {
         </form>
 
         {status.kind === 'error' && activeCode && (
-          <p className="error" role="alert">
+          <p className="flash flash-error" role="alert">
             {status.message}
           </p>
         )}
@@ -181,7 +196,7 @@ export function CliDevicePage() {
               <div className="flash" role="status">
                 <p>
                   Approved. Return to your terminal —{' '}
-                  <code className="mono">boxen login</code> should finish
+                  <code className="mono">mice login</code> should finish
                   shortly.
                 </p>
               </div>
@@ -195,13 +210,13 @@ export function CliDevicePage() {
         )}
 
         {actionError && (
-          <p className="error" role="alert">
+          <p className="flash flash-error" role="alert">
             {actionError}
           </p>
         )}
 
         <p className="muted small">
-          <Link to="/">Back to Boxen</Link>
+          <Link to="/">Back to Mice</Link>
         </p>
       </main>
     </div>

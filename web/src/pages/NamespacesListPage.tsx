@@ -162,7 +162,7 @@ export function NamespacesListPage() {
         )}
       </div>
 
-      {actionError && <p className="error">{actionError}</p>}
+      {actionError && <p className="flash flash-error" role="status">{actionError}</p>}
 
       <StateBlock
         loading={loading}

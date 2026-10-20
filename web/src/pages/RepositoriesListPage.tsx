@@ -39,9 +39,11 @@ export function RepositoriesListPage() {
           <h1>Repositories</h1>
           <p className="lede">All repositories across namespaces.</p>
         </div>
-        <Link className="btn primary" to="/repos/new">
-          + New repository
-        </Link>
+        <div className="btn-row">
+          <Link className="btn primary" to="/repos/new">
+            + New repository
+          </Link>
+        </div>
       </div>
 
       <StateBlock

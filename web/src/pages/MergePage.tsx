@@ -164,7 +164,7 @@ export function MergePage() {
       <div className="merge-page-head">
         <div>
           <h1 className="merge-title">Merge</h1>
-          <p className="merge-subtitle muted">
+          <p className="lede">
             Bring commits from one branch into another on this oxen-server
             repository.
           </p>
@@ -241,7 +241,7 @@ export function MergePage() {
         <p className="muted">Loading branches…</p>
       )}
       {branches.kind === 'error' && (
-        <p className="error">{branches.message}</p>
+        <p className="flash flash-error" role="status">{branches.message}</p>
       )}
 
       {branches.kind === 'ok' && branchNames.length < 2 && (
