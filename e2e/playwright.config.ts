@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 // Prefer localhost (not 127.0.0.1) so OIDC redirect_uri / cookies match Keycloak.
-const baseURL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+const baseURL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const oxenURL = process.env.OXEN_URL ?? 'http://127.0.0.1:3001'
 const slowMo = Number(process.env.SLOWMO || 0)
 

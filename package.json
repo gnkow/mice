@@ -1,13 +1,13 @@
 {
-  "name": "boxen",
+  "name": "mice",
   "private": true,
   "type": "module",
   "description": "Open-source UI for Oxen (oxen-server)",
   "bin": {
-    "boxen": "./cli/boxen.mjs"
+    "mice": "./cli/mice.mjs"
   },
   "scripts": {
-    "boxen": "node cli/boxen.mjs",
+    "mice": "node cli/mice.mjs",
     "test": "playwright test -c e2e/playwright.config.ts",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:ui": "playwright test -c e2e/playwright.config.ts --ui",

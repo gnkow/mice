@@ -1,10 +1,10 @@
-# Composable Oxen stack for Boxen.
+# Composable Oxen stack for Mice.
 # Full stack: docker compose up --build
 #
 # Browser → web (Vite) → auth (Hono BFF) → oxen-server
 # Keycloak provides OIDC locally. Point OIDC_* at another IdP to replace it.
 
-name: boxen
+name: mice
 
 services:
   oxen-server:
@@ -18,7 +18,7 @@ services:
       SYNC_DIR: /var/oxen/data
     restart: unless-stopped
     networks:
-      - boxen
+      - mice
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
@@ -34,9 +34,9 @@ services:
       KC_HOSTNAME_STRICT: "false"
       KC_HEALTH_ENABLED: "true"
     volumes:
-      - ./auth/keycloak/realm-boxen.json:/opt/keycloak/data/import/realm-boxen.json:ro
+      - ./auth/keycloak/realm-mice.json:/opt/keycloak/data/import/realm-mice.json:ro
     networks:
-      - boxen
+      - mice
 
   auth:
     build:
@@ -50,25 +50,25 @@ services:
       AUTH_DATA_DIR: /data
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
       PUBLIC_WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
-      SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-boxen-session-secret}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-mice-session-secret}
       # PLAT-AUTHO: unset = store flag (off until bootstrap).
       AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}
-      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-boxen@example.com}
+      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice@example.com}
       AUTHZ_DEV_GRANT_ALL: ${AUTHZ_DEV_GRANT_ALL:-true}
       AUTHZ_GROUP_BOOTSTRAP: ${AUTHZ_GROUP_BOOTSTRAP:-}
       AUTHZ_REQUIRE_TRAINING: ${AUTHZ_REQUIRE_TRAINING:-false}
       # Server-side discovery inside Compose (override all OIDC_* for another IdP)
-      OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/boxen}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/mice}
       # Browser-facing issuer / authorize host
-      OIDC_ISSUER_PUBLIC: ${OIDC_ISSUER_PUBLIC:-http://localhost:${KEYCLOAK_PORT:-8180}/realms/boxen}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-boxen-auth}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-boxen-auth-secret}
+      OIDC_ISSUER_PUBLIC: ${OIDC_ISSUER_PUBLIC:-http://localhost:${KEYCLOAK_PORT:-8180}/realms/mice}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-mice-auth}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-mice-auth-secret}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:${WEB_PORT:-5173}/auth/callback}
       OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:${WEB_PORT:-5173}/login}
       OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
-      # Directory search via Keycloak Admin API (service account on boxen-auth)
+      # Directory search via Keycloak Admin API (service account on mice-auth)
       KEYCLOAK_ADMIN_URL: ${KEYCLOAK_ADMIN_URL:-http://keycloak:8080}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-boxen}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-mice}
       DIRECTORY_PROVIDER: ${DIRECTORY_PROVIDER:-keycloak}
       COOKIE_SECURE: "false"
       # Corporate TLS intercepts break npm inside the image; prefer host node_modules.
@@ -82,19 +82,61 @@ services:
       JOBS_DOCKER_SOCKET: /var/run/docker.sock
       JOBS_IMAGE_PULL_ALLOWLIST: ${JOBS_IMAGE_PULL_ALLOWLIST:-}
       JOBS_MAX_CONCURRENT: ${JOBS_MAX_CONCURRENT:-2}
+      # PLAT-SESS — desktop sessions (local Docker provisioner + guacamole-lite)
+      SESSIONS_ENABLED: ${SESSIONS_ENABLED:-true}
+      SESSIONS_DATA_DIR: /data/sessions
+      SESSIONS_HOST_DATA_DIR: ${SESSIONS_HOST_DATA_DIR:-./.data/sessions}
+      # Default docker = real XFCE+xrdp guests. Use mock for fast e2e only.
+      SESSIONS_PROVISIONER: ${SESSIONS_PROVISIONER:-docker}
+      SESSIONS_DOCKER_SOCKET: /var/run/docker.sock
+      SESSIONS_DOCKER_NETWORK: ${SESSIONS_DOCKER_NETWORK:-mice_mice}
+      SESSIONS_DESKTOP_IMAGE: ${SESSIONS_DESKTOP_IMAGE:-lscr.io/linuxserver/rdesktop:ubuntu-xfce}
+      SESSIONS_MAX_PER_USER: ${SESSIONS_MAX_PER_USER:-2}
+      SESSIONS_IDLE_TIMEOUT_SECONDS: ${SESSIONS_IDLE_TIMEOUT_SECONDS:-14400}
+      SESSIONS_MAX_LIFETIME_SECONDS: ${SESSIONS_MAX_LIFETIME_SECONDS:-43200}
+      SESSIONS_CONNECT_BACKEND: ${SESSIONS_CONNECT_BACKEND:-guacamole_lite}
+      SESSIONS_GUACD_HOST: guacd
+      SESSIONS_GUACD_PORT: "4822"
+      SESSIONS_RUSTGUAC_URL: ${SESSIONS_RUSTGUAC_URL:-}
+      SESSIONS_RUSTGUAC_API_KEY: ${SESSIONS_RUSTGUAC_API_KEY:-}
+      SESSIONS_RECORDING: ${SESSIONS_RECORDING:-false}
+      SESSIONS_AUDIT_RETENTION_DAYS: ${SESSIONS_AUDIT_RETENTION_DAYS:-365}
     volumes:
       - ./auth:/app
       - auth_node_modules:/app/node_modules
       - auth_data:/data
       # Bind-mount so host Docker can re-bind job workdirs into runner containers.
       - ${JOBS_HOST_DATA_DIR:-./.data/jobs}:/data/jobs
+      - ${SESSIONS_HOST_DATA_DIR:-./.data/sessions}:/data/sessions
       # Local (Docker) runner. Set JOBS_RUNNER=kubernetes for Cluster jobs.
       - ${JOBS_DOCKER_SOCKET_HOST:-/var/run/docker.sock}:/var/run/docker.sock
     depends_on:
       - oxen-server
       - keycloak
+      - guacd
     networks:
-      - boxen
+      - mice
+
+  # Guacamole daemon — RDP/VNC protocol translation for Sessions Connect
+  # Keep in step with web's guacamole-common-js (^1.5); 1.6 guacd + 1.5 JS
+  # triggers "Guacamole protocol violation". disable-gfx exists since 1.5.
+  guacd:
+    image: guacamole/guacd:1.5.5
+    restart: unless-stopped
+    networks:
+      - mice
+
+  # Optional rustguac (set SESSIONS_CONNECT_BACKEND=rustguac + SESSIONS_RUSTGUAC_URL)
+  rustguac:
+    profiles: ["rustguac"]
+    image: ${RUSTGUAC_IMAGE:-ghcr.io/sol1/rustguac:latest}
+    environment:
+      GUACD_HOSTNAME: guacd
+      GUACD_PORT: "4822"
+    depends_on:
+      - guacd
+    networks:
+      - mice
 
   web:
     build:
@@ -114,10 +156,10 @@ services:
     depends_on:
       - auth
     networks:
-      - boxen
+      - mice
 
 networks:
-  boxen:
+  mice:
 
 volumes:
   oxen-data:

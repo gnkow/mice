@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 import { EncryptJWT } from 'jose'
 import type { Page } from '@playwright/test'
 
-const BASE_URL = process.env.BOXEN_BASE_URL ?? 'http://localhost:5173'
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const SESSION_SECRET =
-  process.env.SESSION_SECRET ?? 'dev-only-change-me-boxen-session-secret'
-const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? 'boxen_session'
+  process.env.SESSION_SECRET ?? 'dev-only-change-me-mice-session-secret'
+const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? 'mice_session'
 const TTL_SEC = Number(process.env.SESSION_TTL_SEC ?? 60 * 60 * 8)
 
 export type TestIdentity = {
@@ -24,7 +24,7 @@ function secretKey() {
 export async function sealTestSession(user: TestIdentity): Promise<string> {
   return new EncryptJWT({
     sub: user.sub,
-    iss: user.iss ?? 'boxen-e2e',
+    iss: user.iss ?? 'mice-e2e',
     email: user.email,
     name: user.name,
     id_token: '',
@@ -48,10 +48,10 @@ export async function mintSession(
     ?.map((g) => g.trim().toLowerCase())
     .filter(Boolean)
   const user: TestIdentity = {
-    name: identity.name ?? 'Boxen E2E',
-    email: identity.email ?? 'e2e@boxen.local',
+    name: identity.name ?? 'Mice E2E',
+    email: identity.email ?? 'e2e@mice.local',
     sub: identity.sub ?? 'e2e-user',
-    iss: identity.iss ?? 'boxen-e2e',
+    iss: identity.iss ?? 'mice-e2e',
     ...(groups?.length ? { groups } : {}),
   }
   const token = await sealTestSession(user)

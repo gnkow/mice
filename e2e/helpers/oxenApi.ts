@@ -30,7 +30,7 @@ async function api<T = Json>(
   return { status: res.status, body }
 }
 
-export function uniqueId(prefix = 'boxen-e2e'): string {
+export function uniqueId(prefix = 'mice-e2e'): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
@@ -69,8 +69,8 @@ export async function putFile(
       : new Blob([content])
   form.append('file', bytes, name)
   form.append('message', message)
-  form.append('name', 'Boxen E2E')
-  form.append('email', 'e2e@boxen.local')
+  form.append('name', 'Mice E2E')
+  form.append('email', 'e2e@mice.local')
   const resource = [branch, ...path.split('/').filter(Boolean)].join('/')
   const { status, body } = await api(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/file/${resource}`,

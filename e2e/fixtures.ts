@@ -20,7 +20,7 @@ type Fixtures = {
 }
 
 async function makeRepo(seeded: boolean): Promise<RepoFixture> {
-  const namespace = uniqueId('boxen-e2e')
+  const namespace = uniqueId('mice-e2e')
   const repo = 'repo'
   await createRepo(namespace, repo)
   if (seeded) {
