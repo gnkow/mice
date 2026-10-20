@@ -219,7 +219,7 @@ export function WorkspacesPage() {
         <div>
           <h1>Workspaces</h1>
           <p className="lede">
-            Stage and commit changes on the server without a full local clone.
+            Make changes on the server without downloading the entire repository.
           </p>
         </div>
         <div className="btn-row">
@@ -257,7 +257,7 @@ export function WorkspacesPage() {
         loading={workspaces.kind === 'loading'}
         error={workspaces.kind === 'error' ? workspaces.message : null}
         empty={workspaces.kind === 'ok' && list.length === 0}
-        emptyMessage="No workspaces yet. Create one to stage remote changes."
+        emptyMessage="No workspaces yet. Create one to work with your data remotely."
       >
         {workspaces.kind === 'ok' && (
           <div className="table-container">

@@ -5,7 +5,7 @@ export function DocsPage() {
         <div>
           <h1>Docs</h1>
           <p className="lede">
-            Documentation for Oxen and self-hosted oxen-server.
+            Documentation and guides for using the platform.
           </p>
         </div>
       </div>

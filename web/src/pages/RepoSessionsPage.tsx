@@ -36,11 +36,11 @@ export function RepoSessionsPage() {
         <div>
           <h1>Sessions</h1>
           <p className="lede">
-            Desktop sessions that mount a workspace of{' '}
+            Remote desktop sessions connected to workspaces in{' '}
             <code className="mono">
               {namespace}/{repo}
             </code>
-            . Open a session for connect, stop, or destroy.
+            . Open a session to connect, stop, or remove it.
           </p>
         </div>
         <div className="btn-row">

@@ -50,11 +50,9 @@ export function JobsListPage() {
         <div>
           <h1>Jobs</h1>
           <p className="lede">
-            Jobs across repositories you can access — each run is tagged{' '}
-            <span className="pill runner-local">Local</span> (CLI, after{' '}
-            <span className="mono">mice push</span>) or{' '}
-            <span className="pill runner-cluster">Cluster</span>. Open a job for
-            logs and results.
+            Computational jobs across all your repositories — runs can be{' '}
+            <span className="pill runner-local">Local</span> (from your computer) or{' '}
+            <span className="pill runner-cluster">Cluster</span> (on the server). Open a job to view logs and results.
           </p>
         </div>
       </div>
@@ -116,14 +114,9 @@ export function JobsListPage() {
         onRetry={() => state.reload()}
         empty={state.kind === 'ok' && filtered.length === 0}
         emptyMessage={
-          filter.trim() ? (
-            `No jobs match "${filter.trim()}".`
-          ) : (
-            <>
-              No jobs yet. For local runs: <span className="mono">mice job run</span>{' '}
-              then <span className="mono">mice push</span>.
-            </>
-          )
+          filter.trim()
+            ? `No jobs match "${filter.trim()}".`
+            : "No jobs yet. Use the command-line tools to create and submit jobs."
         }
       >
         {state.kind === 'ok' && (

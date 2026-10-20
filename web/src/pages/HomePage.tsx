@@ -115,7 +115,7 @@ export function HomePage() {
           </p>
         </div>
         {!loading && !error && (
-          <div className="storage-meter" title="Reported storage from oxen-server">
+          <div className="storage-meter" title="Total storage used">
             <span className="storage-meter-label">Storage</span>
             <strong className="small">
               {formatBytes(storageBytes)}

@@ -152,12 +152,9 @@ export function JobsPage() {
         <div>
           <h1>Jobs</h1>
           <p className="lede">
-            Container jobs for this repository —{' '}
-            <span className="pill runner-local">Local</span> (CLI; shown here
-            after <span className="mono">mice push</span>) or{' '}
-            <span className="pill runner-cluster">Cluster</span> (auth BFF /{' '}
-            <span className="mono">JOBS_RUNNER</span>). Open a job for status,
-            logs, and results.
+            Computational jobs for this repository —{' '}
+            <span className="pill runner-local">Local</span> (run on your computer) or{' '}
+            <span className="pill runner-cluster">Cluster</span> (run on the server). Open a job to view status, logs, and results.
           </p>
         </div>
         <div className="btn-row">
@@ -174,8 +171,7 @@ export function JobsPage() {
                 <span className="submit-job-option-text">
                   <b>Run on your machine</b>
                   <span className="muted small">
-                    <span className="mono">mice job run</span> · Docker + local
-                    commit
+                    Execute locally using your local data
                   </span>
                 </span>
               </button>
@@ -187,9 +183,9 @@ export function JobsPage() {
               >
                 <span className="pill runner-cluster">Cluster</span>
                 <span className="submit-job-option-text">
-                  <b>Queue on the server</b>
+                  <b>Run on the server</b>
                   <span className="muted small">
-                    Auth BFF · Docker or Kubernetes
+                    Submit to the server job queue
                   </span>
                 </span>
               </button>

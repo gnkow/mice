@@ -76,7 +76,7 @@ export function WorkspacesListPage() {
         <div>
           <h1>Workspaces</h1>
           <p className="lede">
-            Remote staging workspaces across all repositories on this server.
+            Work with your data on the server without downloading everything locally.
           </p>
         </div>
       </div>

@@ -73,7 +73,7 @@ export function NamespacesListPage() {
       !(await confirmDelete({
         title: `Delete namespace ${ns.name}`,
         detail:
-          'All repositories in this namespace will be deleted from oxen-server, and AuthZ membership will be removed.',
+          'All repositories in this namespace and their access permissions will be permanently deleted.',
         confirmWord: ns.name,
       }))
     ) {
@@ -98,8 +98,7 @@ export function NamespacesListPage() {
         <div>
           <h1>Namespaces</h1>
           <p className="lede">
-            Organize repositories and access. Empty namespaces (AuthZ only) show
-            until the first repository is created on oxen-server.
+            Organize repositories and manage access. Empty namespaces show until you create your first repository.
           </p>
         </div>
         {canCreate && (
@@ -204,7 +203,7 @@ export function NamespacesListPage() {
                             ` · ${ns.workspaceCount} workspace${ns.workspaceCount === 1 ? '' : 's'}`}
                           {ns.onOxen
                             ? ` · ${ns.storageGb.toFixed(3)} GB`
-                            : ' · not on oxen yet'}
+                            : ' · no repositories yet'}
                         </p>
                         <div className="ns-card-tags">
                           {!ns.onOxen && (
@@ -228,7 +227,7 @@ export function NamespacesListPage() {
                           )}
                           {!ns.authz && ns.onOxen && (
                             <span className="ns-tag ns-tag-warn">
-                              no AuthZ record
+                              no access control
                             </span>
                           )}
                         </div>

@@ -126,13 +126,11 @@ export function CliDevicePage() {
         <p className="login-brand">MICE</p>
         <h1>Authorize CLI</h1>
         <p className="lede">
-          Enter the code shown in your terminal to link{' '}
-          <code className="mono">mice login</code> to this account.
+          Enter the code shown in your terminal to link your command-line session to this account.
         </p>
         {!canApprove && authz.kind === 'ok' && authz.data?.enforce ? (
           <p className="flash flash-warn" role="status">
-            You need the <code className="mono">cli_device_approve</code>{' '}
-            instance permission to approve CLI logins.
+            You need permission to approve command-line login requests.
           </p>
         ) : null}
 
@@ -195,15 +193,13 @@ export function CliDevicePage() {
             {done === 'approved' && (
               <div className="flash" role="status">
                 <p>
-                  Approved. Return to your terminal —{' '}
-                  <code className="mono">mice login</code> should finish
-                  shortly.
+                  Approved. Return to your terminal — login should complete shortly.
                 </p>
               </div>
             )}
             {done === 'denied' && (
               <div className="flash flash-warn" role="status">
-                <p>Denied. The CLI login was cancelled.</p>
+                <p>Denied. The login request was cancelled.</p>
               </div>
             )}
           </div>

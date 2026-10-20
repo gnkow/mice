@@ -981,7 +981,7 @@ export function BlobPage() {
             empty={
               lineage.kind === 'ok' && lineage.data.operations.length === 0
             }
-            emptyMessage="No lineage ops for this path yet. Upload or edit via Mice, or rebuild from history."
+            emptyMessage="No history tracking for this file yet. Upload or edit to start tracking changes."
           >
             {lineage.kind === 'ok' && (
               <LineageGraph

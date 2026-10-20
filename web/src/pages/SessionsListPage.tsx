@@ -61,8 +61,7 @@ export function SessionsListPage() {
         <div>
           <h1>Sessions</h1>
           <p className="lede">
-            Dedicated Linux desktops — exclusive to you. Mount zero or more
-            workspaces to work with your data.
+            Your personal remote desktop environments for working with data. Connect one or more workspaces to access your files.
           </p>
         </div>
         <div className="btn-row">
