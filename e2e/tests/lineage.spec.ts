@@ -659,7 +659,7 @@ test.describe('file lineage (PLAT-TRACE)', () => {
     await page.getByTestId('blob-tab-lineage').click()
     await expect(page.getByTestId('lineage-panel')).toBeVisible()
     await page.getByRole('button', { name: 'Rebuild from history' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/lineage/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/lineage/i, {
       timeout: 30_000,
     })
     await expect(page.getByTestId('lineage-graph')).toBeVisible({

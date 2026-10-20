@@ -27,7 +27,7 @@ test.describe('workspaces & merge (W/M)', () => {
     await uploadSection.locator('input[name="file"]').setInputFiles(wsNote)
     await uploadSection.getByRole('button', { name: 'Stage upload' }).click()
 
-    await expect(page.locator('main p.ok')).toHaveText(/Staged ws-note\.txt/, {
+    await expect(page.locator('main .flash-success')).toHaveText(/Staged ws-note\.txt/, {
       timeout: 30_000,
     })
     await expect(page.locator('code', { hasText: 'ws-note.txt' })).toBeVisible()
@@ -39,7 +39,7 @@ test.describe('workspaces & merge (W/M)', () => {
     await commitSection.getByLabel('Commit message').fill('workspace commit via e2e')
     await commitSection.getByRole('button', { name: 'Commit workspace' }).click()
 
-    await expect(page.locator('main p.ok')).toContainText(/Committed/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Committed/i, {
       timeout: 30_000,
     })
   })
@@ -70,7 +70,7 @@ test.describe('workspaces & merge (W/M)', () => {
     })
 
     await page.getByRole('button', { name: 'Merge feature → main' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Merged/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Merged/i, {
       timeout: 30_000,
     })
   })

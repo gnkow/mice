@@ -105,13 +105,13 @@ test.describe('compare & DF (D-03–D-07 DF-01–05)', () => {
 
     await page.locator('details.more-actions').getByText('Advanced').click()
     await page.getByRole('button', { name: 'Reload' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/reloaded/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/reloaded/i, {
       timeout: 30_000,
     })
 
     await page.getByRole('button', { name: 'Delete compare' }).click()
     await acceptConfirmModal(page, 'DELETE')
-    await expect(page.locator('main p.ok')).toContainText(/Compare deleted/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Compare deleted/i, {
       timeout: 30_000,
     })
   })
@@ -136,7 +136,7 @@ test.describe('compare & DF (D-03–D-07 DF-01–05)', () => {
     await expect(page.locator('th', { hasText: 'name' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Index for query' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Indexing/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Indexing/i, {
       timeout: 30_000,
     })
   })
@@ -217,7 +217,7 @@ test.describe('compare & DF (D-03–D-07 DF-01–05)', () => {
     await schemaSection
       .getByRole('button', { name: 'Stage schema metadata' })
       .click()
-    await expect(page.locator('main p.ok')).toContainText(/Schema metadata staged/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Schema metadata staged/i, {
       timeout: 30_000,
     })
 
@@ -229,7 +229,7 @@ test.describe('compare & DF (D-03–D-07 DF-01–05)', () => {
       .getByLabel('Column metadata (JSON object)')
       .fill('{"description":"e2e column"}')
     await columnForm.getByRole('button', { name: 'Stage column metadata' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Column metadata/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Column metadata/i, {
       timeout: 30_000,
     })
   })

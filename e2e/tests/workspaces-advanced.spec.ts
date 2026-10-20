@@ -30,7 +30,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
     const upload = page.locator('section', { hasText: 'Upload file' })
     await upload.locator('input[name="file"]').setInputFiles(wsNote)
     await upload.getByRole('button', { name: 'Stage upload' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Staged/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Staged/i, {
       timeout: 30_000,
     })
 
@@ -53,7 +53,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
       .locator('section', { hasText: 'Stage removal' })
       .getByRole('button', { name: 'Stage delete' })
       .click()
-    await expect(page.locator('main p.ok')).toHaveText(/Staged removal of readme\.txt/, {
+    await expect(page.locator('main .flash-success')).toHaveText(/Staged removal of readme\.txt/, {
       timeout: 30_000,
     })
   })

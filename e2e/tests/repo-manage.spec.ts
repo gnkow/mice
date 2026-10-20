@@ -9,7 +9,7 @@ test.describe('repository manage (R-05 R-06 R-07–R-09)', () => {
     await page.getByPlaceholder('New name').fill('renamed-repo')
     await page.getByRole('button', { name: 'Rename' }).click()
 
-    await expect(page.locator('.error')).toContainText(
+    await expect(page.locator('.flash-error')).toContainText(
       /addresses repositories by name|cannot rename/i,
     )
     await expect(page).toHaveURL(
@@ -47,7 +47,7 @@ test.describe('repository manage (R-05 R-06 R-07–R-09)', () => {
     await about
       .getByRole('button', { name: 'Refresh size and metadata' })
       .click()
-    await expect(about.locator('.error')).toHaveCount(0)
+    await expect(about.locator('.flash-error')).toHaveCount(0)
     await expect(about.getByText(/\bsize\b/i)).toBeVisible()
   })
 })

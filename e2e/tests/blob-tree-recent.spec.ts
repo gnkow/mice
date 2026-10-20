@@ -42,7 +42,7 @@ test.describe('blob + tree recent features', () => {
     await editor.getByLabel(/Commit message/i).fill('blob edit save')
     await editor.getByRole('button', { name: 'Save' }).click()
 
-    await expect(page.locator('main p.ok')).toContainText(/Saved/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Saved/i, {
       timeout: 30_000,
     })
     await expect(page.getByTestId('blob-editor')).toHaveCount(0)
@@ -75,7 +75,7 @@ test.describe('blob + tree recent features', () => {
       timeout: 15_000,
     })
     await page.getByRole('button', { name: 'Restore latest version' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Restored/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Restored/i, {
       timeout: 30_000,
     })
     await expect(page.getByTestId('blob-missing')).toHaveCount(0)
@@ -94,7 +94,7 @@ test.describe('blob + tree recent features', () => {
       .getByTestId('path-change-rename')
       .getByRole('button', { name: 'Rename' })
       .click()
-    await expect(page.locator('main p.ok')).toContainText(/Renamed/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Renamed/i, {
       timeout: 30_000,
     })
     await expect(fileNameLink(page, /^NOTES\.txt$/)).toBeVisible()
@@ -121,7 +121,7 @@ test.describe('blob + tree recent features', () => {
       .getByTestId('path-change-copy')
       .getByRole('button', { name: 'Copy' })
       .click()
-    await expect(page.locator('main p.ok')).toContainText(/Copied/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Copied/i, {
       timeout: 30_000,
     })
 
@@ -162,7 +162,7 @@ test.describe('blob + tree recent features', () => {
       .getByTestId('file-row-deleted')
       .getByRole('button', { name: 'Restore' })
       .click()
-    await expect(page.locator('main p.ok')).toContainText(/Restored/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Restored/i, {
       timeout: 30_000,
     })
     await expect(fileNameLink(page, 'gone-soon.txt')).toBeVisible({

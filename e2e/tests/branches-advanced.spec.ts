@@ -82,7 +82,7 @@ test.describe('branches advanced (B-04 B-06 C-04)', () => {
     await form.getByLabel(/Server commit/).fill(mainTip)
     await form.getByRole('button', { name: 'Merge into branch' }).click()
 
-    await expect(page.locator('main p.ok')).toContainText(/Branch tip after merge/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Branch tip after merge/i, {
       timeout: 30_000,
     })
   })

@@ -93,7 +93,7 @@ test.describe('files advanced (F-05–F-15)', () => {
     const downloadOrError = await Promise.race([
       downloadPromise.then((d) => ({ kind: 'download' as const, d })),
       page
-        .locator('main p.error')
+        .locator('main .flash-error')
         .waitFor({ state: 'visible', timeout: 30_000 })
         .then(() => ({ kind: 'error' as const })),
     ])
@@ -101,7 +101,7 @@ test.describe('files advanced (F-05–F-15)', () => {
     if (downloadOrError.kind === 'download') {
       expect(await downloadOrError.d.failure()).toBeNull()
     } else {
-      await expect(page.locator('main p.error')).not.toHaveText('')
+      await expect(page.locator('main .flash-error')).not.toHaveText('')
     }
   })
 
@@ -119,7 +119,7 @@ test.describe('files advanced (F-05–F-15)', () => {
       .getByRole('button', { name: 'Move' })
       .click()
 
-    await expect(page.locator('main p.ok')).toContainText(/Moved/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Moved/i, {
       timeout: 30_000,
     })
     await page.goto(repoPath(seededRepo, '/tree/main/docs'))
@@ -149,7 +149,7 @@ test.describe('files advanced (F-05–F-15)', () => {
 
     await page.locator('details.blob-ops-menu').getByText('More').click()
     await page.getByRole('menuitem', { name: 'Refresh metadata' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Derived metadata refreshed/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Derived metadata refreshed/i, {
       timeout: 30_000,
     })
 
@@ -198,7 +198,7 @@ test.describe('files advanced (F-05–F-15)', () => {
       .click()
     const tgz = await tgzDownload
     expect(tgz.suggestedFilename()).toMatch(/\.tgz$/)
-    await expect(page.locator('main p.ok')).toContainText(/tarball/i)
+    await expect(page.locator('main .flash-success')).toContainText(/tarball/i)
   })
 
   test('F-09: import from URL surfaces server response', async ({
@@ -212,7 +212,7 @@ test.describe('files advanced (F-05–F-15)', () => {
     await section.getByLabel('Destination path').fill('imports/remote.txt')
     await section.getByRole('button', { name: 'Import URL' }).click()
     // Live server blocks / fails fetch — UI must show the error (wiring check).
-    await expect(page.locator('main p.error')).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('main .flash-error')).toBeVisible({ timeout: 30_000 })
   })
 
   test('F-10: upload & unpack zip archive', async ({ page, seededRepo }) => {
@@ -224,7 +224,7 @@ test.describe('files advanced (F-05–F-15)', () => {
       path.join(fixtures, 'sample.zip'),
     )
     await section.getByRole('button', { name: 'Upload & unpack' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Zip unpacked/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Zip unpacked/i, {
       timeout: 30_000,
     })
 
@@ -241,7 +241,7 @@ test.describe('files advanced (F-05–F-15)', () => {
     await page.getByRole('menuitem', { name: 'Download by hash' }).click()
     const download = await downloadPromise
     expect(await download.failure()).toBeNull()
-    await expect(page.locator('main p.ok')).toContainText(/Downloaded .* by content hash/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Downloaded .* by content hash/i, {
       timeout: 15_000,
     })
   })

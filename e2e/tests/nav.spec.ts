@@ -40,7 +40,7 @@ test.describe('repo nav (TC-NAV-01)', () => {
         .getByRole('link', { name: stop.link, exact: true })
         .click()
       await expect(stop.ready()).toBeVisible({ timeout: 30_000 })
-      await expect(page.locator('main p.error')).toHaveCount(0)
+      await expect(page.locator('main .flash-error')).toHaveCount(0)
     }
 
     await expect(page.locator('nav.repo-nav details.repo-nav-more')).toHaveCount(

@@ -42,7 +42,7 @@ test.describe('upload (unified size-aware flow)', () => {
     await dialog.getByLabel('Destination directory').fill('multi')
     await dialog.getByRole('button', { name: 'Upload' }).click()
 
-    const ok = page.locator('.manage-files-toast.ok, p.ok').first()
+    const ok = page.locator('.manage-files-toast.flash-success, .flash-success').first()
     await expect(ok).toContainText(/Uploaded 2 file/, { timeout: 120_000 })
     await expect(ok).toContainText('sample.txt')
     await expect(ok).toContainText('ws-note.txt')
@@ -59,7 +59,7 @@ test.describe('upload (unified size-aware flow)', () => {
       await dialog.getByLabel('Destination directory').fill('bulk')
       await dialog.getByRole('button', { name: 'Upload' }).click()
 
-      const ok = page.locator('.manage-files-toast.ok, p.ok').first()
+      const ok = page.locator('.manage-files-toast.flash-success, .flash-success').first()
       await expect(ok).toContainText(/Uploaded 1 file/, { timeout: 120_000 })
       await expect(ok).toContainText(/chunked/)
       await expect(ok).toContainText(/chunks/)
@@ -86,7 +86,7 @@ test.describe('upload (unified size-aware flow)', () => {
       await dialog.getByRole('button', { name: 'Upload' }).click()
 
       await expect(
-        page.locator('.manage-files-toast.ok, p.ok').first(),
+        page.locator('.manage-files-toast.flash-success, .flash-success').first(),
       ).toContainText(/staged into workspace/i, { timeout: 120_000 })
     } finally {
       fs.unlinkSync(chunky)

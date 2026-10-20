@@ -116,7 +116,7 @@ test.describe('platform (P-03 P-04)', () => {
       timeout: 30_000,
     })
     await page.getByRole('button', { name: 'Merge feature → main' }).click()
-    await expect(page.locator('main p.ok')).toContainText(/Merged/i, {
+    await expect(page.locator('main .flash-success')).toContainText(/Merged/i, {
       timeout: 30_000,
     })
 
