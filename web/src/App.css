@@ -4426,7 +4426,7 @@ p.ok {
 
 .empty-state {
   display: grid;
-  justify-items: start;
+  justify-items: center;
   gap: 0.35rem;
   padding: 1.25rem;
   border: 1px dashed var(--line);
@@ -4444,12 +4444,12 @@ p.ok {
 .empty-state-icon::after {
   content: '';
   position: absolute;
-  left: 0.55rem;
-  top: -0.15rem;
+  left: 50%;
+  top: 50%;
   width: 2px;
   height: 1.7rem;
   background: var(--muted);
-  transform: rotate(40deg);
+  transform: translate(-50%, -50%) rotate(40deg);
 }
 
 .commit-day-heading {
