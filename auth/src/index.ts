@@ -37,8 +37,10 @@ import {
 } from './accessRequests.js'
 import {
   authorizeAuditQuery,
+  authorizeCliDeviceApprove,
   authorizeLineageQuery,
   authorizeLineageRebuild,
+  authorizeManageOwnTokens,
   canManageRepoCollaborators,
   isPendingUser,
   preparePrincipal,
@@ -95,13 +97,14 @@ import {
   updateCustomNamespaceRole,
   updateCustomRepoRole,
 } from './customRoles.js'
-import type {
-  BasePermission,
-  CollaboratorRoleRef,
-  InstancePermission,
-  MemberRoleRef,
-  NamespaceCapability,
-  RepoFinePermission,
+import {
+  ALL_INSTANCE_PERMISSIONS,
+  type BasePermission,
+  type CollaboratorRoleRef,
+  type InstancePermission,
+  type MemberRoleRef,
+  type NamespaceCapability,
+  type RepoFinePermission,
 } from './authzTypes.js'
 import {
   approveDevice,
@@ -119,11 +122,17 @@ import {
   revokePatByToken,
 } from './tokens.js'
 import { registerJobRoutes } from './jobsRoutes.js'
+import { registerSessionRoutes } from './sessionsRoutes.js'
+import {
+  resumeInterruptedProvisions,
+  startSessionsLifecycleSweeper,
+} from './sessions.js'
+import { attachSessionsGuacGateway } from './sessionsGateway.js'
 import { resumeQueuedJobs } from './jobs.js'
 
-const PKCE_COOKIE = 'boxen_oidc_pkce'
-/** After Boxen logout, next /auth/login must show IdP credentials (no silent SSO). */
-const PROMPT_LOGIN_COOKIE = 'boxen_prompt_login'
+const PKCE_COOKIE = 'mice_oidc_pkce'
+/** After Mice logout, next /auth/login must show IdP credentials (no silent SSO). */
+const PROMPT_LOGIN_COOKIE = 'mice_prompt_login'
 
 type PkceState = {
   verifier: string
@@ -157,15 +166,15 @@ app.get('/auth/cli-info', (c) => {
   return c.json({
     remote,
     authHost,
-    loginExample: 'boxen login',
-    cloneExample: `boxen clone ${remote}/<namespace>/<repo>`,
+    loginExample: 'mice login',
+    cloneExample: `mice clone ${remote}/<namespace>/<repo>`,
     /** Automation / CI still use a manually minted PAT. */
     configExample: `oxen config --auth ${authHost} <PAT>`,
     oxenCloneExample: `oxen clone ${remote}/<namespace>/<repo>`,
   })
 })
 
-// --- CLI device login (Boxen-native pairing; no IdP device grant required) ---
+// --- CLI device login (Mice-native pairing; no IdP device grant required) ---
 
 app.post('/auth/cli/device/start', (c) => {
   const started = startDeviceAuth()
@@ -194,6 +203,10 @@ app.post('/auth/cli/device/approve', async (c) => {
   const session = await requireSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
+  const gate = authorizeCliDeviceApprove(session)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+  }
   let userCode = ''
   try {
     const body = (await c.req.json()) as { user_code?: string }
@@ -213,6 +226,11 @@ app.post('/auth/cli/device/approve', async (c) => {
 app.post('/auth/cli/device/deny', async (c) => {
   const session = await requireSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
+  preparePrincipal(session)
+  const gate = authorizeCliDeviceApprove(session)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+  }
   let userCode = ''
   try {
     const body = (await c.req.json()) as { user_code?: string }
@@ -332,10 +350,13 @@ app.get('/auth/me/authz', async (c) => {
     enforce: isAuthzEnforce(),
     pending,
     instanceAdmin: isInstanceAdmin(session),
-    permissions: {
-      create_namespace: hasInstancePermission(session, 'create_namespace'),
-      view_audit: hasInstancePermission(session, 'view_audit'),
-    },
+    permissions: Object.fromEntries(
+      ALL_INSTANCE_PERMISSIONS.map((p) => [
+        p,
+        hasInstancePermission(session, p),
+      ]),
+    ) as Record<(typeof ALL_INSTANCE_PERMISSIONS)[number], boolean>,
+    instancePermissionCatalog: ALL_INSTANCE_PERMISSIONS,
     hasAnyGrant: userHasAnyGrant(session),
     trainingCompleted: hasCompletedTraining(session),
     requireTraining: env.authzRequireTraining,
@@ -460,12 +481,22 @@ async function requireSession(c: Parameters<typeof getSession>[0]) {
 app.get('/auth/tokens', async (c) => {
   const session = await requireSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
+  preparePrincipal(session)
+  const gate = authorizeManageOwnTokens(session)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+  }
   return c.json({ tokens: listPatsForUser(session) })
 })
 
 app.post('/auth/tokens', async (c) => {
   const session = await requireSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
+  preparePrincipal(session)
+  const gate = authorizeManageOwnTokens(session)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+  }
   let label = 'CLI token'
   let scopes: PatScope[] | undefined
   try {
@@ -498,6 +529,11 @@ app.post('/auth/tokens', async (c) => {
 app.delete('/auth/tokens/:id', async (c) => {
   const session = await requireSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
+  preparePrincipal(session)
+  const gate = authorizeManageOwnTokens(session)
+  if (!gate.allow) {
+    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+  }
   const id = c.req.param('id')
   const ok = revokePat(session, id)
   if (!ok) return c.json({ error: 'Token not found' }, 404)
@@ -654,7 +690,7 @@ app.post('/auth/lineage/rebuild', async (c) => {
       }
       return { ok: upstream.ok, status: upstream.status, json }
     } catch (err) {
-      console.error('[boxen-auth] lineage rebuild fetch failed', err)
+      console.error('[mice-auth] lineage rebuild fetch failed', err)
       return { ok: false, status: 502, json: null }
     }
   }
@@ -737,7 +773,7 @@ app.get('/auth/login', async (c) => {
     maxAge: 600,
   })
   // Always prompt=login so Sign in with SSO shows the IdP credential form
-  // (covers Keycloak SSO cookies that survived Boxen-only logout).
+  // (covers Keycloak SSO cookies that survived Mice-only logout).
   deleteCookie(c, PROMPT_LOGIN_COOKIE, { path: '/' })
   return c.redirect(
     buildAuthorizeUrl({
@@ -1494,11 +1530,15 @@ app.all('/api/*', async (c) => {
 })
 
 registerJobRoutes(app)
+registerSessionRoutes(app)
 resumeQueuedJobs()
+startSessionsLifecycleSweeper()
+resumeInterruptedProvisions()
 
 console.log(
-  `[boxen-auth] listening on :${env.port} → oxen ${env.oxenUpstream}` +
-    ` (oidc=${oidcConfigured()}; jobs=${env.jobsRunner})`,
+  `[mice-auth] listening on :${env.port} → oxen ${env.oxenUpstream}` +
+    ` (oidc=${oidcConfigured()}; jobs=${env.jobsRunner}; sessions=${env.sessionsEnabled})`,
 )
 
-serve({ fetch: app.fetch, port: env.port })
+const server = serve({ fetch: app.fetch, port: env.port })
+attachSessionsGuacGateway(server as never)

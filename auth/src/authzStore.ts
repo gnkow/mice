@@ -3,6 +3,7 @@ import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
 import type { SessionUser } from './session.js'
 import {
+  ALL_INSTANCE_PERMISSIONS,
   isPredefinedNsRole,
   isPredefinedRepoRole,
   maxRepoRole,
@@ -222,7 +223,7 @@ export function listInstanceAdmins(): UserKey[] {
 
 export function instancePermissions(user: UserKey): InstancePermission[] {
   if (isInstanceAdmin(user)) {
-    return ['create_namespace', 'view_audit']
+    return [...ALL_INSTANCE_PERMISSIONS]
   }
   return readInstance().permissions[userKey(user)] ?? []
 }
@@ -290,6 +291,11 @@ export function setInstancePermissions(
   perms: InstancePermission[],
 ): { ok: true } | { ok: false; error: string } {
   if (!isInstanceAdmin(actor)) return { ok: false, error: 'Forbidden' }
+  for (const p of perms) {
+    if (!ALL_INSTANCE_PERMISSIONS.includes(p)) {
+      return { ok: false, error: `Invalid instance permission: ${p}` }
+    }
+  }
   writeInstancePermissions(target, perms)
   return { ok: true }
 }
@@ -301,10 +307,50 @@ export function writeInstancePermissions(
 ): void {
   const s = readInstance()
   const key = userKey(target)
-  const cleaned = [...new Set(perms)]
+  const cleaned = [
+    ...new Set(perms.filter((p) => ALL_INSTANCE_PERMISSIONS.includes(p))),
+  ]
   if (cleaned.length === 0) delete s.permissions[key]
   else s.permissions[key] = cleaned
   writeInstance(s)
+}
+
+/**
+ * True if the user is a namespace member/owner, instance admin, or has any
+ * repo collaborator grant (user or IdP group) under the namespace.
+ */
+export function userCanSeeNamespace(
+  user: UserKey & { groups?: string[] },
+  ns: string,
+): boolean {
+  if (isInstanceAdmin(user)) return true
+  if (resolveNamespaceRole(ns, user)) return true
+  const prefix = `${ns}/`
+  const uk = userKey(user)
+  const groups = new Set((user.groups ?? []).map(normalizeGroup))
+  const collab = readCollaborators()
+  for (const [key, map] of Object.entries(collab.collaborators)) {
+    if (!key.startsWith(prefix)) continue
+    if (map[uk]) return true
+  }
+  for (const [key, map] of Object.entries(collab.groupCollaborators ?? {})) {
+    if (!key.startsWith(prefix)) continue
+    for (const g of groups) {
+      if (map[g]) return true
+    }
+  }
+  return false
+}
+
+/** Namespace names visible to the user (member, collab, or instance admin). */
+export function visibleNamespaceNames(
+  user: UserKey & { groups?: string[] },
+): string[] | 'all' {
+  if (isInstanceAdmin(user)) return 'all'
+  const nsStore = readNamespaces()
+  return Object.keys(nsStore.namespaces)
+    .filter((ns) => userCanSeeNamespace(user, ns))
+    .sort()
 }
 
 /** Users who completed training (Phase 3 gate). */

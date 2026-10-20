@@ -33,6 +33,10 @@ import { WorkspacesPage } from './pages/WorkspacesPage'
 import { JobPage } from './pages/JobPage'
 import { JobsPage } from './pages/JobsPage'
 import { JobsListPage } from './pages/JobsListPage'
+import { SessionsListPage } from './pages/SessionsListPage'
+import { SessionPage } from './pages/SessionPage'
+import { SessionDesktopPage } from './pages/SessionDesktopPage'
+import { RepoSessionsPage } from './pages/RepoSessionsPage'
 import './App.css'
 
 export default function App() {
@@ -44,6 +48,11 @@ export default function App() {
           <Route path="cli/device" element={<CliDevicePage />} />
           <Route path="pending" element={<PendingAccessPage />} />
           <Route element={<RequireAuthz />}>
+            {/* Full-page desktop viewer (no app chrome) — opened by Connect */}
+            <Route
+              path="sessions/:sessionId/desktop"
+              element={<SessionDesktopPage />}
+            />
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
               <Route path="namespaces" element={<NamespacesListPage />} />
@@ -55,6 +64,8 @@ export default function App() {
               />
               <Route path="workspaces" element={<WorkspacesListPage />} />
               <Route path="jobs" element={<JobsListPage />} />
+              <Route path="sessions" element={<SessionsListPage />} />
+              <Route path="sessions/:sessionId" element={<SessionPage />} />
               <Route path="audit" element={<AuditPage />} />
               <Route path="docs" element={<DocsPage />} />
               <Route path="n/:namespace" element={<NamespacePage />} />
@@ -85,6 +96,7 @@ export default function App() {
                 />
                 <Route path="jobs" element={<JobsPage />} />
                 <Route path="jobs/:jobId" element={<JobPage />} />
+                <Route path="sessions" element={<RepoSessionsPage />} />
                 <Route path="df/:branch/*" element={<DataFramePage />} />
                 <Route path="import" element={<ImportExportPage />} />
                 <Route path="upload" element={<LargeUploadPage />} />

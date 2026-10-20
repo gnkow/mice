@@ -15,6 +15,7 @@ import {
   namespacesWithCapability,
   ownedNamespaces,
   resolveNamespaceRole,
+  userCanSeeNamespace,
   userHasAnyGrant,
 } from './authzStore.js'
 import {
@@ -207,6 +208,7 @@ export function requiredRepoRoleForRequest(
   if (m === 'GET' || m === 'HEAD') return 'read'
 
   if (action === 'repo.delete') return 'admin'
+  if (action === 'repo.metadata') return 'admin'
   if (action === 'merge') return 'maintain'
   if (action === 'branch.delete') return 'maintain'
   if (
@@ -266,11 +268,22 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
   let repo = classified.repo ?? input.createRepo
   const action = classified.action
 
-  // List / read namespace catalog — any non-pending user
+  // List oxen namespace catalog — non-pending; proxy filters to visible ns.
+  // Single-namespace GET requires membership or repo collab in that ns.
   if (
     (pathname === '/api/namespaces' || pathname.startsWith('/api/namespaces/')) &&
     (method === 'GET' || method === 'HEAD')
   ) {
+    const parts = pathname.replace(/\/+$/, '').split('/').filter(Boolean)
+    if (parts.length >= 3) {
+      const targetNs = decodeURIComponent(parts[2] ?? '')
+      if (!targetNs) return deny('Invalid namespace')
+      if (userCanSeeNamespace(user, targetNs)) return allow()
+      if (isInstanceAdmin(user)) {
+        return { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
+      }
+      return deny('Not allowed to view that namespace')
+    }
     return allow()
   }
 
@@ -389,7 +402,10 @@ export function authorizeAuditQuery(
   }
 }
 
-/** Lineage read: repo `read`, or instance admin / `view_audit` for cross-repo. */
+/**
+ * Lineage read: repo `lineage_read` (implied by read), ns `view_lineage`,
+ * or instance `view_lineage` / admin for unscoped.
+ */
 export function authorizeLineageQuery(
   user: SessionUser,
   namespace?: string,
@@ -400,20 +416,26 @@ export function authorizeLineageQuery(
     return { allow: true }
   }
   if (!namespace || !repo) {
-    if (isInstanceAdmin(user) || hasInstancePermission(user, 'view_audit')) {
+    if (isInstanceAdmin(user) || hasInstancePermission(user, 'view_lineage')) {
       return { allow: true }
     }
     return {
       allow: false,
-      reason: 'namespace and repo required (or view_audit / admin)',
+      reason: 'namespace and repo required (or view_lineage / admin)',
     }
   }
-  const check = hasRepoPermission(user, namespace, repo, 'read')
+  if (hasNamespaceCapability(namespace, user, 'view_lineage')) {
+    return { allow: true }
+  }
+  const check = hasRepoPermission(user, namespace, repo, 'read', {
+    method: 'GET',
+    action: 'lineage.read',
+  })
   if (check.ok) return { allow: true }
-  return { allow: false, reason: 'Requires repository read access' }
+  return { allow: false, reason: 'Requires lineage_read on repository' }
 }
 
-/** Lineage rebuild: repo admin (or Owner / instance admin). */
+/** Lineage rebuild: repo `lineage_rebuild` (implied by admin). */
 export function authorizeLineageRebuild(
   user: SessionUser,
   namespace: string,
@@ -424,15 +446,17 @@ export function authorizeLineageRebuild(
     return { allow: true }
   }
   if (isInstanceAdmin(user)) return { allow: true }
-  if (resolveNamespaceRole(namespace, user) === 'owner') return { allow: true }
-  const check = hasRepoPermission(user, namespace, repo, 'admin')
+  const check = hasRepoPermission(user, namespace, repo, 'admin', {
+    method: 'POST',
+    action: 'lineage.rebuild',
+  })
   if (check.ok) return { allow: true }
-  return { allow: false, reason: 'Requires repository admin' }
+  return { allow: false, reason: 'Requires lineage_rebuild on repository' }
 }
 
 /**
- * job.submit: dedicated capability dependent on repo write
- * (write role implies job_submit; custom roles may list job_submit only if base ≥ write).
+ * job.submit: dedicated fine (implied by write); custom roles may grant
+ * job_submit below the write floor.
  */
 export function authorizeJobSubmit(
   user: SessionUser,
@@ -441,18 +465,17 @@ export function authorizeJobSubmit(
 ): { allow: boolean; reason?: string } {
   preparePrincipal(user)
   if (!isAuthzEnforce()) return { allow: true }
-  // Dependent on repo write; write (and custom roles with base≥write) imply job_submit.
   const write = hasRepoPermission(user, namespace, repo, 'write', {
     method: 'POST',
     action: 'job.submit',
   })
   if (!write.ok) {
-    return { allow: false, reason: 'job.submit requires repository write' }
+    return { allow: false, reason: 'job.submit requires repository write or job_submit' }
   }
   return { allow: true }
 }
 
-/** job.read: dedicated capability dependent on repo read. */
+/** job.read: dedicated fine (implied by read). */
 export function authorizeJobRead(
   user: SessionUser,
   namespace: string,
@@ -460,9 +483,83 @@ export function authorizeJobRead(
 ): { allow: boolean; reason?: string } {
   preparePrincipal(user)
   if (!isAuthzEnforce()) return { allow: true }
-  const read = hasRepoPermission(user, namespace, repo, 'read')
+  const read = hasRepoPermission(user, namespace, repo, 'read', {
+    method: 'GET',
+    action: 'job.read',
+  })
   if (!read.ok) {
-    return { allow: false, reason: 'job.read requires repository read' }
+    return { allow: false, reason: 'job.read requires repository read or job_read' }
   }
   return { allow: true }
+}
+
+/** job.cancel: dedicated fine (implied by write); independent of job_submit. */
+export function authorizeJobCancel(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  const check = hasRepoPermission(user, namespace, repo, 'write', {
+    method: 'POST',
+    action: 'job.cancel',
+  })
+  if (!check.ok) {
+    return {
+      allow: false,
+      reason: 'job.cancel requires repository write or job_cancel',
+    }
+  }
+  return { allow: true }
+}
+
+/** job.complete / publish: dedicated fine (implied by write). */
+export function authorizeJobComplete(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  const check = hasRepoPermission(user, namespace, repo, 'write', {
+    method: 'POST',
+    action: 'job.complete',
+  })
+  if (!check.ok) {
+    return {
+      allow: false,
+      reason: 'job.complete requires repository write or job_complete',
+    }
+  }
+  return { allow: true }
+}
+
+/** Own PAT mint/list/revoke when enforce is on. */
+export function authorizeManageOwnTokens(user: SessionUser): {
+  allow: boolean
+  reason?: string
+} {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  if (isInstanceAdmin(user) || hasInstancePermission(user, 'manage_own_tokens')) {
+    return { allow: true }
+  }
+  return { allow: false, reason: 'Missing permission manage_own_tokens' }
+}
+
+/** Approve / deny CLI device codes when enforce is on. */
+export function authorizeCliDeviceApprove(user: SessionUser): {
+  allow: boolean
+  reason?: string
+} {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  if (
+    isInstanceAdmin(user) ||
+    hasInstancePermission(user, 'cli_device_approve')
+  ) {
+    return { allow: true }
+  }
+  return { allow: false, reason: 'Missing permission cli_device_approve' }
 }

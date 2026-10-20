@@ -1,9 +1,25 @@
+import { createHash } from 'node:crypto'
+
 function required(name: string, fallback?: string): string {
   const v = process.env[name] ?? fallback
   if (v === undefined || v === '') {
     throw new Error(`Missing required env ${name}`)
   }
   return v
+}
+
+/** 32-char utf8 key for guacamole-lite (AES-256-CBC). */
+function sessionsGuacCryptKey(): string {
+  const raw = process.env.SESSIONS_GUAC_CRYPT_KEY ?? ''
+  if (raw.length >= 32) return raw.slice(0, 32)
+  return createHash('sha256')
+    .update(
+      process.env.SESSION_SECRET ?? 'dev-only-change-me-mice-session-secret',
+    )
+    .digest('base64')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 32)
+    .padEnd(32, '0')
 }
 
 export const env = {
@@ -14,11 +30,11 @@ export const env = {
   ),
   sessionSecret: required(
     'SESSION_SECRET',
-    'dev-only-change-me-boxen-session-secret',
+    'dev-only-change-me-mice-session-secret',
   ),
   /** Cookie max age (seconds). */
   sessionTtlSec: Number(process.env.SESSION_TTL_SEC ?? 60 * 60 * 8),
-  cookieName: process.env.SESSION_COOKIE_NAME ?? 'boxen_session',
+  cookieName: process.env.SESSION_COOKIE_NAME ?? 'mice_session',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   /** Directory for PAT store (pats.json). */
   dataDir: (process.env.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
@@ -53,8 +69,67 @@ export const env = {
     .filter(Boolean),
   jobsMaxConcurrent: Number(process.env.JOBS_MAX_CONCURRENT ?? 2),
   /** Kubernetes namespace for Job objects when JOBS_RUNNER=kubernetes. */
-  jobsK8sNamespace: process.env.JOBS_K8S_NAMESPACE ?? 'boxen-jobs',
+  jobsK8sNamespace: process.env.JOBS_K8S_NAMESPACE ?? 'mice-jobs',
   jobsKubectlBin: process.env.JOBS_KUBECTL_BIN ?? 'kubectl',
+  /** PLAT-SESS — desktop sessions */
+  sessionsEnabled: process.env.SESSIONS_ENABLED !== 'false',
+  sessionsDataDir: (
+    process.env.SESSIONS_DATA_DIR ??
+    `${(process.env.AUTH_DATA_DIR ?? './data').replace(/\/$/, '')}/sessions`
+  ).replace(/\/$/, ''),
+  sessionsHostDataDir: (process.env.SESSIONS_HOST_DATA_DIR ?? '').replace(
+    /\/$/,
+    '',
+  ),
+  sessionsProvisioner: (process.env.SESSIONS_PROVISIONER ?? 'docker').toLowerCase() as
+    | 'docker'
+    | 'libvirt'
+    | 'kubevirt'
+    | 'mock',
+  sessionsDockerBin: process.env.SESSIONS_DOCKER_BIN ?? process.env.JOBS_DOCKER_BIN ?? 'docker',
+  sessionsDockerSocket:
+    process.env.SESSIONS_DOCKER_SOCKET ??
+    process.env.JOBS_DOCKER_SOCKET ??
+    '/var/run/docker.sock',
+  sessionsDockerNetwork: process.env.SESSIONS_DOCKER_NETWORK ?? 'mice_mice',
+  sessionsDesktopImage:
+    process.env.SESSIONS_DESKTOP_IMAGE ??
+    'lscr.io/linuxserver/rdesktop:ubuntu-xfce',
+  sessionsDefaultCpu: process.env.SESSIONS_DEFAULT_CPU ?? '2',
+  sessionsDefaultMemory: process.env.SESSIONS_DEFAULT_MEMORY ?? '2g',
+  sessionsDefaultDisk: process.env.SESSIONS_DEFAULT_DISK ?? '40g',
+  sessionsMaxPerUser: Number(process.env.SESSIONS_MAX_PER_USER ?? 2),
+  sessionsMaxMounts: Number(process.env.SESSIONS_MAX_MOUNTS ?? 8),
+  sessionsIdleTimeoutSec: Number(
+    process.env.SESSIONS_IDLE_TIMEOUT_SECONDS ?? 4 * 60 * 60,
+  ),
+  sessionsMaxLifetimeSec: Number(
+    process.env.SESSIONS_MAX_LIFETIME_SECONDS ?? 12 * 60 * 60,
+  ),
+  sessionsReadyTimeoutMs: Number(
+    process.env.SESSIONS_READY_TIMEOUT_MS ?? 180_000,
+  ),
+  sessionsRecording: process.env.SESSIONS_RECORDING === 'true',
+  sessionsConnectBackend: (
+    process.env.SESSIONS_CONNECT_BACKEND ?? 'guacamole_lite'
+  ).toLowerCase() as 'guacamole_lite' | 'rustguac',
+  sessionsRustguacUrl: (process.env.SESSIONS_RUSTGUAC_URL ?? '').replace(
+    /\/$/,
+    '',
+  ),
+  sessionsRustguacApiKey: process.env.SESSIONS_RUSTGUAC_API_KEY ?? '',
+  sessionsGuacdHost: process.env.SESSIONS_GUACD_HOST ?? 'guacd',
+  sessionsGuacdPort: Number(process.env.SESSIONS_GUACD_PORT ?? 4822),
+  sessionsGuacWsPath: process.env.SESSIONS_GUAC_WS_PATH ?? '/auth/sessions-guac',
+  sessionsPublicConnectOrigin: (
+    process.env.SESSIONS_PUBLIC_CONNECT_ORIGIN ?? ''
+  ).replace(/\/$/, ''),
+  /** 64 hex chars (32 bytes) for guacamole-lite AES key. */
+  sessionsGuacCryptKey: sessionsGuacCryptKey(),
+  /** Phase 3: retain session audit actions at least this many days (0 = no purge). */
+  sessionsAuditRetentionDays: Number(
+    process.env.SESSIONS_AUDIT_RETENTION_DAYS ?? 365,
+  ),
   /**
    * AuthZ enforcement override: 'true' | 'false' | '' (use store flag).
    * Default empty → store `enforce` (starts false until bootstrap).
@@ -114,7 +189,7 @@ export const env = {
   })(),
   /** Keycloak base URL for Admin API (no /realms path), e.g. http://keycloak:8080 */
   keycloakAdminUrl: (process.env.KEYCLOAK_ADMIN_URL ?? '').replace(/\/$/, ''),
-  keycloakRealm: process.env.KEYCLOAK_REALM ?? 'boxen',
+  keycloakRealm: process.env.KEYCLOAK_REALM ?? 'mice',
 }
 
 export function oidcConfigured(): boolean {

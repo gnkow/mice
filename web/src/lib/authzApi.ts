@@ -19,6 +19,12 @@ export type CollaboratorRoleRef = RepoRole | string
 export type InstancePermission =
   | 'create_namespace'
   | 'view_audit'
+  | 'view_lineage'
+  | 'manage_own_tokens'
+  | 'cli_device_approve'
+  | 'session_create'
+  | 'session_connect'
+  | 'session_admin'
 
 export type NamespaceCapability =
   | 'manage_members'
@@ -26,6 +32,7 @@ export type NamespaceCapability =
   | 'manage_custom_roles'
   | 'create_repos'
   | 'view_audit'
+  | 'view_lineage'
   | 'review_access_requests'
   | 'delete_namespace'
 
@@ -39,6 +46,12 @@ export type RepoFinePermission =
   | 'manage_repo_metadata'
   | 'repo_delete'
   | 'other_mutate'
+  | 'job_submit'
+  | 'job_read'
+  | 'job_cancel'
+  | 'job_complete'
+  | 'lineage_read'
+  | 'lineage_rebuild'
 
 export type MemberPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: MemberRoleRef }
