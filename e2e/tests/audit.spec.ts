@@ -184,4 +184,111 @@ test.describe('audit log (PLAT-AUDIT)', () => {
     expect(events.every((e) => e.namespace === nsA)).toBeTruthy()
     expect(events.some((e) => e.namespace === nsB)).toBeFalsy()
   })
+
+  test.describe('filters, labels and export', () => {
+    async function seed(page: import('@playwright/test').Page) {
+      const ns = uniqueId('audit-f')
+      const repo = 'repo'
+      expect(
+        (await page.request.post(`${AUTH_URL}/api/repos`, { data: { namespace: ns, name: repo } })).ok(),
+      ).toBeTruthy()
+      const put = await page.request.put(
+        `${AUTH_URL}/api/repos/${ns}/${repo}/file/main/a.txt`,
+        {
+          multipart: {
+            file: { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('x\n') },
+            message: 'seed',
+          },
+        },
+      )
+      expect(put.ok()).toBeTruthy()
+      const workspaceId = crypto.randomUUID()
+      const ws = await page.request.post(
+        `${AUTH_URL}/api/repos/${ns}/${repo}/workspaces`,
+        { data: { workspace_id: workspaceId, branch_name: 'main', name: 'audit-ws' } },
+      )
+      expect(ws.ok()).toBeTruthy()
+      const job = await page.request.post(`${AUTH_URL}/auth/jobs`, {
+        data: { namespace: ns, repo, source: 'main', image: 'alpine', command: ['echo', 'hi'] },
+      })
+      expect(job.ok()).toBeTruthy()
+      const jobId = (await job.json()).job.id as string
+      return { ns, repo, workspaceId, jobId }
+    }
+
+    test('TC-AUDIT-07: filters by workspace and job id via API', async ({ page }) => {
+      await sessionLogin(page)
+      const { ns, workspaceId, jobId } = await seed(page)
+      const w = await countAuditEvents(page, { namespace: ns, workspace_id: workspaceId })
+      expect(w.events.length).toBeGreaterThan(0)
+      expect(w.events.every((e) => (e.detail as { workspace_id?: string })?.workspace_id === workspaceId)).toBeTruthy()
+      const j = await countAuditEvents(page, { namespace: ns, job_id: jobId })
+      expect(j.events.length).toBeGreaterThan(0)
+      expect(j.events.map((e) => e.action)).toContain('job.submit')
+      const none = await countAuditEvents(page, { namespace: ns, job_id: 'nope' })
+      expect(none.total).toBe(0)
+    })
+
+    test('TC-AUDIT-08: facets endpoint lists resources and labelled actions', async ({ page }) => {
+      await sessionLogin(page)
+      const { workspaceId, jobId } = await seed(page)
+      const res = await page.request.get(`${AUTH_URL}/auth/audit/facets`)
+      expect(res.ok()).toBeTruthy()
+      const f = await res.json()
+      expect(f.workspaces.map((x: { id: string }) => x.id)).toContain(workspaceId)
+      expect(f.jobs.map((x: { id: string }) => x.id)).toContain(jobId)
+      expect(f.actions.find((a: { value: string }) => a.value === 'file.write')?.label).toBeTruthy()
+    })
+
+    test('TC-AUDIT-09: facets and export require auth', async ({ playwright }) => {
+      const ctx = await playwright.request.newContext()
+      expect((await ctx.get(`${AUTH_URL}/auth/audit/facets`)).status()).toBe(401)
+      expect((await ctx.get(`${AUTH_URL}/auth/audit/export.csv`)).status()).toBe(401)
+      await ctx.dispose()
+    })
+
+    test('TC-AUDIT-10: CSV export respects filters and is itself audited', async ({ page }) => {
+      await sessionLogin(page)
+      const { ns, jobId } = await seed(page)
+      const res = await page.request.get(
+        `${AUTH_URL}/auth/audit/export.csv?namespace=${ns}&job_id=${jobId}`,
+      )
+      expect(res.ok()).toBeTruthy()
+      expect(res.headers()['content-type']).toContain('text/csv')
+      expect(res.headers()['content-disposition']).toMatch(/attachment; filename="audit-\d{4}-\d{2}-\d{2}\.csv"/)
+      const lines = (await res.text()).trim().split('\r\n')
+      expect(lines[0]).toContain('timestamp,actor_name')
+      expect(lines.length).toBeGreaterThan(1)
+      for (const l of lines.slice(1)) {
+        expect(l).toContain(ns)
+        expect(l).toContain(jobId)
+      }
+      const { events } = await countAuditEvents(page, { action: 'audit.export' })
+      expect(events.length).toBeGreaterThan(0)
+    })
+
+    test('TC-AUDIT-11: UI shows labels, populated dropdowns, filters and exports', async ({ page }) => {
+      await sessionLogin(page)
+      const { ns, workspaceId, jobId } = await seed(page)
+      await page.goto('/audit')
+      await page.getByLabel('Namespace').fill(ns)
+      await expect(page.locator('select[name="job_id"]').locator(`option[value="${jobId}"]`)).toHaveCount(1, { timeout: 15_000 })
+      await expect(page.locator('select[name="workspace_id"]').locator(`option[value="${workspaceId}"]`)).toHaveCount(1)
+      await expect(page.locator('.audit-filters select[name="session_id"]')).toBeVisible()
+      await expect(page.getByLabel('Action').locator('optgroup').first()).toBeAttached()
+
+      await page.locator('select[name="job_id"]').selectOption(jobId)
+      await page.getByRole('button', { name: 'Filter' }).click()
+      await expect(page).toHaveURL(new RegExp(`job_id=${jobId}`))
+      const rows = page.locator('.audit-table tbody tr')
+      await expect(rows.first()).toBeVisible({ timeout: 15_000 })
+      await expect(page.locator('.audit-table')).toContainText('job.submit')
+
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Export CSV' }).click(),
+      ])
+      expect(download.suggestedFilename()).toMatch(/^audit-.*\.csv$/)
+    })
+  })
 })

@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { env } from './env.js'
+import { auditActionLabel } from './auditLabels.js'
 import type { SessionUser } from './session.js'
 
 export type AuditVia = 'session' | 'pat'
@@ -38,6 +39,20 @@ export type AuditQuery = {
   limit?: number
   /** Exclusive: return events older than this id (reverse chronological). */
   cursor?: string
+  sessionId?: string
+  workspaceId?: string
+  jobId?: string
+  via?: AuditVia
+  /** AuthZ scope: only events in these namespaces (applied before paging). */
+  allowedNamespaces?: string[]
+}
+
+export type AuditResource = {
+  id: string
+  count: number
+  lastTs: string
+  namespace?: string
+  repo?: string
 }
 
 const MAX_LIMIT = 100
@@ -86,7 +101,7 @@ export function classifyPath(
       const branch = rest[1] ? safeDecode(rest[1]) : undefined
       const filePath = rest.slice(2).map(safeDecode).join('/')
       return {
-        action: 'file.write',
+        action: method === 'DELETE' ? 'file.delete' : 'file.write',
         namespace,
         repo,
         detail: {
@@ -112,7 +127,25 @@ export function classifyPath(
       return { action: 'merge', namespace, repo }
     }
     if (rest[0] === 'workspaces') {
-      return { action: 'workspace.other', namespace, repo }
+      // All workspace.* actions share the `workspace` prefix, which authz keys on.
+      const workspaceId = rest[1] ? safeDecode(rest[1]) : undefined
+      const sub = rest[2]
+      let action = 'workspace.other'
+      if (method === 'POST' && rest.length === 1) action = 'workspace.create'
+      else if (method === 'DELETE' && rest.length === 2) {
+        action = 'workspace.delete'
+      } else if (sub === 'commit') action = 'workspace.commit'
+      else if (sub === 'merge') action = 'workspace.merge'
+      else if (sub === 'files') {
+        action =
+          method === 'DELETE' ? 'workspace.file.delete' : 'workspace.file.write'
+      }
+      return {
+        action,
+        namespace,
+        repo,
+        detail: workspaceId ? { workspace_id: workspaceId } : undefined,
+      }
     }
     if (method === 'DELETE' && rest.length === 0) {
       return { action: 'repo.delete', namespace, repo }
@@ -217,24 +250,57 @@ function readAllEvents(): AuditEvent[] {
   }
 }
 
-export function queryAudit(q: AuditQuery): {
-  events: AuditEvent[]
-  nextCursor: string | null
-} {
-  const limit = Math.min(
-    Math.max(1, q.limit ?? DEFAULT_LIMIT),
-    MAX_LIMIT,
-  )
+function detailStrings(
+  detail: Record<string, unknown> | undefined,
+  single: string,
+  plural?: string,
+): string[] {
+  if (!detail) return []
+  const out: string[] = []
+  const one = detail[single]
+  if (typeof one === 'string' && one) out.push(one)
+  if (plural) {
+    const many = detail[plural]
+    if (Array.isArray(many)) {
+      for (const v of many) if (typeof v === 'string' && v) out.push(v)
+    }
+  }
+  return out
+}
+
+/** Session ids an event refers to. */
+export function eventSessionIds(e: AuditEvent): string[] {
+  return detailStrings(e.detail, 'session_id')
+}
+
+/** Job ids an event refers to (single or batch). */
+export function eventJobIds(e: AuditEvent): string[] {
+  return detailStrings(e.detail, 'job_id', 'job_ids')
+}
+
+/** Workspace ids an event refers to, including session mounts. */
+export function eventWorkspaceIds(e: AuditEvent): string[] {
+  const ids = detailStrings(e.detail, 'workspace_id')
+  const mounts = e.detail?.mounts
+  if (Array.isArray(mounts)) {
+    for (const m of mounts) {
+      const w = (m as { workspace_id?: unknown } | null)?.workspace_id
+      if (typeof w === 'string' && w) ids.push(w)
+    }
+  }
+  return ids
+}
+
+function filterEvents(q: AuditQuery): AuditEvent[] {
   let events = readAllEvents()
 
   // Newest first
   events.reverse()
 
-  if (q.cursor) {
-    const idx = events.findIndex((e) => e.id === q.cursor)
-    if (idx >= 0) events = events.slice(idx + 1)
+  if (q.allowedNamespaces) {
+    const allowed = new Set(q.allowedNamespaces)
+    events = events.filter((e) => e.namespace && allowed.has(e.namespace))
   }
-
   if (q.actor) {
     const a = q.actor.toLowerCase()
     events = events.filter(
@@ -255,6 +321,21 @@ export function queryAudit(q: AuditQuery): {
       (e) => e.action === q.action || e.action.startsWith(`${q.action}.`),
     )
   }
+  if (q.via) {
+    events = events.filter((e) => e.via === q.via)
+  }
+  if (q.sessionId) {
+    const id = q.sessionId
+    events = events.filter((e) => eventSessionIds(e).includes(id))
+  }
+  if (q.workspaceId) {
+    const id = q.workspaceId
+    events = events.filter((e) => eventWorkspaceIds(e).includes(id))
+  }
+  if (q.jobId) {
+    const id = q.jobId
+    events = events.filter((e) => eventJobIds(e).includes(id))
+  }
   if (q.since) {
     const since = q.since
     events = events.filter((e) => e.ts >= since)
@@ -262,6 +343,23 @@ export function queryAudit(q: AuditQuery): {
   if (q.until) {
     const until = q.until
     events = events.filter((e) => e.ts <= until)
+  }
+  return events
+}
+
+export function queryAudit(q: AuditQuery): {
+  events: AuditEvent[]
+  nextCursor: string | null
+} {
+  const limit = Math.min(
+    Math.max(1, q.limit ?? DEFAULT_LIMIT),
+    MAX_LIMIT,
+  )
+  let events = filterEvents(q)
+
+  if (q.cursor) {
+    const idx = events.findIndex((e) => e.id === q.cursor)
+    if (idx >= 0) events = events.slice(idx + 1)
   }
 
   const page = events.slice(0, limit)
@@ -271,4 +369,122 @@ export function queryAudit(q: AuditQuery): {
       : null
 
   return { events: page, nextCursor }
+}
+
+export const EXPORT_MAX_ROWS = 50_000
+
+/** All matching events (newest first) for export; ignores paging, capped at EXPORT_MAX_ROWS. */
+export function queryAuditForExport(q: AuditQuery): {
+  events: AuditEvent[]
+  truncated: boolean
+} {
+  const events = filterEvents({ ...q, cursor: undefined, limit: undefined })
+  return {
+    events: events.slice(0, EXPORT_MAX_ROWS),
+    truncated: events.length > EXPORT_MAX_ROWS,
+  }
+}
+
+const FACET_CAP = 200
+
+function collectResources(
+  events: AuditEvent[],
+  pick: (e: AuditEvent) => string[],
+): AuditResource[] {
+  const map = new Map<string, AuditResource>()
+  // events are newest first, so the first sighting carries the latest timestamp
+  for (const e of events) {
+    for (const id of pick(e)) {
+      const cur = map.get(id)
+      if (cur) {
+        cur.count += 1
+        if (!cur.namespace && e.namespace) cur.namespace = e.namespace
+        if (!cur.repo && e.repo) cur.repo = e.repo
+      } else {
+        map.set(id, {
+          id,
+          count: 1,
+          lastTs: e.ts,
+          ...(e.namespace ? { namespace: e.namespace } : {}),
+          ...(e.repo ? { repo: e.repo } : {}),
+        })
+      }
+    }
+  }
+  return [...map.values()].slice(0, FACET_CAP)
+}
+
+/** Distinct sessions / workspaces / jobs / actions seen in the (scoped) log. */
+export function auditFacets(scope: Pick<AuditQuery, 'allowedNamespaces' | 'namespace'>): {
+  sessions: AuditResource[]
+  workspaces: AuditResource[]
+  jobs: AuditResource[]
+  observedActions: string[]
+} {
+  const events = filterEvents(scope)
+  return {
+    sessions: collectResources(events, eventSessionIds),
+    workspaces: collectResources(events, eventWorkspaceIds),
+    jobs: collectResources(events, eventJobIds),
+    observedActions: [...new Set(events.map((e) => e.action))].sort(),
+  }
+}
+
+export const AUDIT_CSV_COLUMNS = [
+  'timestamp',
+  'actor_name',
+  'actor_email',
+  'actor_sub',
+  'actor_issuer',
+  'via',
+  'action',
+  'action_label',
+  'namespace',
+  'repo',
+  'session_id',
+  'workspace_id',
+  'job_id',
+  'method',
+  'path',
+  'status',
+  'message',
+  'detail',
+] as const
+
+/** RFC 4180 quoting, plus a leading apostrophe on cells a spreadsheet would treat as a formula. */
+export function csvCell(value: unknown): string {
+  let text = value == null ? '' : String(value)
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+export function auditEventsToCsv(events: AuditEvent[]): string {
+  const lines = [AUDIT_CSV_COLUMNS.join(',')]
+  for (const e of events) {
+    lines.push(
+      [
+        e.ts,
+        e.actor.name,
+        e.actor.email,
+        e.actor.sub,
+        e.actor.iss,
+        e.via,
+        e.action,
+        auditActionLabel(e.action),
+        e.namespace,
+        e.repo,
+        eventSessionIds(e).join(';'),
+        eventWorkspaceIds(e).join(';'),
+        eventJobIds(e).join(';'),
+        e.method,
+        e.path,
+        e.status,
+        e.message,
+        e.detail ? JSON.stringify(e.detail) : '',
+      ]
+        .map(csvCell)
+        .join(','),
+    )
+  }
+  return `${lines.join('\r\n')}\r\n`
 }

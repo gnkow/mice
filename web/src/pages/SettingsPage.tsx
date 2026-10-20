@@ -72,6 +72,9 @@ export function SettingsPage() {
 
   useEffect(() => {
     setForm(loadSettings())
+  }, [])
+
+  useEffect(() => {
     void reloadTokens()
   }, [reloadTokens])
 
@@ -291,7 +294,7 @@ mice push
                 Test connection
               </button>
             </div>
-            {saved && <p className="ok">Saved.</p>}
+            {saved && <p className="flash flash-success" role="status">Saved.</p>}
             {probe && <p className="muted">{probe}</p>}
           </form>
         </section>

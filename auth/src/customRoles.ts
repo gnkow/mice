@@ -433,7 +433,12 @@ export function finePermissionForAction(
   if (action === 'repo.metadata') return 'manage_repo_metadata'
   if (action === 'merge') return 'merge'
   if (action === 'branch.delete') return 'delete_branch'
-  if (action === 'file.write' || action === 'branch.create' || action === 'branch.update') {
+  if (
+    action === 'file.write' ||
+    action === 'file.delete' ||
+    action === 'branch.create' ||
+    action === 'branch.update'
+  ) {
     return 'contents_write'
   }
   if (action.startsWith('workspace')) return 'workspaces'

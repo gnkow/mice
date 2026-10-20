@@ -4975,7 +4975,8 @@ p.ok {
   color: var(--muted);
 }
 
-.audit-filters input {
+.audit-filters input,
+.audit-filters select {
   font: inherit;
   font-size: 0.9rem;
   color: var(--fg);

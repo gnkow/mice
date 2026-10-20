@@ -565,7 +565,7 @@ export function ManageFilesMenu({
         </Modal>
       )}
 
-      {!modal && info && <p className="ok manage-files-toast">{info}</p>}
+      {!modal && info && <p className="flash flash-success manage-files-toast">{info}</p>}
       {!modal && error && <p className="error manage-files-toast">{error}</p>}
     </>
   )

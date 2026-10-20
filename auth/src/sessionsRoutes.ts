@@ -1,4 +1,5 @@
 import type { Hono } from 'hono'
+import { actorFromUser, appendAudit } from './audit.js'
 import { preparePrincipal } from './authz.js'
 import { env } from './env.js'
 import { getSession, type SessionUser } from './session.js'
@@ -262,6 +263,22 @@ export function registerSessionRoutes(app: Hono) {
         mountDir,
         body.files,
       )
+      appendAudit({
+        actor: actorFromUser(authed.user),
+        via: authed.via,
+        method: 'POST',
+        path: c.req.path,
+        status: 200,
+        action: 'session.sync',
+        detail: {
+          session_id: sessionId,
+          mount_key: mountKey,
+          added: result.added,
+          modified: result.modified,
+          removed: result.removed,
+          uploaded: result.uploaded,
+        },
+      })
       return c.json({
         success: true,
         added: result.added,

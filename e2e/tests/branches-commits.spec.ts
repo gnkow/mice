@@ -62,7 +62,7 @@ test.describe('branches & commits (B/C)', () => {
     await pathFilter.fill('notes')
     await pathFilter.press('Enter')
     await expect(page.getByText(/Showing commits that touch/)).toBeVisible()
-    await expect(page.getByText('add note')).toBeVisible()
+    await expect(page.locator('.commit-msg', { hasText: 'add note' })).toBeVisible()
 
     await page.locator('.history-list .commit-list a').first().click()
     await expect(page).toHaveURL(/\/commits\/[a-f0-9]+/)

@@ -58,7 +58,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
 
     await page.getByRole('button', { name: 'Deny' }).click()
     await expect(
-      page.getByText('Denied. The CLI login was cancelled.'),
+      page.getByText('Denied. The login request was cancelled.'),
     ).toBeVisible()
 
     await page.waitForTimeout(4500)

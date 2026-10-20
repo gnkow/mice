@@ -43,11 +43,9 @@ test.describe('platform (P-03 P-04)', () => {
     await expect(browse.getByText('0').first()).toBeVisible()
     await expect(browse.getByText('Namespaces')).toBeVisible()
     await expect(browse.getByText('Repositories')).toBeVisible()
-    await expect(browse.getByText('Workspaces')).toBeVisible()
+    await expect(browse.getByText('Workspaces', { exact: true })).toBeVisible()
     await expect(
-      page.getByText(
-        'No repositories yet. Create your first repository to start versioning data.',
-      ),
+      browse.getByRole('link', { name: /^0 Repositories/ }),
     ).toBeVisible()
   })
 
@@ -64,14 +62,15 @@ test.describe('platform (P-03 P-04)', () => {
       await route.continue()
     })
 
-    // Home paginates repos (12/page); filter by namespace so the fixture is on-screen.
-    await page.goto(`/?q=${encodeURIComponent(seededRepo.namespace)}`)
+    // Home is a tile dashboard: repository count replaces the old card list.
+    await page.goto('/')
     await expect(page.getByLabel('Loading')).toBeVisible()
     await expect(
-      page.locator(
-        `.dash-repo-cards a.repo-summary-card[href*="/n/${encodeURIComponent(seededRepo.namespace)}/"]`,
-      ),
+      page
+        .getByRole('navigation', { name: 'Browse' })
+        .getByRole('link', { name: /^[1-9]\d* Repositories/ }),
     ).toBeVisible({ timeout: 15_000 })
+    expect(seededRepo.namespace).toBeTruthy()
   })
 
   test('TC-AUTH-01: BFF injects session author on merge commit', async ({

@@ -16,9 +16,10 @@ test.describe('Jobs UI', () => {
     await page.goto(repoPath(seededRepo, '/jobs'))
     await expect(page.getByRole('heading', { name: 'Jobs' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Detail' })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Submit job' }).first().click()
+    await page.locator('summary', { hasText: 'New job' }).click()
+    await page.getByRole('menuitem', { name: /Run on your machine/ }).click()
     await expect(
-      page.getByRole('dialog', { name: 'Submit job' }),
+      page.getByRole('dialog', { name: 'New job — Local' }),
     ).toBeVisible()
     await expect(page.getByText(/local commit/i)).toBeVisible()
   })

@@ -352,7 +352,7 @@ export function MergePage() {
       )}
 
       {result && (
-        <p className="ok merge-result" role="status">
+        <p className="flash flash-success merge-result" role="status">
           {result}
         </p>
       )}

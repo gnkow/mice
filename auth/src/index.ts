@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { env, oidcConfigured } from './env.js'
 import {
@@ -21,8 +21,14 @@ import {
 import {
   actorFromUser,
   appendAudit,
+  auditEventsToCsv,
+  auditFacets,
   queryAudit,
+  queryAuditForExport,
+  type AuditQuery,
+  type AuditVia,
 } from './audit.js'
+import { auditActionLabel, knownAuditActions } from './auditLabels.js'
 import {
   deriveOpsFromPathHistory,
   queryLineage,
@@ -220,6 +226,11 @@ app.post('/auth/cli/device/approve', async (c) => {
     const status = result.status === 404 ? 404 : 400
     return c.json({ error: result.error }, status)
   }
+  auditMutation(c, session, 'session', {
+    action: 'device.approve',
+    message: `Approved device login: ${result.userCode}`,
+    detail: { userCode: result.userCode },
+  })
   return c.json({ ok: true, user_code: result.userCode })
 })
 
@@ -244,6 +255,11 @@ app.post('/auth/cli/device/deny', async (c) => {
     const status = result.status === 404 ? 404 : 400
     return c.json({ error: result.error }, status)
   }
+  auditMutation(c, session, 'session', {
+    action: 'device.deny',
+    message: `Denied device login: ${userCode.trim().toUpperCase()}`,
+    detail: { userCode: userCode.trim().toUpperCase() },
+  })
   return c.json({ ok: true })
 })
 
@@ -275,6 +291,11 @@ app.post('/auth/cli/device/poll', async (c) => {
   if (result.status === 'error') {
     return c.json({ status: 'error', error: result.error }, 400)
   }
+  auditMutation(c, result.user, 'pat', {
+    action: 'device.redeem',
+    message: 'CLI device login completed; token issued',
+    detail: { patId: result.patId },
+  })
   return c.json({
     status: 'approved',
     access_token: result.token,
@@ -290,8 +311,15 @@ app.post('/auth/cli/logout', async (c) => {
   const auth = c.req.header('authorization') ?? ''
   const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
   if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
+  const user = resolvePat(bearer)
   const ok = revokePatByToken(bearer)
   if (!ok) return c.json({ error: 'Token not found' }, 404)
+  if (user) {
+    auditMutation(c, user, 'pat', {
+      action: 'token.revoke',
+      message: 'Revoked token via CLI logout',
+    })
+  }
   return c.json({ ok: true })
 })
 
@@ -395,6 +423,11 @@ app.post('/auth/access-requests', async (c) => {
     /* ok */
   }
   const req = submitAccessRequest(session, message)
+  auditMutation(c, session, 'session', {
+    action: 'access-request.submit',
+    message: 'Submitted access request',
+    detail: { requestId: req.id },
+  })
   return c.json({ ok: true, request: req })
 })
 
@@ -440,7 +473,27 @@ app.post('/auth/access-requests/:id', async (c) => {
     role: body.role,
     permission: body.permission,
   })
-  if (!result.ok) return c.json({ error: result.error }, 400)
+  if (!result.ok) {
+    auditMutation(c, session, 'session', {
+      action: `access-request.${body.action}`,
+      status: 400,
+      message: `Access request ${body.action} failed: ${result.error}`,
+      detail: { requestId: c.req.param('id') },
+    })
+    return c.json({ error: result.error }, 400)
+  }
+  auditMutation(c, session, 'session', {
+    action: `access-request.${body.action}`,
+    namespace: body.action === 'approve' ? body.namespace : undefined,
+    message: `Access request ${result.request.status}`,
+    detail: {
+      requestId: result.request.id,
+      requester: { sub: result.request.sub, iss: result.request.iss },
+      ...(body.action === 'approve'
+        ? { role: body.role, permission: body.permission }
+        : {}),
+    },
+  })
   return c.json({ ok: true, request: result.request })
 })
 
@@ -464,13 +517,68 @@ app.post('/auth/training', async (c) => {
     setTrainingCompletedSelf(session, done)
   } else {
     const result = setTrainingCompleted(session, target, done)
-    if (!result.ok) return c.json({ error: result.error }, 403)
+    if (!result.ok) {
+      auditMutation(c, session, 'session', {
+        action: 'training.update',
+        status: 403,
+        message: `Training update denied: ${result.error}`,
+        detail: { target, completed: done },
+      })
+      return c.json({ error: result.error }, 403)
+    }
   }
+  auditMutation(c, session, 'session', {
+    action: 'training.update',
+    message: `Set training completed=${done} for ${self ? 'self' : target.sub}`,
+    detail: { target, completed: done, self },
+  })
   return c.json({
     ok: true,
     trainingCompleted: hasCompletedTraining(target),
   })
 })
+
+type AuditFields = {
+  action: string
+  message?: string
+  namespace?: string
+  repo?: string
+  detail?: Record<string, unknown>
+  status?: number
+}
+
+/** Append an audit event for a BFF-native (non-proxied) mutation. Never pass secrets in `detail`. */
+function auditMutation(
+  c: Parameters<typeof proxyToOxen>[0],
+  user: Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>,
+  via: AuditVia,
+  fields: AuditFields,
+): void {
+  appendAudit({
+    actor: actorFromUser(user as SessionUser),
+    via,
+    method: c.req.method,
+    path: c.req.path,
+    status: fields.status ?? 200,
+    action: fields.action,
+    ...(fields.message ? { message: fields.message } : {}),
+    ...(fields.namespace ? { namespace: fields.namespace } : {}),
+    ...(fields.repo ? { repo: fields.repo } : {}),
+    ...(fields.detail ? { detail: fields.detail } : {}),
+  })
+}
+
+function memberTarget(body: {
+  kind?: 'user' | 'group'
+  sub?: string
+  iss?: string
+  group?: string
+}): Record<string, unknown> {
+  const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
+  return kind === 'group'
+    ? { kind, group: body.group }
+    : { kind, sub: body.sub, iss: body.iss }
+}
 
 async function requireSession(c: Parameters<typeof getSession>[0]) {
   const session = await getSession(c)
@@ -516,6 +624,11 @@ app.post('/auth/tokens', async (c) => {
   } catch {
     /* keep */
   }
+  auditMutation(c, session, 'session', {
+    action: 'token.create',
+    message: `Created token: ${label}`,
+    detail: { tokenId: pat.id, label, scopes },
+  })
   return c.json({
     token,
     pat,
@@ -537,42 +650,106 @@ app.delete('/auth/tokens/:id', async (c) => {
   const id = c.req.param('id')
   const ok = revokePat(session, id)
   if (!ok) return c.json({ error: 'Token not found' }, 404)
+  auditMutation(c, session, 'session', {
+    action: 'token.revoke',
+    message: `Revoked token: ${id}`,
+    detail: { tokenId: id },
+  })
   return c.json({ ok: true })
 })
 
-/** Query append-only audit log (session required). */
-app.get('/auth/audit', async (c) => {
+/** Resolve the caller's audit scope + filters; returns a Response on failure. */
+async function resolveAuditQuery(
+  c: Context,
+): Promise<
+  | { error: Response }
+  | { session: SessionUser; query: AuditQuery }
+> {
   const session = await getSession(c)
   if (!session) {
-    return c.json({ error: 'Authentication required' }, 401)
+    return { error: c.json({ error: 'Authentication required' }, 401) }
   }
-
   preparePrincipal(session)
   let namespace = c.req.query('namespace') || undefined
   const gate = authorizeAuditQuery(session, namespace)
   if (!gate.allow) {
-    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
+    return { error: c.json({ error: gate.reason ?? 'Forbidden' }, 403) }
   }
   if (gate.forceNamespace) namespace = gate.forceNamespace
-  const ownedOnly = gate.ownedOnly
+  const via = c.req.query('via')
+  return {
+    session,
+    query: {
+      actor: c.req.query('actor') || undefined,
+      namespace,
+      repo: c.req.query('repo') || undefined,
+      action: c.req.query('action') || undefined,
+      since: c.req.query('since') || undefined,
+      until: c.req.query('until') || undefined,
+      sessionId: c.req.query('session_id') || undefined,
+      workspaceId: c.req.query('workspace_id') || undefined,
+      jobId: c.req.query('job_id') || undefined,
+      via: via === 'session' || via === 'pat' ? via : undefined,
+      allowedNamespaces: gate.ownedOnly,
+    },
+  }
+}
 
+/** Query append-only audit log (session required). */
+app.get('/auth/audit', async (c) => {
+  const r = await resolveAuditQuery(c)
+  if ('error' in r) return r.error
   const limitRaw = c.req.query('limit')
   const limit = limitRaw ? Number(limitRaw) : undefined
   const { events, nextCursor } = queryAudit({
-    actor: c.req.query('actor') || undefined,
-    namespace,
-    repo: c.req.query('repo') || undefined,
-    action: c.req.query('action') || undefined,
-    since: c.req.query('since') || undefined,
-    until: c.req.query('until') || undefined,
+    ...r.query,
     cursor: c.req.query('cursor') || undefined,
     limit: Number.isFinite(limit) ? limit : undefined,
   })
-  const filtered =
-    ownedOnly && ownedOnly.length
-      ? events.filter((e) => e.namespace && ownedOnly.includes(e.namespace))
-      : events
-  return c.json({ events: filtered, nextCursor })
+  return c.json({
+    events: events.map((e) => ({ ...e, action_label: auditActionLabel(e.action) })),
+    nextCursor,
+  })
+})
+
+/** Filter dropdown options: known actions plus sessions/workspaces/jobs seen in the log. */
+app.get('/auth/audit/facets', async (c) => {
+  const r = await resolveAuditQuery(c)
+  if ('error' in r) return r.error
+  const f = auditFacets({
+    namespace: r.query.namespace,
+    allowedNamespaces: r.query.allowedNamespaces,
+  })
+  return c.json({
+    actions: knownAuditActions(),
+    sessions: f.sessions,
+    workspaces: f.workspaces,
+    jobs: f.jobs,
+  })
+})
+
+/** CSV export honouring the same filters and scope as the list. */
+app.get('/auth/audit/export.csv', async (c) => {
+  const r = await resolveAuditQuery(c)
+  if ('error' in r) return r.error
+  const { events, truncated } = queryAuditForExport(r.query)
+  const csv = auditEventsToCsv(events)
+  appendAudit({
+    actor: actorFromUser(r.session),
+    via: 'session',
+    action: 'audit.export',
+    method: c.req.method,
+    path: c.req.path,
+    status: 200,
+    message: `Exported ${events.length} audit events to CSV`,
+    detail: { rows: events.length, truncated, filters: { ...r.query, allowedNamespaces: undefined } },
+  })
+  const day = new Date().toISOString().slice(0, 10)
+  c.header('Content-Type', 'text/csv; charset=utf-8')
+  c.header('Content-Disposition', `attachment; filename="audit-${day}.csv"`)
+  c.header('Cache-Control', 'no-store')
+  if (truncated) c.header('X-Audit-Truncated', 'true')
+  return c.body(csv)
 })
 
 /** Query file lineage graph for a repo (session required; repo read). */
@@ -741,6 +918,13 @@ app.post('/auth/lineage/rebuild', async (c) => {
   }
 
   const created = deriveOpsFromPathHistory(namespace, repo, branch, hints)
+  auditMutation(c, session, 'session', {
+    action: 'lineage.rebuild',
+    namespace,
+    repo,
+    message: `Rebuilt lineage for ${path}`,
+    detail: { branch, path, created: created.length },
+  })
   return c.json({
     created: created.length,
     operations: created,
@@ -826,6 +1010,10 @@ app.get('/auth/callback', async (c) => {
     }
     preparePrincipal(sessionUser)
     await setSessionCookie(c, sessionUser)
+    auditMutation(c, sessionUser, 'session', {
+      action: 'auth.login',
+      message: 'Signed in via SSO',
+    })
     const dest = safeReturnPath(pkce.next) ?? '/'
     return c.redirect(dest)
   } catch (e) {
@@ -836,6 +1024,12 @@ app.get('/auth/callback', async (c) => {
 
 async function finishLogout(c: Parameters<typeof getSession>[0]) {
   const session = await getSession(c)
+  if (session) {
+    auditMutation(c, session, 'session', {
+      action: 'auth.logout',
+      message: 'Signed out',
+    })
+  }
   clearSessionCookie(c)
   setCookie(c, PROMPT_LOGIN_COOKIE, '1', {
     httpOnly: true,
@@ -925,7 +1119,15 @@ app.patch('/auth/instance', async (c) => {
   if (!isInstanceAdmin(session)) return c.json({ error: 'Forbidden' }, 403)
   try {
     const body = (await c.req.json()) as { enforce?: boolean }
-    if (typeof body.enforce === 'boolean') setAuthzEnforce(body.enforce)
+    if (typeof body.enforce === 'boolean') {
+      const oldValue = isAuthzEnforce()
+      setAuthzEnforce(body.enforce)
+      auditMutation(c, session, 'session', {
+        action: 'instance.settings.update',
+        message: `Updated instance enforce: ${oldValue} → ${body.enforce}`,
+        detail: { enforce: body.enforce, previousEnforce: oldValue },
+      })
+    }
   } catch {
     return c.json({ error: 'Invalid body' }, 400)
   }
@@ -946,7 +1148,20 @@ app.post('/auth/instance/admins', async (c) => {
     return c.json({ error: 'sub and iss required' }, 400)
   }
   const result = addInstanceAdmin(session, { sub: body.sub, iss: body.iss })
-  if (!result.ok) return c.json({ error: result.error }, 403)
+  if (!result.ok) {
+    auditMutation(c, session, 'session', {
+      action: 'instance.admin.add',
+      status: 403,
+      message: `Add instance admin denied: ${result.error}`,
+      detail: { target: { sub: body.sub, iss: body.iss } },
+    })
+    return c.json({ error: result.error }, 403)
+  }
+  auditMutation(c, session, 'session', {
+    action: 'instance.admin.add',
+    message: `Added instance admin ${body.sub}`,
+    detail: { target: { sub: body.sub, iss: body.iss } },
+  })
   return c.json({ ok: true })
 })
 
@@ -964,7 +1179,20 @@ app.delete('/auth/instance/admins', async (c) => {
     return c.json({ error: 'sub and iss required' }, 400)
   }
   const result = removeInstanceAdmin(session, { sub: body.sub, iss: body.iss })
-  if (!result.ok) return c.json({ error: result.error }, 400)
+  if (!result.ok) {
+    auditMutation(c, session, 'session', {
+      action: 'instance.admin.remove',
+      status: 400,
+      message: `Remove instance admin failed: ${result.error}`,
+      detail: { target: { sub: body.sub, iss: body.iss } },
+    })
+    return c.json({ error: result.error }, 400)
+  }
+  auditMutation(c, session, 'session', {
+    action: 'instance.admin.remove',
+    message: `Removed instance admin ${body.sub}`,
+    detail: { target: { sub: body.sub, iss: body.iss } },
+  })
   return c.json({ ok: true })
 })
 
@@ -986,7 +1214,23 @@ app.put('/auth/instance/permissions', async (c) => {
     { sub: body.sub, iss: body.iss },
     body.permissions,
   )
-  if (!result.ok) return c.json({ error: result.error }, 403)
+  if (!result.ok) {
+    auditMutation(c, session, 'session', {
+      action: 'instance.permissions.update',
+      status: 403,
+      message: `Instance permissions update denied: ${result.error}`,
+      detail: { target: { sub: body.sub, iss: body.iss } },
+    })
+    return c.json({ error: result.error }, 403)
+  }
+  auditMutation(c, session, 'session', {
+    action: 'instance.permissions.update',
+    message: `Set instance permissions for ${body.sub}`,
+    detail: {
+      target: { sub: body.sub, iss: body.iss },
+      permissions: body.permissions,
+    },
+  })
   return c.json({ ok: true })
 })
 
@@ -1028,6 +1272,15 @@ app.post('/auth/namespaces', async (c) => {
   )
   if (!result.ok) return c.json({ error: result.error }, 400)
   const name = body.name.trim()
+  auditMutation(c, session, 'session', {
+    action: 'namespace.create',
+    namespace: name,
+    message: `Created namespace ${name}`,
+    detail: {
+      basePermission: body.basePermission,
+      membersCanCreateRepos: body.membersCanCreateRepos ?? true,
+    },
+  })
   return c.json({
     ok: true,
     name,
@@ -1068,8 +1321,24 @@ app.patch('/auth/namespaces/:ns', async (c) => {
   } catch {
     return c.json({ error: 'Invalid body' }, 400)
   }
+  const previous = getNamespace(ns)
   const result = updateNamespaceSettings(ns, body)
   if (!result.ok) return c.json({ error: result.error }, 400)
+  auditMutation(c, session, 'session', {
+    action: 'namespace.settings.update',
+    namespace: ns,
+    message: `Updated settings for namespace ${ns}`,
+    detail: {
+      previous: previous && {
+        basePermission: previous.basePermission,
+        membersCanCreateRepos: previous.membersCanCreateRepos,
+      },
+      next: {
+        basePermission: body.basePermission,
+        membersCanCreateRepos: body.membersCanCreateRepos,
+      },
+    },
+  })
   return c.json({ ok: true, namespace: getNamespace(ns) })
 })
 
@@ -1125,6 +1394,13 @@ app.delete('/auth/namespaces/:ns', async (c) => {
             )
           }
           deletedRepos.push(name)
+          auditMutation(c, session, 'session', {
+            action: 'repo.delete',
+            namespace: ns,
+            repo: name,
+            message: `Deleted repository ${ns}/${name} (namespace deletion)`,
+            detail: { cascade: 'namespace.delete' },
+          })
         }
       }
     } catch (err) {
@@ -1158,15 +1434,11 @@ app.delete('/auth/namespaces/:ns', async (c) => {
   const result = deleteNamespaceAuthz(ns)
   if (!result.ok) return c.json({ error: result.error }, 400)
 
-  appendAudit({
-    actor: actorFromUser(session),
-    via: 'session',
-    method: 'DELETE',
-    path: `/auth/namespaces/${ns}`,
-    status: 200,
+  auditMutation(c, session, 'session', {
     action: 'namespace.delete',
     namespace: ns,
-    detail: { deletedRepos },
+    message: `Deleted namespace ${ns}`,
+    detail: { deletedRepos, deleteRepositories },
   })
 
   return c.json({ ok: true, deletedRepositories: deletedRepos })
@@ -1208,6 +1480,12 @@ app.put('/auth/namespaces/:ns/members', async (c) => {
     )
     if (!result.ok) return c.json({ error: result.error }, 400)
   }
+  auditMutation(c, session, 'session', {
+    action: 'namespace.member.set',
+    namespace: ns,
+    message: `Set namespace member role ${body.role}`,
+    detail: { target: memberTarget(body), role: body.role },
+  })
   return c.json({ ok: true, members: listNamespaceMembers(ns) })
 })
 
@@ -1241,6 +1519,12 @@ app.delete('/auth/namespaces/:ns/members', async (c) => {
     const result = removeNamespaceMember(ns, { sub: body.sub, iss: body.iss })
     if (!result.ok) return c.json({ error: result.error }, 400)
   }
+  auditMutation(c, session, 'session', {
+    action: 'namespace.member.remove',
+    namespace: ns,
+    message: 'Removed namespace member',
+    detail: { target: memberTarget(body) },
+  })
   return c.json({ ok: true, members: listNamespaceMembers(ns) })
 })
 
@@ -1295,6 +1579,13 @@ app.put('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
     )
     if (!result.ok) return c.json({ error: result.error }, 400)
   }
+  auditMutation(c, session, 'session', {
+    action: 'repo.collaborator.set',
+    namespace: ns,
+    repo,
+    message: `Set repository collaborator role ${body.role}`,
+    detail: { target: memberTarget(body), role: body.role },
+  })
   return c.json({ ok: true, collaborators: listRepoCollaborators(ns, repo) })
 })
 
@@ -1328,6 +1619,13 @@ app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
     }
     removeRepoCollaborator(ns, repo, { sub: body.sub, iss: body.iss })
   }
+  auditMutation(c, session, 'session', {
+    action: 'repo.collaborator.remove',
+    namespace: ns,
+    repo,
+    message: 'Removed repository collaborator',
+    detail: { target: memberTarget(body) },
+  })
   return c.json({ ok: true, collaborators: listRepoCollaborators(ns, repo) })
 })
 
@@ -1397,6 +1695,16 @@ app.post('/auth/namespaces/:ns/custom-roles/namespace', async (c) => {
     baseRepositoryRole: body.baseRepositoryRole,
   })
   if (!result.ok) return c.json({ error: result.error }, 400)
+  auditMutation(c, session, 'session', {
+    action: 'custom-role.namespace.create',
+    namespace: ns,
+    message: `Created namespace role ${body.name}`,
+    detail: {
+      roleId: result.role.id,
+      permissions: body.permissions,
+      baseRepositoryRole: body.baseRepositoryRole,
+    },
+  })
   return c.json({ ok: true, role: result.role })
 })
 
@@ -1421,6 +1729,12 @@ app.patch('/auth/namespaces/:ns/custom-roles/namespace/:roleId', async (c) => {
   }
   const result = updateCustomNamespaceRole(ns, roleId, body)
   if (!result.ok) return c.json({ error: result.error }, 400)
+  auditMutation(c, session, 'session', {
+    action: 'custom-role.namespace.update',
+    namespace: ns,
+    message: `Updated namespace role ${roleId}`,
+    detail: { roleId, changes: body },
+  })
   return c.json({ ok: true, role: result.role })
 })
 
@@ -1438,6 +1752,12 @@ app.delete('/auth/namespaces/:ns/custom-roles/namespace/:roleId', async (c) => {
     isCustomNamespaceRoleAssigned(ns, roleId),
   )
   if (!result.ok) return c.json({ error: result.error }, 400)
+  auditMutation(c, session, 'session', {
+    action: 'custom-role.namespace.delete',
+    namespace: ns,
+    message: `Deleted namespace role ${roleId}`,
+    detail: { roleId },
+  })
   return c.json({ ok: true })
 })
 
@@ -1470,6 +1790,16 @@ app.post('/auth/namespaces/:ns/custom-roles/repo', async (c) => {
     permissions: body.permissions,
   })
   if (!result.ok) return c.json({ error: result.error }, 400)
+  auditMutation(c, session, 'session', {
+    action: 'custom-role.repo.create',
+    namespace: ns,
+    message: `Created repository role ${body.name}`,
+    detail: {
+      roleId: result.role.id,
+      base: body.base,
+      permissions: body.permissions,
+    },
+  })
   return c.json({ ok: true, role: result.role })
 })
 
@@ -1494,6 +1824,12 @@ app.patch('/auth/namespaces/:ns/custom-roles/repo/:roleId', async (c) => {
   }
   const result = updateCustomRepoRole(ns, roleId, body)
   if (!result.ok) return c.json({ error: result.error }, 400)
+  auditMutation(c, session, 'session', {
+    action: 'custom-role.repo.update',
+    namespace: ns,
+    message: `Updated repository role ${roleId}`,
+    detail: { roleId, changes: body },
+  })
   return c.json({ ok: true, role: result.role })
 })
 
@@ -1511,6 +1847,12 @@ app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', async (c) => {
     isCustomRepoRoleAssigned(ns, roleId),
   )
   if (!result.ok) return c.json({ error: result.error }, 400)
+  auditMutation(c, session, 'session', {
+    action: 'custom-role.repo.delete',
+    namespace: ns,
+    message: `Deleted repository role ${roleId}`,
+    detail: { roleId },
+  })
   return c.json({ ok: true })
 })
 

@@ -71,6 +71,7 @@ export async function proxyToOxen(
   const contentType = c.req.header('content-type') ?? ''
   let message: string | undefined
   let createNs: string | undefined
+  let bodyWorkspaceId: string | undefined
   let createRepo: string | undefined
   let moveNewPath: string | undefined
   let copyFrom: string | undefined
@@ -103,6 +104,9 @@ export async function proxyToOxen(
           const created = extractRepoCreateFromJson(parsed)
           createNs = created.namespace
           createRepo = created.repo
+          if (typeof parsed.workspace_id === 'string' && parsed.workspace_id.trim()) {
+            bodyWorkspaceId = parsed.workspace_id.trim()
+          }
           if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
             moveNewPath = parsed.new_path.trim()
           }
@@ -277,6 +281,7 @@ export async function proxyToOxen(
       repo,
       message,
       detail: {
+        ...(bodyWorkspaceId ? { workspace_id: bodyWorkspaceId } : {}),
         ...classified.detail,
         ...(moveNewPath ? { new_path: moveNewPath } : {}),
         ...(copyFrom ? { copy_from: copyFrom } : {}),

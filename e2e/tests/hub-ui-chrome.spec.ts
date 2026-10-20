@@ -142,7 +142,7 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     await page.goto(repoPath(seededRepo, '/merge?base=main&head=feature'))
     await expect(page.getByRole('heading', { name: 'Merge', exact: true })).toBeVisible()
     await expect(
-      page.getByText(/Bring commits from one branch into another/),
+      page.getByText(/Combine changes from one branch into another/),
     ).toBeVisible()
 
     await expect(page.getByLabel('Head branch (from)')).toHaveValue('feature')
@@ -213,7 +213,7 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     await page.goto(repoPath(seededRepo, '/workspaces'))
     await expect(page.getByRole('heading', { name: 'Workspaces' })).toBeVisible()
     await expect(
-      page.getByText(/Stage and commit changes on the server/),
+      page.getByText(/Make changes on the server without downloading the entire repository/),
     ).toBeVisible()
 
     const table = page.locator('table.workspaces-table')

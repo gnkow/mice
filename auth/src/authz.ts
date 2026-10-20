@@ -213,6 +213,7 @@ export function requiredRepoRoleForRequest(
   if (action === 'branch.delete') return 'maintain'
   if (
     action === 'file.write' ||
+    action === 'file.delete' ||
     action === 'branch.create' ||
     action === 'branch.update' ||
     action.startsWith('workspace') ||

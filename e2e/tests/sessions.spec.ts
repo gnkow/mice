@@ -12,15 +12,12 @@ test.describe('Sessions UI', () => {
   test('nav Sessions page can create a mock session', async ({ page }) => {
     await page.goto('/sessions')
     await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible()
-    await expect(page.getByText(/No mounts/i)).toBeVisible()
     await page.getByRole('button', { name: 'New session' }).click()
-    // Mock provisioner becomes ready quickly — card is a link to the detail page
-    await expect
-      .poll(async () => page.locator('.jobs-list-card').count(), {
-        timeout: 30_000,
-      })
-      .toBeGreaterThan(0)
-    await page.locator('.jobs-list-card').first().click()
+    await page
+      .getByRole('dialog', { name: 'New session' })
+      .getByRole('button', { name: 'Create session' })
+      .click()
+    // Creation navigates directly to the session detail page.
     await expect(page).toHaveURL(/\/sessions\/[0-9a-f]+/)
     await expect(
       page.getByText(/Ready|Connected|Provisioning/i).first(),

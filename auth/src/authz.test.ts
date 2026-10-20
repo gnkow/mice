@@ -977,6 +977,36 @@ describe('audit ACL and path classification', () => {
     assert.ok(ws.action.startsWith('workspace'))
     assert.equal(classifyPath('DELETE', '/api/repos/n/r').action, 'repo.delete')
   })
+
+  it('classifyPath distinguishes file delete and workspace operations', () => {
+    const del = classifyPath('DELETE', '/api/repos/n/r/file/main/a.txt')
+    assert.equal(del.action, 'file.delete')
+    assert.equal(del.detail?.path, 'a.txt')
+    const cases: Array<[string, string, string]> = [
+      ['POST', '/api/repos/n/r/workspaces', 'workspace.create'],
+      ['DELETE', '/api/repos/n/r/workspaces/w1', 'workspace.delete'],
+      ['POST', '/api/repos/n/r/workspaces/w1/commit/main', 'workspace.commit'],
+      ['PUT', '/api/repos/n/r/workspaces/w1/files/a.txt', 'workspace.file.write'],
+      ['DELETE', '/api/repos/n/r/workspaces/w1/files/a.txt', 'workspace.file.delete'],
+      ['POST', '/api/repos/n/r/workspaces/w1/merge/main', 'workspace.merge'],
+      ['PUT', '/api/repos/n/r/workspaces/w1/other', 'workspace.other'],
+    ]
+    for (const [method, path, action] of cases) {
+      const c = classifyPath(method, path)
+      assert.equal(c.action, action, `${method} ${path}`)
+      assert.equal(c.namespace, 'n')
+      assert.equal(c.repo, 'r')
+      // Authz keys must be unchanged by the finer audit names.
+      assert.equal(requiredRepoRoleForRequest(method, path, c.action), 'write')
+      assert.equal(finePermissionForAction(method, c.action), 'workspaces')
+    }
+    assert.equal(classifyPath('POST', '/api/repos/n/r/workspaces/w1/commit/main').detail?.workspace_id, 'w1')
+    assert.equal(
+      requiredRepoRoleForRequest('DELETE', '/api/repos/n/r/file/main/a', 'file.delete'),
+      'write',
+    )
+    assert.equal(finePermissionForAction('DELETE', 'file.delete'), 'contents_write')
+  })
 })
 
 describe('repo / namespace API decisions', () => {

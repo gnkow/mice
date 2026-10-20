@@ -101,7 +101,8 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
     await acceptConfirmModal(page, 'clear-me')
     await expect(page).toHaveURL(/\/workspaces$/, { timeout: 30_000 })
 
-    // recreate two workspaces, then clear all (client lists + deletes)
+    // recreate two workspaces, then delete each from its detail page
+    // (bulk "Clear all" was removed from the UI)
     for (const name of ['to-clear-a', 'to-clear-b']) {
       await page.getByRole('button', { name: 'New workspace' }).click()
       const dialog = page.getByRole('dialog', { name: 'New workspace' })
@@ -112,9 +113,14 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
     }
     await expect(page.getByRole('link', { name: /to-clear-a/ })).toBeVisible()
     await expect(page.getByRole('link', { name: /to-clear-b/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Clear all' })).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Clear all' }).click()
-    await acceptConfirmModal(page, 'DELETE ALL')
+    for (const name of ['to-clear-a', 'to-clear-b']) {
+      await page.getByRole('link', { name: new RegExp(name) }).first().click()
+      await page.getByRole('button', { name: 'Delete', exact: true }).click()
+      await acceptConfirmModal(page, name)
+      await expect(page).toHaveURL(/\/workspaces$/, { timeout: 30_000 })
+    }
     await expect(page.getByText('No workspaces yet.')).toBeVisible({
       timeout: 30_000,
     })

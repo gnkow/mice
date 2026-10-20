@@ -566,8 +566,8 @@ export async function retryDesktopSession(
     method: 'POST',
     path: `/auth/sessions/${id}/retry`,
     status: 200,
-    action: 'session.create',
-    detail: { session_id: id, retry: true },
+    action: 'session.retry',
+    detail: { session_id: id },
   })
   void provisionInBackground(id)
   return publicSession(updated)

@@ -2,7 +2,90 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAudit, type AuditEvent } from '../lib/audit'
+import {
+  actionLabel,
+  eventResources,
+  exportAuditCsv,
+  fetchAudit,
+  fetchAuditFacets,
+  type AuditEvent,
+  type AuditFacets,
+  type AuditResource,
+} from '../lib/audit'
+
+const FILTER_KEYS = [
+  'actor',
+  'namespace',
+  'repo',
+  'action',
+  'session_id',
+  'workspace_id',
+  'job_id',
+] as const
+type FilterKey = (typeof FILTER_KEYS)[number]
+type Draft = Record<FilterKey, string>
+
+function draftFromParams(p: URLSearchParams): Draft {
+  return Object.fromEntries(FILTER_KEYS.map((k) => [k, p.get(k) ?? ''])) as Draft
+}
+
+function shortId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id
+}
+
+function resourceLabel(r: AuditResource): string {
+  const where = r.repo ? ` · ${r.namespace ?? ''}/${r.repo}` : r.namespace ? ` · ${r.namespace}` : ''
+  return `${shortId(r.id)}${where} (${r.count})`
+}
+
+function ResourceSelect({
+  name,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  name: string
+  label: string
+  value: string
+  options: AuditResource[]
+  onChange: (v: string) => void
+}) {
+  const known = options.some((o) => o.id === value)
+  return (
+    <label>
+      {label}
+      <select name={name} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">All</option>
+        {value && !known && <option value={value}>{shortId(value)}</option>}
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {resourceLabel(o)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function ResourceCell({ event }: { event: AuditEvent }) {
+  const r = eventResources(event)
+  const items: [string, string][] = []
+  if (r.sessionId) items.push(['Session', r.sessionId])
+  if (r.workspaceId) items.push(['Workspace', r.workspaceId])
+  for (const j of r.jobIds.slice(0, 3)) items.push(['Job', j])
+  if (r.jobIds.length > 3) items.push(['Jobs', `+${r.jobIds.length - 3} more`])
+  if (items.length === 0) return <span className="muted">—</span>
+  return (
+    <div className="small">
+      {items.map(([k, v]) => (
+        <div key={`${k}:${v}`} title={v}>
+          <span className="muted">{k}</span> <span className="mono">{shortId(v)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function formatTs(ts: string): string {
   try {
@@ -25,42 +108,78 @@ function RepoCell({ event }: { event: AuditEvent }) {
 
 export function AuditPage() {
   const [params, setParams] = useSearchParams()
-  const [draft, setDraft] = useState({
-    actor: params.get('actor') ?? '',
-    namespace: params.get('namespace') ?? '',
-    repo: params.get('repo') ?? '',
-    action: params.get('action') ?? '',
-  })
+  const [draft, setDraft] = useState<Draft>(() => draftFromParams(params))
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
-  const queryKey = useMemo(
+  const applied = useMemo(
     () => ({
       actor: params.get('actor') || undefined,
       namespace: params.get('namespace') || undefined,
       repo: params.get('repo') || undefined,
       action: params.get('action') || undefined,
-      limit: 100,
+      sessionId: params.get('session_id') || undefined,
+      workspaceId: params.get('workspace_id') || undefined,
+      jobId: params.get('job_id') || undefined,
     }),
     [params],
   )
 
   const state = useAsync(
-    (signal) => fetchAudit(queryKey, signal),
-    [queryKey.actor, queryKey.namespace, queryKey.repo, queryKey.action],
+    (signal) => fetchAudit({ ...applied, limit: 100 }, signal),
+    [
+      applied.actor,
+      applied.namespace,
+      applied.repo,
+      applied.action,
+      applied.sessionId,
+      applied.workspaceId,
+      applied.jobId,
+    ],
   )
+  const facetState = useAsync((signal) => fetchAuditFacets({}, signal), [])
+  const facets: AuditFacets | null =
+    facetState.kind === 'ok' ? facetState.data : null
+
+  const actionGroups = useMemo(() => {
+    const groups = new Map<string, { value: string; label: string }[]>()
+    for (const a of facets?.actions ?? []) {
+      const list = groups.get(a.group) ?? []
+      list.push(a)
+      groups.set(a.group, list)
+    }
+    return [...groups.entries()]
+  }, [facets])
+
+  function set(key: FilterKey, value: string) {
+    setDraft((d) => ({ ...d, [key]: value }))
+  }
 
   function onFilter(e: FormEvent) {
     e.preventDefault()
     const next = new URLSearchParams()
-    if (draft.actor.trim()) next.set('actor', draft.actor.trim())
-    if (draft.namespace.trim()) next.set('namespace', draft.namespace.trim())
-    if (draft.repo.trim()) next.set('repo', draft.repo.trim())
-    if (draft.action.trim()) next.set('action', draft.action.trim())
+    for (const k of FILTER_KEYS) {
+      const v = draft[k].trim()
+      if (v) next.set(k, v)
+    }
     setParams(next, { replace: true })
   }
 
   function clearFilters() {
-    setDraft({ actor: '', namespace: '', repo: '', action: '' })
+    setDraft(draftFromParams(new URLSearchParams()))
     setParams({}, { replace: true })
+  }
+
+  async function onExport() {
+    setExporting(true)
+    setExportError(null)
+    try {
+      await exportAuditCsv(applied)
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -73,7 +192,17 @@ export function AuditPage() {
             / which repo).
           </p>
         </div>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void onExport()}
+          disabled={exporting}
+          title="Download the events matching the applied filters"
+        >
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </button>
       </div>
+      {exportError && <p className="flash flash-error">{exportError}</p>}
 
       <form className="audit-filters" onSubmit={onFilter}>
         <label>
@@ -81,7 +210,7 @@ export function AuditPage() {
           <input
             name="actor"
             value={draft.actor}
-            onChange={(e) => setDraft((d) => ({ ...d, actor: e.target.value }))}
+            onChange={(e) => set('actor', e.target.value)}
             placeholder="email, name, or sub"
           />
         </label>
@@ -90,9 +219,7 @@ export function AuditPage() {
           <input
             name="namespace"
             value={draft.namespace}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, namespace: e.target.value }))
-            }
+            onChange={(e) => set('namespace', e.target.value)}
             placeholder="namespace"
           />
         </label>
@@ -101,21 +228,54 @@ export function AuditPage() {
           <input
             name="repo"
             value={draft.repo}
-            onChange={(e) => setDraft((d) => ({ ...d, repo: e.target.value }))}
+            onChange={(e) => set('repo', e.target.value)}
             placeholder="repo"
           />
         </label>
         <label>
           Action
-          <input
+          <select
             name="action"
             value={draft.action}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, action: e.target.value }))
-            }
-            placeholder="file.write, merge, …"
-          />
+            onChange={(e) => set('action', e.target.value)}
+          >
+            <option value="">All actions</option>
+            {draft.action &&
+              !(facets?.actions ?? []).some((a) => a.value === draft.action) && (
+                <option value={draft.action}>{draft.action}</option>
+              )}
+            {actionGroups.map(([group, items]) => (
+              <optgroup key={group} label={group}>
+                {items.map((a) => (
+                  <option key={a.value} value={a.value}>
+                    {a.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
         </label>
+        <ResourceSelect
+          name="session_id"
+          label="Session"
+          value={draft.session_id}
+          options={facets?.sessions ?? []}
+          onChange={(v) => set('session_id', v)}
+        />
+        <ResourceSelect
+          name="workspace_id"
+          label="Workspace"
+          value={draft.workspace_id}
+          options={facets?.workspaces ?? []}
+          onChange={(v) => set('workspace_id', v)}
+        />
+        <ResourceSelect
+          name="job_id"
+          label="Job"
+          value={draft.job_id}
+          options={facets?.jobs ?? []}
+          onChange={(v) => set('job_id', v)}
+        />
         <div className="audit-filter-actions">
           <button type="submit" className="btn primary">
             Filter
@@ -143,6 +303,7 @@ export function AuditPage() {
                   <th>Via</th>
                   <th>Action</th>
                   <th>Repo</th>
+                  <th>Resource</th>
                   <th>Status</th>
                   <th>Message</th>
                 </tr>
@@ -156,9 +317,15 @@ export function AuditPage() {
                       <div className="muted small">{ev.actor.email}</div>
                     </td>
                     <td className="mono small">{ev.via}</td>
-                    <td className="mono small">{ev.action}</td>
+                    <td title={ev.action}>
+                      <div>{actionLabel(ev)}</div>
+                      <div className="muted small mono">{ev.action}</div>
+                    </td>
                     <td>
                       <RepoCell event={ev} />
+                    </td>
+                    <td>
+                      <ResourceCell event={ev} />
                     </td>
                     <td className="mono small">{ev.status}</td>
                     <td className="small">
