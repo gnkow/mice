@@ -233,6 +233,9 @@ export function WorkspacesPage() {
           >
             New workspace
           </button>
+          <Link className="btn ghost" to="/workspaces">
+            All workspaces
+          </Link>
         </div>
       </div>
 
