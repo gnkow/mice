@@ -30,7 +30,7 @@ type PatRecord = PatPublic & {
 
 type StoreFile = { version: 1; tokens: PatRecord[] }
 
-const TOKEN_PREFIX = 'boxen_pat_'
+const TOKEN_PREFIX = 'mice_pat_'
 
 function storePath(): string {
   return join(env.dataDir, 'pats.json')

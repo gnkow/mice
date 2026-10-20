@@ -106,7 +106,7 @@ export function buildAuthorizeUrl(opts: {
   return u.toString()
 }
 
-/** RP-initiated logout URL (browser → IdP → back to Boxen /login). */
+/** RP-initiated logout URL (browser → IdP → back to Mice /login). */
 export async function buildEndSessionUrl(opts: {
   idToken?: string
 }): Promise<string | null> {

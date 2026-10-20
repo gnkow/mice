@@ -43,7 +43,7 @@ export type JobRun = {
   result_commit: string | null
   /**
    * Branch that received the result commit. CLI path: source branch.
-   * Legacy server path: `boxen/job/<id>`.
+   * Legacy server path: `mice/job/<id>`.
    */
   result_branch: string | null
   image: string
@@ -71,7 +71,7 @@ export type JobRun = {
   workspace_id: string | null
   /** Docker/K8s runtime id for cancel */
   runtime_id: string | null
-  /** `cli` = executed by local `boxen job run` (not auth host Docker/K8s). */
+  /** `cli` = executed by local `mice job run` (not auth host Docker/K8s). */
   runner: 'docker' | 'kubernetes' | 'cli'
   /** @deprecated legacy field; prefer target_branch */
   branch?: string
@@ -87,7 +87,7 @@ export type JobSubmitBody = {
    * Resolved server-side to source_ref + pin_commit.
    */
   source?: string
-  /** @deprecated Legacy server-side merge destination. Prefer `boxen push`. */
+  /** @deprecated Legacy server-side merge destination. Prefer `mice push`. */
   target?: string
   /** @deprecated legacy source branch with pin_commit (not a merge target) */
   branch?: string
@@ -106,7 +106,7 @@ export type JobSubmitBody = {
   workspace_id?: string
   /**
    * When `cli`, auth records the job but does not execute it — the local
-   * `boxen` CLI runs Docker and reports completion.
+   * `mice` CLI runs Docker and reports completion.
    */
   runner?: 'cli' | 'docker' | 'kubernetes'
 }

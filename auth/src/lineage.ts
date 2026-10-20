@@ -492,7 +492,7 @@ export function appendLineage(
 ): LineageOp | null {
   const arityErr = validateArity(partial.kind, partial.inputs, partial.outputs)
   if (arityErr) {
-    console.error('[boxen-auth] lineage arity', arityErr, partial.kind)
+    console.error('[mice-auth] lineage arity', arityErr, partial.kind)
     return null
   }
 
@@ -562,7 +562,7 @@ export function appendLineage(
     }
     return op
   } catch (err) {
-    console.error('[boxen-auth] lineage append failed', err)
+    console.error('[mice-auth] lineage append failed', err)
     return null
   }
 }

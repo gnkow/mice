@@ -1,5 +1,11 @@
 import type { Hono } from 'hono'
-import { authorizeJobRead, authorizeJobSubmit, preparePrincipal } from './authz.js'
+import {
+  authorizeJobCancel,
+  authorizeJobComplete,
+  authorizeJobRead,
+  authorizeJobSubmit,
+  preparePrincipal,
+} from './authz.js'
 import {
   cancelJob,
   completeCliJob,
@@ -156,7 +162,7 @@ export function registerJobRoutes(app: Hono) {
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const existing = getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
-    const gate = authorizeJobSubmit(
+    const gate = authorizeJobCancel(
       authed.user,
       existing.namespace,
       existing.repo,
@@ -176,7 +182,7 @@ export function registerJobRoutes(app: Hono) {
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const existing = getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
-    const gate = authorizeJobSubmit(
+    const gate = authorizeJobComplete(
       authed.user,
       existing.namespace,
       existing.repo,
@@ -288,13 +294,13 @@ export function registerJobRoutes(app: Hono) {
         }
         const namespace = typeof j.namespace === 'string' ? j.namespace : ''
         const repo = typeof j.repo === 'string' ? j.repo : ''
-        const gate = authorizeJobSubmit(authed.user, namespace, repo)
+        const gate = authorizeJobComplete(authed.user, namespace, repo)
         if (!gate.allow) {
           return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
         }
         const existing = getJob(String(j.id || ''))
         if (existing) {
-          const gateExisting = authorizeJobSubmit(
+          const gateExisting = authorizeJobComplete(
             authed.user,
             existing.namespace,
             existing.repo,
@@ -374,7 +380,7 @@ export function registerJobRoutes(app: Hono) {
     for (const id of jobIds) {
       const existing = getJob(id)
       if (!existing) return c.json({ error: `Not found: ${id}` }, 404)
-      const gate = authorizeJobSubmit(
+      const gate = authorizeJobComplete(
         authed.user,
         existing.namespace,
         existing.repo,
@@ -397,6 +403,6 @@ export function registerJobRoutes(app: Hono) {
   }
 
   app.post('/auth/jobs/publish', (c) => handlePublishOrSync(c))
-  /** @deprecated prefer POST /auth/jobs/publish after boxen push */
+  /** @deprecated prefer POST /auth/jobs/publish after mice push */
   app.post('/auth/jobs/sync', (c) => handlePublishOrSync(c))
 }

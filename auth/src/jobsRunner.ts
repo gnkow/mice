@@ -117,7 +117,7 @@ export function createDockerRunner(): Runner {
       return digest || null
     },
     async start({ job, dataDir, logPath }) {
-      const name = `boxen-job-${job.id}`
+      const name = `mice-job-${job.id}`
       // Remove any leftover
       await runCmd(env.jobsDockerBin, ['rm', '-f', name]).catch(() => {})
 
@@ -216,7 +216,7 @@ export function createKubernetesRunner(): Runner {
       return null
     },
     async start({ job, dataDir, logPath }) {
-      const name = `boxen-job-${job.id}`.slice(0, 63)
+      const name = `mice-job-${job.id}`.slice(0, 63)
       const ns = env.jobsK8sNamespace
       const manifest = {
         apiVersion: 'batch/v1',
@@ -224,7 +224,7 @@ export function createKubernetesRunner(): Runner {
         metadata: {
           name,
           namespace: ns,
-          labels: { 'boxen.job': job.id },
+          labels: { 'mice.job': job.id },
         },
         spec: {
           backoffLimit: 0,
@@ -370,14 +370,14 @@ export function getRunner(): Runner {
 
 /**
  * Resolve a host-side open/access watcher binary.
- * Prefers the static `boxen-readwatch` helper (no apk/inotify-tools needed).
+ * Prefers the static `mice-readwatch` helper (no apk/inotify-tools needed).
  */
 export function resolveReadWatchBin(): string | null {
   const arch =
     process.arch === 'x64' ? 'amd64' : process.arch === 'arm64' ? 'arm64' : ''
   const candidates = [
-    join(here, '..', 'bin', `linux-${arch}`, 'boxen-readwatch'),
-    '/usr/local/bin/boxen-readwatch',
+    join(here, '..', 'bin', `linux-${arch}`, 'mice-readwatch'),
+    '/usr/local/bin/mice-readwatch',
     '/usr/bin/inotifywait',
     '/bin/inotifywait',
   ]
@@ -399,7 +399,7 @@ export function startReadWatcher(
   const bin = resolveReadWatchBin()
   if (!bin) {
     console.warn(
-      '[jobs] no read-watcher binary (boxen-readwatch / inotifywait); inputs will be empty',
+      '[jobs] no read-watcher binary (mice-readwatch / inotifywait); inputs will be empty',
     )
     return { stop: () => [...reads] }
   }
@@ -418,7 +418,7 @@ export function startReadWatcher(
       const full = line.trim()
       if (!full.startsWith(dataDir)) continue
       let rel = full.slice(dataDir.length).replace(/^\/+/, '')
-      if (!rel || rel.startsWith('.boxen-job')) continue
+      if (!rel || rel.startsWith('.mice-job')) continue
       // directory events end with /
       if (rel.endsWith('/')) continue
       reads.add(rel)

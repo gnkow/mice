@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-const dataDir = mkdtempSync(join(tmpdir(), 'boxen-authz-'))
+const dataDir = mkdtempSync(join(tmpdir(), 'mice-authz-'))
 
 process.env.AUTH_DATA_DIR = dataDir
 process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
-process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@boxen.local'
+process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.AUTHZ_GROUP_BOOTSTRAP = JSON.stringify({
   'alice@example.com': {
@@ -25,8 +25,14 @@ process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 const {
   authorizeApiRequest,
   authorizeAuditQuery,
+  authorizeCliDeviceApprove,
+  authorizeJobCancel,
+  authorizeJobComplete,
+  authorizeJobRead,
+  authorizeJobSubmit,
   authorizeLineageQuery,
   authorizeLineageRebuild,
+  authorizeManageOwnTokens,
   canManageRepoCollaborators,
   canSkipPendingGate,
   effectiveRepoRole,
@@ -96,7 +102,7 @@ function mkUser(id: string, groups?: string[]) {
 const admin = {
   sub: 'admin',
   iss: 'test',
-  email: 'admin@boxen.local',
+  email: 'admin@mice.local',
   name: 'Admin',
 }
 const alice = {
@@ -219,7 +225,7 @@ describe('TC-AUTHO matrix', () => {
     const admin2 = {
       sub: 'admin2',
       iss: 'test',
-      email: 'admin2@boxen.local',
+      email: 'admin2@mice.local',
       name: 'Admin2',
     }
     addInstanceAdmin(admin, admin2)
@@ -794,7 +800,70 @@ describe('custom roles CRUD and capabilities', () => {
     assert.equal(finePermissionForAction('DELETE', 'repo.delete'), 'repo_delete')
     assert.equal(finePermissionForAction('POST', 'workspace.create'), 'workspaces')
     assert.equal(finePermissionForAction('POST', 'repo.create'), null)
+    assert.equal(finePermissionForAction('PATCH', 'repo.metadata'), 'manage_repo_metadata')
+    assert.equal(finePermissionForAction('POST', 'job.cancel'), 'job_cancel')
+    assert.equal(finePermissionForAction('POST', 'job.complete'), 'job_complete')
+    assert.equal(finePermissionForAction('GET', 'lineage.read'), 'lineage_read')
+    assert.equal(finePermissionForAction('GET', 'job.read'), 'job_read')
+    assert.equal(finePermissionForAction('POST', 'lineage.rebuild'), 'lineage_rebuild')
     assert.equal(finePermissionForAction('PATCH', 'mystery'), 'other_mutate')
+  })
+})
+
+describe('atomic instance + job gates', () => {
+  it('manage_own_tokens and cli_device_approve deny without grant under enforce', () => {
+    const u = mkUser('token-cli-user')
+    writeInstancePermissions(u, [])
+    setAuthzEnforce(true)
+    assert.equal(authorizeManageOwnTokens(u).allow, false)
+    assert.equal(authorizeCliDeviceApprove(u).allow, false)
+    writeInstancePermissions(u, ['manage_own_tokens', 'cli_device_approve'])
+    assert.equal(authorizeManageOwnTokens(u).allow, true)
+    assert.equal(authorizeCliDeviceApprove(u).allow, true)
+    writeInstancePermissions(u, [])
+  })
+
+  it('job cancel/complete implied by write; custom role can grant cancel without submit', () => {
+    const ns = 'tc-job-atomic'
+    const repo = 'r1'
+    createNamespaceAuthz(admin, ns, 'none', true)
+    const writer = mkUser('job-writer')
+    const cancelOnly = mkUser('job-cancel-only')
+    setRepoCollaborator(ns, repo, writer, 'write')
+    const role = createCustomRepoRole(ns, {
+      name: 'Cancel only',
+      base: 'read',
+      permissions: ['job_cancel'],
+    })
+    assert.equal(role.ok, true)
+    if (!role.ok) return
+    setRepoCollaborator(ns, repo, cancelOnly, role.role.id)
+
+    setAuthzEnforce(true)
+    assert.equal(authorizeJobCancel(writer, ns, repo).allow, true)
+    assert.equal(authorizeJobComplete(writer, ns, repo).allow, true)
+    assert.equal(authorizeJobSubmit(writer, ns, repo).allow, true)
+
+    assert.equal(authorizeJobCancel(cancelOnly, ns, repo).allow, true)
+    assert.equal(authorizeJobSubmit(cancelOnly, ns, repo).allow, false)
+    assert.equal(authorizeJobComplete(cancelOnly, ns, repo).allow, false)
+    assert.equal(authorizeJobRead(cancelOnly, ns, repo).allow, true)
+  })
+
+  it('ns view_lineage allows lineage query without repo collab', () => {
+    const ns = 'tc-ns-lineage'
+    const repo = 'r1'
+    createNamespaceAuthz(admin, ns, 'none', true)
+    const viewer = mkUser('ns-lin-viewer')
+    const role = createCustomNamespaceRole(ns, {
+      name: 'Lineage viewer',
+      permissions: ['view_lineage'],
+    })
+    assert.equal(role.ok, true)
+    if (!role.ok) return
+    setNamespaceMember(ns, viewer, role.role.id)
+    setAuthzEnforce(true)
+    assert.equal(authorizeLineageQuery(viewer, ns, repo).allow, true)
   })
 })
 
@@ -823,7 +892,7 @@ describe('lineage ACL', () => {
     const missingNs = authorizeLineageQuery(alice, undefined, undefined)
     assert.equal(missingNs.allow, false)
 
-    writeInstancePermissions(bob, ['view_audit'])
+    writeInstancePermissions(bob, ['view_lineage'])
     assert.equal(authorizeLineageQuery(bob, undefined, undefined).allow, true)
     writeInstancePermissions(bob, [])
   })

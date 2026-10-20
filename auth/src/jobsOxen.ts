@@ -118,7 +118,11 @@ export async function materializeCommitClone(
   return hashes
 }
 
-/** Materialize workspace files when oxen workspace file listing is available. */
+/** 
+ * Materialize workspace base commit.
+ * Note: This materializes the workspace's base commit, not staged changes.
+ * For full workspace state with staged files, use the Oxen workspace API.
+ */
 export async function materializeWorkspaceMount(
   namespace: string,
   repo: string,
@@ -126,47 +130,28 @@ export async function materializeWorkspaceMount(
   destDir: string,
 ): Promise<Map<string, string>> {
   mkdirSync(destDir, { recursive: true })
-  const hashes = new Map<string, string>()
-  // Workspace dir listing: GET …/workspaces/{id}/dir/{path}
-  async function walk(dirPath: string) {
-    const suffix = dirPath
-      ? dirPath.split('/').filter(Boolean).map(encSeg).join('/')
-      : ''
-    const res = await oxenFetch(
-      `/api/repos/${encSeg(namespace)}/${encSeg(repo)}/workspaces/${encSeg(workspaceId)}/dir/${suffix}?page=1&page_size=100`,
+  
+  // Get workspace details to find its base commit
+  const wsRes = await oxenFetch(
+    `/api/repos/${encSeg(namespace)}/${encSeg(repo)}/workspaces/${encSeg(workspaceId)}`,
+  )
+  if (!wsRes.ok) {
+    throw new Error(
+      `oxen workspace lookup failed (${wsRes.status}); workspace mount unavailable`,
     )
-    if (!res.ok) {
-      throw new Error(
-        `oxen workspace dir failed (${res.status}); workspace mount unavailable`,
-      )
-    }
-    const body = (await res.json()) as { entries?: DirEntry[] }
-    for (const e of body.entries ?? []) {
-      const name = e.filename
-      if (!name || name.startsWith('.oxen')) continue
-      const rel = dirPath ? `${dirPath}/${name}` : name
-      if (e.is_dir) {
-        mkdirSync(join(destDir, rel), { recursive: true })
-        await walk(rel)
-        continue
-      }
-      const fileRes = await oxenFetch(
-        `/api/repos/${encSeg(namespace)}/${encSeg(repo)}/workspaces/${encSeg(workspaceId)}/file/${rel.split('/').map(encSeg).join('/')}`,
-      )
-      if (!fileRes.ok || !fileRes.body) {
-        throw new Error(`workspace file download failed for ${rel}`)
-      }
-      const dest = join(destDir, rel)
-      mkdirSync(dirname(dest), { recursive: true })
-      await pipeline(
-        Readable.fromWeb(fileRes.body as never),
-        createWriteStream(dest),
-      )
-      hashes.set(rel, hashFile(dest))
-    }
   }
-  await walk('')
-  return hashes
+  const wsBody = (await wsRes.json()) as { 
+    workspace?: { commit?: { id?: string } } 
+  }
+  const commitId = wsBody.workspace?.commit?.id
+  if (!commitId) {
+    throw new Error(
+      `workspace ${workspaceId} has no base commit; cannot materialize`,
+    )
+  }
+  
+  // Materialize the base commit
+  return await materializeCommitClone(namespace, repo, commitId, destDir)
 }
 
 export function hashFile(path: string): string {
@@ -177,7 +162,7 @@ export function snapshotTree(root: string): Map<string, string> {
   const out = new Map<string, string>()
   function walk(dir: string) {
     for (const name of readdirSync(dir)) {
-      if (name === '.oxen' || name === '.boxen-job') continue
+      if (name === '.oxen' || name === '.mice-job') continue
       const full = join(dir, name)
       const st = statSync(full)
       const rel = relative(root, full).replace(/\\/g, '/')
@@ -390,7 +375,7 @@ export function writePinMarker(
   pinCommit: string,
   jobId: string,
 ): void {
-  const dir = join(dataDir, '.boxen-job')
+  const dir = join(dataDir, '.mice-job')
   mkdirSync(dir, { recursive: true })
   writeFileSync(
     join(dir, 'pin.json'),

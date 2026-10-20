@@ -191,7 +191,7 @@ async function getKeycloakToken(): Promise<string | null> {
     })
     if (!res.ok) {
       console.error(
-        '[boxen-auth] Keycloak token failed',
+        '[mice-auth] Keycloak token failed',
         res.status,
         await res.text().catch(() => ''),
       )
@@ -208,7 +208,7 @@ async function getKeycloakToken(): Promise<string | null> {
     }
     return json.access_token
   } catch (err) {
-    console.error('[boxen-auth] Keycloak token error', err)
+    console.error('[mice-auth] Keycloak token error', err)
     return null
   }
 }
@@ -230,7 +230,7 @@ async function searchKeycloakUsers(
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) {
-      console.error('[boxen-auth] Keycloak user search failed', res.status)
+      console.error('[mice-auth] Keycloak user search failed', res.status)
       return []
     }
     const rows = (await res.json()) as Array<{
@@ -260,7 +260,7 @@ async function searchKeycloakUsers(
       })
       .slice(0, limit)
   } catch (err) {
-    console.error('[boxen-auth] Keycloak user search error', err)
+    console.error('[mice-auth] Keycloak user search error', err)
     return []
   }
 }
@@ -281,7 +281,7 @@ async function searchKeycloakGroups(
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) {
-      console.error('[boxen-auth] Keycloak group search failed', res.status)
+      console.error('[mice-auth] Keycloak group search failed', res.status)
       return []
     }
     const rows = (await res.json()) as Array<{ name?: string; path?: string }>
@@ -296,7 +296,7 @@ async function searchKeycloakGroups(
     }
     return out
   } catch (err) {
-    console.error('[boxen-auth] Keycloak group search error', err)
+    console.error('[mice-auth] Keycloak group search error', err)
     return []
   }
 }

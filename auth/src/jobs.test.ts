@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-const dataDir = mkdtempSync(join(tmpdir(), 'boxen-jobs-'))
+const dataDir = mkdtempSync(join(tmpdir(), 'mice-jobs-'))
 
 process.env.AUTH_DATA_DIR = dataDir
 process.env.JOBS_DATA_DIR = join(dataDir, 'jobs')
@@ -12,7 +12,7 @@ process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
-process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@boxen.local'
+process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 
 const {
   parseSubmitBody,
@@ -32,18 +32,24 @@ const { env } = await import('./env.js')
 const { validateArity, appendLineage, queryLineage } = await import(
   './lineage.js'
 )
-const { authorizeJobSubmit, authorizeJobRead, preparePrincipal } =
-  await import('./authz.js')
+const {
+  authorizeJobCancel,
+  authorizeJobComplete,
+  authorizeJobSubmit,
+  authorizeJobRead,
+  preparePrincipal,
+} = await import('./authz.js')
 const {
   createNamespaceAuthz,
   setRepoCollaborator,
   setAuthzEnforce,
 } = await import('./authzStore.js')
+const { createCustomRepoRole } = await import('./customRoles.js')
 
 const admin = {
   sub: 'admin',
   iss: 'test',
-  email: 'admin@boxen.local',
+  email: 'admin@mice.local',
   name: 'Admin',
 }
 
@@ -127,8 +133,8 @@ describe('parseSubmitBody', () => {
 describe('mergeRangePath', () => {
   it('keeps slashes in job branch names (web baseHead)', () => {
     assert.equal(
-      mergeRangePath('main', 'boxen/job/abc123'),
-      'main..boxen/job/abc123',
+      mergeRangePath('main', 'mice/job/abc123'),
+      'main..mice/job/abc123',
     )
   })
 })
@@ -170,7 +176,7 @@ describe('resolveReadWatchBin', () => {
     // On macOS unit tests the linux binary exists on disk but is not executable
     // here; resolution only checks existsSync.
     if (bin) {
-      assert.match(bin, /boxen-readwatch|inotifywait/)
+      assert.match(bin, /mice-readwatch|inotifywait/)
     }
   })
 })
@@ -199,13 +205,13 @@ describe('toDockerHostPath', () => {
     const prevHost = env.jobsHostDataDir
     const prevData = env.jobsDataDir
     ;(env as { jobsHostDataDir: string }).jobsHostDataDir =
-      '/Users/me/boxen/.data/jobs'
+      '/Users/me/mice/.data/jobs'
     ;(env as { jobsDataDir: string }).jobsDataDir = '/data/jobs'
     assert.equal(
       toDockerHostPath('/data/jobs/work/abc/data'),
-      '/Users/me/boxen/.data/jobs/work/abc/data',
+      '/Users/me/mice/.data/jobs/work/abc/data',
     )
-    assert.equal(toDockerHostPath('/data/jobs'), '/Users/me/boxen/.data/jobs')
+    assert.equal(toDockerHostPath('/data/jobs'), '/Users/me/mice/.data/jobs')
     assert.equal(toDockerHostPath('/tmp/other'), '/tmp/other')
     ;(env as { jobsHostDataDir: string }).jobsHostDataDir = prevHost
     ;(env as { jobsDataDir: string }).jobsDataDir = prevData
@@ -261,6 +267,31 @@ describe('job authz', () => {
     assert.equal(authorizeJobSubmit(reader, ns, 'r1').allow, false)
     assert.equal(authorizeJobSubmit(writer, ns, 'r1').allow, true)
     assert.equal(authorizeJobRead(writer, ns, 'r1').allow, true)
+    assert.equal(authorizeJobCancel(writer, ns, 'r1').allow, true)
+    assert.equal(authorizeJobComplete(writer, ns, 'r1').allow, true)
+    assert.equal(authorizeJobCancel(reader, ns, 'r1').allow, false)
+  })
+
+  it('custom role can grant job_complete without job_submit', () => {
+    const ns = 'job-atomic'
+    const user = {
+      sub: 'completer',
+      iss: 'test',
+      email: 'completer@example.com',
+      name: 'Completer',
+    }
+    createNamespaceAuthz(admin, ns, 'none', true)
+    const role = createCustomRepoRole(ns, {
+      name: 'Complete only',
+      base: 'read',
+      permissions: ['job_complete'],
+    })
+    assert.equal(role.ok, true)
+    if (!role.ok) return
+    setRepoCollaborator(ns, 'r1', user, role.role.id)
+    setAuthzEnforce(true)
+    assert.equal(authorizeJobComplete(user, ns, 'r1').allow, true)
+    assert.equal(authorizeJobSubmit(user, ns, 'r1').allow, false)
   })
 })
 
@@ -324,7 +355,7 @@ describe('job id rekey', () => {
       target_branch: '',
       sync_branch: '',
       result_commit: commit,
-      result_branch: `boxen/job/${commit}`,
+      result_branch: `mice/job/${commit}`,
       image: 'alpine',
       image_digest: null,
       command: ['true'],

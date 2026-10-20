@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-const dataDir = mkdtempSync(join(tmpdir(), 'boxen-cli-device-'))
+const dataDir = mkdtempSync(join(tmpdir(), 'mice-cli-device-'))
 process.env.AUTH_DATA_DIR = dataDir
 process.env.PUBLIC_OXEN_REMOTE = 'http://localhost:8080'
 process.env.PUBLIC_WEB_ORIGIN = 'http://localhost:5173'
@@ -66,7 +66,7 @@ describe('CLI device auth', () => {
     const polled = pollDevice(started.device_code)
     assert.equal(polled.status, 'approved')
     if (polled.status !== 'approved') return
-    assert.match(polled.token, /^boxen_pat_/)
+    assert.match(polled.token, /^mice_pat_/)
     assert.equal(polled.user.email, alice.email)
     assert.equal(polled.authHost, 'localhost:8080')
     assert.equal(polled.remote, 'http://localhost:8080')

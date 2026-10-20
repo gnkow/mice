@@ -22,8 +22,10 @@ import { authorizeApiRequest } from './authz.js'
 import {
   ensureNamespaceForCreate,
   hasInstancePermission,
+  isAuthzEnforce,
   isInstanceAdmin,
   setRepoCollaborator,
+  visibleNamespaceNames,
 } from './authzStore.js'
 
 const HOP_BY_HOP = new Set([
@@ -86,7 +88,7 @@ export async function proxyToOxen(
       if (typeof restoreField === 'string' && restoreField.trim()) {
         restoreFrom = restoreField.trim()
       }
-      // Boxen-only hints for lineage; oxen-server must not see them.
+      // Mice-only hints for lineage; oxen-server must not see them.
       form.delete('copy_from')
       form.delete('restore_from')
       body = injectAuthorFormData(form, user)
@@ -200,6 +202,40 @@ export async function proxyToOxen(
 
   let responseBody: BodyInit | null = upstream.body
   let commitId: string | undefined
+
+  // Filter oxen namespace catalog to AuthZ-visible namespaces under enforce.
+  if (
+    isAuthzEnforce() &&
+    method === 'GET' &&
+    (pathname.replace(/\/+$/, '') || '/') === '/api/namespaces' &&
+    upstream.ok
+  ) {
+    const ct = upstream.headers.get('content-type') ?? ''
+    if (ct.includes('application/json')) {
+      try {
+        const text = await upstream.text()
+        try {
+          const parsed = JSON.parse(text) as {
+            namespaces?: Array<{ namespace?: string; name?: string }>
+            [key: string]: unknown
+          }
+          const visible = visibleNamespaceNames(user)
+          if (visible !== 'all' && Array.isArray(parsed.namespaces)) {
+            const allow = new Set(visible)
+            parsed.namespaces = parsed.namespaces.filter((n) => {
+              const name = n.namespace ?? n.name ?? ''
+              return allow.has(name)
+            })
+          }
+          responseBody = JSON.stringify(parsed)
+        } catch {
+          responseBody = text
+        }
+      } catch {
+        /* keep streamed body */
+      }
+    }
+  }
 
   if (method !== 'GET' && method !== 'HEAD') {
     const classified = classifyPath(method, pathname)
@@ -320,6 +356,10 @@ export async function proxyToOxen(
     if (HOP_BY_HOP.has(key.toLowerCase())) return
     resHeaders.set(key, value)
   })
+  // Body may have been rewritten (namespace ACL filter / lineage buffer).
+  if (typeof responseBody === 'string') {
+    resHeaders.delete('content-length')
+  }
 
   return new Response(responseBody, {
     status: upstream.status,

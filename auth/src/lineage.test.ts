@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-const dataDir = mkdtempSync(join(tmpdir(), 'boxen-lineage-'))
+const dataDir = mkdtempSync(join(tmpdir(), 'mice-lineage-'))
 
 process.env.AUTH_DATA_DIR = dataDir
 process.env.SESSION_SECRET = 'test-secret'

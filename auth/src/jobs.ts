@@ -774,7 +774,7 @@ async function executeJob(id: string) {
     const observedReads = matchGlobs(watcher.stop(), job.input_globs)
     const after = snapshotTree(data)
     // Ignore marker dir
-    after.delete('.boxen-job/pin.json')
+    after.delete('.mice-job/pin.json')
     const diff = diffTrees(before, after)
 
     // Inputs are observed reads of pin/pre-job files only (not new outputs).
@@ -830,13 +830,13 @@ async function executeJob(id: string) {
 
     if (changed.length) {
       const author = {
-        name: job.actor.name || job.actor.email || 'boxen',
-        email: job.actor.email || 'boxen@localhost',
+        name: job.actor.name || job.actor.email || 'mice',
+        email: job.actor.email || 'mice@localhost',
       }
-      const message = `boxen-job ${job.id} (pin ${job.pin_commit.slice(0, 12)})`
+      const message = `mice-job ${job.id} (pin ${job.pin_commit.slice(0, 12)})`
 
-      // Always commit on boxen/job/<id> branched from the pin.
-      resultBranch = `boxen/job/${job.id}`
+      // Always commit on mice/job/<id> branched from the pin.
+      resultBranch = `mice/job/${job.id}`
       const sourceBranch = branchFromSourceRef(job.source_ref)
       await createBranchFromPin(
         job.namespace,
@@ -905,7 +905,7 @@ async function executeJob(id: string) {
     let canonicalId = provisionalId
     if (resultCommit && job.runner === 'docker') {
       canonicalId = resultCommit
-      const commitBranch = `boxen/job/${resultCommit}`
+      const commitBranch = `mice/job/${resultCommit}`
       if (resultBranch && resultBranch !== commitBranch) {
         try {
           await createBranchFromPin(

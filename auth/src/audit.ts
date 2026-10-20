@@ -117,6 +117,13 @@ export function classifyPath(
     if (method === 'DELETE' && rest.length === 0) {
       return { action: 'repo.delete', namespace, repo }
     }
+    // Repo-level metadata mutate (PATCH/PUT on repo root or settings-ish paths).
+    if (
+      (method === 'PATCH' || method === 'PUT') &&
+      (rest.length === 0 || rest[0] === 'settings' || rest[0] === 'meta')
+    ) {
+      return { action: 'repo.metadata', namespace, repo }
+    }
     return { action: 'other', namespace, repo }
   }
 
@@ -186,7 +193,7 @@ export function appendAudit(
     appendFileSync(storePath(), `${JSON.stringify(event)}\n`, 'utf8')
     return event
   } catch (err) {
-    console.error('[boxen-auth] audit append failed', err)
+    console.error('[mice-auth] audit append failed', err)
     return null
   }
 }

@@ -4,20 +4,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-const dataDir = mkdtempSync(join(tmpdir(), 'boxen-directory-'))
+const dataDir = mkdtempSync(join(tmpdir(), 'mice-directory-'))
 
 process.env.AUTH_DATA_DIR = dataDir
 process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
-process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@boxen.local'
+process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 process.env.DIRECTORY_PROVIDER = 'none'
 process.env.KEYCLOAK_ADMIN_URL = ''
-process.env.OIDC_CLIENT_ID = 'boxen-auth'
-process.env.OIDC_CLIENT_SECRET = 'boxen-auth-secret'
-process.env.OIDC_ISSUER_PUBLIC = 'http://localhost:8180/realms/boxen'
+process.env.OIDC_CLIENT_ID = 'mice-auth'
+process.env.OIDC_CLIENT_SECRET = 'mice-auth-secret'
+process.env.OIDC_ISSUER_PUBLIC = 'http://localhost:8180/realms/mice'
 
 const {
   canSearchDirectory,
@@ -37,15 +37,15 @@ const { preparePrincipal } = await import('./authz.js')
 
 const admin = {
   sub: 'admin-sub',
-  iss: 'boxen-dev',
-  email: 'admin@boxen.local',
+  iss: 'mice-dev',
+  email: 'admin@mice.local',
   name: 'Admin',
 }
 
 const pending = {
   sub: 'pending-sub',
-  iss: 'boxen-dev',
-  email: 'pending@boxen.local',
+  iss: 'mice-dev',
+  email: 'pending@mice.local',
   name: 'Pending',
 }
 
@@ -56,14 +56,14 @@ describe('directory search', () => {
     assert.equal(created.ok, true)
     setNamespaceMember(
       'dir-ns',
-      { sub: 'alice-sub', iss: 'boxen-dev' },
+      { sub: 'alice-sub', iss: 'mice-dev' },
       'member',
     )
     setNamespaceGroupMember('dir-ns', 'engineering', 'member')
     setRepoCollaborator(
       'dir-ns',
       'r1',
-      { sub: 'bob-collab', iss: 'boxen-dev' },
+      { sub: 'bob-collab', iss: 'mice-dev' },
       'write',
     )
   })
@@ -97,8 +97,8 @@ describe('directory search', () => {
 
     const member = {
       sub: 'alice-sub',
-      iss: 'boxen-dev',
-      email: 'alice@boxen.local',
+      iss: 'mice-dev',
+      email: 'alice@mice.local',
       name: 'Alice',
     }
     preparePrincipal(member)
@@ -143,9 +143,9 @@ describe('directory search', () => {
           JSON.stringify([
             {
               id: 'kc-uuid-1',
-              username: 'boxen',
-              email: 'boxen@example.com',
-              firstName: 'Boxen',
+              username: 'mice',
+              email: 'mice@example.com',
+              firstName: 'Mice',
               lastName: 'User',
               enabled: true,
             },
@@ -156,7 +156,7 @@ describe('directory search', () => {
       return new Response('not found', { status: 404 })
     })
 
-    const res = await searchDirectory({ q: 'boxen', kind: 'user', limit: 10 })
+    const res = await searchDirectory({ q: 'mice', kind: 'user', limit: 10 })
     assert.ok(res.results.some((r) => r.kind === 'user' && r.sub === 'kc-uuid-1'))
     assert.ok(
       res.source === 'keycloak' || res.source === 'mixed' || res.source === 'store',

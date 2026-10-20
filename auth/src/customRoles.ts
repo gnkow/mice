@@ -48,6 +48,7 @@ export const ALL_NAMESPACE_CAPABILITIES: NamespaceCapability[] = [
   'manage_custom_roles',
   'create_repos',
   'view_audit',
+  'view_lineage',
   'review_access_requests',
   'delete_namespace',
 ]
@@ -64,6 +65,10 @@ export const ALL_REPO_FINE_PERMISSIONS: RepoFinePermission[] = [
   'other_mutate',
   'job_submit',
   'job_read',
+  'job_cancel',
+  'job_complete',
+  'lineage_read',
+  'lineage_rebuild',
 ]
 
 /** Minimum predefined role that already implies each fine permission. */
@@ -79,6 +84,10 @@ export const REPO_FINE_IMPLIED_MIN: Record<RepoFinePermission, RepoRole> = {
   other_mutate: 'admin',
   job_submit: 'write',
   job_read: 'read',
+  job_cancel: 'write',
+  job_complete: 'write',
+  lineage_read: 'read',
+  lineage_rebuild: 'admin',
 }
 
 function path() {
@@ -419,8 +428,9 @@ export function finePermissionForAction(
   action: string,
 ): RepoFinePermission | null {
   const m = method.toUpperCase()
-  if (m === 'GET' || m === 'HEAD') return 'contents_read'
+  // Product actions first so GET job.read / lineage.read are not collapsed to contents_read.
   if (action === 'repo.delete') return 'repo_delete'
+  if (action === 'repo.metadata') return 'manage_repo_metadata'
   if (action === 'merge') return 'merge'
   if (action === 'branch.delete') return 'delete_branch'
   if (action === 'file.write' || action === 'branch.create' || action === 'branch.update') {
@@ -429,7 +439,14 @@ export function finePermissionForAction(
   if (action.startsWith('workspace')) return 'workspaces'
   if (action === 'job.submit') return 'job_submit'
   if (action === 'job.read') return 'job_read'
+  if (action === 'job.cancel') return 'job_cancel'
+  if (action === 'job.complete' || action === 'job.publish' || action === 'job.sync') {
+    return 'job_complete'
+  }
+  if (action === 'lineage.read') return 'lineage_read'
+  if (action === 'lineage.rebuild') return 'lineage_rebuild'
   if (action === 'repo.create') return null // namespace-gated
+  if (m === 'GET' || m === 'HEAD') return 'contents_read'
   if (m !== 'GET' && m !== 'HEAD') return 'other_mutate'
   return 'contents_read'
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 
-const dataDir = mkdtempSync(join(tmpdir(), 'boxen-tokens-'))
+const dataDir = mkdtempSync(join(tmpdir(), 'mice-tokens-'))
 process.env.AUTH_DATA_DIR = dataDir
 process.env.SESSION_SECRET = 'test-session-secret-for-tokens'
 
@@ -43,7 +43,7 @@ describe('PAT tokens', () => {
 
   it('createPat defaults source to manual and snapshots groups', () => {
     const { token, pat } = createPat(alice, 'manual-token')
-    assert.match(token, /^boxen_pat_/)
+    assert.match(token, /^mice_pat_/)
     assert.equal(pat.source, 'manual')
     assert.equal(pat.label, 'manual-token')
 
@@ -99,8 +99,8 @@ describe('PAT tokens', () => {
   })
 
   it('resolvePat / findPatByToken reject unknown tokens', () => {
-    assert.equal(resolvePat('boxen_pat_notreal'), null)
-    assert.equal(findPatByToken('boxen_pat_notreal'), null)
+    assert.equal(resolvePat('mice_pat_notreal'), null)
+    assert.equal(findPatByToken('mice_pat_notreal'), null)
     assert.equal(resolvePat('Bearer something'), null)
   })
 })
