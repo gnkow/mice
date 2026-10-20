@@ -24,7 +24,7 @@ export async function cmdLogin(opts = {}) {
 
   if (!findOxen()) {
     console.error(
-      'boxen: oxen CLI not found on PATH. Install Oxen first, then retry login.',
+      'mice: oxen CLI not found on PATH. Install Oxen first, then retry login.',
     )
     process.exitCode = 1
     return
@@ -36,7 +36,7 @@ export async function cmdLogin(opts = {}) {
   })
   if (!started.res.ok || !started.json?.device_code) {
     console.error(
-      `boxen login: failed to start device auth (${started.res.status})`,
+      `mice login: failed to start device auth (${started.res.status})`,
       started.json?.error ?? started.text,
     )
     process.exitCode = 1
@@ -113,25 +113,25 @@ export async function cmdLogin(opts = {}) {
       continue
     }
     if (status === 'access_denied') {
-      console.error('boxen login: authorization denied in the browser.')
+      console.error('mice login: authorization denied in the browser.')
       process.exitCode = 1
       return
     }
     if (status === 'expired_token') {
-      console.error('boxen login: device code expired. Run boxen login again.')
+      console.error('mice login: device code expired. Run mice login again.')
       process.exitCode = 1
       return
     }
 
     console.error(
-      'boxen login: unexpected response',
+      'mice login: unexpected response',
       body.error ?? body.status ?? polled.text,
     )
     process.exitCode = 1
     return
   }
 
-  console.error('boxen login: timed out waiting for approval.')
+  console.error('mice login: timed out waiting for approval.')
   process.exitCode = 1
 }
 
@@ -149,7 +149,7 @@ export async function cmdLogout(opts = {}) {
     })
     if (!res.res.ok && res.res.status !== 404) {
       console.error(
-        `boxen logout: server revoke failed (${res.res.status})`,
+        `mice logout: server revoke failed (${res.res.status})`,
         res.json?.error ?? res.text,
       )
     }
@@ -165,14 +165,14 @@ export async function cmdWhoami(opts = {}) {
   const remote = resolveRemote({ remote: opts.remote })
   const token = resolveToken()
   if (!token) {
-    console.error('Not logged in. Run: boxen login')
+    console.error('Not logged in. Run: mice login')
     process.exitCode = 1
     return
   }
   const res = await bffFetch(remote, '/auth/cli/whoami', { token })
   if (!res.res.ok) {
     console.error(
-      `boxen whoami: ${res.res.status}`,
+      `mice whoami: ${res.res.status}`,
       res.json?.error ?? res.text,
     )
     process.exitCode = 1

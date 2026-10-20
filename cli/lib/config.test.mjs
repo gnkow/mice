@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-const configDir = mkdtempSync(join(tmpdir(), 'boxen-cli-config-'))
-process.env.BOXEN_CONFIG_DIR = configDir
-delete process.env.BOXEN_REMOTE
-delete process.env.BOXEN_PAT
+const configDir = mkdtempSync(join(tmpdir(), 'mice-cli-config-'))
+process.env.MICE_CONFIG_DIR = configDir
+delete process.env.MICE_REMOTE
+delete process.env.MICE_PAT
 
 const {
   authHostFromRemote,
@@ -20,17 +20,17 @@ const {
   saveCredentials,
 } = await import('./config.mjs')
 
-describe('boxen CLI config', () => {
+describe('mice CLI config', () => {
   before(() => {
     clearLoginState()
-    delete process.env.BOXEN_REMOTE
-    delete process.env.BOXEN_PAT
+    delete process.env.MICE_REMOTE
+    delete process.env.MICE_PAT
   })
 
   after(() => {
-    delete process.env.BOXEN_CONFIG_DIR
-    delete process.env.BOXEN_REMOTE
-    delete process.env.BOXEN_PAT
+    delete process.env.MICE_CONFIG_DIR
+    delete process.env.MICE_REMOTE
+    delete process.env.MICE_PAT
     try {
       rmSync(configDir, { recursive: true, force: true })
     } catch {
@@ -43,28 +43,28 @@ describe('boxen CLI config', () => {
     assert.equal(resolveRemote(), 'http://localhost:8080')
   })
 
-  it('prefers BOXEN_REMOTE over saved config', () => {
+  it('prefers MICE_REMOTE over saved config', () => {
     saveConfig({ remote: 'http://saved.example:8080' })
-    process.env.BOXEN_REMOTE = 'http://env.example:9090/'
+    process.env.MICE_REMOTE = 'http://env.example:9090/'
     assert.equal(resolveRemote(), 'http://env.example:9090')
-    delete process.env.BOXEN_REMOTE
+    delete process.env.MICE_REMOTE
     assert.equal(resolveRemote(), 'http://saved.example:8080')
   })
 
   it('authHostFromRemote extracts host:port', () => {
     assert.equal(authHostFromRemote('http://localhost:8080'), 'localhost:8080')
     assert.equal(
-      authHostFromRemote('https://boxen.example.com'),
-      'boxen.example.com',
+      authHostFromRemote('https://mice.example.com'),
+      'mice.example.com',
     )
   })
 
-  it('resolveToken prefers BOXEN_PAT over credentials file', () => {
-    saveCredentials({ token: 'boxen_pat_stored' })
-    assert.equal(resolveToken(), 'boxen_pat_stored')
-    process.env.BOXEN_PAT = 'boxen_pat_env'
-    assert.equal(resolveToken(), 'boxen_pat_env')
-    delete process.env.BOXEN_PAT
+  it('resolveToken prefers MICE_PAT over credentials file', () => {
+    saveCredentials({ token: 'mice_pat_stored' })
+    assert.equal(resolveToken(), 'mice_pat_stored')
+    process.env.MICE_PAT = 'mice_pat_env'
+    assert.equal(resolveToken(), 'mice_pat_env')
+    delete process.env.MICE_PAT
   })
 
   it('clearLoginState removes pat metadata and credentials', () => {
@@ -74,7 +74,7 @@ describe('boxen CLI config', () => {
       patId: 'abc',
       loggedInAt: new Date().toISOString(),
     })
-    saveCredentials({ token: 'boxen_pat_x', patId: 'abc' })
+    saveCredentials({ token: 'mice_pat_x', patId: 'abc' })
     clearLoginState()
     const cfg = loadConfig()
     assert.equal(cfg.patId, undefined)

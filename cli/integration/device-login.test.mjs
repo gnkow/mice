@@ -15,7 +15,7 @@ const AUTH_URL = (process.env.AUTH_URL ?? 'http://localhost:8080').replace(
   '',
 )
 const SESSION_SECRET =
-  process.env.SESSION_SECRET ?? 'dev-only-change-me-boxen-session-secret'
+  process.env.SESSION_SECRET ?? 'dev-only-change-me-mice-session-secret'
 
 async function authUp() {
   try {
@@ -30,8 +30,8 @@ async function sealSessionCookie() {
   const key = createHash('sha256').update(SESSION_SECRET).digest()
   const token = await new EncryptJWT({
     sub: 'cli-integration',
-    iss: 'boxen-e2e',
-    email: 'cli-integration@boxen.local',
+    iss: 'mice-e2e',
+    email: 'cli-integration@mice.local',
     name: 'CLI Integration',
     id_token: '',
     groups: [],
@@ -40,7 +40,7 @@ async function sealSessionCookie() {
     .setIssuedAt()
     .setExpirationTime('1h')
     .encrypt(key)
-  return `boxen_session=${token}`
+  return `mice_session=${token}`
 }
 
 const up = await authUp()
@@ -82,14 +82,14 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
     const body = JSON.parse(pollText)
     assert.equal(body.status, 'approved')
     const token = body.token || body.access_token
-    assert.match(token, /^boxen_pat_/)
+    assert.match(token, /^mice_pat_/)
 
     const who = await fetch(`${AUTH_URL}/auth/cli/whoami`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     assert.equal(who.status, 200)
     const me = await who.json()
-    assert.equal(me.user.email, 'cli-integration@boxen.local')
+    assert.equal(me.user.email, 'cli-integration@mice.local')
 
     const api = await fetch(`${AUTH_URL}/api/version`, {
       headers: { Authorization: `Bearer ${token}` },

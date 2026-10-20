@@ -1,4 +1,4 @@
-# Boxen
+# Mice
 
 Open-source web UI for [Oxen](https://www.oxen.ai) / self-hosted [`oxen-server`](https://docs.oxen.ai/getting-started/oxen-server).
 
@@ -9,7 +9,7 @@ Open-source web UI for [Oxen](https://www.oxen.ai) / self-hosted [`oxen-server`]
 | `compose.yaml` | Stack: `oxen-server`, `auth` (Hono BFF), `keycloak`, `web` |
 | `auth/` | Auth BFF — OIDC/session, AuthZ, author injection, audit JSONL, proxy to oxen-server |
 | `web/` | Vite + React + TypeScript UI |
-| `cli/` | `boxen` CLI — login/logout + Oxen command passthrough via the BFF |
+| `cli/` | `mice` CLI — login/logout + Oxen command passthrough via the BFF |
 | `TESTS.md` | Test plan + recommended frameworks for full coverage |
 
 ## Prerequisites
@@ -33,67 +33,67 @@ cd auth && npm install && cd ..   # host tooling / IDE; Compose installs Linux d
 docker compose up --build
 # → UI        http://localhost:5173
 # → Auth BFF  http://localhost:8080
-# → Keycloak  http://localhost:8180  (admin/admin; user boxen / boxen)
+# → Keycloak  http://localhost:8180  (admin/admin; user mice / mice)
 # → oxen API  http://localhost:3001  (direct; browser uses BFF)
 ```
 
-Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `boxen` / `boxen`). Sign out clears the Boxen session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
+Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `mice` / `mice`). Sign out clears the Mice session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
 
-Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Day-to-day CLI auth uses **`boxen login`** (browser device pairing). Automation may still mint **CLI PATs** (`Settings → CLI tokens`).
+Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Day-to-day CLI auth uses **`mice login`** (browser device pairing). Automation may still mint **CLI PATs** (`Settings → CLI tokens`).
 
-### Boxen CLI (through the BFF)
+### Mice CLI (through the BFF)
 
 Requires the [Oxen CLI](https://docs.oxen.ai) on `PATH`. From the repo root (or after `npm link`):
 
 ```bash
 # Interactive login — opens the UI to approve a device code (no PAT copy-paste)
-boxen login
-boxen clone http://localhost:8080/<namespace>/<repo>
-boxen whoami
+mice login
+mice clone http://localhost:8080/<namespace>/<repo>
+mice whoami
 # …any other oxen subcommand:
-boxen status
-boxen push origin main
+mice status
+mice push origin main
 ```
 
-`boxen` forwards Oxen commands to the `oxen` binary after configuring Bearer auth for the BFF host. Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
+`mice` forwards Oxen commands to the `oxen` binary after configuring Bearer auth for the BFF host. Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
 
 #### Automation / CI (PAT)
 
 ```bash
 # Settings → CLI tokens → Create token, then:
-export BOXEN_PAT=boxen_pat_…
+export MICE_PAT=mice_pat_…
 # or:
-oxen config --auth localhost:8080 boxen_pat_…
+oxen config --auth localhost:8080 mice_pat_…
 oxen clone http://localhost:8080/<namespace>/<repo>
 ```
 
 ### Local jobs CLI
 
-Local jobs run Docker on your machine. Metadata is cached under `~/.boxen/jobs/` (not in the repository). When you `boxen push` (through the auth BFF), job metadata for result commits on the tip is published automatically — no separate sync step:
+Local jobs run Docker on your machine. Metadata is cached under `~/.mice/jobs/` (not in the repository). When you `mice push` (through the auth BFF), job metadata for result commits on the tip is published automatically — no separate sync step:
 
 ```bash
-# From the repo root (links the `boxen` binary), or: npm link
+# From the repo root (links the `mice` binary), or: npm link
 npm install
-boxen login   # or: export BOXEN_PAT=… BOXEN_REMOTE=http://localhost:8080
+mice login   # or: export MICE_PAT=… MICE_REMOTE=http://localhost:8080
 
 # From inside an oxen clone (ns/repo/source autodected):
-boxen clone http://localhost:8080/<ns>/<repo>
+mice clone http://localhost:8080/<ns>/<repo>
 cd <repo>
 
 # Local-only run (no remote/UI entry yet):
-boxen job run \
+mice job run \
   --image alpine:3.20 \
   -- touch out.txt
 
 # Push commits via BFF — also publishes pending job metadata:
-boxen push
+mice push
 
-# Or combine: boxen job run --push --image alpine:3.20 -- touch out.txt
+# Or combine: mice job run --push --image alpine:3.20 -- touch out.txt
 
-boxen job list              # local cache for this clone
-boxen job reset --yes       # clear stuck/failed local job (+ confirm unless --yes)
-boxen job status --id <jobId>
-boxen job logs --id <jobId>
+mice job list              # local cache for this clone
+mice job reset --yes       # clear stuck/failed local job (+ confirm unless --yes)
+mice job status --id <jobId>
+mice job logs --id <jobId>
 ```
 
 ### Use another OIDC IdP
@@ -126,8 +126,8 @@ OIDC_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
 OIDC_ISSUER_PUBLIC=https://login.microsoftonline.com/<tenant>/v2.0
 OIDC_CLIENT_ID=<app-id>
 OIDC_CLIENT_SECRET=<secret>
-OIDC_REDIRECT_URI=https://boxen.example.com/auth/callback
-OIDC_POST_LOGOUT_REDIRECT_URI=https://boxen.example.com/login
+OIDC_REDIRECT_URI=https://mice.example.com/auth/callback
+OIDC_POST_LOGOUT_REDIRECT_URI=https://mice.example.com/login
 OIDC_GROUPS_CLAIM=groups
 DIRECTORY_PROVIDER=none
 AUTHZ_BOOTSTRAP_ADMINS=admin@example.com
@@ -148,6 +148,17 @@ make clean           # stop stack, wipe volumes + deps + test artifacts
 
 Atomic E2E case catalog: [`TESTS.md`](./TESTS.md).
 
+### Desktop sessions (PLAT-SESS)
+
+Interactive Linux desktops (exclusive per user). Default local stack uses the **docker** provisioner (XFCE+xrdp via `lscr.io/linuxserver/rdesktop`). Connect uses **guacamole-lite** + `guacd`. Create-time **multi-mount** of Oxen workspaces/commits under `/data/<ns>/<repo>` (AuthZ mirrors Jobs read/write). UI: **Sessions** in the nav. Use `SESSIONS_PROVISIONER=mock` only for fast API/UI e2e (Connect is disabled — no RDP host).
+
+```bash
+make up                 # includes guacd; real desktops by default
+make test-sessions      # Playwright (set SESSIONS_PROVISIONER=mock for speed)
+```
+
+Plan: [`plans/Sessions.md`](./plans/Sessions.md).
+
 ## Progress
 
-Playwright case catalog: [`TESTS.md`](./TESTS.md). Local epic/design notes (AuthN, AuthZ, audit, GxP) live under `plans/` when present (gitignored).
+Playwright case catalog: [`TESTS.md`](./TESTS.md). Local epic/design notes (AuthN, AuthZ, audit, GxP, Sessions) live under `plans/` when present (gitignored).

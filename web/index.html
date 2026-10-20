@@ -12,7 +12,7 @@
     />
     <script>
       try {
-        var raw = localStorage.getItem('boxen.appearance')
+        var raw = localStorage.getItem('mice.appearance')
         var parsed = raw ? JSON.parse(raw) : null
         var mode = parsed && parsed.colorMode ? parsed.colorMode : 'system'
         var dark = window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -23,7 +23,7 @@
         document.documentElement.style.colorScheme = resolved
       } catch (e) {}
     </script>
-    <title>Boxen</title>
+    <title>Mice</title>
   </head>
   <body>
     <div id="root"></div>

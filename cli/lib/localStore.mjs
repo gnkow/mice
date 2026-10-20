@@ -1,6 +1,6 @@
 /**
- * Local job metadata under `~/.boxen/jobs/<repoKey>/<jobId>/`
- * (not inside the repository). Override home with BOXEN_HOME.
+ * Local job metadata under `~/.mice/jobs/<repoKey>/<jobId>/`
+ * (not inside the repository). Override home with MICE_HOME.
  */
 import { createHash } from 'node:crypto'
 import {
@@ -15,10 +15,10 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 /** @returns {string} */
-export function boxenHome() {
-  const fromEnv = process.env.BOXEN_HOME?.trim()
+export function miceHome() {
+  const fromEnv = process.env.MICE_HOME?.trim()
   if (fromEnv) return fromEnv.replace(/\/$/, '')
-  return join(homedir(), '.boxen')
+  return join(homedir(), '.mice')
 }
 
 /** Stable key for a clone root path. */
@@ -28,11 +28,11 @@ export function repoJobsKey(root) {
 }
 
 function legacyJobsDir(root) {
-  return join(root, '.boxen', 'jobs')
+  return join(root, '.mice', 'jobs')
 }
 
 export function jobsDir(root) {
-  return join(boxenHome(), 'jobs', repoJobsKey(root))
+  return join(miceHome(), 'jobs', repoJobsKey(root))
 }
 
 export function jobDir(root, jobId) {

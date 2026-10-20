@@ -1,5 +1,5 @@
 {
-  "realm": "boxen",
+  "realm": "mice",
   "enabled": true,
   "sslRequired": "none",
   "registrationAllowed": false,
@@ -9,12 +9,12 @@
   "editUsernameAllowed": false,
   "clients": [
     {
-      "clientId": "boxen-auth",
-      "name": "Boxen Auth BFF",
+      "clientId": "mice-auth",
+      "name": "Mice Auth BFF",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "boxen-auth-secret",
+      "secret": "mice-auth-secret",
       "redirectUris": [
         "http://localhost:5173/auth/callback",
         "http://127.0.0.1:5173/auth/callback"
@@ -42,24 +42,24 @@
   ],
   "users": [
     {
-      "username": "boxen",
+      "username": "mice",
       "enabled": true,
-      "email": "boxen@example.com",
+      "email": "mice@example.com",
       "emailVerified": true,
-      "firstName": "Boxen",
+      "firstName": "Mice",
       "lastName": "User",
       "credentials": [
         {
           "type": "password",
-          "value": "boxen",
+          "value": "mice",
           "temporary": false
         }
       ]
     },
     {
-      "username": "service-account-boxen-auth",
+      "username": "service-account-mice-auth",
       "enabled": true,
-      "serviceAccountClientId": "boxen-auth",
+      "serviceAccountClientId": "mice-auth",
       "clientRoles": {
         "realm-management": [
           "view-users",

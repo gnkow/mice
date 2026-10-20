@@ -1,4 +1,4 @@
-// boxen-readwatch: recursively watch a directory for file open/access events
+// mice-readwatch: recursively watch a directory for file open/access events
 // and print absolute paths (one per line) to stdout. Used by the jobs runner
 // when inotify-tools is unavailable (e.g. Alpine + corp TLS).
 package main
@@ -17,7 +17,7 @@ import (
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: boxen-readwatch <dir>")
+		fmt.Fprintln(os.Stderr, "usage: mice-readwatch <dir>")
 		os.Exit(2)
 	}
 	root, err := filepath.Abs(os.Args[1])

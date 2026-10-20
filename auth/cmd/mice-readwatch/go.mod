@@ -1,4 +1,4 @@
-module github.com/boxen/boxen-readwatch
+module github.com/mice/mice-readwatch
 
 go 1.26.0
 

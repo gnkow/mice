@@ -6,12 +6,12 @@ ARG TARGETARCH=amd64
 WORKDIR /app
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 # Prebuilt by `make readwatch` (static inotify helper; apk inotify-tools often blocked).
-COPY bin/linux-${TARGETARCH}/boxen-readwatch /usr/local/bin/boxen-readwatch
-RUN chmod +x /usr/local/bin/boxen-readwatch
+COPY bin/linux-${TARGETARCH}/mice-readwatch /usr/local/bin/mice-readwatch
+RUN chmod +x /usr/local/bin/mice-readwatch
 COPY package.json package-lock.json* ./
 COPY . .
 EXPOSE 8080
 # Install Linux deps in the container (host macOS node_modules are not portable).
 # --strict-ssl=false: some corp networks intercept TLS to the npm registry.
-# boxen-readwatch observes job input file opens for lineage.
+# mice-readwatch observes job input file opens for lineage.
 CMD ["sh", "-c", "npm install --strict-ssl=false && npm run dev"]

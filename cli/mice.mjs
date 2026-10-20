@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * boxen — run / inspect / sync Boxen jobs locally against an oxen clone.
+ * mice — run / inspect / sync Mice jobs locally against an oxen clone.
  *
  * Typical flow (inside a clone):
- *   boxen job run --image alpine:3.20 -- touch out.txt
- *   boxen push                  # pushes commits via BFF + publishes job meta
+ *   mice job run --image alpine:3.20 -- touch out.txt
+ *   mice push                  # pushes commits via BFF + publishes job meta
  *
- * Local job metadata: ~/.boxen/jobs/ (not in the repository).
- * Jobs appear on the remote/UI when their result commit is pushed via boxen.
+ * Local job metadata: ~/.mice/jobs/ (not in the repository).
+ * Jobs appear on the remote/UI when their result commit is pushed via mice.
  *
  * Autodetects namespace, repo, cwd, and source branch:commit from the clone.
- * Auth (boxen login / BOXEN_PAT) is required to push / talk to the BFF.
+ * Auth (mice login / MICE_PAT) is required to push / talk to the BFF.
  */
 
 import { randomBytes } from 'node:crypto'
@@ -68,42 +68,42 @@ import {
 } from './lib/publish.mjs'
 
 function usage(code = 1) {
-  console.error(`boxen — Oxen CLI via the Boxen auth BFF + local jobs
+  console.error(`mice — Oxen CLI via the Mice auth BFF + local jobs
 
 Usage:
-  boxen login [--remote URL] [--no-open]
-  boxen logout
-  boxen whoami
-  boxen remote
-  boxen version
-  boxen <oxen command> [args…]
+  mice login [--remote URL] [--no-open]
+  mice logout
+  mice whoami
+  mice remote
+  mice version
+  mice <oxen command> [args…]
 
-  boxen job run    [--namespace <ns>] [--repo <repo>]
+  mice job run    [--namespace <ns>] [--repo <repo>]
                    [--source <branch|commit|branch:commit>]
                    [--name <label>] [--push]
                    --image <image>
                    [--timeout <sec>] [--cpu <n>] [--memory <size>]
                    -- <command> [args...]
 
-  boxen job reset  [--id <jobId>] [--all] [--purge] [--yes]
+  mice job reset  [--id <jobId>] [--all] [--purge] [--yes]
                    [--remote <url>] [--token <pat>]
 
-  boxen push       # oxen push via BFF; also publishes pending job metadata
+  mice push       # oxen push via BFF; also publishes pending job metadata
 
-  boxen job list   [--remote <url>] [--token <pat>]
+  mice job list   [--remote <url>] [--token <pat>]
                    [--namespace <ns>] [--repo <repo>]
-  boxen job status --id <jobId> [--remote <url>] [--token <pat>]
-  boxen job logs   --id <jobId> [--remote <url>] [--token <pat>]
-  boxen job cancel --id <jobId> [--remote <url>] [--token <pat>]
+  mice job status --id <jobId> [--remote <url>] [--token <pat>]
+  mice job logs   --id <jobId> [--remote <url>] [--token <pat>]
+  mice job cancel --id <jobId> [--remote <url>] [--token <pat>]
 
-Env: BOXEN_REMOTE, BOXEN_PAT, BOXEN_HOME (default ~/.boxen), BOXEN_YES
+Env: MICE_REMOTE, MICE_PAT, MICE_HOME (default ~/.mice), MICE_YES
 
 Inside an oxen clone, namespace/repo/source are detected automatically.
-Job metadata is cached under ~/.boxen/jobs/ (not in the repo).
-Results commit locally on the source branch. When you boxen push, matching
+Job metadata is cached under ~/.mice/jobs/ (not in the repo).
+Results commit locally on the source branch. When you mice push, matching
 job metadata is published to the BFF/UI automatically.
 
-boxen job reset clears stuck/failed local job state (and may restore a dirty
+mice job reset clears stuck/failed local job state (and may restore a dirty
 worktree). Destructive resets require confirmation unless --yes is set.
 `)
   process.exit(code)
@@ -136,7 +136,7 @@ function resolveAuth(flags) {
     flags.token || resolveToken() || '',
   )
   if (!token) {
-    console.error('Not logged in. Run: boxen login (or set --token / BOXEN_PAT)')
+    console.error('Not logged in. Run: mice login (or set --token / MICE_PAT)')
     usage(1)
   }
   return { remote, token }
@@ -234,7 +234,7 @@ async function cmdRun(flags, command) {
   }
   if (flags.target || flags.merge) {
     console.error(
-      'Deprecated: push with boxen push (or job run --push), not --target/--merge',
+      'Deprecated: push with mice push (or job run --push), not --target/--merge',
     )
     usage(1)
   }
@@ -243,7 +243,7 @@ async function cmdRun(flags, command) {
     usage(1)
   }
   if (flags.sync) {
-    console.error('note: --sync is deprecated; use --push (or boxen push)')
+    console.error('note: --sync is deprecated; use --push (or mice push)')
   }
 
   const sourceBranch =
@@ -313,7 +313,7 @@ async function cmdRun(flags, command) {
   const logPath = join(jobPath, 'job.log')
 
   console.error(
-    `running ${jobId} (local, ~/.boxen cache) source=${sourceRef}`,
+    `running ${jobId} (local, ~/.mice cache) source=${sourceRef}`,
   )
 
   let exitCode = 1
@@ -361,7 +361,7 @@ async function cmdRun(flags, command) {
       oxenAdd(ctx.root, changed, oxenOpts)
       resultCommit = oxenCommit(
         ctx.root,
-        `boxen-job ${jobId} (pin ${pinCommit.slice(0, 12)})`,
+        `mice-job ${jobId} (pin ${pinCommit.slice(0, 12)})`,
         oxenOpts,
       )
     } else if (exitCode === 0) {
@@ -432,7 +432,7 @@ async function cmdRun(flags, command) {
     }
   } else if (status === 'succeeded') {
     console.error(
-      'local only — job appears on the remote/UI after: boxen push',
+      'local only — job appears on the remote/UI after: mice push',
     )
   }
 
@@ -466,7 +466,7 @@ async function cmdRun(flags, command) {
 async function cmdReset(flags) {
   const root = findOxenRoot(process.cwd())
   if (!root) {
-    console.error('boxen job reset must be run inside an oxen clone')
+    console.error('mice job reset must be run inside an oxen clone')
     process.exit(1)
   }
   // Soft auth: only needed if a published/remote job must be marked failed.
@@ -633,7 +633,7 @@ async function cmdReset(flags) {
   }
 }
 
-const BOXEN_VERSION = '0.1.0'
+const MICE_VERSION = '0.1.0'
 
 function parseLoginFlags(argv) {
   /** @type {{ remote?: string, open: boolean }} */
@@ -667,7 +667,7 @@ async function cmdJob(jobArgv) {
 
   if (cmd === 'sync') {
     console.error(
-      'boxen job sync is removed. Push commits with `boxen push` — job metadata is published automatically.',
+      'mice job sync is removed. Push commits with `mice push` — job metadata is published automatically.',
     )
     process.exit(1)
   }
@@ -685,7 +685,7 @@ async function cmdJob(jobArgv) {
       : detected?.namespace
     const repo = flags.repo ? String(flags.repo) : detected?.repo
     if (!root) {
-      console.error('boxen job list must be run inside an oxen clone')
+      console.error('mice job list must be run inside an oxen clone')
       usage(1)
     }
     if (!namespace || !repo) {
@@ -807,7 +807,7 @@ async function main() {
     return
   }
   if (cmd === 'version' || cmd === '--version' || cmd === '-V') {
-    console.log(`boxen ${BOXEN_VERSION}`)
+    console.log(`mice ${MICE_VERSION}`)
     const ov = oxenVersion()
     if (ov) console.log(`oxen ${ov}`)
     else console.log('oxen: not found on PATH')
@@ -823,7 +823,7 @@ async function main() {
   const remote = resolveRemote()
   if (looksLikeDirectOxenServer(remote)) {
     console.error(
-      `boxen: BOXEN_REMOTE / configured remote looks like raw oxen-server (${remote}).\nUse the auth BFF remote (e.g. http://localhost:8080), not :3001.`,
+      `mice: MICE_REMOTE / configured remote looks like raw oxen-server (${remote}).\nUse the auth BFF remote (e.g. http://localhost:8080), not :3001.`,
     )
     process.exitCode = 1
     return
@@ -832,19 +832,19 @@ async function main() {
   try {
     ensureOxenAuth(remote)
   } catch (err) {
-    console.error(`boxen: ${err instanceof Error ? err.message : err}`)
+    console.error(`mice: ${err instanceof Error ? err.message : err}`)
     process.exitCode = 1
     return
   }
 
   const { args, rewritten, blocked } = rewriteArgsForBff(argv, remote)
   if (blocked) {
-    console.error(`boxen: could not rewrite direct oxen-server URL: ${blocked}`)
+    console.error(`mice: could not rewrite direct oxen-server URL: ${blocked}`)
     process.exitCode = 1
     return
   }
   if (rewritten) {
-    console.error(`boxen: rewrote :3001 remote URL(s) to ${remote}`)
+    console.error(`mice: rewrote :3001 remote URL(s) to ${remote}`)
   }
 
   const code = await runOxenPassthrough(args)
@@ -866,11 +866,11 @@ async function main() {
         })
         if (!pub.ok) {
           console.error(
-            `boxen: commits pushed, but job publish failed: ${pub.message}`,
+            `mice: commits pushed, but job publish failed: ${pub.message}`,
           )
           process.exitCode = 1
         } else if (pub.published?.length) {
-          console.error(`boxen: ${pub.message}`)
+          console.error(`mice: ${pub.message}`)
         }
       }
     }

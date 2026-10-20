@@ -2,14 +2,14 @@ import { createInterface } from 'node:readline'
 
 /**
  * Require interactive confirmation for destructive job operations.
- * Pass `--yes` / `-y` or set BOXEN_YES=1 to skip.
+ * Pass `--yes` / `-y` or set MICE_YES=1 to skip.
  * Non-TTY without --yes refuses (fail closed).
  *
  * @param {string} message
  * @param {{ yes?: boolean, y?: boolean }} flags
  */
 export async function confirmOrExit(message, flags = {}) {
-  if (flags.yes || flags.y || process.env.BOXEN_YES === '1') return
+  if (flags.yes || flags.y || process.env.MICE_YES === '1') return
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error(

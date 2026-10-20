@@ -1,5 +1,5 @@
 /**
- * Publish local job metadata to the BFF after commits are pushed via Boxen.
+ * Publish local job metadata to the BFF after commits are pushed via Mice.
  * Job records stay local until a successful push associates them with a remote branch tip.
  */
 import { api } from './api.mjs'
@@ -108,7 +108,7 @@ function toPublishPayload(root, job) {
 }
 
 /**
- * After a successful `boxen push`, publish unpublished local jobs whose
+ * After a successful `mice push`, publish unpublished local jobs whose
  * result_commit is on the pushed tip history.
  */
 export async function publishJobsAfterPush({

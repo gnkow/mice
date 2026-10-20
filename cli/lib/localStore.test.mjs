@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import {
-  boxenHome,
+  miceHome,
   jobsDir,
   listLocalJobs,
   readLocalJob,
@@ -12,7 +12,7 @@ import {
   writeLocalJob,
 } from './localStore.mjs'
 
-describe('localStore (~/.boxen cache)', () => {
+describe('localStore (~/.mice cache)', () => {
   /** @type {string} */
   let home
   /** @type {string} */
@@ -21,21 +21,21 @@ describe('localStore (~/.boxen cache)', () => {
   let prevHome
 
   before(() => {
-    prevHome = process.env.BOXEN_HOME
-    home = mkdtempSync(join(tmpdir(), 'boxen-home-'))
-    root = mkdtempSync(join(tmpdir(), 'boxen-clone-'))
-    process.env.BOXEN_HOME = home
+    prevHome = process.env.MICE_HOME
+    home = mkdtempSync(join(tmpdir(), 'mice-home-'))
+    root = mkdtempSync(join(tmpdir(), 'mice-clone-'))
+    process.env.MICE_HOME = home
   })
 
   after(() => {
-    if (prevHome === undefined) delete process.env.BOXEN_HOME
-    else process.env.BOXEN_HOME = prevHome
+    if (prevHome === undefined) delete process.env.MICE_HOME
+    else process.env.MICE_HOME = prevHome
     rmSync(home, { recursive: true, force: true })
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('stores jobs under BOXEN_HOME/jobs/<repoKey>, not in the clone', () => {
-    assert.equal(boxenHome(), home)
+  it('stores jobs under MICE_HOME/jobs/<repoKey>, not in the clone', () => {
+    assert.equal(miceHome(), home)
     const key = repoJobsKey(root)
     assert.match(key, /^[0-9a-f]{16}$/)
     assert.equal(jobsDir(root), join(home, 'jobs', key))

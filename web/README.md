@@ -1,6 +1,6 @@
-# boxen-web
+# mice-web
 
-Vite + React + TypeScript UI for Boxen.
+Vite + React + TypeScript UI for Mice.
 
 ```bash
 npm install

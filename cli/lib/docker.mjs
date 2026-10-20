@@ -15,7 +15,7 @@ import {
 import { dirname, join } from 'node:path'
 import { diffSnapshots, snapshotTree } from './oxen.mjs'
 
-const DOCKER = process.env.BOXEN_DOCKER_BIN || 'docker'
+const DOCKER = process.env.MICE_DOCKER_BIN || 'docker'
 
 function runCmd(bin, args, opts = {}) {
   const r = spawnSync(bin, args, {
@@ -30,13 +30,13 @@ function runCmd(bin, args, opts = {}) {
   }
 }
 
-/** Copy clone working tree into workDir, excluding .oxen / .boxen. */
+/** Copy clone working tree into workDir, excluding .oxen / .mice. */
 export function materializeWorkCopy(repoRoot, workDir) {
   rmSync(workDir, { recursive: true, force: true })
   mkdirSync(workDir, { recursive: true })
   const entries = readdirSync(repoRoot, { withFileTypes: true })
   for (const ent of entries) {
-    if (ent.name === '.oxen' || ent.name === '.boxen') continue
+    if (ent.name === '.oxen' || ent.name === '.mice') continue
     const src = join(repoRoot, ent.name)
     const dest = join(workDir, ent.name)
     cpSync(src, dest, { recursive: true, force: true })
@@ -68,7 +68,7 @@ export async function runDockerJob({
   envMap = {},
   logPath,
 }) {
-  const name = `boxen-job-${jobId}`.slice(0, 63)
+  const name = `mice-job-${jobId}`.slice(0, 63)
   runCmd(DOCKER, ['rm', '-f', name])
 
   mkdirSync(dirname(logPath), { recursive: true })

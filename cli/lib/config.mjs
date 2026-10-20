@@ -2,11 +2,11 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'n
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-/** Override with BOXEN_CONFIG_DIR (tests / custom installs). */
+/** Override with MICE_CONFIG_DIR (tests / custom installs). */
 function resolveConfigDir() {
-  const fromEnv = process.env.BOXEN_CONFIG_DIR?.trim()
+  const fromEnv = process.env.MICE_CONFIG_DIR?.trim()
   if (fromEnv) return fromEnv.replace(/\/$/, '')
-  return join(homedir(), '.config', 'boxen')
+  return join(homedir(), '.config', 'mice')
 }
 
 function paths() {
@@ -24,7 +24,7 @@ function paths() {
  *   authHost?: string
  *   patId?: string
  *   loggedInAt?: string
- * }} BoxenConfig
+ * }} MiceConfig
  */
 
 /**
@@ -33,7 +33,7 @@ function paths() {
  *   remote?: string
  *   authHost?: string
  *   patId?: string
- * }} BoxenCredentials
+ * }} MiceCredentials
  */
 
 function readJson(path, fallback) {
@@ -55,22 +55,22 @@ export function configDir() {
   return paths().dir
 }
 
-/** @returns {BoxenConfig} */
+/** @returns {MiceConfig} */
 export function loadConfig() {
   return readJson(paths().config, {})
 }
 
-/** @param {BoxenConfig} cfg */
+/** @param {MiceConfig} cfg */
 export function saveConfig(cfg) {
   writeJson(paths().config, cfg)
 }
 
-/** @returns {BoxenCredentials} */
+/** @returns {MiceCredentials} */
 export function loadCredentials() {
   return readJson(paths().creds, {})
 }
 
-/** @param {BoxenCredentials} creds */
+/** @param {MiceCredentials} creds */
 export function saveCredentials(creds) {
   const { creds: credsPath } = paths()
   writeJson(credsPath, creds)
@@ -98,7 +98,7 @@ export function clearLoginState() {
  * @param {{ remote?: string }} [opts]
  */
 export function resolveRemote(opts = {}) {
-  const fromEnv = process.env.BOXEN_REMOTE?.replace(/\/$/, '')
+  const fromEnv = process.env.MICE_REMOTE?.replace(/\/$/, '')
   if (fromEnv) return fromEnv
   if (opts.remote) return opts.remote.replace(/\/$/, '')
   const cfg = loadConfig()
@@ -114,9 +114,9 @@ export function authHostFromRemote(remote) {
   }
 }
 
-/** Token for API calls: BOXEN_PAT env, else stored credentials. */
+/** Token for API calls: MICE_PAT env, else stored credentials. */
 export function resolveToken() {
-  if (process.env.BOXEN_PAT?.trim()) return process.env.BOXEN_PAT.trim()
+  if (process.env.MICE_PAT?.trim()) return process.env.MICE_PAT.trim()
   const creds = loadCredentials()
   return creds.token?.trim() || null
 }

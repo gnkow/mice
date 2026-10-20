@@ -16,7 +16,7 @@ import {
   resolveRemote,
   resolveToken,
 } from './config.mjs'
-import { boxenHome } from './localStore.mjs'
+import { miceHome } from './localStore.mjs'
 
 /**
  * @param {string[]} args
@@ -198,16 +198,16 @@ export function oxenAdd(root, paths, opts = {}) {
 }
 
 /**
- * Commit author identity for local jobs lives under `~/.boxen/oxen-config`
+ * Commit author identity for local jobs lives under `~/.mice/oxen-config`
  * (not in the clone), so the worktree stays clean.
- * `root` is kept for API compat / legacy migration from `<clone>/.boxen/`.
+ * `root` is kept for API compat / legacy migration from `<clone>/.mice/`.
  */
 export function oxenIdentityDir(_root) {
-  return join(boxenHome(), 'oxen-config')
+  return join(miceHome(), 'oxen-config')
 }
 
 function legacyOxenIdentityDir(root) {
-  return join(root, '.boxen', 'oxen-config')
+  return join(root, '.mice', 'oxen-config')
 }
 
 export function userConfigPath(root) {
@@ -263,7 +263,7 @@ export function ensureOxenIdentity(root, actor = {}) {
     }
   }
 
-  // One-time migrate from legacy in-clone `.boxen/oxen-config`.
+  // One-time migrate from legacy in-clone `.mice/oxen-config`.
   const legacy = parseIdentityFile(legacyUserConfigPath(root))
   if (legacy) {
     try {
@@ -286,8 +286,8 @@ export function ensureOxenIdentity(root, actor = {}) {
   }
 
   const name =
-    sanitizeIdentField(actor.name || actor.email || '') || 'boxen'
-  const email = sanitizeIdentField(actor.email || '') || 'boxen@localhost'
+    sanitizeIdentField(actor.name || actor.email || '') || 'mice'
+  const email = sanitizeIdentField(actor.email || '') || 'mice@localhost'
   const body = `name = "${name}"\nemail = "${email}"\n`
 
   try {
@@ -410,7 +410,7 @@ export function relWorkdir(root, cwd = process.cwd()) {
   return rel === '' ? '' : rel.split(sep).join('/')
 }
 
-/** Snapshot file digests under dir (skip .oxen / .boxen). */
+/** Snapshot file digests under dir (skip .oxen / .mice). */
 export function snapshotTree(dir) {
   const out = new Map()
   const walk = (base, prefix) => {
@@ -422,7 +422,7 @@ export function snapshotTree(dir) {
     }
     for (const ent of entries) {
       const name = ent.name
-      if (name === '.oxen' || name === '.boxen' || name === '.boxen-job') continue
+      if (name === '.oxen' || name === '.mice' || name === '.mice-job') continue
       const full = join(base, name)
       const rel = prefix ? `${prefix}/${name}` : name
       if (ent.isDirectory()) walk(full, rel)
@@ -563,7 +563,7 @@ export function ensureOxenAuth(remote) {
   const token = resolveToken()
   if (!token) {
     throw new Error(
-      `Not logged in for ${host}. Run: boxen login\n(Or set BOXEN_PAT for automation.)`,
+      `Not logged in for ${host}. Run: mice login\n(Or set MICE_PAT for automation.)`,
     )
   }
   oxenConfigAuth(host, token)
@@ -579,14 +579,14 @@ export function runOxenPassthrough(args) {
   const bin = findOxen()
   if (!bin) {
     console.error(
-      'boxen: oxen CLI not found on PATH.\nInstall Oxen (https://docs.oxen.ai), then run: boxen login',
+      'mice: oxen CLI not found on PATH.\nInstall Oxen (https://docs.oxen.ai), then run: mice login',
     )
     return Promise.resolve(127)
   }
   return new Promise((resolve) => {
     const child = spawn(bin, args, { stdio: 'inherit' })
     child.on('error', (err) => {
-      console.error(`boxen: failed to run oxen: ${err.message}`)
+      console.error(`mice: failed to run oxen: ${err.message}`)
       resolve(127)
     })
     child.on('close', (code, signal) => {
