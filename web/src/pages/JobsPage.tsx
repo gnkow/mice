@@ -152,9 +152,7 @@ export function JobsPage() {
         <div>
           <h1>Jobs</h1>
           <p className="lede">
-            Computational jobs for this repository —{' '}
-            <span className="pill runner-local">Local</span> (run on your computer) or{' '}
-            <span className="pill runner-cluster">Cluster</span> (run on the server). Open a job to view status, logs, and results.
+            Run computational tasks on your data — execute locally on your computer or remotely on the server. View status, logs, and results for each job.
           </p>
         </div>
         <div className="btn-row">

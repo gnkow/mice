@@ -50,9 +50,7 @@ export function JobsListPage() {
         <div>
           <h1>Jobs</h1>
           <p className="lede">
-            Computational jobs across all your repositories — runs can be{' '}
-            <span className="pill runner-local">Local</span> (from your computer) or{' '}
-            <span className="pill runner-cluster">Cluster</span> (on the server). Open a job to view logs and results.
+            Run computational tasks on your data across all repositories — execute locally or remotely on the server. View status, logs, and results for each job.
           </p>
         </div>
       </div>
