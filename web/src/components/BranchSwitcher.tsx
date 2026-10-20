@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { GitBranch } from 'lucide-react'
 
 type Props = {
   branch: string
@@ -40,18 +41,10 @@ export function BranchSwitcher({
         className="branch-switcher-summary"
         aria-label={`Current branch ${branch}`}
       >
-        <svg
+        <GitBranch
           className="branch-switcher-icon"
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          aria-hidden
-        >
-          <path
-            fill="currentColor"
-            d="M5 3.25a1.75 1.75 0 1 1-1.5 2.8v1.4A2.75 2.75 0 0 0 6.25 10.2h1.9v-.95a1.75 1.75 0 1 1 1.5 0v.95h1.1A2.75 2.75 0 0 0 13.5 7.45V5.95a1.75 1.75 0 1 1 1.5 0v1.5A4.25 4.25 0 0 1 10.75 11.7H9.65v1.05a1.75 1.75 0 1 1-1.5 0V11.7H6.25A4.25 4.25 0 0 1 2 7.45V6.05a1.75 1.75 0 0 1 3-1.8Z"
-          />
-        </svg>
+          size={14}
+        />
         <span className="branch-switcher-name mono">{branch}</span>
         <span className="branch-switcher-caret" aria-hidden>
           ▾

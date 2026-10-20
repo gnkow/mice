@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Copy } from 'lucide-react'
 import { fetchCliInfo, viteOxenRemote } from '../lib/tokens'
 
 type Props = {
@@ -10,23 +11,6 @@ type Props = {
 
 type Mode = 'local' | 'cluster'
 type SectionKey = string
-
-function CopyIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <path
-        fill="currentColor"
-        fillRule="nonzero"
-        d="M28,10V28H10V10H28m0-2H10a2,2,0,0,0-2,2V28a2,2,0,0,0,2,2H28a2,2,0,0,0,2-2V10a2,2,0,0,0-2-2Z"
-      />
-      <path
-        fill="currentColor"
-        fillRule="nonzero"
-        d="M4,18H2V4A2,2,0,0,1,4,2H18V4H4Z"
-      />
-    </svg>
-  )
-}
 
 type CmdSection = {
   key: SectionKey
@@ -73,26 +57,26 @@ export function SubmitJobBox({
 
   const localSections = useMemo((): CmdSection[] => {
     const setup = [
-      'boxen login',
-      `boxen clone ${cloneUrl}`,
+      'mice login',
+      `mice clone ${cloneUrl}`,
       `cd ${r}`,
     ].join('\n')
 
     const run = [
-      'boxen job run \\',
+      'mice job run \\',
       '  --name my-job \\',
       '  --image alpine:3.20 \\',
       '  -- sh -c \'echo hello > out.txt\'',
     ].join('\n')
 
     const runPush = [
-      'boxen job run --push \\',
+      'mice job run --push \\',
       '  --name my-job \\',
       '  --image alpine:3.20 \\',
       '  -- sh -c \'echo hello > out.txt\'',
     ].join('\n')
 
-    const push = ['boxen push', '# publishes pending job metadata for commits on the tip'].join(
+    const push = ['mice push', '# publishes pending job metadata for commits on the tip'].join(
       '\n',
     )
 
@@ -107,19 +91,19 @@ export function SubmitJobBox({
         key: 'local-run',
         title: 'Run (local only)',
         cmd: run,
-        hint: 'Runs Docker on your machine and commits on the source branch. Job metadata stays in ~/.boxen/jobs/ — nothing appears on the remote/UI until you push.',
+        hint: 'Runs Docker on your machine and commits on the source branch. Job metadata stays in ~/.mice/jobs/ — nothing appears on the remote/UI until you push.',
       },
       {
         key: 'local-run-push',
         title: 'Run and push',
         cmd: runPush,
-        hint: 'After the local commit, runs boxen push (via BFF). Job metadata for result commits on the tip is published automatically.',
+        hint: 'After the local commit, runs mice push (via BFF). Job metadata for result commits on the tip is published automatically.',
       },
       {
         key: 'local-push',
         title: 'Push later',
         cmd: push,
-        hint: 'Ordinary boxen push through the auth BFF. Any unpublished local jobs whose result commit is on the pushed tip are published to the UI.',
+        hint: 'Ordinary mice push through the auth BFF. Any unpublished local jobs whose result commit is on the pushed tip are published to the UI.',
       },
     ]
   }, [cloneUrl, r])
@@ -127,14 +111,14 @@ export function SubmitJobBox({
   const clusterSections = useMemo((): CmdSection[] => {
     const setup = [
       '# Settings → CLI tokens → Create token',
-      'export BOXEN_PAT=boxen_pat_…',
-      `export BOXEN_REMOTE=${remoteBase}`,
-      '# optional: boxen login  (for status/logs without exporting PAT)',
+      'export MICE_PAT=mice_pat_…',
+      `export MICE_REMOTE=${remoteBase}`,
+      '# optional: mice login  (for status/logs without exporting PAT)',
     ].join('\n')
 
     const submit = [
-      'curl -sS -X POST "$BOXEN_REMOTE/auth/jobs" \\',
-      '  -H "Authorization: Bearer $BOXEN_PAT" \\',
+      'curl -sS -X POST "$MICE_REMOTE/auth/jobs" \\',
+      '  -H "Authorization: Bearer $MICE_PAT" \\',
       '  -H "Content-Type: application/json" \\',
       "  -d '{",
       `    "namespace": "${ns}",`,
@@ -148,9 +132,9 @@ export function SubmitJobBox({
     ].join('\n')
 
     const follow = [
-      'boxen job status --id <jobId>',
-      'boxen job logs --id <jobId>',
-      'boxen job cancel --id <jobId>',
+      'mice job status --id <jobId>',
+      'mice job logs --id <jobId>',
+      'mice job cancel --id <jobId>',
     ].join('\n')
 
     return [
@@ -170,7 +154,7 @@ export function SubmitJobBox({
         key: 'cluster-follow',
         title: 'Status & logs',
         cmd: follow,
-        hint: 'Use the job id from the JSON response. Status/logs work after boxen login or with BOXEN_PAT set.',
+        hint: 'Use the job id from the JSON response. Status/logs work after mice login or with MICE_PAT set.',
       },
     ]
   }, [remoteBase, ns, r])
@@ -223,7 +207,7 @@ export function SubmitJobBox({
         {mode === 'local' ? (
           <>
             <span className="pill runner-local">Local</span> Run with{' '}
-            <span className="mono">boxen job run</span> on your machine (Docker
+            <span className="mono">mice job run</span> on your machine (Docker
             + local oxen commit). Best for iteration.
           </>
         ) : (
@@ -254,7 +238,7 @@ export function SubmitJobBox({
               <span className="clone-copy-label">
                 {copied === s.key ? 'Copied' : ''}
               </span>
-              <CopyIcon />
+              <Copy size={16} />
             </button>
           </div>
           <pre className="clone-code mono">

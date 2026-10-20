@@ -1,4 +1,5 @@
 import { useEffect, useId, type ReactNode } from 'react'
+import { X } from 'lucide-react'
 
 type Props = {
   title: string
@@ -47,12 +48,7 @@ export function Modal({ title, onClose, children, wide }: Props) {
             aria-label="Close"
             onClick={onClose}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
-              <path
-                fill="currentColor"
-                d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"
-              />
-            </svg>
+            <X size={14} />
           </button>
         </div>
         <div className="modal-body">{children}</div>

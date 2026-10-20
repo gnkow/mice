@@ -1,5 +1,5 @@
 {
-  "name": "boxen-web",
+  "name": "mice-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -11,7 +11,9 @@
     "test": "tsx --test src/lib/oxen/paths.test.ts src/lib/lastBranch.test.ts src/lib/jobs.test.ts src/lib/tokens.test.ts"
   },
   "dependencies": {
+    "guacamole-common-js": "^1.5.0",
     "hash-wasm": "^4.12.0",
+    "lucide-react": "^1.60.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4"

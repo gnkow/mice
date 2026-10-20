@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Copy } from 'lucide-react'
 import { fetchCliInfo, viteOxenRemote } from '../lib/tokens'
 
 type Props = {
@@ -7,19 +8,6 @@ type Props = {
 }
 
 type SectionKey = 'login' | 'oxen' | 'python' | 'auth'
-
-function CopyIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <path
-        fill="currentColor"
-        fillRule="nonzero"
-        d="M28,10V28H10V10H28m0-2H10a2,2,0,0,0-2,2V28a2,2,0,0,0,2,2H28a2,2,0,0,0,2-2V10a2,2,0,0,0-2-2Z"
-      />
-      <path fill="currentColor" fillRule="nonzero" d="M4,18H2V4A2,2,0,0,1,4,2H18V4H4Z" />
-    </svg>
-  )
-}
 
 export function CloneBox({ namespace, repo }: Props) {
   const [copied, setCopied] = useState<SectionKey | null>(null)
@@ -49,8 +37,8 @@ export function CloneBox({ namespace, repo }: Props) {
     [remote, namespace, repo],
   )
 
-  const loginCmd = 'boxen login'
-  const boxenCloneCmd = `boxen clone ${target}`
+  const loginCmd = 'mice login'
+  const miceCloneCmd = `mice clone ${target}`
   const authCmd = `oxen config --auth ${authHost} <PAT>`
   const pythonCmd = `import oxen\noxen.clone("${target}")`
 
@@ -79,36 +67,36 @@ export function CloneBox({ namespace, repo }: Props) {
             }
           >
             <span className="clone-copy-label">{copied === 'login' ? 'Copied' : ''}</span>
-            <CopyIcon />
+            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">
           <code>{loginCmd}</code>
         </pre>
         <p className="clone-hint muted small">
-          Opens a browser to authorize the Boxen CLI. Traffic goes through the
+          Opens a browser to authorize the Mice CLI. Traffic goes through the
           auth BFF (not raw oxen-server).
         </p>
       </section>
 
       <section className="clone-section">
         <div className="clone-section-head">
-          <b>Boxen</b>
+          <b>Mice</b>
           <button
             type="button"
             className="clone-copy"
-            onClick={() => void copy('oxen', boxenCloneCmd)}
+            onClick={() => void copy('oxen', miceCloneCmd)}
             title={copied === 'oxen' ? 'Copied' : 'Copy'}
             aria-label={
               copied === 'oxen' ? 'Copied clone command' : 'Copy clone command'
             }
           >
             <span className="clone-copy-label">{copied === 'oxen' ? 'Copied' : ''}</span>
-            <CopyIcon />
+            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">
-          <code>{boxenCloneCmd}</code>
+          <code>{miceCloneCmd}</code>
         </pre>
       </section>
 
@@ -129,7 +117,7 @@ export function CloneBox({ namespace, repo }: Props) {
             <span className="clone-copy-label">
               {copied === 'python' ? 'Copied' : ''}
             </span>
-            <CopyIcon />
+            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">
@@ -150,7 +138,7 @@ export function CloneBox({ namespace, repo }: Props) {
             }
           >
             <span className="clone-copy-label">{copied === 'auth' ? 'Copied' : ''}</span>
-            <CopyIcon />
+            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">

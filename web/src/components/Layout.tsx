@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
+import { Box, Menu, Search, Sun } from 'lucide-react'
 import { fetchAuthMe, logout, type AuthUser } from '../lib/auth'
 import { fetchServerVersion } from '../lib/oxen/api'
 import { loadSettings, subscribeSettings } from '../lib/oxen/settings'
@@ -164,20 +165,8 @@ export function Layout() {
             <aside className="drawer" aria-label="Main navigation">
               <div className="drawer-head">
                 <NavLink to="/" className="brand-link" end onClick={closeDrawer}>
-                  <svg className="brand-mark" viewBox="0 0 16 16" aria-hidden>
-                    <rect
-                      x="1"
-                      y="2"
-                      width="14"
-                      height="12"
-                      rx="1.5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                    <path d="M1 6h14" stroke="currentColor" strokeWidth="1.5" />
-                  </svg>
-                  <span className="wordmark">Boxen</span>
+                  <Box className="brand-mark" size={20} strokeWidth={1.5} />
+                  <span className="wordmark">Mice</span>
                 </NavLink>
                 <button
                   type="button"
@@ -204,6 +193,9 @@ export function Layout() {
                 <NavLink to="/jobs" onClick={closeDrawer}>
                   Jobs
                 </NavLink>
+                <NavLink to="/sessions" onClick={closeDrawer}>
+                  Sessions
+                </NavLink>
                 <NavLink to="/audit" onClick={closeDrawer}>
                   Audit
                 </NavLink>
@@ -223,15 +215,10 @@ export function Layout() {
             aria-expanded={drawerOpen}
             onClick={() => setDrawerOpen(true)}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-              <path
-                fill="currentColor"
-                d="M2 4h12v1.5H2V4zm0 3.25h12v1.5H2v-1.5zm0 3.25h12V12H2v-1.5z"
-              />
-            </svg>
+            <Menu size={16} />
           </button>
           <NavLink to="/" className="brand-link" end>
-            <span className="wordmark">BOXEN</span>
+            <span className="wordmark">MICE</span>
           </NavLink>
           <div className="topbar-spacer" />
           {connected === false && (
@@ -244,12 +231,7 @@ export function Layout() {
           )}
           <details className="search-pop" ref={searchRef}>
             <summary className="icon-round" aria-label="Search" title="Search">
-              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-                <path
-                  fill="currentColor"
-                  d="M10.68 9.6a4.75 4.75 0 1 0-1.08 1.08l3.36 3.36.76-.76-3.04-3.68ZM6.75 10.5a3.75 3.75 0 1 1 0-7.5 3.75 3.75 0 0 1 0 7.5Z"
-                />
-              </svg>
+              <Search size={16} />
             </summary>
             <form className="search-pop-panel" role="search" onSubmit={onSearch}>
               <input
@@ -264,12 +246,7 @@ export function Layout() {
           </details>
           <details className="menu-pop" ref={themeRef}>
             <summary className="icon-round" aria-label="Theme" title="Theme">
-              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-                <path
-                  fill="currentColor"
-                  d="M8 1.5a.75.75 0 0 1 .75.75v1a.75.75 0 0 1-1.5 0v-1A.75.75 0 0 1 8 1.5Zm0 10.5a.75.75 0 0 1 .75.75v1a.75.75 0 0 1-1.5 0v-1A.75.75 0 0 1 8 12Zm6.5-4a.75.75 0 0 1-.75.75h-1a.75.75 0 0 1 0-1.5h1a.75.75 0 0 1 .75.75ZM3.25 8a.75.75 0 0 1-.75.75h-1a.75.75 0 0 1 0-1.5h1A.75.75 0 0 1 3.25 8Zm8.66-4.16a.75.75 0 0 1 0 1.06l-.71.71a.75.75 0 1 1-1.06-1.06l.71-.71a.75.75 0 0 1 1.06 0ZM5.86 10.39a.75.75 0 0 1 0 1.06l-.71.71a.75.75 0 1 1-1.06-1.06l.71-.71a.75.75 0 0 1 1.06 0Zm6.39 1.06a.75.75 0 1 1-1.06 1.06l-.71-.71a.75.75 0 1 1 1.06-1.06l.71.71ZM5.15 3.9a.75.75 0 0 1 0 1.06l-.71.71A.75.75 0 1 1 3.38 4.6l.71-.71a.75.75 0 0 1 1.06 0ZM8 4.75a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5Z"
-                />
-              </svg>
+              <Sun size={16} />
             </summary>
             <div className="menu-pop-panel">
               <fieldset className="appearance-fieldset">
@@ -384,7 +361,7 @@ export function Layout() {
           <Outlet />
         </div>
         <footer className="site-footer">
-          <NavLink to="/">Boxen</NavLink>
+          <NavLink to="/">Mice</NavLink>
           <a href="https://docs.oxen.ai/" rel="noreferrer" target="_blank">
             Oxen docs
           </a>
