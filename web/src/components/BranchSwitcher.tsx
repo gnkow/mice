@@ -1,3 +1,4 @@
+import { GitBranch as ActionGitBranch } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GitBranch } from 'lucide-react'
 
@@ -76,7 +77,7 @@ export function BranchSwitcher({
                   if (detailsRef.current) detailsRef.current.open = false
                 }}
               >
-                {b === branch ? '✓ ' : ''}
+                <ActionGitBranch size={14} aria-hidden="true" className="button-label-icon" />{b === branch ? '✓ ' : ''}
                 {b}
               </button>
             </li>

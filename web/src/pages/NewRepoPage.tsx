@@ -1,3 +1,4 @@
+import { ChevronUp as ActionChevronUp, FolderGit2 as ActionFolderGit2, Plus as ActionPlus, Trash2 as ActionTrash2, X as ActionX } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -343,7 +344,7 @@ export function NewRepoPage() {
                             )
                           }
                         >
-                          Remove
+                          <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                         </button>
                       </li>
                     ))}
@@ -420,7 +421,7 @@ export function NewRepoPage() {
                     disabled={busy || !collabSub.trim() || !collabIss.trim()}
                     onClick={addCollaborator}
                   >
-                    Add
+                    <ActionPlus size={14} aria-hidden="true" className="button-label-icon" />Add
                   </button>
                 </div>
               </div>
@@ -433,7 +434,7 @@ export function NewRepoPage() {
             onClick={() => setShowMore((v) => !v)}
             aria-expanded={showMore}
           >
-            {showMore ? 'Less' : 'More'}
+            <ActionChevronUp size={14} aria-hidden="true" className="button-label-icon" />{showMore ? 'Less' : 'More'}
           </button>
         </section>
 
@@ -447,10 +448,10 @@ export function NewRepoPage() {
               (creatingNewNamespace && me.kind === 'ok' && !canCreateNamespace)
             }
           >
-            {busy ? 'Creating…' : 'Create repository'}
+            <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Creating…' : 'Create repository'}
           </button>
           <Link className="btn ghost" to={cancelTo}>
-            Cancel
+            <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
           </Link>
         </div>
       </form>

@@ -1,3 +1,4 @@
+import { Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { DirectoryPicker } from './DirectoryPicker'
 import type {
@@ -168,7 +169,7 @@ export function NamespaceCreateSettings({
                     })
                   }
                 >
-                  Remove
+                  <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                 </button>
               </li>
             ))}
@@ -206,7 +207,7 @@ export function NamespaceCreateSettings({
               disabled={disabled || !draftSub.trim() || !draftIss.trim()}
               onClick={addMember}
             >
-              Add member
+              <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add member
             </button>
           </div>
         </div>

@@ -431,6 +431,7 @@ export function finePermissionForAction(
   // Product actions first so GET job.read / lineage.read are not collapsed to contents_read.
   if (action === 'repo.delete') return 'repo_delete'
   if (action === 'repo.metadata') return 'manage_repo_metadata'
+  if (action === 'meta.set') return 'manage_repo_metadata'
   if (action === 'merge') return 'merge'
   if (action === 'branch.delete') return 'delete_branch'
   if (

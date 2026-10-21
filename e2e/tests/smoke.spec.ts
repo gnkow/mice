@@ -57,8 +57,8 @@ test.describe('smoke (P/N/R/F)', () => {
     await expect(repoTitle(page, name)).toBeVisible()
 
     await page.goto(`/namespaces?q=${encodeURIComponent(ns)}`)
-    await expect(page.getByRole('link', { name: ns })).toBeVisible()
-    await page.getByRole('link', { name: ns }).first().click()
+    await expect(page.getByRole('link', { name: ns, exact: true })).toBeVisible()
+    await page.getByRole('link', { name: ns, exact: true }).first().click()
     await expect(
       page.locator('.card-list').getByRole('link', {
         name: new RegExp(`^${name}\\b`),

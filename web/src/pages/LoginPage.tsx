@@ -1,3 +1,4 @@
+import { LogIn as ActionLogIn } from 'lucide-react'
 import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { fetchAuthMe } from '../lib/auth'
@@ -53,7 +54,7 @@ export function LoginPage() {
                 : ''
             }`}
           >
-            Sign in with SSO
+            <ActionLogIn size={14} aria-hidden="true" className="button-label-icon" />Sign in with SSO
           </a>
         </div>
       </main>

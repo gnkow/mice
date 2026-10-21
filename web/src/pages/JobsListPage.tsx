@@ -1,3 +1,4 @@
+import { Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { JobSummaryCard } from '../components/JobSummaryCard'
@@ -93,7 +94,7 @@ export function JobsListPage() {
                 onClick={() => onFilterChange('')}
                 aria-label="Clear search"
               >
-                Clear
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
               </button>
             ) : null}
           </div>

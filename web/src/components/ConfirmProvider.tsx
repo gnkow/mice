@@ -1,3 +1,4 @@
+import { Check as ActionCheck, X as ActionX } from 'lucide-react'
 import {
   useEffect,
   useId,
@@ -145,14 +146,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 className="btn ghost"
                 onClick={() => finish(false)}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
               <button
                 type="submit"
                 className="btn danger"
                 disabled={!canConfirm}
               >
-                Confirm
+                <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Confirm
               </button>
             </div>
           </form>

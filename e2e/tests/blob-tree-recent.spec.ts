@@ -16,9 +16,12 @@ test.describe('blob + tree recent features', () => {
     await page.goto(repoPath(seededRepo, '/blob/main/readme.txt'))
     await expect(page.getByRole('heading', { name: 'readme.txt' })).toBeVisible()
 
+    await page.getByTestId('blob-tab-details').click()
+    await expect(page.locator('#blob-panel-details')).toBeVisible()
+    await expect(page.locator('dt', { hasText: 'Content hash' })).toBeVisible()
+
     await page.getByTestId('blob-tab-metadata').click()
     await expect(page.locator('#blob-panel-metadata')).toBeVisible()
-    await expect(page.locator('dt', { hasText: 'Hash' })).toBeVisible()
 
     await page.getByTestId('blob-tab-history').click()
     await expect(page.locator('#blob-panel-history')).toBeVisible()

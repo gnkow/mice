@@ -1,3 +1,4 @@
+import { ArrowLeftRight as ActionArrowLeftRight, ChevronLeft as ActionChevronLeft, ChevronRight as ActionChevronRight, Database as ActionDatabase, FileText as ActionFileText, Save as ActionSave } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
@@ -167,7 +168,7 @@ export function DataFramePage() {
             className="btn ghost"
             to={`${base}/df-compare?path=${encodeURIComponent(path)}&base=${encodeURIComponent(branch)}&head=${encodeURIComponent(branch)}`}
           >
-            Compare…
+            <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />Compare…
           </Link>
           <button
             type="button"
@@ -175,13 +176,13 @@ export function DataFramePage() {
             disabled={busy}
             onClick={onIndex}
           >
-            Index for query
+            <ActionDatabase size={14} aria-hidden="true" className="button-label-icon" />Index for query
           </button>
           <Link
             className="btn ghost"
             to={`${base}/blob/${encodeURIComponent(branch)}/${path}`}
           >
-            Raw file
+            <ActionFileText size={14} aria-hidden="true" className="button-label-icon" />Raw file
           </Link>
         </div>
       </div>
@@ -244,7 +245,7 @@ export function DataFramePage() {
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
-                  Previous
+                  <ActionChevronLeft size={14} aria-hidden="true" className="button-label-icon" />Previous
                 </button>
                 <button
                   type="button"
@@ -252,7 +253,7 @@ export function DataFramePage() {
                   disabled={page >= pagination.total_pages}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  <ActionChevronRight size={14} aria-hidden="true" className="button-label-icon" />Next
                 </button>
               </div>
             )}
@@ -295,7 +296,7 @@ export function DataFramePage() {
             />
           </label>
           <button className="btn" type="submit" disabled={busy}>
-            Stage schema metadata
+            <ActionSave size={14} aria-hidden="true" className="button-label-icon" />Stage schema metadata
           </button>
         </form>
         <form className="form" onSubmit={onColumnMeta} style={{ marginTop: '1.25rem' }}>
@@ -323,7 +324,7 @@ export function DataFramePage() {
             />
           </label>
           <button className="btn" type="submit" disabled={busy}>
-            Stage column metadata
+            <ActionSave size={14} aria-hidden="true" className="button-label-icon" />Stage column metadata
           </button>
         </form>
       </details>

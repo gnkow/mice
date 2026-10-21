@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { FolderGit2, Layers, Monitor, Network, Plus, Terminal, type LucideIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
@@ -16,6 +17,7 @@ type BrowseTile = {
   value: string | number
   label: string
   hint: string
+  icon: LucideIcon
   span?: 'wide' | 'tall' | 'full'
 }
 
@@ -62,6 +64,7 @@ export function HomePage() {
       createLabel: 'New namespace',
       value: mergedNamespaces.length,
       label: 'Namespaces',
+      icon: Network,
       hint: 'Orgs, members, and access boundaries',
       span: 'wide',
     },
@@ -71,6 +74,7 @@ export function HomePage() {
       createLabel: 'New repository',
       value: repositories.length,
       label: 'Repositories',
+      icon: FolderGit2,
       hint: 'Versioned datasets and files',
       span: 'tall',
     },
@@ -82,7 +86,8 @@ export function HomePage() {
       createLabel: 'New workspace',
       value: workspaces.length,
       label: 'Workspaces',
-      hint: 'Writable mounts on pinned data',
+      icon: Layers,
+      hint: 'Writable mounts on versioned data',
     },
     {
       to: '/jobs',
@@ -92,6 +97,7 @@ export function HomePage() {
       createLabel: 'New job',
       value: jobs.kind === 'loading' ? '…' : jobCount,
       label: 'Jobs',
+      icon: Terminal,
       hint: 'Batch compute against workspaces',
     },
     {
@@ -100,6 +106,7 @@ export function HomePage() {
       createLabel: 'New session',
       value: sessions.kind === 'loading' ? '…' : sessionCount,
       label: 'Sessions',
+      icon: Monitor,
       hint: 'Interactive Linux desktop containers',
       span: 'full',
     },
@@ -153,7 +160,7 @@ export function HomePage() {
                 <Link className="dash-tile-main" to={tile.to}>
                   <span className="dash-tile-value">{tile.value}</span>
                   <span className="dash-tile-copy">
-                    <span className="dash-tile-label">{tile.label}</span>
+                    <span className="dash-tile-label"><tile.icon size={22} aria-hidden="true" />{tile.label}</span>
                     <span className="dash-tile-hint">{tile.hint}</span>
                   </span>
                 </Link>
@@ -163,7 +170,7 @@ export function HomePage() {
                   aria-label={tile.createLabel}
                   title={tile.createLabel}
                 >
-                  +
+                  <Plus size={18} aria-hidden="true" />
                 </Link>
               </div>
             ))}

@@ -1,3 +1,4 @@
+import { ArrowLeftRight as ActionArrowLeftRight, File as ActionFile, GitMerge as ActionGitMerge } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
@@ -135,13 +136,13 @@ export function ComparePage() {
             className="btn ghost"
             to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/df-compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`}
           >
-            DF compare
+            <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />DF compare
           </Link>
           <Link
             className="btn ghost"
             to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/merge?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`}
           >
-            Merge…
+            <ActionGitMerge size={14} aria-hidden="true" className="button-label-icon" />Merge…
           </Link>
         </div>
       </div>
@@ -285,7 +286,7 @@ export function ComparePage() {
                               className="linkish"
                               onClick={() => setSelectedFile(entry.filename)}
                             >
-                              {entry.filename}
+                              <ActionFile size={14} aria-hidden="true" className="button-label-icon" />{entry.filename}
                             </button>
                           </td>
                           <td className="muted">{entry.data_type ?? '—'}</td>

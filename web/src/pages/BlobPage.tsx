@@ -1,3 +1,6 @@
+import { History as ActionHistory, Save as ActionSave, X as ActionX } from 'lucide-react'
+import { Eye, Info, Tags, History, GitFork, type LucideIcon } from 'lucide-react'
+import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
@@ -51,18 +54,20 @@ type Preview =
   | { kind: 'image'; url: string; entry: MetadataEntry }
   | { kind: 'binary'; entry: MetadataEntry }
 
-type BlobTab = 'preview' | 'metadata' | 'history' | 'lineage'
+type BlobTab = 'preview' | 'details' | 'metadata' | 'history' | 'lineage'
 
-const TABS: { id: BlobTab; label: string }[] = [
-  { id: 'preview', label: 'Preview' },
-  { id: 'metadata', label: 'Metadata' },
-  { id: 'history', label: 'History' },
-  { id: 'lineage', label: 'Lineage' },
+const TABS: { id: BlobTab; label: string; icon: LucideIcon }[] = [
+  { id: 'preview', label: 'Preview', icon: Eye },
+  { id: 'details', label: 'Details', icon: Info },
+  { id: 'metadata', label: 'Metadata', icon: Tags },
+  { id: 'history', label: 'History', icon: History },
+  { id: 'lineage', label: 'Lineage', icon: GitFork },
 ]
 
 function isBlobTab(value: string | null): value is BlobTab {
   return (
     value === 'preview' ||
+    value === 'details' ||
     value === 'metadata' ||
     value === 'history' ||
     value === 'lineage'
@@ -390,7 +395,7 @@ export function BlobPage() {
         'Derived metadata refreshed (sizes / type counts / text stats). Custom labels are not supported by this endpoint.',
       )
       preview.reload()
-      setTab('metadata')
+      setTab('details')
     } catch (err) {
       setActionError(
         err instanceof OxenApiError
@@ -654,7 +659,7 @@ export function BlobPage() {
             data-testid={`blob-tab-${t.id}`}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
+            <t.icon size={14} aria-hidden="true" className="button-label-icon" />{t.label}
           </button>
         ))}
       </div>
@@ -694,7 +699,7 @@ export function BlobPage() {
                     className="btn ghost"
                     onClick={() => setTab('history')}
                   >
-                    View history
+                    <ActionHistory size={14} aria-hidden="true" className="button-label-icon" />View history
                   </button>
                 </div>
               )}
@@ -733,7 +738,7 @@ export function BlobPage() {
                         disabled={busy}
                         onClick={cancelEditing}
                       >
-                        Cancel
+                        <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
                       </button>
                       <button
                         type="button"
@@ -741,7 +746,7 @@ export function BlobPage() {
                         disabled={busy || !dirty}
                         onClick={() => void onSaveEdit()}
                       >
-                        {busy ? 'Saving…' : 'Save'}
+                        <ActionSave size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Saving…' : 'Save'}
                       </button>
                     </div>
                   </div>
@@ -812,18 +817,18 @@ export function BlobPage() {
         </section>
       )}
 
-      {tab === 'metadata' && (
+      {tab === 'details' && (
         <section
           className="panel"
           role="tabpanel"
-          id="blob-panel-metadata"
-          aria-labelledby="blob-tab-metadata"
+          id="blob-panel-details"
+          aria-labelledby="blob-tab-details"
         >
           <StateBlock
             loading={preview.kind === 'loading'}
             error={preview.kind === 'error' ? preview.message : null}
             empty={!entry}
-            emptyMessage="No metadata available for this file."
+            emptyMessage="No details available for this file."
           >
             {entry && (
               <dl className="kv blob-meta-kv">
@@ -832,17 +837,17 @@ export function BlobPage() {
                   <dd>{formatBytes(entry.size)}</dd>
                 </div>
                 <div>
-                  <dt>Type</dt>
+                  <dt>Content type</dt>
                   <dd>
                     {entry.data_type} · {entry.mime_type}
                   </dd>
                 </div>
                 <div>
-                  <dt>Hash</dt>
+                  <dt>Content hash</dt>
                   <dd className="mono">{entry.hash}</dd>
                 </div>
                 <div>
-                  <dt>Commit</dt>
+                  <dt>Last changed in</dt>
                   <dd className="mono">
                     {entry.latest_commit?.id.slice(0, 12) ?? '—'}
                     {entry.latest_commit
@@ -852,7 +857,7 @@ export function BlobPage() {
                 </div>
                 {entry.metadata != null && (
                   <div>
-                    <dt>Derived meta</dt>
+                    <dt>Extracted properties</dt>
                     <dd>
                       <pre className="code-preview" style={{ margin: 0 }}>
                         {JSON.stringify(entry.metadata, null, 2)}
@@ -865,7 +870,7 @@ export function BlobPage() {
             {versionMeta.kind === 'ok' && versionMeta.data && (
               <dl className="kv blob-meta-kv" style={{ marginTop: '1rem' }}>
                 <div>
-                  <dt>Version store</dt>
+                  <dt>Stored hash</dt>
                   <dd className="mono">{versionMeta.data.version.hash}</dd>
                 </div>
                 <div>
@@ -875,6 +880,17 @@ export function BlobPage() {
               </dl>
             )}
           </StateBlock>
+        </section>
+      )}
+
+      {tab === 'metadata' && (
+        <section
+          className="panel"
+          role="tabpanel"
+          id="blob-panel-metadata"
+          aria-labelledby="blob-tab-metadata"
+        >
+          <MetaBody type="file" id={`${namespace}/${repo}:${path}`} context={{ kind: looksLikeCommitId(branch) ? 'commit' : 'branch', id: branch }} />
         </section>
       )}
 

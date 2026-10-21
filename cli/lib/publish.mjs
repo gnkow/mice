@@ -3,6 +3,7 @@
  * Job records stay local until a successful push associates them with a remote branch tip.
  */
 import { api } from './api.mjs'
+import { applyCreateMeta } from './meta.mjs'
 import {
   collectAncestorJobs,
   listLocalJobs,
@@ -185,6 +186,18 @@ export async function publishJobsAfterPush({
       published: [],
       branch,
       message: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  for (const j of jobs) {
+    if (j.meta) {
+      await applyCreateMeta({
+        remote,
+        token,
+        type: 'job',
+        id: j.id,
+        patch: j.meta,
+      })
     }
   }
 

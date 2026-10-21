@@ -1,3 +1,5 @@
+import { FolderOpen as ActionFolderOpen, History as ActionHistory, Trash2 as ActionTrash2 } from 'lucide-react'
+import { MetaPanel } from '../components/MetaPanel'
 import { useEffect, useState } from 'react'
 import {
   Link,
@@ -163,7 +165,7 @@ export function CommitsPage() {
                 className={mode === 'history' ? 'active' : ''}
                 onClick={() => setMode('history')}
               >
-                Revision history
+                <ActionHistory size={14} aria-hidden="true" className="button-label-icon" />Revision history
               </button>
               <button
                 type="button"
@@ -172,7 +174,7 @@ export function CommitsPage() {
                 className={mode === 'all' ? 'active' : ''}
                 onClick={() => setMode('all')}
               >
-                All commits
+                <ActionHistory size={14} aria-hidden="true" className="button-label-icon" />All commits
               </button>
             </div>
           </div>
@@ -231,7 +233,7 @@ export function CommitsPage() {
                     setHistoryParams(revision, '')
                   }}
                 >
-                  Clear
+                  <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
                 </button>
               )}
             </div>
@@ -288,7 +290,7 @@ export function CommitsPage() {
                       className="btn ghost small"
                       to={`${base}/tree/${commit.id}`}
                     >
-                      Browse tree
+                      <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />Browse tree
                     </Link>
                   </div>
 
@@ -331,6 +333,7 @@ export function CommitsPage() {
                       )}
                     </span>
                   </p>
+                  <MetaPanel key={commit.id} type="commit" id={`${namespace}/${repo}#${commit.id}`} />
                 </>
               )}
             </StateBlock>

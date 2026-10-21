@@ -96,6 +96,68 @@ mice job status --id <jobId>
 mice job logs --id <jobId>
 ```
 
+### Tags and labels from the CLI
+
+Open a branch name in the repository's **Branches** list for its info, metadata,
+and power tools (update tip or merge an incoming commit). Icon-only shortcuts in
+the list link to history, files, metadata, comparisons, and power tools.
+Text actions throughout the UI use leading icons, including dialogs and menus;
+icon-only actions retain accessible labels and tooltips.
+The main navigation and home tiles also have entity icons. File and folder row
+menus include **Edit Metadata**. Workspace tabs are **Changes**, **Jobs** (not yet
+implemented), **Sessions**, and **Metadata**; Changes combines staging, reviewing
+changes, and committing into a branch on one page.
+
+```bash
+# Inside a clone, namespace/repo are filled in.
+mice meta set repo --tag reviewed,gold --label env=prod --label owner=ml
+mice meta set branch dev --label stage=staging
+mice meta set file data/train.csv --scope repository --tag pii
+mice meta set file data/train.csv --scope branch --revision dev --label owner=ml
+mice meta set file data/train.csv --scope commit --revision <commit-id> --tag reviewed
+mice meta set directory data --scope repository --untag draft --unlabel owner
+mice meta set commit <id> --tag release
+mice meta set workspace <id> --label owner=ml
+mice meta set job <jobId> --tag nightly          # job/session ids are plain
+mice meta get repo [--json]                     # annotations on this resource only
+mice meta clear file data/train.csv --scope repository --yes # clear this scope only
+# Commands that create an entity take --tag / --label (repeatable) directly:
+mice commit -m "v2" --tag release --label qa=ok
+mice branch dev --label stage=staging        # also: mice checkout -b dev --tag wip
+mice create-remote acme/data --tag demo
+mice job run --image alpine:3.20 --tag nightly -- touch out.txt   # applied when the job is published
+# Outside a clone use full ids: ns/repo, ns/repo@branch, ns/repo#commit,
+# ns/repo!workspace, ns/repo:path, ns/repo:dir/ (or pass --namespace/--repo).
+```
+
+Metadata is explicit-only: namespaces, repositories, branches, commits, folders
+(`directory`), files, workspaces, jobs, and sessions each have independent tags and
+labels. Nothing is inherited, propagated, or merged from another resource.
+File/folder scopes are **general**, **specific branch**, or **specific commit**.
+The CLI calls the general scope `--scope repository`; branch/commit scopes require
+`--revision`. Each path/scope combination is independent, with no fallback to general
+annotations. Commit IDs are shared across branches, not duplicated per branch.
+There are no snapshots or historical metadata guarantees. Metadata remains attached
+to its path after file deletion/recreation.
+
+`--untag` and `--unlabel` delete entries; they do not create absence overrides.
+Renaming removes the old name/key. Empty label strings remain present values.
+The editor confirms tag merges and label replacement during renaming.
+The API accepts `tags` as a replacement list and merges `labels` per key (`null`
+deletes a label). Inheritance, propagation, and absence-override options are rejected.
+Existing stores automatically retain explicit tags/labels and discard old active
+inheritance rules and absence overrides; inherited values are not copied.
+History and revision counters are preserved.
+
+UI and CLI edits use revision checks; stale UI saves preserve drafts and require
+loading and reviewing the latest metadata. Changes to another resource do not
+invalidate an edit. Search covers all explicitly annotated resources visible to the
+caller, and never returns a resource merely because its parent is annotated.
+Metadata state, history, and monotonic revisions are
+written together by atomic JSON replacement. This store requires **a single auth
+process**; it does not support concurrent writers across processes or hosts. Read/write
+failures are surfaced; history is retained without automatic compaction.
+
 ### Use another OIDC IdP
 
 Compose ships Keycloak for local SSO. The BFF speaks standard OIDC Authorization Code + PKCE; any IdP that supports that flow works.

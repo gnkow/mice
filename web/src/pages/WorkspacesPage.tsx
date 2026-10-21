@@ -1,13 +1,13 @@
+import { Layers as ActionLayers, Monitor as ActionMonitor, X as ActionX, FileDiff, Tags, Terminal } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Modal } from '../components/Modal'
-import { SessionCreateModal } from '../components/SessionCreateModal'
+import { MetaPills } from '../components/MetaPills'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { confirmDelete } from '../lib/confirmDelete'
 import { resolveDefaultBranch } from '../lib/lastBranch'
 import {
-  clearWorkspaces,
   createWorkspace,
   deleteWorkspace,
   listBranches,
@@ -54,11 +54,6 @@ export function WorkspacesPage() {
   const [branch, setBranch] = useState('main')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [sessionCreateWorkspace, setSessionCreateWorkspace] = useState<{
-    namespace: string
-    repo: string
-    workspaceId: string
-  } | null>(null)
 
   useEffect(() => {
     if (params.get('new') !== '1') return
@@ -180,39 +175,6 @@ export function WorkspacesPage() {
     }
   }
 
-  async function onClear() {
-    if (
-      !(await confirmDelete({
-        title: `Delete all workspaces in ${namespace}/${repo}`,
-        detail:
-          'Every workspace for this repository will be removed and all staged (uncommitted) changes discarded.',
-        confirmWord: 'DELETE ALL',
-      }))
-    ) {
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      await clearWorkspaces(namespace, repo)
-      workspaces.reload()
-    } catch (err) {
-      setError(
-        err instanceof OxenApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Clear failed',
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onCreateSession(workspaceId: string) {
-    setSessionCreateWorkspace({ namespace, repo, workspaceId })
-  }
-
   return (
     <main className="page">
       <div className="page-head">
@@ -231,11 +193,8 @@ export function WorkspacesPage() {
               setCreateOpen(true)
             }}
           >
-            New workspace
+            <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />New workspace
           </button>
-          <Link className="btn ghost" to="/workspaces">
-            All workspaces
-          </Link>
         </div>
       </div>
 
@@ -292,12 +251,17 @@ export function WorkspacesPage() {
                               {ws.id.slice(0, 8)}
                             </span>
                           </div>
+                          <MetaPills type="workspace" id={`${namespace}/${repo}!${ws.id}`} />
                         </td>
                         <td>
                           <div className="workspace-base-cell">
-                            <code className="mono" title={ws.commit.id}>
+                            <Link
+                              className="mono workspace-commit-link"
+                              title={ws.commit.id}
+                              to={`${base}/commits/${encodeURIComponent(ws.commit.id)}`}
+                            >
                               {ws.commit.id.slice(0, 8)}
-                            </code>
+                            </Link>
                             <span
                               className="muted small workspace-base-msg"
                               title={ws.commit.message}
@@ -309,7 +273,7 @@ export function WorkspacesPage() {
                         <td>
                           <div className="workspace-sessions-cell">
                             {mountedSessions.length === 0 ? (
-                              <span className="muted small">None</span>
+                              <span className="muted small">No sessions</span>
                             ) : (
                               <div className="workspace-sessions-list">
                                 {mountedSessions.map((session) => (
@@ -338,18 +302,38 @@ export function WorkspacesPage() {
                         </td>
                         <td className="workspaces-col-actions">
                           <div className="workspace-row-actions">
-                            <Link className="btn ghost workspace-open-btn" to={href}>
-                              Open
-                            </Link>
-                            <button
-                              type="button"
-                              className="btn ghost small workspace-new-session-btn"
-                              title={`Create session for ${label}`}
-                              onClick={() => void onCreateSession(ws.id)}
+                            <Link
+                              className="icon-round"
+                              to={`${href}#changes`}
+                              aria-label={`Changes in ${label}`}
+                              title={`Changes in ${label}`}
                             >
-                              New session
-                            </button>
-                            <button
+                              <FileDiff size={14} aria-hidden />
+                            </Link>
+                            <Link
+                              className="icon-round"
+                              to={`${href}#jobs`}
+                              aria-label={`Jobs for ${label}`}
+                              title={`Jobs for ${label}`}
+                            >
+                              <Terminal size={14} aria-hidden />
+                            </Link>
+                            <Link
+                              className="icon-round"
+                              to={`${href}#sessions`}
+                              aria-label={`Sessions for ${label}`}
+                              title={`Sessions for ${label}`}
+                            >
+                              <ActionMonitor size={14} aria-hidden />
+                            </Link>
+                            <Link
+                              className="icon-round"
+                              to={`${href}#metadata`}
+                              aria-label={`Metadata for ${label}`}
+                              title={`Metadata for ${label}`}
+                            >
+                              <Tags size={14} aria-hidden />
+                            </Link>                            <button
                               type="button"
                               className="icon-round workspace-delete"
                               disabled={busy}
@@ -359,6 +343,7 @@ export function WorkspacesPage() {
                             >
                               <TrashIcon />
                             </button>
+
                           </div>
                         </td>
                       </tr>
@@ -407,10 +392,10 @@ export function WorkspacesPage() {
                 className="btn ghost"
                 onClick={() => setCreateOpen(false)}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
               <button className="btn primary" type="submit" disabled={busy}>
-                {busy ? 'Creating…' : 'Create workspace'}
+                <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Creating…' : 'Create workspace'}
               </button>
             </div>
             {error && <p className="flash flash-error" role="status">{error}</p>}
@@ -418,12 +403,6 @@ export function WorkspacesPage() {
         </Modal>
       )}
 
-      {sessionCreateWorkspace && (
-        <SessionCreateModal
-          onClose={() => setSessionCreateWorkspace(null)}
-          preselectedWorkspace={sessionCreateWorkspace}
-        />
-      )}
 
       {!createOpen && error && <p className="flash flash-error" role="status">{error}</p>}
     </main>

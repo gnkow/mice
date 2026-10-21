@@ -1,3 +1,4 @@
+import { ChevronUp as ActionChevronUp, User as ActionUser, Users as ActionUsers } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import {
   searchDirectory,
@@ -141,6 +142,7 @@ export function DirectoryPicker(props: Props) {
                 }}
               >
                 <span className="directory-picker-option-name">
+                  <ActionUser size={14} aria-hidden="true" className="button-label-icon" />
                   {u.name || u.email || u.sub}
                 </span>
                 <span className="muted small">
@@ -165,7 +167,7 @@ export function DirectoryPicker(props: Props) {
                   setOpen(false)
                 }}
               >
-                <span className="directory-picker-option-name">{g.name}</span>
+                <span className="directory-picker-option-name"><ActionUsers size={14} aria-hidden="true" className="button-label-icon" />{g.name}</span>
                 <span className="muted small">IdP group</span>
               </button>
             </li>
@@ -189,7 +191,7 @@ export function DirectoryPicker(props: Props) {
         disabled={props.disabled}
         onClick={() => setShowManual((v) => !v)}
       >
-        {showManual ? 'Hide manual entry' : 'Manual entry'}
+        <ActionChevronUp size={14} aria-hidden="true" className="button-label-icon" />{showManual ? 'Hide manual entry' : 'Manual entry'}
       </button>
 
       {showManual && props.kind === 'user' && (

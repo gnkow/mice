@@ -1,3 +1,6 @@
+import { Copy as ActionCopy, FilePenLine as ActionFilePenLine, MoveRight as ActionMoveRight, Pencil as ActionPencil, Tags as ActionTags, Trash2 as ActionTrash2, X as ActionX } from 'lucide-react'
+import { MetaPills } from '../components/MetaPills'
+import { MetaModal } from '../components/MetaModal'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AuthorAvatar } from '../components/AuthorAvatar'
@@ -56,6 +59,7 @@ function isMissingRevisionError(message: string): boolean {
 export function TreePage() {
   const { namespace = '', repo = '', branch = 'main', '*': splat } = useParams()
   const path = splat ?? ''
+  const [metaTarget, setMetaTarget] = useState<{ type: 'file' | 'directory'; path: string } | null>(null)
   const navigate = useNavigate()
 
   const branches = useAsync(
@@ -465,6 +469,11 @@ export function TreePage() {
           )}
         </div>
         <div className="btn-row code-toolbar-actions">
+          {path && (
+            <button type="button" className="btn ghost" onClick={() => setMetaTarget({ type: 'directory', path })}>
+              <ActionTags size={14} aria-hidden="true" className="button-label-icon" />Metadata
+            </button>
+          )}
           <ManageFilesMenu
             namespace={namespace}
             repo={repo}
@@ -641,9 +650,11 @@ export function TreePage() {
                       d="M8 1.5a6.5 6.5 0 1 0 4.03 11.6.75.75 0 0 0-.94-1.17A5 5 0 1 1 8 3a.75.75 0 0 0 0-1.5Zm.75 3.25v2.69l1.78 1.78a.75.75 0 1 1-1.06 1.06l-2.25-2.25A.75.75 0 0 1 7 7.5v-2.75a.75.75 0 0 1 1.5 0Z"
                     />
                   </svg>
-                  {commitCount == null
-                    ? '… Commits'
-                    : `${commitCount} Commit${commitCount === 1 ? '' : 's'}`}
+                  <span>
+                    {commitCount == null
+                      ? '… Commits'
+                      : `${commitCount} Commit${commitCount === 1 ? '' : 's'}`}
+                  </span>
                 </Link>
               </div>
             )}
@@ -666,9 +677,16 @@ export function TreePage() {
                           isDir={entry.is_dir}
                           filename={entry.filename}
                         />
-                        <Link to={href} className="file-name-link" title={entry.filename}>
-                          {entry.filename}
-                        </Link>
+                        <span className="file-row-name-main">
+                          <Link to={href} className="file-name-link" title={entry.filename}>
+                            {entry.filename}
+                          </Link>
+                          <MetaPills
+                            type={entry.is_dir ? 'directory' : 'file'}
+                            id={`${namespace}/${repo}:${entryPath.replace(/\/+$/, '')}${entry.is_dir ? '/' : ''}`}
+                            scope={{ kind: looksLikeCommitId(branch) ? 'commit' : 'branch', id: branch }}
+                          />
+                        </span>
                       </span>
                       <span className="file-row-size muted">
                         {entry.is_dir ? '' : formatBytes(entry.size)}
@@ -728,6 +746,15 @@ export function TreePage() {
                             </svg>
                           </summary>
                           <div className="row-more-menu">
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                setMetaTarget({ type: entry.is_dir ? 'directory' : 'file', path: entryPath })
+                              }}
+                            >
+                              <ActionTags size={14} aria-hidden="true" className="button-label-icon" />Edit Metadata
+                            </button>
                             {!entry.is_dir && entry.data_type === 'tabular' && (
                               <Link
                                 to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/df/${encodeURIComponent(branch)}/${entryPath}`}
@@ -741,7 +768,7 @@ export function TreePage() {
                                 disabled={busy}
                                 onClick={() => openPathChange('rename', entryPath)}
                               >
-                                Rename
+                                <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />Rename
                               </button>
                             )}
                             {!entry.is_dir && (
@@ -750,7 +777,7 @@ export function TreePage() {
                                 disabled={busy}
                                 onClick={() => openPathChange('move', entryPath)}
                               >
-                                Move
+                                <ActionMoveRight size={14} aria-hidden="true" className="button-label-icon" />Move
                               </button>
                             )}
                             {!entry.is_dir && (
@@ -759,7 +786,7 @@ export function TreePage() {
                                 disabled={busy}
                                 onClick={() => openPathChange('copy', entryPath)}
                               >
-                                Copy
+                                <ActionCopy size={14} aria-hidden="true" className="button-label-icon" />Copy
                               </button>
                             )}
                             <hr className="menu-sep" />
@@ -769,7 +796,7 @@ export function TreePage() {
                               disabled={busy}
                               onClick={() => onDelete(entryPath, entry.is_dir)}
                             >
-                              Delete
+                              <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete
                             </button>
                           </div>
                         </details>
@@ -960,7 +987,7 @@ export function TreePage() {
             </p>
             <div className="btn-row">
               <button className="btn" type="submit" disabled={busy}>
-                {pathChange.mode === 'rename'
+                <ActionFilePenLine size={14} aria-hidden="true" className="button-label-icon" />{pathChange.mode === 'rename'
                   ? 'Rename'
                   : pathChange.mode === 'copy'
                     ? 'Copy'
@@ -972,11 +999,22 @@ export function TreePage() {
                 onClick={closePathChange}
                 disabled={busy}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
             </div>
           </form>
         </section>
+      )}
+
+      {metaTarget && (
+        <MetaModal
+          key={`${metaTarget.type}:${metaTarget.path}`}
+          type={metaTarget.type}
+          id={`${namespace}/${repo}:${metaTarget.path.replace(/\/+$/, '')}${metaTarget.type === 'directory' ? '/' : ''}`}
+          title={`Metadata: ${metaTarget.path.replace(/\/+$/, '')}${metaTarget.type === 'directory' ? '/' : ''}`}
+          context={{ kind: looksLikeCommitId(branch) ? 'commit' : 'branch', id: branch }}
+          onClose={() => setMetaTarget(null)}
+        />
       )}
 
       {info && <p className="flash flash-success" role="status">{info}</p>}

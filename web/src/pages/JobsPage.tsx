@@ -1,5 +1,6 @@
+import { Laptop as ActionLaptop, Server as ActionServer, Terminal as ActionTerminal, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { JobSummaryCard } from '../components/JobSummaryCard'
 import { Modal } from '../components/Modal'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
@@ -157,7 +158,7 @@ export function JobsPage() {
         </div>
         <div className="btn-row">
           <details className="clone-dropdown submit-job-dropdown">
-            <summary className="btn primary">New job</summary>
+            <summary className="btn primary"><ActionTerminal size={14} aria-hidden="true" className="button-label-icon" />New job</summary>
             <div className="clone-dropdown-panel submit-job-menu" role="menu">
               <button
                 type="button"
@@ -165,7 +166,7 @@ export function JobsPage() {
                 className="submit-job-option"
                 onClick={(e) => openSubmit('local', e)}
               >
-                <span className="pill runner-local">Local</span>
+                <ActionLaptop size={14} aria-hidden="true" className="button-label-icon" /><span className="pill runner-local">Local</span>
                 <span className="submit-job-option-text">
                   <b>Run on your machine</b>
                   <span className="muted small">
@@ -179,7 +180,7 @@ export function JobsPage() {
                 className="submit-job-option"
                 onClick={(e) => openSubmit('cluster', e)}
               >
-                <span className="pill runner-cluster">Cluster</span>
+                <ActionServer size={14} aria-hidden="true" className="button-label-icon" /><span className="pill runner-cluster">Cluster</span>
                 <span className="submit-job-option-text">
                   <b>Run on the server</b>
                   <span className="muted small">
@@ -189,9 +190,6 @@ export function JobsPage() {
               </button>
             </div>
           </details>
-          <Link className="btn ghost" to="/jobs">
-            All jobs
-          </Link>
         </div>
       </header>
 
@@ -299,7 +297,7 @@ export function JobsPage() {
                 className="btn ghost small"
                 onClick={clearFilters}
               >
-                Clear
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
               </button>
             )}
           </div>

@@ -1,10 +1,13 @@
+import { FileDiff, Monitor as ActionMonitor, Tags, Terminal, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { MetaPills } from '../components/MetaPills'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
-import { SessionCreateModal } from '../components/SessionCreateModal'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { loadCatalog } from '../lib/catalog'
+import { confirmDelete } from '../lib/confirmDelete'
+import { deleteWorkspace } from '../lib/oxen/api'
 import { listSessions, sessionMounts, type DesktopSession } from '../lib/sessions'
 
 export function WorkspacesListPage() {
@@ -14,12 +17,10 @@ export function WorkspacesListPage() {
   const [filter, setFilter] = useState(params.get('q') ?? '')
   const pageParam = Number(params.get('page') || '1')
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
-  const [sessionCreateWorkspace, setSessionCreateWorkspace] = useState<{
-    namespace: string
-    repo: string
-    workspaceId: string
-  } | null>(null)
   
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
   const workspaces = state.kind === 'ok' ? state.data.workspaces : []
   const sessionsList = sessions.kind === 'ok' ? sessions.data.sessions : []
 
@@ -47,8 +48,7 @@ export function WorkspacesListPage() {
       const name = ws.name || ws.id
       const repo = `${ws.namespace}/${ws.repo}`
       return name.toLowerCase().includes(q) || 
-             repo.toLowerCase().includes(q) ||
-             ws.branch_name.toLowerCase().includes(q)
+             repo.toLowerCase().includes(q)
     })
   }, [workspaces, filter])
 
@@ -68,6 +68,29 @@ export function WorkspacesListPage() {
     else nextParams.delete('q')
     nextParams.delete('page')
     setParams(nextParams, { replace: true })
+  }
+
+  async function onDelete(ns: string, repo: string, id: string, label: string) {
+    if (
+      !(await confirmDelete({
+        title: `Delete workspace ${label}`,
+        detail:
+          'Staged changes in this workspace will be discarded. Committed history on the branch is unaffected.',
+        confirmWord: label,
+      }))
+    ) {
+      return
+    }
+    setBusyId(id)
+    setError(null)
+    try {
+      await deleteWorkspace(ns, repo, id)
+      state.reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   return (
@@ -119,7 +142,7 @@ export function WorkspacesListPage() {
                 onClick={() => onFilterChange('')}
                 aria-label="Clear search"
               >
-                Clear
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
               </button>
             ) : null}
           </div>
@@ -131,6 +154,8 @@ export function WorkspacesListPage() {
           </p>
         )}
       </div>
+
+      {error && <p className="flash flash-error" role="status">{error}</p>}
 
       <StateBlock
         loading={state.kind === 'loading'}
@@ -165,14 +190,20 @@ export function WorkspacesListPage() {
                   return (
                     <tr key={key}>
                       <td>
-                        <Link to={href} className="workspace-link">
-                          {label}
-                        </Link>
+                        <div className="workspace-name-cell">
+                          <Link to={href} className="workspace-name-link">
+                            {label}
+                          </Link>
+                          <span className="mono muted small" title={ws.id}>
+                            {ws.id.slice(0, 8)}
+                          </span>
+                        </div>
+                        <MetaPills type="workspace" id={`${ws.namespace}/${ws.repo}!${ws.id}`} />
                       </td>
                       <td className="muted small">
                         <Link
                           to={`/n/${encodeURIComponent(ws.namespace)}/r/${encodeURIComponent(ws.repo)}`}
-                          className="repo-link"
+                          className="workspace-commit-link"
                         >
                           {ws.namespace}/{ws.repo}
                         </Link>
@@ -197,28 +228,53 @@ export function WorkspacesListPage() {
                             )}
                           </div>
                         ) : (
-                          <span className="muted">—</span>
+                          <span className="muted small">No sessions</span>
                         )}
                       </td>
                       <td className="muted small">—</td>
                       <td className="workspaces-col-actions">
                         <div className="workspace-row-actions">
-                          <Link className="btn ghost workspace-open-btn" to={href}>
-                            Open
+                          <Link
+                            className="icon-round"
+                            to={`${href}#changes`}
+                            aria-label={`Changes for ${label}`}
+                            title={`Changes for ${label}`}
+                          >
+                            <FileDiff size={14} aria-hidden />
+                          </Link>
+                          <Link
+                            className="icon-round"
+                            to={`${href}#jobs`}
+                            aria-label={`Jobs for ${label}`}
+                            title={`Jobs for ${label}`}
+                          >
+                            <Terminal size={14} aria-hidden />
+                          </Link>
+                          <Link
+                            className="icon-round"
+                            to={`${href}#sessions`}
+                            aria-label={`Sessions for ${label}`}
+                            title={`Sessions for ${label}`}
+                          >
+                            <ActionMonitor size={14} aria-hidden />
+                          </Link>
+                          <Link
+                            className="icon-round"
+                            to={`${href}#metadata`}
+                            aria-label={`Metadata for ${label}`}
+                            title={`Metadata for ${label}`}
+                          >
+                            <Tags size={14} aria-hidden />
                           </Link>
                           <button
                             type="button"
-                            className="btn ghost small workspace-new-session-btn"
-                            title={`Create session for ${label}`}
-                            onClick={() =>
-                              setSessionCreateWorkspace({
-                                namespace: ws.namespace,
-                                repo: ws.repo,
-                                workspaceId: ws.id,
-                              })
-                            }
+                            className="icon-round workspace-delete"
+                            disabled={busyId === ws.id}
+                            title={`Delete ${label}`}
+                            aria-label={`Delete workspace ${label}`}
+                            onClick={() => void onDelete(ws.namespace, ws.repo, ws.id, label)}
                           >
-                            New session
+                            <ActionTrash2 size={14} aria-hidden />
                           </button>
                         </div>
                       </td>
@@ -240,12 +296,6 @@ export function WorkspacesListPage() {
         )}
       </StateBlock>
 
-      {sessionCreateWorkspace && (
-        <SessionCreateModal
-          onClose={() => setSessionCreateWorkspace(null)}
-          preselectedWorkspace={sessionCreateWorkspace}
-        />
-      )}
     </main>
   )
 }

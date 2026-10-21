@@ -1,3 +1,5 @@
+import { FolderGit2 as ActionFolderGit2, MoveRight as ActionMoveRight, Pencil as ActionPencil, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
+import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DirectoryPicker } from '../components/DirectoryPicker'
@@ -133,7 +135,7 @@ export function RepoSettingsPage() {
         </div>
         <div className="btn-row">
           <Link className="btn ghost" to={`${base}/tree/main`}>
-            View repository
+            <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />View repository
           </Link>
         </div>
       </div>
@@ -158,7 +160,7 @@ export function RepoSettingsPage() {
               required
             />
             <button className="btn ghost" type="submit" disabled={busy}>
-              Rename
+              <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />Rename
             </button>
           </form>
         </section>
@@ -182,7 +184,7 @@ export function RepoSettingsPage() {
               required
             />
             <button className="btn ghost" type="submit" disabled={busy}>
-              Transfer
+              <ActionMoveRight size={14} aria-hidden="true" className="button-label-icon" />Transfer
             </button>
           </form>
         </section>
@@ -255,7 +257,7 @@ export function RepoSettingsPage() {
                         })
                       }}
                     >
-                      Remove
+                      <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                     </button>
                   </li>
                 )
@@ -367,11 +369,16 @@ export function RepoSettingsPage() {
               </label>
               <div className="ns-member-form-actions">
                 <button className="btn primary" type="submit" disabled={busy}>
-                  Add collaborator
+                  <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add collaborator
                 </button>
               </div>
             </div>
           </form>
+        </section>
+
+        <section className="settings-section" aria-labelledby="repo-meta-heading">
+          <h2 id="repo-meta-heading">Metadata</h2>
+          <MetaBody type="repo" id={`${namespace}/${repo}`} />
         </section>
 
         <section
@@ -391,7 +398,7 @@ export function RepoSettingsPage() {
             disabled={busy}
             onClick={() => void onDelete()}
           >
-            Delete repository
+            <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete repository
           </button>
         </section>
       </div>

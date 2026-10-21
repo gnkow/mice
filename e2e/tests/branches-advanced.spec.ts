@@ -31,10 +31,10 @@ test.describe('branches advanced (B-04 B-06 C-04)', () => {
     )
 
     await page.goto(repoPath(seededRepo, '/branches'))
+    await page.getByRole('link', { name: 'Power tools for rewind', exact: true }).click()
+    await expect(page).toHaveURL(/\/branches\/rewind#power-tools$/)
     const advanced = page.locator('details.panel', { hasText: 'Power tools' })
-    await advanced.locator('summary').click()
     const form = advanced.locator('form').filter({ hasText: 'Commit ID' })
-    await form.getByLabel('Branch').fill('rewind')
     await form.getByLabel('Commit ID').fill(first)
     await form.getByRole('button', { name: 'Update tip' }).click()
 
@@ -74,10 +74,9 @@ test.describe('branches advanced (B-04 B-06 C-04)', () => {
     ).find((b) => b.name === 'main')!.commit_id
 
     await page.goto(repoPath(seededRepo, '/branches'))
+    await page.getByRole('link', { name: 'Power tools for main', exact: true }).click()
     const advanced = page.locator('details.panel', { hasText: 'Power tools' })
-    await advanced.locator('summary').click()
     const form = advanced.locator('form').filter({ hasText: 'Client commit' })
-    await form.locator('select').selectOption('main')
     await form.getByLabel(/Client commit/).fill(clientId!)
     await form.getByLabel(/Server commit/).fill(mainTip)
     await form.getByRole('button', { name: 'Merge into branch' }).click()

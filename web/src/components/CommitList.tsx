@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { Commit } from '../lib/oxen/types'
+import { MetaPills } from './MetaPills'
 import { AuthorAvatar } from './AuthorAvatar'
 import { dayKey, formatDayHeading, formatRelativeTime } from '../lib/time'
 
@@ -66,6 +67,7 @@ export function CommitList({
                           {formatRelativeTime(c.timestamp)}
                         </time>
                       </span>
+                      <MetaPills type="commit" id={`${namespace}/${repo}#${c.id}`} />
                     </span>
                     <span className="commit-sha mono">{c.id.slice(0, 7)}</span>
                   </Link>

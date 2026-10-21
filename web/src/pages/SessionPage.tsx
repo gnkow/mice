@@ -1,3 +1,5 @@
+import { Plug as ActionPlug, RefreshCw as ActionRefreshCw, Square as ActionSquare, Trash2 as ActionTrash2 } from 'lucide-react'
+import { MetaBody } from '../components/MetaPanel'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
@@ -217,7 +219,7 @@ export function SessionPage() {
               }
               onClick={() => void onConnect()}
             >
-              Connect
+              <ActionPlug size={14} aria-hidden="true" className="button-label-icon" />Connect
             </button>
             {canRetry ? (
               <button
@@ -226,7 +228,7 @@ export function SessionPage() {
                 disabled={busy}
                 onClick={() => void onRetry()}
               >
-                Retry
+                <ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />Retry
               </button>
             ) : null}
             {canStop ? (
@@ -236,7 +238,7 @@ export function SessionPage() {
                 disabled={busy}
                 onClick={() => void onStop()}
               >
-                Stop
+                <ActionSquare size={14} aria-hidden="true" className="button-label-icon" />Stop
               </button>
             ) : null}
             <button
@@ -245,7 +247,7 @@ export function SessionPage() {
               disabled={busy || session.status === 'destroyed'}
               onClick={() => void onDestroy()}
             >
-              Destroy
+              <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Destroy
             </button>
           </div>
         </div>
@@ -397,6 +399,11 @@ export function SessionPage() {
             ) : null}
           </dl>
         </details>
+      </section>
+
+      <section className="settings-section" aria-labelledby="meta-heading">
+        <h2 id="meta-heading">Metadata</h2>
+        <MetaBody type="session" id={session.id} />
       </section>
     </main>
   )

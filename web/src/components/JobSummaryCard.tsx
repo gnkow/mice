@@ -10,6 +10,7 @@ import {
   shortenJobRef,
   type JobRun,
 } from '../lib/jobs'
+import { MetaPills } from './MetaPills'
 import { formatRelativeTime } from '../lib/time'
 
 function statusClass(s: JobRun['status']) {
@@ -89,6 +90,8 @@ export function JobSummaryCard({ job, showRepo }: Props) {
             </span>
           </span>
         </span>
+
+        <MetaPills type="job" id={job.id} />
 
         <span className="jobs-card-footer muted">
           {showRepo ? (

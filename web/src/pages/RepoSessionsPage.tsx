@@ -1,5 +1,6 @@
+import { Monitor as ActionMonitor } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { SessionCreateModal } from '../components/SessionCreateModal'
 import { SessionSummaryCard } from '../components/SessionSummaryCard'
@@ -49,11 +50,8 @@ export function RepoSessionsPage() {
             className="btn primary"
             onClick={() => setCreateOpen(true)}
           >
-            New session
+            <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />New session
           </button>
-          <Link className="btn ghost" to="/sessions">
-            All sessions
-          </Link>
         </div>
       </header>
 

@@ -1,7 +1,7 @@
 import type { LucideProps } from 'lucide-react'
-import * as LucideIcons from 'lucide-react'
+import { icons } from 'lucide-react'
 
-export type IconName = keyof typeof LucideIcons
+export type IconName = keyof typeof icons
 
 type IconProps = LucideProps & {
   name: IconName
@@ -17,7 +17,7 @@ type IconProps = LucideProps & {
  * <Icon name="GitBranch" size={16} strokeWidth={2} />
  */
 export function Icon({ name, size = 16, ...props }: IconProps) {
-  const IconComponent = LucideIcons[name]
+  const IconComponent = icons[name]
   
   if (!IconComponent) {
     console.warn(`Icon "${name}" not found in lucide-react`)

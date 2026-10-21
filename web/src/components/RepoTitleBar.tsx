@@ -1,3 +1,4 @@
+import { Copy as ActionCopy } from 'lucide-react'
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
@@ -49,7 +50,7 @@ export function RepoTitleBar() {
             {social.star ? 'Starred' : 'Star'}
           </button>
           <details className="clone-dropdown">
-            <summary className="btn ghost">Clone</summary>
+            <summary className="btn ghost"><ActionCopy size={14} aria-hidden="true" className="button-label-icon" />Clone</summary>
             <div className="clone-dropdown-panel">
               <CloneBox namespace={namespace} repo={repo} />
             </div>

@@ -1,3 +1,4 @@
+import { KeyRound as ActionKeyRound, LogOut as ActionLogOut } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { logout } from '../lib/auth'
@@ -45,7 +46,7 @@ export function PendingAccessPage() {
           />
         </label>
         <button className="btn primary" type="submit" disabled={busy}>
-          {busy ? 'Submitting…' : 'Request access'}
+          <ActionKeyRound size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Submitting…' : 'Request access'}
         </button>
       </form>
       {status && <p className="muted">{status}</p>}
@@ -60,7 +61,7 @@ export function PendingAccessPage() {
             })
           }}
         >
-          Sign out
+          <ActionLogOut size={14} aria-hidden="true" className="button-label-icon" />Sign out
         </button>{' '}
         <Link to="/login">Back to login</Link>
       </p>

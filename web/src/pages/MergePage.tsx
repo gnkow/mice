@@ -1,3 +1,4 @@
+import { ArrowLeftRight as ActionArrowLeftRight, GitMerge as ActionGitMerge } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { CommitList } from '../components/CommitList'
@@ -177,7 +178,7 @@ export function MergePage() {
             if (!canCheck) e.preventDefault()
           }}
         >
-          View diff
+          <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />View diff
         </Link>
       </div>
 
@@ -339,10 +340,10 @@ export function MergePage() {
                     disabled={busy || !isMergeable || nothingToMerge}
                     onClick={() => void onMerge()}
                   >
-                    {busy ? 'Merging…' : `Merge ${head} → ${base}`}
+                    <ActionGitMerge size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Merging…' : `Merge ${head} → ${base}`}
                   </button>
                   <Link className="btn ghost" to={compareHref}>
-                    View diff
+                    <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />View diff
                   </Link>
                 </div>
               </section>

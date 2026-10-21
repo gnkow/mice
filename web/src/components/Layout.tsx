@@ -1,6 +1,7 @@
+import { LogOut as ActionLogOut } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
-import { Box, Menu, Search, Sun } from 'lucide-react'
+import { BookOpen, Box, ClipboardList, FolderGit2, Home, Layers, Menu, Monitor, Network, Search, Sun, Tags, Terminal } from 'lucide-react'
 import { fetchAuthMe, logout, type AuthUser } from '../lib/auth'
 import { fetchServerVersion } from '../lib/oxen/api'
 import { loadSettings, subscribeSettings } from '../lib/oxen/settings'
@@ -179,28 +180,31 @@ export function Layout() {
               </div>
               <nav className="drawer-nav">
                 <NavLink to="/" end onClick={closeDrawer}>
-                  Home
+                  <Home size={18} aria-hidden="true" />Home
                 </NavLink>
                 <NavLink to="/namespaces" onClick={closeDrawer}>
-                  Namespaces
+                  <Network size={18} aria-hidden="true" />Namespaces
                 </NavLink>
                 <NavLink to="/repositories" onClick={closeDrawer}>
-                  Repositories
+                  <FolderGit2 size={18} aria-hidden="true" />Repositories
                 </NavLink>
                 <NavLink to="/workspaces" onClick={closeDrawer}>
-                  Workspaces
+                  <Layers size={18} aria-hidden="true" />Workspaces
                 </NavLink>
                 <NavLink to="/jobs" onClick={closeDrawer}>
-                  Jobs
+                  <Terminal size={18} aria-hidden="true" />Jobs
                 </NavLink>
                 <NavLink to="/sessions" onClick={closeDrawer}>
-                  Sessions
+                  <Monitor size={18} aria-hidden="true" />Sessions
+                </NavLink>
+                <NavLink to="/meta" end onClick={closeDrawer}>
+                  <Tags size={18} aria-hidden="true" />Metadata
                 </NavLink>
                 <NavLink to="/audit" onClick={closeDrawer}>
-                  Audit
+                  <ClipboardList size={18} aria-hidden="true" />Audit
                 </NavLink>
                 <NavLink to="/docs" onClick={closeDrawer}>
-                  Docs
+                  <BookOpen size={18} aria-hidden="true" />Docs
                 </NavLink>
               </nav>
             </aside>
@@ -330,7 +334,7 @@ export function Layout() {
               </NavLink>
               {user && (
                 <button type="button" className="linkish" onClick={onLogout}>
-                  Sign out
+                  <ActionLogOut size={14} aria-hidden="true" className="button-label-icon" />Sign out
                 </button>
               )}
               <div className="profile-menu-footer">

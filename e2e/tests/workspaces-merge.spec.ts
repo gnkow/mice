@@ -22,7 +22,7 @@ test.describe('workspaces & merge (W/M)', () => {
     await expect(page).toHaveURL(/\/workspaces\/[^/]+$/, { timeout: 30_000 })
     await expect(page.getByRole('heading', { name: 'e2e-ws' })).toBeVisible()
 
-    await page.getByRole('tab', { name: 'Stage' }).click()
+    await expect(page.getByRole('tab')).toHaveText(['Changes', 'Jobs', 'Sessions', 'Metadata'])
     const uploadSection = page.locator('section', { hasText: 'Upload file' })
     await uploadSection.locator('input[name="file"]').setInputFiles(wsNote)
     await uploadSection.getByRole('button', { name: 'Stage upload' }).click()
@@ -32,7 +32,6 @@ test.describe('workspaces & merge (W/M)', () => {
     })
     await expect(page.locator('code', { hasText: 'ws-note.txt' })).toBeVisible()
 
-    await page.getByRole('tab', { name: 'Commit' }).click()
     const commitSection = page.locator('section', {
       hasText: 'Commit & merge into branch',
     })
@@ -42,6 +41,16 @@ test.describe('workspaces & merge (W/M)', () => {
     await expect(page.locator('main .flash-success')).toContainText(/Committed/i, {
       timeout: 30_000,
     })
+    await expect(page.getByText('Nothing staged.', { exact: true })).toBeVisible()
+    await page.getByRole('tab', { name: 'Jobs', exact: true }).click()
+    await expect(page.getByRole('tabpanel')).toContainText('Workspace jobs are not implemented yet.')
+    await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeVisible()
+    await page.getByRole('tab', { name: 'Metadata', exact: true }).click()
+    await expect(page.getByRole('tabpanel').getByLabel('Add tag', { exact: true })).toBeVisible()
+    await page.getByRole('tab', { name: 'Changes', exact: true }).click()
+    await expect(uploadSection).toBeVisible()
+    await expect(commitSection).toBeVisible()
   })
 
   test('M-01 M-02: mergeable check and merge feature into main', async ({
@@ -75,4 +84,3 @@ test.describe('workspaces & merge (W/M)', () => {
     })
   })
 })
-

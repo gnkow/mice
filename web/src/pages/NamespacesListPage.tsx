@@ -1,5 +1,7 @@
+import { FolderPlus as ActionFolderPlus, Settings as ActionSettings, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { MetaPills } from '../components/MetaPills'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
@@ -104,7 +106,7 @@ export function NamespacesListPage() {
         {canCreate && (
           <div className="btn-row">
             <Link className="btn primary" to="/namespaces/new">
-              + New namespace
+              <ActionFolderPlus size={14} aria-hidden="true" className="button-label-icon" />New namespace
             </Link>
           </div>
         )}
@@ -148,7 +150,7 @@ export function NamespacesListPage() {
                 onClick={() => onFilterChange('')}
                 aria-label="Clear search"
               >
-                Clear
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
               </button>
             ) : null}
           </div>
@@ -195,6 +197,7 @@ export function NamespacesListPage() {
                         >
                           {ns.name}
                         </Link>
+                        <div className="ns-card-info">
                         <p className="ns-card-meta muted small">
                           {ns.repoCount === 1
                             ? '1 repository'
@@ -231,33 +234,30 @@ export function NamespacesListPage() {
                             </span>
                           )}
                         </div>
+                        </div>
+                        <MetaPills type="namespace" id={ns.name} />
                       </div>
                       <div className="ns-card-actions">
                         {ns.authz && (
                           <Link
-                            className="btn ghost small"
+                            className="icon-round"
                             to={`/n/${encodeURIComponent(ns.name)}/settings`}
+                            aria-label={`Settings for ${ns.name}`}
+                            title={`Settings for ${ns.name}`}
                           >
-                            Settings
+                            <ActionSettings size={14} aria-hidden />
                           </Link>
                         )}
-                        <Link
-                          className="btn primary small ns-card-new-repo"
-                          to={`/repos/new?namespace=${encodeURIComponent(ns.name)}`}
-                        >
-                          <span className="ns-card-new-repo-icon" aria-hidden>
-                            +
-                          </span>
-                          New repository
-                        </Link>
                         {canDelete && (
                           <button
                             type="button"
-                            className="btn danger small"
+                            className="icon-round branch-delete"
                             disabled={busyNs === ns.name}
+                            aria-label={`Delete namespace ${ns.name}`}
+                            title={busyNs === ns.name ? 'Deleting…' : `Delete ${ns.name}`}
                             onClick={() => void onRemove(ns)}
                           >
-                            {busyNs === ns.name ? 'Deleting…' : 'Delete'}
+                            <ActionTrash2 size={14} aria-hidden />
                           </button>
                         )}
                       </div>

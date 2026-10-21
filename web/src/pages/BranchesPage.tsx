@@ -1,26 +1,27 @@
+import { GitBranch as ActionGitBranch, X as ActionX } from 'lucide-react'
+import { ArrowLeftRight, FolderOpen, History, Tags, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AuthorAvatar } from '../components/AuthorAvatar'
+import { CommitSelector } from '../components/CommitSelector'
 import { Modal } from '../components/Modal'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { confirmDelete } from '../lib/confirmDelete'
-import {
-  pickOtherBranch,
-  resolveDefaultBranch,
-} from '../lib/lastBranch'
+import { resolveDefaultBranch } from '../lib/lastBranch'
 import {
   compareCommits,
   createBranch,
   deleteBranch,
   getCommit,
   listBranches,
-  mergeCommitIntoBranch,
   updateBranch,
 } from '../lib/oxen/api'
 import type { Commit } from '../lib/oxen/types'
 import { OxenApiError } from '../lib/oxen/types'
 import { formatRelativeTime } from '../lib/time'
+
+type SourceType = 'branch' | 'commit'
 
 type BranchMeta = {
   commit?: Commit
@@ -71,14 +72,10 @@ export function BranchesPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [fromName, setFromName] = useState('main')
-  const [updateBranchName, setUpdateBranchName] = useState('')
-  const [commitId, setCommitId] = useState('')
-  const [mergeBranch, setMergeBranch] = useState('main')
-  const [clientCommitId, setClientCommitId] = useState('')
-  const [serverCommitId, setServerCommitId] = useState('')
+  const [sourceType, setSourceType] = useState<SourceType>('branch')
+  const [fromCommit, setFromCommit] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [metaByName, setMetaByName] = useState<Record<string, BranchMeta>>({})
 
@@ -94,12 +91,7 @@ export function BranchesPage() {
 
   useEffect(() => {
     if (branchNames.length === 0) return
-    setFromName((prev) =>
-      branchNames.includes(prev) ? prev : defaultBranch,
-    )
-    setMergeBranch((prev) =>
-      branchNames.includes(prev) ? prev : defaultBranch,
-    )
+    setFromName((prev) => (branchNames.includes(prev) ? prev : defaultBranch))
   }, [branchNames, defaultBranch])
 
   const branchTipsKey = useMemo(
@@ -175,16 +167,12 @@ export function BranchesPage() {
 
   const nameValid = newName.trim().length >= 2
   const nameTaken = branchNames.includes(newName.trim())
-  const canCreate = nameValid && !nameTaken && !busy
-
-  function tipFor(name: string) {
-    return branchList.find((b) => b.name === name)?.commit_id ?? ''
-  }
+  const commitOk = sourceType !== 'commit' || fromCommit.length > 0
+  const canCreate = nameValid && !nameTaken && commitOk && !busy
 
   async function run(action: () => Promise<void>) {
     setBusy(true)
     setError(null)
-    setInfo(null)
     try {
       await action()
       branches.reload()
@@ -205,27 +193,23 @@ export function BranchesPage() {
     e.preventDefault()
     if (!canCreate) return
     void run(async () => {
-      await createBranch(
-        namespace,
-        repo,
-        newName.trim(),
-        fromName.trim() || defaultBranch,
-      )
+      if (sourceType === 'commit') {
+        const name = newName.trim()
+        await createBranch(namespace, repo, name, fromName.trim() || defaultBranch)
+        await updateBranch(namespace, repo, name, fromCommit)
+      } else {
+        await createBranch(
+          namespace,
+          repo,
+          newName.trim(),
+          fromName.trim() || defaultBranch,
+        )
+      }
       setNewName('')
+      setFromCommit('')
+      setSourceType('branch')
+      setFromName(defaultBranch)
       setCreateOpen(false)
-    })
-  }
-
-  function onUpdate(e: FormEvent) {
-    e.preventDefault()
-    void run(async () => {
-      await updateBranch(
-        namespace,
-        repo,
-        updateBranchName.trim(),
-        commitId.trim(),
-      )
-      setCommitId('')
     })
   }
 
@@ -253,14 +237,12 @@ export function BranchesPage() {
         () => setCopied((cur) => (cur === name ? null : cur)),
         1500,
       )
-    } catch {
-      setCopied(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not copy branch name')
     }
   }
 
   const basePath = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
-  const otherForMerge =
-    pickOtherBranch(branchNames, defaultBranch) || defaultBranch
 
   return (
     <main className="page branches-page">
@@ -277,7 +259,7 @@ export function BranchesPage() {
           className="btn primary"
           onClick={() => setCreateOpen(true)}
         >
-          New branch
+          <ActionGitBranch size={14} aria-hidden="true" className="button-label-icon" />New branch
         </button>
       </div>
 
@@ -322,12 +304,10 @@ export function BranchesPage() {
                     const isDefault = b.name === defaultBranch
                     const meta = metaByName[b.name]
                     const ahead = meta?.ahead
-                    const canMerge =
-                      !isDefault && typeof ahead === 'number' && ahead > 0
                     const commit = meta?.commit
-                    const mergeHref = `${basePath}/merge?base=${encodeURIComponent(defaultBranch)}&head=${encodeURIComponent(b.name)}`
                     const compareHref = `${basePath}/compare?base=${encodeURIComponent(defaultBranch)}&head=${encodeURIComponent(b.name)}`
                     const treeHref = `${basePath}/tree/${encodeURIComponent(b.name)}`
+                    const branchHref = `${basePath}/branches/${encodeURIComponent(b.name)}`
 
                     return (
                       <tr
@@ -337,7 +317,7 @@ export function BranchesPage() {
                       >
                         <td className="branches-col-name">
                           <div className="branch-title-row">
-                            <Link className="branch-pill" to={treeHref}>
+                            <Link className="branch-pill" to={branchHref}>
                               <BranchIcon />
                               <span className="mono">{b.name}</span>
                             </Link>
@@ -410,44 +390,48 @@ export function BranchesPage() {
                         </td>
                         <td className="branches-col-actions">
                           <div className="branch-row-actions">
+                            <Link
+                              className="icon-round"
+                              to={`${basePath}/commits?branch=${encodeURIComponent(b.name)}`}
+                              aria-label={`History for ${b.name}`}
+                              title={`History for ${b.name}`}
+                            >
+                              <History size={14} aria-hidden />
+                            </Link>
+                            <Link
+                              className="icon-round"
+                              to={treeHref}
+                              aria-label={`Browse files on ${b.name}`}
+                              title={`Browse files on ${b.name}`}
+                            >
+                              <FolderOpen size={14} aria-hidden />
+                            </Link>
+                            <Link
+                              className="icon-round"
+                              to={`${branchHref}#metadata`}
+                              aria-label={`Metadata for ${b.name}`}
+                              title={`View or edit metadata for ${b.name}`}
+                            >
+                              <Tags size={14} aria-hidden />
+                            </Link>
                             {!isDefault && (
                               <Link
-                                className="btn ghost branch-compare-btn"
+                                className="icon-round"
                                 to={compareHref}
+                                aria-label={`Compare ${b.name} with ${defaultBranch}`}
                                 title={`Compare ${b.name} with ${defaultBranch}`}
                               >
-                                Compare
+                                <ArrowLeftRight size={14} aria-hidden />
                               </Link>
                             )}
-                            {isDefault ? (
-                              <button
-                                type="button"
-                                className="btn ghost branch-mr-btn"
-                                disabled
-                                title="Default branch cannot open a merge request against itself"
-                              >
-                                Create merge request
-                              </button>
-                            ) : (
-                              <Link
-                                className={`btn ghost branch-mr-btn${canMerge ? '' : ' is-disabled'}`}
-                                to={canMerge ? mergeHref : '#'}
-                                aria-disabled={!canMerge}
-                                tabIndex={canMerge ? undefined : -1}
-                                onClick={(e) => {
-                                  if (!canMerge) e.preventDefault()
-                                }}
-                                title={
-                                  canMerge
-                                    ? `Merge ${b.name} into ${defaultBranch}`
-                                    : ahead === 0
-                                      ? `No commits ahead of ${defaultBranch}`
-                                      : 'Checking divergence…'
-                                }
-                              >
-                                Create merge request
-                              </Link>
-                            )}
+                            <Link
+                              className="icon-round"
+                              to={`${branchHref}#power-tools`}
+                              aria-label={`Power tools for ${b.name}`}
+                              title={`Power tools for ${b.name}`}
+                            >
+                              <Wrench size={14} aria-hidden />
+                            </Link>
                             <button
                               type="button"
                               className="icon-round branch-delete"
@@ -500,12 +484,29 @@ export function BranchesPage() {
               <p className="field-hint error-text">Branch already exists</p>
             )}
             <label>
-              Source
+              Source type
+              <select
+                value={sourceType}
+                onChange={(e) => {
+                  setSourceType(e.target.value as SourceType)
+                  setFromCommit('')
+                }}
+                aria-label="Source type"
+              >
+                <option value="branch">Branch</option>
+                <option value="commit">Commit</option>
+              </select>
+            </label>
+            <label>
+              {sourceType === 'commit' ? 'Branch to pick the commit from' : 'Source branch'}
               <select
                 value={fromName}
-                onChange={(e) => setFromName(e.target.value)}
+                onChange={(e) => {
+                  setFromName(e.target.value)
+                  setFromCommit('')
+                }}
                 required
-                aria-label="Source"
+                aria-label={sourceType === 'commit' ? 'Commit branch' : 'Source branch'}
               >
                 {branchNames.length > 0 ? (
                   branchNames.map((name) => (
@@ -518,134 +519,32 @@ export function BranchesPage() {
                 )}
               </select>
             </label>
+            {sourceType === 'commit' && (
+              <CommitSelector
+                namespace={namespace}
+                repo={repo}
+                branch={fromName}
+                value={fromCommit}
+                onChange={setFromCommit}
+                label="Commit"
+              />
+            )}
             <div className="btn-row modal-actions">
               <button
                 type="button"
                 className="btn ghost"
                 onClick={() => setCreateOpen(false)}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
               <button className="btn primary" type="submit" disabled={!canCreate}>
-                Create branch
+                <ActionGitBranch size={14} aria-hidden="true" className="button-label-icon" />Create branch
               </button>
             </div>
           </form>
         </Modal>
       )}
 
-      <details className="panel branches-power-tools">
-        <summary className="section-label" style={{ cursor: 'pointer' }}>
-          Power tools
-        </summary>
-        <p className="muted small">
-          Point a tip at a commit, or use the push-path merge. For branch merges
-          prefer{' '}
-          <Link
-            to={`${basePath}/merge?base=${encodeURIComponent(defaultBranch)}&head=${encodeURIComponent(otherForMerge)}`}
-          >
-            Merge
-          </Link>
-          .
-        </p>
-
-        <h3 className="subhead">Point branch at commit</h3>
-        <form className="form" onSubmit={onUpdate}>
-          <label>
-            Branch
-            <input
-              value={updateBranchName}
-              onChange={(e) => setUpdateBranchName(e.target.value)}
-              placeholder="dev"
-              required
-            />
-          </label>
-          <label>
-            Commit ID
-            <input
-              value={commitId}
-              onChange={(e) => setCommitId(e.target.value)}
-              required
-            />
-          </label>
-          <button className="btn ghost" type="submit" disabled={busy}>
-            Update tip
-          </button>
-        </form>
-
-        <h3 className="subhead">Merge commit into branch</h3>
-        <p className="muted">
-          Push-path merge: combine an incoming (client) commit with the branch
-          tip (server). On conflict the server tip is unchanged.
-        </p>
-        <form
-          className="form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void run(async () => {
-              const server =
-                serverCommitId.trim() || tipFor(mergeBranch.trim())
-              if (!server) throw new Error('Server commit id is required')
-              const res = await mergeCommitIntoBranch(
-                namespace,
-                repo,
-                mergeBranch.trim(),
-                clientCommitId.trim(),
-                server,
-              )
-              setInfo(
-                `Branch tip after merge: ${res.commit.id.slice(0, 12)} — ${res.commit.message}`,
-              )
-              setClientCommitId('')
-            })
-          }}
-        >
-          <label>
-            Branch
-            <select
-              value={mergeBranch}
-              onChange={(e) => {
-                setMergeBranch(e.target.value)
-                setServerCommitId(tipFor(e.target.value))
-              }}
-            >
-              {branchNames.length > 0 ? (
-                branchNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))
-              ) : (
-                <option value={mergeBranch}>{mergeBranch}</option>
-              )}
-            </select>
-          </label>
-          <label>
-            Client commit (incoming)
-            <input
-              value={clientCommitId}
-              onChange={(e) => setClientCommitId(e.target.value)}
-              placeholder="commit id to merge in"
-              required
-              className="mono"
-            />
-          </label>
-          <label>
-            Server commit (branch tip)
-            <input
-              value={serverCommitId || tipFor(mergeBranch)}
-              onChange={(e) => setServerCommitId(e.target.value)}
-              placeholder="defaults to branch tip"
-              className="mono"
-            />
-          </label>
-          <button className="btn" type="submit" disabled={busy}>
-            Merge into branch
-          </button>
-        </form>
-      </details>
-
-      {info && <p className="flash flash-success" role="status">{info}</p>}
       {error && <p className="flash flash-error" role="status">{error}</p>}
     </main>
   )

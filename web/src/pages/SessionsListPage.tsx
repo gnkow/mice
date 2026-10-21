@@ -1,3 +1,4 @@
+import { Monitor as ActionMonitor, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
@@ -76,7 +77,7 @@ export function SessionsListPage() {
                 : undefined
             }
           >
-            New session
+            <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />New session
           </button>
         </div>
       </div>
@@ -121,7 +122,7 @@ export function SessionsListPage() {
                 onClick={() => onFilterChange('')}
                 aria-label="Clear search"
               >
-                Clear
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
               </button>
             ) : null}
           </div>

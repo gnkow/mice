@@ -1,3 +1,4 @@
+import { ChevronLeft as ActionChevronLeft, ChevronRight as ActionChevronRight } from 'lucide-react'
 /** Shared page size for all list pagination in Mice. */
 export const PAGE_SIZE = 12
 
@@ -31,7 +32,7 @@ export function Pagination({
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
       >
-        Previous
+        <ActionChevronLeft size={14} aria-hidden="true" className="button-label-icon" />Previous
       </button>
       <span className="pagination-status muted small">{status}</span>
       <button
@@ -40,7 +41,7 @@ export function Pagination({
         disabled={page >= pageCount}
         onClick={() => onPageChange(page + 1)}
       >
-        Next
+        <ActionChevronRight size={14} aria-hidden="true" className="button-label-icon" />Next
       </button>
     </nav>
   )

@@ -1,3 +1,4 @@
+import { FolderPlus as ActionFolderPlus, X as ActionX } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
@@ -86,10 +87,10 @@ export function NewNamespacePage() {
               type="submit"
               disabled={!canCreate || busy}
             >
-              {busy ? 'Creating…' : 'Create namespace'}
+              <ActionFolderPlus size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Creating…' : 'Create namespace'}
             </button>
             <Link className="btn ghost" to="/namespaces">
-              Cancel
+              <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
             </Link>
           </div>
         </form>

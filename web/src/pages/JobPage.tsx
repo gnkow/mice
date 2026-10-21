@@ -1,3 +1,5 @@
+import { ClipboardList, Files, Terminal, Tags, X as ActionX, type LucideIcon } from 'lucide-react'
+import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
@@ -18,12 +20,13 @@ import {
 } from '../lib/jobs'
 import { formatRelativeTime } from '../lib/time'
 
-type JobTab = 'overview' | 'files' | 'logs'
+type JobTab = 'overview' | 'files' | 'logs' | 'metadata'
 
-const TABS: { id: JobTab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'files', label: 'Files' },
-  { id: 'logs', label: 'Logs' },
+const TABS: { id: JobTab; label: string; icon: LucideIcon }[] = [
+  { id: 'overview', label: 'Overview', icon: ClipboardList },
+  { id: 'files', label: 'Files', icon: Files },
+  { id: 'logs', label: 'Logs', icon: Terminal },
+  { id: 'metadata', label: 'Metadata', icon: Tags },
 ]
 
 function statusClass(s: JobRun['status']) {
@@ -144,7 +147,7 @@ export function JobPage() {
               disabled={cancelling}
               onClick={() => void onCancel()}
             >
-              {cancelling ? 'Cancelling…' : 'Cancel'}
+              <ActionX size={14} aria-hidden="true" className="button-label-icon" />{cancelling ? 'Cancelling…' : 'Cancel'}
             </button>
           ) : null}
         </div>
@@ -231,7 +234,7 @@ export function JobPage() {
             className={tab === t.id ? 'active' : ''}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
+            <t.icon size={14} aria-hidden="true" className="button-label-icon" />{t.label}
             {t.id === 'files'
               ? ` (${job.inputs.length + job.outputs.length})`
               : ''}
@@ -352,6 +355,18 @@ export function JobPage() {
           aria-labelledby="job-tab-logs"
         >
           <pre className="jobs-logs">{logs || '(empty)'}</pre>
+        </section>
+      )}
+
+      {tab === 'metadata' && (
+        <section
+          className="job-page-panel"
+          role="tabpanel"
+          id="job-panel-metadata"
+          aria-labelledby="job-tab-metadata"
+        >
+          <h2 className="job-page-section-label">Metadata</h2>
+          <MetaBody type="job" id={job.id} />
         </section>
       )}
     </div>

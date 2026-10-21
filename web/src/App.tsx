@@ -5,6 +5,7 @@ import { RequireAuthz } from './components/RequireAuthz'
 import { RepoIndexRedirect, RepoLayout } from './components/RepoLayout'
 import { BlobPage } from './pages/BlobPage'
 import { BranchesPage } from './pages/BranchesPage'
+import { BranchPage } from './pages/BranchPage'
 import { CommitsPage } from './pages/CommitsPage'
 import { ComparePage } from './pages/ComparePage'
 import { DataFrameComparePage } from './pages/DataFrameComparePage'
@@ -14,6 +15,7 @@ import { HomePage } from './pages/HomePage'
 import { ImportExportPage } from './pages/ImportExportPage'
 import { LargeUploadPage } from './pages/LargeUploadPage'
 import { AuditPage } from './pages/AuditPage'
+import { MetaPage } from './pages/MetaPage'
 import { CliDevicePage } from './pages/CliDevicePage'
 import { LoginPage } from './pages/LoginPage'
 import { PendingAccessPage } from './pages/PendingAccessPage'
@@ -67,6 +69,8 @@ export default function App() {
               <Route path="sessions" element={<SessionsListPage />} />
               <Route path="sessions/:sessionId" element={<SessionPage />} />
               <Route path="audit" element={<AuditPage />} />
+              <Route path="meta" element={<MetaPage />} />
+              <Route path="meta/search" element={<Navigate to="/meta" replace />} />
               <Route path="docs" element={<DocsPage />} />
               <Route path="n/:namespace" element={<NamespacePage />} />
               <Route
@@ -83,6 +87,7 @@ export default function App() {
                 <Route path="tree/:branch" element={<TreePage />} />
                 <Route path="blob/:branch/*" element={<BlobPage />} />
                 <Route path="branches" element={<BranchesPage />} />
+                <Route path="branches/:branch" element={<BranchPage />} />
                 <Route path="commits" element={<CommitsPage />} />
                 <Route path="commits/:commitId" element={<CommitsPage />} />
                 <Route path="compare" element={<ComparePage />} />

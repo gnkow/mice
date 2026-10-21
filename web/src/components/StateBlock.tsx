@@ -1,3 +1,4 @@
+import { RefreshCw as ActionRefreshCw } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 type Props = {
@@ -33,7 +34,7 @@ export function StateBlock({
         <p className="error">{error}</p>
         {onRetry && (
           <button type="button" className="btn ghost" onClick={onRetry}>
-            Retry
+            <ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />Retry
           </button>
         )}
       </div>

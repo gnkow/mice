@@ -1,3 +1,4 @@
+import { Check as ActionCheck, Search as ActionSearch, X as ActionX } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
@@ -149,7 +150,7 @@ export function CliDevicePage() {
           </label>
           <div className="btn-row">
             <button className="btn" type="submit" disabled={!codeInput.trim()}>
-              Look up
+              <ActionSearch size={14} aria-hidden="true" className="button-label-icon" />Look up
             </button>
           </div>
         </form>
@@ -178,7 +179,7 @@ export function CliDevicePage() {
                   disabled={busy}
                   onClick={() => void onApprove()}
                 >
-                  Approve
+                  <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Approve
                 </button>
                 <button
                   type="button"
@@ -186,7 +187,7 @@ export function CliDevicePage() {
                   disabled={busy}
                   onClick={() => void onDeny()}
                 >
-                  Deny
+                  <ActionX size={14} aria-hidden="true" className="button-label-icon" />Deny
                 </button>
               </div>
             )}

@@ -21,6 +21,8 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['workspace.file.delete', 'Workspace file deleted', 'Workspaces'],
   ['workspace.other', 'Workspace changed', 'Workspaces'],
   ['job.submit', 'Job submitted', 'Jobs'],
+  ['meta.set', 'Metadata updated', 'Metadata'],
+  ['meta.delete', 'Metadata removed', 'Metadata'],
   ['job.complete', 'Job completed', 'Jobs'],
   ['job.fail', 'Job failed', 'Jobs'],
   ['job.cancel', 'Job cancelled', 'Jobs'],

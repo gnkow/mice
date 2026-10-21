@@ -66,8 +66,8 @@ export function CloneBox({ namespace, repo }: Props) {
               copied === 'login' ? 'Copied login command' : 'Copy login command'
             }
           >
+            <Copy size={16} aria-hidden />
             <span className="clone-copy-label">{copied === 'login' ? 'Copied' : ''}</span>
-            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">
@@ -91,8 +91,8 @@ export function CloneBox({ namespace, repo }: Props) {
               copied === 'oxen' ? 'Copied clone command' : 'Copy clone command'
             }
           >
+            <Copy size={16} aria-hidden />
             <span className="clone-copy-label">{copied === 'oxen' ? 'Copied' : ''}</span>
-            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">
@@ -114,10 +114,10 @@ export function CloneBox({ namespace, repo }: Props) {
                 : 'Copy Python snippet'
             }
           >
+            <Copy size={16} aria-hidden />
             <span className="clone-copy-label">
               {copied === 'python' ? 'Copied' : ''}
             </span>
-            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">
@@ -137,8 +137,8 @@ export function CloneBox({ namespace, repo }: Props) {
               copied === 'auth' ? 'Copied auth command' : 'Copy auth command'
             }
           >
+            <Copy size={16} aria-hidden />
             <span className="clone-copy-label">{copied === 'auth' ? 'Copied' : ''}</span>
-            <Copy size={16} />
           </button>
         </div>
         <pre className="clone-code mono">

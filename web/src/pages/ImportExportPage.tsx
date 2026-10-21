@@ -1,3 +1,4 @@
+import { Download as ActionDownload, Import as ActionImport, Pencil as ActionPencil, Upload as ActionUpload } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
@@ -143,7 +144,7 @@ export function ImportExportPage() {
         className="linkish"
         onClick={() => setEditMessage(true)}
       >
-        Edit message
+        <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />Edit message
       </button>
     </p>
   )
@@ -166,7 +167,7 @@ export function ImportExportPage() {
             className="btn ghost"
             to={`${base}/tree/${encodeURIComponent(branch)}?manage=upload`}
           >
-            Upload
+            <ActionUpload size={14} aria-hidden="true" className="button-label-icon" />Upload
           </Link>
           <label className="branch-pick">
             Branch
@@ -193,7 +194,7 @@ export function ImportExportPage() {
           aria-selected={tab === 'export'}
           onClick={() => setTab('export')}
         >
-          Export
+          <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />Export
         </button>
         <button
           type="button"
@@ -202,7 +203,7 @@ export function ImportExportPage() {
           aria-selected={tab === 'import'}
           onClick={() => setTab('import')}
         >
-          Import
+          <ActionImport size={14} aria-hidden="true" className="button-label-icon" />Import
         </button>
       </div>
 
@@ -220,7 +221,7 @@ export function ImportExportPage() {
                 />
               </label>
               <button className="btn" type="submit" disabled={busy}>
-                Download zip
+                <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />Download zip
               </button>
             </form>
           </section>
@@ -246,7 +247,7 @@ export function ImportExportPage() {
                 />
               </label>
               <button className="btn" type="submit" disabled={busy}>
-                Download .tgz
+                <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />Download .tgz
               </button>
             </form>
           </details>
@@ -299,7 +300,7 @@ export function ImportExportPage() {
               </details>
               {messageField}
               <button className="btn" type="submit" disabled={busy}>
-                Import URL
+                <ActionImport size={14} aria-hidden="true" className="button-label-icon" />Import URL
               </button>
             </form>
           </section>
@@ -326,7 +327,7 @@ export function ImportExportPage() {
               </label>
               {messageField}
               <button className="btn" type="submit" disabled={busy}>
-                Upload & unpack
+                <ActionUpload size={14} aria-hidden="true" className="button-label-icon" />Upload & unpack
               </button>
             </form>
           </section>

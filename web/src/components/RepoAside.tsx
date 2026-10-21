@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
 import {
   getRepository,
@@ -19,7 +19,6 @@ import { useEffect, useState } from 'react'
 
 export function RepoAside() {
   const { namespace = '', repo = '' } = useParams()
-  const filesHref = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/tree/${encodeURIComponent(lastBranch(namespace, repo, 'main'))}`
   const [starred, setStarred] = useState(
     () => loadRepoSocial(namespace, repo).star,
   )
@@ -211,7 +210,7 @@ export function RepoAside() {
 
       {repository && (repository.data_types?.length ?? 0) > 0 && (
         <section className="repo-aside-panel hub-aside-card">
-          <h3 className="hub-aside-heading">Repository contents</h3>
+          <h3 className="hub-aside-heading">Contents</h3>
           <div className="composition-bar" aria-hidden>
             {(() => {
               const total = repository.data_types.reduce(
@@ -284,11 +283,6 @@ export function RepoAside() {
             access controls.
           </p>
         )}
-        <p>
-          <Link className="linkish" to={filesHref}>
-            Browse files →
-          </Link>
-        </p>
       </section>
     </aside>
   )

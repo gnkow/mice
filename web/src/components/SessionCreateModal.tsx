@@ -1,3 +1,4 @@
+import { Layers as ActionLayers, Monitor as ActionMonitor, Trash2 as ActionTrash2, X as ActionX } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Modal } from './Modal'
@@ -175,7 +176,7 @@ export function SessionCreateModal({
               disabled={creating || workspaces.length === 0}
               onClick={addWorkspaceMount}
             >
-              + Add workspace
+              <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />Add workspace
             </button>
           </div>
           {drafts.length === 0 ? (
@@ -234,7 +235,7 @@ export function SessionCreateModal({
                     disabled={creating}
                     onClick={() => removeDraft(d.key)}
                   >
-                    Remove
+                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                   </button>
                 </div>
               ))}
@@ -244,10 +245,10 @@ export function SessionCreateModal({
 
         <div className="btn-row modal-actions">
           <button type="button" className="btn ghost" onClick={onClose}>
-            Cancel
+            <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
           </button>
           <button className="btn primary" type="submit" disabled={creating}>
-            {creating ? 'Creating…' : 'Create session'}
+            <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />{creating ? 'Creating…' : 'Create session'}
           </button>
         </div>
         {error && <p className="error">{error}</p>}

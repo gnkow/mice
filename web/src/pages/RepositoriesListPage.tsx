@@ -1,3 +1,4 @@
+import { FolderGit2 as ActionFolderGit2, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
@@ -51,7 +52,7 @@ export function RepositoriesListPage() {
         </div>
         <div className="btn-row">
           <Link className="btn primary" to="/repos/new">
-            + New repository
+            <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />New repository
           </Link>
         </div>
       </div>
@@ -94,7 +95,7 @@ export function RepositoriesListPage() {
                 onClick={() => onFilterChange('')}
                 aria-label="Clear search"
               >
-                Clear
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
               </button>
             ) : null}
           </div>
@@ -123,7 +124,12 @@ export function RepositoriesListPage() {
             <ul className="card-list">
               {slice.items.map((p) => (
                 <li key={`${p.namespace}/${p.name}`}>
-                  <RepoSummaryCard namespace={p.namespace} name={p.name} />
+                  <RepoSummaryCard
+                    namespace={p.namespace}
+                    name={p.name}
+                    showNamespace
+                    onDeleted={() => state.reload()}
+                  />
                 </li>
               ))}
             </ul>

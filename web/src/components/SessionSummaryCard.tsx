@@ -9,6 +9,7 @@ import {
   statusLabel,
   type DesktopSession,
 } from '../lib/sessions'
+import { MetaPills } from './MetaPills'
 import { formatRelativeTime } from '../lib/time'
 
 type Props = {
@@ -78,6 +79,8 @@ export function SessionSummaryCard({ session }: Props) {
             )}
           </span>
         </span>
+
+        <MetaPills type="session" id={session.id} />
 
         <span className="jobs-card-footer muted">
           <span title={session.created_at}>

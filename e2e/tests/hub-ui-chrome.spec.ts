@@ -44,8 +44,8 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
       mainRow.getByRole('button', { name: 'Cannot delete default branch' }),
     ).toBeDisabled()
     await expect(
-      mainRow.getByRole('button', { name: 'Create merge request' }),
-    ).toBeDisabled()
+      mainRow.getByRole('link', { name: 'Power tools for main' }),
+    ).toBeVisible()
 
     const featureRow = page.locator('tr[data-branch="feature"]')
     await expect(featureRow).toBeVisible()
@@ -55,14 +55,8 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
       })
       .toMatch(/^[1-9]\d*$/)
 
-    const mr = featureRow.getByRole('link', { name: 'Create merge request' })
-    await expect(mr).toBeVisible({ timeout: 30_000 })
-    await expect(mr).toHaveAttribute(
-      'href',
-      new RegExp(`/merge\\?base=main&head=feature`),
-    )
     await expect(
-      featureRow.getByRole('link', { name: 'Compare', exact: true }),
+      featureRow.getByRole('link', { name: 'Compare feature with main', exact: true }),
     ).toHaveAttribute(
       'href',
       new RegExp(`/compare\\?base=main&head=feature`),
@@ -92,32 +86,6 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     await expect(
       page.getByRole('button', { name: 'Copied feature' }),
     ).toBeVisible({ timeout: 5_000 })
-  })
-
-  test('branches: identical tip disables merge request', async ({
-    page,
-    seededRepo,
-  }) => {
-    await createBranch(
-      seededRepo.namespace,
-      seededRepo.repo,
-      'same-tip',
-      'main',
-    )
-
-    await page.goto(repoPath(seededRepo, '/branches'))
-    const row = page.locator('tr[data-branch="same-tip"]')
-    await expect(row).toBeVisible()
-    await expect
-      .poll(async () => row.locator('.branches-col-ahead').innerText(), {
-        timeout: 30_000,
-      })
-      .toBe('0')
-
-    const mr = row.getByRole('link', { name: 'Create merge request' })
-    await expect(mr).toHaveAttribute('aria-disabled', 'true')
-    await mr.click({ force: true })
-    await expect(page).toHaveURL(/\/branches/)
   })
 
   test('merge: range chrome, swap, view diff, empty single-branch', async ({
@@ -226,17 +194,17 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     ).toBeVisible()
 
     await expect(page.locator(`tr[data-workspace="${a.id}"]`)).toBeVisible()
-    await expect(page.getByRole('link', { name: 'alpha-ws' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'beta-ws' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'alpha-ws', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'beta-ws', exact: true })).toBeVisible()
 
     await page.getByPlaceholder('Filter workspaces…').fill('alpha')
-    await expect(page.getByRole('link', { name: 'alpha-ws' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'beta-ws' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'alpha-ws', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'beta-ws', exact: true })).toHaveCount(0)
     await page.getByPlaceholder('Filter workspaces…').fill('')
 
     await page
       .locator(`tr[data-workspace="${a.id}"]`)
-      .getByRole('link', { name: 'Open' })
+      .getByRole('link', { name: 'alpha-ws', exact: true })
       .click()
     await expect(page).toHaveURL(new RegExp(`/workspaces/${a.id}$`))
     await expect(page.getByRole('heading', { name: 'alpha-ws' })).toBeVisible()
@@ -249,7 +217,7 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
       .getByRole('button', { name: 'Delete workspace beta-ws' })
       .click()
     await acceptConfirmModal(page, 'beta-ws')
-    await expect(page.getByRole('link', { name: 'beta-ws' })).toHaveCount(0, {
+    await expect(page.getByRole('link', { name: 'beta-ws', exact: true })).toHaveCount(0, {
       timeout: 30_000,
     })
 
@@ -276,7 +244,6 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     )
     await expect(page.getByRole('heading', { name: 'staged-ui' })).toBeVisible()
 
-    await page.getByRole('tab', { name: 'Stage' }).click()
     const uploadSection = page.locator('section', { hasText: 'Upload file' })
     await uploadSection.locator('input[name="file"]').setInputFiles({
       name: 'ui-stage.txt',
@@ -286,9 +253,8 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     await uploadSection.getByRole('button', { name: 'Stage upload' }).click()
 
     await expect(
-      page.getByText('1 staged change', { exact: true }),
+      page.getByRole('tab', { name: 'Changes (1)', exact: true }),
     ).toBeVisible({ timeout: 30_000 })
-    await page.getByRole('button', { name: 'Jump to commit' }).click()
     await expect(
       page.locator('#workspace-commit').getByText(/Mergeable into main/i),
     ).toBeVisible({ timeout: 30_000 })

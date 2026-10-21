@@ -1,3 +1,4 @@
+import { Check as ActionCheck, Copy as ActionCopy, KeyRound as ActionKeyRound, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
@@ -205,7 +206,7 @@ mice push
                   type="submit"
                   disabled={tokenBusy}
                 >
-                  Create token
+                  <ActionKeyRound size={14} aria-hidden="true" className="button-label-icon" />Create token
                 </button>
               </div>
             </div>
@@ -220,7 +221,7 @@ mice push
                 className="btn ghost"
                 onClick={() => void navigator.clipboard.writeText(newToken)}
               >
-                Copy token
+                <ActionCopy size={14} aria-hidden="true" className="button-label-icon" />Copy token
               </button>
             </div>
           )}
@@ -248,7 +249,7 @@ mice push
                     disabled={tokenBusy}
                     onClick={() => void onRevoke(t.id)}
                   >
-                    Revoke
+                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Revoke
                   </button>
                 </li>
               ))}
@@ -288,10 +289,10 @@ mice push
             </div>
             <div className="btn-row ns-settings-actions">
               <button className="btn primary" type="submit">
-                Save
+                <ActionSave size={14} aria-hidden="true" className="button-label-icon" />Save
               </button>
               <button className="btn ghost" type="button" onClick={onTest}>
-                Test connection
+                <ActionPlug size={14} aria-hidden="true" className="button-label-icon" />Test connection
               </button>
             </div>
             {saved && <p className="flash flash-success" role="status">Saved.</p>}
@@ -446,7 +447,7 @@ function AccessRequestsSection({
                   setApprovePerm('')
                 }}
               >
-                Approve
+                <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Approve
               </button>
               <button
                 type="button"
@@ -454,7 +455,7 @@ function AccessRequestsSection({
                 disabled={busy}
                 onClick={() => void onDeny(r)}
               >
-                Deny
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Deny
               </button>
             </li>
           ))}
@@ -516,7 +517,7 @@ function AccessRequestsSection({
             )}
             <div className="ns-member-form-actions">
               <button className="btn primary" type="submit" disabled={busy}>
-                Confirm
+                <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Confirm
               </button>
               <button
                 className="btn ghost"
@@ -524,7 +525,7 @@ function AccessRequestsSection({
                 disabled={busy}
                 onClick={() => setApproveId(null)}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
             </div>
           </div>
@@ -686,7 +687,7 @@ function InstanceAdminSection() {
                   disabled={busy}
                   onClick={() => void onRemoveAdmin(a.sub, a.iss)}
                 >
-                  Remove
+                  <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                 </button>
               </li>
             ))}
@@ -707,7 +708,7 @@ function InstanceAdminSection() {
               />
               <div className="ns-member-form-actions">
                 <button className="btn primary" type="submit" disabled={busy}>
-                  Add admin
+                  <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add admin
                 </button>
               </div>
             </div>
@@ -750,7 +751,7 @@ function InstanceAdminSection() {
                       ).then(() => state.reload())
                     }
                   >
-                    Clear
+                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
                   </button>
                 </li>
               ))}
@@ -794,7 +795,7 @@ function InstanceAdminSection() {
             </fieldset>
             <div className="ns-member-form-actions">
               <button className="btn primary" type="submit" disabled={busy}>
-                Set permissions
+                <ActionSettings size={14} aria-hidden="true" className="button-label-icon" />Set permissions
               </button>
             </div>
           </form>

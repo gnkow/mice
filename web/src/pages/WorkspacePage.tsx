@@ -1,5 +1,9 @@
+import { FileText as ActionFileText, GitCommitHorizontal as ActionGitCommitHorizontal, Monitor as ActionMonitor, RefreshCw as ActionRefreshCw, Search as ActionSearch, Trash2 as ActionTrash2, Undo2 as ActionUndo2, Upload as ActionUpload, X as ActionX } from 'lucide-react'
+import { FileDiff, Tags, Terminal, type LucideIcon } from 'lucide-react'
+import { MetaBody } from '../components/MetaPanel'
+import { SessionCreateModal } from '../components/SessionCreateModal'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { confirmDelete } from '../lib/confirmDelete'
@@ -26,15 +30,20 @@ import {
 } from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
 
-type WorkspaceTab = 'changes' | 'stage' | 'commit' | 'sessions'
+type WorkspaceTab = 'changes' | 'jobs' | 'sessions' | 'metadata'
 type StagedKind = 'added' | 'modified' | 'removed'
 
-const TABS: { id: WorkspaceTab; label: string }[] = [
-  { id: 'changes', label: 'Changes' },
-  { id: 'stage', label: 'Stage' },
-  { id: 'commit', label: 'Commit' },
-  { id: 'sessions', label: 'Sessions' },
+const TABS: { id: WorkspaceTab; label: string; icon: LucideIcon }[] = [
+  { id: 'changes', label: 'Changes', icon: FileDiff },
+  { id: 'jobs', label: 'Jobs', icon: Terminal },
+  { id: 'sessions', label: 'Sessions', icon: ActionMonitor },
+  { id: 'metadata', label: 'Metadata', icon: Tags },
 ]
+
+function tabFromHash(hash: string): WorkspaceTab {
+  const id = hash.replace(/^#/, '')
+  return TABS.some((t) => t.id === id) ? (id as WorkspaceTab) : 'changes'
+}
 
 const STAGED_KIND_LABEL: Record<StagedKind, string> = {
   added: 'Added',
@@ -99,7 +108,7 @@ function EntryList({
                     disabled={busy}
                     onClick={() => onPreview(e.filename)}
                   >
-                    Preview
+                    <ActionFileText size={14} aria-hidden="true" className="button-label-icon" />Preview
                   </button>
                 )}
                 <button
@@ -108,7 +117,7 @@ function EntryList({
                   disabled={busy}
                   onClick={() => onUnstage(e.filename)}
                 >
-                  Unstage
+                  <ActionUndo2 size={14} aria-hidden="true" className="button-label-icon" />Unstage
                 </button>
               </span>
             </li>
@@ -131,7 +140,12 @@ export function WorkspacePage() {
 
   const [changesPath, setChangesPath] = useState('')
   const [changesPathApplied, setChangesPathApplied] = useState('')
-  const [tab, setTab] = useState<WorkspaceTab>('changes')
+  const { hash } = useLocation()
+  const [tab, setTab] = useState<WorkspaceTab>(() => tabFromHash(hash))
+
+  useEffect(() => {
+    setTab(tabFromHash(hash))
+  }, [hash])
 
   const changes = useAsync(
     (signal) =>
@@ -372,24 +386,9 @@ export function WorkspacePage() {
           disabled={busy}
           onClick={() => void onDelete()}
         >
-          Delete
+          <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete
         </button>
       </div>
-
-      {stagedCount > 0 && (
-        <div className="workspace-summary" aria-live="polite">
-          <span className="merge-status-pill is-ok">
-            {stagedCount} staged change{stagedCount === 1 ? '' : 's'}
-          </span>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => setTab('commit')}
-          >
-            Jump to commit
-          </button>
-        </div>
-      )}
 
       <div className="tab-bar" role="tablist" aria-label="Workspace views">
         {TABS.map((t) => (
@@ -403,7 +402,7 @@ export function WorkspacePage() {
             className={tab === t.id ? 'active' : ''}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
+            <t.icon size={14} aria-hidden="true" className="button-label-icon" />{t.label}
             {t.id === 'changes' && stagedCount > 0 ? ` (${stagedCount})` : ''}
           </button>
         ))}
@@ -414,7 +413,7 @@ export function WorkspacePage() {
 
       {tab === 'changes' && (
         <div
-          className="workspace-page-panel"
+          className="workspace-page-panel workspace-changes-panel"
           role="tabpanel"
           id="workspace-panel-changes"
           aria-labelledby="workspace-tab-changes"
@@ -447,7 +446,7 @@ export function WorkspacePage() {
                     placeholder="Filter by directory, e.g. notes"
                   />
                   <button type="submit" className="btn ghost" disabled={busy}>
-                    Filter
+                    <ActionSearch size={14} aria-hidden="true" className="button-label-icon" />Filter
                   </button>
                   {changesPathApplied && (
                     <button
@@ -459,7 +458,7 @@ export function WorkspacePage() {
                         setChangesPathApplied('')
                       }}
                     >
-                      Clear
+                      <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
                     </button>
                   )}
                 </form>
@@ -512,7 +511,7 @@ export function WorkspacePage() {
                     setPreviewText(null)
                   }}
                 >
-                  Close
+                  <ActionX size={14} aria-hidden="true" className="button-label-icon" />Close
                 </button>
               </div>
               {previewText == null ? (
@@ -522,16 +521,6 @@ export function WorkspacePage() {
               )}
             </section>
           )}
-        </div>
-      )}
-
-      {tab === 'stage' && (
-        <div
-          className="workspace-page-panel"
-          role="tabpanel"
-          id="workspace-panel-stage"
-          aria-labelledby="workspace-tab-stage"
-        >
           <div className="grid-2">
             <section className="panel">
               <h2 className="section-label">Upload file</h2>
@@ -549,7 +538,7 @@ export function WorkspacePage() {
                   <input name="file" type="file" required />
                 </label>
                 <button className="btn primary" type="submit" disabled={busy}>
-                  Stage upload
+                  <ActionUpload size={14} aria-hidden="true" className="button-label-icon" />Stage upload
                 </button>
               </form>
             </section>
@@ -567,21 +556,11 @@ export function WorkspacePage() {
                   />
                 </label>
                 <button className="btn ghost" type="submit" disabled={busy}>
-                  Stage delete
+                  <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Stage delete
                 </button>
               </form>
             </section>
           </div>
-        </div>
-      )}
-
-      {tab === 'commit' && (
-        <div
-          className="workspace-page-panel"
-          role="tabpanel"
-          id="workspace-panel-commit"
-          aria-labelledby="workspace-tab-commit"
-        >
           <section id="workspace-commit" className="panel">
             <h2 className="section-label">Commit & merge into branch</h2>
             <StateBlock
@@ -637,10 +616,24 @@ export function WorkspacePage() {
                   type="submit"
                   disabled={busy || (mergeable.kind === 'ok' && !mergeOk)}
                 >
-                  Commit workspace
+                  <ActionGitCommitHorizontal size={14} aria-hidden="true" className="button-label-icon" />Commit workspace
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {tab === 'jobs' && (
+        <div
+          className="workspace-page-panel"
+          role="tabpanel"
+          id="workspace-panel-jobs"
+          aria-labelledby="workspace-tab-jobs"
+        >
+          <section className="panel">
+            <h2 className="section-label">Jobs</h2>
+            <p className="muted">Workspace jobs are not implemented yet.</p>
           </section>
         </div>
       )}
@@ -659,6 +652,23 @@ export function WorkspacePage() {
           />
         </div>
       )}
+
+      {tab === 'metadata' && (
+        <div
+          className="workspace-page-panel"
+          role="tabpanel"
+          id="workspace-panel-metadata"
+          aria-labelledby="workspace-tab-metadata"
+        >
+          <section className="panel">
+            <h2 className="section-label">Metadata</h2>
+            <MetaBody
+              type="workspace"
+              id={`${namespace}/${repo}!${workspaceId}`}
+            />
+          </section>
+        </div>
+      )}
     </main>
   )
 }
@@ -671,6 +681,7 @@ type SessionsTabProps = {
 
 function SessionsTab({ namespace, repo, workspaceId }: SessionsTabProps) {
   const sessions = useAsync((signal) => listSessions(signal), [])
+  const [createOpen, setCreateOpen] = useState(false)
   const sessionsList = sessions.kind === 'ok' ? sessions.data.sessions : []
 
   // Find sessions that mount this workspace
@@ -685,6 +696,25 @@ function SessionsTab({ namespace, repo, workspaceId }: SessionsTabProps) {
       )
     })
   }, [sessionsList, namespace, repo, workspaceId])
+
+  const createButton = (
+    <div className="btn-row">
+      <button
+        type="button"
+        className="btn primary"
+        onClick={() => setCreateOpen(true)}
+      >
+        <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />New session
+      </button>
+    </div>
+  )
+  const createModal = createOpen && (
+    <SessionCreateModal
+      onClose={() => setCreateOpen(false)}
+      preselectedWorkspace={{ namespace, repo, workspaceId }}
+      filterRepo={{ namespace, repo }}
+    />
+  )
 
   if (sessions.kind === 'loading') {
     return <StateBlock loading>{null}</StateBlock>
@@ -704,19 +734,16 @@ function SessionsTab({ namespace, repo, workspaceId }: SessionsTabProps) {
         <p className="muted">
           No sessions are currently mounting this workspace.
         </p>
-        <p className="muted small">
-          Create a session from the{' '}
-          <Link to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/workspaces`}>
-            workspaces list
-          </Link>{' '}
-          to start working with this workspace in a desktop environment.
-        </p>
+        {createButton}
+        {createModal}
       </div>
     )
   }
 
   return (
     <div className="sessions-sync-panel">
+      {createButton}
+      {createModal}
       <p className="muted small workspace-sessions-hint">
         {mountedSessions.length} session{mountedSessions.length === 1 ? '' : 's'}{' '}
         mounting this workspace. Sync changes from sessions back to this workspace.
@@ -860,7 +887,7 @@ function SessionMountDiff({
             disabled={syncing || selectedFiles.size === 0}
             onClick={() => void onSync()}
           >
-            {syncing
+            <ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />{syncing
               ? 'Syncing…'
               : `Sync ${selectedFiles.size > 0 ? `(${selectedFiles.size})` : ''}`}
           </button>

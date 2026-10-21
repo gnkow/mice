@@ -1,3 +1,4 @@
+import { Download as ActionDownload, Search as ActionSearch, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
@@ -199,7 +200,7 @@ export function AuditPage() {
           disabled={exporting}
           title="Download the events matching the applied filters"
         >
-          {exporting ? 'Exporting…' : 'Export CSV'}
+          <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />{exporting ? 'Exporting…' : 'Export CSV'}
         </button>
       </div>
       {exportError && <p className="flash flash-error">{exportError}</p>}
@@ -278,10 +279,10 @@ export function AuditPage() {
         />
         <div className="audit-filter-actions">
           <button type="submit" className="btn primary">
-            Filter
+            <ActionSearch size={14} aria-hidden="true" className="button-label-icon" />Filter
           </button>
           <button type="button" className="btn ghost" onClick={clearFilters}>
-            Clear
+            <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
           </button>
         </div>
       </form>

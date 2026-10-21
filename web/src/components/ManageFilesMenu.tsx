@@ -1,3 +1,4 @@
+import { Download as ActionDownload, FileArchive as ActionFileArchive, Files as ActionFiles, FolderPlus as ActionFolderPlus, Import as ActionImport, Link as ActionLink, Plus as ActionPlus, Upload as ActionUpload, X as ActionX } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
@@ -252,19 +253,19 @@ export function ManageFilesMenu({
   return (
     <>
       <details className="manage-files" ref={detailsRef}>
-        <summary className="btn ghost">Manage Files</summary>
+        <summary className="btn ghost"><ActionFiles size={14} aria-hidden="true" className="button-label-icon" />Manage Files</summary>
         <div className="manage-files-menu">
           <button type="button" onClick={() => open('upload')}>
-            Upload
+            <ActionUpload size={14} aria-hidden="true" className="button-label-icon" />Upload
           </button>
           <button type="button" onClick={() => open('folder')}>
-            Create folder
+            <ActionFolderPlus size={14} aria-hidden="true" className="button-label-icon" />Create folder
           </button>
           <button type="button" onClick={() => open('import')}>
-            Import
+            <ActionImport size={14} aria-hidden="true" className="button-label-icon" />Import
           </button>
           <button type="button" onClick={() => open('export')}>
-            Export
+            <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />Export
           </button>
         </div>
       </details>
@@ -360,10 +361,10 @@ export function ManageFilesMenu({
                 onClick={close}
                 disabled={busy}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
               <button className="btn" type="submit" disabled={busy}>
-                {busy ? 'Uploading…' : 'Upload'}
+                <ActionUpload size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Uploading…' : 'Upload'}
               </button>
             </div>
           </form>
@@ -405,10 +406,10 @@ export function ManageFilesMenu({
                 onClick={close}
                 disabled={busy}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
               <button className="btn" type="submit" disabled={busy}>
-                {busy ? 'Creating…' : 'Create'}
+                <ActionPlus size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Creating…' : 'Create'}
               </button>
             </div>
           </form>
@@ -426,7 +427,7 @@ export function ManageFilesMenu({
               aria-selected={importMode === 'url'}
               onClick={() => setImportMode('url')}
             >
-              From URL
+              <ActionLink size={14} aria-hidden="true" className="button-label-icon" />From URL
             </button>
             <button
               type="button"
@@ -435,7 +436,7 @@ export function ManageFilesMenu({
               aria-selected={importMode === 'zip'}
               onClick={() => setImportMode('zip')}
             >
-              Zip archive
+              <ActionFileArchive size={14} aria-hidden="true" className="button-label-icon" />Zip archive
             </button>
           </div>
           {importMode === 'url' ? (
@@ -476,10 +477,10 @@ export function ManageFilesMenu({
                   onClick={close}
                   disabled={busy}
                 >
-                  Cancel
+                  <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
                 </button>
                 <button className="btn" type="submit" disabled={busy}>
-                  {busy ? 'Importing…' : 'Import'}
+                  <ActionImport size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Importing…' : 'Import'}
                 </button>
               </div>
             </form>
@@ -520,10 +521,10 @@ export function ManageFilesMenu({
                   onClick={close}
                   disabled={busy}
                 >
-                  Cancel
+                  <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
                 </button>
                 <button className="btn" type="submit" disabled={busy}>
-                  {busy ? 'Unpacking…' : 'Upload & unpack'}
+                  <ActionUpload size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Unpacking…' : 'Upload & unpack'}
                 </button>
               </div>
             </form>
@@ -554,10 +555,10 @@ export function ManageFilesMenu({
                 onClick={close}
                 disabled={busy}
               >
-                Cancel
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
               <button className="btn" type="submit" disabled={busy}>
-                {busy ? 'Exporting…' : 'Download zip'}
+                <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Exporting…' : 'Download zip'}
               </button>
             </div>
           </form>

@@ -1,3 +1,4 @@
+import { ArrowLeftRight as ActionArrowLeftRight, ChevronLeft as ActionChevronLeft, ChevronRight as ActionChevronRight, RefreshCw as ActionRefreshCw, Settings as ActionSettings, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
@@ -209,7 +210,7 @@ export function DataFrameComparePage() {
           </p>
         </div>
         <Link className="btn ghost" to={`${base}/compare`}>
-          File compare
+          <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />File compare
         </Link>
       </div>
 
@@ -287,11 +288,11 @@ export function DataFrameComparePage() {
         </label>
         <div className="btn-row">
           <button type="submit" className="btn" disabled={busy}>
-            {busy ? 'Working…' : 'Compare'}
+            <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Working…' : 'Compare'}
           </button>
           {compareId && (
             <details className="more-actions">
-              <summary className="btn ghost">Advanced</summary>
+              <summary className="btn ghost"><ActionSettings size={14} aria-hidden="true" className="button-label-icon" />Advanced</summary>
               <div className="more-actions-body">
                 <button
                   type="button"
@@ -299,7 +300,7 @@ export function DataFrameComparePage() {
                   disabled={busy}
                   onClick={() => void runCompare('update')}
                 >
-                  Update
+                  <ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />Update
                 </button>
                 <button
                   type="button"
@@ -307,7 +308,7 @@ export function DataFrameComparePage() {
                   disabled={busy}
                   onClick={() => void runCompare('reload')}
                 >
-                  Reload
+                  <ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />Reload
                 </button>
               </div>
             </details>
@@ -325,7 +326,7 @@ export function DataFrameComparePage() {
               disabled={busy}
               onClick={() => void onDelete()}
             >
-              Delete compare
+              <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete compare
             </button>
           </div>
           {compareId && (
@@ -421,7 +422,7 @@ export function DataFrameComparePage() {
                   )
                 }}
               >
-                Previous
+                <ActionChevronLeft size={14} aria-hidden="true" className="button-label-icon" />Previous
               </button>
               <button
                 type="button"
@@ -439,7 +440,7 @@ export function DataFrameComparePage() {
                   )
                 }}
               >
-                Next
+                <ActionChevronRight size={14} aria-hidden="true" className="button-label-icon" />Next
               </button>
             </div>
           )}

@@ -1,3 +1,4 @@
+import { FolderGit2 as ActionFolderGit2, FolderPlus as ActionFolderPlus, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
 import {
@@ -173,7 +174,7 @@ export function CustomRolesSection({ namespace }: Props) {
                         )
                     }
                   >
-                    Delete
+                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete
                   </button>
                 </li>
               ))}
@@ -233,7 +234,7 @@ export function CustomRolesSection({ namespace }: Props) {
             </fieldset>
             <div className="ns-member-form-actions">
               <button className="btn primary" type="submit" disabled={busy}>
-                Create namespace role
+                <ActionFolderPlus size={14} aria-hidden="true" className="button-label-icon" />Create namespace role
               </button>
             </div>
           </form>
@@ -284,7 +285,7 @@ export function CustomRolesSection({ namespace }: Props) {
                         )
                     }
                   >
-                    Delete
+                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete
                   </button>
                 </li>
               ))}
@@ -360,7 +361,7 @@ export function CustomRolesSection({ namespace }: Props) {
             </fieldset>
             <div className="ns-member-form-actions">
               <button className="btn primary" type="submit" disabled={busy}>
-                Create repository role
+                <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />Create repository role
               </button>
             </div>
           </form>

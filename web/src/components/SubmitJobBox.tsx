@@ -1,3 +1,4 @@
+import { Laptop as ActionLaptop, Server as ActionServer } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Copy } from 'lucide-react'
 import { fetchCliInfo, viteOxenRemote } from '../lib/tokens'
@@ -187,7 +188,7 @@ export function SubmitJobBox({
             setCopied(null)
           }}
         >
-          Local
+          <ActionLaptop size={14} aria-hidden="true" className="button-label-icon" />Local
         </button>
         <button
           type="button"
@@ -199,7 +200,7 @@ export function SubmitJobBox({
             setCopied(null)
           }}
         >
-          Cluster
+          <ActionServer size={14} aria-hidden="true" className="button-label-icon" />Cluster
         </button>
       </div>
 
@@ -235,10 +236,10 @@ export function SubmitJobBox({
                   : `Copy ${s.title} commands`
               }
             >
+              <Copy size={16} aria-hidden />
               <span className="clone-copy-label">
                 {copied === s.key ? 'Copied' : ''}
               </span>
-              <Copy size={16} />
             </button>
           </div>
           <pre className="clone-code mono">

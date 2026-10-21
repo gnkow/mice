@@ -128,6 +128,7 @@ import {
   revokePatByToken,
 } from './tokens.js'
 import { registerJobRoutes } from './jobsRoutes.js'
+import { registerMetaRoutes } from './metaRoutes.js'
 import { registerSessionRoutes } from './sessionsRoutes.js'
 import {
   resumeInterruptedProvisions,
@@ -1872,6 +1873,7 @@ app.all('/api/*', async (c) => {
 })
 
 registerJobRoutes(app)
+registerMetaRoutes(app)
 registerSessionRoutes(app)
 resumeQueuedJobs()
 startSessionsLifecycleSweeper()

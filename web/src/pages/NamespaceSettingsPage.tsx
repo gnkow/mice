@@ -1,3 +1,5 @@
+import { FolderGit2 as ActionFolderGit2, FolderOpen as ActionFolderOpen, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
+import { MetaBody } from '../components/MetaPanel'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CustomRolesSection } from '../components/CustomRolesSection'
@@ -171,13 +173,13 @@ export function NamespaceSettingsPage() {
             className="btn ghost"
             to={`/n/${encodeURIComponent(namespace)}`}
           >
-            View namespace
+            <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />View namespace
           </Link>
           <Link
             className="btn primary"
             to={`/repos/new?namespace=${encodeURIComponent(namespace)}`}
           >
-            + New repository
+            <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />New repository
           </Link>
         </div>
       </div>
@@ -308,7 +310,7 @@ export function NamespaceSettingsPage() {
                         disabled={busy}
                         onClick={() => void onRemoveMember(m)}
                       >
-                        Remove
+                        <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                       </button>
                     </li>
                   ))}
@@ -383,7 +385,7 @@ export function NamespaceSettingsPage() {
                       type="submit"
                       disabled={busy}
                     >
-                      Add member
+                      <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add member
                     </button>
                   </div>
                 </div>
@@ -391,6 +393,11 @@ export function NamespaceSettingsPage() {
             </section>
 
             <CustomRolesSection namespace={namespace} />
+
+            <section className="settings-section" aria-labelledby="ns-meta-heading">
+              <h2 id="ns-meta-heading">Metadata</h2>
+              <MetaBody type="namespace" id={namespace} />
+            </section>
 
             <section
               className="danger-zone ns-danger-zone"
@@ -409,7 +416,7 @@ export function NamespaceSettingsPage() {
                 disabled={busy}
                 onClick={() => void onDeleteNamespace()}
               >
-                Delete namespace
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete namespace
               </button>
             </section>
           </div>

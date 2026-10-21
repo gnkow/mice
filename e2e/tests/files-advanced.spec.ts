@@ -19,6 +19,36 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const fixtures = path.join(__dirname, '../fixtures')
 
 test.describe('files advanced (F-05–F-15)', () => {
+  test('file and folder row menus open metadata for the selected path and scope', async ({ page, seededRepo }) => {
+    await putFile(seededRepo.namespace, seededRepo.repo, 'main', 'nested/file.txt', 'inside\n', 'seed nested')
+    await page.goto(repoPath(seededRepo, '/tree/main'))
+    for (const [name, title, tag] of [
+      ['readme.txt', 'Metadata: readme.txt', 'file-tag'],
+      ['nested', 'Metadata: nested/', 'folder-tag'],
+    ]) {
+      await fileRowAction(page, name, 'Edit Metadata')
+      const dialog = page.getByRole('dialog', { name: title, exact: true })
+      await expect(dialog).toBeVisible()
+      await dialog.getByLabel('Metadata scope').selectOption('branch')
+      await expect(dialog.getByLabel('Scope revision')).toHaveValue('main')
+      await dialog.getByLabel('Add tag', { exact: true }).fill(tag)
+      await dialog.getByRole('button', { name: 'Add tag', exact: true }).click()
+      await expect(dialog.getByTestId('meta-tags')).toContainText(tag)
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    }
+    await fileRowAction(page, 'nested', 'Edit Metadata')
+    const dialog = page.getByRole('dialog', { name: 'Metadata: nested/', exact: true })
+    await dialog.getByLabel('Metadata scope').selectOption('branch')
+    await expect(dialog.getByTestId('meta-tags')).toContainText('folder-tag')
+    await expect(dialog.getByTestId('meta-tags')).not.toContainText('file-tag')
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    await fileNameLink(page, 'nested').click()
+    await page.getByRole('button', { name: 'Metadata', exact: true }).click()
+    const folderDialog = page.getByRole('dialog', { name: 'Metadata: nested/', exact: true })
+    await folderDialog.getByLabel('Metadata scope').selectOption('branch')
+    await expect(folderDialog.getByTestId('meta-tags')).toContainText('folder-tag')
+  })
+
   test('TC-F-02b: Download button triggers browser download', async ({
     page,
     seededRepo,
@@ -79,8 +109,8 @@ test.describe('files advanced (F-05–F-15)', () => {
 
   test('TC-F-16: Download (version store)', async ({ page, seededRepo }) => {
     await page.goto(repoPath(seededRepo, '/blob/main/readme.txt'))
-    await page.getByTestId('blob-tab-metadata').click()
-    await expect(page.locator('dt', { hasText: 'Hash' })).toBeVisible({
+    await page.getByTestId('blob-tab-details').click()
+    await expect(page.locator('dt', { hasText: 'Content hash' })).toBeVisible({
       timeout: 15_000,
     })
 
@@ -143,8 +173,8 @@ test.describe('files advanced (F-05–F-15)', () => {
 
     await page.goto(repoPath(seededRepo, '/blob/main/readme.txt'))
     await expect(page.getByRole('heading', { name: 'readme.txt' })).toBeVisible()
-    await page.getByTestId('blob-tab-metadata').click()
-    await expect(page.locator('dt', { hasText: 'Hash' })).toBeVisible()
+    await page.getByTestId('blob-tab-details').click()
+    await expect(page.locator('dt', { hasText: 'Content hash' })).toBeVisible()
     await expect(page.locator('dd.mono').first()).not.toHaveText('')
 
     await page.locator('details.blob-ops-menu').getByText('More').click()
@@ -153,7 +183,7 @@ test.describe('files advanced (F-05–F-15)', () => {
       timeout: 30_000,
     })
 
-    await expect(page.locator('dt', { hasText: 'Version store' })).toBeVisible({
+    await expect(page.locator('dt', { hasText: 'Stored hash' })).toBeVisible({
       timeout: 15_000,
     })
     await page.getByTestId('blob-tab-history').click()

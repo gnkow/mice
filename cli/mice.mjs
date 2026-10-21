@@ -25,6 +25,12 @@ import {
 } from './lib/config.mjs'
 import { cmdLogin, cmdLogout, cmdWhoami } from './lib/login.mjs'
 import {
+  applyCreateMeta,
+  cmdMeta,
+  detectCreation,
+  extractCreateMeta,
+} from './lib/meta.mjs'
+import {
   materializeWorkCopy,
   inferCommandInputPaths,
   pathHashesFromSnapshot,
@@ -81,12 +87,33 @@ Usage:
   mice job run    [--namespace <ns>] [--repo <repo>]
                    [--source <branch|commit|branch:commit>]
                    [--name <label>] [--push]
+                   [--tag <t>]… [--label <k=v>]…
                    --image <image>
                    [--timeout <sec>] [--cpu <n>] [--memory <size>]
                    -- <command> [args...]
 
   mice job reset  [--id <jobId>] [--all] [--purge] [--yes]
                    [--remote <url>] [--token <pat>]
+
+  mice meta get   <type> [id] [--own] [--json]
+  mice meta set   <type> [id] [--tag <t>[,<t>…]]… [--label <k=v>]…
+                   [--untag <t>]… [--unlabel <k>]…
+                   Path types require --scope repository|branch|commit;
+                   branch/commit scopes also require --revision <name-or-id>.
+  mice meta clear <type> [id] --yes
+                   types: namespace repo branch commit directory file
+                          workspace job session
+                   ids:   ns | ns/repo | ns/repo@branch | ns/repo#commit |
+                          ns/repo!workspace | ns/repo:path | ns/repo:dir/ | <jobId> | <sessionId>
+                   Inside a clone, namespace/repo are filled in: bare paths,
+                   branch names and commit ids work, and \`mice meta set repo\`
+                   targets the current repo.
+
+  Commands that create an entity also accept --tag / --label (repeatable):
+    mice commit -m msg --tag release --label qa=ok      # commit
+    mice branch dev --label stage=staging               # branch (also checkout -b)
+    mice create-remote ns/repo --tag demo               # repository
+    mice job run … --tag nightly                        # job (set once it is published)
 
   mice push       # oxen push via BFF; also publishes pending job metadata
 
@@ -292,6 +319,7 @@ async function cmdRun(flags, command) {
     result_branch: null,
     sync_branch: '',
     published: false,
+    ...(flags.__meta ? { meta: flags.__meta } : {}),
     parent_job_id,
     image,
     command: [command[0]],
@@ -658,7 +686,20 @@ async function cmdJob(jobArgv) {
     usage(0)
   }
   const cmd = jobArgv[0]
-  const { flags, _: rest } = parseArgs(jobArgv.slice(1))
+  let jobMeta = null
+  let jobRest = jobArgv.slice(1)
+  if (cmd === 'run') {
+    try {
+      const ex = extractCreateMeta(jobRest)
+      jobMeta = ex.patch
+      jobRest = ex.args
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err)
+      usage(1)
+    }
+  }
+  const { flags, _: rest } = parseArgs(jobRest)
+  flags.__meta = jobMeta
 
   if (cmd === 'run') {
     await cmdRun(flags, rest)
@@ -819,6 +860,28 @@ async function main() {
     return
   }
 
+  if (cmd === 'meta') {
+    await cmdMeta(argv.slice(1), {
+      auth: resolveAuth,
+      usage,
+      ctx: (flags) => {
+        const root = findOxenRoot(process.cwd())
+        const detected = root ? detectRemote(root) : null
+        const namespace = String(flags.namespace || detected?.namespace || '')
+        const repo = String(flags.repo || detected?.repo || '')
+        if (!namespace) {
+          throw new Error('Could not detect namespace; run inside a clone or pass --namespace/--repo')
+        }
+        return {
+          namespace,
+          repo,
+          branch: root ? currentBranch(root) : undefined,
+        }
+      },
+    })
+    return
+  }
+
   // --- Oxen passthrough ---
   const remote = resolveRemote()
   if (looksLikeDirectOxenServer(remote)) {
@@ -837,7 +900,24 @@ async function main() {
     return
   }
 
-  const { args, rewritten, blocked } = rewriteArgsForBff(argv, remote)
+  let passArgv = argv
+  let createMeta = null
+  let creation = null
+  try {
+    const ex = extractCreateMeta(argv)
+    creation = ex.patch ? detectCreation(ex.args) : null
+    // Other commands keep their own --tag/--label semantics untouched.
+    if (creation) {
+      createMeta = ex.patch
+      passArgv = ex.args
+    }
+  } catch (err) {
+    console.error(`mice: ${err instanceof Error ? err.message : err}`)
+    process.exitCode = 1
+    return
+  }
+
+  const { args, rewritten, blocked } = rewriteArgsForBff(passArgv, remote)
   if (blocked) {
     console.error(`mice: could not rewrite direct oxen-server URL: ${blocked}`)
     process.exitCode = 1
@@ -849,6 +929,29 @@ async function main() {
 
   const code = await runOxenPassthrough(args)
   process.exitCode = code
+
+  if (code === 0 && createMeta && creation) {
+    const root = findOxenRoot(process.cwd())
+    const detected = root ? detectRemote(root) : null
+    const token = resolveToken()
+    let type = creation.kind
+    let id = ''
+    if (creation.kind === 'repo') {
+      id = creation.name
+    } else if (detected?.namespace && detected?.repo) {
+      const base = `${detected.namespace}/${detected.repo}`
+      if (creation.kind === 'branch') id = `${base}@${creation.name}`
+      else if (root && headCommit(root)) id = `${base}#${headCommit(root)}`
+    }
+    if (!id || !token) {
+      console.error(
+        `mice: could not set metadata automatically; run: mice meta set ${type} <id> …`,
+      )
+      process.exitCode = 1
+    } else if (!(await applyCreateMeta({ remote, token, type, id, patch: createMeta }))) {
+      process.exitCode = 1
+    }
+  }
 
   // After a successful push through the BFF, publish local job metadata
   // for result commits that are now on the pushed tip.
