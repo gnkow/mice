@@ -23,6 +23,7 @@ export type CatalogWorkspace = {
   repo: string
   id: string
   name: string
+  createdAt?: string | null
 }
 
 export type Catalog = {
@@ -61,6 +62,7 @@ export async function loadCatalog(signal: AbortSignal): Promise<Catalog> {
               repo: r.name,
               id: w.id,
               name: w.name || w.id,
+              createdAt: w.created_at,
             })),
           )
           .catch(() => [] as CatalogWorkspace[]),

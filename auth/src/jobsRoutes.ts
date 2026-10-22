@@ -22,6 +22,7 @@ import {
 } from './jobs.js'
 import { getJob } from './jobsStore.js'
 import { getSession, type SessionUser } from './session.js'
+import { favoriteUserKey, listFavorites } from './favoritesStore.js'
 import { resolvePat } from './tokens.js'
 
 async function requireAuth(c: {
@@ -122,7 +123,20 @@ export function registerJobRoutes(app: Hono) {
             (j) => authorizeJobRead(authed.user, j.namespace, j.repo).allow,
           )
     const pageLimit = Math.min(Math.max(1, limit ?? 50), 100)
-    const page = jobs.slice(0, pageLimit)
+    let page = jobs.slice(0, pageLimit)
+    if (c.req.query('favorites') === 'first' && !c.req.query('cursor')) {
+      // Pin the caller's favorite jobs even when they fall outside the newest window.
+      const pinned = listFavorites(favoriteUserKey(authed.user))
+        .filter((f) => f.type === 'job')
+        .map((f) => getJobPublic(f.id))
+        .filter((j): j is NonNullable<typeof j> =>
+          !!j &&
+          (!namespace || (j.namespace === namespace && j.repo === repo)) &&
+          (!status || j.status === status) &&
+          authorizeJobRead(authed.user, j.namespace, j.repo).allow)
+      const ids = new Set(pinned.map((j) => j.id))
+      page = [...pinned, ...page.filter((j) => !ids.has(j.id))]
+    }
     const nextCursor =
       jobs.length > pageLimit
         ? (page[page.length - 1]?.id ?? null)

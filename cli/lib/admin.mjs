@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { api } from './api.mjs'
 import { confirmOrExit } from './confirm.mjs'
+import { resolveEntityId } from './meta.mjs'
 
 /**
  * Commands that mirror the BFF's /auth/* management API:
@@ -25,6 +26,7 @@ export const ADMIN_GROUPS = [
   'role',
   'session',
   'notifications',
+  'favorite',
 ]
 
 /**
@@ -377,6 +379,30 @@ export function buildRequest(group, argv, ctx = () => ({})) {
           path: `${base}/sync/${enc(need(args[1], 'mount key'))}`,
           body: files.length ? { files } : {},
         }
+      }
+      break
+    }
+
+    case 'favorite': {
+      const base = '/auth/favorites'
+      const types = ['namespace', 'repo', 'branch', 'workspace', 'job', 'session']
+      if (!sub || sub === 'list') {
+        const type = str(flags.type)
+        if (type && !types.includes(type)) throw new UsageError(`--type must be one of ${types.join(', ')}`)
+        return { method: 'GET', path: `${base}${qs({ type })}` }
+      }
+      if (sub === 'add' || sub === 'remove') {
+        const type = need(args[0], `entity type (${types.join('|')})`)
+        if (!types.includes(type)) throw new UsageError(`Unknown entity type "${type}". One of: ${types.join(', ')}`)
+        let id
+        try {
+          id = resolveEntityId(type, args[1], ctx)
+        } catch (err) {
+          throw new UsageError(err instanceof Error ? err.message : String(err))
+        }
+        return sub === 'add'
+          ? { method: 'PUT', path: base, body: { type, id } }
+          : { method: 'DELETE', path: `${base}${qs({ type, id })}` }
       }
       break
     }

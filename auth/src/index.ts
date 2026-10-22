@@ -130,6 +130,8 @@ import {
 } from './tokens.js'
 import { registerJobRoutes } from './jobsRoutes.js'
 import { registerMetaRoutes } from './metaRoutes.js'
+import { registerFavoritesRoutes } from './favoritesRoutes.js'
+import { purgeFavoritesForAudit } from './favoritesStore.js'
 import { registerSessionRoutes } from './sessionsRoutes.js'
 import {
   resumeInterruptedProvisions,
@@ -164,7 +166,10 @@ function safeReturnPath(raw: string | undefined | null): string | undefined {
 }
 
 const app = new Hono()
-setAuditObserver(captureNotificationAudit)
+setAuditObserver((event) => {
+  try { purgeFavoritesForAudit(event) } catch (err) { console.error('[mice-auth] favorites purge failed', err) }
+  captureNotificationAudit(event)
+})
 
 app.get('/healthz', (c) => c.json({ ok: true }))
 
@@ -1907,6 +1912,7 @@ app.all('/api/*', async (c) => {
 
 registerJobRoutes(app)
 registerMetaRoutes(app)
+registerFavoritesRoutes(app)
 registerSessionRoutes(app)
 registerNotificationRoutes(app)
 startNotificationWorker()

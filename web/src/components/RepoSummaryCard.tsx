@@ -6,10 +6,9 @@ import { deleteRepository, getRepository, listCommitHistory, listWorkspaces } fr
 import { formatBytes } from '../lib/oxen/client'
 import { confirmDelete } from '../lib/confirmDelete'
 import { lastBranch } from '../lib/lastBranch'
-import { loadRepoSocial } from '../lib/repoSocial'
 import { formatRelativeTime } from '../lib/time'
+import { FavoriteStar } from './FavoriteStar'
 import { MetaPills } from './MetaPills'
-import { StarIcon } from './icons'
 import { VisibilityPill } from './VisibilityPill'
 
 type Props = {
@@ -64,7 +63,6 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
           .sort((a, b) => b.count - a.count)
           .slice(0, 4)
       : []
-  const starred = loadRepoSocial(namespace, name).star
 
   const href = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(name)}/tree/${encodeURIComponent(lastBranch(namespace, name, 'main'))}`
   const summary =
@@ -128,19 +126,10 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
       </span>
       <span className="repo-summary-badges">
         <VisibilityPill />
-        {starred && (
-          <span
-            className="visibility-pill star-pill"
-            title="Starred in this browser"
-            style={{ textTransform: 'none' }}
-          >
-            <StarIcon filled size={12} />
-            1
-          </span>
-        )}
       </span>
     </Link>
     <div className="repo-card-actions">
+      <FavoriteStar type="repo" id={`${namespace}/${name}`} />
       <Link
         className="icon-round"
         to={`${repoBase}/settings`}

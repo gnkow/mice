@@ -55,7 +55,7 @@ async function requireAuth(c: Context): Promise<Authed | null> {
   return null
 }
 
-const lookup: MetaAuthzDeps = {
+export const lookup: MetaAuthzDeps = {
   sessionOwner: (id) => {
     const s = getSessionRecord(id)
     return s ? `${s.owner.iss}|${s.owner.sub}` : null
@@ -96,7 +96,7 @@ async function repoExists(ns: string, repo: string): Promise<boolean> {
 }
 
 /** Parse + normalize + validate existence. Throws MetaError. */
-async function resolveRef(type: string, id: string, scope?: EntityRef['scope']): Promise<EntityRef> {
+export async function resolveRef(type: string, id: string, scope?: EntityRef['scope']): Promise<EntityRef> {
   let ref = parseRef(type, id, scope)
   switch (ref.type) {
     case 'namespace':

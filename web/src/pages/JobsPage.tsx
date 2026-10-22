@@ -1,25 +1,29 @@
 import { Laptop as ActionLaptop, Server as ActionServer, Terminal as ActionTerminal, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
+import { FavoriteStar } from '../components/FavoriteStar'
 import { JobSummaryCard } from '../components/JobSummaryCard'
+import { ListToolbar } from '../components/ListToolbar'
+import { useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
 import { Modal } from '../components/Modal'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { StateBlock } from '../components/StateBlock'
 import { SubmitJobBox } from '../components/SubmitJobBox'
 import { useAsync } from '../hooks/useAsync'
 import {
-  JOB_LIST_SORTS,
   JOB_STATUSES,
   collectJobBranches,
   filterAndSortJobs,
   listJobs,
-  parseJobListSort,
   parseJobRunner,
   parseJobStatus,
-  type JobListSort,
+  type JobRun,
   type JobRunnerKind,
   type JobStatus,
 } from '../lib/jobs'
+
+const JOB_SORT_FIELDS: SortFields<JobRun> = { name: (j) => j.name || j.id, created: (j) => j.created_at }
 
 type SubmitMode = 'local' | 'cluster'
 
@@ -33,7 +37,7 @@ export function JobsPage() {
 
   const status = parseJobStatus(params.get('status'))
   const runner = parseJobRunner(params.get('runner'))
-  const sort = parseJobListSort(params.get('sort'))
+  const listSort = useListSort('repo-jobs', JOB_SORT_FIELDS)
   const sourceBranch = (params.get('source') || '').trim()
   const targetBranch = (params.get('target') || '').trim()
   const q = params.get('q') ?? ''
@@ -68,16 +72,20 @@ export function JobsPage() {
     source_branch: sourceBranch,
     target_branch: targetBranch,
     q,
-    sort,
+    sort: 'created_desc',
   })
-  const slice = paginate(filtered, page, PAGE_SIZE)
+  const favs = useFavorites()
+  const ordered = useMemo(
+    () => listSort.apply(filtered, (j) => favs.has('job', j.id)),
+    [filtered, listSort.apply, favs],
+  )
+  const slice = paginate(ordered, page, PAGE_SIZE)
   const filtersActive = Boolean(
     status ||
       runner ||
       sourceBranch ||
       targetBranch ||
-      q.trim() ||
-      sort !== 'created_desc',
+      q.trim(),
   )
 
   useEffect(() => {
@@ -111,10 +119,6 @@ export function JobsPage() {
     patchParams({ runner: next || null })
   }
 
-  function setSort(next: JobListSort) {
-    patchParams({ sort: next === 'created_desc' ? null : next })
-  }
-
   function setSourceBranch(next: string) {
     patchParams({ source: next.trim() || null })
   }
@@ -137,7 +141,6 @@ export function JobsPage() {
       source: null,
       target: null,
       q: null,
-      sort: null,
     })
   }
 
@@ -194,7 +197,11 @@ export function JobsPage() {
       </header>
 
       {hasJobs && (
-        <div className="jobs-toolbar" role="search" aria-label="Filter jobs">
+        <ListToolbar
+          id="jobs"
+          sort={listSort}
+          search={{ value: qDraft, onChange: setQDraft, onCommit: commitSearch, placeholder: 'Name, id, image, command…' }}
+        >
           <label className="jobs-toolbar-field">
             <span className="jobs-toolbar-label">Status</span>
             <select
@@ -254,38 +261,6 @@ export function JobsPage() {
               ))}
             </select>
           </label>
-          <label className="jobs-toolbar-field">
-            <span className="jobs-toolbar-label">Sort</span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(parseJobListSort(e.target.value))}
-            >
-              {JOB_LIST_SORTS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="jobs-toolbar-field jobs-toolbar-search">
-            <span className="jobs-toolbar-label">Search</span>
-            <input
-              type="search"
-              value={qDraft}
-              onChange={(e) => setQDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  commitSearch(qDraft)
-                }
-              }}
-              onBlur={() => {
-                if (qDraft.trim() !== q.trim()) commitSearch(qDraft)
-              }}
-              placeholder="Name, id, image, command…"
-              autoComplete="off"
-            />
-          </label>
           <div className="jobs-toolbar-meta">
             <p className="muted small">
               {filtered.length} of {jobs.length}
@@ -301,7 +276,7 @@ export function JobsPage() {
               </button>
             )}
           </div>
-        </div>
+        </ListToolbar>
       )}
 
       <StateBlock
@@ -318,8 +293,9 @@ export function JobsPage() {
           <>
             <ul className="card-list">
               {slice.items.map((j) => (
-                <li key={j.id}>
+                <li key={j.id} className="fav-row">
                   <JobSummaryCard job={j} />
+                  <FavoriteStar type="job" id={j.id} label={j.name} className="fav-row-star" />
                 </li>
               ))}
             </ul>

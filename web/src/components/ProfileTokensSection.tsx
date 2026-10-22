@@ -40,7 +40,7 @@ export function ProfileTokensSection() {
 
   return <section id="cli-tokens" className="settings-section" aria-labelledby="cli-tokens-heading">
     <div className="ns-settings-section-head">
-      <div><h2 id="cli-tokens-heading">CLI tokens</h2>
+      <div><h2 id="cli-tokens-heading"><KeyRound size={18} className="button-label-icon" aria-hidden="true" />CLI tokens</h2>
         <p className="muted small">Use <code>mice login</code> for day-to-day access. Create personal access tokens for CI and automation; connect through the auth BFF, not raw oxen-server.</p></div>
       {allowed && tokens.kind === 'ok' && <p className="muted small ns-settings-count">{tokens.data.length} token{tokens.data.length === 1 ? '' : 's'}</p>}
     </div>

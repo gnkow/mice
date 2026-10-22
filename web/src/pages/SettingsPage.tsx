@@ -1,5 +1,6 @@
-import { Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX } from 'lucide-react'
+import { ListChecks, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe } from '../lib/auth'
@@ -60,6 +61,16 @@ export function SettingsPage() {
     }
   }
 
+  const groups = [
+    { title: 'General', items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
+    { title: 'Access', items: [{ id: 'access-requests', label: 'Access requests', Icon: Inbox }] },
+    ...(isInstanceAdmin ? [{ title: 'Administration', items: [
+      { id: 'authorization-policy', label: 'Authorization policy', Icon: ShieldCheck },
+      { id: 'instance-administrators', label: 'Instance administrators', Icon: ShieldUser },
+      { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
+    ] }] : []),
+  ]
+
   return (
     <main className="page wide">
       <div className="page-head">
@@ -72,11 +83,13 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <div className="ns-settings">
+      <div className="profile-layout">
+      <SectionNav label="Settings sections" groups={groups} />
+      <div className="ns-settings profile-sections">
         <section id="connection" className="settings-section" aria-labelledby="connection-heading">
           <div className="ns-settings-section-head">
             <div>
-              <h2 id="connection-heading">Connection</h2>
+              <h2 id="connection-heading"><ActionPlug size={18} className="button-label-icon" aria-hidden="true" />Connection</h2>
               <p className="muted small">
                 Leave the API base empty for the same-origin auth proxy.
                 Sign-in and commit identity are managed by SSO.
@@ -104,6 +117,7 @@ export function SettingsPage() {
           <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
           {isInstanceAdmin && <InstanceAdminSection />}
         </>}
+      </div>
       </div>
     </main>
   )
@@ -199,12 +213,13 @@ function AccessRequestsSection({
 
   return (
     <section
+      id="access-requests"
       className="settings-section"
       aria-labelledby="access-requests-heading"
     >
       <div className="ns-settings-section-head">
         <div>
-          <h2 id="access-requests-heading">Access requests</h2>
+          <h2 id="access-requests-heading"><Inbox size={18} className="button-label-icon" aria-hidden="true" />Access requests</h2>
           <p className="muted small">
             Pending SSO users waiting for a namespace seat or instance
             permission.
@@ -437,8 +452,8 @@ function InstanceAdminSection() {
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {data && (
         <>
-          <section className="settings-section" aria-labelledby="authorization-policy-heading">
-          <h2 id="authorization-policy-heading">Authorization policy</h2>
+          <section id="authorization-policy" className="settings-section" aria-labelledby="authorization-policy-heading">
+          <h2 id="authorization-policy-heading"><ShieldCheck size={18} className="button-label-icon" aria-hidden="true" />Authorization policy</h2>
           <p className="muted small">Control whether namespace, repository, and instance permissions are enforced.</p>
           <label className="ns-settings-toggle">
             <input
@@ -457,10 +472,10 @@ function InstanceAdminSection() {
           </label>
           </section>
 
-          <section className="settings-section" aria-labelledby="instance-administrators-heading">
+          <section id="instance-administrators" className="settings-section" aria-labelledby="instance-administrators-heading">
           <div className="ns-settings-section-head ns-settings-section-head-tight">
             <div>
-              <h2 id="instance-administrators-heading">Instance administrators</h2>
+              <h2 id="instance-administrators-heading"><ShieldUser size={18} className="button-label-icon" aria-hidden="true" />Instance administrators</h2>
               <p className="muted small">
                 Full instance catalog and site-admin bypass.
               </p>
@@ -511,10 +526,10 @@ function InstanceAdminSection() {
           </form>
           </section>
 
-          <section className="settings-section" aria-labelledby="delegated-permissions-heading">
+          <section id="delegated-permissions" className="settings-section" aria-labelledby="delegated-permissions-heading">
           <div className="ns-settings-section-head ns-settings-section-head-spaced">
             <div>
-              <h2 id="delegated-permissions-heading">Delegated permissions</h2>
+              <h2 id="delegated-permissions-heading"><ListChecks size={18} className="button-label-icon" aria-hidden="true" />Delegated permissions</h2>
               <p className="muted small">
                 Delegate individual instance permissions to non-admins.
               </p>

@@ -22,6 +22,7 @@ import {
   type DesktopSession,
 } from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
+import { FavoriteStar } from '../components/FavoriteStar'
 
 export function SessionPage() {
   const { sessionId = '' } = useParams()
@@ -197,6 +198,7 @@ export function SessionPage() {
         <div className="job-page-title-row">
           <div className="job-page-title-main">
             <h1 className="job-page-title">{title}</h1>
+            <FavoriteStar type="session" id={session.id} label={title} />
             <span className="job-page-id mono muted" title={session.id}>
               {shortenSessionId(session.id, 12)}
             </span>

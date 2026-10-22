@@ -373,6 +373,7 @@ export function listJobs(
     status?: JobStatus
     limit?: number
     cursor?: string
+    favoritesFirst?: boolean
   },
   signal?: AbortSignal,
 ) {
@@ -382,6 +383,7 @@ export function listJobs(
   if (opts?.status) params.set('status', opts.status)
   if (opts?.limit != null) params.set('limit', String(opts.limit))
   if (opts?.cursor) params.set('cursor', opts.cursor)
+  if (opts?.favoritesFirst) params.set('favorites', 'first')
   const qs = params.toString()
   return jobsFetch<{ jobs: JobRun[]; nextCursor: string | null }>(
     `/auth/jobs${qs ? `?${qs}` : ''}`,

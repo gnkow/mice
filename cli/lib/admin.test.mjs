@@ -124,6 +124,17 @@ describe('buildRequest', () => {
     assert.throws(() => buildRequest('notifications', ['preferences', 'set', '--json', '{']))
   })
 
+  it('favorite', () => {
+    const ctx = () => ({ namespace: 'acme', repo: 'web' })
+    assert.equal(buildRequest('favorite', []).path, '/auth/favorites')
+    assert.equal(buildRequest('favorite', ['list', '--type', 'repo']).path, '/auth/favorites?type=repo')
+    assert.deepEqual(buildRequest('favorite', ['add', 'repo'], ctx), { method: 'PUT', path: '/auth/favorites', body: { type: 'repo', id: 'acme/web' } })
+    assert.deepEqual(buildRequest('favorite', ['add', 'branch', 'dev'], ctx).body, { type: 'branch', id: 'acme/web@dev' })
+    assert.equal(buildRequest('favorite', ['remove', 'job', 'j1']).path, '/auth/favorites?type=job&id=j1')
+    assert.throws(() => buildRequest('favorite', ['add', 'file', 'x']), /Unknown entity type/)
+    assert.throws(() => buildRequest('favorite', ['list', '--type', 'x']), /--type/)
+  })
+
   it('rejects unknown subcommands', () => {
     assert.throws(() => buildRequest('namespace', ['bogus']), /Unknown/)
   })

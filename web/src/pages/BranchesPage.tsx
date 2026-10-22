@@ -20,6 +20,10 @@ import {
 import type { Commit } from '../lib/oxen/types'
 import { OxenApiError } from '../lib/oxen/types'
 import { formatRelativeTime } from '../lib/time'
+import { ListToolbar } from '../components/ListToolbar'
+import { useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
+import { FavoriteStar } from '../components/FavoriteStar'
 
 type SourceType = 'branch' | 'commit'
 
@@ -165,6 +169,17 @@ export function BranchesPage() {
     return branchList.filter((b) => b.name.toLowerCase().includes(needle))
   }, [branchList, filter])
 
+  const branchSortFields = useMemo<SortFields<(typeof branchList)[number]>>(
+    () => ({ name: (b) => b.name, created: (b) => metaByName[b.name]?.commit?.timestamp }),
+    [metaByName],
+  )
+  const sort = useListSort('branches', branchSortFields)
+  const favs = useFavorites()
+  const ordered = useMemo(
+    () => sort.apply(filtered, (b) => favs.has('branch', `${namespace}/${repo}@${b.name}`)),
+    [filtered, sort.apply, favs, namespace, repo],
+  )
+
   const nameValid = newName.trim().length >= 2
   const nameTaken = branchNames.includes(newName.trim())
   const commitOk = sourceType !== 'commit' || fromCommit.length > 0
@@ -263,19 +278,11 @@ export function BranchesPage() {
         </button>
       </div>
 
-      <div className="branches-toolbar">
-        <label className="branches-filter-label">
-          <span className="sr-only">Filter branches</span>
-          <input
-            type="search"
-            className="branches-filter"
-            placeholder="Filter branches…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            disabled={branches.kind !== 'ok'}
-          />
-        </label>
-      </div>
+      <ListToolbar
+        id="branches"
+        sort={sort}
+        search={{ value: filter, onChange: setFilter, placeholder: 'Filter branches…', disabled: branches.kind !== 'ok' }}
+      />
 
       <StateBlock
         loading={branches.kind === 'loading'}
@@ -300,7 +307,7 @@ export function BranchesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((b) => {
+                  {ordered.map((b) => {
                     const isDefault = b.name === defaultBranch
                     const meta = metaByName[b.name]
                     const ahead = meta?.ahead
@@ -317,6 +324,7 @@ export function BranchesPage() {
                       >
                         <td className="branches-col-name">
                           <div className="branch-title-row">
+                            <FavoriteStar type="branch" id={`${namespace}/${repo}@${b.name}`} label={b.name} />
                             <Link className="branch-pill" to={branchHref}>
                               <BranchIcon />
                               <span className="mono">{b.name}</span>

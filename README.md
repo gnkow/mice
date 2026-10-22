@@ -59,7 +59,7 @@ mice push origin main
 
 #### Management commands
 
-Everything the UI can do through `/auth/*` is also available from the CLI (JSON output; run `mice --help` for all flags): `authz`, `directory`, `access-request`, `training`, `audit` (`list|facets|export`), `lineage` (`query|rebuild`), `instance`, `namespace` (incl. `member`), `collaborator`, `role` (custom roles), `session`, `notifications`, `meta history|search`, and `job list --published`. These use an **unscoped** PAT (what `mice login` mints) acting as its owner; repo-scoped PATs are rejected, and AuthZ is still enforced server-side. Minting/revoking tokens and approving device logins remain browser-only.
+Everything the UI can do through `/auth/*` is also available from the CLI (JSON output; run `mice --help` for all flags): `authz`, `directory`, `access-request`, `training`, `audit` (`list|facets|export`), `lineage` (`query|rebuild`), `instance`, `namespace` (incl. `member`), `collaborator`, `role` (custom roles), `session`, `notifications`, `favorite` (`list|add|remove`), `meta history|search`, and `job list --published`. These use an **unscoped** PAT (what `mice login` mints) acting as its owner; repo-scoped PATs are rejected, and AuthZ is still enforced server-side. Minting/revoking tokens and approving device logins remain browser-only.
 
 #### Automation / CI (PAT)
 

@@ -1,4 +1,5 @@
 import { FolderGit2 as ActionFolderGit2, Settings as ActionSettings } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { MetaPills } from '../components/MetaPills'
 import { RepoSummaryCard } from '../components/RepoSummaryCard'
@@ -8,6 +9,13 @@ import { fetchNamespaceAuthz, listAuthzNamespaces } from '../lib/authzApi'
 import { getNamespace, listRepositories, listWorkspaces } from '../lib/oxen/api'
 import { OxenApiError } from '../lib/oxen/types'
 import type { ListRepositoryResponse, NamespaceResponse } from '../lib/oxen/types'
+import { FavoriteStar } from '../components/FavoriteStar'
+import { ListToolbar } from '../components/ListToolbar'
+import { useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
+import type { RepositoryListView } from '../lib/oxen/types'
+
+const NS_REPO_SORTS: SortFields<RepositoryListView> = { name: (r) => r.name, created: () => null }
 
 function isNotFound(err: unknown): boolean {
   if (!(err instanceof OxenApiError)) return false
@@ -69,12 +77,21 @@ export function NamespacePage() {
     (signal) => loadNamespacePage(namespace, signal),
     [namespace],
   )
+  const [filter, setFilter] = useState('')
+  const sort = useListSort('namespace-repos', NS_REPO_SORTS)
+  const favs = useFavorites()
+  const repoList = state.kind === 'ok' ? state.data.repos.repositories : null
+  const ordered = useMemo(() => {
+    const needle = filter.trim().toLowerCase()
+    const matching = (repoList ?? []).filter((r) => !needle || r.name.toLowerCase().includes(needle))
+    return sort.apply(matching, (r) => favs.has('repo', `${r.namespace}/${r.name}`))
+  }, [repoList, filter, sort.apply, favs])
 
   return (
     <main className="page">
       <div className="page-head">
         <div>
-          <h1>{namespace}</h1>
+          <h1>{namespace} <FavoriteStar type="namespace" id={namespace} /></h1>
           {state.kind === 'ok' && (
             <div className="storage-meter" style={{ marginTop: '0.75rem' }}>
               <span className="storage-meter-label">Storage</span>
@@ -135,8 +152,14 @@ export function NamespacePage() {
                 </>
               }
             >
+              <ListToolbar
+                id="ns-repos"
+                sort={sort}
+                search={{ value: filter, onChange: setFilter, placeholder: 'Filter by name' }}
+                meta={`${ordered.length} repositor${ordered.length === 1 ? 'y' : 'ies'}${filter.trim() ? ' matching' : ''}`}
+              />
               <ul className="card-list">
-                {state.data.repos.repositories.map((repo) => (
+                {ordered.map((repo) => (
                   <li key={`${repo.namespace}/${repo.name}`}>
                     <RepoSummaryCard
                       namespace={repo.namespace}

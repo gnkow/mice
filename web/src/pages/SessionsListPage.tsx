@@ -7,7 +7,12 @@ import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe } from '../lib/auth'
-import { listSessions, sessionMounts } from '../lib/sessions'
+import { listSessions, sessionMounts, type DesktopSession } from '../lib/sessions'
+import { FavoriteStar } from '../components/FavoriteStar'
+import { SortControl, useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
+
+const SESSIONS_SORTS: SortFields<DesktopSession> = { name: (x) => x.id, created: (x) => x.created_at }
 
 export function SessionsListPage() {
   const state = useAsync((signal) => listSessions(signal), [])
@@ -30,7 +35,13 @@ export function SessionsListPage() {
     })
   }, [sessions, filter])
 
-  const slice = paginate(filtered, page, PAGE_SIZE)
+  const sort = useListSort('sessions', SESSIONS_SORTS)
+  const favs = useFavorites()
+  const ordered = useMemo(
+    () => sort.apply(filtered, (x) => favs.has('session', x.id)),
+    [filtered, sort.apply, favs],
+  )
+  const slice = paginate(ordered, page, PAGE_SIZE)
   const [createOpen, setCreateOpen] = useState(false)
   const canCreateSession =
     authz.kind === 'ok' &&
@@ -85,6 +96,7 @@ export function SessionsListPage() {
       {createOpen && <SessionCreateModal onClose={() => setCreateOpen(false)} />}
 
       <div className="ns-toolbar">
+        <SortControl id="sessions" sort={sort} />
         <div className="ns-search-field">
           <label className="ns-search-label" htmlFor="session-filter">
             Search
@@ -150,8 +162,9 @@ export function SessionsListPage() {
           <>
             <ul className="card-list">
               {slice.items.map((s) => (
-                <li key={s.id}>
+                <li key={s.id} className="fav-row">
                   <SessionSummaryCard session={s} />
+                  <FavoriteStar type="session" id={s.id} className="fav-row-star" />
                 </li>
               ))}
             </ul>

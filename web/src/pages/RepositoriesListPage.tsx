@@ -6,6 +6,11 @@ import { RepoSummaryCard } from '../components/RepoSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { loadCatalog } from '../lib/catalog'
+import { SortControl, useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
+import type { CatalogRepo } from '../lib/catalog'
+
+const REPOSITORIES_SORTS: SortFields<CatalogRepo> = { name: (x) => `${x.namespace}/${x.name}`, created: () => null }
 
 export function RepositoriesListPage() {
   const state = useAsync((signal) => loadCatalog(signal), [])
@@ -25,7 +30,13 @@ export function RepositoriesListPage() {
     )
   }, [state, filter])
 
-  const slice = paginate(filtered, page, PAGE_SIZE)
+  const sort = useListSort('repositories', REPOSITORIES_SORTS)
+  const favs = useFavorites()
+  const ordered = useMemo(
+    () => sort.apply(filtered, (x) => favs.has('repo', `${x.namespace}/${x.name}`)),
+    [filtered, sort.apply, favs],
+  )
+  const slice = paginate(ordered, page, PAGE_SIZE)
 
   function goPage(next: number) {
     const nextParams = new URLSearchParams(params)
@@ -58,6 +69,7 @@ export function RepositoriesListPage() {
       </div>
 
       <div className="ns-toolbar">
+        <SortControl id="repositories" sort={sort} />
         <div className="ns-search-field">
           <label className="ns-search-label" htmlFor="repo-filter">
             Search

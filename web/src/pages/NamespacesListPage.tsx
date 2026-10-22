@@ -13,6 +13,11 @@ import {
   mergeNamespaces,
   type MergedNamespace,
 } from '../lib/mergeNamespaces'
+import { SortControl, useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
+import { FavoriteStar } from '../components/FavoriteStar'
+
+const NAMESPACES_SORTS: SortFields<MergedNamespace> = { name: (x) => x.name, created: (x) => x.authz?.createdAt }
 
 export function NamespacesListPage() {
   const catalog = useAsync((signal) => loadCatalog(signal), [])
@@ -43,7 +48,13 @@ export function NamespacesListPage() {
     return merged.filter((ns) => ns.name.toLowerCase().includes(q))
   }, [merged, filter])
 
-  const slice = paginate(filtered, page, PAGE_SIZE)
+  const sort = useListSort('namespaces', NAMESPACES_SORTS)
+  const favs = useFavorites()
+  const ordered = useMemo(
+    () => sort.apply(filtered, (x) => favs.has('namespace', x.name)),
+    [filtered, sort.apply, favs],
+  )
+  const slice = paginate(ordered, page, PAGE_SIZE)
   const loading = catalog.kind === 'loading' || authzNs.kind === 'loading'
   const error =
     catalog.kind === 'error'
@@ -113,6 +124,7 @@ export function NamespacesListPage() {
       </div>
 
       <div className="ns-toolbar">
+        <SortControl id="namespaces" sort={sort} />
         <div className="ns-search-field">
           <label className="ns-search-label" htmlFor="ns-filter">
             Search
@@ -238,6 +250,7 @@ export function NamespacesListPage() {
                         <MetaPills type="namespace" id={ns.name} />
                       </div>
                       <div className="ns-card-actions">
+                        <FavoriteStar type="namespace" id={ns.name} />
                         {ns.authz && (
                           <Link
                             className="icon-round"

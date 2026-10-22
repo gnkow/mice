@@ -9,6 +9,7 @@ import { confirmDelete } from '../lib/confirmDelete'
 import { resolveDefaultBranch } from '../lib/lastBranch'
 import { compareCommits, deleteBranch, getCommit, listBranches, mergeCommitIntoBranch, updateBranch } from '../lib/oxen/api'
 import { formatRelativeTime } from '../lib/time'
+import { FavoriteStar } from '../components/FavoriteStar'
 
 export function BranchPage() {
   const { namespace = '', repo = '', branch = '' } = useParams()
@@ -77,7 +78,7 @@ function BranchDetail({ namespace, repo, branch }: { namespace: string; repo: st
     <div className="page-head">
       <div>
         <Link to={`${base}/branches`} className="small">All branches</Link>
-        <h1>Branch: <span className="mono">{branch}</span></h1>
+        <h1>Branch: <span className="mono">{branch}</span> <FavoriteStar type="branch" id={`${namespace}/${repo}@${branch}`} label={branch} /></h1>
       </div>
       <div className="btn-row">
         <Link className="btn ghost" to={`${base}/tree/${encodedBranch}`}><ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />Browse files</Link>

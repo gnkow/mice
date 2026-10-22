@@ -9,6 +9,12 @@ import { loadCatalog } from '../lib/catalog'
 import { confirmDelete } from '../lib/confirmDelete'
 import { deleteWorkspace } from '../lib/oxen/api'
 import { listSessions, sessionMounts, type DesktopSession } from '../lib/sessions'
+import { SortControl, useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
+import type { CatalogWorkspace } from '../lib/catalog'
+import { FavoriteStar } from '../components/FavoriteStar'
+
+const WORKSPACES_SORTS: SortFields<CatalogWorkspace> = { name: (x) => x.name || x.id, created: (x) => x.createdAt }
 
 export function WorkspacesListPage() {
   const state = useAsync((signal) => loadCatalog(signal), [])
@@ -52,7 +58,13 @@ export function WorkspacesListPage() {
     })
   }, [workspaces, filter])
 
-  const slice = paginate(filtered, page, PAGE_SIZE)
+  const sort = useListSort('workspaces', WORKSPACES_SORTS)
+  const favs = useFavorites()
+  const ordered = useMemo(
+    () => sort.apply(filtered, (x) => favs.has('workspace', `${x.namespace}/${x.repo}!${x.id}`)),
+    [filtered, sort.apply, favs],
+  )
+  const slice = paginate(ordered, page, PAGE_SIZE)
 
   function goPage(next: number) {
     const nextParams = new URLSearchParams(params)
@@ -105,6 +117,7 @@ export function WorkspacesListPage() {
       </div>
 
       <div className="ns-toolbar">
+        <SortControl id="workspaces" sort={sort} />
         <div className="ns-search-field">
           <label className="ns-search-label" htmlFor="workspace-filter">
             Search
@@ -191,6 +204,7 @@ export function WorkspacesListPage() {
                     <tr key={key}>
                       <td>
                         <div className="workspace-name-cell">
+                          <FavoriteStar type="workspace" id={`${ws.namespace}/${ws.repo}!${ws.id}`} label={label} />
                           <Link to={href} className="workspace-name-link">
                             {label}
                           </Link>

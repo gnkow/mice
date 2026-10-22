@@ -1,7 +1,11 @@
 import { Layers as ActionLayers, Monitor as ActionMonitor, X as ActionX, FileDiff, Tags, Terminal } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { FavoriteStar } from '../components/FavoriteStar'
+import { ListToolbar } from '../components/ListToolbar'
 import { Modal } from '../components/Modal'
+import { useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
 import { MetaPills } from '../components/MetaPills'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
@@ -13,7 +17,7 @@ import {
   listBranches,
   listWorkspaces,
 } from '../lib/oxen/api'
-import { OxenApiError } from '../lib/oxen/types'
+import { OxenApiError, type Workspace } from '../lib/oxen/types'
 import {
   listSessions,
   sessionMounts,
@@ -22,6 +26,8 @@ import {
   type DesktopSession,
 } from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
+
+const WS_SORTS: SortFields<Workspace> = { name: (w) => w.name || w.id, created: (w) => w.created_at }
 
 function TrashIcon({ size = 14 }: { size?: number }) {
   return (
@@ -49,6 +55,8 @@ export function WorkspacesPage() {
   const sessions = useAsync((signal) => listSessions(signal), [])
 
   const [filter, setFilter] = useState('')
+  const sort = useListSort('repo-workspaces', WS_SORTS)
+  const favs = useFavorites()
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
   const [branch, setBranch] = useState('main')
@@ -116,6 +124,10 @@ export function WorkspacesPage() {
       )
     })
   }, [list, filter])
+  const ordered = useMemo(
+    () => sort.apply(filtered, (ws) => favs.has('workspace', `${namespace}/${repo}!${ws.id}`)),
+    [filtered, sort.apply, favs, namespace, repo],
+  )
 
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
 
@@ -198,19 +210,11 @@ export function WorkspacesPage() {
         </div>
       </div>
 
-      <div className="workspaces-toolbar">
-        <label>
-          <span className="sr-only">Filter workspaces</span>
-          <input
-            type="search"
-            className="workspaces-filter"
-            placeholder="Filter workspaces…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            disabled={workspaces.kind !== 'ok'}
-          />
-        </label>
-      </div>
+      <ListToolbar
+        id="workspaces"
+        sort={sort}
+        search={{ value: filter, onChange: setFilter, placeholder: 'Filter workspaces…', disabled: workspaces.kind !== 'ok' }}
+      />
 
       <StateBlock
         loading={workspaces.kind === 'loading'}
@@ -236,7 +240,7 @@ export function WorkspacesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((ws) => {
+                  {ordered.map((ws) => {
                     const label = ws.name || ws.id.slice(0, 8)
                     const href = `${base}/workspaces/${encodeURIComponent(ws.id)}`
                     const mountedSessions = workspaceToSessions.get(ws.id) || []
@@ -247,6 +251,7 @@ export function WorkspacesPage() {
                             <Link className="workspace-name-link" to={href}>
                               {label}
                             </Link>
+                            <FavoriteStar type="workspace" id={`${namespace}/${repo}!${ws.id}`} label={label} />
                             <span className="mono muted small" title={ws.id}>
                               {ws.id.slice(0, 8)}
                             </span>

@@ -176,6 +176,8 @@ Output is JSON. Most commands accept --remote / --token.
   mice notifications [list] [--unread] [--cursor c] | unread-count
   mice notifications read|unread <id> | read-all [--before iso]
   mice notifications preferences [set --json '<prefs>'] | resource-overrides
+  mice favorite list [--type namespace|repo|branch|workspace|job|session]
+  mice favorite add|remove <type> [id]     (id defaults from the current clone)
   mice notifications announce --title t --summary s     (instance admin)
 
   API token create/revoke and CLI device approval stay browser-only.

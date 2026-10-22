@@ -147,7 +147,7 @@ export function NotificationSettingsPage({ embedded = false }: { embedded?: bool
   }
 
   const Container = embedded ? 'section' : 'main'
-  return <Container className={embedded ? 'settings-section' : 'page notification-page'} aria-label={embedded ? 'Notification preferences' : undefined}>
+  return <Container id={embedded ? 'notifications' : undefined} className={embedded ? 'settings-section' : 'page notification-page'} aria-label={embedded ? 'Notification preferences' : undefined}>
     <div className="page-head">
       <div>{embedded ? <h2><Bell className="button-label-icon" aria-hidden="true" />Notifications</h2> : <h1>Notifications</h1>}<p className="lede">Choose the activity and delivery channels that work for you.</p></div>
       <Link className="btn" to="/notifications"><Mail size={16} aria-hidden="true" />Open inbox</Link>
@@ -194,6 +194,7 @@ export function NotificationSettingsPage({ embedded = false }: { embedded?: bool
       <fieldset disabled={busy || loading}>
         <legend>Resource watch and mute overrides</legend>
         <p>All accessible resources are included by default. The nearest explicit override wins: a child watch can override a parent mute. Watch never grants access, overrides disabled categories, or enables an external channel. Personal outcomes are separate from resource muting.</p>
+        <p className="muted small">Favorites notify by default; mute a resource to override. A favorite never overrides a disabled category.</p>
         <p className="muted small">Hierarchy: instance → namespace → repository → type → resource ID. Empty fields inherit their parent scope; leave all fields empty for the entire instance. Paths and IDs are exact resource identifiers, not wildcard patterns.</p>
         <ul className="notification-overrides">{form.resourceOverrides.map((entry, index) => <li key={index}>
           <div><strong>{entry.mode === 'watch' ? 'Watch' : 'Mute'}</strong> · {[entry.resource.namespace, entry.resource.repo, entry.resource.type, entry.resource.id].filter(Boolean).join(' / ') || 'Entire instance'}</div>

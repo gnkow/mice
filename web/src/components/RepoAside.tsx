@@ -11,32 +11,13 @@ import {
 } from '../lib/oxen/api'
 import { formatBytes } from '../lib/oxen/client'
 import { lastBranch } from '../lib/lastBranch'
-import { loadRepoSocial, REPO_SOCIAL_EVENT } from '../lib/repoSocial'
 import { OxenApiError } from '../lib/oxen/types'
 import { AuthorAvatar } from './AuthorAvatar'
 import { DataTypeIcon } from './icons'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 export function RepoAside() {
   const { namespace = '', repo = '' } = useParams()
-  const [starred, setStarred] = useState(
-    () => loadRepoSocial(namespace, repo).star,
-  )
-
-  useEffect(() => {
-    setStarred(loadRepoSocial(namespace, repo).star)
-    function onSocial(e: Event) {
-      const detail = (e as CustomEvent).detail as
-        | { namespace: string; repo: string }
-        | undefined
-      if (detail?.namespace === namespace && detail?.repo === repo) {
-        setStarred(loadRepoSocial(namespace, repo).star)
-      }
-    }
-    window.addEventListener(REPO_SOCIAL_EVENT, onSocial)
-    return () => window.removeEventListener(REPO_SOCIAL_EVENT, onSocial)
-  }, [namespace, repo])
-
   const detail = useAsync(
     (signal) => getRepository(namespace, repo, signal),
     [namespace, repo],
@@ -171,13 +152,6 @@ export function RepoAside() {
                     : formatBytes(repository.size)}
                 </strong>
                 <span className="muted"> size</span>
-              </li>
-              <li>
-                <strong>{starred ? 1 : 0}</strong>
-                <span className="muted">
-                  {' '}
-                  star{starred ? '' : 's'}
-                </span>
               </li>
               <li className="hub-aside-meta-secondary">
                 <strong>{repository.branch_count ?? 0}</strong>

@@ -1,15 +1,22 @@
 import { Monitor as ActionMonitor } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
+import { FavoriteStar } from '../components/FavoriteStar'
+import { ListToolbar } from '../components/ListToolbar'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { SessionCreateModal } from '../components/SessionCreateModal'
 import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import { StateBlock } from '../components/StateBlock'
+import { useListSort, type SortFields } from '../components/SortControl'
 import { useAsync } from '../hooks/useAsync'
+import { useFavorites } from '../lib/favorites'
 import {
   listSessions,
   sessionsMountingRepoWorkspace,
+  type DesktopSession,
 } from '../lib/sessions'
+
+const SESSION_SORTS: SortFields<DesktopSession> = { name: (x) => x.id, created: (x) => x.created_at }
 
 /** Repository sessions list — detail lives on the global Session page. */
 export function RepoSessionsPage() {
@@ -21,7 +28,17 @@ export function RepoSessionsPage() {
 
   const state = useAsync((signal) => listSessions(signal), [namespace, repo])
   const all = state.kind === 'ok' ? state.data.sessions : []
-  const sessions = sessionsMountingRepoWorkspace(all, namespace, repo)
+  const mounting = sessionsMountingRepoWorkspace(all, namespace, repo)
+  const [filter, setFilter] = useState('')
+  const sort = useListSort('repo-sessions', SESSION_SORTS)
+  const favs = useFavorites()
+  const sessions = useMemo(() => {
+    const needle = filter.trim().toLowerCase()
+    const matching = needle
+      ? mounting.filter((s) => [s.id, s.status, s.owner.name, s.owner.email].some((v) => (v ?? '').toLowerCase().includes(needle)))
+      : mounting
+    return sort.apply(matching, (s) => favs.has('session', s.id))
+  }, [mounting, filter, sort.apply, favs])
   const slice = paginate(sessions, page, PAGE_SIZE)
 
   function goPage(next: number) {
@@ -66,15 +83,22 @@ export function RepoSessionsPage() {
         loading={state.kind === 'loading'}
         error={state.kind === 'error' ? state.message : null}
         onRetry={() => state.reload()}
-        empty={state.kind === 'ok' && sessions.length === 0}
+        empty={state.kind === 'ok' && mounting.length === 0}
         emptyMessage="No sessions mount a workspace of this repository yet. Use the New session button above to get started."
       >
-        {state.kind === 'ok' && sessions.length > 0 && (
+        {state.kind === 'ok' && mounting.length > 0 && (
           <>
+            <ListToolbar
+              id="repo-sessions"
+              sort={sort}
+              search={{ value: filter, onChange: setFilter, placeholder: 'Filter by id, status or owner' }}
+              meta={`${sessions.length} session${sessions.length === 1 ? '' : 's'}${filter.trim() ? ' matching' : ''}`}
+            />
             <ul className="card-list">
               {slice.items.map((s) => (
-                <li key={s.id}>
+                <li key={s.id} className="fav-row">
                   <SessionSummaryCard session={s} />
+                  <FavoriteStar type="session" id={s.id} className="fav-row-star" />
                 </li>
               ))}
             </ul>

@@ -6,9 +6,15 @@ import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { listJobs } from '../lib/jobs'
+import { FavoriteStar } from '../components/FavoriteStar'
+import { SortControl, useListSort, type SortFields } from '../components/SortControl'
+import { useFavorites } from '../lib/favorites'
+import type { JobRun } from '../lib/jobs'
+
+const JOBS_SORTS: SortFields<JobRun> = { name: (x) => x.name || x.id, created: (x) => x.created_at }
 
 export function JobsListPage() {
-  const state = useAsync((signal) => listJobs({ limit: 100 }, signal), [])
+  const state = useAsync((signal) => listJobs({ limit: 100, favoritesFirst: true }, signal), [])
   const [params, setParams] = useSearchParams()
   const [filter, setFilter] = useState(params.get('q') ?? '')
   const pageParam = Number(params.get('page') || '1')
@@ -27,7 +33,13 @@ export function JobsListPage() {
     })
   }, [jobs, filter])
 
-  const slice = paginate(filtered, page, PAGE_SIZE)
+  const sort = useListSort('jobs', JOBS_SORTS)
+  const favs = useFavorites()
+  const ordered = useMemo(
+    () => sort.apply(filtered, (x) => favs.has('job', x.id)),
+    [filtered, sort.apply, favs],
+  )
+  const slice = paginate(ordered, page, PAGE_SIZE)
 
   function goPage(next: number) {
     const nextParams = new URLSearchParams(params)
@@ -57,6 +69,7 @@ export function JobsListPage() {
       </div>
 
       <div className="ns-toolbar">
+        <SortControl id="jobs" sort={sort} />
         <div className="ns-search-field">
           <label className="ns-search-label" htmlFor="job-filter">
             Search
@@ -122,8 +135,9 @@ export function JobsListPage() {
           <>
             <ul className="card-list">
               {slice.items.map((j) => (
-                <li key={j.id}>
+                <li key={j.id} className="fav-row">
                   <JobSummaryCard job={j} showRepo />
+                  <FavoriteStar type="job" id={j.id} label={j.name} className="fav-row-star" />
                 </li>
               ))}
             </ul>

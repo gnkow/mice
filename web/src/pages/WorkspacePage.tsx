@@ -29,6 +29,7 @@ import {
   syncSessionMount,
 } from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
+import { FavoriteStar } from '../components/FavoriteStar'
 
 type WorkspaceTab = 'changes' | 'jobs' | 'sessions' | 'metadata'
 type StagedKind = 'added' | 'modified' | 'removed'
@@ -354,7 +355,8 @@ export function WorkspacePage() {
             <Link to={`${base}/workspaces`}>← Workspaces</Link>
           </p>
           <h1 className="workspace-detail-title">
-            {ws?.name || workspaceId.slice(0, 8)}
+            {ws?.name || workspaceId.slice(0, 8)}{' '}
+            <FavoriteStar type="workspace" id={`${namespace}/${repo}!${workspaceId}`} label={ws?.name || workspaceId} />
           </h1>
           {ws && (
             <div className="workspace-meta-row">

@@ -19,6 +19,7 @@ import {
   type JobRun,
 } from '../lib/jobs'
 import { formatRelativeTime } from '../lib/time'
+import { FavoriteStar } from '../components/FavoriteStar'
 
 type JobTab = 'overview' | 'files' | 'logs' | 'metadata'
 
@@ -125,6 +126,7 @@ export function JobPage() {
         <div className="job-page-title-row">
           <div className="job-page-title-main">
             <h1 className="job-page-title">{title}</h1>
+            <FavoriteStar type="job" id={job.id} label={title} />
             {hasName ? (
               <span className="job-page-id mono muted" title={job.id}>
                 {job.id.slice(0, 12)}
