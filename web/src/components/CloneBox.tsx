@@ -145,7 +145,7 @@ export function CloneBox({ namespace, repo }: Props) {
           <code>{authCmd}</code>
         </pre>
         <p className="clone-hint muted small">
-          For CI: create a PAT under Settings → CLI tokens, then configure oxen
+          For CI: create a PAT under Profile → CLI tokens, then configure oxen
           against the BFF host.
         </p>
       </section>

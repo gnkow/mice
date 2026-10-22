@@ -1,21 +1,19 @@
 import { LogOut as ActionLogOut } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
-import { BookOpen, Box, ClipboardList, FolderGit2, Home, Layers, Menu, Monitor, Network, Search, Sun, Tags, Terminal } from 'lucide-react'
+import { BookOpen, Box, ClipboardList, FolderGit2, Home, Layers, Menu, Monitor, Network, Search, Settings, Tags, Terminal, UserRound } from 'lucide-react'
 import { fetchAuthMe, logout, type AuthUser } from '../lib/auth'
 import { fetchServerVersion } from '../lib/oxen/api'
 import { loadSettings, subscribeSettings } from '../lib/oxen/settings'
 import {
   applyAppearance,
   loadAppearance,
-  saveAppearance,
   subscribeAppearance,
   type Appearance,
-  type ColorMode,
-  type DiffPalette,
 } from '../lib/appearance'
 import { ConfirmProvider } from './ConfirmProvider'
 import { initials } from '../lib/initials'
+import { NotificationBell } from './NotificationBell'
 
 function useCloseDetails(ref: RefObject<HTMLDetailsElement | null>) {
   useEffect(() => {
@@ -40,10 +38,8 @@ export function Layout() {
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance())
   const [query, setQuery] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const themeRef = useRef<HTMLDetailsElement>(null)
   const menuRef = useRef<HTMLDetailsElement>(null)
   const searchRef = useRef<HTMLDetailsElement>(null)
-  useCloseDetails(themeRef)
   useCloseDetails(menuRef)
   useCloseDetails(searchRef)
 
@@ -134,18 +130,6 @@ export function Layout() {
     navigate(
       q ? `/repositories?q=${encodeURIComponent(q)}` : '/repositories',
     )
-  }
-
-  function setColorMode(colorMode: ColorMode) {
-    const next = { ...loadAppearance(), colorMode }
-    saveAppearance(next)
-    setAppearance(next)
-  }
-
-  function setDiffPalette(diffPalette: DiffPalette) {
-    const next = { ...loadAppearance(), diffPalette }
-    saveAppearance(next)
-    setAppearance(next)
   }
 
   function closeDrawer() {
@@ -248,54 +232,7 @@ export function Layout() {
               />
             </form>
           </details>
-          <details className="menu-pop" ref={themeRef}>
-            <summary className="icon-round" aria-label="Theme" title="Theme">
-              <Sun size={16} />
-            </summary>
-            <div className="menu-pop-panel">
-              <fieldset className="appearance-fieldset">
-                <legend>Theme</legend>
-                {(
-                  [
-                    ['light', 'Light'],
-                    ['dark', 'Dark'],
-                    ['system', 'System'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      type="radio"
-                      name="color-mode"
-                      checked={appearance.colorMode === value}
-                      onChange={() => setColorMode(value)}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </fieldset>
-              <fieldset className="appearance-fieldset">
-                <legend>Diff colors</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name="diff-palette"
-                    checked={appearance.diffPalette === 'default'}
-                    onChange={() => setDiffPalette('default')}
-                  />
-                  Default
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="diff-palette"
-                    checked={appearance.diffPalette === 'colorblind'}
-                    onChange={() => setDiffPalette('colorblind')}
-                  />
-                  Colorblind
-                </label>
-              </fieldset>
-            </div>
-          </details>
+          {user && <NotificationBell key={JSON.stringify([user.iss, user.sub])} user={user} />}
           <details className="profile-menu" ref={menuRef}>
             <summary
               className="avatar-btn"
@@ -305,47 +242,22 @@ export function Layout() {
               <span className="avatar-circle">{avatar}</span>
             </summary>
             <div className="profile-menu-panel">
-              {user ? (
-                <p className="muted small">
-                  Signed as <strong>{user.name}</strong>
-                  <br />
-                  <span>{user.email}</span>
-                </p>
-              ) : (
-                <p className="muted small">Not signed in</p>
-              )}
-              {!user && (
-                <NavLink
-                  to="/login"
-                  onClick={() => {
-                    if (menuRef.current) menuRef.current.open = false
-                  }}
-                >
-                  Sign in
-                </NavLink>
-              )}
+              <NavLink to="/profile" onClick={() => { if (menuRef.current) menuRef.current.open = false }}>
+                <UserRound size={14} aria-hidden="true" className="button-label-icon" />Profile
+              </NavLink>
               <NavLink
                 to="/settings"
                 onClick={() => {
                   if (menuRef.current) menuRef.current.open = false
                 }}
               >
-                Settings
+                <Settings size={14} aria-hidden="true" className="button-label-icon" />Settings
               </NavLink>
               {user && (
                 <button type="button" className="linkish" onClick={onLogout}>
                   <ActionLogOut size={14} aria-hidden="true" className="button-label-icon" />Sign out
                 </button>
               )}
-              <div className="profile-menu-footer">
-                <p className="muted small">
-                  {connected === true
-                    ? `Server v${version}`
-                    : connected === false
-                      ? 'Offline'
-                      : 'Checking connection…'}
-                </p>
-              </div>
             </div>
           </details>
         </header>
@@ -365,6 +277,7 @@ export function Layout() {
           <Outlet />
         </div>
         <footer className="site-footer">
+          <span className="muted small">{connected === true ? `Server v${version}` : connected === false ? 'Offline' : 'Checking connection…'}</span>
           <NavLink to="/">Mice</NavLink>
           <a href="https://docs.oxen.ai/" rel="noreferrer" target="_blank">
             Oxen docs

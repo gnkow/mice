@@ -5,10 +5,12 @@ import { fetchAuthzMe } from '../lib/auth'
 /**
  * When AuthZ enforce is on, zero-grant users are sent to /pending
  * (except instance admin / create_namespace, which the API already excludes).
+ * Personal notification inbox/preferences remain available without resource grants.
  */
 export function RequireAuthz() {
   const location = useLocation()
-  const [state, setState] = useState<'loading' | 'ok' | 'pending'>('loading')
+  const [result, setResult] = useState<{ key: string; state: 'ok' | 'pending' }>()
+  const state = result?.key === location.key ? result.state : 'loading'
 
   useEffect(() => {
     let cancelled = false
@@ -16,13 +18,13 @@ export function RequireAuthz() {
       .then((authz) => {
         if (cancelled) return
         if (!authz) {
-          setState('ok')
+          setResult({ key: location.key, state: 'ok' })
           return
         }
-        setState(authz.enforce && authz.pending ? 'pending' : 'ok')
+        setResult({ key: location.key, state: authz.enforce && authz.pending ? 'pending' : 'ok' })
       })
       .catch(() => {
-        if (!cancelled) setState('ok')
+        if (!cancelled) setResult({ key: location.key, state: 'ok' })
       })
     return () => {
       cancelled = true
@@ -37,7 +39,8 @@ export function RequireAuthz() {
     )
   }
 
-  if (state === 'pending' && location.pathname !== '/pending') {
+  const personalNotifications = location.pathname === '/notifications' || location.pathname === '/profile' || location.pathname === '/profile/notifications'
+  if (state === 'pending' && location.pathname !== '/pending' && !personalNotifications) {
     return <Navigate to="/pending" replace />
   }
 

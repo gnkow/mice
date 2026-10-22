@@ -100,12 +100,13 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     await page.goto('/')
     await expect(page.locator('header.topbar')).toBeVisible()
     await openAccountMenu(page)
+    await expect(page.locator('.profile-menu-panel').getByRole('link')).toHaveText(['Profile', 'Settings'])
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+    await page.locator('.profile-menu-panel').getByRole('link', { name: 'Profile', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible()
     await expect(page.getByText('Signed as')).toBeVisible()
     await expect(page.getByText('UI Login User')).toBeVisible()
     await expect(page.getByText('ui-login@mice.local')).toBeVisible()
-    await expect(
-      page.getByRole('button', { name: 'Sign out' }),
-    ).toBeVisible()
   })
 
   test('TC-AUTH-09: UI Sign out returns to login and blocks app', async ({

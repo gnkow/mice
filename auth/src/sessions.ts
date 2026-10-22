@@ -375,6 +375,15 @@ async function provisionInBackground(id: string): Promise<void> {
       last_activity_at: new Date().toISOString(),
       error: null,
     })
+    appendAudit({
+      actor: session.owner,
+      via: session.via,
+      method: 'POST',
+      path: `/auth/sessions/${id}`,
+      status: 200,
+      action: 'session.ready',
+      detail: { session_id: id, owner: { sub: session.owner.sub, iss: session.owner.iss } },
+    })
     console.log(`[sessions] provision ${id} succeeded`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'provision failed'
@@ -393,6 +402,15 @@ async function provisionInBackground(id: string): Promise<void> {
       action: 'session.create',
       message: msg,
       detail: { session_id: id, failed: true },
+    })
+    appendAudit({
+      actor: session.owner,
+      via: session.via,
+      method: 'POST',
+      path: `/auth/sessions/${id}`,
+      status: 200,
+      action: 'session.fail',
+      detail: { session_id: id, owner: { sub: session.owner.sub, iss: session.owner.iss } },
     })
   } finally {
     provisioningInFlight.delete(id)
@@ -667,7 +685,11 @@ export function startSessionsLifecycleSweeper(): void {
             path: `/auth/sessions/${s.id}`,
             status: 200,
             action: 'session.destroy',
-            detail: { session_id: s.id, reason: 'max_lifetime' },
+            detail: {
+              session_id: s.id,
+              owner: { sub: s.owner.sub, iss: s.owner.iss },
+              reason: 'max_lifetime',
+            },
           })
         } catch {
           /* best-effort */
@@ -696,7 +718,11 @@ export function startSessionsLifecycleSweeper(): void {
             path: `/auth/sessions/${s.id}/stop`,
             status: 200,
             action: 'session.stop',
-            detail: { session_id: s.id, reason: 'idle_timeout' },
+            detail: {
+              session_id: s.id,
+              owner: { sub: s.owner.sub, iss: s.owner.iss },
+              reason: 'idle_timeout',
+            },
           })
         } catch {
           /* best-effort */

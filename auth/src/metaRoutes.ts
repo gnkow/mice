@@ -226,7 +226,7 @@ function auditMeta(
     ...(ref?.namespace ? { namespace: ref.namespace } : {}),
     ...(ref?.repo ? { repo: ref.repo } : {}),
     message,
-    detail,
+    detail: { ...detail, ...(ref ? { resource: ref } : {}) },
   })
 }
 

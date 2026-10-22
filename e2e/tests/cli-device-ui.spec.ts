@@ -140,11 +140,11 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     expect(body.user.email).toBe('api-approve@mice.local')
   })
 
-  test('TC-CLI-14: Settings documents mice login for day-to-day CLI', async ({
+  test('TC-CLI-14: Profile documents mice login for day-to-day CLI', async ({
     page,
   }) => {
     await sessionLogin(page)
-    await page.goto('/settings')
+    await page.goto('/profile')
     await expect(
       page.getByRole('heading', { name: 'CLI tokens' }),
     ).toBeVisible()

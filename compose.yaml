@@ -50,6 +50,12 @@ services:
       AUTH_DATA_DIR: /data
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
       PUBLIC_WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
+      # Optional notification delivery (inbox/toasts work without these).
+      NOTIFICATIONS_SMTP_URL: ${NOTIFICATIONS_SMTP_URL:-}
+      NOTIFICATIONS_EMAIL_FROM: ${NOTIFICATIONS_EMAIL_FROM:-}
+      NOTIFICATIONS_VAPID_PUBLIC_KEY: ${NOTIFICATIONS_VAPID_PUBLIC_KEY:-}
+      NOTIFICATIONS_VAPID_PRIVATE_KEY: ${NOTIFICATIONS_VAPID_PRIVATE_KEY:-}
+      NOTIFICATIONS_VAPID_SUBJECT: ${NOTIFICATIONS_VAPID_SUBJECT:-}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-mice-session-secret}
       # PLAT-AUTHO: unset = store flag (off until bootstrap).
       AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}

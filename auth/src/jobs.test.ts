@@ -29,6 +29,7 @@ const { getJob, rekeyJob, resolveJobId, upsertJob } = await import(
   './jobsStore.js'
 )
 const { env } = await import('./env.js')
+const { queryAudit } = await import('./audit.js')
 const { validateArity, appendLineage, queryLineage } = await import(
   './lineage.js'
 )
@@ -426,6 +427,17 @@ describe('publishSyncedCliJobs', () => {
     assert.equal(job.status, 'succeeded')
     assert.equal(job.sync_branch, 'main')
     assert.equal(job.result_commit, result)
+    const outcomes = queryAudit({ action: 'job.complete', jobId: job.id }).events
+    assert.equal(outcomes.length, 1)
+    assert.deepEqual(outcomes[0].detail?.owner, { sub: admin.sub, iss: admin.iss })
+    const repeated = publishSyncedCliJobs(
+      admin,
+      'pat',
+      [{ ...job, status: 'succeeded' }],
+      'main',
+    )
+    assert.ok(!('error' in repeated))
+    assert.equal(queryAudit({ action: 'job.complete', jobId: job.id }).events.length, 1)
   })
 
   it('rejects path-traversal job ids', () => {

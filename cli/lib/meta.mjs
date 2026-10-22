@@ -31,6 +31,9 @@ const VALUE_FLAGS = new Set([
   'token',
   'namespace',
   'repo',
+  'type',
+  'limit',
+  'cursor',
 ])
 const BOOL_FLAGS = new Set(['own', 'json', 'yes'])
 
@@ -67,6 +70,7 @@ export function parseMetaArgs(argv) {
     else if (key === 'untag') out.untags.push(...splitList(value).map(t => t.toLowerCase()))
     else if (key === 'label') out.labels.push(value)
     else if (key === 'unlabel') out.unlabels.push(...splitList(value).map(k => k.toLowerCase()))
+    else if (key === 'type') (out.types ??= []).push(...splitList(value))
     else out.flags[key] = value
   }
   return out
@@ -176,10 +180,24 @@ const query = (type, id, extra = '', scope) =>
  *           ctx: (flags: object) => { namespace: string, repo: string, branch?: string },
  *           usage: (code?: number) => never }} deps
  */
+export function buildSearchQuery(p) {
+  const u = new URLSearchParams()
+  if (p._[0]) u.set('q', p._.join(' '))
+  for (const t of p.types ?? []) u.append('type', t)
+  for (const k of ['namespace', 'repo', 'limit', 'cursor']) if (p.flags[k]) u.set(k, p.flags[k])
+  for (const t of p.tags) u.append('tag', t)
+  for (const l of p.labels) {
+    const i = l.indexOf('=')
+    if (i < 1) throw new Error(`Bad --label ${l}; use key=value`)
+    u.set(`label.${l.slice(0, i).trim().toLowerCase()}`, l.slice(i + 1))
+  }
+  return `/auth/meta/search?${u}`
+}
+
 export async function cmdMeta(argv, deps) {
   const [sub, ...rest] = argv
   if (!sub || sub === '-h' || sub === '--help') deps.usage(sub ? 0 : 1)
-  if (!['get', 'set', 'clear'].includes(sub)) {
+  if (!['get', 'set', 'clear', 'history', 'search'].includes(sub)) {
     console.error(`Unknown meta command: ${sub}`)
     deps.usage(1)
   }
@@ -189,6 +207,16 @@ export async function cmdMeta(argv, deps) {
   } catch (err) {
     console.error(err instanceof Error ? err.message : err)
     deps.usage(1)
+  }
+  if (sub === 'search') {
+    try {
+      const { remote, token } = deps.auth(p.flags)
+      console.log(JSON.stringify(await api(remote, token, buildSearchQuery(p)), null, 2))
+    } catch (err) {
+      console.error(`mice: ${err instanceof Error ? err.message : err}`)
+      process.exitCode = 1
+    }
+    return
   }
   const [type, idArg] = p._
   if (!type) {
@@ -217,6 +245,12 @@ export async function cmdMeta(argv, deps) {
       } else if (p.flags.revision) throw new Error('--revision requires branch or commit scope')
     } else if (p.flags.scope || p.flags.revision) throw new Error('--scope and --revision apply only to files and directories')
     const ref = { type, id, ...(scope ? { scope } : {}) }
+    if (sub === 'history') {
+      const res = await api(remote, token, query(type, id, '', scope).replace('/auth/meta?', '/auth/meta/history?'))
+      console.log(JSON.stringify(res, null, 2))
+      return
+    }
+
     if (sub === 'get') {
       const res = await api(remote, token, query(type, id, p.flags.own ? '&view=own' : '', scope))
       console.log(p.flags.json ? JSON.stringify(res, null, 2) : formatMeta(res, !!p.flags.own))
