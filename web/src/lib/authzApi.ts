@@ -149,7 +149,7 @@ export function searchDirectory(
   )
 }
 
-async function authzFetch<T>(
+export async function authzFetch<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
 ): Promise<T> {

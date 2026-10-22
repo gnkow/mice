@@ -1,4 +1,5 @@
 import { LogOut as ActionLogOut } from 'lucide-react'
+import { AnnouncementBanner } from './AnnouncementBanner'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
 import { BookOpen, Box, ClipboardList, FolderGit2, Home, Layers, Menu, Monitor, Network, Search, Settings, Tags, Terminal, UserRound } from 'lucide-react'
@@ -209,7 +210,7 @@ export function Layout() {
             <span className="wordmark">MICE</span>
           </NavLink>
           <div className="topbar-spacer" />
-          {connected === false && (
+        {connected === false && (
             <div
               className="conn bad"
               title={settings.apiBase || 'same-origin /api'}
@@ -261,6 +262,7 @@ export function Layout() {
             </div>
           </details>
         </header>
+        {user && <AnnouncementBanner />}
         {connected === false && (
           <div className="offline-banner flash flash-error" role="alert">
             {user

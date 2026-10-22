@@ -2417,7 +2417,8 @@ p.ok {
 }
 
 .ns-settings-field input,
-.ns-settings-field select {
+.ns-settings-field select,
+.ns-settings-field textarea {
   width: 100%;
   padding: 0.4rem 0.65rem;
   border-radius: 0.375rem;
@@ -2429,7 +2430,8 @@ p.ok {
 }
 
 .ns-settings-field input:focus,
-.ns-settings-field select:focus {
+.ns-settings-field select:focus,
+.ns-settings-field textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
@@ -6715,3 +6717,23 @@ a.jobs-list-item:hover {
   font-size: 0.9rem;
 }
 .ns-sort-field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.announcements { display: flex; flex-direction: column; }
+.announcement { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 1.25rem; border-bottom: 1px solid var(--line); }
+.announcement-body { flex: 1; display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem; min-width: 0; }
+.announcement-icon { margin-top: 0.2rem; flex: none; }
+.announcement-info { background: color-mix(in srgb, var(--accent-2) 10%, var(--bg)); }
+.announcement-warning { background: color-mix(in srgb, #9a6700 12%, var(--bg)); }
+.announcement-critical { background: color-mix(in srgb, var(--danger) 12%, var(--bg)); }
+.announcement-dismiss { margin: 0; padding: 0.1rem 0.5rem; border: none; border-radius: 0.25rem; background: transparent; color: var(--muted); font: inherit; font-size: 0.8rem; cursor: pointer; }
+.announcement-dismiss:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+
+.announcement-message-field { max-width: 40rem; margin-top: 1.25rem; }
+.announcement-message-field textarea { resize: vertical; }
+.ns-settings-grid:has(+ .announcement-message-field) { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr); max-width: 52rem; }
+.ns-settings-grid:has(+ .announcement-message-field) .ns-settings-field { max-width: none; }
+.announcements-form .ns-settings-actions { margin-top: 1rem; }
+
+.announcements-form + .ns-settings-subhead { margin-top: 1.75rem; }
+
+.ns-check-fieldset + .ns-member-form-actions { margin-top: 1rem; }

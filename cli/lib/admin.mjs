@@ -27,6 +27,7 @@ export const ADMIN_GROUPS = [
   'session',
   'notifications',
   'favorite',
+  'announcement',
 ]
 
 /**
@@ -380,6 +381,26 @@ export function buildRequest(group, argv, ctx = () => ({})) {
           body: files.length ? { files } : {},
         }
       }
+      break
+    }
+
+    case 'announcement': {
+      const base = '/auth/announcements'
+      const severities = ['info', 'warning', 'critical']
+      if (!sub || sub === 'list') return { method: 'GET', path: `${base}${qs({ all: flags.all ? '1' : undefined })}` }
+      if (sub === 'create') {
+        const severity = str(flags.severity)
+        if (severity && !severities.includes(severity)) throw new UsageError(`--severity must be one of ${severities.join(', ')}`)
+        return {
+          method: 'POST',
+          path: base,
+          body: { title: need(str(flags.title), '--title'), message: str(flags.message), severity, expiresAt: str(flags.expires) },
+        }
+      }
+      if (sub === 'enable' || sub === 'disable') {
+        return { method: 'PATCH', path: `${base}/${enc(need(args[0], 'announcement id'))}`, body: { active: sub === 'enable' } }
+      }
+      if (sub === 'delete') return { method: 'DELETE', path: `${base}/${enc(need(args[0], 'announcement id'))}` }
       break
     }
 

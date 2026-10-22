@@ -131,6 +131,13 @@ import {
 import { registerJobRoutes } from './jobsRoutes.js'
 import { registerMetaRoutes } from './metaRoutes.js'
 import { registerFavoritesRoutes } from './favoritesRoutes.js'
+import {
+  AnnouncementError,
+  createAnnouncement,
+  deleteAnnouncement,
+  listAnnouncements,
+  updateAnnouncement,
+} from './announcementsStore.js'
 import { purgeFavoritesForAudit } from './favoritesStore.js'
 import { registerSessionRoutes } from './sessionsRoutes.js'
 import {
@@ -1913,6 +1920,78 @@ app.all('/api/*', async (c) => {
 registerJobRoutes(app)
 registerMetaRoutes(app)
 registerFavoritesRoutes(app)
+
+// --- Instance announcements: any signed-in user reads live ones; instance admins manage ---
+
+async function announcementPrincipal(c: Context, admin: boolean) {
+  const session = await requireSession(c)
+  if (!session) return { error: c.json({ error: 'Authentication required' }, 401) } as const
+  preparePrincipal(session)
+  if (admin && !isInstanceAdmin(session)) return { error: c.json({ error: 'Forbidden' }, 403) } as const
+  return { session } as const
+}
+
+function announcementFail(c: Context, err: unknown) {
+  if (err instanceof AnnouncementError) return c.json({ error: err.message }, err.status)
+  throw err
+}
+
+app.get('/auth/announcements', async (c) => {
+  const wantAll = c.req.query('all') === '1'
+  const p = await announcementPrincipal(c, wantAll)
+  if ('error' in p) return p.error
+  return c.json({ announcements: listAnnouncements({ all: wantAll }) })
+})
+
+app.post('/auth/announcements', async (c) => {
+  const p = await announcementPrincipal(c, true)
+  if ('error' in p) return p.error
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+    const row = createAnnouncement(body, `${p.session.name || p.session.email || p.session.sub}`)
+    auditMutation(c, p.session, 'session', {
+      action: 'announcement.create',
+      message: `Published announcement "${row.title}"`,
+      detail: { announcementId: row.id, severity: row.severity },
+    })
+    return c.json({ announcement: row }, 201)
+  } catch (err) {
+    return announcementFail(c, err)
+  }
+})
+
+app.patch('/auth/announcements/:id', async (c) => {
+  const p = await announcementPrincipal(c, true)
+  if ('error' in p) return p.error
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+    const row = updateAnnouncement(c.req.param('id'), body)
+    auditMutation(c, p.session, 'session', {
+      action: 'announcement.update',
+      message: `Updated announcement "${row.title}"`,
+      detail: { announcementId: row.id, active: row.active },
+    })
+    return c.json({ announcement: row })
+  } catch (err) {
+    return announcementFail(c, err)
+  }
+})
+
+app.delete('/auth/announcements/:id', async (c) => {
+  const p = await announcementPrincipal(c, true)
+  if ('error' in p) return p.error
+  try {
+    const row = deleteAnnouncement(c.req.param('id'))
+    auditMutation(c, p.session, 'session', {
+      action: 'announcement.delete',
+      message: `Deleted announcement "${row.title}"`,
+      detail: { announcementId: row.id },
+    })
+    return c.json({ ok: true })
+  } catch (err) {
+    return announcementFail(c, err)
+  }
+})
 registerSessionRoutes(app)
 registerNotificationRoutes(app)
 startNotificationWorker()

@@ -124,6 +124,16 @@ describe('buildRequest', () => {
     assert.throws(() => buildRequest('notifications', ['preferences', 'set', '--json', '{']))
   })
 
+  it('announcement', () => {
+    assert.equal(buildRequest('announcement', []).path, '/auth/announcements')
+    assert.equal(buildRequest('announcement', ['list', '--all']).path, '/auth/announcements?all=1')
+    assert.deepEqual(buildRequest('announcement', ['create', '--title', 'Hi', '--severity', 'warning']).body, { title: 'Hi', message: undefined, severity: 'warning', expiresAt: undefined })
+    assert.deepEqual(buildRequest('announcement', ['disable', 'a1']), { method: 'PATCH', path: '/auth/announcements/a1', body: { active: false } })
+    assert.equal(buildRequest('announcement', ['delete', 'a1']).method, 'DELETE')
+    assert.throws(() => buildRequest('announcement', ['create']), /--title/)
+    assert.throws(() => buildRequest('announcement', ['create', '--title', 't', '--severity', 'x']), /--severity/)
+  })
+
   it('favorite', () => {
     const ctx = () => ({ namespace: 'acme', repo: 'web' })
     assert.equal(buildRequest('favorite', []).path, '/auth/favorites')

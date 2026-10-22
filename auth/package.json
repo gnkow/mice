@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node ../scripts/test-fail-fast.mjs --tsx src/authz.test.ts src/audit.test.ts src/meta.test.ts src/directory.test.ts src/lineage.test.ts src/jobs.test.ts src/sessions.test.ts src/cliDevice.test.ts src/tokens.test.ts src/notifications.test.ts src/favorites.test.ts"
+    "test": "node ../scripts/test-fail-fast.mjs --tsx src/authz.test.ts src/audit.test.ts src/meta.test.ts src/directory.test.ts src/lineage.test.ts src/jobs.test.ts src/sessions.test.ts src/cliDevice.test.ts src/tokens.test.ts src/notifications.test.ts src/favorites.test.ts src/announcements.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",

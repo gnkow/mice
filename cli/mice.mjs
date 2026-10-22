@@ -178,6 +178,9 @@ Output is JSON. Most commands accept --remote / --token.
   mice notifications preferences [set --json '<prefs>'] | resource-overrides
   mice favorite list [--type namespace|repo|branch|workspace|job|session]
   mice favorite add|remove <type> [id]     (id defaults from the current clone)
+  mice announcement list [--all]
+  mice announcement create --title <t> [--message <m>] [--severity info|warning|critical] [--expires <ISO date>]   (instance admin)
+  mice announcement enable|disable|delete <id>                                                                    (instance admin)
   mice notifications announce --title t --summary s     (instance admin)
 
   API token create/revoke and CLI device approval stay browser-only.
