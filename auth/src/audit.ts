@@ -57,6 +57,11 @@ export type AuditResource = {
 
 const MAX_LIMIT = 100
 const DEFAULT_LIMIT = 50
+let auditObserver: ((event: AuditEvent) => void) | undefined
+
+export function setAuditObserver(observer: (event: AuditEvent) => void): void {
+  auditObserver = observer
+}
 
 function storePath(): string {
   return join(env.dataDir, 'audit.jsonl')
@@ -97,6 +102,15 @@ export function classifyPath(
     const repo = safeDecode(parts[3])
     const rest = parts.slice(4)
 
+    if (rest[0] === 'commits' && rest.length === 3 &&
+        rest[2] === 'complete' && method === 'POST') {
+      return {
+        action: 'commit.publish',
+        namespace,
+        repo,
+        detail: { commit_id: safeDecode(rest[1]) },
+      }
+    }
     if (rest[0] === 'file') {
       const branch = rest[1] ? safeDecode(rest[1]) : undefined
       const filePath = rest.slice(2).map(safeDecode).join('/')
@@ -224,6 +238,14 @@ export function appendAudit(
   try {
     mkdirSync(dirname(storePath()), { recursive: true })
     appendFileSync(storePath(), `${JSON.stringify(event)}\n`, 'utf8')
+    if (auditObserver) {
+      try {
+        auditObserver(event)
+      } catch (error) {
+        // The journal remains durable; the notification worker retries projection.
+        console.error('[mice-auth] notification capture failed; replay required', error)
+      }
+    }
     return event
   } catch (err) {
     console.error('[mice-auth] audit append failed', err)

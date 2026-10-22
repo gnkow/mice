@@ -2,13 +2,15 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, describe, it } from 'node:test'
+import { after, describe, it, mock } from 'node:test'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-audit-'))
 process.env.AUTH_DATA_DIR = dataDir
 
 const {
   appendAudit,
+  classifyPath,
+  setAuditObserver,
   auditEventsToCsv,
   auditFacets,
   csvCell,
@@ -138,5 +140,58 @@ describe('audit labels', () => {
     assert.ok(auditActionLabel('weird.new_thing').length > 0)
     const all = knownAuditActions()
     assert.equal(new Set(all.map((a) => a.value)).size, all.length)
+  })
+})
+
+describe('notification audit integration', () => {
+    it('classifies completed pushes but not intermediate commit uploads', () => {
+      assert.deepEqual(classifyPath('POST', '/api/repos/ns/repo/commits/abc/complete'), {
+        action: 'commit.publish',
+        namespace: 'ns',
+        repo: 'repo',
+        detail: { commit_id: 'abc' },
+      })
+      assert.equal(classifyPath('POST', '/api/repos/ns/repo/commits/upload').action, 'other')
+      assert.equal(classifyPath('POST', '/api/repos/ns/repo/commits/abc').action, 'other')
+    })
+
+    it('projects appended events and exposes them for durable replay', () => {
+      let observed: string | undefined
+      setAuditObserver((event) => {
+        observed = event.id
+      })
+      const event = appendAudit({
+        actor,
+        via: 'session',
+        method: 'POST',
+        path: '/x',
+        status: 200,
+        action: 'commit.publish',
+      })
+      assert.ok(event)
+      assert.equal(observed, event.id)
+      assert.ok(queryAudit({ action: 'commit.publish' }).events.some((e) => e.id === event.id))
+      setAuditObserver(() => {})
+  })
+
+  it('does not lose the journaled event if live projection throws', () => {
+    const logging = mock.method(console, 'error', () => {})
+    setAuditObserver(() => { throw new Error('notification store unavailable') })
+    try {
+      const event = appendAudit({
+        actor,
+        via: 'session',
+        method: 'POST',
+        path: '/x',
+        status: 200,
+        action: 'file.write',
+      })
+      assert.ok(event)
+      assert.equal(logging.mock.callCount(), 1)
+      assert.ok(queryAudit({ action: 'file.write' }).events.some((entry) => entry.id === event.id))
+    } finally {
+      setAuditObserver(() => {})
+      logging.mock.restore()
+    }
   })
 })

@@ -111,7 +111,7 @@ export function SubmitJobBox({
 
   const clusterSections = useMemo((): CmdSection[] => {
     const setup = [
-      '# Settings → CLI tokens → Create token',
+      '# Profile → CLI tokens → Create token',
       'export MICE_PAT=mice_pat_…',
       `export MICE_REMOTE=${remoteBase}`,
       '# optional: mice login  (for status/logs without exporting PAT)',
@@ -143,7 +143,7 @@ export function SubmitJobBox({
         key: 'cluster-setup',
         title: 'Auth',
         cmd: setup,
-        hint: 'Cluster jobs run on the auth BFF (Docker or Kubernetes via JOBS_RUNNER). Mint a PAT under Settings → CLI tokens for the submit call.',
+        hint: 'Cluster jobs run on the auth BFF (Docker or Kubernetes via JOBS_RUNNER). Mint a PAT under Profile → CLI tokens for the submit call.',
       },
       {
         key: 'cluster-submit',

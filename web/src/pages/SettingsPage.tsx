@@ -1,5 +1,5 @@
-import { Check as ActionCheck, Copy as ActionCopy, KeyRound as ActionKeyRound, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe } from '../lib/auth'
@@ -22,12 +22,6 @@ import {
   saveSettings,
   type OxenSettings,
 } from '../lib/oxen/settings'
-import {
-  createToken,
-  listTokens,
-  revokeToken,
-  type PatPublic,
-} from '../lib/tokens'
 
 const INSTANCE_PERMS: InstancePermission[] = [
   'create_namespace',
@@ -45,39 +39,7 @@ export function SettingsPage() {
   const [form, setForm] = useState<OxenSettings>(loadSettings)
   const [saved, setSaved] = useState(false)
   const [probe, setProbe] = useState<string | null>(null)
-  const [tokens, setTokens] = useState<PatPublic[]>([])
-  const [tokenLabel, setTokenLabel] = useState('CLI token')
-  const [newToken, setNewToken] = useState<string | null>(null)
-  const [tokenError, setTokenError] = useState<string | null>(null)
-  const [tokenBusy, setTokenBusy] = useState(false)
-
   const isInstanceAdmin = me.kind === 'ok' && !!me.data?.instanceAdmin
-  const canManageTokens =
-    me.kind === 'ok' &&
-    !!me.data &&
-    (!me.data.enforce ||
-      me.data.instanceAdmin ||
-      me.data.permissions.manage_own_tokens)
-
-  const reloadTokens = useCallback(async () => {
-    if (!canManageTokens) {
-      setTokens([])
-      return
-    }
-    try {
-      setTokens(await listTokens())
-    } catch {
-      setTokens([])
-    }
-  }, [canManageTokens])
-
-  useEffect(() => {
-    setForm(loadSettings())
-  }, [])
-
-  useEffect(() => {
-    void reloadTokens()
-  }, [reloadTokens])
 
   function onSave(e: FormEvent) {
     e.preventDefault()
@@ -98,178 +60,26 @@ export function SettingsPage() {
     }
   }
 
-  async function onCreateToken(e: FormEvent) {
-    e.preventDefault()
-    setTokenBusy(true)
-    setTokenError(null)
-    setNewToken(null)
-    try {
-      const created = await createToken(tokenLabel)
-      setNewToken(created.token)
-      await reloadTokens()
-    } catch (err) {
-      setTokenError(err instanceof Error ? err.message : 'Create failed')
-    } finally {
-      setTokenBusy(false)
-    }
-  }
-
-  async function onRevoke(id: string) {
-    setTokenBusy(true)
-    setTokenError(null)
-    try {
-      await revokeToken(id)
-      if (newToken) setNewToken(null)
-      await reloadTokens()
-    } catch (err) {
-      setTokenError(err instanceof Error ? err.message : 'Revoke failed')
-    } finally {
-      setTokenBusy(false)
-    }
-  }
-
   return (
     <main className="page wide">
       <div className="page-head">
         <div>
           <h1>Settings</h1>
           <p className="lede">
-            Interactive access uses SSO via the auth BFF (session cookie). Leave
-            API base empty for the Compose/Vite proxy (`/api` → auth →
-            oxen-server). Commit author identity comes from your IdP session,
-            not from this page.
+            Manage connection settings and instance access.
+            Personal preferences and CLI tokens are in your profile.
           </p>
         </div>
       </div>
 
       <div className="ns-settings">
-        {me.kind === 'ok' && me.data && (
-          <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
-        )}
-
-        {isInstanceAdmin && <InstanceAdminSection />}
-
-        <section
-          className="settings-section"
-          aria-labelledby="cli-tokens-heading"
-        >
-          <div className="ns-settings-section-head">
-            <div>
-              <h2 id="cli-tokens-heading">CLI tokens</h2>
-              <p className="muted small">
-                Day-to-day: run <code className="mono">mice login</code> (browser
-                authorize). For CI / automation, mint a PAT below and point oxen
-                / <span className="mono">mice</span> at the{' '}
-                <strong>auth BFF</strong> (not raw oxen-server :3001):
-              </p>
-            </div>
-            <p className="muted small ns-settings-count">
-              {tokens.length} token{tokens.length === 1 ? '' : 's'}
-            </p>
-          </div>
-          {!canManageTokens ? (
-            <p className="muted small">
-              You need the <code className="mono">manage_own_tokens</code>{' '}
-              instance permission to list or create PATs.
-            </p>
-          ) : (
-            <>
-          <pre className="settings-code mono">
-            {`mice login
-mice clone http://localhost:8080/<namespace>/<repo>
-
-# Automation / CI
-oxen config --auth localhost:8080 <PAT>
-oxen clone http://localhost:8080/<namespace>/<repo>
-
-# Jobs (inside a clone; login or MICE_PAT)
-mice job run --image alpine:3.20 -- touch out.txt
-# local commit + ~/.mice job cache; then:
-mice push
-# (publishes job metadata for commits on the tip)`}
-          </pre>
-
-          <form className="ns-member-form" onSubmit={onCreateToken}>
-            <div className="ns-member-form-fields cols-label-action">
-              <label>
-                Token label
-                <input
-                  value={tokenLabel}
-                  onChange={(e) => setTokenLabel(e.target.value)}
-                  placeholder="CLI token"
-                  autoComplete="off"
-                />
-              </label>
-              <div className="ns-member-form-actions">
-                <button
-                  className="btn primary"
-                  type="submit"
-                  disabled={tokenBusy}
-                >
-                  <ActionKeyRound size={14} aria-hidden="true" className="button-label-icon" />Create token
-                </button>
-              </div>
-            </div>
-          </form>
-
-          {newToken && (
-            <div className="flash flash-warn" role="status">
-              <p>Copy this token now — it will not be shown again.</p>
-              <pre className="settings-code mono">{newToken}</pre>
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => void navigator.clipboard.writeText(newToken)}
-              >
-                <ActionCopy size={14} aria-hidden="true" className="button-label-icon" />Copy token
-              </button>
-            </div>
-          )}
-
-          {tokenError && <p className="flash flash-error" role="status">{tokenError}</p>}
-
-          {tokens.length > 0 ? (
-            <ul className="ns-member-list">
-              {tokens.map((t) => (
-                <li key={t.id} className="ns-member-row">
-                  <div className="ns-member-main">
-                    <code className="ns-member-sub">{t.label}</code>
-                    <span className="muted small">
-                      <span className="mono">{t.prefix}…</span>
-                      {' · '}
-                      Created {new Date(t.createdAt).toLocaleString()}
-                      {t.lastUsedAt
-                        ? ` · Last used ${new Date(t.lastUsedAt).toLocaleString()}`
-                        : ''}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn ghost small"
-                    disabled={tokenBusy}
-                    onClick={() => void onRevoke(t.id)}
-                  >
-                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Revoke
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted small">No CLI tokens yet.</p>
-          )}
-            </>
-          )}
-        </section>
-
-        <section
-          className="settings-section"
-          aria-labelledby="connection-heading"
-        >
+        <section id="connection" className="settings-section" aria-labelledby="connection-heading">
           <div className="ns-settings-section-head">
             <div>
               <h2 id="connection-heading">Connection</h2>
               <p className="muted small">
-                Optional override for API base URL.
+                Leave the API base empty for the same-origin auth proxy.
+                Sign-in and commit identity are managed by SSO.
               </p>
             </div>
           </div>
@@ -277,28 +87,23 @@ mice push
             <div className="ns-settings-grid">
               <label className="ns-settings-field">
                 <span className="ns-settings-label">API base URL</span>
-                <input
-                  value={form.apiBase}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, apiBase: e.target.value }))
-                  }
-                  placeholder="(empty = same-origin /api)"
-                  autoComplete="off"
-                />
+                <input value={form.apiBase} onChange={(e) => setForm((f) => ({ ...f, apiBase: e.target.value }))}
+                  placeholder="(empty = same-origin /api)" autoComplete="off" />
               </label>
             </div>
             <div className="btn-row ns-settings-actions">
-              <button className="btn primary" type="submit">
-                <ActionSave size={14} aria-hidden="true" className="button-label-icon" />Save
-              </button>
-              <button className="btn ghost" type="button" onClick={onTest}>
-                <ActionPlug size={14} aria-hidden="true" className="button-label-icon" />Test connection
-              </button>
+              <button className="btn primary" type="submit"><ActionSave size={14} aria-hidden="true" className="button-label-icon" />Save</button>
+              <button className="btn ghost" type="button" onClick={onTest}><ActionPlug size={14} aria-hidden="true" className="button-label-icon" />Test connection</button>
             </div>
             {saved && <p className="flash flash-success" role="status">Saved.</p>}
             {probe && <p className="muted">{probe}</p>}
           </form>
         </section>
+
+        {me.kind === 'ok' && me.data && <>
+          <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
+          {isInstanceAdmin && <InstanceAdminSection />}
+        </>}
       </div>
     </main>
   )
@@ -627,25 +432,14 @@ function InstanceAdminSection() {
   }
 
   return (
-    <section
-      className="settings-section"
-      aria-labelledby="instance-admin-heading"
-    >
-      <div className="ns-settings-section-head">
-        <div>
-          <h2 id="instance-admin-heading">Instance admin</h2>
-          <p className="muted small">
-            Instance admins and delegated permissions (
-            <code>create_namespace</code>, <code>view_audit</code>,{' '}
-            <code>view_lineage</code>, <code>manage_own_tokens</code>,{' '}
-            <code>cli_device_approve</code>, <code>session_*</code>).
-          </p>
-        </div>
-      </div>
+    <>
       {error && <p className="flash flash-error" role="status">{error}</p>}
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {data && (
         <>
+          <section className="settings-section" aria-labelledby="authorization-policy-heading">
+          <h2 id="authorization-policy-heading">Authorization policy</h2>
+          <p className="muted small">Control whether namespace, repository, and instance permissions are enforced.</p>
           <label className="ns-settings-toggle">
             <input
               type="checkbox"
@@ -661,10 +455,12 @@ function InstanceAdminSection() {
               </span>
             </span>
           </label>
+          </section>
 
+          <section className="settings-section" aria-labelledby="instance-administrators-heading">
           <div className="ns-settings-section-head ns-settings-section-head-tight">
             <div>
-              <h3 className="ns-settings-subhead">Admins</h3>
+              <h2 id="instance-administrators-heading">Instance administrators</h2>
               <p className="muted small">
                 Full instance catalog and site-admin bypass.
               </p>
@@ -713,10 +509,12 @@ function InstanceAdminSection() {
               </div>
             </div>
           </form>
+          </section>
 
+          <section className="settings-section" aria-labelledby="delegated-permissions-heading">
           <div className="ns-settings-section-head ns-settings-section-head-spaced">
             <div>
-              <h3 className="ns-settings-subhead">Instance permissions</h3>
+              <h2 id="delegated-permissions-heading">Delegated permissions</h2>
               <p className="muted small">
                 Delegate individual instance permissions to non-admins.
               </p>
@@ -799,8 +597,9 @@ function InstanceAdminSection() {
               </button>
             </div>
           </form>
+          </section>
         </>
       )}
-    </section>
+    </>
   )
 }

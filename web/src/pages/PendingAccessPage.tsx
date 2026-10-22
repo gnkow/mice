@@ -1,4 +1,4 @@
-import { KeyRound as ActionKeyRound, LogOut as ActionLogOut } from 'lucide-react'
+import { Bell, KeyRound as ActionKeyRound, LogOut as ActionLogOut } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { logout } from '../lib/auth'
@@ -50,6 +50,7 @@ export function PendingAccessPage() {
         </button>
       </form>
       {status && <p className="muted">{status}</p>}
+      <p><Link className="btn" to="/notifications"><Bell size={14} aria-hidden="true" />Notifications</Link>{' '}<Link to="/profile">Profile</Link></p>
       <p>
         <button
           type="button"

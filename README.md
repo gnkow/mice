@@ -39,7 +39,7 @@ docker compose up --build
 
 Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `mice` / `mice`). Sign out clears the Mice session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
 
-Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Day-to-day CLI auth uses **`mice login`** (browser device pairing). Automation may still mint **CLI PATs** (`Settings → CLI tokens`).
+Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Day-to-day CLI auth uses **`mice login`** (browser device pairing). Automation may still mint **CLI PATs** (`Profile → CLI tokens`).
 
 ### Mice CLI (through the BFF)
 
@@ -57,10 +57,14 @@ mice push origin main
 
 `mice` forwards Oxen commands to the `oxen` binary after configuring Bearer auth for the BFF host. Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
 
+#### Management commands
+
+Everything the UI can do through `/auth/*` is also available from the CLI (JSON output; run `mice --help` for all flags): `authz`, `directory`, `access-request`, `training`, `audit` (`list|facets|export`), `lineage` (`query|rebuild`), `instance`, `namespace` (incl. `member`), `collaborator`, `role` (custom roles), `session`, `notifications`, `meta history|search`, and `job list --published`. These use an **unscoped** PAT (what `mice login` mints) acting as its owner; repo-scoped PATs are rejected, and AuthZ is still enforced server-side. Minting/revoking tokens and approving device logins remain browser-only.
+
 #### Automation / CI (PAT)
 
 ```bash
-# Settings → CLI tokens → Create token, then:
+# Profile → CLI tokens → Create token, then:
 export MICE_PAT=mice_pat_…
 # or:
 oxen config --auth localhost:8080 mice_pat_…
@@ -220,6 +224,59 @@ make test-sessions      # Playwright (set SESSIONS_PROVISIONER=mock for speed)
 ```
 
 Plan: [`plans/Sessions.md`](./plans/Sessions.md).
+
+### Notifications
+
+The avatar menu contains **Profile**, **Settings**, and **Sign out**. Profile
+contains account identity, theme/diff colors, CLI tokens, and notification preferences.
+Settings separates connection setup, access requests, authorization policy,
+instance administrators, and delegated permissions. CLI examples are available
+on demand in Profile.
+
+The header bell opens your notification inbox. **Account menu → Profile**
+opens preferences: event categories, delivery channels, email
+digests, quiet hours/timezone, and resource watch/mute overrides. Inbox and online
+toasts are enabled by default; email and browser push require explicit opt-in.
+Personal access/security notices remain available even when you have no resource
+grants. No notification category bypasses your global/category preferences.
+
+Resource activity covers resources you can access, excludes routine self-edits,
+and is checked again when displayed or delivered. A parent resource mute includes
+descendants; a more specific watch overrides that mute but never grants access.
+Previously delivered emails and desktop notifications cannot be recalled after
+access revocation. Payloads may include resource names and event summaries, never
+file contents or token secrets.
+
+This implementation supports **one auth process only**. Persist and back up
+`AUTH_DATA_DIR`; notification state and pending delivery survive restarts. The
+audit journal supports replay after interrupted notification projection, but a
+crash between a successful domain/upstream mutation and audit append can still
+lose that event. Direct oxen-server writes and external IdP changes are not
+notification sources. Users become known notification recipients after signing
+in; offline group visibility is limited by saved identity claims.
+
+The UI polls every 10 seconds. Notification content expires after 90 days;
+audit retention is independent. Normal immediate delivery targets 30 seconds,
+excluding quiet hours, digests, and provider/browser delays. Email/push need
+administrator configuration; unavailable channels are shown in profile settings.
+Browser push additionally requires browser permission and a secure context
+(HTTPS in production; localhost for development).
+
+Configure email with `NOTIFICATIONS_SMTP_URL` and `NOTIFICATIONS_EMAIL_FROM`.
+For push, generate VAPID keys with `cd auth && npx web-push generate-vapid-keys`,
+then set `NOTIFICATIONS_VAPID_PUBLIC_KEY`, `NOTIFICATIONS_VAPID_PRIVATE_KEY`, and
+`NOTIFICATIONS_VAPID_SUBJECT` (a `mailto:` contact or HTTPS URL). Keep SMTP
+credentials and private keys in deployment secrets; Compose forwards these
+variables to auth. Daily digests use 09:00 in the profile timezone; weekly
+digests use Monday at 09:00.
+
+Administrators can publish an instance-wide announcement through
+`POST /auth/notifications/announcements` with JSON `{ "title": "...",
+"summary": "..." }`, a browser session cookie, and the deployment's `Origin`
+header. There is no announcement-authoring page yet. Delivery failures are logged
+with sanitized provider codes; pending/retry/dead status is retained in
+`notifications.json`. External delivery is at least once and can duplicate a
+message after an ambiguous provider response.
 
 ## Progress
 

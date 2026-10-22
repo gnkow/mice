@@ -129,9 +129,9 @@ test.describe('CLI auth via BFF PATs (PLAT-AUTH)', () => {
     expect(res.status()).toBe(401)
   })
 
-  test('TC-CLI-04: Settings UI can create a CLI token', async ({ page }) => {
+  test('TC-CLI-04: Profile UI can create a CLI token', async ({ page }) => {
     await sessionLogin(page)
-    await page.goto('/settings')
+    await page.goto('/profile')
     await expect(
       page.getByRole('heading', { name: 'CLI tokens' }),
     ).toBeVisible()

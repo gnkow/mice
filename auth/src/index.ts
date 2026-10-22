@@ -25,6 +25,7 @@ import {
   auditFacets,
   queryAudit,
   queryAuditForExport,
+  setAuditObserver,
   type AuditQuery,
   type AuditVia,
 } from './audit.js'
@@ -136,6 +137,12 @@ import {
 } from './sessions.js'
 import { attachSessionsGuacGateway } from './sessionsGateway.js'
 import { resumeQueuedJobs } from './jobs.js'
+import {
+  captureNotificationAudit,
+  rememberNotificationUser,
+  registerNotificationRoutes,
+  startNotificationWorker,
+} from './notifications.js'
 
 const PKCE_COOKIE = 'mice_oidc_pkce'
 /** After Mice logout, next /auth/login must show IdP credentials (no silent SSO). */
@@ -157,6 +164,7 @@ function safeReturnPath(raw: string | undefined | null): string | undefined {
 }
 
 const app = new Hono()
+setAuditObserver(captureNotificationAudit)
 
 app.get('/healthz', (c) => c.json({ ok: true }))
 
@@ -197,7 +205,7 @@ app.get('/auth/cli/device', (c) => {
 })
 
 app.get('/auth/cli/device/status', async (c) => {
-  const session = await requireSession(c)
+  const session = await requireBrowserSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   const userCode = c.req.query('user_code') ?? ''
   if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
@@ -207,7 +215,7 @@ app.get('/auth/cli/device/status', async (c) => {
 })
 
 app.post('/auth/cli/device/approve', async (c) => {
-  const session = await requireSession(c)
+  const session = await requireBrowserSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
   const gate = authorizeCliDeviceApprove(session)
@@ -236,7 +244,7 @@ app.post('/auth/cli/device/approve', async (c) => {
 })
 
 app.post('/auth/cli/device/deny', async (c) => {
-  const session = await requireSession(c)
+  const session = await requireBrowserSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
   const gate = authorizeCliDeviceApprove(session)
@@ -355,9 +363,10 @@ app.get('/auth/cli/whoami', async (c) => {
 })
 
 app.get('/auth/me', async (c) => {
-  const session = await getSession(c)
+  const session = await requireSession(c)
   if (!session) return c.json({ authenticated: false }, 401)
   preparePrincipal(session)
+  rememberNotificationUser(session)
   return c.json({
     authenticated: true,
     user: {
@@ -371,7 +380,7 @@ app.get('/auth/me', async (c) => {
 
 /** Effective AuthZ summary for UI (pending gate, instance flags). */
 app.get('/auth/me/authz', async (c) => {
-  const session = await getSession(c)
+  const session = await requireSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
   const pending = isPendingUser(session)
@@ -557,7 +566,7 @@ function auditMutation(
 ): void {
   appendAudit({
     actor: actorFromUser(user as SessionUser),
-    via,
+    via: callerVia(c, via),
     method: c.req.method,
     path: c.req.path,
     status: fields.status ?? 200,
@@ -581,14 +590,37 @@ function memberTarget(body: {
     : { kind, sub: body.sub, iss: body.iss }
 }
 
-async function requireSession(c: Parameters<typeof getSession>[0]) {
+/** Browser cookie session only (token minting, device approval). */
+async function requireBrowserSession(c: Parameters<typeof getSession>[0]) {
   const session = await getSession(c)
   if (!session) return null
+  rememberNotificationUser(session)
   return session
 }
 
+/**
+ * Cookie session, or an unscoped CLI PAT acting as its owner. Scoped PATs are
+ * rejected: AuthZ admin/audit routes are not expressible in repo-scoped grants.
+ */
+async function requireSession(c: Context) {
+  const session = await requireBrowserSession(c)
+  if (session) return session
+  const auth = c.req.header('authorization') ?? ''
+  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+  if (!bearer) return null
+  const pat = resolvePat(bearer)
+  if (!pat || pat.patScopes?.length) return null
+  c.set('authVia' as never, 'pat' as never)
+  rememberNotificationUser(pat)
+  return pat
+}
+
+function callerVia(c: Context, fallback: AuditVia): AuditVia {
+  return c.get('authVia' as never) === 'pat' ? 'pat' : fallback
+}
+
 app.get('/auth/tokens', async (c) => {
-  const session = await requireSession(c)
+  const session = await requireBrowserSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
   const gate = authorizeManageOwnTokens(session)
@@ -599,7 +631,7 @@ app.get('/auth/tokens', async (c) => {
 })
 
 app.post('/auth/tokens', async (c) => {
-  const session = await requireSession(c)
+  const session = await requireBrowserSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
   const gate = authorizeManageOwnTokens(session)
@@ -641,7 +673,7 @@ app.post('/auth/tokens', async (c) => {
 })
 
 app.delete('/auth/tokens/:id', async (c) => {
-  const session = await requireSession(c)
+  const session = await requireBrowserSession(c)
   if (!session) return c.json({ error: 'Authentication required' }, 401)
   preparePrincipal(session)
   const gate = authorizeManageOwnTokens(session)
@@ -666,7 +698,7 @@ async function resolveAuditQuery(
   | { error: Response }
   | { session: SessionUser; query: AuditQuery }
 > {
-  const session = await getSession(c)
+  const session = await requireSession(c)
   if (!session) {
     return { error: c.json({ error: 'Authentication required' }, 401) }
   }
@@ -737,7 +769,7 @@ app.get('/auth/audit/export.csv', async (c) => {
   const csv = auditEventsToCsv(events)
   appendAudit({
     actor: actorFromUser(r.session),
-    via: 'session',
+    via: callerVia(c, 'session'),
     action: 'audit.export',
     method: c.req.method,
     path: c.req.path,
@@ -755,7 +787,7 @@ app.get('/auth/audit/export.csv', async (c) => {
 
 /** Query file lineage graph for a repo (session required; repo read). */
 app.get('/auth/lineage', async (c) => {
-  const session = await getSession(c)
+  const session = await requireSession(c)
   if (!session) {
     return c.json({ error: 'Authentication required' }, 401)
   }
@@ -808,7 +840,7 @@ app.get('/auth/lineage', async (c) => {
  * Body: { namespace, repo, branch?, path }
  */
 app.post('/auth/lineage/rebuild', async (c) => {
-  const session = await getSession(c)
+  const session = await requireSession(c)
   if (!session) {
     return c.json({ error: 'Authentication required' }, 401)
   }
@@ -1010,6 +1042,7 @@ app.get('/auth/callback', async (c) => {
       ...(user.groups.length ? { groups: user.groups } : {}),
     }
     preparePrincipal(sessionUser)
+    rememberNotificationUser(sessionUser)
     await setSessionCookie(c, sessionUser)
     auditMutation(c, sessionUser, 'session', {
       action: 'auth.login',
@@ -1875,6 +1908,8 @@ app.all('/api/*', async (c) => {
 registerJobRoutes(app)
 registerMetaRoutes(app)
 registerSessionRoutes(app)
+registerNotificationRoutes(app)
+startNotificationWorker()
 resumeQueuedJobs()
 startSessionsLifecycleSweeper()
 resumeInterruptedProvisions()

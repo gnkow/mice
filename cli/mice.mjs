@@ -18,6 +18,7 @@ import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs, requireFlag } from './lib/args.mjs'
 import { api } from './lib/api.mjs'
+import { ADMIN_GROUPS, runAdmin } from './lib/admin.mjs'
 import {
   authHostFromRemote,
   resolveRemote,
@@ -119,9 +120,65 @@ Usage:
 
   mice job list   [--remote <url>] [--token <pat>]
                    [--namespace <ns>] [--repo <repo>]
+                   [--published [--all] [--status s] [--limit n] [--cursor c] [--pin commit]]
+                   (default: local jobs; --published queries the server)
   mice job status --id <jobId> [--remote <url>] [--token <pat>]
   mice job logs   --id <jobId> [--remote <url>] [--token <pat>]
   mice job cancel --id <jobId> [--remote <url>] [--token <pat>]
+
+  mice meta history <type> [id]
+  mice meta search  [text] [--type <t>]… [--namespace ns] [--repo r]
+                    [--tag t]… [--label k=v]… [--limit n] [--cursor c]
+
+Management (via the BFF; needs mice login — scoped PATs are rejected).
+Output is JSON. Most commands accept --remote / --token.
+  mice authz                                  effective permissions
+  mice directory <query> [--kind user|group] [--limit n]
+  mice access-request submit [--message m] | list
+  mice access-request approve <id> (--namespace ns --role r | --permission p)
+  mice access-request deny <id>
+  mice training set [--sub s --iss i] [--revoke]
+  mice audit list   [--actor a] [--namespace ns] [--repo r] [--action a]
+                    [--since t] [--until t] [--session-id id] [--workspace-id id]
+                    [--job-id id] [--via session|pat] [--limit n] [--cursor c]
+  mice audit facets [--namespace ns]
+  mice audit export [same filters] [--out file.csv]
+  mice lineage query   --namespace ns --repo r [--path p] [--content-hash h]
+                       [--direction ancestors|descendants|both] [--depth n]
+                       [--since t] [--until t] [--kind k] [--job-id id]
+                       [--commit c] [--limit n] [--cursor c]
+  mice lineage rebuild --namespace ns --repo r --path p [--branch b]
+  mice instance show | enforce on|off
+  mice instance admin add|remove --sub s --iss i
+  mice instance permissions set --sub s --iss i --permissions a,b,…
+  mice namespace list | show <ns>
+  mice namespace create <ns> --base-permission none|read|… [--members-create-repos true|false]
+  mice namespace update <ns> [--base-permission p] [--members-create-repos true|false]
+  mice namespace delete <ns> [--keep-repos] [--yes]
+  mice namespace member set <ns> (--sub s --iss i | --group g) --role <owner|member|customId>
+  mice namespace member remove <ns> (--sub s --iss i | --group g)
+  mice collaborator list [ns/repo]
+  mice collaborator set [ns/repo] (--sub s --iss i | --group g) --role <role>
+  mice collaborator remove [ns/repo] (--sub s --iss i | --group g)
+  mice role permissions|list <ns>
+  mice role create <ns> namespace --name n --permissions a,b [--description d]
+                       [--base-repository-role r]
+  mice role create <ns> repo --name n --base read|triage|write|maintain --permissions a,b
+  mice role update <ns> namespace|repo <roleId> [--name …] [--permissions …] …
+  mice role delete <ns> namespace|repo <roleId> [--yes]
+  mice session templates | retention | list [--all]
+  mice session create [--template t] [--image i] [--cpu c] [--memory m] [--disk d]
+                      [--mount ns/repo[@workspace][#commit][:ro|rw]]… [--recording true|false]
+  mice session show|connect|disconnect|retry|stop <id>
+  mice session destroy <id> [--yes]
+  mice session diff <id> <mountKey>
+  mice session sync <id> <mountKey> [--file path]…
+  mice notifications [list] [--unread] [--cursor c] | unread-count
+  mice notifications read|unread <id> | read-all [--before iso]
+  mice notifications preferences [set --json '<prefs>'] | resource-overrides
+  mice notifications announce --title t --summary s     (instance admin)
+
+  API token create/revoke and CLI device approval stay browser-only.
 
 Env: MICE_REMOTE, MICE_PAT, MICE_HOME (default ~/.mice), MICE_YES
 
@@ -719,6 +776,22 @@ async function cmdJob(jobArgv) {
   }
 
   if (cmd === 'list') {
+    if (flags.published || flags.all) {
+      const { remote, token } = resolveAuth(flags)
+      const root = findOxenRoot()
+      const detected = root ? detectRemote(root) : null
+      const q = new URLSearchParams()
+      // --all lists across repos; otherwise scope to the clone / flags.
+      const namespace = flags.namespace ? String(flags.namespace) : flags.all ? '' : detected?.namespace
+      const repo = flags.repo ? String(flags.repo) : flags.all ? '' : detected?.repo
+      if (namespace) q.set('namespace', namespace)
+      if (repo) q.set('repo', repo)
+      for (const k of ['status', 'limit', 'cursor']) if (flags[k]) q.set(k, String(flags[k]))
+      if (flags.pin) q.set('pin_commit', String(flags.pin))
+      const data = await api(remote, token, `/auth/jobs?${q}`)
+      console.log(JSON.stringify(data, null, 2))
+      return
+    }
     const root = findOxenRoot()
     const detected = root ? detectRemote(root) : null
     const namespace = flags.namespace
@@ -857,6 +930,22 @@ async function main() {
 
   if (cmd === 'job') {
     await cmdJob(argv.slice(1))
+    return
+  }
+
+  if (ADMIN_GROUPS.includes(cmd)) {
+    await runAdmin(cmd, argv.slice(1), {
+      auth: resolveAuth,
+      usage,
+      ctx: (flags) => {
+        const root = findOxenRoot(process.cwd())
+        const detected = root ? detectRemote(root) : null
+        return {
+          namespace: String(flags.namespace || detected?.namespace || '') || undefined,
+          repo: String(flags.repo || detected?.repo || '') || undefined,
+        }
+      },
+    })
     return
   }
 

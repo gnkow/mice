@@ -389,6 +389,7 @@ export function completeCliJob(
     repo: job.repo,
     detail: {
       job_id: id,
+      owner: { sub: job.actor.sub, iss: job.actor.iss },
       result_commit: updated.result_commit,
       result_branch: updated.result_branch,
       error: updated.error,
@@ -626,6 +627,24 @@ export function publishSyncedCliJobs(
     if (updated.status === 'succeeded' && !existing) {
       appendJobLineage(updated)
     }
+    if (!existing || existing.status !== updated.status) {
+      appendAudit({
+        actor: actorFromUser(user),
+        via,
+        method: 'POST',
+        path: '/auth/jobs/publish',
+        status: 200,
+        action: updated.status === 'succeeded' ? 'job.complete' :
+          updated.status === 'failed' ? 'job.fail' : 'job.cancel',
+        namespace: updated.namespace,
+        repo: updated.repo,
+        detail: {
+          job_id: updated.id,
+          owner: { sub: updated.actor.sub, iss: updated.actor.iss },
+          source: 'cli-publish',
+        },
+      })
+    }
     jobs.push(publicJob(updated))
   }
 
@@ -703,7 +722,11 @@ export async function cancelJob(
     action: 'job.cancel',
     namespace: job.namespace,
     repo: job.repo,
-    detail: { job_id: id, pin_commit: job.pin_commit },
+    detail: {
+      job_id: id,
+      owner: { sub: job.actor.sub, iss: job.actor.iss },
+      pin_commit: job.pin_commit,
+    },
   })
   return { ok: true, job: updated }
 }
@@ -813,6 +836,7 @@ async function executeJob(id: string) {
         repo: job.repo,
         detail: {
           job_id: id,
+          owner: { sub: job.actor.sub, iss: job.actor.iss },
           pin_commit: job.pin_commit,
           exit_code: exitCode,
         },
@@ -955,6 +979,7 @@ async function executeJob(id: string) {
       repo: job.repo,
       detail: {
         job_id: canonicalId,
+        owner: { sub: job.actor.sub, iss: job.actor.iss },
         provisional_job_id:
           canonicalId !== provisionalId ? provisionalId : undefined,
         pin_commit: job.pin_commit,
@@ -989,7 +1014,12 @@ async function executeJob(id: string) {
       action: 'job.fail',
       namespace: job.namespace,
       repo: job.repo,
-      detail: { job_id: id, pin_commit: job.pin_commit, error: message },
+      detail: {
+        job_id: id,
+        owner: { sub: job.actor.sub, iss: job.actor.iss },
+        pin_commit: job.pin_commit,
+        error: message,
+      },
     })
     cleanupWork(work)
   }

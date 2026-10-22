@@ -39,6 +39,9 @@ import { SessionsListPage } from './pages/SessionsListPage'
 import { SessionPage } from './pages/SessionPage'
 import { SessionDesktopPage } from './pages/SessionDesktopPage'
 import { RepoSessionsPage } from './pages/RepoSessionsPage'
+import { NotificationsPage } from './pages/NotificationsPage'
+import { ProfilePage } from './pages/ProfilePage'
+import './notifications.css'
 import './App.css'
 
 export default function App() {
@@ -109,6 +112,9 @@ export default function App() {
               </Route>
               <Route path="repos/new" element={<NewRepoPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="profile/notifications" element={<Navigate to="/profile" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Route>
