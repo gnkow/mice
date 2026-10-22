@@ -3266,53 +3266,6 @@ p.ok {
   box-shadow: var(--shadow);
 }
 
-.submit-job-dropdown > summary.btn.primary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.submit-job-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  width: min(20rem, calc(100vw - 2rem));
-  padding: 0.5rem;
-}
-
-.submit-job-option {
-  appearance: none;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  width: 100%;
-  margin: 0;
-  padding: 0.65rem 0.7rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.submit-job-option:hover {
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
-  border-color: var(--line);
-}
-
-.submit-job-option-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.submit-job-option-text b {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
 .submit-job-empty-actions {
   display: flex;
   flex-wrap: wrap;

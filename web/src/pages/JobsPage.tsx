@@ -1,5 +1,5 @@
-import { Laptop as ActionLaptop, Server as ActionServer, Terminal as ActionTerminal, Trash2 as ActionTrash2 } from 'lucide-react'
-import { useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { Terminal as ActionTerminal, Trash2 as ActionTrash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { FavoriteStar } from '../components/FavoriteStar'
 import { JobSummaryCard } from '../components/JobSummaryCard'
@@ -144,12 +144,6 @@ export function JobsPage() {
     })
   }
 
-  function openSubmit(mode: SubmitMode, e?: MouseEvent<HTMLElement>) {
-    const details = e?.currentTarget.closest('details')
-    if (details) details.removeAttribute('open')
-    setSubmitMode(mode)
-  }
-
   return (
     <div className="page-stack">
       <header className="page-header page-head">
@@ -160,39 +154,9 @@ export function JobsPage() {
           </p>
         </div>
         <div className="btn-row">
-          <details className="clone-dropdown submit-job-dropdown">
-            <summary className="btn primary"><ActionTerminal size={14} aria-hidden="true" className="button-label-icon" />New job</summary>
-            <div className="clone-dropdown-panel submit-job-menu" role="menu">
-              <button
-                type="button"
-                role="menuitem"
-                className="submit-job-option"
-                onClick={(e) => openSubmit('local', e)}
-              >
-                <ActionLaptop size={14} aria-hidden="true" className="button-label-icon" /><span className="pill runner-local">Local</span>
-                <span className="submit-job-option-text">
-                  <b>Run on your machine</b>
-                  <span className="muted small">
-                    Execute locally using your local data
-                  </span>
-                </span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="submit-job-option"
-                onClick={(e) => openSubmit('cluster', e)}
-              >
-                <ActionServer size={14} aria-hidden="true" className="button-label-icon" /><span className="pill runner-cluster">Cluster</span>
-                <span className="submit-job-option-text">
-                  <b>Run on the server</b>
-                  <span className="muted small">
-                    Submit to the server job queue
-                  </span>
-                </span>
-              </button>
-            </div>
-          </details>
+          <button type="button" className="btn primary" onClick={() => setSubmitMode('local')}>
+            <ActionTerminal size={14} aria-hidden="true" className="button-label-icon" />New job
+          </button>
         </div>
       </header>
 
@@ -312,9 +276,7 @@ export function JobsPage() {
 
       {submitMode && (
         <Modal
-          title={
-            submitMode === 'local' ? 'New job — Local' : 'New job — Cluster'
-          }
+          title="New job"
           onClose={() => setSubmitMode(null)}
           wide
         >
