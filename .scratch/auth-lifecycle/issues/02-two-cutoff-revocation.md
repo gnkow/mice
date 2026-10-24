@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A sessions-only cut-off rejects older Sessions and leaves PATs valid
-- [ ] A full cut-off rejects older Sessions and older PATs (current admin behaviour)
-- [ ] Existing stored revocation data is still honoured as a full cut-off after upgrade
-- [ ] Cut-offs are monotonic: a later call never lowers an earlier one
-- [ ] Verified through the HTTP wiring seam with a fake clock
+- [x] A sessions-only cut-off rejects older Sessions and leaves PATs valid
+- [x] A full cut-off rejects older Sessions and older PATs (current admin behaviour)
+- [x] Existing stored revocation data is still honoured as a full cut-off after upgrade
+- [x] Cut-offs are monotonic: a later call never lowers an earlier one
+- [x] Verified through the HTTP wiring seam with a fake clock

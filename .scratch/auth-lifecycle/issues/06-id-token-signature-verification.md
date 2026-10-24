@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A token with a bad signature, an unexpected algorithm (including none) or an unknown key is rejected
-- [ ] A valid RS256 and a valid ES256 token log in
-- [ ] A key-set fetch failure returns an error and sets no Session cookie
-- [ ] A rotated signing key is picked up without restart
-- [ ] On by default with GxP-strict; off by default otherwise; opt-in setting documented
-- [ ] Tested through the HTTP wiring seam with a stub IdP key set
+- [x] A token with a bad signature, an unexpected algorithm (including none) or an unknown key is rejected
+- [x] A valid RS256 and a valid ES256 token log in
+- [x] A key-set fetch failure returns an error and sets no Session cookie
+- [x] A rotated signing key is picked up without restart
+- [x] On by default with GxP-strict; off by default otherwise; opt-in setting documented
+- [x] Tested through the HTTP wiring seam with a stub IdP key set

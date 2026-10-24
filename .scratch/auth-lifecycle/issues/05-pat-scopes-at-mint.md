@@ -4,10 +4,10 @@
 
 **Blocked by:** 01 (Scoped-credential predicate)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Settings can mint a PAT with one or more scopes
-- [ ] `mice` can mint a PAT with scopes and its help text describes them
-- [ ] A minted scoped PAT is capped to the chosen maximum role in the target repo and refused elsewhere
-- [ ] The Settings token list shows each PAT's scopes
-- [ ] Playwright (or CLI integration) covers minting and using a scoped PAT
+- [x] Settings can mint a PAT with one or more scopes
+- [x] `mice` can mint a PAT with scopes and its help text describes them
+- [x] A minted scoped PAT is capped to the chosen maximum role in the target repo and refused elsewhere
+- [x] The Settings token list shows each PAT's scopes
+- [x] Playwright (or CLI integration) covers minting and using a scoped PAT

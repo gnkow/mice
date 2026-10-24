@@ -272,16 +272,16 @@ The phases below are **proposed, not approved**; every item is unchecked. Order 
 
 ### Phase 2.6 — Revocation and credential hygiene (proposed)
 
-- [ ] Self-service "sign out everywhere" on Profile: reuses the per-principal cut-off for **sessions only**; PATs are untouched unless the user also chooses to revoke them. No per-device list (sessions are stateless)
-- [ ] `GXP_STRICT` refuses to start when `SESSION_IDLE_SEC` is `0` (the startup gate states the rule; [04-gxp-compliance.md](./04-gxp-compliance.md) owns the value, GXP-R-005)
-- [ ] One `isScopedCredential(user)` check (in `principal.ts` or `requireAuth.ts`) replaces the scattered `patScopes?.length` checks in `authz.ts`, `notifications.ts`, `favoritesRoutes.ts` and `index.ts`
-- [ ] Document PAT scopes in Settings and the CLI; confirm scopes can be set at mint time in UI and `mice`
+- [x] Self-service "sign out everywhere" on Profile: reuses the per-principal cut-off for **sessions only**; PATs are untouched unless the user also chooses to revoke them. No per-device list (sessions are stateless)
+- [x] `GXP_STRICT` refuses to start when `SESSION_IDLE_SEC` is `0` (the startup gate states the rule; [04-gxp-compliance.md](./04-gxp-compliance.md) owns the value, GXP-R-005)
+- [x] One `isScopedCredential(user)` check (in `principal.ts` or `requireAuth.ts`) replaces the scattered `patScopes?.length` checks in `authz.ts`, `notifications.ts`, `favoritesRoutes.ts` and `index.ts`
+- [x] Document PAT scopes in Settings and the CLI; confirm scopes can be set at mint time in UI and `mice`
 
 ### Phase 2.7 — id_token signature verification (proposed)
 
-- [ ] Verify the id_token signature with `jose` (`createRemoteJWKSet`, default key rotation); `alg` allowlist RS256 and ES256; a JWKS fetch failure at login returns `500` (fails closed). Only the id_token is verified; access tokens are not used. `jose` is the only new dependency
-- [ ] Enabled by default when `GXP_STRICT` is set; elsewhere the [ADR 0001](../docs/adr/0001-bff-identity-trust-model.md) behaviour stays the default
-- [ ] Production startup gate requires an `https` `OIDC_ISSUER`
+- [x] Verify the id_token signature with `jose` (`createRemoteJWKSet`, default key rotation); `alg` allowlist RS256 and ES256; a JWKS fetch failure at login returns `500` (fails closed). Only the id_token is verified; access tokens are not used. `jose` is the only new dependency
+- [x] Enabled by default when `GXP_STRICT` is set; elsewhere the [ADR 0001](../docs/adr/0001-bff-identity-trust-model.md) behaviour stays the default Opt-in elsewhere with `OIDC_VERIFY_ID_TOKEN=true`; `OIDC_JWKS_COOLDOWN_MS` (default 10000) bounds key-set refetches on an unknown `kid`
+- [x] Production startup gate requires an `https` `OIDC_ISSUER`
 
 ### Phase 3 — SAML recipe, deprovisioning, step-up (proposed)
 

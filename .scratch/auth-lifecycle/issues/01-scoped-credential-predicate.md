@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every place that treats a PAT with scopes specially uses the single rule
-- [ ] Scoped PATs still never get the instance-admin bypass or fine-grained grants
-- [ ] Scoped PATs are still refused on per-user routes (notifications, favorites, others found)
-- [ ] Existing auth unit and e2e tests pass unchanged
-- [ ] A test through the HTTP wiring seam pins the refusal behaviour before the refactor
+- [x] Every place that treats a PAT with scopes specially uses the single rule
+- [x] Scoped PATs still never get the instance-admin bypass or fine-grained grants
+- [x] Scoped PATs are still refused on per-user routes (notifications, favorites, others found)
+- [x] Existing auth unit and e2e tests pass unchanged
+- [x] A test through the HTTP wiring seam pins the refusal behaviour before the refactor

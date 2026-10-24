@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] GxP-strict with idle timeout 0 fails startup with a clear message
-- [ ] GxP-strict with a positive idle timeout starts
-- [ ] Production with an `http` issuer fails startup with a clear message; `https` starts
-- [ ] Non-strict, non-production startup behaves as before
-- [ ] Covered by startup-gate tests using injected env
+- [x] GxP-strict with idle timeout 0 fails startup with a clear message
+- [x] GxP-strict with a positive idle timeout starts
+- [x] Production with an `http` issuer fails startup with a clear message; `https` starts
+- [x] Non-strict, non-production startup behaves as before
+- [x] Covered by startup-gate tests using injected env

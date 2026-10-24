@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 (Two-cut-off revocation)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Another Session of the same Principal is rejected after the action; PATs still work by default
-- [ ] With the option ticked, PATs created at or before the action are also rejected
-- [ ] The route rejects PAT callers and cross-origin requests
-- [ ] The audit record carries the Principal and source `self-service`
-- [ ] Playwright covers the Profile button and confirmation message
+- [x] Another Session of the same Principal is rejected after the action; PATs still work by default
+- [x] With the option ticked, PATs created at or before the action are also rejected
+- [x] The route rejects PAT callers and cross-origin requests
+- [x] The audit record carries the Principal and source `self-service`
+- [x] Playwright covers the Profile button and confirmation message
