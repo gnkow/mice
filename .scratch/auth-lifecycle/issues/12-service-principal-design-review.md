@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-human
+**Status:** done
 
-- [ ] Decisions recorded in the spec (and an ADR if the trust model changes)
-- [ ] Tickets 13–15 confirmed or adjusted
+- [x] Decisions recorded in the spec (and an ADR if the trust model changes)
+- [x] Tickets 13–15 confirmed or adjusted

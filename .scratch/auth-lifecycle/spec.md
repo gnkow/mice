@@ -105,3 +105,12 @@ Close the credential lifecycle in four increments:
 - Phase 4 touches Principal identity and authorization membership, so it should get its own design review (grilling) before tickets are cut; the spec's decisions are the starting point.
 - The two-cut-off change must keep old stored revocations valid; call this out in the ticket for it.
 - Cross-plan mirrors already exist: GxP (idle gate, step-up), authorization (service principal question, directory outage), EPICS (PLAT-AUTH proposed items).
+
+## Service principal design decisions (ticket 12)
+
+- **Permissions:** a service principal is never an instance admin and belongs to no directory group. Access comes only from explicit namespace and repo grants in the normal authorization model.
+- **Audit actor:** actor is `urn:mice:service|<uuid>`, with `actorKind: "service"` and `owner` (the owner's Principal at event time) on every event.
+- **Favorites and notifications:** no favorites (no UI session). Notifications about a service principal (PAT expiry, suspension) go to its owner, not to the principal.
+- **PAT-only identity:** no sessions, only PATs. PATs may be scoped (`ns[/repo]:role`) and are capped by the principal's grants. An unscoped PAT equals the principal's full grants. Sign-out-everywhere and step-up do not apply.
+- **Ownership and revocation:** owner offboarding suspends the principal (reversible, PATs rejected, record kept). Admin revocation of the principal is a full cut-off for existing PATs; new PATs can be minted after reactivation. The owner must be an active human; reassigning to a service principal is rejected.
+- **Tickets 13–15:** confirmed unchanged. No ADR: the trust model is unchanged.
