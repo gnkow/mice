@@ -4,11 +4,11 @@
 
 **Blocked by:** 02 (Two-cut-off revocation)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A disabled or removed Principal's Sessions and PATs are rejected after a run
-- [ ] An enabled Principal is untouched
-- [ ] A directory outage revokes nobody and records an audit event
-- [ ] An instance admin can trigger a run on demand; non-admins cannot
-- [ ] The interval is configurable with a 15-minute default
-- [ ] Tested with a stub directory client and a fake clock
+- [x] A disabled or removed Principal's Sessions and PATs are rejected after a run
+- [x] An enabled Principal is untouched
+- [x] A directory outage revokes nobody and records an audit event
+- [x] An instance admin can trigger a run on demand; non-admins cannot
+- [x] The interval is configurable with a 15-minute default
+- [x] Tested with a stub directory client and a fake clock

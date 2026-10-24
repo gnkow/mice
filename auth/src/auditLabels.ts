@@ -79,6 +79,8 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['device.deny', 'CLI login denied', 'Tokens & CLI'],
   ['device.redeem', 'CLI login completed', 'Tokens & CLI'],
   ['auth.login', 'Signed in', 'Account'],
+  ['auth.reauth', 'Re-authenticated', 'Account'],
+  ['auth.reauth.failed', 'Re-authentication failed', 'Account'],
   ['auth.logout', 'Signed out', 'Account'],
   ['lineage.rebuild', 'Lineage rebuilt', 'Data lineage'],
   ['audit.export', 'Audit log exported', 'Audit'],

@@ -95,6 +95,8 @@ export function buildAuthorizeUrl(opts: {
   codeChallenge: string
   /** Force the IdP to show the username/password form (no silent SSO). */
   promptLogin?: boolean
+  /** Step-up: maximum seconds since the IdP authentication. */
+  maxAge?: number
 }): string {
   if (!cached) throw new Error('OIDC config not loaded')
   const u = new URL(cached.authorizationEndpoint)
@@ -109,6 +111,7 @@ export function buildAuthorizeUrl(opts: {
   if (opts.promptLogin) {
     u.searchParams.set('prompt', 'login')
   }
+  if (opts.maxAge !== undefined) u.searchParams.set('max_age', String(opts.maxAge))
   return u.toString()
 }
 

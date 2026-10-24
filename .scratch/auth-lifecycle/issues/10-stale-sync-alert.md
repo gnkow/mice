@@ -4,10 +4,10 @@
 
 **Blocked by:** 09 (Directory-sync revocation)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Past 2x the interval without a success, an audit event and one admin notification are produced
-- [ ] The alert is not repeated on every check while still stale
-- [ ] A successful run clears the stale state
-- [ ] Non-admins receive nothing
-- [ ] Tested with a fake clock and a stub directory client
+- [x] Past 2x the interval without a success, an audit event and one admin notification are produced
+- [x] The alert is not repeated on every check while still stale
+- [x] A successful run clears the stale state
+- [x] Non-admins receive nothing
+- [x] Tested with a fake clock and a stub directory client

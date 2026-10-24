@@ -11,7 +11,8 @@ import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
 import { applyGlobalGuards, requireAuth } from './requireAuth.js'
 import { buildEndSessionUrl } from './oidc.js'
-import { completeLogin, startLogin } from './loginFlow.js'
+import { PKCE_COOKIE, completeLogin, startLogin } from './loginFlow.js'
+import { handleReauthCallback, registerStepUp } from './stepUp.js'
 import { proxyToOxen } from './proxy.js'
 import {
   clearSessionCookie,
@@ -159,7 +160,6 @@ import {
   startNotificationWorker,
 } from './notifications.js'
 
-const PKCE_COOKIE = 'mice_oidc_pkce'
 /** After Mice logout, next /auth/login must show IdP credentials (no silent SSO). */
 const PROMPT_LOGIN_COOKIE = 'mice_prompt_login'
 
@@ -1010,6 +1010,8 @@ app.get('/auth/login', async (c) => {
   return c.redirect(authorizeUrl)
 })
 
+registerStepUp(app)
+
 app.get('/auth/callback', async (c) => {
   if (!oidcConfigured()) return c.json({ error: 'OIDC is not configured' }, 503)
   const pkceCookie = getCookie(c, PKCE_COOKIE)
@@ -1024,6 +1026,9 @@ app.get('/auth/callback', async (c) => {
     error: c.req.query('error'),
     pkceCookie,
   })
+  if (result.reauth) {
+    return handleReauthCallback(c, result)
+  }
   if (!result.ok) return c.html(result.html, result.status)
   const sessionUser = result.user
   preparePrincipal(sessionUser)

@@ -4,10 +4,10 @@
 
 **Blocked by:** 06 (id_token signature verification)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A protected action with a stale authentication time sends the User through the IdP and resumes after success
-- [ ] A returned authentication time older than the maximum age is rejected and the action does not run
-- [ ] Cancelled or failed re-authentication does nothing and is audited
-- [ ] A PAT caller is refused
-- [ ] Tested with a stub IdP; one demo route exercises it end to end
+- [x] A protected action with a stale authentication time sends the User through the IdP and resumes after success
+- [x] A returned authentication time older than the maximum age is rejected and the action does not run
+- [x] Cancelled or failed re-authentication does nothing and is audited
+- [x] A PAT caller is refused
+- [x] Tested with a stub IdP; one demo route exercises it end to end

@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 (Two-cut-off revocation), 06 (id_token signature verification, reused for logout-token signatures)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A valid logout token ends the Principal's existing Sessions and leaves PATs valid
-- [ ] Bad signature, expired, wrong audience, wrong issuer or missing logout event claim are rejected with no effect
-- [ ] A replayed valid token is harmless
-- [ ] The audit record carries the Principal and source
-- [ ] Tested through the HTTP wiring seam with a stub IdP
+- [x] A valid logout token ends the Principal's existing Sessions and leaves PATs valid
+- [x] Bad signature, expired, wrong audience, wrong issuer or missing logout event claim are rejected with no effect
+- [x] A replayed valid token is harmless
+- [x] The audit record carries the Principal and source
+- [x] Tested through the HTTP wiring seam with a stub IdP
