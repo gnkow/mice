@@ -5,6 +5,20 @@ import { fetchAuthzMe } from '../lib/auth'
 import { createToken, listTokens, revokeToken } from '../lib/tokens'
 
 export function ProfileTokensSection() {
+  const [alsoPats, setAlsoPats] = useState(false)
+  const [signedOut, setSignedOut] = useState(false)
+
+  async function signOutEverywhere() {
+    if (!window.confirm('Sign out of every browser session?')) return
+    const res = await fetch('/auth/sessions/revoke-all', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ includePats: alsoPats }),
+    })
+    if (res.ok) setSignedOut(true)
+  }
+
   const me = useAsync((signal) => fetchAuthzMe(signal), [])
   const allowed = me.kind === 'ok' && !!me.data &&
     (!me.data.enforce || me.data.instanceAdmin || me.data.permissions.manage_own_tokens)
@@ -88,5 +102,9 @@ mice push`}</pre>
         </li>)}
       </ul> : <p className="muted small">No CLI tokens yet.</p>)}
     </>}
+    <h3>Sign out everywhere</h3>
+    <label><input type="checkbox" checked={alsoPats} onChange={e => setAlsoPats(e.target.checked)} /> Also revoke my CLI tokens</label>
+    <button className="btn ghost small" type="button" onClick={() => void signOutEverywhere()}>Sign out everywhere</button>
+    {signedOut && <p role="status">Signed out everywhere.</p>}
   </section>
 }
