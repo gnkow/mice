@@ -150,13 +150,33 @@ describe('proxy author injection fails closed', () => {
   })
 
   it('still proxies binary uploads (author-free allowlist)', async () => {
-    const res = await send('/api/repos/a/b/chunks/abc', {
+    const res = await send('/api/repos/a/b/versions/abc/chunks?offset=0', {
       method: 'PUT',
       contentType: 'application/octet-stream',
       body: new Uint8Array([1, 2, 3]),
     })
     assert.equal(res.status, 200)
     assert.equal(received.length, 1)
+  })
+
+  it('rejects octet-stream on a non-allowlisted route', async () => {
+    const res = await send('/api/repos/a/b/branches', {
+      method: 'POST',
+      contentType: 'application/octet-stream',
+      body: new TextEncoder().encode('{"email":"forged@x.io"}'),
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('rejects gzip on a non-allowlisted route', async () => {
+    const res = await send('/api/repos/a/b/commits', {
+      method: 'POST',
+      contentType: 'application/gzip',
+      body: new Uint8Array([31, 139, 8]),
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
   })
 
   it('still proxies gzip hash queries (author-free allowlist)', async () => {

@@ -128,3 +128,17 @@ export function hasAuthorQueryParam(params: URLSearchParams): boolean {
   }
   return false
 }
+
+/**
+ * Author-free binary write routes (ADR 0001). Octet-stream/gzip bodies are only proxied here;
+ * a new oxen write route stays unproxyable until it is classified and listed.
+ */
+const AUTHOR_FREE_BINARY_ROUTES: Array<{ method: string; path: RegExp }> = [
+  { method: 'PUT', path: /^\/api\/repos\/[^/]+\/[^/]+\/versions\/[^/]+\/chunks$/ },
+  { method: 'QUERY', path: /^\/api\/repos\/[^/]+\/[^/]+\/versions$/ },
+]
+
+export function isAuthorFreeBinaryRoute(method: string, pathname: string): boolean {
+  const m = method.toUpperCase()
+  return AUTHOR_FREE_BINARY_ROUTES.some((r) => r.method === m && r.path.test(pathname))
+}

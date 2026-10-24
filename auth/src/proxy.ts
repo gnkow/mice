@@ -2,6 +2,7 @@ import type { Context } from 'hono'
 import { env } from './env.js'
 import {
   hasAuthorQueryParam,
+  isAuthorFreeBinaryRoute,
   injectAuthorFormData,
   injectAuthorJson,
 } from './author.js'
@@ -171,9 +172,11 @@ export async function proxyToOxen(
       }
     } else if (contentType === 'application/octet-stream') {
       body = await c.req.arrayBuffer()
+      if (!isAuthorFreeBinaryRoute(method, pathname)) rejection = 'binary_on_unlisted_route'
       reqHeaders.set('content-type', 'application/octet-stream')
     } else if (contentType === 'application/gzip') {
       body = await c.req.arrayBuffer()
+      if (!isAuthorFreeBinaryRoute(method, pathname)) rejection = 'binary_on_unlisted_route'
       reqHeaders.set('content-type', 'application/gzip')
     } else {
       // Author-bearing shapes are JSON/multipart; octet-stream and gzip are the author-free
