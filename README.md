@@ -34,7 +34,7 @@ docker compose up --build
 # → UI        http://localhost:5173
 # → Auth BFF  http://localhost:8080
 # → Keycloak  http://localhost:8180  (admin/admin; user mice / mice)
-# → oxen API  http://localhost:3001  (direct; browser uses BFF)
+# → oxen API  http://localhost:3001  (dev override only; browser uses BFF)
 ```
 
 Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `mice` / `mice`). Sign out clears the Mice session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or instance admins, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
@@ -46,18 +46,18 @@ Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. C
 With `NODE_ENV=production` the BFF refuses to start unless `SESSION_SECRET` is set to a private
 value, `OIDC_CLIENT_SECRET` is not the shipped `mice-auth-secret`, and `COOKIE_SECURE=true`.
 
-`compose.yaml` publishes the raw oxen port (`3001`) for local development. Oxen has no auth of
-its own, so production must not expose it. Keep it private with an override file:
+In production the BFF also refuses to start unless `AUTHZ_BOOTSTRAP_ADMINS` names at least one
+instance admin, `AUTHZ_ENFORCE` is not `false`, `AUTHZ_DEV_GRANT_ALL` and `AUTH_DEV_MODE` are unset,
+`AUTH_DATA_DIR` is writable, and `OXEN_UPSTREAM` is an internal address (single-label service name,
+loopback, private range, or `.internal`/`.local`/`.svc` suffix). AuthZ enforcement is always on in
+production; the store flag cannot turn it off.
 
-```yaml
-# compose.prod.yaml
-services:
-  oxen-server:
-    ports: !reset []
-```
+Oxen has no auth of its own, so it must only be reachable from the BFF. `compose.yaml` publishes no
+oxen port; the dev-only `compose.override.yaml` (auto-loaded by `docker compose up`) publishes `3001`
+for e2e helpers. Production runs the base file alone:
 
 ```sh
-docker compose -f compose.yaml -f compose.prod.yaml up -d
+docker compose -f compose.yaml up -d
 ```
 
 ### Mice CLI (through the BFF)

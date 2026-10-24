@@ -24,6 +24,7 @@ import {
   type FileEntrySnapshot,
 } from './lineage.js'
 import { authorizeApiRequest } from './authz.js'
+import { nonCanonicalPathReason } from './pathCanonical.js'
 import {
   ensureNamespaceForCreate,
   hasInstancePermission,
@@ -99,6 +100,17 @@ export async function proxyToOxen(
   const url = new URL(c.req.url)
   const pathname = url.pathname
   const method = c.req.method
+  const nonCanonical = nonCanonicalPathReason(pathname)
+  if (nonCanonical) {
+    return new Response(
+      JSON.stringify({
+        status: 'error',
+        status_message: 'bad_request',
+        error: { detail: `Non-canonical request path (${nonCanonical})` },
+      }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )
+  }
   const reqHeaders = filterRequestHeaders(c.req.raw.headers)
 
   let body: BodyInit | undefined

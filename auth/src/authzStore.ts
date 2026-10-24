@@ -197,8 +197,9 @@ function matchesBootstrap(user: SessionUser): boolean {
   return bootstrapAllowlist().some((entry) => matchesIdentityEntry(entry, user))
 }
 
-/** Effective enforce: env override wins; else store flag. */
+/** Effective enforce: always on in production; else env override, else store flag. */
 export function isAuthzEnforce(): boolean {
+  if (process.env.NODE_ENV === 'production') return true
   if (env.authzEnforce === 'true') return true
   if (env.authzEnforce === 'false') return false
   return readInstance().enforce

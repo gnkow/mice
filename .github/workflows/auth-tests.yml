@@ -1,0 +1,23 @@
+name: auth-tests
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  auth-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: auth/package-lock.json
+      - run: npm ci
+        working-directory: auth
+      - run: npx tsc --noEmit
+        working-directory: auth
+      - run: npm test
+        working-directory: auth

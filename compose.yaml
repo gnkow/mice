@@ -9,9 +9,7 @@ name: mice
 services:
   oxen-server:
     image: oxen/oxen-server:latest
-    ports:
-      # Published for e2e setup helpers (OXEN_URL). Browser traffic must use the BFF.
-      - "${OXEN_PORT:-3001}:3001"
+    # No host port: oxen has no auth, so only the BFF may reach it. Dev publishes it via compose.override.yaml.
     volumes:
       - oxen-data:/var/oxen/data
     environment:

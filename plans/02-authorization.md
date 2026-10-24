@@ -168,7 +168,9 @@ No “active persona” shrinking rights. Explicit collaborator lists **add** gr
 | **Maintain** | Write + merge / branch maintenance without full destructive admin |
 | **Admin** | Manage collaborators/settings; delete and other destructive ops as oxen allows |
 
-Exact `method + path → minimum role` table lives with the implementation (`auth/` path map); keep it deny-by-default for unknown mutating routes.
+The `action → minimum role` table lives in the `auth/` path map and is the enforced source of truth. Unknown mutating routes need **Admin**; unrecognised GET/HEAD routes with no namespace and repo are **denied** unless allowlisted ([ADR 0002](../docs/adr/0002-bff-default-deny.md)). Push transport routes (commit upload, publish, version chunks) need **Write**; the version query needs **Read**.
+
+**Staging and Mice Workspaces:** Oxen's own workspaces (the glossary's **Staging**) and Mice Workspaces sit at the repo-role floor here (Read for GET, Write for mutations). Per-owner or lease rules are decided in [08-workspaces.md](./08-workspaces.md) and the Jobs/Sessions plans, not in this plan.
 
 ### 7.4 Base permissions
 
@@ -219,7 +221,7 @@ Instance **admins** (bootstrap) hold full instance catalog + `site_admin_bypass`
 
 ### 7.9 Tokens (PATs)
 
-- Phase 0: PAT AuthZ = minting user’s full effective access (additive).
+- Phase 0: PAT AuthZ = minting user’s full effective access (additive), evaluated on every request: direct grants shrink immediately when the user loses them; scopes cap the result. Group-derived access is fixed at mint (see §12 runbook).
 - Phase 2: optional fine-grained resource grants (selected namespaces/repos + max role) ⊆ user’s access.
 - Under enforce, mint/list/revoke own PATs requires `manage_own_tokens` (or instance admin).
 - PAT cannot escalate beyond the user.
@@ -323,6 +325,17 @@ Env:
 - [ ] Optional expiry for delegated instance permissions and emergency admin grants; expiry audited
 - [ ] Documented, tested behavior for stale IdP group claims and directory outage
 
+### Production readiness (ticketed in `.scratch/auth-readiness/`)
+
+- [x] Production startup refuses to run un-enforced, without a bootstrap admin, with dev flags, with an unwritable data directory, or with a non-internal oxen upstream; the enforce flag is always on in production
+- [x] Unrecognised unscoped GET/HEAD denied; one action table drives enforcement; table-completeness test
+- [x] Non-canonical paths rejected with `400`
+- [x] Write role can push through the BFF (Read cannot)
+- [x] Oxen unpublished in the base compose; dev override publishes it
+- [x] Single-replica lock on `AUTH_DATA_DIR` in production
+- [x] PAT shrink and scope-cap tests; Owner audit scope tests (list, export, facets)
+- [x] ADR 0002; auth unit tests and typecheck in CI
+
 ## 11. Test plan
 
 | Case | Expectation |
@@ -354,6 +367,16 @@ Env:
 | Directory outage | Keycloak Admin API down degrades directory search to store-known principals only; grants and enforcement are unaffected (no live IdP lookup). Fail-open vs fail-closed behavior for any future live group re-check is undefined — Open question 3 |
 | JSON store concurrency | Single-writer BFF assumptions; swap store later if multi-instance |
 | AUDIT ns filter gaps | Owners must not see other namespaces; enforce server-side filter |
+
+### Runbook: dropping group-derived access (until Phase 5)
+
+Session and PAT `groups` are fixed at login and at mint, so removing someone from an IdP group does not shrink what they already hold. To cut it off now:
+
+1. Remove or change the group binding in AuthZ if the access came from a binding.
+2. Revoke the Principal's credentials by `iss`+`sub` (admin revocation). This ends their Sessions and rejects PATs created at or before the cut-off.
+3. The user signs in again (fresh `groups`) and mints new PATs.
+
+Direct grants (member, collaborator, custom role) take effect immediately without this.
 
 ### Open questions
 

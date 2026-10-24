@@ -1,7 +1,30 @@
+import { accessSync, constants, mkdirSync } from 'node:fs'
 import { SERVICE_ISSUER } from './principal.js'
 
 const DEV_SESSION_SECRET = 'dev-only-change-me-mice-session-secret'
 const SHIPPED_CLIENT_SECRET = 'mice-auth-secret'
+
+const INTERNAL_SUFFIXES = ['.internal', '.local', '.svc', '.svc.cluster.local', '.localhost']
+
+function isInternalHost(host: string): boolean {
+  if (host === 'localhost' || host === '::1' || host === '[::1]') return true
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    const [a, b] = host.split('.').map(Number) as [number, number]
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  }
+  if (!host.includes('.')) return true
+  return INTERNAL_SUFFIXES.some((s) => host.endsWith(s))
+}
+
+function oxenUpstreamProblem(raw: string): string | null {
+  try {
+    const host = new URL(raw).hostname.toLowerCase()
+    if (isInternalHost(host)) return null
+  } catch {
+    /* fall through */
+  }
+  return `OXEN_UPSTREAM "${raw}" must be an internal address (oxen-server has no auth of its own)`
+}
 
 /** Returns the reasons the deployment must not start (production hardening, GxP-strict). */
 export function productionStartupProblems(
@@ -26,6 +49,31 @@ export function productionStartupProblems(
   }
   if (!/^https:\/\//i.test(e.OIDC_ISSUER ?? '')) {
     problems.push('OIDC_ISSUER must be an https:// URL')
+  }
+  if ((e.AUTHZ_ENFORCE ?? '').toLowerCase() === 'false') {
+    problems.push('AUTHZ_ENFORCE=false is not allowed in production (AuthZ is always enforced)')
+  }
+  const bootstrapAdmins = (e.AUTHZ_BOOTSTRAP_ADMINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (bootstrapAdmins.length === 0) {
+    problems.push('AUTHZ_BOOTSTRAP_ADMINS must list at least one instance admin')
+  }
+  if (e.AUTHZ_DEV_GRANT_ALL === 'true') {
+    problems.push('AUTHZ_DEV_GRANT_ALL must not be set in production')
+  }
+  if (e.AUTH_DEV_MODE === 'true') {
+    problems.push('AUTH_DEV_MODE must not be set in production')
+  }
+  const upstreamProblem = oxenUpstreamProblem(e.OXEN_UPSTREAM ?? 'http://127.0.0.1:3001')
+  if (upstreamProblem) problems.push(upstreamProblem)
+  const dataDir = e.AUTH_DATA_DIR ?? './data'
+  try {
+    mkdirSync(dataDir, { recursive: true })
+    accessSync(dataDir, constants.W_OK)
+  } catch {
+    problems.push(`AUTH_DATA_DIR "${dataDir}" is not writable`)
   }
   return problems
 }

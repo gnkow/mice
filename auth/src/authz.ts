@@ -1,4 +1,5 @@
 import { classifyPath } from './audit.js'
+import { authzActionForPath, minRoleForAction } from './authzPathMap.js'
 import {
   customNamespaceRoleIds,
   customRepoRoleIdsForUser,
@@ -208,20 +209,8 @@ export function requiredRepoRoleForRequest(
   const m = method.toUpperCase()
   if (m === 'GET' || m === 'HEAD') return 'read'
 
-  if (action === 'repo.delete') return 'admin'
-  if (action === 'repo.metadata') return 'admin'
-  if (action === 'merge') return 'maintain'
-  if (action === 'branch.delete') return 'maintain'
-  if (
-    action === 'file.write' ||
-    action === 'file.delete' ||
-    action === 'branch.create' ||
-    action === 'branch.update' ||
-    action.startsWith('workspace') ||
-    action === 'repo.create'
-  ) {
-    return 'write'
-  }
+  const mapped = minRoleForAction(action)
+  if (mapped) return mapped
   // Unknown mutating route: require admin (fail closed-ish)
   if (m !== 'GET' && m !== 'HEAD') return 'admin'
   return 'read'
@@ -268,7 +257,7 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
   const classified = classifyPath(method, pathname)
   let ns = classified.namespace ?? input.createNamespace
   let repo = classified.repo ?? input.createRepo
-  const action = classified.action
+  const action = authzActionForPath(method, pathname, classified.action)
 
   // List oxen namespace catalog — non-pending; proxy filters to visible ns.
   // Single-namespace GET requires membership or repo collab in that ns.
@@ -339,9 +328,7 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
   }
 
   if (!ns || !repo) {
-    // Unscoped / unrecognized — allow non-pending reads only
-    if (method === 'GET' || method === 'HEAD') return allow()
-    return deny('Unable to authorize path (missing namespace/repo)')
+    return deny('Unable to authorize path (not an allowlisted unscoped route)')
   }
 
   const need = requiredRepoRoleForRequest(method, pathname, action)

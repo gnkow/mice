@@ -195,3 +195,30 @@ describe('notification audit integration', () => {
     }
   })
 })
+
+describe('namespace-scoped audit (Owner scope)', () => {
+  it('never returns other namespaces or events without a namespace', () => {
+    add('access_request.create', { message: 'no namespace' })
+    const scope = ['ns1']
+    const { events } = queryAudit({ allowedNamespaces: scope, limit: 100 })
+    assert.ok(events.length > 0)
+    assert.ok(events.every((e) => e.namespace === 'ns1'))
+
+    const exported = queryAuditForExport({ allowedNamespaces: scope })
+    assert.ok(exported.events.length > 0)
+    assert.ok(exported.events.every((e) => e.namespace === 'ns1'))
+    assert.ok(!auditEventsToCsv(exported.events).includes('ns2'))
+
+    const facets = auditFacets({ allowedNamespaces: scope })
+    assert.ok(facets.jobs.every((j) => !['job-2', 'job-3'].includes(j.id)))
+    assert.ok(facets.workspaces.every((w) => w.id !== 'ws-2'))
+  })
+
+  it('an explicit other-namespace filter inside the scope returns nothing', () => {
+    const { events } = queryAudit({ allowedNamespaces: ['ns1'], namespace: 'ns2', limit: 100 })
+    assert.deepEqual(events, [])
+    const facets = auditFacets({ allowedNamespaces: ['ns1'], namespace: 'ns2' })
+    assert.deepEqual(facets.jobs, [])
+    assert.deepEqual(facets.workspaces, [])
+  })
+})

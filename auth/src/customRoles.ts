@@ -438,10 +438,12 @@ export function finePermissionForAction(
     action === 'file.write' ||
     action === 'file.delete' ||
     action === 'branch.create' ||
-    action === 'branch.update'
+    action === 'branch.update' ||
+    action === 'push'
   ) {
     return 'contents_write'
   }
+  if (action === 'versions.query') return 'contents_read'
   if (action.startsWith('workspace')) return 'workspaces'
   if (action === 'job.submit') return 'job_submit'
   if (action === 'job.read') return 'job_read'

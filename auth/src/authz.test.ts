@@ -75,7 +75,7 @@ const {
   resolveAccessRequest,
 } = await import('./accessRequests.js')
 const { createPat, resolvePat } = await import('./tokens.js')
-const { OXEN_PATH_ROLE_MAP } = await import('./authzPathMap.js')
+const { OXEN_PATH_ROLE_MAP, minRoleForAction } = await import('./authzPathMap.js')
 const { classifyPath } = await import('./audit.js')
 const { env } = await import('./env.js')
 const {
@@ -450,6 +450,101 @@ describe('Phase 2–3 extras', () => {
       requiredRepoRoleForRequest('POST', '/api/repos/n/r/mystery', 'other'),
       'admin',
     )
+  })
+
+  it('Write collaborator can push; Read collaborator cannot; merge stays Maintain', () => {
+    const ns = 'tc-push'
+    createNamespaceAuthz(admin, ns, 'none', true)
+    const writer = mkUser('push-writer')
+    const reader = mkUser('push-reader')
+    setRepoCollaborator(ns, 'r', writer, 'write')
+    setRepoCollaborator(ns, 'r', reader, 'read')
+    const pushRoutes: Array<[string, string]> = [
+      ['POST', `/api/repos/${ns}/r/commits/upload`],
+      ['POST', `/api/repos/${ns}/r/commits/abc`],
+      ['POST', `/api/repos/${ns}/r/commits/abc/complete`],
+      ['PUT', `/api/repos/${ns}/r/versions/v1/chunks`],
+    ]
+    for (const [method, pathname] of pushRoutes) {
+      const w = authorizeApiRequest({ user: writer, via: 'session', method, pathname })
+      assert.equal(w.allow, true, `writer ${method} ${pathname}`)
+      const r = authorizeApiRequest({ user: reader, via: 'session', method, pathname })
+      assert.equal(r.allow, false, `reader ${method} ${pathname}`)
+    }
+    const versionQuery = authorizeApiRequest({
+      user: reader,
+      via: 'session',
+      method: 'QUERY',
+      pathname: `/api/repos/${ns}/r/versions`,
+    })
+    assert.equal(versionQuery.allow, true)
+    const merge = authorizeApiRequest({
+      user: writer,
+      via: 'session',
+      method: 'POST',
+      pathname: `/api/repos/${ns}/r/merge`,
+    })
+    assert.equal(merge.allow, false)
+  })
+
+  it('denies unrecognised unscoped GET/HEAD paths for a member', () => {
+    const ns = 'tc-default-deny'
+    createNamespaceAuthz(admin, ns, 'read', true)
+    const u = mkUser('default-deny-user')
+    setNamespaceMember(ns, u, 'member')
+    for (const method of ['GET', 'HEAD']) {
+      for (const pathname of [
+        '/api/mystery',
+        '/api/Repos/ns/r/file/main/a',
+        '/api/repos',
+        '/api/admin/users',
+        '/other',
+      ]) {
+        const d = authorizeApiRequest({ user: u, via: 'session', method, pathname })
+        assert.equal(d.allow, false, `${method} ${pathname}`)
+      }
+    }
+  })
+
+  it('still allows the allowlisted unscoped GET routes for a member', () => {
+    const ns = 'tc-allowlist'
+    createNamespaceAuthz(admin, ns, 'read', true)
+    const u = mkUser('allowlist-user')
+    setNamespaceMember(ns, u, 'member')
+    for (const pathname of [
+      '/api/version',
+      '/api/health',
+      '/api/oxen_version',
+      '/api/namespaces',
+      `/api/namespaces/${ns}`,
+      `/api/repos/${ns}`,
+    ]) {
+      const d = authorizeApiRequest({ user: u, via: 'session', method: 'GET', pathname })
+      assert.equal(d.allow, true, pathname)
+    }
+  })
+
+  it('every action classifyPath emits for a repo route is in the table or falls to admin', () => {
+    const samples: Array<[string, string]> = [
+      ['PUT', '/api/repos/n/r/file/main/a'],
+      ['DELETE', '/api/repos/n/r/file/main/a'],
+      ['POST', '/api/repos/n/r/branches'],
+      ['DELETE', '/api/repos/n/r/branches/b'],
+      ['PUT', '/api/repos/n/r/branches/b'],
+      ['POST', '/api/repos/n/r/merge'],
+      ['POST', '/api/repos/n/r/workspaces'],
+      ['DELETE', '/api/repos/n/r'],
+      ['PATCH', '/api/repos/n/r'],
+      ['POST', '/api/repos'],
+    ]
+    for (const [method, path] of samples) {
+      const { action } = classifyPath(method, path)
+      assert.ok(minRoleForAction(action), `${method} ${path} -> ${action} missing from table`)
+      assert.equal(requiredRepoRoleForRequest(method, path, action), minRoleForAction(action))
+    }
+    for (const row of OXEN_PATH_ROLE_MAP) {
+      assert.ok(['read', 'triage', 'write', 'maintain', 'admin'].includes(row.minRole))
+    }
   })
 
   it('deleteNamespaceAuthz removes settings and members', () => {
@@ -1094,6 +1189,38 @@ describe('repo / namespace API decisions', () => {
     assert.ok(patUser)
     assert.equal(hasRepoPermission(patUser!, ns, 'r1', 'read').ok, true)
     assert.equal(hasRepoPermission(patUser!, ns, 'r1', 'write').ok, false)
+  })
+
+  it('PAT access shrinks immediately when the minting user loses a direct grant', () => {
+    const ns = 'tc-pat-shrink'
+    createNamespaceAuthz(admin, ns, 'none', true)
+    const u = mkUser('pat-shrink-user')
+    setRepoCollaborator(ns, 'r', u, 'write')
+    const { token } = createPat(u, 'shrink', [{ namespace: ns, repo: 'r', maxRole: 'write' }])
+    const pat = resolvePat(token)
+    assert.ok(pat)
+    assert.equal(hasRepoPermission(pat!, ns, 'r', 'write').ok, true)
+
+    setRepoCollaborator(ns, 'r', u, 'read')
+    assert.equal(hasRepoPermission(pat!, ns, 'r', 'write').ok, false)
+    assert.equal(hasRepoPermission(pat!, ns, 'r', 'read').ok, true)
+
+    removeRepoCollaborator(ns, 'r', u)
+    const again = resolvePat(token)
+    assert.ok(again)
+    assert.equal(hasRepoPermission(again!, ns, 'r', 'read').ok, false)
+  })
+
+  it('PAT never exceeds its scope even when the user later gains more', () => {
+    const ns = 'tc-pat-no-grow'
+    createNamespaceAuthz(admin, ns, 'none', true)
+    const u = mkUser('pat-no-grow-user')
+    setRepoCollaborator(ns, 'r', u, 'read')
+    const { token } = createPat(u, 'no-grow', [{ namespace: ns, repo: 'r', maxRole: 'read' }])
+    setRepoCollaborator(ns, 'r', u, 'admin')
+    const pat = resolvePat(token)
+    assert.ok(pat)
+    assert.equal(hasRepoPermission(pat!, ns, 'r', 'write').ok, false)
   })
 
   it('updateNamespaceSettings basePermission affects members', () => {
