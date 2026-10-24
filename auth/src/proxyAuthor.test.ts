@@ -175,6 +175,35 @@ describe('proxy author injection fails closed', () => {
     assert.equal(received.length, 1)
   })
 
+  it('rejects author-like query parameters on a bodyless write', async () => {
+    const res = await send('/api/repos/a/b/branches/x?user_email=forged%40x.io', {
+      method: 'DELETE',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('rejects author-like query parameters on a JSON write, case-insensitively', async () => {
+    const res = await send('/api/repos/a/b/branches?Author=forged', {
+      contentType: 'application/json',
+      body: JSON.stringify({ name: 'x', message: 'm' }),
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('leaves author-like query parameters alone on reads', async () => {
+    const res = await app.request('/api/repos/a/b/commits?author=alice')
+    assert.equal(res.status, 200)
+    assert.equal(received.length, 1)
+  })
+
+  it('does not treat a plain name query parameter as an author', async () => {
+    const res = await send('/api/repos/a/b/branches/x?name=main', { method: 'DELETE' })
+    assert.equal(res.status, 200)
+    assert.equal(received.length, 1)
+  })
+
   it('answers 403, not 400, and writes no rejection row for an unauthorized Principal', async () => {
     setAuthzEnforce(true)
     try {

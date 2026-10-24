@@ -1,6 +1,10 @@
 import type { Context } from 'hono'
 import { env } from './env.js'
-import { injectAuthorFormData, injectAuthorJson } from './author.js'
+import {
+  hasAuthorQueryParam,
+  injectAuthorFormData,
+  injectAuthorJson,
+} from './author.js'
 import type { SessionUser } from './session.js'
 import {
   actorFromUser,
@@ -179,6 +183,15 @@ export async function proxyToOxen(
         rejection = 'unclassified_body'
       }
     }
+  }
+
+  if (
+    !rejection &&
+    method !== 'GET' &&
+    method !== 'HEAD' &&
+    hasAuthorQueryParam(url.searchParams)
+  ) {
+    rejection = 'author_in_query'
   }
 
   const decision = authorizeApiRequest({

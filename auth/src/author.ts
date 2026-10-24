@@ -67,3 +67,24 @@ export function injectAuthorFormData(
   next.set('author', user.name)
   return next
 }
+
+// `name` is excluded: some oxen routes use it for non-author purposes.
+const AUTHOR_QUERY_PARAMS = new Set([
+  'author',
+  'author_name',
+  'author_email',
+  'committer',
+  'committer_name',
+  'committer_email',
+  'email',
+  'user_name',
+  'user_email',
+])
+
+/** True when the query string carries client-chosen author fields. */
+export function hasAuthorQueryParam(params: URLSearchParams): boolean {
+  for (const key of params.keys()) {
+    if (AUTHOR_QUERY_PARAMS.has(key.toLowerCase())) return true
+  }
+  return false
+}
