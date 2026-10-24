@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { env } from './env.js'
+import { isSessionRevoked } from './sessionRevocation.js'
 import type { PatScope, SessionUser } from './session.js'
 
 export type PatSource = 'cli-login' | 'manual'
@@ -20,6 +21,9 @@ export type PatPublic = {
 export const PAT_DEFAULT_DAYS = 90
 export const PAT_MAX_DAYS = 365
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Avoid rewriting pats.json on every request. */
+const LAST_USED_DEBOUNCE_MS = 60_000
 
 export class PatExpiryError extends Error {}
 
@@ -132,7 +136,7 @@ export function createPat(
     iss: user.iss,
     email: user.email,
     name: user.name,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(Date.now()).toISOString(),
     expiresAt: new Date(Date.now() + days * DAY_MS).toISOString(),
     source,
     ...(scopes?.length ? { scopes } : {}),
@@ -176,8 +180,11 @@ export function resolvePat(rawBearer: string): SessionUser | null {
   const store = readStore()
   const rec = store.tokens.find((t) => t.tokenHash === tokenHash)
   if (!rec || isExpired(rec)) return null
-  rec.lastUsedAt = new Date().toISOString()
-  writeStore(store)
+  if (isSessionRevoked(rec, Math.floor(Date.parse(rec.createdAt) / 1000))) return null
+  if (!rec.lastUsedAt || Date.now() - Date.parse(rec.lastUsedAt) >= LAST_USED_DEBOUNCE_MS) {
+    rec.lastUsedAt = new Date(Date.now()).toISOString()
+    writeStore(store)
+  }
   return {
     sub: rec.sub,
     iss: rec.iss,

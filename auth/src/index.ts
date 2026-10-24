@@ -5,8 +5,7 @@ import { assertProductionStartup } from './startupGate.js'
 import { revokeSessions } from './sessionRevocation.js'
 import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
-import { sameOriginGuard } from './csrf.js'
-import { sessionActivity } from './sessionActivity.js'
+import { applyGlobalGuards, requireAuth } from './requireAuth.js'
 import {
   buildAuthorizeUrl,
   buildEndSessionUrl,
@@ -184,8 +183,7 @@ assertProductionStartup()
 runIdentityMigration()
 
 const app = new Hono()
-app.use('*', sameOriginGuard)
-app.use('*', sessionActivity)
+applyGlobalGuards(app)
 setAuditObserver((event) => {
   try { purgeFavoritesForAudit(event) } catch (err) { console.error('[mice-auth] favorites purge failed', err) }
   captureNotificationAudit(event)
@@ -1133,27 +1131,6 @@ app.get('/auth/logout', async (c) => {
   if (idpLogoutUrl) return c.redirect(idpLogoutUrl)
   return c.redirect('/login')
 })
-
-async function requireAuth(c: Parameters<typeof proxyToOxen>[0]) {
-  const session = await getSession(c)
-  if (session) {
-    preparePrincipal(session)
-    return { user: session as SessionUser, via: 'session' as const }
-  }
-
-  const auth = c.req.header('authorization') ?? ''
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-
-  if (bearer) {
-    const patUser = resolvePat(bearer)
-    if (patUser) {
-      preparePrincipal(patUser)
-      return { user: patUser, via: 'pat' as const }
-    }
-  }
-
-  return null
-}
 
 function requireOwner(session: SessionUser, ns: string): boolean {
   preparePrincipal(session)

@@ -135,6 +135,27 @@ describe('PAT expiry', () => {
     assert.ok(listed?.lastUsedAt)
   })
 
+  it('debounces last-used writes to once a minute', () => {
+    const { token, pat } = createPat(bob, 'debounce')
+    const realNow = Date.now
+    const t0 = realNow()
+    const lastUsed = () => listPatsForUser(bob).find((p) => p.id === pat.id)?.lastUsedAt
+    try {
+      Date.now = () => t0
+      resolvePat(token)
+      const first = lastUsed()
+      assert.equal(first, new Date(t0).toISOString())
+      Date.now = () => t0 + 10_000
+      resolvePat(token)
+      assert.equal(lastUsed(), first)
+      Date.now = () => t0 + 61_000
+      resolvePat(token)
+      assert.equal(lastUsed(), new Date(t0 + 61_000).toISOString())
+    } finally {
+      Date.now = realNow
+    }
+  })
+
   it('grandfathers legacy tokens to 365 days exactly once', () => {
     const file = join(dataDir, 'pats.json')
     const store = JSON.parse(readFileSync(file, 'utf8'))

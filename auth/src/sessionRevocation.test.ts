@@ -10,6 +10,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@x.io'
 
 const { sealSession, openSession } = await import('./session.js')
 const { revokeSessions } = await import('./sessionRevocation.js')
+const { createPat, resolvePat } = await import('./tokens.js')
 const authz = await import('./authzStore.js')
 
 const mk = (sub: string, iss = 'idp-a') => ({ sub, iss, email: `${sub}@x.io`, name: sub })
@@ -40,5 +41,21 @@ describe('session revocation', () => {
     revokeSessions(admin, target)
     const fresh = await sealSession({ ...target, sessionStart: nowSec() + 2 })
     assert.ok(await openSession(fresh))
+  })
+
+  it('also cuts off PATs minted before the revocation, not later ones', async () => {
+    const victim = mk('pat-victim')
+    const { token: old } = createPat(victim, 'old')
+    assert.ok(resolvePat(old))
+    const realNow = Date.now
+    try {
+      revokeSessions(admin, victim)
+      assert.equal(resolvePat(old), null)
+      Date.now = () => realNow() + 2000
+      const { token: fresh } = createPat(victim, 'fresh')
+      assert.ok(resolvePat(fresh))
+    } finally {
+      Date.now = realNow
+    }
   })
 })
