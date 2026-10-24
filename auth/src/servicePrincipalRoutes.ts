@@ -1,5 +1,7 @@
 import type { Context, Hono } from 'hono'
 import { isInstanceAdmin } from './authzStore.js'
+import { authenticateUser } from './requireAuth.js'
+import { guarded } from './routeGuard.js'
 import { parsePatScopes } from './patScopes.js'
 import { principalKey } from './principal.js'
 import {
@@ -13,7 +15,6 @@ import type { SessionUser } from './session.js'
 import { createPat, listPatsForUser, PatExpiryError, revokePat } from './tokens.js'
 
 type Deps = {
-  requireSession: (c: Context) => Promise<SessionUser | null>
   audit: (
     c: Context,
     user: SessionUser,
@@ -22,22 +23,15 @@ type Deps = {
 }
 
 /** Admin-managed service principals (CI identities). Owners may also mint and revoke their PATs. */
-export function registerServicePrincipalRoutes(app: Hono, { requireSession, audit }: Deps): void {
+export function registerServicePrincipalRoutes(app: Hono, { audit }: Deps): void {
   const base = '/auth/instance/service-principals'
 
-  app.get(base, async (c) => {
-    const s = await requireSession(c)
-    if (!s) return c.json({ error: 'Authentication required' }, 401)
-    if (!isInstanceAdmin(s)) return c.json({ error: 'Instance admin required' }, 403)
-    return c.json({ servicePrincipals: listServicePrincipals() })
-  })
+  const adminOnly = (u: SessionUser) => (isInstanceAdmin(u) ? null : 'Instance admin required')
 
-  app.post(base, async (c) => {
-    const s = await requireSession(c)
-    if (!s) return c.json({ error: 'Authentication required' }, 401)
-    if (!isInstanceAdmin(s)) return c.json({ error: 'Instance admin required' }, 403)
-    const body = (await c.req.json().catch(() => ({}))) as { name?: string; owner?: unknown }
-    const r = createServicePrincipal({ name: body.name ?? '', owner: body.owner })
+  app.get(base, guarded({ gate: adminOnly }, ({ c }) => c.json({ servicePrincipals: listServicePrincipals() })))
+
+  app.post(base, guarded({ gate: adminOnly, body: 'optional' }, ({ c, user: s, body }) => {
+    const r = createServicePrincipal({ name: (body.name as string | undefined) ?? '', owner: body.owner })
     if (!r.ok) return c.json({ error: r.error }, 400)
     audit(c, s, {
       action: 'service-principal.create',
@@ -45,11 +39,11 @@ export function registerServicePrincipalRoutes(app: Hono, { requireSession, audi
       detail: { id: r.principal.id, owner: { iss: r.principal.owner.iss, sub: r.principal.owner.sub } },
     })
     return c.json({ servicePrincipal: r.principal }, 201)
-  })
+  }))
 
   /** Admin or the current owner; null with a response when denied. */
   async function manage(c: Context) {
-    const s = await requireSession(c)
+    const s = await authenticateUser(c)
     if (!s) return { res: c.json({ error: 'Authentication required' }, 401) }
     const sp = getServicePrincipal(c.req.param('id') ?? '')
     if (!sp) return { res: c.json({ error: 'Not found' }, 404) }
@@ -105,7 +99,7 @@ export function registerServicePrincipalRoutes(app: Hono, { requireSession, audi
   })
 
   app.post(`${base}/:id/reassign`, async (c) => {
-    const s = await requireSession(c)
+    const s = await authenticateUser(c)
     if (!s) return c.json({ error: 'Authentication required' }, 401)
     if (!isInstanceAdmin(s)) return c.json({ error: 'Instance admin required' }, 403)
     const body = (await c.req.json().catch(() => ({}))) as { owner?: unknown }

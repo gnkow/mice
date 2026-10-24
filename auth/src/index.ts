@@ -7,6 +7,7 @@ import { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directoryS
 import { registerServicePrincipalRoutes } from './servicePrincipalRoutes.js'
 import { startServicePatExpirySchedule } from './servicePrincipalExpiry.js'
 import type { AuditFields } from './routeDeps.js'
+import { guarded } from './routeGuard.js'
 import { registerTokenRoutes } from './tokenRoutes.js'
 import { registerInstanceRoutes } from './instanceRoutes.js'
 import { registerRevocationRoutes } from './revocationRoutes.js'
@@ -220,20 +221,15 @@ app.get('/auth/cli/device', (c) => {
   return c.redirect(target.toString())
 })
 
-app.get('/auth/cli/device/status', async (c) => {
-  const session = await authenticateUser(c, { credential: 'session' })
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.get('/auth/cli/device/status', guarded({ credential: 'session' }, async ({ c, user: session }) => {
   const userCode = c.req.query('user_code') ?? ''
   if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
   const lookup = lookupDeviceByUserCode(userCode)
   if (!lookup) return c.json({ error: 'Unknown user code' }, 404)
   return c.json(lookup)
-})
+}))
 
-app.post('/auth/cli/device/approve', async (c) => {
-  const session = await authenticateUser(c, { credential: 'session' })
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.post('/auth/cli/device/approve', guarded({ credential: 'session' }, async ({ c, user: session }) => {
   const gate = authorizeCliDeviceApprove(session)
   if (!gate.allow) {
     return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
@@ -257,12 +253,9 @@ app.post('/auth/cli/device/approve', async (c) => {
     detail: { userCode: result.userCode },
   })
   return c.json({ ok: true, user_code: result.userCode })
-})
+}))
 
-app.post('/auth/cli/device/deny', async (c) => {
-  const session = await authenticateUser(c, { credential: 'session' })
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.post('/auth/cli/device/deny', guarded({ credential: 'session' }, async ({ c, user: session }) => {
   const gate = authorizeCliDeviceApprove(session)
   if (!gate.allow) {
     return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
@@ -286,7 +279,7 @@ app.post('/auth/cli/device/deny', async (c) => {
     detail: { userCode: userCode.trim().toUpperCase() },
   })
   return c.json({ ok: true })
-})
+}))
 
 app.post('/auth/cli/device/poll', async (c) => {
   let deviceCode = ''
@@ -393,10 +386,7 @@ app.get('/auth/me', async (c) => {
 })
 
 /** Effective AuthZ summary for UI (pending gate, instance flags). */
-app.get('/auth/me/authz', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.get('/auth/me/authz', guarded({}, async ({ c, user: session }) => {
   const pending = isPendingUser(session)
   return c.json({
     enforce: isAuthzEnforce(),
@@ -413,13 +403,10 @@ app.get('/auth/me/authz', async (c) => {
     trainingCompleted: hasCompletedTraining(session),
     requireTraining: env.authzRequireTraining,
   })
-})
+}))
 
 /** IdP / store directory search for AuthZ member & collaborator pickers. */
-app.get('/auth/directory/search', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.get('/auth/directory/search', guarded({}, async ({ c, user: session }) => {
   if (!canSearchDirectory(session)) {
     return c.json({ error: 'Forbidden' }, 403)
   }
@@ -433,12 +420,9 @@ app.get('/auth/directory/search', async (c) => {
     limit: Number.isFinite(limitRaw) ? limitRaw : 25,
   })
   return c.json(result)
-})
+}))
 
-app.post('/auth/access-requests', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.post('/auth/access-requests', guarded({}, async ({ c, user: session }) => {
   let message = ''
   try {
     const body = (await c.req.json()) as { message?: string }
@@ -453,12 +437,9 @@ app.post('/auth/access-requests', async (c) => {
     detail: { requestId: req.id },
   })
   return c.json({ ok: true, request: req })
-})
+}))
 
-app.get('/auth/access-requests', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.get('/auth/access-requests', guarded({}, async ({ c, user: session }) => {
   if (!canReviewAccessRequests(session)) {
     return c.json({ error: 'Forbidden' }, 403)
   }
@@ -472,12 +453,9 @@ app.get('/auth/access-requests', async (c) => {
       'review_access_requests',
     ),
   })
-})
+}))
 
-app.post('/auth/access-requests/:id', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.post('/auth/access-requests/:id', guarded({}, async ({ c, user: session }) => {
   let body: {
     action?: 'approve' | 'deny'
     namespace?: string
@@ -519,12 +497,9 @@ app.post('/auth/access-requests/:id', async (c) => {
     },
   })
   return c.json({ ok: true, request: result.request })
-})
+}))
 
-app.post('/auth/training', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.post('/auth/training', guarded({}, async ({ c, user: session }) => {
   let body: { sub?: string; iss?: string; completed?: boolean }
   try {
     body = (await c.req.json()) as typeof body
@@ -560,7 +535,7 @@ app.post('/auth/training', async (c) => {
     ok: true,
     trainingCompleted: hasCompletedTraining(target),
   })
-})
+}))
 
 /** Append an audit event for a BFF-native (non-proxied) mutation. Never pass secrets in `detail`. */
 function auditMutation(
@@ -979,11 +954,6 @@ function requireNsCapability(
 app.post('/auth/backchannel-logout', backChannelLogout)
 app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())
 registerServicePrincipalRoutes(app, {
-  requireSession: async (c) => {
-    const s = await authenticateUser(c)
-    if (s) preparePrincipal(s)
-    return s
-  },
   audit: (c, user, fields) => auditMutation(c, user, 'session', fields),
 })
 app.post('/auth/sessions/revoke-all', signOutEverywhere)
@@ -992,17 +962,11 @@ registerTokenRoutes(app, { audit: auditMutation })
 registerInstanceRoutes(app, { audit: auditMutation })
 registerRevocationRoutes(app)
 
-app.get('/auth/namespaces', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.get('/auth/namespaces', guarded({}, async ({ c, user: session }) => {
   return c.json({ namespaces: listNamespacesForUser(session) })
-})
+}))
 
-app.post('/auth/namespaces', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
+app.post('/auth/namespaces', guarded({}, async ({ c, user: session }) => {
   if (
     !isInstanceAdmin(session) &&
     !hasInstancePermission(session, 'create_namespace')
@@ -1044,11 +1008,9 @@ app.post('/auth/namespaces', async (c) => {
     name,
     namespace: getNamespace(name),
   })
-})
+}))
 
-app.get('/auth/namespaces/:ns', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.get('/auth/namespaces/:ns', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   preparePrincipal(session)
   const settings = getNamespace(ns)
@@ -1061,11 +1023,9 @@ app.get('/auth/namespaces/:ns', async (c) => {
     ...settings,
     members: listNamespaceMembers(ns),
   })
-})
+}))
 
-app.patch('/auth/namespaces/:ns', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.patch('/auth/namespaces/:ns', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   if (!requireNsCapability(session, ns, 'manage_settings')) {
     return c.json({ error: 'Forbidden' }, 403)
@@ -1098,16 +1058,14 @@ app.patch('/auth/namespaces/:ns', async (c) => {
     },
   })
   return c.json({ ok: true, namespace: getNamespace(ns) })
-})
+}))
 
 /**
  * Delete namespace AuthZ (and optionally all oxen repositories under it).
  * Body: { deleteRepositories?: boolean } — default true.
  * Owners or instance admins only.
  */
-app.delete('/auth/namespaces/:ns', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.delete('/auth/namespaces/:ns', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   preparePrincipal(session)
   if (!requireNsCapability(session, ns, 'delete_namespace')) {
@@ -1200,11 +1158,9 @@ app.delete('/auth/namespaces/:ns', async (c) => {
   })
 
   return c.json({ ok: true, deletedRepositories: deletedRepos })
-})
+}))
 
-app.put('/auth/namespaces/:ns/members', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.put('/auth/namespaces/:ns/members', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   if (!requireNsCapability(session, ns, 'manage_members')) {
     return c.json({ error: 'Forbidden' }, 403)
@@ -1245,11 +1201,9 @@ app.put('/auth/namespaces/:ns/members', async (c) => {
     detail: { target: memberTarget(body), role: body.role },
   })
   return c.json({ ok: true, members: listNamespaceMembers(ns) })
-})
+}))
 
-app.delete('/auth/namespaces/:ns/members', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.delete('/auth/namespaces/:ns/members', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   if (!requireNsCapability(session, ns, 'manage_members')) {
     return c.json({ error: 'Forbidden' }, 403)
@@ -1284,11 +1238,9 @@ app.delete('/auth/namespaces/:ns/members', async (c) => {
     detail: { target: memberTarget(body) },
   })
   return c.json({ ok: true, members: listNamespaceMembers(ns) })
-})
+}))
 
-app.get('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.get('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   const repo = c.req.param('repo')
   preparePrincipal(session)
@@ -1296,11 +1248,9 @@ app.get('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
     return c.json({ error: 'Forbidden' }, 403)
   }
   return c.json({ collaborators: listRepoCollaborators(ns, repo) })
-})
+}))
 
-app.put('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.put('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   const repo = c.req.param('repo')
   preparePrincipal(session)
@@ -1345,11 +1295,9 @@ app.put('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
     detail: { target: memberTarget(body), role: body.role },
   })
   return c.json({ ok: true, collaborators: listRepoCollaborators(ns, repo) })
-})
+}))
 
-app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   const repo = c.req.param('repo')
   preparePrincipal(session)
@@ -1385,11 +1333,9 @@ app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', async (c) => {
     detail: { target: memberTarget(body) },
   })
   return c.json({ ok: true, collaborators: listRepoCollaborators(ns, repo) })
-})
+}))
 
-app.get('/auth/namespaces/:ns/custom-roles/permissions', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.get('/auth/namespaces/:ns/custom-roles/permissions', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   preparePrincipal(session)
   if (
@@ -1403,11 +1349,9 @@ app.get('/auth/namespaces/:ns/custom-roles/permissions', async (c) => {
     repoFinePermissions: ALL_REPO_FINE_PERMISSIONS,
     repoFineImpliedMin: REPO_FINE_IMPLIED_MIN,
   })
-})
+}))
 
-app.get('/auth/namespaces/:ns/custom-roles', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.get('/auth/namespaces/:ns/custom-roles', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   preparePrincipal(session)
   if (!getNamespace(ns)) return c.json({ error: 'Not found' }, 404)
@@ -1422,11 +1366,9 @@ app.get('/auth/namespaces/:ns/custom-roles', async (c) => {
     namespaceRoles: listCustomNamespaceRoles(ns),
     repoRoles: listCustomRepoRoles(ns),
   })
-})
+}))
 
-app.post('/auth/namespaces/:ns/custom-roles/namespace', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.post('/auth/namespaces/:ns/custom-roles/namespace', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
     return c.json({ error: 'Forbidden' }, 403)
@@ -1464,11 +1406,9 @@ app.post('/auth/namespaces/:ns/custom-roles/namespace', async (c) => {
     },
   })
   return c.json({ ok: true, role: result.role })
-})
+}))
 
-app.patch('/auth/namespaces/:ns/custom-roles/namespace/:roleId', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.patch('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   const roleId = c.req.param('roleId')
   if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
@@ -1494,11 +1434,9 @@ app.patch('/auth/namespaces/:ns/custom-roles/namespace/:roleId', async (c) => {
     detail: { roleId, changes: body },
   })
   return c.json({ ok: true, role: result.role })
-})
+}))
 
-app.delete('/auth/namespaces/:ns/custom-roles/namespace/:roleId', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.delete('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   const roleId = c.req.param('roleId')
   if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
@@ -1517,11 +1455,9 @@ app.delete('/auth/namespaces/:ns/custom-roles/namespace/:roleId', async (c) => {
     detail: { roleId },
   })
   return c.json({ ok: true })
-})
+}))
 
-app.post('/auth/namespaces/:ns/custom-roles/repo', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.post('/auth/namespaces/:ns/custom-roles/repo', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
     return c.json({ error: 'Forbidden' }, 403)
@@ -1559,11 +1495,9 @@ app.post('/auth/namespaces/:ns/custom-roles/repo', async (c) => {
     },
   })
   return c.json({ ok: true, role: result.role })
-})
+}))
 
-app.patch('/auth/namespaces/:ns/custom-roles/repo/:roleId', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.patch('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   const roleId = c.req.param('roleId')
   if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
@@ -1589,11 +1523,9 @@ app.patch('/auth/namespaces/:ns/custom-roles/repo/:roleId', async (c) => {
     detail: { roleId, changes: body },
   })
   return c.json({ ok: true, role: result.role })
-})
+}))
 
-app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
+app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({}, async ({ c, user: session }) => {
   const ns = c.req.param('ns')
   const roleId = c.req.param('roleId')
   if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
@@ -1612,7 +1544,7 @@ app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', async (c) => {
     detail: { roleId },
   })
   return c.json({ ok: true })
-})
+}))
 
 app.all('/api/*', async (c) => {
   const authed = await authenticateRequest(c, { allowScoped: true })
