@@ -15,7 +15,7 @@ test.describe('scoped PATs (PLAT-AUTH)', () => {
     await page.getByLabel('Max role').selectOption('read')
     await page.getByRole('button', { name: "Create token" }).click()
     await expect(page.getByText(/some-ns/).first()).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText(/Scopes some-ns/)).toBeVisible()
+    await expect(page.getByText(/Scopes some-ns/).first()).toBeVisible()
 
     const list = await page.request.get(`${BASE_URL}/auth/tokens`)
     const { tokens } = (await list.json()) as { tokens: Array<{ scopes?: Array<{ namespace: string; maxRole: string }> }> }
