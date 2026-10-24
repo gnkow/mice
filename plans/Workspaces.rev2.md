@@ -1,6 +1,20 @@
 # WORKSPACES — BFF-owned remote working trees (rev 2)
 
-> **SUPERSEDED** by [Workspaces.md](./Workspaces.md) (rev 3: overlay + checkout store). Kept for history only; its W0–W6 checklist is not tracked.
+> # ⛔ SUPERSEDED — DO NOT IMPLEMENT FROM THIS FILE
+> Replaced by [Workspaces.md](./Workspaces.md) (rev 3: overlay + checkout store). Kept for history only; nothing here is tracked or approved. Where this file and Workspaces.md differ, **Workspaces.md wins**.
+>
+> Points that conflict with Workspaces.md (do not implement):
+>
+> | Rev 2 (this file) | Rev 3 ([Workspaces.md](./Workspaces.md)) |
+> | --- | --- |
+> | Storage: `AUTH_DATA_DIR/workspaces/<id>/tree` cloned per workspace, Docker **host-path bind** (`WORKSPACES_HOST_DATA_DIR`) | Overlay (`upper` over a shared per-commit checkout) on two Docker **named volumes** (`mice-store`, `mice-workspaces`), §2; host paths only resolved from `docker volume inspect` |
+> | Create = full clone via `materializeCommitClone` | `ensureCheckout` incremental, hardlinked, single-flight (§3); create copies nothing |
+> | Phases **W0–W6** (W0 store … W6 remove Oxen usage) | Phases **W0–W7** with different contents (W0 spike, W1 checkout store, W2 workspace store, W3 leases, W4 commit builder, W5 jobs/sessions, W6 CLI/UI, W7 Kubernetes), §12. Do not map rev 2 numbers onto them |
+> | Kubernetes: RWX PVC `WORKSPACES_PVC` | Not in this iteration; `copy`/`reflink` driver meanwhile, overlay is W7 (§4.3) |
+> | Manifest cache `manifest.json` in `<id>/`, live diff by re-hashing the tree | Diff from `upper` + manifests, never walking the lower tree (§5.1, I2) |
+> | `/api/repos/*/workspaces/*` "stays reachable but unused" | Oxen workspaces are renamed **Stages** and remain a separate, supported feature; see route ownership below |
+>
+> **Route ownership:** `/auth/workspaces/**` and `/auth/checkouts/**` belong to Mice workspaces (Workspaces.md §9). Oxen's own `/api/repos/:ns/:repo/workspaces/**` is proxied by the BFF and owned by **Stages** (formerly Staging; see [Staging.md](./Staging.md)); it is not deprecated or removed by Workspaces.md, and Mice workspaces never use it except transiently as the commit builder (§7.1). Rev 2's "ignored/unused" wording is void.
 
 Replaces the use of **Oxen workspaces as a user concept** everywhere in Mice. A Mice workspace is a persistent, writable directory on a shared volume holding a **working tree cloned from a branch/commit**, which Sessions and Jobs **mount**. Oxen is only the versioned store (clone in, commit out).
 

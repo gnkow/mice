@@ -409,6 +409,11 @@ Ties to [`PLAT-GXP`](./GXP.md): optional per-field `requireReason` so changing a
 - [ ] `requireReason` for GxP fields; bulk edits; history diff UI
 - [ ] Lifecycle hooks (rename, delete cascade, orphan sweeper)
 - [ ] Dataframe/column schema metadata mirror (read-through from oxen, searchable)
+- [ ] Field-level protection for `sensitive` fields: redacted (not just hidden) in API, history, audit diffs, search snippets/facets, CSV export and index; optional encryption at rest (key source and rotation) — see Q7
+- [ ] Authoritative reindex/rebuild contract: `reindex` rebuilds the index from own records + history only, is idempotent and resumable, reports drift, and defines index state after repo/branch rename, delete and a crash mid fan-out (`generation` marker, `pending` rows) — see Q8
+- [ ] Export (CSV and `.mice/metadata.json`) audit and masking: every export audited with filter, row count and masked-field list; `sensitive` fields masked unless `view_sensitive_meta`; formula-guard retained — see Q9
+- [ ] Controlled field-schema versioning and migration: `MetaFieldDef` carries a `version`; breaking changes (type change, enum removal, newly `required`) need a migration plan/dry-run, and existing values are re-validated, not silently dropped — see Q10
+- [ ] Documented validation error contract: stable 422 body `{ code, path, message, limit? }` per violation (all violations listed), and stable codes for 409 (`ifVersion`/`ifRevision` mismatch) and lock conflicts
 
 ### Phase 4 — Extensions (optional)
 - [ ] Snapshot export of metadata into repo (`.mice/metadata.json`) at a commit
@@ -443,6 +448,10 @@ Ties to [`PLAT-GXP`](./GXP.md): optional per-field `requireReason` so changing a
 | Q5 | ~~Should files inherit through directories in v1?~~ | **Decided: yes.** Files inherit through all directories up to the repo (Phase 1) |
 | Q6 | ~~Tag removal semantics at multiple levels?~~ | **Decided: latest (closest to the entity) statement wins** — own add beats ancestor removal and vice versa |
 | Q4 | Is SQLite acceptable as a new runtime dependency in the auth image? | Needs `better-sqlite3` native build in `auth/Dockerfile` |
+| Q7 | `sensitive` fields: redact vs. encrypt? Who holds keys, and are old history revisions re-encrypted on rotation? | Open. Proposal: redact everywhere by default; encryption at rest only if GxP/PII demands. Today `sensitive` is only a definition flag (no enforcement in `auth/src/meta*.ts`) |
+| Q8 | After rename/delete/crash, is the index or the own-record store authoritative, and may reindex run online? | Open. Proposal: own records + history are authoritative; reindex builds into a new `generation` and swaps atomically; the old generation serves reads until then |
+| Q9 | Export masking and audit: which fields are masked, and is a masked export distinguishable from a full one? | Open. Proposal: `meta.export` audit detail lists filters, count and `masked: true/false` |
+| Q10 | Field-schema migration: who approves a breaking definition change, and are existing records grandfathered or blocked? | Open. Proposal: grandfather with a `needs_migration` flag; block only new writes |
 
 ## 15. Epic entry (to add to [EPICS.md](./EPICS.md))
 

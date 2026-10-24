@@ -2,7 +2,7 @@
 
 Living design and phased plan for epic [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs): container-image jobs against a **local clone** of versioned Oxen data, automatic input/output lineage in the **unified** lineage graph, local Docker runner then cluster. Workspaces are an optional later mount source, not a prerequisite.
 
-Related: [EPICS.md](./EPICS.md) · [Sessions.md](./Sessions.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [TRACEABILITY.md](./TRACEABILITY.md) · [GXP.md](./GXP.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [Sessions.md](./Sessions.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [TRACEABILITY.md](./TRACEABILITY.md) · [GXP.md](./GXP.md) · [notification.md](./notification.md) · [README.md](../README.md)
 
 ## 1. Purpose & scope
 
@@ -337,6 +337,21 @@ All phases below are **in delivery scope**.
 - [ ] Web: Cluster tab form with every job option and workspace picker; lock indicators on workspace pages
 - [ ] Tests TC-JOB-18…27; docs/CLI usage
 
+### Phase 5 — Reliability, outputs, alerts (proposed; none approved; see §15)
+
+Today only `queued` jobs are re-driven after a restart (`resumeQueuedJobs`); a job interrupted while `running` is not retried, and the Kubernetes Job uses `backoffLimit: 0`.
+
+- [ ] Opt-in **retry policy** on submit (`max_attempts`, `backoff`, retry-on conditions: runner/infra failure, timeout; never user exit ≠ 0 by default); default 1 attempt; hard server cap
+- [ ] Attempts recorded on `JobRun` (`attempt`, `attempts[]` with timestamps/exit code/error, `retry_of`); each attempt re-clones the pin or restarts from the frozen workspace without double-committing
+- [ ] **Idempotent execution:** one result commit per job at most (safe branch `mice/job/<id>` + job id in commit message used to detect an already-created commit); retry/restart after commit reuses it
+- [ ] **Resumable on restart:** reconcile `running` jobs after a BFF/runner restart (re-attach to a live container/Pod, else mark `failed` with `error`, or retry per policy)
+- [ ] **Output browsing/download:** list and download files in `outputs[]` (and the result commit) via API + job detail UI, authorized by `job.read` + repo read; logs downloadable in full up to `max_log_bytes`
+- [ ] **Retention policy** for logs and non-committed outputs/log blobs (env-configured days/bytes, listed in a `GET /auth/jobs/retention`-style endpoint like Sessions); no purge by default; `JobRun` metadata and lineage never purged by this policy
+- [ ] **Stuck / long-running alerts:** flag jobs `queued` beyond a threshold (lease/`wait_reason`, concurrency cap) or `running` past a fraction of `timeout_seconds` with no log output
+- [ ] **Resource-quota warnings:** surface exhaustion (`JOBS_MAX_CONCURRENT` saturated, disk/memory limit hit, workspace over quota) on the job and in the UI before/when it fails
+- [ ] Notification events for the above and **job notification subscriptions** (per job/repo; submitter by default), delivered through the notification system — event names, recipients and `mice notifications` CLI hand-off live in [notification.md](./notification.md); Jobs only emits the events
+- [ ] Tests TC-JOB-28…32; docs/CLI usage
+
 ## 10. API
 
 | Route | Auth | Behavior |
@@ -434,7 +449,17 @@ TC-JOB-18 auto workspace created; TC-JOB-19 selected workspace used + second job
 | Lease leaks (crash) | TTL + startup reconciliation + admin force-release |
 | Unified lineage schema churn | Add job kinds additive; keep FileVersion stable |
 
-## 15. How to use this file
+## 15. Open questions (Phase 5)
+
+1. Which failures are retryable by default (runner/infra only, or also timeouts)? What are the `max_attempts` cap and backoff shape (fixed, exponential, jitter)?
+2. Is each attempt a separate `JobRun` linked by `retry_of`, or one `JobRun` with `attempts[]`? Which one do lineage and audit (`job.submit` / `job.fail`) key on?
+3. How is a re-attached `running` job proven to be the same execution after restart (container/Pod label with `job_id` + attempt), and who owns that for the Kubernetes runner?
+4. What is the default retention for logs and uncommitted outputs, and does it differ for `GXP_STRICT` ([GXP.md](./GXP.md))?
+5. Can a user download outputs of a failed/cancelled job (they are never committed)? Where are they stored while the workspace is kept (Phase 4)?
+6. Stuck-job thresholds: global env defaults or per-job fields? Who is notified (submitter only, or repo admins)?
+7. Which job events does [notification.md](./notification.md) own (stuck, quota, retry-exhausted) versus job-specific subscription state kept in Jobs?
+
+## 16. How to use this file
 
 1. Implement Phases 0–3; tick bullets in PRs.
 2. Keep decisions in §4 locked unless an ADR supersedes them.

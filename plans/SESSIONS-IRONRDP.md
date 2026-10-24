@@ -27,6 +27,20 @@ Most Mice Sessions guests are **Linux + xrdp**. IronRDP is strongest against Win
 4. Exclusive Sessions (no share/join) preserved
 5. License review (AGPL / commercial CE limits) acceptable
 
+## Additional criteria and open items (proposed; none approved)
+
+- [ ] **Fallback and compatibility matrix:** browser × guest (xrdp XFCE/MATE, GNOME/KDE RDP, optional Windows) × gateway (guacamole_lite, rustguac, IronRDP) with pass/fail per row; automatic or user-selectable **fallback to the Guacamole path** when WASM/WebSocket/codec support is missing or the RDP handshake fails (NLA/TLS/security-layer variants)
+- [ ] **Clipboard and file transfer:** text and image clipboard both directions, drive/file redirection, each switchable by the Sessions security policy ([Sessions.md](./Sessions.md) Phase 4); defaults must not be looser than the Guacamole path
+- [ ] **Reconnect:** network drop and tab close/reopen reconnect to the same guest without data loss; behavior on gateway restart and ticket expiry; resolution/DPI change on resume
+- [ ] **Browser support criteria:** minimum supported versions (Chromium, Firefox, Safari) and required features (WASM, WebCodecs/SharedArrayBuffer headers, WebSocket through the BFF); unsupported browsers get a clear message and the fallback
+- [ ] **Recording and connection audit:** IronRDP relays bytes, so server-side recording and connection audit (IP, start/end, policy, clipboard/file events) must be replaced explicitly — equivalent to [Sessions.md](./Sessions.md) Phase 4 or documented as a gap blocking the switch
+
+### Open questions
+
+1. Where would recording happen with a byte-relay gateway (relay tap, guest-side agent) and is it acceptable for regulated use?
+2. Which of the matrix rows are required for the ADR, and which may stay fallback-only?
+3. Is per-feature clipboard/file policy enforceable when the gateway cannot parse RDP virtual channels?
+
 ## Decision
 
 Stay on **guacamole_lite** (default) or **rustguac** until this spike is run and an ADR promotes IronRDP.

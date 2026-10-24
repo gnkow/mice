@@ -93,6 +93,8 @@ One JSON object per line:
 | `status` | Upstream HTTP status |
 | `action` | Coarse class (`repo.create`, `file.write`, `file.delete`, `branch.*`, `merge`, `workspace.create/delete/commit/merge/file.write/file.delete/other`, `other`). New names keep the `file.`/`workspace` prefixes that AuthZ maps on |
 | `namespace` / `repo` | Parsed from `/api/repos/:ns/:repo/...` when possible |
+| `dataset` | *(proposed)* Dataset version the mutation acted on: oxen commit id / content hash before and after (`{ base, head }`), when determinable; see Open question 2 |
+| `reason` / `change_control_id` | *(proposed, [GXP.md](./GXP.md) Phase 2)* Structured fields, not free text in `message`/`detail`; absent when policy does not require them |
 | `message` | From body `message` / `commit_message` when present |
 | `detail` | Small non-secret extras (e.g. branch, file path); never tokens or file bytes |
 
@@ -155,6 +157,13 @@ Umbrella checklist and sequencing live in [`GXP.md`](./GXP.md) (Phases 1–4). T
 - Retention / export (filtered NDJSON + manifest) — [GXP.md](./GXP.md) Phase 4
 - Store swap (Postgres JSONB / Mongo) behind the same schema (optional, with export)
 
+### Phase 2.1 — Durability & schema (proposed, unchecked)
+
+- [ ] Durable outbox / reconciliation for the mutation→audit crash gap: persist intent before proxying, mark complete after append, and reconcile orphaned intents on restart (needed for [GXP.md](./GXP.md) `GXP_STRICT`, `GXP-R-025`)
+- [ ] Schema: explicit dataset version/commit fields (`dataset.base` / `dataset.head`)
+- [ ] Schema: structured `reason` and `change_control_id` fields (shared with [GXP.md](./GXP.md) `GXP-R-040`…`042`)
+- [ ] Namespace-owner query test coverage: unit + Playwright for Owner scoped to own namespace, other-namespace `403`/empty, ns `view_audit` capability, `403` for insufficient principal (extends the open Phase 1.5 Playwright item)
+
 ## 8. API
 
 | Route | Auth | Behavior |
@@ -162,7 +171,7 @@ Umbrella checklist and sequencing live in [`GXP.md`](./GXP.md) (Phases 1–4). T
 | `GET /auth/audit` | Session; **AuthZ per [AUTHO.md](./AUTHO.md)** (`authorizeAuditQuery`: instance admin / `view_audit` / ns-scoped Owner) | Query params: `actor`, `namespace`, `repo`, `action`, `since`, `until`, `limit`, `cursor` |
 | (no write routes) | — | Append only from proxy |
 
-Disk append is **best-effort**: if JSONL write fails, the proxied oxen response still returns (logged server-side). Documented risk until a durable queue exists.
+Disk append is **best-effort**: if JSONL write fails, the proxied oxen response still returns (logged server-side). Documented risk until a durable queue exists. A crash after the upstream mutation but before append leaves no event at all; Phase 2.1 outbox/reconciliation targets this ([GXP.md](./GXP.md) strict mode).
 
 ## 9. UI
 
@@ -188,8 +197,16 @@ Disk append is **best-effort**: if JSONL write fails, the proxied oxen response 
 | --- | --- |
 | JSONL scan does not scale | Cap `limit`; swap store in Phase 2 behind same API |
 | Append failure silent to client | Log error; revisit fail-closed if GxP demands |
+| Crash between mutation and audit append | No record of a committed mutation; outbox/reconciliation (Phase 2.1), cross-ref [GXP.md](./GXP.md) |
+| Owner-scoped query leaks | Server-side ns filter; add explicit test coverage (Phase 2.1) |
 | Direct `:3001` bypass | Production: do not publish oxen port; product remote is BFF |
 | Over-broad `other` actions | Tighten path heuristics as routes are catalogued |
+
+### Open questions
+
+1. **Outbox location:** same JSONL volume (intent records beside `audit.jsonl`) or the future store swap? Does reconciliation record an `unconfirmed` outcome or re-query oxen to infer the result?
+2. **Dataset version capture:** is the pre/post commit id available from the oxen response for every mutation class, or does the BFF need an extra read (and lock) before/after proxying?
+3. **Reason/change-control placement:** top-level fields vs inside `detail`; ownership split with [GXP.md](./GXP.md) Phase 2.
 
 ## 12. How to use this file
 

@@ -37,8 +37,8 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md
 | Audit JSONL | Append-only events on mutate via BFF; query API + `/audit` UI ([AUDIT.md](./AUDIT.md)) | Part 11 audit trail (partial) |
 | Audit query AuthZ | `authorizeAuditQuery` — instance admin / `view_audit` / ns-Owner scoped ([`../auth/src/authz.ts`](../auth/src/authz.ts)) | Restricted audit review |
 | Site-admin bypass | Audited `site_admin_bypass` | Privileged path visibility |
-| Session TTL | `SESSION_TTL_SEC` (default 8h); no separate idle timeout yet ([`../auth/src/env.ts`](../auth/src/env.ts)) | Session controls (gap) |
-| Audit append | Best-effort (fail-open to client) ([AUDIT.md](./AUDIT.md) §8) | Integrity gap for strict GxP |
+| Session TTL / idle | `SESSION_TTL_SEC` (default 8h) plus sliding idle timeout `SESSION_IDLE_SEC` (shipped; default `0` = off, validated value set by GXP policy) ([`../auth/src/env.ts`](../auth/src/env.ts)) | Session controls |
+| Audit append | Best-effort (fail-open to client); strict fail-closed mode **not implemented** ([AUDIT.md](./AUDIT.md) §8) | Integrity gap for strict GxP |
 | Reason / CC id | Not required | Gap |
 | Electronic signatures | None beyond login + author injection | Gap |
 | Retention / export | None | Gap |
@@ -71,7 +71,7 @@ Status: `Done` / `Partial` / `Todo`. Anchors are indicative (Part 11 / Annex 11 
 | GXP-R-002 | All product mutations authenticated at BFF (session, PAT, or audited breakglass) | Part 11 §11.10(d); Annex 11 §12 | Done | AUTH |
 | GXP-R-003 | Role-based authorization on namespaces/repos and instance permissions | Part 11 §11.10(g); Annex 11 §12 | Done | AUTHO |
 | GXP-R-004 | Configurable session absolute max lifetime | Part 11 §11.10(d); Annex 11 §12 | Done | AUTH (`SESSION_TTL_SEC`) |
-| GXP-R-005 | Configurable idle timeout that ends the session | Part 11 §11.10(d) | Todo | AUTH / GXP Phase 1 |
+| GXP-R-005 | Configurable idle timeout that ends the session | Part 11 §11.10(d) | Partial | AUTH (`SESSION_IDLE_SEC` shipped); GXP owns the validated value policy |
 | GXP-R-006 | Ability to disable or remove a user’s effective access (membership revoke / no grants) | Part 11 §11.10(d) | Done | AUTHO |
 | GXP-R-007 | Breakglass path limited, attributable, and audited | Part 11 §11.10(e) | Partial | AUTH + AUDIT (use audited; tighten in strict mode) |
 | GXP-R-008 | PATs scoped, attributable (`via: pat`), revocable | Part 11 §11.10(d)/(g) | Done | AUTH / AUTHO |
@@ -132,6 +132,14 @@ Status: `Done` / `Partial` / `Todo`. Anchors are indicative (Part 11 / Annex 11 
 | GXP-R-060 | `GXP_STRICT` config enabling fail-closed audit, reason policy, e-sig enforcement | Annex 11 §4 / §12 | Todo | GXP Phase 1 |
 | GXP-R-061 | Documented backup/restore path for `AUTH_DATA_DIR` (audit, authz, esign, PATs) | Annex 11 §7 / §16 | Todo | GXP Phase 4 + ops notes in this doc |
 | GXP-R-062 | No product API to purge audit or e-sig history in strict mode | Part 11 §11.10(c)/(e) | Todo | GXP Phase 4 |
+| GXP-R-063 | Integrity verification of regulated records after backup/restore (audit, esign, authz stores; hashes checked against export manifests) | Annex 11 §7 / §16; ALCOA+ Complete | Todo | GXP Phase 4 |
+
+### 4.8 Signature lifecycle & review
+
+| ID | Requirement | Anchor | Status | Owner |
+| --- | --- | --- | --- | --- |
+| GXP-R-057 | Signature revocation / correction workflow: a signature is never edited or deleted; revoke/supersede is a new audited record linked to the original with reason | Part 11 §11.10(e)/§11.70 | Todo | GXP Phase 3 |
+| GXP-R-058 | Reviewer notification and escalation when a signature or approval is requested, pending past a threshold, or revoked | Annex 11 §9; workflow support | Todo | GXP Phase 3 + [notification.md](./notification.md) |
 
 ## 5. Target architecture
 
@@ -185,7 +193,7 @@ flowchart TB
 | `GXP_ESIGN_ACTIONS` | Actions requiring a prior valid e-signature token/id |
 | `GXP_RETENTION_DAYS` | Minimum retention hint for export/ops (enforce no-delete in strict) |
 | `SESSION_TTL_SEC` | Absolute session lifetime (existing) |
-| `SESSION_IDLE_SEC` | Idle timeout (Phase 1) |
+| `SESSION_IDLE_SEC` | Idle timeout (shipped; default `0` = off; value policy owned here) |
 | `AUTHZ_REQUIRE_TRAINING` | Existing training gate |
 | `AUTH_DATA_DIR` | Audit, authz, PAT, esign stores |
 
@@ -211,8 +219,8 @@ flowchart LR
 ### Phase 1 — GxP-strict audit hardening
 
 - [ ] `GXP_STRICT` env + wiring in [`../auth/src/env.ts`](../auth/src/env.ts)
-- [ ] Fail-closed audit append on mutate when strict ([`../auth/src/proxy.ts`](../auth/src/proxy.ts) / [`../auth/src/audit.ts`](../auth/src/audit.ts))
-- [ ] `SESSION_IDLE_SEC` idle timeout (GXP-R-005); mechanism lives in [AUTH.md](./AUTH.md) Phase 2.5
+- [ ] **Strict fail-closed audit is still unimplemented:** when `GXP_STRICT=true`, a failed audit append must fail the mutation (GXP-R-025; today best-effort, see [AUDIT.md](./AUDIT.md) §8) ([`../auth/src/proxy.ts`](../auth/src/proxy.ts) / [`../auth/src/audit.ts`](../auth/src/audit.ts))
+- [ ] Set and document the validated `SESSION_IDLE_SEC` value/default for GxP deployments (GXP-R-005); mechanism shipped in [AUTH.md](./AUTH.md) Phase 2.5
 - [ ] Document BFF-only production remote + NTP expectation (GXP-R-009 / R-032)
 - [ ] Tighten action classification where `other` is over-broad (GXP-R-026)
 - [x] Sync EPICS/AUDIT checklist drift for audit query AuthZ
@@ -235,6 +243,8 @@ flowchart LR
 - [ ] `GET /auth/esign` — list/filter by resource (AuthZ-scoped)
 - [ ] Enforce `GXP_ESIGN_ACTIONS`: mutate requires valid unconsumed/bound signature id
 - [ ] UI: e-sig dialog (meaning + re-auth) on merge approval first
+- [ ] Signature revoke/supersede as a new audited, linked record with reason; originals immutable (GXP-R-057)
+- [ ] Reviewer notification and escalation for pending/revoked signatures via [notification.md](./notification.md) events (GXP-R-058)
 - [ ] Audit events `esign.create` / `esign.fail`; under `GXP_STRICT`, workspace commit/merge fails closed if the audit append fails
 - [ ] E2E: TC-GXP-20…25
 
@@ -243,6 +253,7 @@ flowchart LR
 - [ ] `GXP_RETENTION_DAYS` documented; no delete APIs in strict mode (GXP-R-062)
 - [ ] `GET /auth/audit/export` — filtered NDJSON + manifest (hashes, time range, generator version)
 - [ ] Ops note: backup/restore of `AUTH_DATA_DIR` (GXP-R-061)
+- [ ] Restore verification: integrity check of audit/esign records against export-manifest hashes (GXP-R-063)
 - [ ] Optional store swap remains per [AUDIT.md](./AUDIT.md) (Postgres/Mongo behind same schema)
 - [ ] E2E: TC-GXP-30…32
 
@@ -295,7 +306,14 @@ flowchart LR
 | IdP step-up UX variance | Abstract step-up behind BFF; document Keycloak/OIDC config |
 | Clock skew | NTP on hosts; document in Phase 1 |
 | E-sig on PAT automation | Disallow PAT for e-sig create; human session only for Phase 3 |
+| Mutation succeeds but audit append never runs (crash between) | Strict mode needs a durable outbox/reconciliation — see [AUDIT.md](./AUDIT.md) Phase 2 / §11 |
 | Scope creep into QMS docs | Keep paperwork out; catalog stays product-only |
+
+### Open questions
+
+1. **Backup/restore and integrity (GXP-R-061/063):** what is the supported backup method for `AUTH_DATA_DIR` (volume snapshot vs app-level export), and how is a restore proven complete (manifest hash chain, record counts, sequence check)? Who runs and attests it?
+2. **Signature revocation (GXP-R-057):** can a signed merge be revoked after the merge landed, and what happens to the oxen record (compensating commit vs annotation only)?
+3. **Reviewer escalation (GXP-R-058):** thresholds, recipients and fallback when the reviewer is offboarded; depends on [notification.md](./notification.md) delivery guarantees.
 
 ## 12. How to use this file
 

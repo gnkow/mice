@@ -316,6 +316,13 @@ Env:
 - [x] `DirectoryPicker` on namespace/repo/instance/create member flows
 - [x] Unit + Playwright coverage (`directory.test.ts`, TC-AUTHO-directory)
 
+### Phase 5 — Access lifecycle — **proposed** (see Open questions in §12)
+
+- [ ] Immediate path to drop IdP-group-derived access held by existing PATs (snapshot at mint)
+- [ ] Periodic access review (members, collaborators, group bindings, instance admins/permissions) with audited attestation
+- [ ] Optional expiry for delegated instance permissions and emergency admin grants; expiry audited
+- [ ] Documented, tested behavior for stale IdP group claims and directory outage
+
 ## 11. Test plan
 
 | Case | Expectation |
@@ -343,8 +350,16 @@ Env:
 | Incomplete path → role map | Deny unknown mutating routes; expand map with Mice features |
 | Sparse Triage | Document equality with Read where no triage routes exist; revisit |
 | Site-admin bypass overuse | Audit every bypass; prefer normal grants |
+| Stale IdP group claims | Session `groups` are fixed at login and PAT `groups` at mint, so a removed IdP group keeps granting access until re-login / PAT revoke; see Open question 1 and the not-valid-before cut-off ([AUTH.md](./AUTH.md)) |
+| Directory outage | Keycloak Admin API down degrades directory search to store-known principals only; grants and enforcement are unaffected (no live IdP lookup). Fail-open vs fail-closed behavior for any future live group re-check is undefined — Open question 3 |
 | JSON store concurrency | Single-writer BFF assumptions; swap store later if multi-instance |
 | AUDIT ns filter gaps | Owners must not see other namespaces; enforce server-side filter |
+
+### Open questions
+
+1. **Immediate group-membership revocation:** PAT group claims are snapshotted at mint time, so removing a user from an IdP group does not shrink existing PATs. Define a path that takes effect immediately (e.g. admin "revoke tokens/sessions" per `iss`+`sub`, which already rejects PATs created at or before the cut-off; or unbinding the group in AuthZ; or re-checking groups against the directory on PAT use). Which is the supported route, and does it need a UI action?
+2. **Periodic access review and emergency/delegated-admin expiry:** should the platform support scheduled access-review campaigns (members, collaborators, group bindings, instance admins, instance permissions) with attestation audit events? Should delegated instance permissions and emergency (breakglass) admin grants carry a mandatory expiry that auto-revokes and is audited?
+3. **Directory outage behavior:** if a live directory/group re-check is added, should an outage fail closed (deny) or use last-known groups for a bounded time? Who is alerted?
 
 ## 13. How to use this file
 

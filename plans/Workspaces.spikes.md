@@ -47,6 +47,11 @@ Run on 2026-10 against Docker Desktop (macOS, arm64): Docker 29.5.3, linuxkit ke
 - Scan cache (3 s) made `changes` stale right after container writes; `changes` now forces a rescan.
 - Containers run with `--user WORKSPACES_UID:GID` only when configured; MountSpec carries `user` and `umask: "0002"`.
 
+## Findings still to gather (all unchecked)
+
+- [ ] **Production Kubernetes overlay validation:** on a real cluster (not Docker Desktop), verify whether a pod can mount overlay with `userxattr` via a node DaemonSet/CSI-style publish or in-pod fuse-overlayfs; kernel ≥ 5.11 and ext4/xfs `d_type` on node disks; behaviour on RWX PVC (NFS/CSI) with the `copy`/`reflink` fallback; copy-up/whiteout/opaque markers and read-only second mount; pod security (no privileged escalation); node drain/reschedule while a lease is held. Feeds W7 in [Workspaces.md](./Workspaces.md) §12
+- [ ] **Backup and recovery:** snapshot/restore of `mice-workspaces` (`upper`, `state.json`, `base.json`) and `store/index` journals while a writer is active and while idle; whether overlay generation volumes can be recreated from state after restore; rebuild of `store/commits` from Oxen after losing `mice-store`; measured restore time vs. workspace size; what is lost for a failed job's partial output. Feeds the backup/DR requirement in Workspaces.md §15
+
 ## W5-sessions findings (workspace mounts in desktop sessions)
 
 - Real stack (`auth/scripts/ws-sessions-integration.mjs`, rdesktop image, Docker Desktop): session A rw → write lease; session B rw → degraded to ro with notice naming A; both reach `ready`; A writes through `/data/<ns>/<repo>` and `changes` reports added/modified/removed (whiteout) correctly; B sees the new file and cannot write; workspace delete → 423 naming both sessions; `session_count` 2; `?workspace_id=` filter works.

@@ -2,7 +2,7 @@
 
 Living design and phased plan for epic [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions): **provision dedicated Linux full-desktop OS** instances for interactive use, connect from Mice via **rustguac + guacd** (RDP / xrdp), gate with IdP AuthN + AuthZ + audit. Workspaces are an optional mount (Phase 2+), not a prerequisite. Formerly sketched as VM gateways (`PLAT-GW`).
 
-Related: [EPICS.md](./EPICS.md) · [Jobs.md](./Jobs.md) · [SESSIONS-IRONRDP.md](./SESSIONS-IRONRDP.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [GXP.md](./GXP.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [Jobs.md](./Jobs.md) · [SESSIONS-IRONRDP.md](./SESSIONS-IRONRDP.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [GXP.md](./GXP.md) · [notification.md](./notification.md) · [README.md](../README.md)
 
 ## 1. Purpose & scope
 
@@ -312,6 +312,19 @@ Include `session id`, owner `sub`, image, and workspace/pin when known. Never lo
 - [x] Retention policy endpoint (`GET /auth/sessions/retention`); no purge by default
 - [x] IronRDP spike notes — [SESSIONS-IRONRDP.md](./SESSIONS-IRONRDP.md)
 
+### Phase 4 — Desktop security, recovery, cost, audit (proposed; none approved; see §14)
+
+Today the sweeper only tears down on idle/max-lifetime without advance warning, `POST /auth/sessions/:id/retry` handles only `failed`/`stopped` sessions, and `recording` is a flag with no stated retention or access rules.
+
+- [ ] **Desktop security controls**, per template/policy and default-deny where a regulated policy applies: clipboard (off / host→guest / guest→host / both), drive/file redirection, printing/audio, screen capture/recording by the user, with the effective policy snapshotted on the `DesktopSession`
+- [ ] **Guest egress policy:** network policy for the guest (none / allowlist incl. Oxen via BFF) snapshotted on the session, same model as Jobs' `network`; mounted data cannot be exfiltrated via an open path unless policy allows
+- [ ] **Reconnect/resume:** closing the browser tab or a network drop leaves the guest desktop running; reconnect mints a new `ConnectTicket` (status back to `ready`/`connected`) and is distinguished from a new session in audit
+- [ ] **User-visible recovery:** when guacd/rustguac/the provisioner fails or a guest becomes `unhealthy`, the UI shows the cause and a recover action (reconnect, restart gateway link, retry) instead of a bare `failed`; document what survives (mounts and workspace data yes; guest state outside mounts per §11a)
+- [ ] **Cost/quota policy:** per-user/instance limits beyond `SESSIONS_MAX_PER_USER` (total cpu/memory/disk, cumulative running hours); usage shown on the session
+- [ ] **Warnings before limits:** notify and show a banner before `SESSIONS_MAX_LIFETIME_SECONDS`, before idle teardown, and on resource exhaustion in the guest; allow an extension (bounded by policy) — events delivered via [notification.md](./notification.md) (Sessions only emits them)
+- [ ] **Connection audit for regulated use:** audit events carry client IP/user agent, connection start/end, duration, effective security policy and recording state; a `session.recording` lifecycle (start/stop/access/purge); tamper-evident retention aligned with [GXP.md](./GXP.md) and [AUDIT.md](./AUDIT.md)
+- [ ] Tests TC-SESS-12…17; docs
+
 ## 9. API
 
 | Route | Auth | Behavior |
@@ -395,7 +408,18 @@ Make target sketch: `make test-sessions` (stack up + Playwright `e2e/tests/sessi
 | Mount contract drift with Jobs | One ADR; both epics link it |
 | RDP credentials in logs | Redact; prefer short-lived injected secrets |
 
-## 14. How to use this file
+## 14. Open questions (Phase 4)
+
+1. Are clipboard and drive redirection enforced at guacd/rustguac (connection parameters), in the guest (xrdp config), or both? Who can relax the default — template owner, instance admin?
+2. What is the default security policy for non-regulated vs `GXP_STRICT` deployments?
+3. Is guest egress enforced by the provisioner (Docker network / NetworkPolicy / VM firewall)? Which destinations are always allowed (Oxen via BFF)?
+4. Does a dropped connection count as `disconnect` for idle-timeout purposes, and how long may a guest run with no client attached?
+5. Which guest/gateway failures are auto-recovered versus user-triggered, and does `retry` extend beyond `failed`/`stopped`?
+6. Cost unit and ceilings (hours, cpu·hours, disk) and whether quotas are per user, per namespace or instance-wide; how far ahead are lifetime warnings sent, and may users extend?
+7. Where are recordings stored, who may view them, how long are they kept, and does recording imply a user notice in the Connect UI?
+8. Which connection facts must audit hold for regulated use (IP, device, clipboard/file transfer events), and can guacd report them reliably?
+
+## 15. How to use this file
 
 1. Implement Phase 0 first (API + Compose + UI + local E2E); tick bullets in PRs.
 2. Keep decisions in §4 locked unless an ADR supersedes them.

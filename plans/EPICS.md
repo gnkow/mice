@@ -6,10 +6,10 @@ These epics need services beyond stock oxen-server (`new backend`). Flip status 
 
 ## Sequencing
 
-1. **PLAT-GXP Phase 1** (`GXP_STRICT` fail-closed audit, idle timeout) lands before W4 and cluster jobs, so new mutating surfaces are built fail-closed.
+1. **PLAT-GXP Phase 1** (`GXP_STRICT` fail-closed audit; the idle timeout has shipped) lands before W4 and cluster jobs, so new mutating surfaces are built fail-closed.
 2. **PLAT-WS W4** (starting with the Oxen ephemeral-workspace spike) is next; it unblocks PLAT-JOB Phase 4.
 3. **PLAT-META Phases 2–4** wait until the workspace entity model stabilises after W4.
-4. **PLAT-AUTH Phase 2.5** (session and PAT hardening) runs alongside; SAML is via Keycloak brokering, SCIM unscheduled.
+4. **PLAT-AUTH Phase 2.5** (session and PAT hardening) has shipped ([ADR 0001](../docs/adr/0001-bff-identity-trust-model.md)); SAML is via Keycloak brokering, SCIM (deprovisioning) unscheduled.
 
 ## Legend
 
@@ -90,6 +90,8 @@ flowchart TB
 - [x] Gate oxen-server via BFF; inject commit author from IdP session (unique `sub` in oxen history later)
 - [x] CLI / Python via BFF PATs (`mice_pat_*`); Clone box points at BFF remote
 - [x] Org/repo RBAC — **moved to** [`PLAT-AUTHO`](#plat-autho--authorization-authz) / [AUTHO.md](./AUTHO.md)
+- [x] Phase 2.5 hardening: fail-closed author injection, same-origin CSRF guard, sliding idle timeout, admin session revocation (also cuts off PATs), PAT expiry and last-used, id_token claim checks + `auth_time`, `iss`+`sub` identity with verified-email bootstrap, production startup gate
+- [ ] Deprovisioning / offboarding strategy (SCIM or event-based) — open question in [AUTH.md](./AUTH.md)
 
 ---
 
@@ -134,6 +136,7 @@ flowchart TB
 - [x] Immutable, append-only audit store with attributable actor identity (JSONL under `AUTH_DATA_DIR`)
 - [x] Audit query UI (filter by actor, repo, time, change type)
 - [x] Gate query API/UI per [AUTHO.md](./AUTHO.md) (`view_audit` / instance admin / namespace-Owner ns-scoped)
+- [ ] Durable outbox/reconciliation for the mutation→audit crash gap ([AUDIT.md](./AUDIT.md) Phase 2.1)
 - [ ] GxP metadata on relevant changes (reason / change-control id) — see [`PLAT-GXP`](#plat-gxp--gxp-product-controls)
 - [ ] Retention policy and export for review / inspection — see [`PLAT-GXP`](#plat-gxp--gxp-product-controls)
 
@@ -156,7 +159,9 @@ flowchart TB
 - [x] Phase 2 — Oxen derivation / backfill + rebuild API (compare-wide scan later)
 - [x] Phase 3 — Lineage query API + AuthZ
 - [x] Phase 4 — Graph UI on file / blob views
-- [ ] Phase 5 — Explicit copy when product API exists; optional store swap / shared refs with [`PLAT-JOB`](#plat-job--versioned-workspace-jobs)
+- [x] Job lineage (`job` op kind in `lineage.ts`)
+- [ ] Phase 5 — Explicit copy when product API exists; optional store swap / shared version-ref types with [`PLAT-JOB`](#plat-job--versioned-workspace-jobs)
+- [ ] Phase 6 — Lineage correction/approval, reconciliation status for the mutation→capture gap, retention and export
 
 ---
 
@@ -173,10 +178,12 @@ flowchart TB
 ### TODO
 
 - [x] Requirements catalog (`GXP-R-*`) + phased plan in [GXP.md](./GXP.md)
-- [ ] Phase 1 — `GXP_STRICT` fail-closed audit; idle timeout; BFF-only deploy notes
+- [x] Idle timeout (`SESSION_IDLE_SEC`; value policy owned here)
+- [ ] Phase 1 — `GXP_STRICT` fail-closed audit; BFF-only deploy notes
 - [ ] Phase 2 — Required reason + optional change-control id on configured mutates
 - [ ] Phase 3 — Full electronic signatures (step-up, meaning, bind to version; merge approval first)
 - [ ] Phase 4 — Retention policy + filtered audit/esign export; no purge in strict mode
+- [ ] Backup/restore with integrity verification of regulated records; signature revocation/correction and reviewer escalation ([GXP.md](./GXP.md))
 
 ---
 
@@ -197,6 +204,7 @@ flowchart TB
 - [x] Unify lineage with PLAT-TRACE (`job` op kind + shared version-refs; query by `jobId` / `commit`)
 - [x] Mice jobs UI monitor (list/logs/status/cancel); submit via `mice-job` CLI
 - [ ] Optional workspace mount ADR shared with [`PLAT-SESS`](#plat-sess--desktop-sessions); lineage UI polish
+- [ ] Retry policy, output/artifact browsing and retention, stuck-job and quota alerts ([Jobs.md](./Jobs.md) Phase 5)
 - [x] Cluster runner (`JOBS_RUNNER=kubernetes`) + Docker image digest pinning
 
 ---
@@ -218,6 +226,7 @@ flowchart TB
 - [x] Mice Sessions UI (list / create / Connect / stop / destroy)
 - [x] Per-user guest OS identity from IdP (mapped username + unique password); idle/max lifetime sweeper
 - [x] Optional workspace mount + pin; libvirt/KubeVirt provisioner stubs; template catalog; IronRDP spike notes
+- [ ] Desktop security controls (clipboard, drive, egress), reconnect/resume, quota and lifetime warnings, connection audit ([Sessions.md](./Sessions.md) Phase 4)
 
 ---
 
@@ -256,12 +265,13 @@ flowchart TB
 
 ### TODO
 
-- [ ] BFF store + API (list/add/remove/lookup), read-gated, auto-delete on entity removal
-- [ ] "Favorites first" default sort option + icon-only star in rows and headers
-- [ ] Profile panel: tabs per entity type with counts
-- [ ] `mice favorite add|remove|list`
-- [ ] Favorited resources notify by default (mute wins)
-- [ ] Server-side `favorites=first` for paginated jobs/sessions
+- [x] BFF store + API (list/add/remove/lookup), read-gated, auto-delete on entity removal
+- [x] "Favorites first" default sort option + icon-only star in rows and headers
+- [x] Profile panel: tabs per entity type with counts
+- [x] `mice favorite add|remove|list`
+- [x] Favorited resources notify by default (mute wins)
+- [ ] Server-side `favorites=first` for paginated jobs/sessions (v1 decision: ordering is page-local, see [FAVORITES.md](./FAVORITES.md) Q2)
+- [ ] Explicit per-resource watch distinct from a favorite
 
 ---
 
@@ -283,6 +293,7 @@ flowchart TB
 - [ ] W5 remainder — jobs on workspaces (sessions half done)
 - [ ] W6 CLI `mice workspace`, web UI rebuild, e2e, docs
 - [ ] W7 Kubernetes overlay support (separate design)
+- [ ] Fencing/lease authority, workspace notification events, conflict-resolution audit detail, backup/DR ([Workspaces.md](./Workspaces.md) §15)
 
 ---
 
@@ -290,11 +301,22 @@ flowchart TB
 
 **Goal:** In-app inbox, toasts, email and Web Push for events affecting users and resources they can access; preferences on Profile.
 
-**Status:** Done (single instance; multi-instance out of scope)
+**Status:** Done for the original scope (single instance; multi-instance out of scope); extensions below are proposed
 
 **Depends on:** PLAT-AUTH; PLAT-AUTHO; PLAT-AUDIT
 
 **Plan:** [notification.md](./notification.md)
+
+### TODO (proposed extensions, unapproved)
+
+- [ ] Security events: PAT expiring, Session revoked, new-device sign-in, admin alerts
+- [ ] Webhook / Slack / Teams channel
+- [ ] Snooze and archive
+- [ ] Review/approval requests with reminders and escalation
+- [ ] Stuck-job/session and quota alerts
+- [ ] `mice notifications` CLI
+- [ ] Per-resource watch from the resource page
+- [ ] Admin delivery-health view
 
 ---
 

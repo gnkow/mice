@@ -32,15 +32,20 @@ Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [GXP.md](./GXP.md) 
 
 ## 2. Current state
 
-Mice is a Vite/React SPA that talks to self-hosted oxen-server. There is **no** platform login, session, IdP, or roles today.
+Mice is a Vite/React SPA that talks to self-hosted oxen-server **through the auth BFF** ([`auth/`](../auth/)). Phases 0–2.5 below are shipped; trust decisions are recorded in [ADR 0001](../docs/adr/0001-bff-identity-trust-model.md).
 
 | Piece | Behavior |
 | --- | --- |
-| Settings | Optional API base + bearer token + commit author ([`web/src/pages/SettingsPage.tsx`](./web/src/pages/SettingsPage.tsx)) |
-| Persistence | `localStorage` keys in [`web/src/lib/oxen/settings.ts`](./web/src/lib/oxen/settings.ts) |
-| API client | `Authorization: Bearer …` when token set ([`web/src/lib/oxen/client.ts`](./web/src/lib/oxen/client.ts)) |
-| Proxy | Vite/Compose `/api` → oxen-server with **no** auth injection ([`compose.yaml`](./compose.yaml), [`web/vite.config.ts`](./web/vite.config.ts)) |
-| Env | [`.env.example`](./.env.example) has ports only — no OIDC vars |
+| Login / session | OIDC Authorization Code + PKCE; signed session cookie keyed on `iss`+`sub`; sliding idle timeout (`SESSION_IDLE_SEC`) plus absolute `SESSION_TTL_SEC` |
+| Settings | CLI tokens, optional API base; commit author override removed |
+| Proxy | `/api` → BFF → oxen-server; unauthenticated → `401`; author injection fails closed ([`auth/src/proxy.ts`](../auth/src/proxy.ts)) |
+| CSRF | Same-origin (`Origin` / `Sec-Fetch-Site`) guard on cookie-authenticated non-GET; PATs exempt |
+| Revocation | Admin "revoke sessions" per `iss`+`sub`; also rejects PATs created at/before the cut-off |
+| PATs | Expiry (default 90d, max 365d) + last-used; hashed in `pats.json` |
+| id_token | `iss`, `aud`, `exp`, `nonce` checked; `auth_time` captured; no JWKS signature check |
+| Bootstrap | `iss`+`sub` or `email_verified` email only; `@users.local` never matches |
+| Production gate | Refuses to start with dev/missing `SESSION_SECRET`, shipped `OIDC_CLIENT_SECRET`, or non-Secure cookies ([`auth/src/startupGate.ts`](../auth/src/startupGate.ts)) |
+| Env | [`.env.example`](./.env.example) — OIDC, session and AuthZ vars (§8) |
 
 Commit author name/email are metadata for oxen commits, not authentication.
 
@@ -111,7 +116,7 @@ sequenceDiagram
   AuthBFF-->>MiceUI: response
 ```
 
-### Future Compose shape (not implemented yet)
+### Compose shape (implemented)
 
 - `oxen-server` — data plane (as today)
 - `auth` — Node/TS BFF; browser `/api` and `/auth/*` terminate here
@@ -133,7 +138,7 @@ sequenceDiagram
 
 Starter Owner/Member/Reader sketch is **superseded**. Namespace/repo roles, additive resolution, instance permissions, and enforcement phases are specified in **[AUTHO.md](./AUTHO.md)** (GitHub Enterprise–shaped model).
 
-Until PLAT-AUTHO Phase 0 lands, the BFF remains **authenticated-only** (any valid session/PAT may proxy `/api`).
+PLAT-AUTHO Phase 0 is shipped: the BFF enforces AuthZ when `AUTHZ_ENFORCE` is on; authenticated-only applies only to dev (`AUTHZ_DEV_GRANT_ALL`).
 
 ## 6. Auth gate + identity toward oxen-server
 
@@ -152,7 +157,7 @@ Stock [`oxen-server`](https://docs.oxen.ai/getting-started/oxen-server) (0.59+) 
 
 1. **Authenticate uniquely at the BFF** — OIDC → signed session cookie with `iss`, `sub`, email, display name.
 2. **Block the gate** — any `/api/*` without a valid session → `401`; do not proxy. In production, oxen-server listens only on the Docker/private network (not published to the host, or firewalled).
-3. **Authorize at the BFF** — AuthZ before proxy per [AUTHO.md](./AUTHO.md); until PLAT-AUTHO Phase 0, authenticated-only is the floor.
+3. **Authorize at the BFF** — AuthZ before proxy per [AUTHO.md](./AUTHO.md); authenticated-only is the floor only in dev mode.
 4. **Send who commits** — for mutating oxen routes that accept author fields (`name`/`email`, `user_name`/`user_email`, form fields, etc.), the BFF **overwrites** those fields from the session IdP claims. Client-supplied author values are **not trusted**.
 5. **UI** — Settings **commit author override is removed entirely**. No client-editable name/email. Author fields on oxen writes come **only** from IdP claims via the BFF.
 6. **CLI / PAT** — after SSO, user mints a `mice_pat_*` token (Settings → CLI tokens). Oxen CLI and Python use the **BFF** as remote with `oxen config --auth <BFF-host> <PAT>`. BFF validates PAT, injects author, proxies to oxen-server. Do **not** point CLI at raw `:3001` in normal use.
@@ -190,13 +195,14 @@ Exact path/body rewrite table will be maintained next to the BFF proxy code as e
 | --- | --- |
 | Login | BFF `/auth/login` → IdP authorize (PKCE) → `/auth/callback` → create **signed/encrypted session cookie** → `Set-Cookie` |
 | Cookie | Stateless session payload (user id, `iss`/`sub`, expiry, roles snapshot as needed); HTTP-only, Secure (prod), SameSite=`Lax`; short idle + absolute max lifetime; signed with `SESSION_SECRET` |
-| Server session store | No session table. Revocation = short absolute TTL + per-`iss`+`sub` **not-valid-before** denylist checked on every request; instance admins can "revoke sessions" (Phase 2 hardening, unchecked below) |
-| CSRF | `Origin` / `Sec-Fetch-Site` check on every cookie-authenticated non-GET request; PAT requests exempt; no token scheme (hardening, unchecked below) |
+| Server session store | No session table. Revocation = short absolute TTL + per-`iss`+`sub` **not-valid-before** cut-off checked on every request; instance admins can "revoke sessions" (shipped, Phase 2.5). The same cut-off also rejects PATs created at or before it; PATs minted afterwards work |
+| CSRF | `Origin` / `Sec-Fetch-Site` check on every cookie-authenticated non-GET request; PAT requests exempt; no token scheme (shipped, Phase 2.5) |
 | Logout | BFF clears session cookie; **RP-initiated IdP end-session** (when `id_token` present) then return to `/login`; next `/auth/login` uses `prompt=login` so the IdP credential form always appears |
 | Refresh | Prefer embedding refreshable IdP tokens only if needed; keep cookie payload small — refresh via re-login or silent OIDC when access expired |
-| Idle timeout | AUTH implements a sliding window by re-sealing the cookie on activity; [GXP.md](./GXP.md) sets `SESSION_IDLE_SEC` and enforces it in strict mode |
-| PAT lifetime | Required expiry (default 90 days, max 365) plus last-used timestamp; existing PATs grandfathered to 365 days from migration |
-| Production gate | BFF refuses to start in production unless `SESSION_SECRET` is set (not the dev default) and cookies are Secure; oxen port exposure is documented, not probed |
+| Idle timeout | **Shipped.** Sliding window: the BFF re-seals the cookie on activity; idle value is `SESSION_IDLE_SEC` (default `0` = off). [GXP.md](./GXP.md) owns the value policy for validated deployments |
+| PAT lifetime | **Shipped.** Required expiry (default 90 days, max 365) plus last-used timestamp; existing PATs grandfathered to 365 days from migration; expired PATs rejected |
+| id_token | **Shipped.** `iss`, `aud`, `exp`, `nonce` validated at login; `auth_time` captured for e-signature step-up ([GXP.md](./GXP.md) Phase 3); no JWKS signature check ([ADR 0001](../docs/adr/0001-bff-identity-trust-model.md)) |
+| Production gate | **Shipped.** BFF refuses to start in production unless `SESSION_SECRET` is set (not the dev default), `OIDC_CLIENT_SECRET` is not `mice-auth-secret`, and cookies are Secure; oxen port exposure is documented, not probed |
 
 ## 8. Configuration
 
@@ -300,10 +306,14 @@ Touchpoints when coding: [`SettingsPage.tsx`](./web/src/pages/SettingsPage.tsx),
 | --- | --- |
 | oxen-server lacks fine-grained ACL | Enforce authZ at BFF; **do not publish** oxen-server ports in production compose |
 | Client spoofs author fields | BFF always overwrites author from session; ignore client values |
-| Incomplete rewrite coverage | **Not yet true in code** (unparseable JSON and non-JSON/multipart bodies pass through). Phase 2.5 makes it fail closed with an explicit allowlist — [ADR 0001](../docs/adr/0001-bff-identity-trust-model.md) |
+| Incomplete rewrite coverage | Fails closed: `400` on unparseable or unclassified non-GET bodies, explicit allowlist of author-free writes; new oxen write routes must be classified before proxying — [ADR 0001](../docs/adr/0001-bff-identity-trust-model.md) |
 | Unstable or reused IdP `sub` | Key on `iss`+`sub`; bootstrap by verified email only; document IdP requirements |
 | GxP attribution | PLAT-AUDIT uses session `sub`/email from BFF — same source as injected author |
 | Proxy path drift | Single hop: browser → BFF → oxen; no browser→oxen shortcut |
+
+### Open questions
+
+1. **Deprovisioning / offboarding:** session revocation is manual (admin action) and the BFF only sees IdP state at login. Should offboarding be automated via SCIM or an event-based path (IdP webhook / back-channel logout / periodic directory sync) that sets the not-valid-before cut-off and removes memberships? Owner and trigger unassigned.
 
 ## 13. How to use this file
 

@@ -91,6 +91,8 @@ Notification preferences already hold `resourceOverrides: {resource, mode: 'watc
 
 - Favorited resources behave as an **implicit `watch`** at the lowest precedence: effective mode = explicit override (any specificity) → else favorite → else default.
 - Explicit **mute always wins** over favorite, including a mute on a parent (e.g. muted repo) — favoriting a job in a muted repo does not un-mute it unless the user sets an explicit watch on it.
+- A favorite is an implicit watch only; it is not an explicit `watch` override.
+- [ ] Explicit per-resource watch, distinct from favorite: the star and a watch control are separate, and the UI shows both states (favorited, watched, effective result). Proposed in [notification.md](./notification.md); unapproved.
 - Not persisted into `resourceOverrides`: computed at delivery time from the favorites store, so unfavoriting restores defaults with no cleanup.
 - Applies to event categories keyed to a resource: jobs (state changes), sessions, branches/repos (pushes, merges) per existing categories; category toggles and quiet hours still apply (a favorite never bypasses a disabled category — **to verify against current `watch` semantics**, Q3).
 - Notification settings page shows a read-only hint: "Favorites notify by default; mute to override."
@@ -104,6 +106,8 @@ mice favorite list [--type namespace|repo|branch|workspace|job|session]
 mice favorite add    <type> <id>     # ids per META grammar; inside a clone: bare branch/repo allowed
 mice favorite remove <type> <id>
 ```
+
+- [ ] Hand-off: `mice notifications list|read|watch` is specified in [notification.md](./notification.md) (PAT with a notifications scope); not part of the `favorite` group. Unapproved.
 
 Same id resolution helper as `mice meta` (`resolveEntityId`) so `mice favorite add repo` inside a clone works. JSON output, unit tests in `admin.test.mjs`.
 
@@ -145,7 +149,7 @@ Same id resolution helper as `mice meta` (`resolveEntityId`) so `mice favorite a
 | Q2 | Server-side `favorites=first` for paginated jobs/sessions now, or accept page-local pinning in v1? | Page-local in v1, server-side in Phase 5 |
 | Q3 | Does a favorite bypass a **disabled notification category** or only the per-resource mute default? | Does not bypass categories |
 | Q4 | Do **cluster-visible instance admins** see favorites on entities they can only read via admin rights? | Yes, same read gate |
-| Q5 | Cross-device behavior on login with SSO identity change (sub changes)? | Not handled; favorites follow `iss+sub` |
+| Q5 | Cross-device behavior on login with SSO identity change (sub changes)? | Identity is `iss`+`sub` (ADR 0001): Principals are keyed `iss`+`sub`, no cross-IdP merging. A changed `sub` or a different IdP is a different Principal with its own favorites |
 
 ## 13. Implementation status
 

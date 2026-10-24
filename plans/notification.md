@@ -91,7 +91,16 @@ are the notification boundary. Retries and background transitions count too.
 | Files/folders | Created, changed, deleted | Eligible readers; group bulk writes/pushes into useful summaries |
 | Metadata | Tag/label additions, edits, removals | Users authorized to see the annotated resource and scope |
 | Security | User-affecting token lifecycle changes | Affected user only; never include token values |
+| Security (proposed) | PAT expiring soon (e.g. 14/3 days) and expired; last-used is tracked and may inform the notice | Token owner only; name, scopes and expiry date, never the `mice_pat_*` value |
+| Security (proposed) | Session revoked by an instance admin (the same cut-off also rejects the target's PATs issued before it) | Affected Principal only; say Sessions and PATs were cut off, not who among admins acted unless policy allows |
+| Security (proposed) | Sign-in from a new device or location | Signed-in user only; coarse device/location summary, no IP or token detail in external channels |
+| Security (proposed, admin) | CSRF cross-site rejections (`request.cross_site_rejected`) and rejected unclassifiable writes that author injection fails closed on (`request.rejected`, ADR 0001) | Instance admins only, as a rate-limited/grouped summary; never include request bodies, cookies, headers or token values |
+| Approvals (proposed) | Review/approval requested (GxP e-signature, merge approval), reminder, escalation, decided | Designated approvers; requester gets the outcome; escalation target defined by policy |
+| Operations (proposed) | Job or Desktop Session stuck/long-running; quota warnings | Owner as a personal outcome; admins for instance-wide thresholds |
 | Announcements | Instance maintenance and administrator announcements | Explicit authorized audience; only authorized administrators can publish |
+
+Security notices never contain token values, Session cookies or secrets. Admin-only
+security alerts go to instance admins, not to namespace owners or resource readers.
 
 Repository readability alone does not imply visibility of private sessions,
 access requests, token events, or administrative details. Use the same effective
@@ -151,6 +160,24 @@ resource names merely because an old notification contains them.
   tab for toasts; do not replay a burst of stale toasts after reconnect.
 - After quiet hours, summarize deferred toasts rather than playing every toast.
   Preserve all eligible activity in the inbox.
+
+### Proposed extensions (unapproved)
+
+- **Snooze and archive/delete:** snooze an inbox entry until a chosen time (it
+  resurfaces as unread); archive or delete entries. See open question 10.
+- **Approvals:** review/approval requests carry reminders and escalation after a
+  configurable delay. Notifications link to the approval; they never approve.
+  Recipients are rechecked against current approver rights.
+- **Thresholds:** stuck/long-running Job and Desktop Session alerts and quota
+  warnings use configurable thresholds (instance default, per-user override
+  within bounds), with one notice per crossing, not per poll.
+- **Per-resource watch:** set a watch from the resource page and from Favorites
+  (see [FAVORITES.md](./FAVORITES.md)), not only Profile. Same override
+  semantics as section 5; a favorite is an implicit watch, an explicit watch is separate.
+- **Webhook/Slack/Teams:** outbound channel, per user and per namespace.
+- **CLI:** `mice notifications` list/read/watch using a PAT with a notifications scope.
+- **Admin delivery health:** queue depth, oldest due delivery, dead letters and
+  provider errors, visible to instance admins without notification content.
 
 Grouping must not cross permission boundaries or merge distinct personal security
 and access outcomes into an opaque activity count. Keep constituent events for
@@ -226,6 +253,10 @@ Data:
   count, state, provider reference, last error, expiry.
 - Push subscription: user/device identity, endpoint, subscription keys, consent
   state; protect endpoint/key material and never expose another user's records.
+- Webhook endpoint (proposed): owner (user or namespace), kind (generic/Slack/Teams),
+  URL, signing secret reference, consent/verification state, categories, last
+  success/failure. URL and secret are write-only after creation.
+- Inbox entry additions (proposed): snoozed-until and archived/deleted state.
 
 Proposed user-scoped routes under `/auth/notifications`:
 
@@ -238,7 +269,15 @@ Proposed user-scoped routes under `/auth/notifications`:
 | `GET/PATCH /preferences` | Read/update own preferences with concurrency checks |
 | `PUT/DELETE /resource-overrides/:id` | Set/remove typed resource override |
 | `POST/DELETE /push-subscriptions` | Register/remove own device subscription |
+| `PATCH /:id` (snooze/archive) | Proposed: snooze until a time, archive or delete own entry |
+| `GET/POST/DELETE /webhooks` | Proposed: own endpoints; namespace endpoints need namespace-admin and live under the namespace |
+| `POST /webhooks/:id/test` | Proposed: send a test payload |
+| `GET /auth/notifications/admin/health` | Proposed: instance-admin delivery health |
 | `GET /stream` | Authenticated live changes with resume cursor |
+
+CLI use (`mice notifications list|read|watch`) authenticates with a PAT carrying a
+notifications scope; scoped PATs must not reach other routes. Revocation and expiry
+apply as for any PAT.
 
 Use existing auth, request-validation, CSRF/origin, and error conventions.
 Preference changes never accept an arbitrary recipient identity from the caller.
@@ -253,14 +292,20 @@ milestone is useful internally but does not complete the feature.
 1. **Contract and infrastructure:** settle open decisions; inventory every event
    producer; define permission mapping, event schema, local persistence, and
    recovery guarantees.
+   Settle the open questions for new channels and events (12-19).
 2. **Durable event backbone:** implement single-writer storage, audit capture and
    replay, identity/access resolution, idempotent fan-out, and durable delivery retries.
 3. **Profile and in-app experience:** preferences and resource hierarchy, inbox,
    read state/counts, grouping, live updates, online toasts, and access-loss handling.
+   Proposed: snooze/archive/delete and per-resource watch from Favorites and resource pages.
 4. **External delivery:** email immediate/digests, Web Push consent/subscriptions,
    quiet hours/DST, retries, cancellation, and visible delivery failures.
+   Proposed: webhook/Slack/Teams channel (user and namespace), admin delivery-health view.
 5. **Complete catalog and release:** wire every agreed event category and admin
    announcements; test recovery/load/privacy; document configuration and operations.
+   Proposed: PAT expiry, admin Session revocation, new-device and admin security
+   alerts; approval requests with reminders/escalation; stuck-job/session and
+   quota alerts; `mice notifications` CLI.
 
 ## 10. Acceptance and verification
 
@@ -286,6 +331,20 @@ milestone is useful internally but does not complete the feature.
 - Exercise unit tests for policy/scheduling, database integration tests for queue
   and recovery, and Playwright for profile, inbox, permissions, and consent.
   Use local mail/push test doubles, not real personal delivery destinations.
+
+Proposed additions (all unchecked, unapproved):
+
+- [ ] PAT expiring-soon and expired notices reach only the token owner (phase 5), once per threshold, and no output, log or payload contains a token value.
+- [ ] Admin Session revocation notifies the affected Principal; the revoked Session and pre-cut-off PATs stop working, newer PATs keep working (phase 5).
+- [ ] New-device/location sign-in notices reach only the signing-in user (phase 5).
+- [ ] CSRF cross-site and author-injection rejection alerts reach instance admins only, are rate-limited, and carry no request body, cookie or token (phase 5).
+- [ ] Webhook/Slack/Teams delivery works per user and per namespace with signed payloads, retries, dead letters and no secret/URL exposure after creation; blocked destinations are refused (phase 4).
+- [ ] Snooze resurfaces an entry as unread at the chosen time; archive/delete removes it from counts and lists (phase 3).
+- [ ] Approval requests notify only current approvers, remind and escalate on schedule, and stop once decided (phase 5).
+- [ ] Stuck/long-running Job and Desktop Session alerts and quota warnings fire once per configured threshold crossing (phase 5).
+- [ ] `mice notifications list|read|watch` works with a notifications-scoped PAT and fails with a PAT lacking the scope or an expired/revoked one (phase 5).
+- [ ] A resource can be watched from Favorites and its own page, and the effective state matches Profile (phase 3).
+- [ ] The admin delivery-health view shows queue depth, dead letters and provider errors to instance admins only, without notification content (phase 4).
 
 ## 11. Further assessment questions
 
@@ -316,11 +375,27 @@ These remain open; do not treat proposals as approved requirements.
     controls and automatic 90-day expiry sufficient?
 11. Are administrator announcements immediate or schedulable, and should audience
     selection support namespaces/groups as well as the whole instance?
+12. Webhook SSRF: which destinations are allowed (HTTPS only, host allowlist,
+    block private/link-local/metadata ranges, DNS rebinding, redirects)? Who may
+    configure namespace endpoints?
+13. Webhook signing and secrets: signature scheme and replay window, secret
+    rotation, and where secrets are stored (encrypted at rest, write-only)?
+14. Webhook retry/backoff, timeout, payload size, ordering, and when to disable a
+    failing endpoint? Slack/Teams payload formats versus generic JSON?
+15. Do webhook payloads include resource names and summaries, or only a link?
+    Namespace endpoints must not leak entries a recipient cannot see.
+16. Admin security alerts: which recipients, thresholds and grouping window for
+    CSRF/author-injection rejections, and may new-device detection store IP/location?
+17. Approvals: reminder interval, escalation target and delay, and which
+    approval types (GxP e-signature, merge) are in scope?
+18. Alert thresholds for stuck/long-running Jobs and Sessions and for quotas: who
+    sets them, and can users override them?
+19. Which PAT scope name gates `mice notifications`, and is `watch` polling or
+    the stream?
 
 ## 12. Documentation and repository handling
 
 Implementation should update deployment/environment examples, user-facing profile
 help, relevant API/event documentation, and operational recovery/runbooks.
 
-This plan is intentionally under `plans/`, which the repository currently ignores.
-It remains a local file unless explicitly included in version control.
+This plan lives under `plans/`, which is tracked in git.
