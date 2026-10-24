@@ -5,6 +5,7 @@ import nodemailer from 'nodemailer'
 import webpush from 'web-push'
 import type { AuditEvent } from './audit.js'
 import { authorizeJobRead, hasRepoPermission, preparePrincipal } from './authz.js'
+import { isScopedCredential } from './principal.js'
 import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin, userCanSeeNamespace } from './authzStore.js'
 import { canReviewAccessRequests } from './accessRequests.js'
 import { getJob } from './jobsStore.js'
@@ -50,7 +51,7 @@ function principal(s: NotificationState, key: string): SessionUser | undefined {
 }
 
 export function rememberNotificationUser(user: SessionUser): void {
-  if (!user.iss || !user.sub || user.patScopes) return
+  if (!user.iss || !user.sub || isScopedCredential(user)) return
   preparePrincipal(user)
   notificationTransaction((s) => {
     const key = notificationUserKey(user)
@@ -414,7 +415,7 @@ async function requireBrowser(c: Context): Promise<SessionUser> {
     // Unscoped CLI PATs may use the inbox; bearer auth is not CSRF-prone, so skip the origin check.
     const auth = c.req.header('authorization') ?? ''
     const pat = auth.startsWith('Bearer ') ? resolvePat(auth.slice('Bearer '.length)) : null
-    if (!pat || pat.patScopes?.length) throw new RequestError('Authentication required', 401)
+    if (!pat || isScopedCredential(pat)) throw new RequestError('Authentication required', 401)
     preparePrincipal(pat)
     return pat
   }

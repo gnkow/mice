@@ -26,6 +26,7 @@ import {
   type RepoRole,
 } from './authzTypes.js'
 import type { SessionUser } from './session.js'
+import { isScopedCredential } from './principal.js'
 import type { AuditVia } from './audit.js'
 import { env } from './env.js'
 import { applyGroupBootstrap } from './groupBootstrap.js'
@@ -161,13 +162,13 @@ export function hasRepoPermission(
   if (
     opts?.method &&
     opts?.action &&
-    !user.patScopes?.length &&
+    !isScopedCredential(user) &&
     hasFineRepoPermission(user, ns, repo, opts.method, opts.action)
   ) {
     return { ok: true, effective, bypass: false }
   }
   // PAT scopes never get site-admin bypass
-  if (isInstanceAdmin(user) && !user.patScopes?.length) {
+  if (isInstanceAdmin(user) && !isScopedCredential(user)) {
     return { ok: true, effective: 'admin', bypass: true }
   }
   return {
@@ -592,6 +593,6 @@ export function authorizeWorkspaceWrite(
 export function authorizeStoreAdmin(user: SessionUser): { allow: boolean; reason?: string } {
   preparePrincipal(user)
   if (!isAuthzEnforce()) return { allow: true }
-  if (isInstanceAdmin(user) && !user.patScopes?.length) return { allow: true }
+  if (isInstanceAdmin(user) && !isScopedCredential(user)) return { allow: true }
   return { allow: false, reason: 'Requires instance admin' }
 }

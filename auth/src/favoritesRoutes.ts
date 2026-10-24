@@ -1,5 +1,6 @@
 import type { Context, Hono } from 'hono'
 import { preparePrincipal } from './authz.js'
+import { isScopedCredential } from './principal.js'
 import { env } from './env.js'
 import {
   FAVORITE_TYPES,
@@ -32,7 +33,7 @@ async function requireUser(c: Context): Promise<SessionUser> {
     // Unscoped PATs only; bearer auth is not CSRF-prone.
     const auth = c.req.header('authorization') ?? ''
     const pat = auth.startsWith('Bearer ') ? resolvePat(auth.slice('Bearer '.length)) : null
-    if (!pat || pat.patScopes?.length) throw new HttpError('Authentication required', 401)
+    if (!pat || isScopedCredential(pat)) throw new HttpError('Authentication required', 401)
     preparePrincipal(pat)
     return pat
   }

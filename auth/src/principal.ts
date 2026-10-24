@@ -4,6 +4,11 @@
  */
 export type PrincipalId = { sub: string; iss: string }
 
+/** True for a PAT minted with scopes: it never gets admin bypass, fine-grained grants or per-user routes. */
+export function isScopedCredential(user: { patScopes?: readonly unknown[] }): boolean {
+  return !!user.patScopes?.length
+}
+
 const SEP = '\0'
 const norm = (v: string) => v.trim().replace(/\/$/, '')
 

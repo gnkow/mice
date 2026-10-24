@@ -1,4 +1,5 @@
 import { hasRepoPermission, preparePrincipal } from './authz.js'
+import { isScopedCredential } from './principal.js'
 import {
   hasInstancePermission,
   hasNamespaceCapability,
@@ -30,7 +31,7 @@ export function canReadEntity(
 ): boolean {
   preparePrincipal(user)
   if (!isAuthzEnforce()) return true
-  if (isInstanceAdmin(user) && !user.patScopes?.length) return true
+  if (isInstanceAdmin(user) && !isScopedCredential(user)) return true
   switch (ref.type) {
     case 'namespace':
       return !!ref.namespace && userCanSeeNamespace(user, ref.namespace)
@@ -61,12 +62,12 @@ export function canEditEntity(
 ): boolean {
   preparePrincipal(user)
   if (!isAuthzEnforce()) return true
-  if (isInstanceAdmin(user) && !user.patScopes?.length) return true
+  if (isInstanceAdmin(user) && !isScopedCredential(user)) return true
   switch (ref.type) {
     case 'namespace':
       return (
         !!ref.namespace &&
-        !user.patScopes?.length &&
+        !isScopedCredential(user) &&
         hasNamespaceCapability(ref.namespace, user, 'manage_settings')
       )
     case 'session':

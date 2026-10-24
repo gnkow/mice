@@ -111,6 +111,7 @@ import {
   type NamespaceCapability,
   type RepoFinePermission,
 } from './authzTypes.js'
+import { isScopedCredential } from './principal.js'
 import {
   approveDevice,
   denyDevice,
@@ -611,7 +612,7 @@ async function requireSession(c: Context) {
   const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
   if (!bearer) return null
   const pat = resolvePat(bearer)
-  if (!pat || pat.patScopes?.length) return null
+  if (!pat || isScopedCredential(pat)) return null
   c.set('authVia' as never, 'pat' as never)
   rememberNotificationUser(pat)
   return pat

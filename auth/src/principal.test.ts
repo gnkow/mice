@@ -12,7 +12,18 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS =
 process.env.AUTHZ_GROUP_BOOTSTRAP = '{}'
 
 const { maybeBootstrapInstanceAdmin, isInstanceAdmin } = await import('./authzStore.js')
-const { matchesIdentityEntry } = await import('./principal.js')
+const { matchesIdentityEntry, isScopedCredential } = await import('./principal.js')
+
+describe('isScopedCredential', () => {
+  it('is true only for a PAT carrying scopes', () => {
+    assert.equal(isScopedCredential({}), false)
+    assert.equal(isScopedCredential({ patScopes: [] }), false)
+    assert.equal(
+      isScopedCredential({ patScopes: [{ namespace: 'a', maxRole: 'read' }] }),
+      true,
+    )
+  })
+})
 const { migrateIdentityKeys } = await import('./identityMigration.js')
 
 const reset = () => writeFileSync(join(dataDir, 'instance-admins.json'), '')
