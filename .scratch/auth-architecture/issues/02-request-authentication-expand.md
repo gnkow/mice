@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One call resolves cookie then PAT, applies the policy, and returns the Principal with how it authenticated
-- [ ] Scoped-credential and service-principal restrictions are decided inside the module
-- [ ] Tests cover each policy through the interface only
-- [ ] No existing route changes behaviour
+- [x] One call resolves cookie then PAT, applies the policy, and returns the Principal with how it authenticated
+- [x] Scoped-credential and service-principal restrictions are decided inside the module
+- [x] Tests cover each policy through the interface only
+- [x] No existing route changes behaviour
 
 Part of the expand–contract sequence: 03 and 04 migrate callers, 04 contracts.

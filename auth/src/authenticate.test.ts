@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, it } from 'node:test'
+
+process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-authn-'))
+process.env.SESSION_SECRET = 'test-session-secret-for-authn'
+process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
+
+const { Hono } = await import('hono')
+const { authenticate } = await import('./requireAuth.js')
+type Policy = NonNullable<Parameters<typeof authenticate>[1]>
+const { sealSession } = await import('./session.js')
+const { createPat } = await import('./tokens.js')
+const { createServicePrincipal, serviceUser } = await import('./servicePrincipals.js')
+const { env } = await import('./env.js')
+
+const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
+const appFor = (policy: Policy) => {
+  const app = new Hono()
+  app.all('/x', async (c) => {
+    const r = await authenticate(c, policy)
+    return r.ok ? c.json({ sub: r.user.sub, via: r.via }) : c.json({ error: r.error }, r.status)
+  })
+  return app
+}
+const cookie = async (sub: string) =>
+  `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })}`
+const scope = [{ namespace: 'ns', maxRole: 'read' as const }]
+const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
+
+describe('authenticate', () => {
+  it('accepts a cookie Session, then an unscoped PAT, by default', async () => {
+    const app = appFor({})
+    const { token } = createPat(mk('a'), 'a')
+    assert.deepEqual(await (await app.request('/x', { headers: { cookie: await cookie('b') } })).json(), { sub: 'b', via: 'session' })
+    assert.deepEqual(await (await app.request('/x', { headers: bearer(token) })).json(), { sub: 'a', via: 'pat' })
+    assert.equal((await app.request('/x')).status, 401)
+  })
+
+  it('rejects scoped PATs unless allowScoped', async () => {
+    const { token } = createPat(mk('s'), 's', scope)
+    assert.equal((await appFor({}).request('/x', { headers: bearer(token) })).status, 401)
+    assert.equal((await appFor({ allowScoped: true }).request('/x', { headers: bearer(token) })).status, 200)
+  })
+
+  it('credential: session refuses PATs', async () => {
+    const { token } = createPat(mk('p'), 'p')
+    assert.equal((await appFor({ credential: 'session' }).request('/x', { headers: bearer(token) })).status, 401)
+    assert.equal((await appFor({ credential: 'session' }).request('/x', { headers: { cookie: await cookie('p') } })).status, 200)
+  })
+
+  it('refuses service principals when asked', async () => {
+    const r = createServicePrincipal({ name: 'ci', owner: mk('owner') })
+    assert.ok(r.ok)
+    const { token } = createPat(serviceUser(r.principal), 'ci')
+    const refused = await appFor({ refuseServiceWith: 'no favorites' }).request('/x', { headers: bearer(token) })
+    assert.equal(refused.status, 403)
+    assert.equal((await appFor({}).request('/x', { headers: bearer(token) })).status, 200)
+  })
+
+  it('checks Origin and content type for cookie Sessions on unsafe methods only', async () => {
+    const app = appFor({ originCheck: true, jsonOnly: true })
+    const c = await cookie('o')
+    const post = (headers: Record<string, string>) => app.request('/x', { method: 'POST', headers: { cookie: c, ...headers } })
+    assert.equal((await post({})).status, 403)
+    assert.equal((await post({ origin: new URL(env.publicWebOrigin).origin })).status, 400)
+    assert.equal((await post({ origin: new URL(env.publicWebOrigin).origin, 'content-type': 'application/json' })).status, 200)
+    assert.equal((await app.request('/x', { headers: { cookie: c } })).status, 200)
+    const { token } = createPat(mk('o2'), 'o')
+    assert.equal((await app.request('/x', { method: 'POST', headers: bearer(token) })).status, 200)
+  })
+})
