@@ -18,9 +18,9 @@ Production capacity/SLO, external email sender/verification policy, and browser
 support must be assessed against the deployment. External provider delivery is
 at least once; successful core mutation and audit append are not transactional.
 
-Related: [AUTH.md](./AUTH.md), [AUTHO.md](./AUTHO.md),
-[AUDIT.md](./AUDIT.md), [Jobs.md](./Jobs.md), [Sessions.md](./Sessions.md),
-[META.md](./META.md).
+Related: [01-authentication.md](./01-authentication.md), [02-authorization.md](./02-authorization.md),
+[03-audit.md](./03-audit.md), [09-jobs.md](./09-jobs.md), [10-sessions.md](./10-sessions.md),
+[12-metadata-search.md](./12-metadata-search.md).
 
 ## 1. Outcome
 
@@ -172,7 +172,7 @@ resource names merely because an old notification contains them.
   warnings use configurable thresholds (instance default, per-user override
   within bounds), with one notice per crossing, not per poll.
 - **Per-resource watch:** set a watch from the resource page and from Favorites
-  (see [FAVORITES.md](./FAVORITES.md)), not only Profile. Same override
+  (see [13-favorites.md](./13-favorites.md)), not only Profile. Same override
   semantics as section 5; a favorite is an implicit watch, an explicit watch is separate.
 - **Webhook/Slack/Teams:** outbound channel, per user and per namespace.
 - **CLI:** `mice notifications` list/read/watch using a PAT with a notifications scope.

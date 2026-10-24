@@ -2,9 +2,9 @@
 
 Living design and phased plan for epic [`PLAT-AUTH`](./EPICS.md#plat-auth--idp--sso-authn): IdP SSO, session lifecycle, and mapping identities to oxen-server credentials.
 
-**Authorization (namespace/repo RBAC)** lives in [`AUTHO.md`](./AUTHO.md) / [`PLAT-AUTHO`](./EPICS.md#plat-autho--authorization-authz).
+**Authorization (namespace/repo RBAC)** lives in [`02-authorization.md`](./02-authorization.md) / [`PLAT-AUTHO`](./EPICS.md#plat-autho--authorization-authz).
 
-Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [GXP.md](./GXP.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [02-authorization.md](./02-authorization.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [README.md](../README.md)
 
 ## 1. Purpose & scope
 
@@ -17,7 +17,7 @@ Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [GXP.md](./GXP.md) 
 
 **Out of scope (this document)**
 
-- Namespace/repo AuthZ model and enforcement — see [AUTHO.md](./AUTHO.md)
+- Namespace/repo AuthZ model and enforcement — see [02-authorization.md](./02-authorization.md)
 - Detailed design of [`PLAT-AUDIT`](./EPICS.md#plat-audit--gxp-oriented-change-audit), [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs), [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions) — they **consume** identity from this plan and AuthZ from AUTHO
 - Oxen Hub cloud SSO
 - GitHub Apps / OAuth Apps product model
@@ -26,8 +26,8 @@ Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [GXP.md](./GXP.md) 
 
 | Epic | Needs from PLAT-AUTH |
 | --- | --- |
-| PLAT-AUTHO | Stable `iss`/`sub` (and email) for membership keys; session/PAT principal at the BFF — see [AUTHO.md](./AUTHO.md) |
-| PLAT-AUDIT | Stable actor `sub` (and email/display) + auth `via` on every audited mutation — see [AUDIT.md](./AUDIT.md) |
+| PLAT-AUTHO | Stable `iss`/`sub` (and email) for membership keys; session/PAT principal at the BFF — see [02-authorization.md](./02-authorization.md) |
+| PLAT-AUDIT | Stable actor `sub` (and email/display) + auth `via` on every audited mutation — see [03-audit.md](./03-audit.md) |
 | PLAT-JOB / PLAT-SESS | Session or service identity; AuthZ checks via PLAT-AUTHO before mount/run |
 
 ## 2. Current state
@@ -57,7 +57,7 @@ Commit author name/email are metadata for oxen commits, not authentication.
 2. Login / logout UI and secure session lifecycle
 3. Replace Settings bearer as the **primary** path for interactive users
 4. Map IdP identities into credentials usable against oxen-server
-5. Leave a clear hook for AuthZ at the BFF ([AUTHO.md](./AUTHO.md))
+5. Leave a clear hook for AuthZ at the BFF ([02-authorization.md](./02-authorization.md))
 
 ### Non-goals
 
@@ -78,7 +78,7 @@ Commit author name/email are metadata for oxen commits, not authentication.
 | Gate to oxen | **No request reaches oxen-server without a valid BFF session or PAT**. Stock oxen-server stays on a private network. |
 | Identity to oxen | BFF uniquely identifies the user from IdP (`iss`+`sub`; profile email/name for oxen fields) and **injects commit author fields** on mutating proxied calls. Settings author override is **removed entirely** — clients cannot set name/email. |
 | Oxen bearer vault | **Not used** for stock oxen-server (server does not mint or validate per-user tokens as of 0.59+). AuthN/authZ live in the BFF. |
-| AuthZ | Enforced at the BFF — model and phases in [AUTHO.md](./AUTHO.md) (not detailed here) |
+| AuthZ | Enforced at the BFF — model and phases in [02-authorization.md](./02-authorization.md) (not detailed here) |
 | Automation | **CLI PATs** (`mice_pat_*`) minted in Settings; session cookie for interactive use |
 | Local/dev | Compose **Keycloak** (OIDC) for `make up` / e2e — closer to enterprise IdPs; SAML later if needed |
 
@@ -87,7 +87,7 @@ Commit author name/email are metadata for oxen commits, not authentication.
 | Component | Role |
 | --- | --- |
 | Mice UI | Login entry, account menu, logout; same-origin API calls with cookies |
-| Auth BFF (`auth/`) | Node/TS service: OIDC dance, **stateless signed session cookie**, AuthZ hook ([AUTHO.md](./AUTHO.md)), **identity injection** on write bodies, reverse proxy to oxen-server |
+| Auth BFF (`auth/`) | Node/TS service: OIDC dance, **stateless signed session cookie**, AuthZ hook ([02-authorization.md](./02-authorization.md)), **identity injection** on write bodies, reverse proxy to oxen-server |
 | IdP | Enterprise OIDC issuer; local Compose **Keycloak** |
 | oxen-server | Unchanged data plane; **not publicly exposed**; reached only via BFF |
 
@@ -132,11 +132,11 @@ sequenceDiagram
 | OIDC `sub` (+ `iss`) | Stable primary key for the platform user |
 | `email` | Commit **author email** injected by BFF; display; audit attribution |
 | `name` / `preferred_username` | Commit **author name** injected by BFF; UI display |
-| Groups / roles claims | Session `groups` via `OIDC_GROUPS_CLAIM` (default `groups`); live AuthZ bindings + optional `AUTHZ_GROUP_BOOTSTRAP` — see [AUTHO.md](./AUTHO.md) |
+| Groups / roles claims | Session `groups` via `OIDC_GROUPS_CLAIM` (default `groups`); live AuthZ bindings + optional `AUTHZ_GROUP_BOOTSTRAP` — see [02-authorization.md](./02-authorization.md) |
 
 ### Authorization (moved)
 
-Starter Owner/Member/Reader sketch is **superseded**. Namespace/repo roles, additive resolution, instance permissions, and enforcement phases are specified in **[AUTHO.md](./AUTHO.md)** (GitHub Enterprise–shaped model).
+Starter Owner/Member/Reader sketch is **superseded**. Namespace/repo roles, additive resolution, instance permissions, and enforcement phases are specified in **[02-authorization.md](./02-authorization.md)** (GitHub Enterprise–shaped model).
 
 PLAT-AUTHO Phase 0 is shipped: the BFF enforces AuthZ when `AUTHZ_ENFORCE` is on; authenticated-only applies only to dev (`AUTHZ_DEV_GRANT_ALL`).
 
@@ -157,12 +157,12 @@ Stock [`oxen-server`](https://docs.oxen.ai/getting-started/oxen-server) (0.59+) 
 
 1. **Authenticate uniquely at the BFF** — OIDC → signed session cookie with `iss`, `sub`, email, display name.
 2. **Block the gate** — any `/api/*` without a valid session → `401`; do not proxy. In production, oxen-server listens only on the Docker/private network (not published to the host, or firewalled).
-3. **Authorize at the BFF** — AuthZ before proxy per [AUTHO.md](./AUTHO.md); authenticated-only is the floor only in dev mode.
+3. **Authorize at the BFF** — AuthZ before proxy per [02-authorization.md](./02-authorization.md); authenticated-only is the floor only in dev mode.
 4. **Send who commits** — for mutating oxen routes that accept author fields (`name`/`email`, `user_name`/`user_email`, form fields, etc.), the BFF **overwrites** those fields from the session IdP claims. Client-supplied author values are **not trusted**.
 5. **UI** — Settings **commit author override is removed entirely**. No client-editable name/email. Author fields on oxen writes come **only** from IdP claims via the BFF.
 6. **CLI / PAT** — after SSO, user mints a `mice_pat_*` token (Settings → CLI tokens). Oxen CLI and Python use the **BFF** as remote with `oxen config --auth <BFF-host> <PAT>`. BFF validates PAT, injects author, proxies to oxen-server. Do **not** point CLI at raw `:3001` in normal use.
 7. **Automation** — mint CLI PATs; no shared break-glass bearer.
-8. **PLAT-AUDIT** — audit log uses the same session/`sub` (and `via`) the BFF already resolved — see [AUDIT.md](./AUDIT.md).
+8. **PLAT-AUDIT** — audit log uses the same session/`sub` (and `via`) the BFF already resolved — see [03-audit.md](./03-audit.md).
 
 ### CLI through the BFF
 
@@ -199,9 +199,9 @@ Exact path/body rewrite table will be maintained next to the BFF proxy code as e
 | CSRF | `Origin` / `Sec-Fetch-Site` check on every cookie-authenticated non-GET request; PAT requests exempt; no token scheme (shipped, Phase 2.5) |
 | Logout | BFF clears session cookie; **RP-initiated IdP end-session** (when `id_token` present) then return to `/login`; next `/auth/login` uses `prompt=login` so the IdP credential form always appears |
 | Refresh | Prefer embedding refreshable IdP tokens only if needed; keep cookie payload small — refresh via re-login or silent OIDC when access expired |
-| Idle timeout | **Shipped.** Sliding window: the BFF re-seals the cookie on activity; idle value is `SESSION_IDLE_SEC` (default `0` = off). [GXP.md](./GXP.md) owns the value policy for validated deployments |
+| Idle timeout | **Shipped.** Sliding window: the BFF re-seals the cookie on activity; idle value is `SESSION_IDLE_SEC` (default `0` = off). [04-gxp-compliance.md](./04-gxp-compliance.md) owns the value policy for validated deployments |
 | PAT lifetime | **Shipped.** Required expiry (default 90 days, max 365) plus last-used timestamp; existing PATs grandfathered to 365 days from migration; expired PATs rejected |
-| id_token | **Shipped.** `iss`, `aud`, `exp`, `nonce` validated at login; `auth_time` captured for e-signature step-up ([GXP.md](./GXP.md) Phase 3); no JWKS signature check ([ADR 0001](../docs/adr/0001-bff-identity-trust-model.md)) |
+| id_token | **Shipped.** `iss`, `aud`, `exp`, `nonce` validated at login; `auth_time` captured for e-signature step-up ([04-gxp-compliance.md](./04-gxp-compliance.md) Phase 3); no JWKS signature check ([ADR 0001](../docs/adr/0001-bff-identity-trust-model.md)) |
 | Production gate | **Shipped.** BFF refuses to start in production unless `SESSION_SECRET` is set (not the dev default), `OIDC_CLIENT_SECRET` is not `mice-auth-secret`, and cookies are Secure; oxen port exposure is documented, not probed |
 
 ## 8. Configuration
@@ -218,15 +218,15 @@ See [`.env.example`](./.env.example). Compose wires these into the `auth` servic
 | `OXEN_UPSTREAM` | oxen-server base URL for the BFF proxy |
 | `PUBLIC_OXEN_REMOTE` | Browser/CLI-facing BFF base (e.g. `http://localhost:8080`) |
 | `AUTH_DATA_DIR` | Directory for hashed PAT store (`pats.json`) |
-| `OIDC_GROUPS_CLAIM` | Id token claim for IdP groups — see [AUTHO.md](./AUTHO.md) |
-| `AUTHZ_GROUP_BOOTSTRAP` | Optional login-time materialize — see [AUTHO.md](./AUTHO.md) |
-| `AUTHZ_BOOTSTRAP_ADMINS` | Instance admin allowlist — see [AUTHO.md](./AUTHO.md) |
+| `OIDC_GROUPS_CLAIM` | Id token claim for IdP groups — see [02-authorization.md](./02-authorization.md) |
+| `AUTHZ_GROUP_BOOTSTRAP` | Optional login-time materialize — see [02-authorization.md](./02-authorization.md) |
+| `AUTHZ_BOOTSTRAP_ADMINS` | Instance admin allowlist — see [02-authorization.md](./02-authorization.md) |
 
 ### Other OIDC IdPs
 
 Compose Keycloak is the local default. Any OIDC Authorization Code + PKCE IdP works: set `OIDC_ISSUER`, `OIDC_ISSUER_PUBLIC` (browser host if different), `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, and `OIDC_POST_LOGOUT_REDIRECT_URI` on the auth service. Set `DIRECTORY_PROVIDER=none` when the Keycloak Admin directory is unavailable. See the root [README](../README.md#use-another-oidc-idp).
 
-Local Keycloak: realm `mice`, client `mice-auth` / secret `mice-auth-secret`, redirect `http://localhost:5173/auth/callback` (see [`auth/keycloak/realm-mice.json`](../auth/keycloak/realm-mice.json)). The client has a **service account** with `view-users` / `query-users` / `view-groups` / `query-groups` so the BFF can run directory search (`KEYCLOAK_ADMIN_URL`, `GET /auth/directory/search` — see [AUTHO.md](./AUTHO.md)). Re-import the realm (or recreate the Keycloak volume) after changing the realm JSON.
+Local Keycloak: realm `mice`, client `mice-auth` / secret `mice-auth-secret`, redirect `http://localhost:5173/auth/callback` (see [`auth/keycloak/realm-mice.json`](../auth/keycloak/realm-mice.json)). The client has a **service account** with `view-users` / `query-users` / `view-groups` / `query-groups` so the BFF can run directory search (`KEYCLOAK_ADMIN_URL`, `GET /auth/directory/search` — see [02-authorization.md](./02-authorization.md)). Re-import the realm (or recreate the Keycloak volume) after changing the realm JSON.
 
 ## 9. Phased delivery
 
@@ -255,7 +255,7 @@ Local Keycloak: realm `mice`, client `mice-auth` / secret `mice-auth-secret`, re
 
 ### Phase 2 — Org / repo RBAC — **moved to PLAT-AUTHO**
 
-See [AUTHO.md](./AUTHO.md) phases. AUTH Phase 2 no longer tracks RBAC delivery.
+See [02-authorization.md](./02-authorization.md) phases. AUTH Phase 2 no longer tracks RBAC delivery.
 
 ### Phase 2.5 — Session & PAT hardening
 
@@ -296,7 +296,7 @@ Touchpoints when coding: [`SettingsPage.tsx`](./web/src/pages/SettingsPage.tsx),
 | OIDC login happy path | Session cookie set; home loads against live oxen via BFF |
 | Logout | Cookie cleared; subsequent `/api` is `401` |
 | Author injection | Commit/merge via UI shows IdP email/name in oxen history, not a forged Settings author |
-| AuthZ deny | Covered in [AUTHO.md](./AUTHO.md) TC-AUTHO-* (e.g. insufficient repo role → `403`) |
+| AuthZ deny | Covered in [02-authorization.md](./02-authorization.md) TC-AUTHO-* (e.g. insufficient repo role → `403`) |
 | PAT | Automation authenticates to BFF with `mice_pat_*`; oxen remains private |
 | E2e | Keycloak SSO + sealed session cookies for multi-identity cases |
 

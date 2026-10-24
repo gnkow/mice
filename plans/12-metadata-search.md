@@ -2,7 +2,7 @@
 
 Living design and phased plan for a new epic `PLAT-META`: user-defined, **indexable and searchable metadata on every entity** in the system (namespaces, repos, branches, commits, files, workspaces, jobs, sessions, users, …), managed through the auth BFF and surfaced in the web UI.
 
-Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [TRACEABILITY.md](./TRACEABILITY.md) · [GXP.md](./GXP.md) · [Jobs.md](./Jobs.md) · [Sessions.md](./Sessions.md)
+Related: [EPICS.md](./EPICS.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [11-lineage.md](./11-lineage.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [09-jobs.md](./09-jobs.md) · [10-sessions.md](./10-sessions.md)
 
 ## 1. Purpose & scope
 
@@ -13,7 +13,7 @@ Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.
 - Typed, validated fields (schema/definition per entity type), plus free-form tags and key/value labels
 - A search index over metadata (full-text + facet filters) with AuthZ-aware results
 - REST API under the auth BFF, UI to view/edit/search, CLI-friendly (PAT) access
-- Every metadata mutation audited ([AUDIT.md](./AUDIT.md)); revision history per entity
+- Every metadata mutation audited ([03-audit.md](./03-audit.md)); revision history per entity
 - Cross-entity search page ("find everything where `project=ABC` and `status=approved`")
 
 **Out of scope (this document)**
@@ -23,7 +23,7 @@ Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.
 - External catalog sync (e.g. DataHub, Purview) — export hooks only
 - Storing secrets or PII-sensitive blobs in metadata (explicitly disallowed; validated by size/type)
 
-**Depends on:** [`PLAT-AUTHO`](./AUTHO.md) (permissions), [`PLAT-AUDIT`](./AUDIT.md) (change trail).
+**Depends on:** [`PLAT-AUTHO`](./02-authorization.md) (permissions), [`PLAT-AUDIT`](./03-audit.md) (change trail).
 
 ## 2. Current state
 
@@ -327,7 +327,7 @@ Search syntax sugar in `q`: `tag:foo`, `type:repo`, `label.env:prod`, `field.sta
 
 ## 8. Lifecycle & integrity
 
-- **Rename/move** (repo rename, branch rename, file move via lineage `move`): hook updates `ref` and writes a history entry; for files, [TRACEABILITY.md](./TRACEABILITY.md) lineage can resolve a moved path so unpinned metadata follows renames.
+- **Rename/move** (repo rename, branch rename, file move via lineage `move`): hook updates `ref` and writes a history entry; for files, [11-lineage.md](./11-lineage.md) lineage can resolve a moved path so unpinned metadata follows renames.
 - **Delete**: namespace/repo/job/session deletion hooks tombstone dependent metadata (cascade by `namespace`/`repo` denormalised fields).
 - **Orphan sweeper**: periodic task flags metadata whose entity no longer resolves.
 - **Immutable targets** (`commit`, pinned `file`) cannot be orphaned by edits; metadata is still editable (metadata ≠ target) but history is retained.
@@ -335,7 +335,7 @@ Search syntax sugar in `q`: `tag:foo`, `type:repo`, `label.env:prod`, `field.sta
 
 ## 9. AuthZ
 
-New atomic permissions in `authzTypes.ts` / catalog ([AUTHO.md](./AUTHO.md)):
+New atomic permissions in `authzTypes.ts` / catalog ([02-authorization.md](./02-authorization.md)):
 
 | Permission | Scope | Meaning |
 | --- | --- | --- |
@@ -371,7 +371,7 @@ New audit actions (add to `auditLabels.ts`, group **Metadata**):
 
 Audit `detail`: `{ entity_type, entity_id, revision, changed: { tags, labels, fields }, affected_descendants: <count> }` — a parent edit is **one** audit event (with the affected count), not one per descendant; recomputed effective rows are derived data and not audited individually. Events carry **old/new values for GxP-relevant fields** (diff, not full record). Audit `namespace`/`repo` filled from the entity ref so existing scoped audit works; add `entity_id` detail key + audit filter (extends the Session/Workspace/Job filters).
 
-Ties to [`PLAT-GXP`](./GXP.md): optional per-field `requireReason` so changing a governed field demands a reason/change-control id captured in the audit event.
+Ties to [`PLAT-GXP`](./04-gxp-compliance.md): optional per-field `requireReason` so changing a governed field demands a reason/change-control id captured in the audit event.
 
 ## 11. Web UI
 
@@ -462,7 +462,7 @@ Ties to [`PLAT-GXP`](./GXP.md): optional per-field `requireReason` so changing a
 
 **Status:** Partial (Phase 1 implemented; Phases 2–4 open)
 
-**Plan:** [META.md](./META.md)
+**Plan:** [12-metadata-search.md](./12-metadata-search.md)
 
 ### TODO
 

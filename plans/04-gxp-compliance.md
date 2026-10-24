@@ -2,9 +2,9 @@
 
 Living catalog of **product/tech controls** for Mice as a GxP-capable platform, plus phased engineering delivery. Grounded in FDA [21 CFR Part 11](https://www.ecfr.gov/current/title-21/chapter-I/subchapter-A/part-11), EU GMP Annex 11, ALCOA+ data integrity, and GAMP 5–style *system* controls the software must support.
 
-Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [README.md](../README.md)
 
-**Detail SoTs:** AuthN → [AUTH.md](./AUTH.md); AuthZ / training gate → [AUTHO.md](./AUTHO.md); audit store/API → [AUDIT.md](./AUDIT.md). This document owns the cross-cutting requirements matrix, GxP-strict mode, reason/change-control gate, electronic signatures, and retention/export umbrella.
+**Detail SoTs:** AuthN → [01-authentication.md](./01-authentication.md); AuthZ / training gate → [02-authorization.md](./02-authorization.md); audit store/API → [03-audit.md](./03-audit.md). This document owns the cross-cutting requirements matrix, GxP-strict mode, reason/change-control gate, electronic signatures, and retention/export umbrella.
 
 ## 1. Purpose & scope
 
@@ -22,7 +22,7 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md
 - Paper / hybrid signature workflows, biometric e-signatures, certified WORM appliances (deployment option only)
 - Oxen Hub cloud; raw oxen-server without the BFF as a GxP path
 
-**Depends on:** [`PLAT-AUTH`](./AUTH.md), [`PLAT-AUTHO`](./AUTHO.md), [`PLAT-AUDIT`](./AUDIT.md)
+**Depends on:** [`PLAT-AUTH`](./01-authentication.md), [`PLAT-AUTHO`](./02-authorization.md), [`PLAT-AUDIT`](./03-audit.md)
 
 **Consumed by:** later [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs) / [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions) (AuthZ + audit + e-sig where actions are GxP-critical)
 
@@ -30,15 +30,15 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md
 
 | Piece | Behavior | GxP relevance |
 | --- | --- | --- |
-| OIDC / session / PAT | IdP login; signed session cookie; `mice_pat_*` ([`../auth/src/`](../auth/src/), [AUTH.md](./AUTH.md)) | Unique attributable identity |
+| OIDC / session / PAT | IdP login; signed session cookie; `mice_pat_*` ([`../auth/src/`](../auth/src/), [01-authentication.md](./01-authentication.md)) | Unique attributable identity |
 | Author injection | BFF overwrites commit author from session/PAT ([`../auth/src/proxy.ts`](../auth/src/proxy.ts)) | ALCOA+ attributable |
-| AuthZ | Namespace/repo roles; instance perms; hard gate ([AUTHO.md](./AUTHO.md)) | Access control |
+| AuthZ | Namespace/repo roles; instance perms; hard gate ([02-authorization.md](./02-authorization.md)) | Access control |
 | Training gate | `AUTHZ_REQUIRE_TRAINING` + `POST /auth/training` ([`../auth/src/authz.ts`](../auth/src/authz.ts)) | Personnel qualification *hook* (product) |
-| Audit JSONL | Append-only events on mutate via BFF; query API + `/audit` UI ([AUDIT.md](./AUDIT.md)) | Part 11 audit trail (partial) |
+| Audit JSONL | Append-only events on mutate via BFF; query API + `/audit` UI ([03-audit.md](./03-audit.md)) | Part 11 audit trail (partial) |
 | Audit query AuthZ | `authorizeAuditQuery` — instance admin / `view_audit` / ns-Owner scoped ([`../auth/src/authz.ts`](../auth/src/authz.ts)) | Restricted audit review |
 | Site-admin bypass | Audited `site_admin_bypass` | Privileged path visibility |
 | Session TTL / idle | `SESSION_TTL_SEC` (default 8h) plus sliding idle timeout `SESSION_IDLE_SEC` (shipped; default `0` = off, validated value set by GXP policy) ([`../auth/src/env.ts`](../auth/src/env.ts)) | Session controls |
-| Audit append | Best-effort (fail-open to client); strict fail-closed mode **not implemented** ([AUDIT.md](./AUDIT.md) §8) | Integrity gap for strict GxP |
+| Audit append | Best-effort (fail-open to client); strict fail-closed mode **not implemented** ([03-audit.md](./03-audit.md) §8) | Integrity gap for strict GxP |
 | Reason / CC id | Not required | Gap |
 | Electronic signatures | None beyond login + author injection | Gap |
 | Retention / export | None | Gap |
@@ -57,7 +57,7 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md
 
 - Implementing org validation packages inside this repo
 - Replacing oxen version history (complement it with BFF audit + e-sig)
-- Multi-instance shared audit store (same schema swap as [AUDIT.md](./AUDIT.md) Phase 2)
+- Multi-instance shared audit store (same schema swap as [03-audit.md](./03-audit.md) Phase 2)
 
 ## 4. Requirements catalog
 
@@ -139,7 +139,7 @@ Status: `Done` / `Partial` / `Todo`. Anchors are indicative (Part 11 / Annex 11 
 | ID | Requirement | Anchor | Status | Owner |
 | --- | --- | --- | --- | --- |
 | GXP-R-057 | Signature revocation / correction workflow: a signature is never edited or deleted; revoke/supersede is a new audited record linked to the original with reason | Part 11 §11.10(e)/§11.70 | Todo | GXP Phase 3 |
-| GXP-R-058 | Reviewer notification and escalation when a signature or approval is requested, pending past a threshold, or revoked | Annex 11 §9; workflow support | Todo | GXP Phase 3 + [notification.md](./notification.md) |
+| GXP-R-058 | Reviewer notification and escalation when a signature or approval is requested, pending past a threshold, or revoked | Annex 11 §9; workflow support | Todo | GXP Phase 3 + [14-notifications.md](./14-notifications.md) |
 
 ## 5. Target architecture
 
@@ -213,14 +213,14 @@ flowchart LR
 
 - [x] Author this catalog (`GXP-R-*`) and architecture
 - [x] Link from [EPICS.md](./EPICS.md) (`PLAT-GXP`) and [README.md](../README.md)
-- [x] Point [AUDIT.md](./AUDIT.md) Phase 2 at this umbrella
+- [x] Point [03-audit.md](./03-audit.md) Phase 2 at this umbrella
 - [ ] Keep requirement statuses updated as phases land
 
 ### Phase 1 — GxP-strict audit hardening
 
 - [ ] `GXP_STRICT` env + wiring in [`../auth/src/env.ts`](../auth/src/env.ts)
-- [ ] **Strict fail-closed audit is still unimplemented:** when `GXP_STRICT=true`, a failed audit append must fail the mutation (GXP-R-025; today best-effort, see [AUDIT.md](./AUDIT.md) §8) ([`../auth/src/proxy.ts`](../auth/src/proxy.ts) / [`../auth/src/audit.ts`](../auth/src/audit.ts))
-- [ ] Set and document the validated `SESSION_IDLE_SEC` value/default for GxP deployments (GXP-R-005); mechanism shipped in [AUTH.md](./AUTH.md) Phase 2.5
+- [ ] **Strict fail-closed audit is still unimplemented:** when `GXP_STRICT=true`, a failed audit append must fail the mutation (GXP-R-025; today best-effort, see [03-audit.md](./03-audit.md) §8) ([`../auth/src/proxy.ts`](../auth/src/proxy.ts) / [`../auth/src/audit.ts`](../auth/src/audit.ts))
+- [ ] Set and document the validated `SESSION_IDLE_SEC` value/default for GxP deployments (GXP-R-005); mechanism shipped in [01-authentication.md](./01-authentication.md) Phase 2.5
 - [ ] Document BFF-only production remote + NTP expectation (GXP-R-009 / R-032)
 - [ ] Tighten action classification where `other` is over-broad (GXP-R-026)
 - [x] Sync EPICS/AUDIT checklist drift for audit query AuthZ
@@ -244,7 +244,7 @@ flowchart LR
 - [ ] Enforce `GXP_ESIGN_ACTIONS`: mutate requires valid unconsumed/bound signature id
 - [ ] UI: e-sig dialog (meaning + re-auth) on merge approval first
 - [ ] Signature revoke/supersede as a new audited, linked record with reason; originals immutable (GXP-R-057)
-- [ ] Reviewer notification and escalation for pending/revoked signatures via [notification.md](./notification.md) events (GXP-R-058)
+- [ ] Reviewer notification and escalation for pending/revoked signatures via [14-notifications.md](./14-notifications.md) events (GXP-R-058)
 - [ ] Audit events `esign.create` / `esign.fail`; under `GXP_STRICT`, workspace commit/merge fails closed if the audit append fails
 - [ ] E2E: TC-GXP-20…25
 
@@ -254,7 +254,7 @@ flowchart LR
 - [ ] `GET /auth/audit/export` — filtered NDJSON + manifest (hashes, time range, generator version)
 - [ ] Ops note: backup/restore of `AUTH_DATA_DIR` (GXP-R-061)
 - [ ] Restore verification: integrity check of audit/esign records against export-manifest hashes (GXP-R-063)
-- [ ] Optional store swap remains per [AUDIT.md](./AUDIT.md) (Postgres/Mongo behind same schema)
+- [ ] Optional store swap remains per [03-audit.md](./03-audit.md) (Postgres/Mongo behind same schema)
 - [ ] E2E: TC-GXP-30…32
 
 ## 8. API (planned)
@@ -262,7 +262,7 @@ flowchart LR
 | Route | Auth | Behavior |
 | --- | --- | --- |
 | Mutate `/api/*` | Session / PAT / breakglass + AuthZ | When strict: reason/e-sig gates; fail-closed audit |
-| `GET /auth/audit` | Per [AUTHO.md](./AUTHO.md) | Existing query; expose reason/CC when present |
+| `GET /auth/audit` | Per [02-authorization.md](./02-authorization.md) | Existing query; expose reason/CC when present |
 | `GET /auth/audit/export` | `view_audit` / instance admin (ns-scoped for Owners) | NDJSON + manifest download |
 | `POST /auth/esign` | Session + step-up | Create signature record |
 | `GET /auth/esign` | Session + AuthZ | List signatures for resource |
@@ -306,14 +306,14 @@ flowchart LR
 | IdP step-up UX variance | Abstract step-up behind BFF; document Keycloak/OIDC config |
 | Clock skew | NTP on hosts; document in Phase 1 |
 | E-sig on PAT automation | Disallow PAT for e-sig create; human session only for Phase 3 |
-| Mutation succeeds but audit append never runs (crash between) | Strict mode needs a durable outbox/reconciliation — see [AUDIT.md](./AUDIT.md) Phase 2 / §11 |
+| Mutation succeeds but audit append never runs (crash between) | Strict mode needs a durable outbox/reconciliation — see [03-audit.md](./03-audit.md) Phase 2 / §11 |
 | Scope creep into QMS docs | Keep paperwork out; catalog stays product-only |
 
 ### Open questions
 
 1. **Backup/restore and integrity (GXP-R-061/063):** what is the supported backup method for `AUTH_DATA_DIR` (volume snapshot vs app-level export), and how is a restore proven complete (manifest hash chain, record counts, sequence check)? Who runs and attests it?
 2. **Signature revocation (GXP-R-057):** can a signed merge be revoked after the merge landed, and what happens to the oxen record (compensating commit vs annotation only)?
-3. **Reviewer escalation (GXP-R-058):** thresholds, recipients and fallback when the reviewer is offboarded; depends on [notification.md](./notification.md) delivery guarantees.
+3. **Reviewer escalation (GXP-R-058):** thresholds, recipients and fallback when the reviewer is offboarded; depends on [14-notifications.md](./14-notifications.md) delivery guarantees.
 
 ## 12. How to use this file
 

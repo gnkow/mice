@@ -2,7 +2,7 @@
 
 Personal **favorites** for the main entities. Favorites are pinned to the top of the existing listings (as a default sort option) and collected in a **Favorites panel on the Profile page**, with one tab per entity type.
 
-Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [META.md](./META.md) · [notification.md](./notification.md) · [AUDIT.md](./AUDIT.md) · [Jobs.md](./Jobs.md) · [Sessions.md](./Sessions.md)
+Related: [EPICS.md](./EPICS.md) · [02-authorization.md](./02-authorization.md) · [12-metadata-search.md](./12-metadata-search.md) · [14-notifications.md](./14-notifications.md) · [03-audit.md](./03-audit.md) · [09-jobs.md](./09-jobs.md) · [10-sessions.md](./10-sessions.md)
 
 ## 1. Decisions (from product Q&A)
 
@@ -14,7 +14,7 @@ Related: [EPICS.md](./EPICS.md) · [AUTHO.md](./AUTHO.md) · [META.md](./META.md
 | D4 | Limit | **Unlimited** per user (server still enforces a defensive hard ceiling, see §5) |
 | D5 | Stale entities | Entity deleted (or renamed away) → favorite is **auto-deleted** |
 | D6 | AuthZ | Anyone who can **read** the entity can favorite it. Losing access → favorite is **hidden** (not deleted) and reappears if access returns |
-| D7 | Audit | **Not audited** (personal UI state, not GxP data). Called out in AUDIT.md as an explicit exclusion |
+| D7 | Audit | **Not audited** (personal UI state, not GxP data). Called out in 03-audit.md as an explicit exclusion |
 | D8 | Metadata | **Independent of PLAT-META.** No `is:favorite` filter, no star on MetaPage |
 | D9 | CLI | `mice favorite add|remove|list` |
 | D10 | Notifications | Favorited resources **notify by default** (implicit "watch"); explicit user mute always wins (§7) |
@@ -92,7 +92,7 @@ Notification preferences already hold `resourceOverrides: {resource, mode: 'watc
 - Favorited resources behave as an **implicit `watch`** at the lowest precedence: effective mode = explicit override (any specificity) → else favorite → else default.
 - Explicit **mute always wins** over favorite, including a mute on a parent (e.g. muted repo) — favoriting a job in a muted repo does not un-mute it unless the user sets an explicit watch on it.
 - A favorite is an implicit watch only; it is not an explicit `watch` override.
-- [ ] Explicit per-resource watch, distinct from favorite: the star and a watch control are separate, and the UI shows both states (favorited, watched, effective result). Proposed in [notification.md](./notification.md); unapproved.
+- [ ] Explicit per-resource watch, distinct from favorite: the star and a watch control are separate, and the UI shows both states (favorited, watched, effective result). Proposed in [14-notifications.md](./14-notifications.md); unapproved.
 - Not persisted into `resourceOverrides`: computed at delivery time from the favorites store, so unfavoriting restores defaults with no cleanup.
 - Applies to event categories keyed to a resource: jobs (state changes), sessions, branches/repos (pushes, merges) per existing categories; category toggles and quiet hours still apply (a favorite never bypasses a disabled category — **to verify against current `watch` semantics**, Q3).
 - Notification settings page shows a read-only hint: "Favorites notify by default; mute to override."
@@ -107,7 +107,7 @@ mice favorite add    <type> <id>     # ids per META grammar; inside a clone: bar
 mice favorite remove <type> <id>
 ```
 
-- [ ] Hand-off: `mice notifications list|read|watch` is specified in [notification.md](./notification.md) (PAT with a notifications scope); not part of the `favorite` group. Unapproved.
+- [ ] Hand-off: `mice notifications list|read|watch` is specified in [14-notifications.md](./14-notifications.md) (PAT with a notifications scope); not part of the `favorite` group. Unapproved.
 
 Same id resolution helper as `mice meta` (`resolveEntityId`) so `mice favorite add repo` inside a clone works. JSON output, unit tests in `admin.test.mjs`.
 
@@ -118,7 +118,7 @@ Same id resolution helper as `mice meta` (`resolveEntityId`) so `mice favorite a
 | AUTHO | No new permission. Read-gate reused; documented as "any reader may favorite" |
 | AUDIT | Explicit exclusion note; no new actions or labels |
 | META | None (D8). Shared id grammar only |
-| notification.md | New implicit-watch rule (§7); update the preference semantics section and `resourceIsMuted` callers |
+| 14-notifications.md | New implicit-watch rule (§7); update the preference semantics section and `resourceIsMuted` callers |
 | Jobs / Sessions | Optional `favorites=first` list param (Phase 2); delete hooks (D5) |
 | GXP | Out of scope; favorites carry no regulated data |
 | EPICS.md | New row `PLAT-FAV`, depends on AUTH, AUTHO |

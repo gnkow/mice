@@ -1,5 +1,7 @@
 # WORKSPACES — overlay working trees over a shared per-commit checkout store (rev 3)
 
+> This file merges the former `Workspaces.md` (rev 3, the body, §1–§15), `Workspaces.rev2.md` (history only, §18), `Workspaces.spikes.md` (§16) and `Staging.md` (§17). It is the single plan for the Workspaces topic.
+
 A **Mice workspace** is a persistent, writable filesystem view of a repo at a branch/commit that Sessions and Jobs **mount**. It is built from two parts:
 
 - a **shared, immutable per-commit checkout** (the *lower layer*), downloaded once and reused by every workspace of that repo; and
@@ -7,7 +9,7 @@ A **Mice workspace** is a persistent, writable filesystem view of a repo at a br
 
 Creating a workspace copies nothing. Disk grows only with changes. The full tree (all files, always) is available to every consumer.
 
-> Rev 3 supersedes rev 2 (`Workspaces.rev2.md`): scratch/clone-per-workspace is replaced by overlay + checkout store. Oxen's own server-side workspaces are **not** used; they move to a separate, later feature — see [Staging.md](./Staging.md). Jobs: [Jobs.md §13](./Jobs.md). Sessions: [Sessions.md §11](./Sessions.md).
+> Rev 3 supersedes rev 2 (kept only as history in [§18](#18-appendix-c--superseded-rev-2-decisions)): scratch/clone-per-workspace is replaced by overlay + checkout store. Oxen's own server-side workspaces are **not** used; they move to a separate, later feature — see [§17](#17-appendix-b--stages--server-side-oxen-workspaces-separate-unscheduled-feature). Spike results: [§16](#16-appendix-a--spike-findings). Jobs: [09-jobs.md §13](./09-jobs.md). Sessions: [10-sessions.md §11](./10-sessions.md).
 
 User decisions carried forward (locked):
 
@@ -244,10 +246,10 @@ Needs the `write` lease and no container using it. Clear `upper` (and `work`), r
 ## 8. Consumers
 
 - **Sessions:** mount = lease + volume mount (`ro`/`rw`) at `/data/<ns>/<repo>`. No copy, baseline, `sync` or `mount-diff` (those code paths are removed in W4). Live view of a job = `ro` session on the job's workspace.
-- **Cluster jobs:** workspace = selected or auto `job-<id>` (created and `ready` first); `write` lease (or `read` for `workspace_mode: ro`); container started with the volume mounted at `workdir` (default `/data`), `--user WORKSPACES_UID:GID`, umask `0002`; no per-job clone. Exit 0 → §7.1 commit; failure/cancel → upper left as is, nothing committed, diff visible. Auto workspace deleted only when auto **and** succeeded **and** merged (or empty diff); otherwise kept until the user deletes it. See [Jobs.md §13](./Jobs.md).
+- **Cluster jobs:** workspace = selected or auto `job-<id>` (created and `ready` first); `write` lease (or `read` for `workspace_mode: ro`); container started with the volume mounted at `workdir` (default `/data`), `--user WORKSPACES_UID:GID`, umask `0002`; no per-job clone. Exit 0 → §7.1 commit; failure/cancel → upper left as is, nothing committed, diff visible. Auto workspace deleted only when auto **and** succeeded **and** merged (or empty diff); otherwise kept until the user deletes it. See [09-jobs.md §13](./09-jobs.md).
 - **Local (laptop) jobs:** cannot mount server volumes. `mice job run --workspace <id>`: take the `write` lease (renewed) → download `…/archive` (helper `wsctl tar`, kernel view) → run Docker locally → upload changes as a tar + removal list → server applies through `wsctl` **under the lease** (kernel-correct whiteouts) → §7.1 commit → release. Not live-viewable (tree untouched until apply). Without `--workspace` nothing changes.
 - **CLI:** `mice workspace create|list|show|delete|changes|commit|update|reset|ls|get|put|rm|mv|leases|unlock|retry` and `mice checkout list|warm|rm|gc` (admin).
-- **Web:** Workspaces list/detail rebuilt (creation progress bar, Changes, Files, Jobs, Sessions, Leases, writer/waiting pills, Open live view, commit/update/reset dialogs, mount-mode picker). The old Oxen-workspace screens are relabeled **Staging** (§10, [Staging.md](./Staging.md)).
+- **Web:** Workspaces list/detail rebuilt (creation progress bar, Changes, Files, Jobs, Sessions, Leases, writer/waiting pills, Open live view, commit/update/reset dialogs, mount-mode picker). The old Oxen-workspace screens are relabeled **Staging**, finally **Stages** (§10, [§17](#17-appendix-b--stages--server-side-oxen-workspaces-separate-unscheduled-feature)).
 
 ## 9. API (auth BFF; session or PAT)
 
@@ -273,9 +275,9 @@ Audit: `workspace.create/delete/commit/update/reset/compact`, `workspace.lease.a
 
 ## 10. Renaming Oxen workspaces to Staging (naming only, now)
 
-> **Update:** the name finally chosen is **Stages** (UI `/stages`, CLI `mice stage`, favorites type `stage`; see [Staging.md](./Staging.md)), so read "Staging" below as "Stages". Route ownership: `/auth/workspaces/**` and `/auth/checkouts/**` are Mice workspaces; Oxen's proxied `/api/repos/:ns/:repo/workspaces/**` is owned by Stages and is **not** deprecated by this plan. Only the `mice workspace` alias for Oxen workspaces is retired.
+> **Update:** the name finally chosen is **Stages** (UI `/stages`, CLI `mice stage`, favorites type `stage`; see [§17](#17-appendix-b--stages--server-side-oxen-workspaces-separate-unscheduled-feature)), so read "Staging" below as "Stages". Route ownership: `/auth/workspaces/**` and `/auth/checkouts/**` are Mice workspaces; Oxen's proxied `/api/repos/:ns/:repo/workspaces/**` is owned by Stages and is **not** deprecated by this plan. Only the `mice workspace` alias for Oxen workspaces is retired.
 
-To free the word *workspace*, W0 relabels the existing Oxen-workspace UI/CLI as **Staging** (UI strings, nav, route `/staging`, CLI group `mice staging` with `mice workspace` kept as a deprecated alias for one release **only until W5 replaces it**). Behaviour is unchanged; functional redesign is a later, independent project: [Staging.md](./Staging.md). The favorites id grammar `ns/repo!workspaceId` is kept for staging areas; new Mice workspaces use `ns/repo~workspaceId`.
+To free the word *workspace*, W0 relabels the existing Oxen-workspace UI/CLI as **Staging** (UI strings, nav, route `/staging`, CLI group `mice staging` with `mice workspace` kept as a deprecated alias for one release **only until W5 replaces it**). Behaviour is unchanged; functional redesign is a later, independent project: [§17](#17-appendix-b--stages--server-side-oxen-workspaces-separate-unscheduled-feature). The favorites id grammar `ns/repo!workspaceId` is kept for staging areas; new Mice workspaces use `ns/repo~workspaceId`.
 
 ## 11. Capability probe and configuration
 
@@ -297,12 +299,12 @@ To free the word *workspace*, W0 relabels the existing Oxen-workspace UI/CLI as 
 
 ## 12. Phases (each shippable with tests)
 
-- [x] **W0** Spike (done; findings in [Workspaces.spikes.md](./Workspaces.spikes.md). Overlay works on Docker Desktop; `getfattr` is not in the auth image yet) + foundations: capability probe; **verify** Docker-volume overlay (Linux and Docker Desktop), `userxattr`, shared mount between rw and ro containers, `getfattr` markers; Oxen listing facts (dir hashes, recursion, file hash algorithm, revision→commit id); UI/CLI relabel Oxen workspaces → **Staging**
+- [x] **W0** Spike (done; findings in [§16](#16-appendix-a--spike-findings). Overlay works on Docker Desktop; `getfattr` is not in the auth image yet) + foundations: capability probe; **verify** Docker-volume overlay (Linux and Docker Desktop), `userxattr`, shared mount between rw and ro containers, `getfattr` markers; Oxen listing facts (dir hashes, recursion, file hash algorithm, revision→commit id); UI/CLI relabel Oxen workspaces → **Staging**
 - [x] **W1** Checkout store (done, minus the admin CLI; routes under `/auth/checkouts`, `/auth/store`; `.oxen` entries are skipped, not rejected): `ensureCheckout` (incremental, dir-prune, resume, publish), manifests, GC, scrub, progress, prewarm, admin routes/CLI
 - [~] **W2** Workspace store + overlay driver (partial: async create/retry/list/get/delete, `scan`, changes, effective manifest, file reads, archive, quotas, copy/reflink prepare are done; NOT done: mount spec, `wsctl` mutations, reset): create (async), mount spec, `scan`, effective manifest, file API reads, `wsctl` mutations, reset, delete, quotas, `copy`/`reflink` fallbacks
-- [x] **W3** Leases, one-writer enforcement, ro/rw mounts, reconciliation, audit, authz map (backend done; see `Workspaces.spikes.md` §W3. Deviations: extra route `POST /auth/workspaces/:id/leases/:leaseId/mount` returns the MountSpec; over-quota write lease → 507, not-ready/op≠idle → 409; opaque-dir detection uses a static Go helper `mice-xattr` (auth/cmd/mice-xattr, Makefile target not updated) instead of `attr`; waiting-writer queue is only a flag (`setWriterWaiting`), queue is W5; `requireWriteLease` is exported but no file-mutation routes exist yet; `GET …/changes` always rescans (finding: the 3 s scan cache made `changes` stale right after container writes). Acceptance: TC-WS-13, 14, 20, 22, 29–31; real-Docker check: `node auth/scripts/ws-integration.mjs`)
+- [x] **W3** Leases, one-writer enforcement, ro/rw mounts, reconciliation, audit, authz map (backend done; see §16.3. Deviations: extra route `POST /auth/workspaces/:id/leases/:leaseId/mount` returns the MountSpec; over-quota write lease → 507, not-ready/op≠idle → 409; opaque-dir detection uses a static Go helper `mice-xattr` (auth/cmd/mice-xattr, Makefile target not updated) instead of `attr`; waiting-writer queue is only a flag (`setWriterWaiting`), queue is W5; `requireWriteLease` is exported but no file-mutation routes exist yet; `GET …/changes` always rescans (finding: the 3 s scan cache made `changes` stale right after container writes). Acceptance: TC-WS-13, 14, 20, 22, 29–31; real-Docker check: `node auth/scripts/ws-integration.mjs`)
 - [ ] **W4** (decisions: on `conflict` the target branch and the workspace `upper` stay untouched and the commit remains on the safe branch; audit records Principal, workspace id, base/result commits and merge outcome, failing closed under `GXP_STRICT`) Commit builder (Oxen ephemeral workspace; **spike first**), merge, op state machine + recovery, seeded rebase/compaction, update-from-branch
-- [~] **W5** Jobs on workspaces (Docker runner), auto workspace, wait/timeout, live-view session; Sessions mount rewrite (drop copy/sync/mount-diff) (**Sessions half done**: `workspace_id` session mounts, see `Sessions.md` §11a and `Workspaces.spikes.md` §W5-sessions. Deviations: leases are taken at session create (so the create response already carries `effective_mode`/`notices`), renewed every 60 s, released after the container is removed on stop/destroy/failure/sweeper; rw that cannot get the write lease (423 or over quota) degrades to ro with a `notices[]` entry; PUID/PGID/UMASK env instead of `--user` (rdesktop init); `POST /auth/sessions/:id/remount` recreates the container (guest state outside mounts is lost); workspace JSON `session_count` = distinct session lease holders; pin mounts unchanged. Acceptance: TC-WS-24, 32, 33; real-Docker check: `node auth/scripts/ws-sessions-integration.mjs`. **Follow-up done**: sessions mount workspaces only (commit pins/clone path removed from Sessions; legacy records load, retry drops pin mounts with a notice), `mountable_modes` on workspace JSON, delete guard also via the sessions store, on-demand `new_workspace` mounts (leased at provision time), `GET /auth/sessions?namespace=&repo=`. Still open: jobs on workspaces, auto workspace, wait/timeout, live-view via jobs, dropping legacy copy/sync code)
+- [~] **W5** Jobs on workspaces (Docker runner), auto workspace, wait/timeout, live-view session; Sessions mount rewrite (drop copy/sync/mount-diff) (**Sessions half done**: `workspace_id` session mounts, see `10-sessions.md` §11a and §16.4. Deviations: leases are taken at session create (so the create response already carries `effective_mode`/`notices`), renewed every 60 s, released after the container is removed on stop/destroy/failure/sweeper; rw that cannot get the write lease (423 or over quota) degrades to ro with a `notices[]` entry; PUID/PGID/UMASK env instead of `--user` (rdesktop init); `POST /auth/sessions/:id/remount` recreates the container (guest state outside mounts is lost); workspace JSON `session_count` = distinct session lease holders; pin mounts unchanged. Acceptance: TC-WS-24, 32, 33; real-Docker check: `node auth/scripts/ws-sessions-integration.mjs`. **Follow-up done**: sessions mount workspaces only (commit pins/clone path removed from Sessions; legacy records load, retry drops pin mounts with a notice), `mountable_modes` on workspace JSON, delete guard also via the sessions store, on-demand `new_workspace` mounts (leased at provision time), `GET /auth/sessions?namespace=&repo=`. Still open: jobs on workspaces, auto workspace, wait/timeout, live-view via jobs, dropping legacy copy/sync code)
 - [ ] **W6** CLI `mice workspace`/`mice job run --cluster`/local-job archive-apply; web UI rebuild; e2e; docs
 - [ ] **W7** (separate design) Kubernetes overlay support (node agent or in-pod fuse-overlayfs)
 
@@ -369,17 +371,147 @@ Phases W0 and W1 deliver value on their own (fast workspace-independent checkout
 
 ## 15. Open requirements and questions (all unchecked; not approved)
 
-Notifications cross-reference [notification.md](./notification.md); audit as in §9.
+Notifications cross-reference [14-notifications.md](./14-notifications.md); audit as in §9.
 
 - [ ] **Fencing/lease authority** beyond lock files: fencing token per `write` lease, checked by every mutation (§6.1; TC-WS-34)
-- [ ] **Workspace notification events** (catalog entries for notification.md, recipients = workspace creator/holder + repo admins): lease contention (writer waiting longer than a threshold, force-release), quota exhaustion (workspace `WORKSPACES_MAX_BYTES`, store watermark/`store.full`), failed commit/merge (incl. `conflict` outcome), failed update/preparation, stuck operations (`op != idle` beyond a timeout, `compaction_pending` stalled, reconciliation recovery taken)
+- [ ] **Workspace notification events** (catalog entries for 14-notifications.md, recipients = workspace creator/holder + repo admins): lease contention (writer waiting longer than a threshold, force-release), quota exhaustion (workspace `WORKSPACES_MAX_BYTES`, store watermark/`store.full`), failed commit/merge (incl. `conflict` outcome), failed update/preparation, stuck operations (`op != idle` beyond a timeout, `compaction_pending` stalled, reconciliation recovery taken)
 - [ ] **Durable conflict-resolution detail** for audit on three-way update (§7.2 step 4a)
 - [ ] **Backup/restore and disaster recovery** for workspace trees: define what is backed up (`workspaces/<id>/{upper,state.json,base.json}`, manifests, `store/index` journals, op/lease journals), what is rebuildable (`store/commits` via `ensureCheckout`, blobs), consistency (quiesce or snapshot with no writer lease; `work/` excluded), overlay generation volumes recreated from state on restore, RPO/RTO targets, and a restore drill (TC-WS-35)
 
 | # | Question | Notes |
 | --- | --- | --- |
 | Q1 | Is the fencing token enforced in `wsctl` only, or also by a store-level generation check, and how does it work with a second BFF instance? | Open. Single BFF assumed today |
-| Q2 | Which notification events are mandatory vs. opt-in, and are lease-contention events rate-limited? | Open; align with notification.md catalog |
+| Q2 | Which notification events are mandatory vs. opt-in, and are lease-contention events rate-limited? | Open; align with 14-notifications.md catalog |
 | Q3 | Is conflict detail kept in audit only, or also retained in the workspace for later review? | Open |
 | Q4 | RPO/RTO for workspace data, and is the `upper` of a failed job's partial output (D5) in backup scope? | Open |
 | Q5 | Snapshot mechanism for `upper` while a rw container runs (filesystem snapshot vs. quiesce)? | Open |
+
+## 16. Appendix A — Spike findings
+
+Former `Workspaces.spikes.md`. Run on 2026-10 against Docker Desktop (macOS, arm64): Docker 29.5.3, linuxkit kernel 6.12.76, Oxen server 0.61.1. Phases: §12.
+
+### 16.1 W0 spike: Docker-volume overlay WORKS on Docker Desktop
+
+- A named volume created with `--opt type=overlay --opt device=overlay --opt o=lowerdir=…,upperdir=…,workdir=…,userxattr` mounts correctly. Paths are the VM-side `docker volume inspect` Mountpoints (`/var/lib/docker/volumes/<vol>/_data/...`), because the Docker daemon (not the BFF container) resolves them.
+- Kernel mounted it as `redirect_dir=nofollow,uuid=on,userxattr`. Backing fs is ext4.
+- Copy-up works (file appears in upper with `user.overlay.origin`); lower is untouched. New files land in upper.
+- Whiteout = **character device 0/0** in upper (not an xattr) on this kernel. `scanUpper` handles both that and the `user.overlay.whiteout` xattr form.
+- `rm -r d; mkdir d` makes `d` opaque: xattr `user.overlay.opaque=y`. Upper root also carries `user.overlay.uuid` / `impure`.
+- A second container mounting the same volume `readonly` is enforced ("Read-only file system") and sees live writes from the rw container.
+- `docker volume rm` fails while a container uses the volume and works afterwards.
+- Reflink: `ENOTSUP` on the volumes (ext4) → driver falls to overlay, then `copy`.
+
+**getfattr**
+
+- Not present in the auth image (node:22-alpine, busybox has `setfattr` only). `apk add attr` fails on this corporate-TLS network, so the Dockerfile was NOT changed. Node has no xattr API.
+- Consequence (before W3): opaque directories could not be detected → scan treated them as merged and emitted a warning (`/auth/workspaces/:id/changes` `warnings`); the capability probe reports `getfattr.ok=false`. Resolved in W3 by `mice-xattr` (§16.3). Alternative if needed: add `attr` to the image (or a probe container); Python `os.listxattr` works in `python:3.13-slim`.
+
+**Oxen listing facts**
+
+- `GET /api/repos/:ns/:repo/dir/<rev>/<path>?page=&page_size=` is **non-recursive**; `recursive=true` is ignored. `page_size` up to 5000 honored; fields `page_number`, `total_pages`, `total_entries`.
+- `dir.hash` = directory hash, `dir.size` = recursive bytes. Entries: `filename`, `hash`, `is_dir`, `size`, `data_type`.
+- Directory hashes are **stable across commits** when the subtree is unchanged → dir-hash prune is valid.
+- File hashes are xxh3-128 of content, hex **not zero-padded** (e.g. 31 chars); equal for equal content at different paths. Compare as opaque strings only (not sha256/md5). The store computes its own sha256 while downloading.
+- Revision → commit: `GET /api/repos/:ns/:repo/revisions/<branch-or-commit>` → `resource.commit.id`. `GET …/branches/main` → `commit_id`. `GET …/commits/<id>` works for ids only (`commits/main` is 404). `dir/<commitId>/…` works.
+- `GET …/file/<rev>/<path>` returns raw bytes; `dir/<rev>/<file>` is 404 for files.
+- `PUT …/file/<branch>/<fullpath>` takes the full path in the URL (multipart filename ignored; empty path = 400).
+
+### 16.2 W1 implementation notes / deviations
+
+- `.oxen` entries named exactly `.oxen` are skipped (counted in meta), not build-aborting; `..`, `/`, `\`, NUL, empty names abort with 422.
+- Resume uses a per-repo durable journal `store/index/<ns>/<repo>.tsv` (oxen hash → sha256) plus existing manifests.
+- GC safety relies on "link or re-download" instead of a GC lock.
+- Archive is computed by the BFF from upper + checkout (no wsctl needed yet).
+
+### 16.3 W3 findings (leases, mounts, real kernel)
+
+- Per-generation volume `mice-ws-<id>-g<gen>` is created with `docker volume create --driver local -o type=overlay -o device=overlay -o o=lowerdir=…,upperdir=…,workdir=…,userxattr`; host paths come from `docker volume inspect` Mountpoint of `mice-store` / `mice-workspaces` (inside the Docker Desktop VM; verified working from the auth container, same as the W0 probe).
+- Real-kernel results (`auth/scripts/ws-integration.mjs`, alpine container with rw mount): new file → `added`; modified lower file → `modified`; deleted lower file → whiteout → `removed`; `rm -r dir && mkdir dir` → opaque dir → lower children reported `removed`; no warnings. Lower checkout checksums unchanged (I4).
+- A second container with the same volume `--mount …,readonly` sees the writer's changes; write, touch, mkdir and rm all fail.
+- Read lease during a write lease works; second write lease → 423 with holder; workspace delete while leased → 423.
+- After release and container exit `docker volume rm` succeeds; container-created upper files are deletable by the BFF (root in the auth container) → workspace dir removed (TC-WS-22).
+- `getfattr` (package `attr`) is not available in the image, so `mice-xattr` (static Go, `unix.Llistxattr/Lgetxattr`, getfattr-compatible output) is copied in; the scan falls back to it, so the degraded-opaque warning is gone.
+- Scan cache (3 s) made `changes` stale right after container writes; `changes` now forces a rescan.
+- Containers run with `--user WORKSPACES_UID:GID` only when configured; MountSpec carries `user` and `umask: "0002"`.
+
+### 16.4 W5-sessions findings (workspace mounts in desktop sessions)
+
+- Real stack (`auth/scripts/ws-sessions-integration.mjs`, rdesktop image, Docker Desktop): session A rw → write lease; session B rw → degraded to ro with notice naming A; both reach `ready`; A writes through `/data/<ns>/<repo>` and `changes` reports added/modified/removed (whiteout) correctly; B sees the new file and cannot write; workspace delete → 423 naming both sessions; `session_count` 2; `?workspace_id=` filter works.
+- Stop A removes its container and releases the write lease; `POST /sessions/B/remount` then upgrades B to rw and the upper persisted across the new container.
+- A stopped Docker container still holds its volumes, so stop/destroy `rm` the container before releasing leases (otherwise `docker volume rm` on workspace delete would fail).
+- rdesktop's init needs root, so ownership uses `PUID`/`PGID` env (from WORKSPACES_UID/GID, default 1000) plus `UMASK=002` instead of `--user`.
+- Background provisioning has no group info for the owner, so authz is checked at create/retry/connect, not inside the provisioner.
+
+### 16.5 Findings still to gather (all unchecked)
+
+- [ ] **Production Kubernetes overlay validation:** on a real cluster (not Docker Desktop), verify whether a pod can mount overlay with `userxattr` via a node DaemonSet/CSI-style publish or in-pod fuse-overlayfs; kernel ≥ 5.11 and ext4/xfs `d_type` on node disks; behaviour on RWX PVC (NFS/CSI) with the `copy`/`reflink` fallback; copy-up/whiteout/opaque markers and read-only second mount; pod security (no privileged escalation); node drain/reschedule while a lease is held. Feeds W7 in §12
+- [ ] **Backup and recovery:** snapshot/restore of `mice-workspaces` (`upper`, `state.json`, `base.json`) and `store/index` journals while a writer is active and while idle; whether overlay generation volumes can be recreated from state after restore; rebuild of `store/commits` from Oxen after losing `mice-store`; measured restore time vs. workspace size; what is lost for a failed job's partial output. Feeds the backup/DR requirement in §15
+
+## 17. Appendix B — Stages — server-side Oxen workspaces (separate, unscheduled feature)
+
+Former `Staging.md`. Status: **not scheduled.** This section only parks the feature that Mice previously called "workspaces" so the word is free for the overlay working trees above. Behaviour today is unchanged; only the label changes (§10).
+
+### 17.1 What it is
+
+An Oxen workspace is a server-side staging area: a base commit (branch head) plus staged changes in a RocksDB, with file bytes in the repo's version store. It supports staging uploads/removals over HTTP, listing staged changes, and committing to a branch (`merge`/`commit`). It has no mountable filesystem and no locking, and a commit conflicts only when the branch changed a path the workspace also staged.
+
+### 17.2 Good uses (why keep it)
+
+- Browser/CLI "edit and commit" without a local clone (upload → review staged → commit).
+- Review area for batch uploads before they become a commit.
+- Used transiently as the **atomic commit builder** inside Mice workspaces (§7.1) — that internal use is not a user-facing stage.
+
+### 17.3 Scope when scheduled (outline)
+
+- Naming in UI/CLI/docs follows §17.4 (`/stages`, `mice stage …`, favorites type `stage`; existing ids `ns/repo!<id>` stay valid).
+- Keep current screens (list, detail, staged changes, file upload, commit) and e2e coverage; fix gaps then: base-advance/behind indicators, multi-file delete, conflict messaging, authz path map entries for `…/workspaces/**` under a custom-role resource `staging`.
+- Out of scope: mounting, locking, jobs, sessions.
+
+### 17.4 Naming
+
+**Decided: Stages** (a single Oxen workspace is a *stage*; UI nav and route `/stages`, CLI `mice stage`, favorites type `stage`). This is what the web, CLI and favorites code already use (`web/src/App.tsx` routes `stages` / `stages/:workspaceId`; `auth/src/favoritesStore.ts` `FAVORITE_TYPES` includes `stage` and maps legacy `workspace` rows to it; `mice favorite list --type …|stage|…`). It supersedes the earlier **Staging** decision (`/staging`, `mice staging`, favorites kind `staging`, authz resource `staging`), which was never shipped; §10 still says Staging in places and should read Stages (its update note says so). "Staging" survives only as the generic term for the server-side staging area. Earlier candidates (Vaults, Drafts, Shelves, Stashes, Changesets, Inboxes) were rejected.
+
+### 17.5 Existing routes remain reachable
+
+The Oxen workspace routes stay available and unchanged for now: the BFF/oxen-server `…/workspaces/**` API (authz actions `workspace.read` / `workspace.write` / `workspace.create` …) and clients that still use it. The rename is label-only; Mice workspaces (overlay working trees) are a separate feature and never reuse these routes (route ownership: §9, §18).
+
+### 17.6 Deprecation / migration (proposed, not scheduled)
+
+- [ ] Decide whether the `workspace.*` authz actions and the `…/workspaces/**` path map get a `stage` resource name, with aliases and a migration of custom roles
+- [ ] Retire the `mice workspace …` alias and any `/workspaces` UI redirects once Mice workspaces ship (W5, §12), with a one-release deprecation notice
+- [ ] Keep legacy favorites rows (`workspace` type, `ns/repo!<id>`) readable through the migration
+
+Open questions:
+
+1. Does the authz resource keep the `workspace` action names indefinitely, or move to `stage` with a compatibility window?
+2. Should the old `/workspaces` UI path redirect to `/stages` once Mice workspaces claim it?
+
+## 18. Appendix C — Superseded rev 2 decisions
+
+Former `Workspaces.rev2.md` ("BFF-owned remote working trees", rev 2). **Superseded; do not implement from it.** Nothing from rev 2 is tracked or approved; where it differs from §1–§15, rev 3 wins. Rev 2's phases **W0–W6** have different contents from §12's **W0–W7**; do not map numbers between them. Only rev-2 facts that remain useful history are kept here.
+
+**Route ownership (still valid):** `/auth/workspaces/**` and `/auth/checkouts/**` belong to Mice workspaces (§9). Oxen's own `/api/repos/:ns/:repo/workspaces/**` is proxied by the BFF and owned by **Stages** (§17); it is not deprecated or removed by this plan, and Mice workspaces never use it except transiently as the commit builder (§7.1). Rev 2's "ignored/unused" wording is void.
+
+### 18.1 Useful history
+
+- Rev 2 core invariant: `tree == base_commit snapshot + changes` (live diff), preserved by every operation per path. Rev 3 restates it as I1–I4 (§1) over `upper` + logical base.
+- Rev 2 state fields: `id`, `kind: user|auto`, `name`, `namespace`, `repo`, `branch`, `base_commit`, `created_by/at`, `updated_at`, `op` (`idle|committing|updating|resetting`, with `op_id`), `quota_bytes`; per-workspace `manifest.json` (`path → {size, mtime_ns, sha256}`) and `base.json` (`path → {sha256, oxen_hash}`). Names unique per repo; `job-<id>`/`session-<id>` reserved for `kind:auto`.
+- Confirmed by the user in rev 2 and carried into rev 3 (D3–D5): the job writes directly into the workspace, the workspace is frozen while a job runs, partial output of a failed job stays, sessions get a read-only live view.
+- Untrusted-tree rules: scan with `lstat`, never follow symlinks; symlinks/devices/FIFOs/sockets are *special* (shown, never read or committed); file-API paths resolved and kept under the tree realpath; scans skip other devices; no `.oxen` dir in the tree; quotas `WORKSPACES_MAX_BYTES`, `WORKSPACES_MAX_TOTAL_BYTES`, a file-count cap, checked on lease release (over quota → no new leases + banner; a running job is never killed).
+- Rev 2 tamper check: at job start `tree_hash` (incremental, bounded by `WORKSPACES_HASH_TIMEOUT_SEC`) must equal the value recorded at lease grant, else `failed: workspace changed before start`.
+- Commit-builder design (kept in rev 3, §7.1): ephemeral unnamed Oxen workspace on a safe branch `mice/ws/<id>-<seq>` (jobs `mice/job/<id>`) at `base_commit`; alternatives rejected because `PUT /file/<branch>/<dir>` commits one directory per call and `DELETE /file` one removal per call (non-atomic).
+- Rev 2 risk list: big-bang replacement of Oxen workspaces (phased, old UI removed last); update-from-branch is path-level, not content merge (explicit conflicts, `ours|theirs`); Oxen behaviour unverified (fallback per-directory `PUT /file` commits, non-atomic caveat).
+- Rev 2 test cases TC-WS-01…20 are replaced by the rev 3 test plan (§13); do not reuse their numbers.
+
+### 18.2 Conflicts: rev 2 vs rev 3
+
+| Rev 2 | Rev 3 (wins) |
+| --- | --- |
+| Storage `AUTH_DATA_DIR/workspaces/<id>/tree` cloned per workspace, Docker **host-path bind** (`WORKSPACES_HOST_DATA_DIR`) | Overlay (`upper` over a shared per-commit checkout) on two Docker **named volumes** (`mice-store`, `mice-workspaces`), §2; host paths only resolved from `docker volume inspect` |
+| Create = full clone via `materializeCommitClone` | `ensureCheckout` incremental, hardlinked, single-flight (§3); create copies nothing |
+| Phases W0–W6 (W0 store … W6 remove Oxen usage) | Phases W0–W7 (W0 spike, W1 checkout store, W2 workspace store, W3 leases, W4 commit builder, W5 jobs/sessions, W6 CLI/UI, W7 Kubernetes), §12 |
+| Kubernetes: RWX PVC `WORKSPACES_PVC` (hostPath for single-node dev) | Not in this iteration; `copy`/`reflink` driver meanwhile, overlay is W7 (§4.3) |
+| Manifest cache `manifest.json`, live diff by re-hashing the tree | Diff from `upper` + manifests, never walking the lower tree (§5.1, I2) |
+| `/api/repos/*/workspaces/*` "stays reachable but unused" | Oxen workspaces renamed **Stages**, a separate supported feature (§17) |
+| Existing Oxen workspaces ignored | Oxen workspaces are kept as Stages (D1: no migration of them into Mice workspaces) |
+| Backup/DR, fencing, notifications not covered | Open requirements, unchecked (§15) |

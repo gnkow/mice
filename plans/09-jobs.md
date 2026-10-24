@@ -2,7 +2,7 @@
 
 Living design and phased plan for epic [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs): container-image jobs against a **local clone** of versioned Oxen data, automatic input/output lineage in the **unified** lineage graph, local Docker runner then cluster. Workspaces are an optional later mount source, not a prerequisite.
 
-Related: [EPICS.md](./EPICS.md) · [Sessions.md](./Sessions.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [TRACEABILITY.md](./TRACEABILITY.md) · [GXP.md](./GXP.md) · [notification.md](./notification.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [10-sessions.md](./10-sessions.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [11-lineage.md](./11-lineage.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [14-notifications.md](./14-notifications.md) · [README.md](../README.md)
 
 ## 1. Purpose & scope
 
@@ -12,19 +12,19 @@ Related: [EPICS.md](./EPICS.md) · [Sessions.md](./Sessions.md) · [AUTH.md](./A
 - Jobs **do not require a workspace**. They require a job-private clone/checkout on the runner machine. **Phase 2+:** jobs may **mount workspaces** and run against that mount instead of (or in addition to) a fresh commit clone — shared contract with [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions)
 - **Automatic input detection** (observed read-set under the data mount) and **automatic output detection** (files changed vs pin, committed as the result when applicable)
 - Valid runs that **only read**, or **neither read nor write** (exit 0, empty I/O sets)
-- Persist each run in the **unified lineage graph** (shared version-ref / op types with [TRACEABILITY.md](./TRACEABILITY.md)) plus durable `JobRun` records
+- Persist each run in the **unified lineage graph** (shared version-ref / op types with [11-lineage.md](./11-lineage.md)) plus durable `JobRun` records
 - **Local Docker** runner first; same `Runner` interface for **cluster** (Kubernetes or equivalent) later
 - Job lifecycle API: submit, status, logs, **cancel**; Mice Jobs UI
 - Resource limits, network policy, and image-pull constraints **from Phase 0**
-- AuthN via [AUTH.md](./AUTH.md), AuthZ via [AUTHO.md](./AUTHO.md) (dedicated job capabilities dependent on repo read/write), audit via [AUDIT.md](./AUDIT.md)
+- AuthN via [01-authentication.md](./01-authentication.md), AuthZ via [02-authorization.md](./02-authorization.md) (dedicated job capabilities dependent on repo read/write), audit via [03-audit.md](./03-audit.md)
 
 **Out of scope (this document)**
 
-- Interactive desktop Sessions — see [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions) / [Sessions.md](./Sessions.md) (shares the **workspace mount + version pin** contract in Phase 2+)
+- Interactive desktop Sessions — see [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions) / [10-sessions.md](./10-sessions.md) (shares the **workspace mount + version pin** contract in Phase 2+)
 - Replacing or forking oxen-server
 - Host-native (non-container) job execution
 - Secrets vault product beyond short-lived runner-injected Oxen credentials
-- GxP-strict product controls (e-sig, reason-for-change on job submit) — [GXP.md](./GXP.md) layers later
+- GxP-strict product controls (e-sig, reason-for-change on job submit) — [04-gxp-compliance.md](./04-gxp-compliance.md) layers later
 
 **Hooks for later epics**
 
@@ -34,7 +34,7 @@ Related: [EPICS.md](./EPICS.md) · [Sessions.md](./Sessions.md) · [AUTH.md](./A
 | PLAT-AUTHO | Dedicated `job.submit` / `job.read` (dependent on repo write / read) before mount/run |
 | PLAT-AUDIT | Emit `job.submit` / `job.complete` / `job.fail` / `job.cancel` with actor + pin/result commits |
 | PLAT-TRACE | Shared version-ref types + new job op kinds in the lineage store/query/UI |
-| PLAT-SESS | Shared **mount + pin** contract (commit / content hash; **workspace mount** in Phase 2+) — [Sessions.md](./Sessions.md) |
+| PLAT-SESS | Shared **mount + pin** contract (commit / content hash; **workspace mount** in Phase 2+) — [10-sessions.md](./10-sessions.md) |
 | PLAT-GXP | Optional fail-closed / e-sig / reason fields on job mutations when `GXP_STRICT` |
 
 **Delivery scope:** Phases 0–3 in this document are all in scope to implement (not a Phase-0-only spike).
@@ -48,7 +48,7 @@ Mice is a web UI + auth BFF in front of self-hosted oxen-server. Versioned data 
 | Commits | Oxen commit DAG via BFF → oxen-server ([`web/src/lib/oxen/api.ts`](../web/src/lib/oxen/api.ts), types in [`web/src/lib/oxen/types.ts`](../web/src/lib/oxen/types.ts)). Commit fields: `id`, `parent_ids`, `message`, `author`, `email`, `timestamp` — **no structured commit metadata API** |
 | Workspaces | Remote staging pinned to a commit; UI merge → new commit — **not required** for jobs until Phase 2 mount |
 | Auth / AuthZ / Audit | Session, PAT, RBAC, JSONL audit at the BFF — see AUTH / AUTHO / AUDIT |
-| File lineage | [TRACEABILITY.md](./TRACEABILITY.md) / `lineage.jsonl` — file ops today; job ops unify via new types |
+| File lineage | [11-lineage.md](./11-lineage.md) / `lineage.jsonl` — file ops today; job ops unify via new types |
 | Jobs / runner | **Not implemented** — EPICS stub only |
 | Containers | Compose stack services only; no job runtime |
 
@@ -80,7 +80,7 @@ Mice is a web UI + auth BFF in front of self-hosted oxen-server. Versioned data 
 | Decision | Choice |
 | --- | --- |
 | Substrate | **Oxen commits** (not git). Pin = clean commit clone; success with diffs → new result commit |
-| Workspace | **Cluster jobs always run on a workspace** (selected, or auto-created) that is **frozen** for the job's lifetime — see §13. Commit-clone jobs without a workspace remain valid for local runs. Historical v1 note: **Not required** for v1. Runner materializes a **local clone/checkout** of `pin_commit`. Phase 2: optional **workspace mount** as the job working tree. Workspaces are now **Mice workspaces** ([Workspaces.md](./Workspaces.md)), not Oxen workspaces |
+| Workspace | **Cluster jobs always run on a workspace** (selected, or auto-created) that is **frozen** for the job's lifetime — see §13. Commit-clone jobs without a workspace remain valid for local runs. Historical v1 note: **Not required** for v1. Runner materializes a **local clone/checkout** of `pin_commit`. Phase 2: optional **workspace mount** as the job working tree. Workspaces are now **Mice workspaces** ([08-workspaces.md](./08-workspaces.md)), not Oxen workspaces |
 | Compute unit | User-supplied **container image** + **command** (+ optional `args`, `env`, `workdir`) |
 | Placement | Job control plane lives **inside the auth BFF** (`/auth/jobs…`). Local runner may be in-process with Docker socket, or a helper process owned by the auth service — not a separate public API surface |
 | Runner | Abstract **`Runner`** interface; **local Docker** first; **Kubernetes** (or similar) later |
@@ -123,7 +123,7 @@ flowchart LR
 | Mice UI | Jobs list / submit / logs / status / cancel; lineage graph (unified) |
 | Job API (auth) | Submit, get, list, logs, cancel; AuthZ + audit hooks |
 | Job store | Durable `JobRun` JSONL |
-| Lineage store | Extended [TRACEABILITY.md](./TRACEABILITY.md) schema with job op kinds |
+| Lineage store | Extended [11-lineage.md](./11-lineage.md) schema with job op kinds |
 | Runner (local) | Docker: clone pin → start container (limits + net policy) → stream logs → read-set + diff → commit via Oxen through BFF identity |
 | Runner (cluster) | Same interface; Pod/Job; callbacks or poll |
 | oxen-server | Unchanged data plane |
@@ -246,7 +246,7 @@ Oxen/`Commit` in Mice exposes `message` / author fields only — no structured c
 
 ### Shared types (with TRACEABILITY)
 
-Extend [TRACEABILITY.md](./TRACEABILITY.md) with:
+Extend [11-lineage.md](./11-lineage.md) with:
 
 - Shared **version-ref** (`path` + `contentHash` + `commitId` + namespace/repo) — already the FileVersion shape; reuse for job I/O
 - New op / edge kinds, e.g.:
@@ -270,7 +270,7 @@ File mutate ops and job ops live in one lineage query surface (filters by kind).
 
 ## 8. AuthZ & audit hooks
 
-### AuthZ (extend [AUTHO.md](./AUTHO.md) when implementing)
+### AuthZ (extend [02-authorization.md](./02-authorization.md) when implementing)
 
 | Gate | Intent |
 | --- | --- |
@@ -280,7 +280,7 @@ File mutate ops and job ops live in one lineage query surface (filters by kind).
 
 Checks are **both** dedicated capability **and** repo permission (deny if either fails). Document mapping/bootstrap in AUTHO (default roles grant `job.*` alongside matching read/write).
 
-### Audit actions ([AUDIT.md](./AUDIT.md))
+### Audit actions ([03-audit.md](./03-audit.md))
 
 | Action | When |
 | --- | --- |
@@ -309,16 +309,16 @@ All phases below are **in delivery scope**.
 
 ### Phase 1 — Mice UI + lineage UX
 
-- [x] Jobs UI: monitor list/detail/logs/cancel; submit via `mice-job` CLI
+- [x] Jobs UI: monitor list/detail/logs/cancel; submit via `mice job` CLI
 - [ ] Unified lineage view: job edges + file ops (filter by kind) — API filters `kind=job` / `jobId` / `commit` ready; UI panel polish TBD
 - [x] Playwright: Jobs tab smoke (`e2e/tests/jobs.spec.ts`); fuller lifecycle cases TBD
 
 ### Phase 2 — Workspace mount + richer tracing
 
 - [x] `source=workspace_mount` + `workspace_id` on submit / materialize path
-- [ ] Shared **workspace mount + version pin** ADR with PLAT-SESS ([Sessions.md](./Sessions.md) §11)
+- [ ] Shared **workspace mount + version pin** ADR with PLAT-SESS ([10-sessions.md](./10-sessions.md) §11)
 - [x] Observed reads via host `inotifywait` (Phase 0); harden further as needed
-- [x] Cross-link Sessions plan ([Sessions.md](./Sessions.md))
+- [x] Cross-link Sessions plan ([10-sessions.md](./10-sessions.md))
 
 ### Phase 3 — Cluster runner + reproducibility hardening
 
@@ -330,7 +330,7 @@ All phases below are **in delivery scope**.
 
 ### Phase 4 — Cluster submission + workspace freeze (see §13)
 
-- [ ] Depends on Workspaces.md W0–W4 (checkouts, workspace store, leases, commit builder); W5 covers the jobs half
+- [ ] Depends on 08-workspaces.md W0–W4 (checkouts, workspace store, leases, commit builder); W5 covers the jobs half
 - [ ] Jobs run on a workspace tree with the single `write` lease; auto-create/delete `job-<id>`; auto-commit + advance base
 - [ ] Local jobs lease via BFF (`mice job run --workspace`)
 - [ ] CLI `mice job run --cluster` with all options as flags (+ `--follow`)
@@ -349,7 +349,7 @@ Today only `queued` jobs are re-driven after a restart (`resumeQueuedJobs`); a j
 - [ ] **Retention policy** for logs and non-committed outputs/log blobs (env-configured days/bytes, listed in a `GET /auth/jobs/retention`-style endpoint like Sessions); no purge by default; `JobRun` metadata and lineage never purged by this policy
 - [ ] **Stuck / long-running alerts:** flag jobs `queued` beyond a threshold (lease/`wait_reason`, concurrency cap) or `running` past a fraction of `timeout_seconds` with no log output
 - [ ] **Resource-quota warnings:** surface exhaustion (`JOBS_MAX_CONCURRENT` saturated, disk/memory limit hit, workspace over quota) on the job and in the UI before/when it fails
-- [ ] Notification events for the above and **job notification subscriptions** (per job/repo; submitter by default), delivered through the notification system — event names, recipients and `mice notifications` CLI hand-off live in [notification.md](./notification.md); Jobs only emits the events
+- [ ] Notification events for the above and **job notification subscriptions** (per job/repo; submitter by default), delivered through the notification system — event names, recipients and `mice notifications` CLI hand-off live in [14-notifications.md](./14-notifications.md); Jobs only emits the events
 - [ ] Tests TC-JOB-28…32; docs/CLI usage
 
 ## 10. API
@@ -400,26 +400,26 @@ Public surface stays under the auth BFF.
 
 ## 13. Cluster submission on Mice workspaces (Phase 4)
 
-> **Superseded design:** the earlier Oxen-workspace freeze/lock plan is replaced by BFF-owned workspaces — see [Workspaces.md](./Workspaces.md) (overlay working trees over a shared per-commit checkout store, leases, API). This section keeps only what is job-specific.
+> **Superseded design:** the earlier Oxen-workspace freeze/lock plan is replaced by BFF-owned workspaces — see [08-workspaces.md](./08-workspaces.md) (overlay working trees over a shared per-commit checkout store, leases, API). This section keeps only what is job-specific.
 
 ### Decisions (locked)
 
 | Topic | Choice |
 | --- | --- |
 | Entry points | Web modal **Cluster** tab and `mice job run --cluster`; both call `POST /auth/jobs` (no `runner:'cli'`), executed by `JOBS_RUNNER` |
-| Filesystem | Every cluster job runs on a **Mice workspace** (Workspaces.md). `workspace_id` given → use it; omitted / `"auto"` → BFF creates `job-<id>` from the resolved source (`workspace_auto=true`). UI picker: *Auto* + the repo's workspaces |
-| Freeze | Job takes the workspace's single **`write` lease** (`queued` with `wait_reason` while another writer holds it; new rw session mounts refused meanwhile; `JOBS_WAIT_TIMEOUT_SEC` 3600; `wait:false` → 409). While held only the job container writes; every other writer gets 423. **Sessions and the UI can still read it live (read-only mount), so users watch outputs in real time without being able to alter the computation** (Workspaces.md §4). `workspace_mode: ro` jobs take `read` leases and may run in parallel. Local jobs with `--workspace`: archive-down / apply-up under the lease (Workspaces.md §7) |
+| Filesystem | Every cluster job runs on a **Mice workspace** (08-workspaces.md). `workspace_id` given → use it; omitted / `"auto"` → BFF creates `job-<id>` from the resolved source (`workspace_auto=true`). UI picker: *Auto* + the repo's workspaces |
+| Freeze | Job takes the workspace's single **`write` lease** (`queued` with `wait_reason` while another writer holds it; new rw session mounts refused meanwhile; `JOBS_WAIT_TIMEOUT_SEC` 3600; `wait:false` → 409). While held only the job container writes; every other writer gets 423. **Sessions and the UI can still read it live (read-only mount), so users watch outputs in real time without being able to alter the computation** (08-workspaces.md §6.1). `workspace_mode: ro` jobs take `read` leases and may run in parallel. Local jobs with `--workspace`: archive-down / apply-up under the lease (08-workspaces.md §8) |
 | Tamper check | `upper_hash` (hash of the workspace's changes) recorded at lease grant, verified before the container starts |
 | Container user | `--user WORKSPACES_UID:GID`, umask 0002 |
-| Working tree | The workspace's **overlay volume** (all files of the commit via the shared checkout + the workspace's changes) is mounted at `workdir` (default `/data`) — Docker runner only in this iteration; Kubernetes uses the copy/reflink driver until W7. No per-job clone or download beyond the shared checkout (Workspaces.md §3–§4). Uncommitted edits in the workspace are visible to the job |
-| Output | On exit 0 the diff vs workspace base is **auto-committed atomically, including deletions** (Workspaces.md §5: safe branch `mice/job/<id>`, then merge into target); base advances per committed path; on failure/cancel the upper layer is left as the job left it (diff stays visible in Changes) with no commit. On success the result simply *is* the workspace content (D5 "always overwrite"): in-place writes + auto-commit + compaction |
+| Working tree | The workspace's **overlay volume** (all files of the commit via the shared checkout + the workspace's changes) is mounted at `workdir` (default `/data`) — Docker runner only in this iteration; Kubernetes uses the copy/reflink driver until W7. No per-job clone or download beyond the shared checkout (08-workspaces.md §3–§4). Uncommitted edits in the workspace are visible to the job |
+| Output | On exit 0 the diff vs workspace base is **auto-committed atomically, including deletions** (08-workspaces.md §7.1: safe branch `mice/job/<id>`, then merge into target); base advances per committed path; on failure/cancel the upper layer is left as the job left it (diff stays visible in Changes) with no commit. On success the result simply *is* the workspace content (D5 "always overwrite"): in-place writes + auto-commit + compaction |
 | Auto workspace cleanup | Deleted when `workspace_auto` **and** succeeded **and** merged (or empty diff). Otherwise kept until the user deletes it (no automatic GC). User-selected workspaces always kept |
 | Lease release | Terminal status / cancel; `timeout_seconds + JOBS_LOCK_GRACE_SEC` (300); restart reconciliation; admin force-release |
 | Cluster options (UI+CLI) | `image`, `command`, `args`, `env`, `workdir`, `timeout_seconds`, `resources.{cpu,memory,disk}`, `max_log_bytes`, `input_globs`, `name`, source, `target`, workspace |
 
 ### API additions
 
-`POST /auth/jobs` accepts `workspace_id` or `workspace:"auto"`, and `wait` (default true). Response adds `workspace_id`, `workspace_auto`, `upper_hash`; `queued` jobs report `wait_reason` (`workspace busy` / `preparing checkout`). Lease routes live in [Workspaces.md §9](./Workspaces.md).
+`POST /auth/jobs` accepts `workspace_id` or `workspace:"auto"`, and `wait` (default true). Response adds `workspace_id`, `workspace_auto`, `upper_hash`; `queued` jobs report `wait_reason` (`workspace busy` / `preparing checkout`). Lease routes live in [08-workspaces.md §9](./08-workspaces.md).
 
 ### CLI
 
@@ -431,7 +431,7 @@ Cluster tab form with every option + workspace picker; Local tab keeps CLI snipp
 
 ### Test plan additions
 
-TC-JOB-18 auto workspace created; TC-JOB-19 selected workspace used + second job waits; TC-JOB-20 writers get 423 during a job while a read-only session sees outputs live; TC-JOB-21 lease released on succeeded/failed/cancelled/timeout; TC-JOB-22 uncommitted workspace edits visible to the job; TC-JOB-23 auto-commit advances base; TC-JOB-24 auto workspace deleted/kept rules; TC-JOB-25 `mice job run --cluster` flags + `--follow`; TC-JOB-26 local job with `--workspace` holds/releases lease; TC-JOB-27 UI Cluster tab submit. Workspace-level cases: Workspaces.md §6.
+TC-JOB-18 auto workspace created; TC-JOB-19 selected workspace used + second job waits; TC-JOB-20 writers get 423 during a job while a read-only session sees outputs live; TC-JOB-21 lease released on succeeded/failed/cancelled/timeout; TC-JOB-22 uncommitted workspace edits visible to the job; TC-JOB-23 auto-commit advances base; TC-JOB-24 auto workspace deleted/kept rules; TC-JOB-25 `mice job run --cluster` flags + `--follow`; TC-JOB-26 local job with `--workspace` holds/releases lease; TC-JOB-27 UI Cluster tab submit. Workspace-level cases: 08-workspaces.md §6.
 
 ## 14. Open risks
 
@@ -439,13 +439,13 @@ TC-JOB-18 auto workspace created; TC-JOB-19 selected workspace used + second job
 | --- | --- |
 | Read-set incomplete (missed opens / mmap) | Document best-effort in Phase 0; harden in Phase 2; globs as filter only |
 | Docker socket near BFF | Runner helper + never expose socket to browser network |
-| Large clones / slow materialize | Shared per-commit checkout store with incremental sync (Workspaces.md §3); no per-job clone |
+| Large clones / slow materialize | Shared per-commit checkout store with incremental sync (08-workspaces.md §3); no per-job clone |
 | Concurrent commits | Always safe job branch then merge; merge conflicts reported on the job without losing the job-branch commit |
 | Secret leakage via `env` / logs | Redact secret-shaped keys; never audit env values |
 | No structured commit metadata | Commit ids live on `JobRun`; optional `job_id` in commit message only |
 | Network breaks tools that need egress | Document allowlist extension process; keep default deny |
-| Shared contract drift with PLAT-SESS | Phase 2 writes one mount/pin ADR used by both ([Sessions.md](./Sessions.md) §11) |
-| Admission-only exclusivity / advisory for host-level writers | See Workspaces.md §6.1/§14; tamper check at start |
+| Shared contract drift with PLAT-SESS | Phase 2 writes one mount/pin ADR used by both ([10-sessions.md](./10-sessions.md) §11) |
+| Admission-only exclusivity / advisory for host-level writers | See 08-workspaces.md §6.1/§14; tamper check at start |
 | Lease leaks (crash) | TTL + startup reconciliation + admin force-release |
 | Unified lineage schema churn | Add job kinds additive; keep FileVersion stable |
 
@@ -454,10 +454,10 @@ TC-JOB-18 auto workspace created; TC-JOB-19 selected workspace used + second job
 1. Which failures are retryable by default (runner/infra only, or also timeouts)? What are the `max_attempts` cap and backoff shape (fixed, exponential, jitter)?
 2. Is each attempt a separate `JobRun` linked by `retry_of`, or one `JobRun` with `attempts[]`? Which one do lineage and audit (`job.submit` / `job.fail`) key on?
 3. How is a re-attached `running` job proven to be the same execution after restart (container/Pod label with `job_id` + attempt), and who owns that for the Kubernetes runner?
-4. What is the default retention for logs and uncommitted outputs, and does it differ for `GXP_STRICT` ([GXP.md](./GXP.md))?
+4. What is the default retention for logs and uncommitted outputs, and does it differ for `GXP_STRICT` ([04-gxp-compliance.md](./04-gxp-compliance.md))?
 5. Can a user download outputs of a failed/cancelled job (they are never committed)? Where are they stored while the workspace is kept (Phase 4)?
 6. Stuck-job thresholds: global env defaults or per-job fields? Who is notified (submitter only, or repo admins)?
-7. Which job events does [notification.md](./notification.md) own (stuck, quota, retry-exhausted) versus job-specific subscription state kept in Jobs?
+7. Which job events does [14-notifications.md](./14-notifications.md) own (stuck, quota, retry-exhausted) versus job-specific subscription state kept in Jobs?
 
 ## 16. How to use this file
 

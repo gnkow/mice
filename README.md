@@ -244,7 +244,7 @@ make up                 # includes guacd; real desktops by default
 make test-sessions      # Playwright (set SESSIONS_PROVISIONER=mock for speed)
 ```
 
-Plan: [`plans/Sessions.md`](./plans/Sessions.md).
+Plan: [`plans/10-sessions.md`](./plans/10-sessions.md).
 
 ### Notifications
 
@@ -301,4 +301,4 @@ message after an ambiguous provider response.
 
 ## Progress
 
-Playwright case catalog: [`TESTS.md`](./TESTS.md). Local epic/design notes (AuthN, AuthZ, audit, GxP, Sessions) live under `plans/` when present (gitignored).
+Playwright case catalog: [`TESTS.md`](./TESTS.md). Epics and design plans live under [`plans/`](./plans/EPICS.md), numbered by implementation priority.

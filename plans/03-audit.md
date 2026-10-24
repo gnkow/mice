@@ -2,7 +2,7 @@
 
 Living design and phased plan for epic [`PLAT-AUDIT`](./EPICS.md#plat-audit--gxp-oriented-change-audit): append-only, attributable audit of mutations through the auth BFF.
 
-Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [GXP.md](./GXP.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [README.md](../README.md)
 
 ## 1. Purpose & scope
 
@@ -20,9 +20,9 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md
 - Auditing raw oxen-server `:3001` (e2e helpers only)
 - Separate audit microservice; Mongo/Postgres store (future swap)
 
-**Depends on:** [`PLAT-AUTH`](./AUTH.md) — session / PAT identity at the BFF.
+**Depends on:** [`PLAT-AUTH`](./01-authentication.md) — session / PAT identity at the BFF.
 
-**AuthZ for query:** [`AUTHO.md`](./AUTHO.md) — instance admin or instance permission `view_audit` for instance-wide `GET /auth/audit`; namespace **Owners** (and custom ns roles with `view_audit`) may query events **scoped to their namespace** only via `authorizeAuditQuery`.
+**AuthZ for query:** [`02-authorization.md`](./02-authorization.md) — instance admin or instance permission `view_audit` for instance-wide `GET /auth/audit`; namespace **Owners** (and custom ns roles with `view_audit`) may query events **scoped to their namespace** only via `authorizeAuditQuery`.
 
 ## 2. Current state
 
@@ -94,7 +94,7 @@ One JSON object per line:
 | `action` | Coarse class (`repo.create`, `file.write`, `file.delete`, `branch.*`, `merge`, `workspace.create/delete/commit/merge/file.write/file.delete/other`, `other`). New names keep the `file.`/`workspace` prefixes that AuthZ maps on |
 | `namespace` / `repo` | Parsed from `/api/repos/:ns/:repo/...` when possible |
 | `dataset` | *(proposed)* Dataset version the mutation acted on: oxen commit id / content hash before and after (`{ base, head }`), when determinable; see Open question 2 |
-| `reason` / `change_control_id` | *(proposed, [GXP.md](./GXP.md) Phase 2)* Structured fields, not free text in `message`/`detail`; absent when policy does not require them |
+| `reason` / `change_control_id` | *(proposed, [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 2)* Structured fields, not free text in `message`/`detail`; absent when policy does not require them |
 | `message` | From body `message` / `commit_message` when present |
 | `detail` | Small non-secret extras (e.g. branch, file path); never tokens or file bytes |
 
@@ -143,35 +143,35 @@ Same Compose `auth_data` volume as PATs.
 
 ### Phase 1.5 — AuthZ gates on query (depends on PLAT-AUTHO)
 
-- [x] Enforce [AUTHO.md](./AUTHO.md) D9 on `GET /auth/audit` and `/audit` UI
+- [x] Enforce [02-authorization.md](./02-authorization.md) D9 on `GET /auth/audit` and `/audit` UI
 - [x] Instance-wide: instance admin or `view_audit`
 - [x] Namespace Owners / ns `view_audit` capability: results limited to allowed namespaces
 - [ ] Playwright: insufficient principal → `403`; Owner cannot read other namespaces (if not already covered in authz e2e)
 
 ### Phase 2 — GxP extras
 
-Umbrella checklist and sequencing live in [`GXP.md`](./GXP.md) (Phases 1–4). This epic keeps audit-store detail:
+Umbrella checklist and sequencing live in [`04-gxp-compliance.md`](./04-gxp-compliance.md) (Phases 1–4). This epic keeps audit-store detail:
 
-- Reason / change-control id on audit events — [GXP.md](./GXP.md) Phase 2 (`GXP-R-040`…`042`)
-- Fail-closed append when `GXP_STRICT=true` — [GXP.md](./GXP.md) Phase 1 (`GXP-R-025`)
-- Retention / export (filtered NDJSON + manifest) — [GXP.md](./GXP.md) Phase 4
+- Reason / change-control id on audit events — [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 2 (`GXP-R-040`…`042`)
+- Fail-closed append when `GXP_STRICT=true` — [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 1 (`GXP-R-025`)
+- Retention / export (filtered NDJSON + manifest) — [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 4
 - Store swap (Postgres JSONB / Mongo) behind the same schema (optional, with export)
 
 ### Phase 2.1 — Durability & schema (proposed, unchecked)
 
-- [ ] Durable outbox / reconciliation for the mutation→audit crash gap: persist intent before proxying, mark complete after append, and reconcile orphaned intents on restart (needed for [GXP.md](./GXP.md) `GXP_STRICT`, `GXP-R-025`)
+- [ ] Durable outbox / reconciliation for the mutation→audit crash gap: persist intent before proxying, mark complete after append, and reconcile orphaned intents on restart (needed for [04-gxp-compliance.md](./04-gxp-compliance.md) `GXP_STRICT`, `GXP-R-025`)
 - [ ] Schema: explicit dataset version/commit fields (`dataset.base` / `dataset.head`)
-- [ ] Schema: structured `reason` and `change_control_id` fields (shared with [GXP.md](./GXP.md) `GXP-R-040`…`042`)
+- [ ] Schema: structured `reason` and `change_control_id` fields (shared with [04-gxp-compliance.md](./04-gxp-compliance.md) `GXP-R-040`…`042`)
 - [ ] Namespace-owner query test coverage: unit + Playwright for Owner scoped to own namespace, other-namespace `403`/empty, ns `view_audit` capability, `403` for insufficient principal (extends the open Phase 1.5 Playwright item)
 
 ## 8. API
 
 | Route | Auth | Behavior |
 | --- | --- | --- |
-| `GET /auth/audit` | Session; **AuthZ per [AUTHO.md](./AUTHO.md)** (`authorizeAuditQuery`: instance admin / `view_audit` / ns-scoped Owner) | Query params: `actor`, `namespace`, `repo`, `action`, `since`, `until`, `limit`, `cursor` |
+| `GET /auth/audit` | Session; **AuthZ per [02-authorization.md](./02-authorization.md)** (`authorizeAuditQuery`: instance admin / `view_audit` / ns-scoped Owner) | Query params: `actor`, `namespace`, `repo`, `action`, `since`, `until`, `limit`, `cursor` |
 | (no write routes) | — | Append only from proxy |
 
-Disk append is **best-effort**: if JSONL write fails, the proxied oxen response still returns (logged server-side). Documented risk until a durable queue exists. A crash after the upstream mutation but before append leaves no event at all; Phase 2.1 outbox/reconciliation targets this ([GXP.md](./GXP.md) strict mode).
+Disk append is **best-effort**: if JSONL write fails, the proxied oxen response still returns (logged server-side). Documented risk until a durable queue exists. A crash after the upstream mutation but before append leaves no event at all; Phase 2.1 outbox/reconciliation targets this ([04-gxp-compliance.md](./04-gxp-compliance.md) strict mode).
 
 ## 9. UI
 
@@ -197,7 +197,7 @@ Disk append is **best-effort**: if JSONL write fails, the proxied oxen response 
 | --- | --- |
 | JSONL scan does not scale | Cap `limit`; swap store in Phase 2 behind same API |
 | Append failure silent to client | Log error; revisit fail-closed if GxP demands |
-| Crash between mutation and audit append | No record of a committed mutation; outbox/reconciliation (Phase 2.1), cross-ref [GXP.md](./GXP.md) |
+| Crash between mutation and audit append | No record of a committed mutation; outbox/reconciliation (Phase 2.1), cross-ref [04-gxp-compliance.md](./04-gxp-compliance.md) |
 | Owner-scoped query leaks | Server-side ns filter; add explicit test coverage (Phase 2.1) |
 | Direct `:3001` bypass | Production: do not publish oxen port; product remote is BFF |
 | Over-broad `other` actions | Tighten path heuristics as routes are catalogued |
@@ -206,7 +206,7 @@ Disk append is **best-effort**: if JSONL write fails, the proxied oxen response 
 
 1. **Outbox location:** same JSONL volume (intent records beside `audit.jsonl`) or the future store swap? Does reconciliation record an `unconfirmed` outcome or re-query oxen to infer the result?
 2. **Dataset version capture:** is the pre/post commit id available from the oxen response for every mutation class, or does the BFF need an extra read (and lock) before/after proxying?
-3. **Reason/change-control placement:** top-level fields vs inside `detail`; ownership split with [GXP.md](./GXP.md) Phase 2.
+3. **Reason/change-control placement:** top-level fields vs inside `detail`; ownership split with [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 2.
 
 ## 12. How to use this file
 

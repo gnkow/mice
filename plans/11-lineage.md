@@ -2,7 +2,7 @@
 
 Living design and phased plan for epic [`PLAT-TRACE`](./EPICS.md#plat-trace--file-lineage--operation-graph): trace the origin of files via repository operations in a graph view.
 
-Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [GXP.md](./GXP.md) · [Jobs.md](./Jobs.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [09-jobs.md](./09-jobs.md) · [README.md](../README.md)
 
 ## 1. Purpose & scope
 
@@ -16,15 +16,15 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md
 
 **Out of scope (this document)**
 
-- Job **lifecycle** API / runner / logs / cancel — owned by [`PLAT-JOB`](./Jobs.md). Job I/O **graph edges** unify here via shared version-ref types and a `job` op kind (implemented; see §4)
+- Job **lifecycle** API / runner / logs / cancel — owned by [`PLAT-JOB`](./09-jobs.md). Job I/O **graph edges** unify here via shared version-ref types and a `job` op kind (implemented; see §4)
 - Replacing oxen path history / content-addressed version store
 - Changing oxen-server internals or adding rename-aware compare APIs upstream
-- GxP reason / e-sig gates on mutates — [GXP.md](./GXP.md) layers on AUTH / AUDIT; lineage may later bind to signed versions
+- GxP reason / e-sig gates on mutates — [04-gxp-compliance.md](./04-gxp-compliance.md) layers on AUTH / AUDIT; lineage may later bind to signed versions
 - Product copy API if oxen-server lacks a first-class copy route (gap noted below)
 
-**Depends on:** [`PLAT-AUTH`](./AUTH.md) (identity at BFF); [`PLAT-AUTHO`](./AUTHO.md) (repo read / query gates).
+**Depends on:** [`PLAT-AUTH`](./01-authentication.md) (identity at BFF); [`PLAT-AUTHO`](./02-authorization.md) (repo read / query gates).
 
-**Complements:** [`PLAT-AUDIT`](./AUDIT.md) (who/when/HTTP trail — not the operation graph); [`PLAT-GXP`](./GXP.md) (review / inspection of data provenance).
+**Complements:** [`PLAT-AUDIT`](./03-audit.md) (who/when/HTTP trail — not the operation graph); [`PLAT-GXP`](./04-gxp-compliance.md) (review / inspection of data provenance).
 
 ## 2. Current state
 
@@ -66,8 +66,8 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md
 | Store (v1) | Append-only **JSONL** at `AUTH_DATA_DIR/lineage.jsonl` (same volume / swap path as audit) |
 | Explicit emitter | Auth BFF after successful upstream mutate (classify file ops; extract paths, hashes, commit id) |
 | Derivation | Offline or on-demand reconcile from commits / path versions / compare; backfill gaps; rename heuristic only when no explicit move for that commit |
-| Audit relationship | Lineage may set `auditEventId` / `commitId`; does **not** replace [AUDIT.md](./AUDIT.md) |
-| Job lineage | **Unified and implemented** (verified in `auth/src/lineage.ts`): one `job` op kind (inputs = observed reads @ pin, outputs = writes @ result; either may be empty) sharing the FileVersion type; query by `jobId` (`detail.job_id`). The finer kinds originally sketched (`job_pin`, `job_produces`, `job_reads`, `job_writes`) were **not** adopted. Job lifecycle/status remains in [Jobs.md](./Jobs.md) JSONL; graph edges live in this lineage store/query. EPICS.md's claim is therefore correct; only Phase 5 below was stale. Note for the EPICS owner: the PLAT-TRACE Phase 5 bullet in EPICS.md still lists shared job refs as open and should be split (copy/store swap open, job lineage done) |
+| Audit relationship | Lineage may set `auditEventId` / `commitId`; does **not** replace [03-audit.md](./03-audit.md) |
+| Job lineage | **Unified and implemented** (verified in `auth/src/lineage.ts`): one `job` op kind (inputs = observed reads @ pin, outputs = writes @ result; either may be empty) sharing the FileVersion type; query by `jobId` (`detail.job_id`). The finer kinds originally sketched (`job_pin`, `job_produces`, `job_reads`, `job_writes`) were **not** adopted. Job lifecycle/status remains in [09-jobs.md](./09-jobs.md) JSONL; graph edges live in this lineage store/query. EPICS.md's claim is therefore correct; only Phase 5 below was stale. Note for the EPICS owner: the PLAT-TRACE Phase 5 bullet in EPICS.md still lists shared job refs as open and should be split (copy/store swap open, job lineage done) |
 
 ```mermaid
 flowchart LR
@@ -196,13 +196,13 @@ Same Compose `auth_data` volume as PATs / audit.
 
 - [ ] Product copy path when oxen (or Mice workspace) supports it; explicit `copy` ops
 - [ ] Optional Postgres/Mongo swap behind the same schema (align with audit Phase 2)
-- [x] Job lineage: single `job` op kind + shared version-refs for [Jobs.md](./Jobs.md), `jobId` query filter (done with PLAT-JOB; finer-grained job kinds not planned)
+- [x] Job lineage: single `job` op kind + shared version-refs for [09-jobs.md](./09-jobs.md), `jobId` query filter (done with PLAT-JOB; finer-grained job kinds not planned)
 
 ### Phase 6 — Correction, reconciliation, retention (all unchecked; see §13)
 
 - [ ] Lineage correction/approval: an authorised reviewer can confirm, reject or re-link a derived (`confidence: low`) move/copy; corrections are append-only `correction` ops that supersede, never edit, the original, and are audited
 - [ ] Reconciliation status: per repo/path, surface whether explicit capture is complete (e.g. `capture: complete | reconciling | gap`) in the API and Lineage panel, and run a reconcile after a detected mutation→capture gap
-- [ ] Retention and export policy: retention period per namespace/repo, legal-hold interaction with [GXP.md](./GXP.md), and filtered NDJSON + manifest export aligned with [AUDIT.md](./AUDIT.md)
+- [ ] Retention and export policy: retention period per namespace/repo, legal-hold interaction with [04-gxp-compliance.md](./04-gxp-compliance.md), and filtered NDJSON + manifest export aligned with [03-audit.md](./03-audit.md)
 
 ## 8. API
 
@@ -212,7 +212,7 @@ Same Compose `auth_data` volume as PATs / audit.
 | `POST /auth/lineage/rebuild` (Phase 2) | Session; repo admin / instance admin | Kick derivation for a repo (async or sync MVP) |
 | (no public write routes) | — | Append from proxy + derivation only |
 
-Disk append is **best-effort** relative to the oxen response (same posture as audit unless `GXP_STRICT` later requires fail-closed). Like audit ([AUDIT.md](./AUDIT.md)), there is a **mutation → capture crash gap**: if the BFF crashes or the append fails after oxen accepted the mutate, no explicit op exists. Derivation later backfills add/edit/delete, but a gapped move/copy degrades to a low-confidence heuristic or is missed. Users must therefore see reconciliation status (Phase 6), not assume completeness.
+Disk append is **best-effort** relative to the oxen response (same posture as audit unless `GXP_STRICT` later requires fail-closed). Like audit ([03-audit.md](./03-audit.md)), there is a **mutation → capture crash gap**: if the BFF crashes or the append fails after oxen accepted the mutate, no explicit op exists. Derivation later backfills add/edit/delete, but a gapped move/copy degrades to a low-confidence heuristic or is missed. Users must therefore see reconciliation status (Phase 6), not assume completeness.
 
 ## 9. UI
 
@@ -264,7 +264,7 @@ Do not expose lineage more broadly than file content for that repo.
 | # | Question | Notes |
 | --- | --- | --- |
 | Q1 | Who may correct or approve a derived move/copy (repo admin, reviewer role), and is a GxP signature needed? | Open. Corrections are additive; the original derived op stays visible |
-| Q2 | How is a mutation→capture gap detected (oxen commit with no matching explicit op, vs. a write-ahead intent record)? | Open. Shared with the audit durable-queue decision in [AUDIT.md](./AUDIT.md) |
+| Q2 | How is a mutation→capture gap detected (oxen commit with no matching explicit op, vs. a write-ahead intent record)? | Open. Shared with the audit durable-queue decision in [03-audit.md](./03-audit.md) |
 | Q3 | Retention period for lineage vs. audit, and may lineage be purged when a repo is deleted? | Open. Default proposal: retain at least as long as audit |
 | Q4 | Is lineage export part of the audit export package or separate? | Open |
 
@@ -273,4 +273,4 @@ Do not expose lineage more broadly than file content for that repo.
 1. Implement phases; tick bullets in PRs.
 2. Keep decisions in §4 unless an ADR supersedes them.
 3. When epic bullets in [EPICS.md](./EPICS.md) land, mark them done.
-4. Keep job **lifecycle** in [Jobs.md](./Jobs.md); keep job **graph edges** here with shared version-ref types.
+4. Keep job **lifecycle** in [09-jobs.md](./09-jobs.md); keep job **graph edges** here with shared version-ref types.

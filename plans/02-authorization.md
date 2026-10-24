@@ -2,7 +2,7 @@
 
 Living design and phased plan for epic [`PLAT-AUTHO`](./EPICS.md#plat-autho--authorization-authz): namespace/repo authorization at the Mice BFF, modeled on **GitHub Enterprise** organization/repository AuthZ.
 
-Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) (AuthN) · [AUDIT.md](./AUDIT.md) · [GXP.md](./GXP.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) (AuthN) · [03-audit.md](./03-audit.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [README.md](../README.md)
 
 **Primary source of truth:** GitHub Enterprise org/repo authorization ([roles in an organization](https://docs.github.com/en/organizations/managing-peoples-access-to-your-organization-with-roles/roles-in-an-organization), [repository roles](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-repository-roles/repository-roles-for-an-organization), [base permissions](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-repository-roles/setting-base-permissions-for-an-organization), custom org/repo roles, outside collaborators, additive resolution).
 
@@ -20,14 +20,14 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) (AuthN) · [AUDIT.md](./
 
 **Out of scope (this document)**
 
-- AuthN / OIDC / sessions / PAT minting mechanics — see [AUTH.md](./AUTH.md)
-- Audit event emission schema — see [AUDIT.md](./AUDIT.md) (this plan only gates who may **query**)
+- AuthN / OIDC / sessions / PAT minting mechanics — see [01-authentication.md](./01-authentication.md)
+- Audit event emission schema — see [03-audit.md](./03-audit.md) (this plan only gates who may **query**)
 - GitHub Apps / OAuth Apps as principals, EMU, SCIM, billing roles
 - Implementing enforcement code (phases below are the delivery plan)
 
-**Depends on:** [`PLAT-AUTH`](./AUTH.md) — session / PAT identity at the BFF.
+**Depends on:** [`PLAT-AUTH`](./01-authentication.md) — session / PAT identity at the BFF.
 
-**Consumed by:** [`PLAT-AUDIT`](./AUDIT.md) query gates; later [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs) / [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions) before mount/run.
+**Consumed by:** [`PLAT-AUDIT`](./03-audit.md) query gates; later [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs) / [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions) before mount/run.
 
 ## 2. Terminology map
 
@@ -75,18 +75,18 @@ Related: [EPICS.md](./EPICS.md) · [AUTH.md](./AUTH.md) (AuthN) · [AUDIT.md](./
 
 Everything else in this plan should read as GH Enterprise adapted to namespaces. Only these differ:
 
-1. **Enforcement point** — AuthZ at Mice BFF; oxen-server has no ACL. Direct `:3001` bypass remains a deployment risk ([AUTH.md](./AUTH.md)).
+1. **Enforcement point** — AuthZ at Mice BFF; oxen-server has no ACL. Direct `:3001` bypass remains a deployment risk ([01-authentication.md](./01-authentication.md)).
 2. **Naming** — API, UI, and docs use **namespace**, not “organization.”
 3. **No GitHub Apps / OAuth Apps** as AuthZ principals in v1 (users + PATs + IdP groups).
 4. **IdP groups as team analogue** — Admins bind IdP group names as namespace members or repo collaborators; access is resolved live from session (or PAT mint-time) `groups`. Nested GitHub Teams / SCIM remain out of scope. `AUTHZ_GROUP_BOOTSTRAP` still materializes instance perms / auto-create namespace on login. Directory search uses **Keycloak Admin API** in Compose (not Microsoft Graph); store-known principals always merge as fallback.
 5. **No billing roles** — omit Billing Manager.
-6. **SSO shape** — OIDC (Keycloak/Entra) per AUTH.md; not GH SAML/EMU/SCIM in v1.
+6. **SSO shape** — OIDC (Keycloak/Entra) per 01-authentication.md; not GH SAML/EMU/SCIM in v1.
 7. **Storage** — JSON under `AUTH_DATA_DIR` (same volume pattern as PATs/audit).
 8. **Oxen permission matrix** — Map GH repo roles onto oxen HTTP routes. **Triage** is first-class but may be sparse (Read + any non-code moderation/metadata routes); expand as product grows.
 9. **Instance permission catalog** — `create_namespace`, instance-wide `view_audit`, `session_create` / `session_connect` / `session_admin` (see §7.8). Namespace **Owners** may query audit **scoped to their namespace** (needs AUDIT filters). Instance admin has audited **`site_admin_bypass`** on org/repo checks.
 10. **Visibility** — Follow oxen public/private (or equivalent); do not assume GH “internal” until oxen supports it.
 11. **EMU** — out of scope; identities are IdP users in the BFF session.
-12. **AUTH.md starter RBAC** — replaced by Owner/Member + five-tier repo roles below.
+12. **01-authentication.md starter RBAC** — replaced by Owner/Member + five-tier repo roles below.
 
 ## 6. Decisions
 
@@ -207,7 +207,7 @@ When `AUTHZ_ENFORCE` is on, missing permission → deny (no authenticated-user d
 | `view_lineage` | Unscoped / cross-repo lineage query |
 | `manage_own_tokens` | List / create / revoke own PATs |
 | `cli_device_approve` | Approve / deny CLI device login codes |
-| `session_create` | Provision desktop Sessions ([Sessions.md](./Sessions.md)) |
+| `session_create` | Provision desktop Sessions ([10-sessions.md](./10-sessions.md)) |
 | `session_connect` | Connect to own Sessions (ownership alone is not enough under enforce) |
 | `session_admin` | Administer any Session (list/stop/destroy/connect); implied by instance admin |
 
@@ -350,7 +350,7 @@ Env:
 | Incomplete path → role map | Deny unknown mutating routes; expand map with Mice features |
 | Sparse Triage | Document equality with Read where no triage routes exist; revisit |
 | Site-admin bypass overuse | Audit every bypass; prefer normal grants |
-| Stale IdP group claims | Session `groups` are fixed at login and PAT `groups` at mint, so a removed IdP group keeps granting access until re-login / PAT revoke; see Open question 1 and the not-valid-before cut-off ([AUTH.md](./AUTH.md)) |
+| Stale IdP group claims | Session `groups` are fixed at login and PAT `groups` at mint, so a removed IdP group keeps granting access until re-login / PAT revoke; see Open question 1 and the not-valid-before cut-off ([01-authentication.md](./01-authentication.md)) |
 | Directory outage | Keycloak Admin API down degrades directory search to store-known principals only; grants and enforcement are unaffected (no live IdP lookup). Fail-open vs fail-closed behavior for any future live group re-check is undefined — Open question 3 |
 | JSON store concurrency | Single-writer BFF assumptions; swap store later if multi-instance |
 | AUDIT ns filter gaps | Owners must not see other namespaces; enforce server-side filter |

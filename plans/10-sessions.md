@@ -1,8 +1,8 @@
 # SESSIONS — PLAT-SESS implementation plan
 
-Living design and phased plan for epic [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions): **provision dedicated Linux full-desktop OS** instances for interactive use, connect from Mice via **rustguac + guacd** (RDP / xrdp), gate with IdP AuthN + AuthZ + audit. Workspaces are an optional mount (Phase 2+), not a prerequisite. Formerly sketched as VM gateways (`PLAT-GW`).
+Living design and phased plan for epic [`PLAT-SESS`](./EPICS.md#plat-sess--desktop-sessions): **provision dedicated Linux full-desktop OS** instances for interactive use, connect from Mice via **rustguac + guacd** (RDP / xrdp), gate with IdP AuthN + AuthZ + audit. Workspaces are an optional mount (Phase 2+), not a prerequisite. Formerly sketched as VM gateways (`PLAT-GW`). This file is the single plan for the Sessions topic; it merges the former `SESSIONS-IRONRDP.md` (now §16).
 
-Related: [EPICS.md](./EPICS.md) · [Jobs.md](./Jobs.md) · [SESSIONS-IRONRDP.md](./SESSIONS-IRONRDP.md) · [AUTH.md](./AUTH.md) · [AUTHO.md](./AUTHO.md) · [AUDIT.md](./AUDIT.md) · [GXP.md](./GXP.md) · [notification.md](./notification.md) · [README.md](../README.md)
+Related: [EPICS.md](./EPICS.md) · [09-jobs.md](./09-jobs.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [14-notifications.md](./14-notifications.md) · [README.md](../README.md)
 
 ## 1. Purpose & scope
 
@@ -15,15 +15,15 @@ Related: [EPICS.md](./EPICS.md) · [Jobs.md](./Jobs.md) · [SESSIONS-IRONRDP.md]
 - **Optional workspace mount** (Phase 2+) pinned to versioned Oxen data — shared **mount + pin** contract with [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs)
 - Session lifecycle API: create, get, list, connect (ticket), stop/destroy; Mice Sessions UI
 - Abstract **`Provisioner`**: local Docker Linux desktop+xrdp first (full Compose E2E on macOS/Linux); libvirt/QEMU or KubeVirt later
-- AuthN via [AUTH.md](./AUTH.md), AuthZ via [AUTHO.md](./AUTHO.md), audit via [AUDIT.md](./AUDIT.md)
+- AuthN via [01-authentication.md](./01-authentication.md), AuthZ via [02-authorization.md](./02-authorization.md), audit via [03-audit.md](./03-audit.md)
 
 **Out of scope (this document)**
 
-- Batch / container-image jobs — see [Jobs.md](./Jobs.md)
+- Batch / container-image jobs — see [09-jobs.md](./09-jobs.md)
 - Replacing or forking oxen-server
 - IronRDP / WASM RDP as the v1 connect path (deferred spike in Phase 3)
 - Building a general VDI / Citrix replacement (templates, GPU pools) beyond provision + connect
-- GxP-strict product controls (recording retention under `GXP_STRICT`) — [GXP.md](./GXP.md) layers later
+- GxP-strict product controls (recording retention under `GXP_STRICT`) — [04-gxp-compliance.md](./04-gxp-compliance.md) layers later
 
 **Naming**
 
@@ -253,7 +253,7 @@ Provisioner.unmountWorkspace(session)
 
 ## 7. AuthZ & audit hooks
 
-### AuthZ (extend [AUTHO.md](./AUTHO.md) when implementing)
+### AuthZ (extend [02-authorization.md](./02-authorization.md) when implementing)
 
 | Gate | Intent |
 | --- | --- |
@@ -265,7 +265,7 @@ Instance admins receive all `session_*` grants. Default interactive users create
 
 **Mounts:** each entry in `mounts[]` requires repo **read** (`authorizeJobRead`) for `ro`, or **write** (`authorizeJobSubmit`) for `rw`. Create fails if any mount is unauthorized. **Connect re-checks** every mount; deny Connect (do not destroy) if access was revoked.
 
-### Audit actions ([AUDIT.md](./AUDIT.md))
+### Audit actions ([03-audit.md](./03-audit.md))
 
 | Action | When |
 | --- | --- |
@@ -310,7 +310,7 @@ Include `session id`, owner `sub`, image, and workspace/pin when known. Never lo
 ### Phase 3 — Ops / GxP / IronRDP spike
 
 - [x] Retention policy endpoint (`GET /auth/sessions/retention`); no purge by default
-- [x] IronRDP spike notes — [SESSIONS-IRONRDP.md](./SESSIONS-IRONRDP.md)
+- [x] IronRDP spike notes — §16
 
 ### Phase 4 — Desktop security, recovery, cost, audit (proposed; none approved; see §14)
 
@@ -321,8 +321,8 @@ Today the sweeper only tears down on idle/max-lifetime without advance warning, 
 - [ ] **Reconnect/resume:** closing the browser tab or a network drop leaves the guest desktop running; reconnect mints a new `ConnectTicket` (status back to `ready`/`connected`) and is distinguished from a new session in audit
 - [ ] **User-visible recovery:** when guacd/rustguac/the provisioner fails or a guest becomes `unhealthy`, the UI shows the cause and a recover action (reconnect, restart gateway link, retry) instead of a bare `failed`; document what survives (mounts and workspace data yes; guest state outside mounts per §11a)
 - [ ] **Cost/quota policy:** per-user/instance limits beyond `SESSIONS_MAX_PER_USER` (total cpu/memory/disk, cumulative running hours); usage shown on the session
-- [ ] **Warnings before limits:** notify and show a banner before `SESSIONS_MAX_LIFETIME_SECONDS`, before idle teardown, and on resource exhaustion in the guest; allow an extension (bounded by policy) — events delivered via [notification.md](./notification.md) (Sessions only emits them)
-- [ ] **Connection audit for regulated use:** audit events carry client IP/user agent, connection start/end, duration, effective security policy and recording state; a `session.recording` lifecycle (start/stop/access/purge); tamper-evident retention aligned with [GXP.md](./GXP.md) and [AUDIT.md](./AUDIT.md)
+- [ ] **Warnings before limits:** notify and show a banner before `SESSIONS_MAX_LIFETIME_SECONDS`, before idle teardown, and on resource exhaustion in the guest; allow an extension (bounded by policy) — events delivered via [14-notifications.md](./14-notifications.md) (Sessions only emits them)
+- [ ] **Connection audit for regulated use:** audit events carry client IP/user agent, connection start/end, duration, effective security policy and recording state; a `session.recording` lifecycle (start/stop/access/purge); tamper-evident retention aligned with [04-gxp-compliance.md](./04-gxp-compliance.md) and [03-audit.md](./03-audit.md)
 - [ ] Tests TC-SESS-12…17; docs
 
 ## 9. API
@@ -350,12 +350,12 @@ Public surface stays under the auth BFF. Browser never holds rustguac long-lived
 
 ## 11. Shared mount + pin contract (Phase 2; with Jobs)
 
-Single ADR (link from Jobs.md + this file):
+Single ADR (link from 09-jobs.md + this file):
 
 | Field | Meaning |
 | --- | --- |
 | `pin_commit` | Oxen commit id (content-addressed pin) — Jobs only; Sessions no longer accept it |
-| `workspace_id` | Optional **Mice workspace** ([Workspaces.md](./Workspaces.md)) — a BFF-owned overlay working tree (shared per-commit checkout + the workspace's changes) mounted as a Docker volume (lease `ro`/`rw`); replaces copy + baseline + sync. A `ro` mount of a running job's workspace is the **live view** |
+| `workspace_id` | Optional **Mice workspace** ([08-workspaces.md](./08-workspaces.md)) — a BFF-owned overlay working tree (shared per-commit checkout + the workspace's changes) mounted as a Docker volume (lease `ro`/`rw`); replaces copy + baseline + sync. A `ro` mount of a running job's workspace is the **live view** |
 | Mount path | Fixed guest path (e.g. `/data` or `/workspace`) |
 | Mode | `ro` \| `rw` per AuthZ |
 | Lifecycle | Mount on start or on connect; unmount on stop/destroy |
@@ -425,3 +425,52 @@ Make target sketch: `make test-sessions` (stack up + Playwright `e2e/tests/sessi
 2. Keep decisions in §4 locked unless an ADR supersedes them.
 3. When epic bullets in [EPICS.md](./EPICS.md) land, mark them done and keep phases in sync.
 4. When Autho/Audit gain session fields, update §7 and link from AUTHO / AUDIT.
+
+## 16. IronRDP spike & compatibility notes (Phase 3)
+
+Deferred performance / architecture spike (merged from the former `SESSIONS-IRONRDP.md`). **v1 Connect remains rustguac or guacamole-lite + guacd** (see §4).
+
+### 16.1 Why spike
+
+Guacamole-class gateways **re-encode** RDP/VNC into the Guacamole protocol on the server (CPU-bound under concurrency; see §13). IronRDP runs RDP (often in WASM) so the gateway mostly **relays bytes**.
+
+### 16.2 Candidates
+
+| Stack | Notes |
+| --- | --- |
+| [IronRDP](https://github.com/Devolutions/IronRDP) | Protocol library; used by Devolutions Gateway, Cloudflare Access, Teleport |
+| [Warpgate](https://github.com/warp-tech/warpgate) | Rust bastion; browser RDP via IronRDP helper |
+| [Devolutions Gateway](https://github.com/Devolutions/devolutions-gateway) | Production IronRDP browser RDP |
+| Custom | Thin WS↔TCP relay + IronRDP WASM in Mice UI |
+
+### 16.3 Linux-first constraint
+
+Most Mice Sessions guests are **Linux + xrdp**. IronRDP is strongest against Windows RDP; validate **xrdp** (and optionally GNOME/KDE RDP) before adopting.
+
+### 16.4 Acceptance criteria to switch Connect backend
+
+1. Input lag ≤ guacamole-lite path on same LAN (click-to-pixel)
+2. guacd/auth CPU lower at N concurrent Sessions (document N)
+3. OIDC + Mice AuthZ ticket handoff equivalent to today’s Connect API
+4. Exclusive Sessions (no share/join) preserved
+5. License review (AGPL / commercial CE limits) acceptable
+
+### 16.5 Additional criteria and open items (proposed; none approved)
+
+- [ ] **Fallback and compatibility matrix:** browser × guest (xrdp XFCE/MATE, GNOME/KDE RDP, optional Windows) × gateway (guacamole_lite, rustguac, IronRDP) with pass/fail per row; automatic or user-selectable **fallback to the Guacamole path** when WASM/WebSocket/codec support is missing or the RDP handshake fails (NLA/TLS/security-layer variants)
+- [ ] **Clipboard and file transfer:** text and image clipboard both directions, drive/file redirection, each switchable by the Sessions security policy (Phase 4, §8); defaults must not be looser than the Guacamole path
+- [ ] **Reconnect:** network drop and tab close/reopen reconnect to the same guest without data loss; behavior on gateway restart and ticket expiry; resolution/DPI change on resume
+- [ ] **Browser support criteria:** minimum supported versions (Chromium, Firefox, Safari) and required features (WASM, WebCodecs/SharedArrayBuffer headers, WebSocket through the BFF); unsupported browsers get a clear message and the fallback
+- [ ] **Recording and connection audit:** IronRDP relays bytes, so server-side recording and connection audit (IP, start/end, policy, clipboard/file events) must be replaced explicitly — equivalent to Phase 4 (§8) or documented as a gap blocking the switch
+
+### 16.6 Open questions
+
+1. Where would recording happen with a byte-relay gateway (relay tap, guest-side agent) and is it acceptable for regulated use?
+2. Which of the matrix rows are required for the ADR, and which may stay fallback-only?
+3. Is per-feature clipboard/file policy enforceable when the gateway cannot parse RDP virtual channels?
+
+(See also §14 for the Phase 4 open questions on policy enforcement, recording and audit.)
+
+### 16.7 Decision
+
+Stay on **guacamole_lite** (default) or **rustguac** until this spike is run and an ADR promotes IronRDP.

@@ -68,6 +68,6 @@ Harden the BFF so every Principal is keyed on `iss`+`sub`, author attribution ca
 
 ## Further Notes
 
-- Design record: `docs/adr/0001-bff-identity-trust-model.md`; plan: `plans/AUTH.md` Phase 2.5.
+- Design record: `docs/adr/0001-bff-identity-trust-model.md`; plan: `plans/01-authentication.md` Phase 2.5.
 - GXP Phase 1 (`GXP_STRICT`, idle timeout value) should land before W4 and cluster jobs; the idle mechanism here is a prerequisite for the timeout.
 - Terms follow `GLOSSARY.md` (Principal, Session, PAT, BFF, Author injection).
