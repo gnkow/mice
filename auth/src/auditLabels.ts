@@ -73,6 +73,7 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['token.create', 'Access token created', 'Tokens & CLI'],
   ['session.revoke', 'Sessions revoked', 'Access'],
   ['directory.sync.failed', 'Directory sync failed', 'Access'],
+  ['directory.sync.stale', 'Directory sync stale', 'Access'],
   ['token.revoke', 'Access token revoked', 'Tokens & CLI'],
   ['device.approve', 'CLI login approved', 'Tokens & CLI'],
   ['device.deny', 'CLI login denied', 'Tokens & CLI'],

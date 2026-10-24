@@ -13,12 +13,17 @@ import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
 import { principalKey } from './principal.js'
 import { getSession } from './session.js'
-import { isInstanceAdmin } from './authzStore.js'
+import { isInstanceAdmin, listInstanceAdmins } from './authzStore.js'
+import { emitNotification } from './notifications.js'
 
 type SyncState = {
   version: 1
   lastAttemptAt?: string
   lastSuccessAt?: string
+  /** Set while a stale alert is outstanding; cleared by the next successful run. */
+  staleAlertedAt?: string
+  /** Baseline for staleness before the first success. */
+  watchingSince?: string
   /** Principals already cut off by a sync, until the IdP shows them enabled again. */
   revoked: Record<string, string>
 }
@@ -106,8 +111,47 @@ export async function runDirectorySync(
   }
   for (const key of stillEnabled) delete state.revoked[key]
   state.lastSuccessAt = now
+  delete state.staleAlertedAt
   writeJsonFile(statePath(), state)
   return { ok: true, checked: principals.length, revoked }
+}
+
+/**
+ * Raises one audit event and one admin notification when no sync has succeeded for more
+ * than twice the interval. Returns true when it alerted.
+ */
+export function checkDirectorySyncStale(intervalSec: number = env.directorySyncIntervalSec): boolean {
+  const state = readState()
+  const nowMs = Date.now()
+  state.watchingSince ??= new Date(nowMs).toISOString()
+  const baseline = Date.parse(state.lastSuccessAt ?? state.watchingSince)
+  const stale = nowMs - baseline > 2 * intervalSec * 1000
+  if (!stale || state.staleAlertedAt) {
+    writeJsonFile(statePath(), state)
+    return false
+  }
+  state.staleAlertedAt = new Date(nowMs).toISOString()
+  writeJsonFile(statePath(), state)
+  appendAudit({
+    actor: SYSTEM_ACTOR,
+    via: 'session',
+    method: 'SYNC',
+    path: 'directory-sync',
+    status: 200,
+    action: 'directory.sync.stale',
+    message: 'Directory sync has not succeeded for more than twice its interval',
+    detail: { source: 'directory-sync', lastSuccessAt: state.lastSuccessAt ?? null },
+  })
+  emitNotification({
+    id: `directory-sync-stale:${state.staleAlertedAt}`,
+    category: 'security',
+    title: 'Directory sync is stale',
+    summary: 'Offboarded users are not being revoked: the directory sync has not succeeded recently.',
+    audience: 'personal',
+    recipients: listInstanceAdmins(),
+    href: '/profile',
+  })
+  return true
 }
 
 /** Instance-admin on-demand run. */
@@ -127,7 +171,10 @@ let timer: ReturnType<typeof setInterval> | undefined
 export function startDirectorySyncSchedule(): void {
   if (timer || !keycloakDirectoryConfigured() || env.directorySyncIntervalSec <= 0) return
   timer = setInterval(
-    () => void runDirectorySync().catch((e) => console.error('[mice-auth] directory sync error', e)),
+    () =>
+      void runDirectorySync()
+        .catch((e) => console.error('[mice-auth] directory sync error', e))
+        .finally(() => checkDirectorySyncStale()),
     env.directorySyncIntervalSec * 1000,
   )
   timer.unref()

@@ -11,7 +11,9 @@ process.env.OIDC_ISSUER_PUBLIC = 'idp'
 
 const { Hono } = await import('hono')
 const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
-const { runDirectorySync, makeDirectorySyncRoute } = await import('./directorySync.js')
+const { runDirectorySync, makeDirectorySyncRoute, checkDirectorySyncStale } = await import('./directorySync.js')
+const { rememberNotificationUser } = await import('./notifications.js')
+const { readNotificationState, notificationUserKey } = await import('./notificationsStore.js')
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
 const { queryAudit } = await import('./audit.js')
@@ -83,3 +85,37 @@ describe('directory sync', () => {
     assert.equal(runs, 1)
   })
 })
+
+describe('stale directory-sync alert', () => {
+  const INTERVAL = 900
+  const received = (sub: string) =>
+    readNotificationState().entries.filter((e) => e.user === notificationUserKey(mk(sub)) &&
+      readNotificationState().events[e.event]?.title === 'Directory sync is stale').length
+
+  it('alerts admins once past 2x the interval, clears on success, re-alerts when stale again', async () => {
+    rememberNotificationUser(mk('root'))
+    rememberNotificationUser(mk('plain'))
+    at(t0 + 10_000_000)
+    await runDirectorySync({ lookup: async () => 'enabled' })
+
+    at(t0 + 10_000_000 + 2 * INTERVAL * 1000 - 1000)
+    assert.equal(checkDirectorySyncStale(INTERVAL), false)
+    assert.equal(received('root'), 0)
+
+    at(t0 + 10_000_000 + 2 * INTERVAL * 1000 + 1000)
+    assert.equal(checkDirectorySyncStale(INTERVAL), true)
+    assert.equal(received('root'), 1)
+    assert.equal(received('plain'), 0)
+    assert.ok(queryAudit({ action: 'directory.sync.stale' }).events.length >= 1)
+
+    at(t0 + 10_000_000 + 3 * INTERVAL * 1000)
+    assert.equal(checkDirectorySyncStale(INTERVAL), false, 'not repeated while still stale')
+    assert.equal(received('root'), 1)
+
+    await runDirectorySync({ lookup: async () => 'enabled' })
+    at(t0 + 10_000_000 + 6 * INTERVAL * 1000)
+    assert.equal(checkDirectorySyncStale(INTERVAL), true, 're-alerts after a later stale spell')
+    assert.equal(received('root'), 2)
+  })
+})
+
