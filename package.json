@@ -14,7 +14,7 @@
     "test:e2e:cli": "playwright test -c e2e/playwright.config.ts e2e/tests/cli-auth.spec.ts e2e/tests/cli-device-ui.spec.ts",
     "test:unit": "npm run test:unit:auth && npm run test:unit:cli && npm run test:unit:web",
     "test:unit:auth": "npm test --prefix auth",
-    "test:unit:cli": "node scripts/test-fail-fast.mjs cli/lib/oxen.test.mjs cli/lib/config.test.mjs cli/lib/localStore.test.mjs cli/lib/publish.test.mjs cli/lib/meta.test.mjs cli/lib/admin.test.mjs",
+    "test:unit:cli": "node scripts/test-fail-fast.mjs --dir cli/lib",
     "test:unit:web": "npm test --prefix web",
     "test:cli:integration": "node --test cli/integration/device-login.test.mjs"
   },
