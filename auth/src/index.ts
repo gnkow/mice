@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
+import { acquireDataDirLock } from './dataDirLock.js'
 import { parsePatScopes } from './patScopes.js'
 import { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directorySync.js'
 import { registerServicePrincipalRoutes } from './servicePrincipalRoutes.js'
@@ -128,6 +129,13 @@ import {
 const PROMPT_LOGIN_COOKIE = 'mice_prompt_login'
 
 assertProductionStartup()
+if (process.env.NODE_ENV === 'production') {
+  const dataLock = acquireDataDirLock(env.dataDir)
+  process.on('exit', () => dataLock.release())
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(sig, () => process.exit(0))
+  }
+}
 startDirectorySyncSchedule()
 startServicePatExpirySchedule()
 runIdentityMigration()
@@ -336,7 +344,6 @@ app.get('/auth/cli/whoami', async (c) => {
 app.get('/auth/me', async (c) => {
   const session = await authenticateUser(c)
   if (!session) return c.json({ authenticated: false }, 401)
-  preparePrincipal(session)
   rememberNotificationUser(session)
   return c.json({
     authenticated: true,
@@ -535,7 +542,6 @@ async function resolveAuditQuery(
   if (!session) {
     return { error: c.json({ error: 'Authentication required' }, 401) }
   }
-  preparePrincipal(session)
   let namespace = c.req.query('namespace') || undefined
   const gate = authorizeAuditQuery(session, namespace)
   if (!gate.allow) {
@@ -625,7 +631,6 @@ app.get('/auth/lineage', async (c) => {
     return c.json({ error: 'Authentication required' }, 401)
   }
 
-  preparePrincipal(session)
   const namespace = c.req.query('namespace') || undefined
   const repo = c.req.query('repo') || undefined
   const gate = authorizeLineageQuery(session, namespace, repo)
@@ -678,7 +683,6 @@ app.post('/auth/lineage/rebuild', async (c) => {
     return c.json({ error: 'Authentication required' }, 401)
   }
 
-  preparePrincipal(session)
   let body: {
     namespace?: string
     repo?: string
@@ -926,7 +930,6 @@ registerFavoritesRoutes(app)
 async function announcementPrincipal(c: Context, admin: boolean) {
   const session = await authenticateUser(c)
   if (!session) return { error: c.json({ error: 'Authentication required' }, 401) } as const
-  preparePrincipal(session)
   if (admin && !isInstanceAdmin(session)) return { error: c.json({ error: 'Forbidden' }, 403) } as const
   return { session } as const
 }
