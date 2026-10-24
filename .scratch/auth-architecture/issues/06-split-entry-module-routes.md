@@ -4,8 +4,8 @@
 
 **Blocked by:** 04 (Migrate index and contract)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Tokens, instance admin and revocation routes live in their own modules
-- [ ] The entry module shrinks accordingly; route paths and responses are unchanged
-- [ ] Existing tests pass; each moved module has a route test that needs no whole-app setup
+- [x] Tokens, instance admin and revocation routes live in their own modules
+- [x] The entry module shrinks accordingly; route paths and responses are unchanged
+- [x] Existing tests pass; each moved module has a route test that needs no whole-app setup

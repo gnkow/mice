@@ -1,4 +1,5 @@
 import type { Context, Hono, MiddlewareHandler } from 'hono'
+import type { AuditVia } from './audit.js'
 import { sameOriginGuard } from './csrf.js'
 import { preparePrincipal } from './authz.js'
 import { env } from './env.js'
@@ -73,6 +74,11 @@ export async function authenticateUser(c: Context, policy: AuthPolicy = {}): Pro
   if (r.via === 'pat') c.set('authVia' as never, 'pat' as never)
   for (const fn of hooks) fn(r.user)
   return r.user
+}
+
+/** The audit `via` for a request: `pat` when it authenticated by PAT, else the given fallback. */
+export function callerVia(c: Context, fallback: AuditVia): AuditVia {
+  return c.get('authVia' as never) === 'pat' ? 'pat' : fallback
 }
 
 export type AuthPolicy = {

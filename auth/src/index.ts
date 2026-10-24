@@ -2,11 +2,14 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
-import { offboard } from './offboarding.js'
 import { parsePatScopes } from './patScopes.js'
 import { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directorySync.js'
 import { registerServicePrincipalRoutes } from './servicePrincipalRoutes.js'
 import { startServicePatExpirySchedule } from './servicePrincipalExpiry.js'
+import type { AuditFields } from './routeDeps.js'
+import { registerTokenRoutes } from './tokenRoutes.js'
+import { registerInstanceRoutes } from './instanceRoutes.js'
+import { registerRevocationRoutes } from './revocationRoutes.js'
 import { backChannelLogout } from './backChannelLogout.js'
 import { signOutEverywhere } from './selfRevocation.js'
 import { runIdentityMigration } from './identityMigration.js'
@@ -15,6 +18,7 @@ import {
   applyGlobalGuards,
   authenticateUser,
   bearerToken,
+  callerVia,
   onAuthenticated,
   requireAuth,
   resolveBearer,
@@ -27,7 +31,6 @@ import {
   clearSessionCookie,
   getSession,
   setSessionCookie,
-  type PatScope,
   type SessionUser,
 } from './session.js'
 import {
@@ -59,7 +62,6 @@ import {
   authorizeCliDeviceApprove,
   authorizeLineageQuery,
   authorizeLineageRebuild,
-  authorizeManageOwnTokens,
   canManageRepoCollaborators,
   isPendingUser,
   preparePrincipal,
@@ -69,7 +71,6 @@ import {
   searchDirectory,
 } from './directory.js'
 import {
-  addInstanceAdmin,
   createNamespaceAuthz,
   deleteNamespaceAuthz,
   getNamespace,
@@ -79,20 +80,15 @@ import {
   isCustomNamespaceRoleAssigned,
   isCustomRepoRoleAssigned,
   isInstanceAdmin,
-  listInstanceAdmins,
-  listInstancePermissionGrants,
   listNamespaceMembers,
   listNamespacesForUser,
   listRepoCollaborators,
   namespacesWithCapability,
-  removeInstanceAdmin,
   removeNamespaceGroupMember,
   removeNamespaceMember,
   removeRepoCollaborator,
   removeRepoGroupCollaborator,
   resolveNamespaceRole,
-  setAuthzEnforce,
-  setInstancePermissions,
   setNamespaceGroupMember,
   setNamespaceMember,
   setRepoCollaborator,
@@ -125,7 +121,6 @@ import {
   type NamespaceCapability,
   type RepoFinePermission,
 } from './authzTypes.js'
-import { isScopedCredential } from './principal.js'
 import {
   approveDevice,
   denyDevice,
@@ -134,11 +129,7 @@ import {
   startDeviceAuth,
 } from './cliDevice.js'
 import {
-  createPat,
-  PatExpiryError,
   findPatByToken,
-  listPatsForUser,
-  revokePat,
   revokePatByToken,
 } from './tokens.js'
 import { registerJobRoutes } from './jobsRoutes.js'
@@ -571,15 +562,6 @@ app.post('/auth/training', async (c) => {
   })
 })
 
-type AuditFields = {
-  action: string
-  message?: string
-  namespace?: string
-  repo?: string
-  detail?: Record<string, unknown>
-  status?: number
-}
-
 /** Append an audit event for a BFF-native (non-proxied) mutation. Never pass secrets in `detail`. */
 function auditMutation(
   c: Parameters<typeof proxyToOxen>[0],
@@ -614,94 +596,6 @@ function memberTarget(body: {
 }
 
 onAuthenticated(rememberNotificationUser)
-
-function callerVia(c: Context, fallback: AuditVia): AuditVia {
-  return c.get('authVia' as never) === 'pat' ? 'pat' : fallback
-}
-
-app.get('/auth/tokens', async (c) => {
-  const session = await authenticateUser(c, { credential: 'session' })
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  const gate = authorizeManageOwnTokens(session)
-  if (!gate.allow) {
-    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
-  }
-  return c.json({ tokens: listPatsForUser(session) })
-})
-
-app.post('/auth/tokens', async (c) => {
-  const session = await authenticateUser(c, { credential: 'session' })
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  const gate = authorizeManageOwnTokens(session)
-  if (!gate.allow) {
-    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
-  }
-  let label = 'CLI token'
-  let scopes: PatScope[] | undefined
-  let expiresInDays: number | undefined
-  try {
-    const body = (await c.req.json()) as {
-      label?: string
-      scopes?: PatScope[]
-      expiresInDays?: number
-    }
-    if (body.expiresInDays !== undefined) expiresInDays = body.expiresInDays
-    if (body.label?.trim()) label = body.label.trim()
-    const parsed = parsePatScopes(body.scopes)
-    if (!parsed.ok) return c.json({ error: parsed.error }, 400)
-    scopes = parsed.scopes
-  } catch {
-    /* empty body ok */
-  }
-  let created: ReturnType<typeof createPat>
-  try {
-    created = createPat(session, label, { scopes, expiresInDays })
-  } catch (e) {
-    if (e instanceof PatExpiryError) return c.json({ error: e.message }, 400)
-    throw e
-  }
-  const { token, pat } = created
-  let authHost = env.publicOxenRemote
-  try {
-    authHost = new URL(env.publicOxenRemote).host
-  } catch {
-    /* keep */
-  }
-  auditMutation(c, session, 'session', {
-    action: 'token.create',
-    message: `Created token: ${label}`,
-    detail: { tokenId: pat.id, label, scopes, expiresAt: pat.expiresAt },
-  })
-  return c.json({
-    token,
-    pat,
-    cli: {
-      remote: env.publicOxenRemote,
-      config: `oxen config --auth ${authHost} ${token}`,
-    },
-  })
-})
-
-app.delete('/auth/tokens/:id', async (c) => {
-  const session = await authenticateUser(c, { credential: 'session' })
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  const gate = authorizeManageOwnTokens(session)
-  if (!gate.allow) {
-    return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
-  }
-  const id = c.req.param('id')
-  const ok = revokePat(session, id)
-  if (!ok) return c.json({ error: 'Token not found' }, 404)
-  auditMutation(c, session, 'session', {
-    action: 'token.revoke',
-    message: `Revoked token: ${id}`,
-    detail: { tokenId: id },
-  })
-  return c.json({ ok: true })
-})
 
 /** Resolve the caller's audit scope + filters; returns a Response on failure. */
 async function resolveAuditQuery(
@@ -1082,71 +976,6 @@ function requireNsCapability(
 
 // --- AuthZ admin APIs (PLAT-AUTHO) ---
 
-app.get('/auth/instance', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  if (!isInstanceAdmin(session)) return c.json({ error: 'Forbidden' }, 403)
-  return c.json({
-    enforce: isAuthzEnforce(),
-    admins: listInstanceAdmins(),
-    permissions: listInstancePermissionGrants(),
-  })
-})
-
-app.patch('/auth/instance', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  if (!isInstanceAdmin(session)) return c.json({ error: 'Forbidden' }, 403)
-  try {
-    const body = (await c.req.json()) as { enforce?: boolean }
-    if (typeof body.enforce === 'boolean') {
-      const oldValue = isAuthzEnforce()
-      setAuthzEnforce(body.enforce)
-      auditMutation(c, session, 'session', {
-        action: 'instance.settings.update',
-        message: `Updated instance enforce: ${oldValue} → ${body.enforce}`,
-        detail: { enforce: body.enforce, previousEnforce: oldValue },
-      })
-    }
-  } catch {
-    return c.json({ error: 'Invalid body' }, 400)
-  }
-  return c.json({ enforce: isAuthzEnforce() })
-})
-
-app.post('/auth/instance/admins', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  let body: { sub?: string; iss?: string; email?: string }
-  try {
-    body = (await c.req.json()) as typeof body
-  } catch {
-    return c.json({ error: 'Invalid body' }, 400)
-  }
-  if (!body.sub || !body.iss) {
-    return c.json({ error: 'sub and iss required' }, 400)
-  }
-  const result = addInstanceAdmin(session, { sub: body.sub, iss: body.iss })
-  if (!result.ok) {
-    auditMutation(c, session, 'session', {
-      action: 'instance.admin.add',
-      status: 403,
-      message: `Add instance admin denied: ${result.error}`,
-      detail: { target: { sub: body.sub, iss: body.iss } },
-    })
-    return c.json({ error: result.error }, 403)
-  }
-  auditMutation(c, session, 'session', {
-    action: 'instance.admin.add',
-    message: `Added instance admin ${body.sub}`,
-    detail: { target: { sub: body.sub, iss: body.iss } },
-  })
-  return c.json({ ok: true })
-})
-
 app.post('/auth/backchannel-logout', backChannelLogout)
 app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())
 registerServicePrincipalRoutes(app, {
@@ -1159,102 +988,9 @@ registerServicePrincipalRoutes(app, {
 })
 app.post('/auth/sessions/revoke-all', signOutEverywhere)
 
-app.post('/auth/instance/revoke-sessions', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  let body: { sub?: string; iss?: string }
-  try {
-    body = (await c.req.json()) as typeof body
-  } catch {
-    return c.json({ error: 'Invalid body' }, 400)
-  }
-  if (!body.sub || !body.iss) {
-    return c.json({ error: 'sub and iss required' }, 400)
-  }
-  const target = { sub: body.sub, iss: body.iss }
-  const result = offboard(target, {
-    scope: 'all',
-    cause: 'admin-revocation',
-    actor: actorFromUser(session),
-    via: callerVia(c, 'session'),
-    method: c.req.method,
-    path: c.req.path,
-    message: `Revoked all sessions of ${target.sub}`,
-    detail: { target },
-  })
-  if (!result.ok) return c.json({ error: result.error }, 403)
-  return c.json({ ok: true })
-})
-
-app.delete('/auth/instance/admins', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  let body: { sub?: string; iss?: string }
-  try {
-    body = (await c.req.json()) as typeof body
-  } catch {
-    return c.json({ error: 'Invalid body' }, 400)
-  }
-  if (!body.sub || !body.iss) {
-    return c.json({ error: 'sub and iss required' }, 400)
-  }
-  const result = removeInstanceAdmin(session, { sub: body.sub, iss: body.iss })
-  if (!result.ok) {
-    auditMutation(c, session, 'session', {
-      action: 'instance.admin.remove',
-      status: 400,
-      message: `Remove instance admin failed: ${result.error}`,
-      detail: { target: { sub: body.sub, iss: body.iss } },
-    })
-    return c.json({ error: result.error }, 400)
-  }
-  auditMutation(c, session, 'session', {
-    action: 'instance.admin.remove',
-    message: `Removed instance admin ${body.sub}`,
-    detail: { target: { sub: body.sub, iss: body.iss } },
-  })
-  return c.json({ ok: true })
-})
-
-app.put('/auth/instance/permissions', async (c) => {
-  const session = await authenticateUser(c)
-  if (!session) return c.json({ error: 'Authentication required' }, 401)
-  preparePrincipal(session)
-  let body: { sub?: string; iss?: string; permissions?: InstancePermission[] }
-  try {
-    body = (await c.req.json()) as typeof body
-  } catch {
-    return c.json({ error: 'Invalid body' }, 400)
-  }
-  if (!body.sub || !body.iss || !Array.isArray(body.permissions)) {
-    return c.json({ error: 'sub, iss, permissions required' }, 400)
-  }
-  const result = setInstancePermissions(
-    session,
-    { sub: body.sub, iss: body.iss },
-    body.permissions,
-  )
-  if (!result.ok) {
-    auditMutation(c, session, 'session', {
-      action: 'instance.permissions.update',
-      status: 403,
-      message: `Instance permissions update denied: ${result.error}`,
-      detail: { target: { sub: body.sub, iss: body.iss } },
-    })
-    return c.json({ error: result.error }, 403)
-  }
-  auditMutation(c, session, 'session', {
-    action: 'instance.permissions.update',
-    message: `Set instance permissions for ${body.sub}`,
-    detail: {
-      target: { sub: body.sub, iss: body.iss },
-      permissions: body.permissions,
-    },
-  })
-  return c.json({ ok: true })
-})
+registerTokenRoutes(app, { audit: auditMutation })
+registerInstanceRoutes(app, { audit: auditMutation })
+registerRevocationRoutes(app)
 
 app.get('/auth/namespaces', async (c) => {
   const session = await authenticateUser(c)
