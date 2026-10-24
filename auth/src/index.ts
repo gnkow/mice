@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
-import { revokeSessions } from './credentialRevocation.js'
+import { offboard } from './offboarding.js'
 import { parsePatScopes } from './patScopes.js'
 import { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directorySync.js'
 import { registerServicePrincipalRoutes } from './servicePrincipalRoutes.js'
@@ -1192,21 +1192,17 @@ app.post('/auth/instance/revoke-sessions', async (c) => {
     return c.json({ error: 'sub and iss required' }, 400)
   }
   const target = { sub: body.sub, iss: body.iss }
-  const result = revokeSessions(session, target)
-  if (!result.ok) {
-    auditMutation(c, session, 'session', {
-      action: 'session.revoke',
-      status: 403,
-      message: 'Revoke sessions denied',
-      detail: { target },
-    })
-    return c.json({ error: result.error }, 403)
-  }
-  auditMutation(c, session, 'session', {
-    action: 'session.revoke',
+  const result = offboard(target, {
+    scope: 'all',
+    cause: 'admin-revocation',
+    actor: actorFromUser(session),
+    via: callerVia(c, 'session'),
+    method: c.req.method,
+    path: c.req.path,
     message: `Revoked all sessions of ${target.sub}`,
     detail: { target },
   })
+  if (!result.ok) return c.json({ error: result.error }, 403)
   return c.json({ ok: true })
 })
 

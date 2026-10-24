@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One interface takes the Principal, scope, cause and actor, and applies cut-off, suspension and audit
-- [ ] All four callers use it; none calls the cut-off functions or the suspension helper directly
-- [ ] Revocation storage no longer depends on audit or service principals
-- [ ] Existing behaviour and tests are unchanged; new tests cross only the new interface
+- [x] One interface takes the Principal, scope, cause and actor, and applies cut-off, suspension and audit
+- [x] All four callers use it; none calls the cut-off functions or the suspension helper directly
+- [x] Revocation storage no longer depends on audit or service principals
+- [x] Existing behaviour and tests are unchanged; new tests cross only the new interface

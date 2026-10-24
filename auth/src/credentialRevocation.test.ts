@@ -9,11 +9,14 @@ process.env.SESSION_SECRET = 'test-session-secret-for-revoke'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@x.io'
 
 const { sealSession, openSession } = await import('./session.js')
-const { revokeSessions, revokeSessionsFor, revokeSessionsOnlyFor, isCredentialRevoked } =
+const { offboard } = await import('./offboarding.js')
+const { revokeSessionsFor, revokeSessionsOnlyFor, isCredentialRevoked } =
   await import('./credentialRevocation.js')
 const { createPat, resolvePat } = await import('./tokens.js')
 const authz = await import('./authzStore.js')
 
+const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string; sub: string }) =>
+  offboard(target, { scope: 'all', cause: 'admin-revocation', actor: { ...actor, email: '', name: '' } })
 const mk = (sub: string, iss = 'idp-a') => ({ sub, iss, email: `${sub}@x.io`, name: sub })
 const admin = mk('admin')
 const target = mk('target')
@@ -23,7 +26,7 @@ authz.maybeBootstrapInstanceAdmin({ ...admin, emailVerified: true })
 
 describe('session revocation', () => {
   it('rejects non-admins', () => {
-    const r = revokeSessions(mk('mallory'), target)
+    const r = adminRevoke(mk('mallory'), target)
     assert.deepEqual(r, { ok: false, error: 'Forbidden' })
   })
 
@@ -32,14 +35,14 @@ describe('session revocation', () => {
     const other = await sealSession({ ...mk('target', 'idp-b'), sessionStart: nowSec() - 60 })
     const bystander = await sealSession({ ...mk('bystander'), sessionStart: nowSec() - 60 })
     assert.ok(await openSession(old))
-    assert.deepEqual(revokeSessions(admin, target), { ok: true })
+    assert.equal(adminRevoke(admin, target).ok, true)
     assert.equal(await openSession(old), null)
     assert.ok(await openSession(other), 'same sub under another iss is unaffected')
     assert.ok(await openSession(bystander))
   })
 
   it('allows a fresh login after revocation', async () => {
-    revokeSessions(admin, target)
+    adminRevoke(admin, target)
     const fresh = await sealSession({ ...target, sessionStart: nowSec() + 2 })
     assert.ok(await openSession(fresh))
   })
@@ -50,7 +53,7 @@ describe('session revocation', () => {
     assert.ok(resolvePat(old))
     const realNow = Date.now
     try {
-      revokeSessions(admin, victim)
+      adminRevoke(admin, victim)
       assert.equal(resolvePat(old), null)
       Date.now = () => realNow() + 2000
       const { token: fresh } = createPat(victim, 'fresh')

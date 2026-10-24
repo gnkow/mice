@@ -1,10 +1,6 @@
 import { join } from 'node:path'
-import { isInstanceAdmin } from './authzStore.js'
 import { env } from './env.js'
 import { principalKey } from './principal.js'
-import { suspendOwnedWithAudit } from './servicePrincipalOffboarding.js'
-import { actorFromUser } from './audit.js'
-import type { SessionUser } from './session.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
 
 /** `notBefore` is the full cut-off (Sessions and PATs); `sessionsNotBefore` ends Sessions only. */
@@ -47,17 +43,6 @@ export function revokeSessionsOnlyFor(
   const cutoff = raise(s.sessionsNotBefore, principalKey(principal), at)
   writeJsonFile(path(), s)
   return cutoff
-}
-
-/** Instance-admin action: revoke every Session and PAT issued to `target` so far. */
-export function revokeSessions(
-  actor: { iss: string; sub: string },
-  target: { iss: string; sub: string },
-): { ok: true } | { ok: false; error: string } {
-  if (!isInstanceAdmin(actor)) return { ok: false, error: 'Forbidden' }
-  revokeSessionsFor(target)
-  suspendOwnedWithAudit(target, 'admin-revocation', actorFromUser(actor as SessionUser))
-  return { ok: true }
 }
 
 /**

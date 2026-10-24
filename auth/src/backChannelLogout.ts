@@ -1,6 +1,5 @@
 import type { Context } from 'hono'
-import { appendAudit } from './audit.js'
-import { revokeSessionsOnlyFor } from './credentialRevocation.js'
+import { offboard } from './offboarding.js'
 import { verifyIdpJwt } from './oidc.js'
 
 const LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout'
@@ -37,16 +36,13 @@ export async function backChannelLogout(c: Context): Promise<Response> {
   }
 
   const principal = { sub, iss }
-  revokeSessionsOnlyFor(principal, Math.min(payload.iat, Math.floor(Date.now() / 1000)))
-  appendAudit({
-    actor: { ...principal, email: '', name: '' },
-    via: 'session',
+  offboard(principal, {
+    scope: 'sessions',
+    cause: 'back-channel-logout',
+    at: Math.min(payload.iat, Math.floor(Date.now() / 1000)),
     method: c.req.method,
     path: c.req.path,
-    status: 200,
-    action: 'session.revoke',
     message: `IdP back-channel logout for ${sub}`,
-    detail: { source: 'back-channel-logout' },
   })
   c.header('Cache-Control', 'no-store')
   return c.body(null, 200)

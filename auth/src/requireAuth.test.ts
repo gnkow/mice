@@ -12,10 +12,12 @@ const { Hono } = await import('hono')
 const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
-const { revokeSessions } = await import('./credentialRevocation.js')
+const { offboard } = await import('./offboarding.js')
 const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
 const { env } = await import('./env.js')
 
+const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string; sub: string }) =>
+  offboard(target, { scope: 'all', cause: 'admin-revocation', actor: { ...actor, email: '', name: '' } })
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
 const root = mk('root')
 maybeBootstrapInstanceAdmin({ ...root, emailVerified: true })
@@ -42,7 +44,7 @@ describe('auth wiring (middleware order + requireAuth)', () => {
   it('falls back to the PAT when the session is revoked', async () => {
     const { token } = createPat(mk('carol'), 'c')
     const stale = await cookie('dave')
-    revokeSessions(root, mk('dave'))
+    adminRevoke(root, mk('dave'))
     const res = await app.request('/whoami', {
       headers: { cookie: stale, authorization: `Bearer ${token}` },
     })
@@ -51,7 +53,7 @@ describe('auth wiring (middleware order + requireAuth)', () => {
 
   it('is 401 with a revoked session and no PAT', async () => {
     const stale = await cookie('erin')
-    revokeSessions(root, mk('erin'))
+    adminRevoke(root, mk('erin'))
     assert.equal((await app.request('/whoami', { headers: { cookie: stale } })).status, 401)
   })
 

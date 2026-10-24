@@ -1,6 +1,5 @@
 import type { Context } from 'hono'
-import { actorFromUser, appendAudit } from './audit.js'
-import { revokeSessionsFor, revokeSessionsOnlyFor } from './credentialRevocation.js'
+import { offboard } from './offboarding.js'
 import { clearSessionCookie, getSession } from './session.js'
 
 /**
@@ -17,19 +16,13 @@ export async function signOutEverywhere(c: Context): Promise<Response> {
   } catch {
     // empty body means defaults
   }
-  if (includePats) revokeSessionsFor(session)
-  else revokeSessionsOnlyFor(session)
-  appendAudit({
-    actor: actorFromUser(session),
-    via: 'session',
+  offboard(session, {
+    scope: includePats ? 'all' : 'sessions',
+    cause: 'self-service',
     method: c.req.method,
     path: c.req.path,
-    status: 200,
-    action: 'session.revoke',
-    message: includePats
-      ? 'Signed out everywhere and revoked PATs'
-      : 'Signed out everywhere',
-    detail: { source: 'self-service', includePats },
+    message: includePats ? 'Signed out everywhere and revoked PATs' : 'Signed out everywhere',
+    detail: { includePats },
   })
   clearSessionCookie(c)
   return c.json({ ok: true })

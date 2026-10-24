@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 import type { Context } from 'hono'
-import { actorFromUser, appendAudit, type AuditActor } from './audit.js'
-import { revokeSessionsFor } from './credentialRevocation.js'
+import { appendAudit, type AuditActor } from './audit.js'
 import {
   collectStorePrincipals,
   directoryIssuer,
@@ -15,7 +14,7 @@ import { principalKey } from './principal.js'
 import { getSession } from './session.js'
 import { isInstanceAdmin, listInstanceAdmins } from './authzStore.js'
 import { emitNotification } from './notifications.js'
-import { suspendOwnedWithAudit } from './servicePrincipalOffboarding.js'
+import { offboard } from './offboarding.js'
 
 type SyncState = {
   version: 1
@@ -96,20 +95,14 @@ export async function runDirectorySync(
   for (const p of gone) {
     const key = principalKey(p)
     if (state.revoked[key]) continue
-    revokeSessionsFor(p)
+    offboard(p, {
+      scope: 'all',
+      cause: 'directory-sync',
+      message: `Directory sync revoked ${p.sub}: disabled or removed in the IdP`,
+      path: 'directory-sync',
+    })
     state.revoked[key] = now
     revoked.push({ sub: p.sub, iss: p.iss })
-    appendAudit({
-      actor: actorFromUser({ ...p, email: p.email, name: p.name }),
-      via: 'session',
-      method: 'SYNC',
-      path: 'directory-sync',
-      status: 200,
-      action: 'session.revoke',
-      message: `Directory sync revoked ${p.sub}: disabled or removed in the IdP`,
-      detail: { source: 'directory-sync' },
-    })
-    suspendOwnedWithAudit(p, 'directory-sync', SYSTEM_ACTOR)
   }
   for (const key of stillEnabled) delete state.revoked[key]
   state.lastSuccessAt = now
