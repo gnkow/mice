@@ -20,7 +20,10 @@ export function registerRevocationRoutes(app: Hono): void {
         message: `Revoked all sessions of ${target.sub}`,
         detail: { target },
       })
-      if (!result.ok) return c.json({ error: result.error }, 403)
+      if (!result.ok) {
+        if (result.error === 'Forbidden') return c.json({ error: result.error }, 403)
+        return c.json({ error: result.error, failed: result.failed }, 500)
+      }
       return c.json({ ok: true })
     }),
   )

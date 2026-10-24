@@ -1,7 +1,7 @@
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { env } from './env.js'
+import { createJsonlLog } from './stores.js'
 import { auditActionLabel } from './auditLabels.js'
 import { kindOf } from './principal.js'
 import { getServicePrincipal } from './servicePrincipals.js'
@@ -72,6 +72,8 @@ function storePath(): string {
   return join(env.dataDir, 'audit.jsonl')
 }
 
+const log = createJsonlLog<AuditEvent>(storePath)
+
 export function actorFromUser(user: SessionUser): AuditActor {
   return {
     sub: user.sub,
@@ -136,8 +138,7 @@ export function appendAudit(
       : {}),
   }
   try {
-    mkdirSync(dirname(storePath()), { recursive: true })
-    appendFileSync(storePath(), `${JSON.stringify(event)}\n`, 'utf8')
+    log.append(event)
     if (auditObserver) {
       try {
         auditObserver(event)
@@ -154,22 +155,7 @@ export function appendAudit(
 }
 
 function readAllEvents(): AuditEvent[] {
-  try {
-    const raw = readFileSync(storePath(), 'utf8')
-    const out: AuditEvent[] = []
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      try {
-        out.push(JSON.parse(trimmed) as AuditEvent)
-      } catch {
-        /* skip bad lines */
-      }
-    }
-    return out
-  } catch {
-    return []
-  }
+  return log.readAll()
 }
 
 function detailStrings(

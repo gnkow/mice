@@ -1,6 +1,12 @@
 import { writeFileSync } from 'node:fs'
 import { api } from './api.mjs'
 import { confirmOrExit } from './confirm.mjs'
+import {
+  INSTANCE_PERMISSIONS,
+  NAMESPACE_CAPABILITIES,
+  REPO_FINE_PERMISSIONS,
+  REPO_ROLES,
+} from './authzContract.mjs'
 import { resolveEntityId } from './meta.mjs'
 
 /**
@@ -74,6 +80,18 @@ const list = (v) =>
     .map((x) => x.trim())
     .filter(Boolean)
 const enc = encodeURIComponent
+const oneOf = (values, label) => (names) => {
+  for (const n of names) if (!values.includes(n)) throw new UsageError(`Unknown ${label} "${n}"; expected one of ${values.join(', ')}`)
+  return names
+}
+const instancePermissions = oneOf(INSTANCE_PERMISSIONS, 'instance permission')
+const namespacePermissions = oneOf(NAMESPACE_CAPABILITIES, 'namespace permission')
+const repoPermissions = oneOf(REPO_FINE_PERMISSIONS, 'repository permission')
+const BASE_ROLES = REPO_ROLES.filter((r) => r !== 'admin')
+const choice = (flag, value, values) => {
+  if (!values.includes(value)) throw new UsageError(`--${flag} must be one of ${values.join(', ')}`)
+  return value
+}
 const qs = (params) => {
   const u = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
@@ -247,7 +265,7 @@ export function buildRequest(group, argv, ctx = () => ({})) {
         return {
           method: 'PUT',
           path: '/auth/instance/permissions',
-          body: { ...userOnly(flags), permissions: list(flags.permissions) },
+          body: { ...userOnly(flags), permissions: instancePermissions(list(flags.permissions)) },
         }
       }
       break
@@ -323,11 +341,14 @@ export function buildRequest(group, argv, ctx = () => ({})) {
         const b = {}
         if (flags.name) b.name = str(flags.name)
         if (flags.description !== undefined) b.description = str(flags.description) ?? ''
-        if (flags.permissions !== undefined) b.permissions = list(flags.permissions)
-        if (kind === 'namespace' && flags['base-repository-role']) {
-          b.baseRepositoryRole = str(flags['base-repository-role'])
+        if (flags.permissions !== undefined) {
+          const names = list(flags.permissions)
+          b.permissions = kind === 'namespace' ? namespacePermissions(names) : repoPermissions(names)
         }
-        if (kind === 'repo' && flags.base) b.base = str(flags.base)
+        if (kind === 'namespace' && flags['base-repository-role']) {
+          b.baseRepositoryRole = choice('base-repository-role', str(flags['base-repository-role']), ['none', ...REPO_ROLES])
+        }
+        if (kind === 'repo' && flags.base) b.base = choice('base', str(flags.base), BASE_ROLES)
         return b
       }
       if (sub === 'create') {

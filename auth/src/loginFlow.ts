@@ -1,5 +1,6 @@
 import type { SessionUser } from './session.js'
-import { buildAuthorizeUrl, exchangeCode, loadOidcConfig, pkceChallenge, randomString } from './oidc.js'
+import { currentClock, type Clock } from './clock.js'
+import { defaultOidcProvider, pkceChallenge, randomString, type OidcProvider } from './oidc.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -28,11 +29,10 @@ export function safeReauthReturnPath(raw: string | undefined | null): string | u
 }
 
 /** Begin an OIDC authorization-code login: the PKCE cookie value to set and the IdP redirect. */
-export async function startLogin(
+async function beginLogin(provider: OidcProvider, 
   next?: string | null,
   reauth?: { maxAge: number; sub: string; iss: string },
 ): Promise<{ pkceCookie: string; authorizeUrl: string }> {
-  await loadOidcConfig()
   const verifier = randomString(32)
   const state = randomString(16)
   const nonce = randomString(16)
@@ -47,7 +47,7 @@ export async function startLogin(
     pkceCookie: Buffer.from(JSON.stringify(pkce)).toString('base64url'),
     // Always prompt=login so SSO shows the IdP credential form (Keycloak SSO cookies can
     // survive a Mice-only logout).
-    authorizeUrl: buildAuthorizeUrl({
+    authorizeUrl: await provider.beginLogin({
       state,
       nonce,
       codeChallenge: challenge,
@@ -79,7 +79,7 @@ function readPkce(cookie: string | undefined): PkceState | null {
 }
 
 /** Finish the login: validate state, exchange the code, and build the Session user. */
-export async function completeLogin(input: {
+async function finishLogin(provider: OidcProvider, clock: Clock, input: {
   code?: string
   state?: string
   error?: string
@@ -92,7 +92,7 @@ export async function completeLogin(input: {
   const isReauth = !!pkce.reauth
   if (pkce.state !== input.state) return fail(400, 'State mismatch.', isReauth)
   try {
-    const user = await exchangeCode({
+    const user = await provider.completeLogin({
       code: input.code,
       codeVerifier: pkce.verifier,
       nonce: pkce.nonce,
@@ -101,7 +101,7 @@ export async function completeLogin(input: {
       if (user.sub !== pkce.reauth.sub || user.iss !== pkce.reauth.iss) {
         return fail(400, 'Re-authentication was completed by a different account.', true)
       }
-      const age = Math.floor(Date.now() / 1000) - (user.authTime ?? 0)
+      const age = Math.floor(clock.now() / 1000) - (user.authTime ?? 0)
       if (user.authTime === undefined || age > pkce.reauth.maxAge + 5) {
         return fail(400, 'Re-authentication was not recent enough.', true)
       }
@@ -125,3 +125,24 @@ export async function completeLogin(input: {
     return fail(500, e instanceof Error ? e.message : 'login failed', isReauth)
   }
 }
+
+/** Login flow over an OIDC provider and clock. */
+export function createLoginFlow(deps: { provider: OidcProvider; clock?: Clock }) {
+  const clock = deps.clock ?? currentClock
+  return {
+    startLogin: (next?: string | null, reauth?: { maxAge: number; sub: string; iss: string }) =>
+      beginLogin(deps.provider, next, reauth),
+    completeLogin: (input: Parameters<typeof finishLogin>[2]) => finishLogin(deps.provider, clock, input),
+  }
+}
+
+/** Process-wide flow: the environment-configured provider, resolved per call. */
+const lazyProvider: OidcProvider = {
+  beginLogin: (r) => defaultOidcProvider().beginLogin(r),
+  completeLogin: (r) => defaultOidcProvider().completeLogin(r),
+  logoutUrl: (o) => defaultOidcProvider().logoutUrl(o),
+  verifyJwt: (t) => defaultOidcProvider().verifyJwt(t),
+}
+const defaults = createLoginFlow({ provider: lazyProvider })
+export const startLogin = defaults.startLogin
+export const completeLogin = defaults.completeLogin

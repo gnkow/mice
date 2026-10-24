@@ -21,3 +21,36 @@ jobs:
         working-directory: auth
       - run: npm test
         working-directory: auth
+
+  web-cli-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: web
+      - run: npx tsc -b
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      - run: node scripts/test-fail-fast.mjs --dir cli/lib
+
+  # Needs the full Compose stack (Keycloak, oxen-server, auth, web), so it only runs when the
+  # repository variable MICE_E2E_STACK is "true" on a runner that can build the stack (Docker plus
+  # `make readwatch` binaries). It is skipped, not failed, everywhere else.
+  e2e-deny-paths:
+    if: vars.MICE_E2E_STACK == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: make up
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test -c e2e/playwright.config.ts e2e/tests/deny-paths.spec.ts
+      - if: failure()
+        run: docker compose logs --no-color --tail=200

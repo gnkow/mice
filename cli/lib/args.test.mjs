@@ -14,3 +14,11 @@ describe('parseScope', () => {
     }
   })
 })
+
+describe('parseScope role names', () => {
+  it('accepts every contract repo role and nothing else', async () => {
+    const { REPO_ROLES } = await import('./authzContract.mjs')
+    for (const role of REPO_ROLES) assert.equal(parseScope(`lab:${role}`)?.maxRole, role)
+    assert.equal(parseScope('lab:owner'), null)
+  })
+})

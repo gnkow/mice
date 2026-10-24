@@ -1,7 +1,7 @@
 import { normalizeGroup, userKey, type UserKey } from './authzTypes.js'
 import { instancePermissions, isInstanceAdmin } from './authzInstanceStore.js'
 import { resolveNamespaceRole } from './authzMembershipStore.js'
-import { readCollaborators, readMembers, readNamespaces, sessionGroups } from './authzStoreFiles.js'
+import * as repo from './authzRepository.js'
 
 /**
  * True if the user is a namespace member/owner, instance admin, or has any
@@ -16,7 +16,7 @@ export function userCanSeeNamespace(
   const prefix = `${ns}/`
   const uk = userKey(user)
   const groups = new Set((user.groups ?? []).map(normalizeGroup))
-  const collab = readCollaborators()
+  const collab = repo.collaboratorsSnapshot()
   for (const [key, map] of Object.entries(collab.collaborators)) {
     if (!key.startsWith(prefix)) continue
     if (map[uk]) return true
@@ -35,7 +35,7 @@ export function visibleNamespaceNames(
   user: UserKey & { groups?: string[] },
 ): string[] | 'all' {
   if (isInstanceAdmin(user)) return 'all'
-  const nsStore = readNamespaces()
+  const nsStore = repo.namespacesSnapshot()
   return Object.keys(nsStore.namespaces)
     .filter((ns) => userCanSeeNamespace(user, ns))
     .sort()
@@ -46,12 +46,12 @@ export function userHasAnyGrant(
 ): boolean {
   if (isInstanceAdmin(user)) return true
   if (instancePermissions(user).length > 0) return true
-  const members = readMembers()
+  const members = repo.membersSnapshot()
   const uk = userKey(user)
   for (const map of Object.values(members.members)) {
     if (map[uk]) return true
   }
-  const groups = sessionGroups(user)
+  const groups = repo.sessionGroups(user)
   if (groups.length) {
     for (const map of Object.values(members.groupMembers ?? {})) {
       for (const g of groups) {
@@ -59,7 +59,7 @@ export function userHasAnyGrant(
       }
     }
   }
-  const collab = readCollaborators()
+  const collab = repo.collaboratorsSnapshot()
   for (const map of Object.values(collab.collaborators)) {
     if (map[uk]) return true
   }
@@ -77,9 +77,9 @@ export function ownedNamespaces(
   user: UserKey & { groups?: string[] },
 ): string[] {
   const out: string[] = []
-  const members = readMembers()
+  const members = repo.membersSnapshot()
   const uk = userKey(user)
-  const groups = sessionGroups(user)
+  const groups = repo.sessionGroups(user)
   for (const [ns, map] of Object.entries(members.members)) {
     if (map[uk] === 'owner') {
       out.push(ns)

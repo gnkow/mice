@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { appendAudit, actorFromUser } from './audit.js'
-import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin } from './authzInstanceStore.js'
+import { authorizeInstanceAction, decideInstanceAction } from './authz.js'
 import { env } from './env.js'
 import type { SessionUser } from './session.js'
 import { mintConnectPayload, type ConnectPayload } from './sessionsConnect.js'
@@ -197,15 +197,7 @@ export function authorizeSessionCreate(user: SessionUser): {
   if (!env.sessionsEnabled) {
     return { allow: false, reason: 'Sessions disabled' }
   }
-  if (!isAuthzEnforce()) return { allow: true }
-  if (isInstanceAdmin(user)) return { allow: true }
-  if (hasInstancePermission(user, 'session_admin')) return { allow: true }
-  if (hasInstancePermission(user, 'session_create')) return { allow: true }
-  return { allow: false, reason: 'Missing permission session_create' }
-}
-
-function hasSessionAdmin(user: SessionUser): boolean {
-  return isInstanceAdmin(user) || hasInstancePermission(user, 'session_admin')
+  return authorizeInstanceAction(user, 'session.create')
 }
 
 export function authorizeSessionAccess(
@@ -216,7 +208,7 @@ export function authorizeSessionAccess(
   if (!env.sessionsEnabled) {
     return { allow: false, reason: 'Sessions disabled' }
   }
-  if (hasSessionAdmin(user)) return { allow: true }
+  if (decideInstanceAction(user, 'session.admin').allow) return { allow: true }
   const isOwner =
     session.owner.sub === user.sub && session.owner.iss === user.iss
   if (!isOwner) {
@@ -226,9 +218,7 @@ export function authorizeSessionAccess(
     }
   }
   if (action === 'connect') {
-    if (!isAuthzEnforce()) return { allow: true }
-    if (hasInstancePermission(user, 'session_connect')) return { allow: true }
-    return { allow: false, reason: 'Missing permission session_connect' }
+    return authorizeInstanceAction(user, 'session.connect')
   }
   // Owner may stop/destroy/read their own session.
   return { allow: true }
@@ -472,7 +462,7 @@ export function listDesktopSessions(opts: {
   namespace?: string
   repo?: string
 }): PublicDesktopSession[] {
-  const admin = hasSessionAdmin(opts.user)
+  const admin = decideInstanceAction(opts.user, 'session.admin').allow
   return listSessions()
     .filter((s) => s.status !== 'destroyed')
     .filter((s) => !opts.workspaceId || workspaceIdsOf(s).includes(opts.workspaceId))

@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { currentClock } from './clock.js'
 import { env } from './env.js'
 import { principalKey } from './principal.js'
 import { defineStore } from './typedStore.js'
@@ -16,7 +17,7 @@ const store = defineStore<Store>({
   empty: () => ({ version: 1, notBefore: {} }),
   valid: (raw) => (raw as Store | null)?.version === 1 && !!(raw as Store).notBefore,
 })
-const nowSec = () => Math.floor(Date.now() / 1000)
+const nowSec = () => Math.floor(currentClock.now() / 1000)
 
 function raise(table: Record<string, number>, key: string, cutoff: number): number {
   const next = Math.max(table[key] ?? 0, cutoff)

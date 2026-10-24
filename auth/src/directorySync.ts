@@ -12,9 +12,11 @@ import { env } from './env.js'
 import { defineStore } from './typedStore.js'
 import { principalKey } from './principal.js'
 import { authenticateUser } from './requireAuth.js'
-import { isInstanceAdmin, listInstanceAdmins } from './authzInstanceStore.js'
+import { listInstanceAdmins } from './authzInstanceStore.js'
+import { decideInstanceAction } from './authz.js'
+import { denialResponse } from './decisionHttp.js'
 import { emitNotification } from './notifications.js'
-import { offboard } from './offboarding.js'
+import { offboard, type OffboardStep } from './offboarding.js'
 
 type SyncState = {
   version: 1
@@ -28,8 +30,15 @@ type SyncState = {
   revoked: Record<string, string>
 }
 
+export type IncompleteOffboarding = {
+  sub: string
+  iss: string
+  failed: Array<{ step: OffboardStep; error: string }>
+}
+
+/** `revoked` are fully offboarded; `incomplete` ones are retried by the next run. */
 export type SyncResult =
-  | { ok: true; checked: number; revoked: Array<{ sub: string; iss: string }> }
+  | { ok: true; checked: number; revoked: Array<{ sub: string; iss: string }>; incomplete: IncompleteOffboarding[] }
   | { ok: false; error: string }
 
 const SYSTEM_ACTOR: AuditActor = {
@@ -92,23 +101,40 @@ export async function runDirectorySync(
   }
 
   const revoked: Array<{ sub: string; iss: string }> = []
+  const incomplete: IncompleteOffboarding[] = []
   for (const p of gone) {
     const key = principalKey(p)
     if (state.revoked[key]) continue
-    offboard(p, {
+    const result = offboard(p, {
       scope: 'all',
       cause: 'directory-sync',
       message: `Directory sync revoked ${p.sub}: disabled or removed in the IdP`,
       path: 'directory-sync',
     })
-    state.revoked[key] = now
-    revoked.push({ sub: p.sub, iss: p.iss })
+    if (result.ok) {
+      state.revoked[key] = now
+      revoked.push({ sub: p.sub, iss: p.iss })
+      continue
+    }
+    const failed = 'failed' in result ? result.failed : [{ step: 'revoke-credentials' as const, error: result.error }]
+    incomplete.push({ sub: p.sub, iss: p.iss, failed })
+    console.error(`[mice-auth] directory sync offboarding incomplete for ${p.sub}`, failed)
+    appendAudit({
+      actor: SYSTEM_ACTOR,
+      via: 'session',
+      method: 'SYNC',
+      path: 'directory-sync',
+      status: 500,
+      action: 'directory.sync.failed',
+      message: `Offboarding of ${p.sub} is incomplete; it will be retried`,
+      detail: { source: 'directory-sync', subject: { sub: p.sub, iss: p.iss }, failed },
+    })
   }
   for (const key of stillEnabled) delete state.revoked[key]
   state.lastSuccessAt = now
   delete state.staleAlertedAt
   store.write(state)
-  return { ok: true, checked: principals.length, revoked }
+  return { ok: true, checked: principals.length, revoked, incomplete }
 }
 
 /**
@@ -154,7 +180,8 @@ export function makeDirectorySyncRoute(run: () => Promise<SyncResult> = runDirec
   return async (c: Context): Promise<Response> => {
     const session = await authenticateUser(c, { credential: 'session' })
     if (!session) return c.json({ error: 'Authentication required' }, 401)
-    if (!isInstanceAdmin(session)) return c.json({ error: 'Instance admin required' }, 403)
+    const denied = denialResponse(c, decideInstanceAction(session, 'directory.sync'))
+    if (denied) return denied
     const result = await run()
     return c.json(result, result.ok ? 200 : 502)
   }

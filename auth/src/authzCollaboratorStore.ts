@@ -1,9 +1,9 @@
 import { isPredefinedRepoRole, maxRepoRole, normalizeGroup, parseUserKey, userKey, type BasePermission, type CollaboratorPrincipal, type CollaboratorRoleRef, type RepoRole, type UserKey } from './authzTypes.js'
 import { getCustomRepoRole, isValidCollaboratorRole } from './customRoles.js'
-import { readCollaborators, repoKey, sessionGroups, writeCollaborators } from './authzStoreFiles.js'
+import * as authzRepo from './authzRepository.js'
 
 export function isCustomRepoRoleAssigned(ns: string, roleId: string): boolean {
-  const collab = readCollaborators()
+  const collab = authzRepo.collaboratorsSnapshot()
   const prefix = `${ns}/`
   for (const [key, map] of Object.entries(collab.collaborators)) {
     if (!key.startsWith(prefix)) continue
@@ -22,7 +22,7 @@ export function getRepoCollaboratorRoleRef(
   user: UserKey,
 ): CollaboratorRoleRef | null {
   return (
-    readCollaborators().collaborators[repoKey(ns, repo)]?.[userKey(user)] ??
+    authzRepo.collaboratorsSnapshot().collaborators[authzRepo.repoKey(ns, repo)]?.[userKey(user)] ??
     null
   )
 }
@@ -55,7 +55,7 @@ export function getRepoCollaboratorRoleFromGroups(
   groups: string[],
 ): RepoRole | null {
   const map =
-    readCollaborators().groupCollaborators?.[repoKey(ns, repo)] ?? {}
+    authzRepo.collaboratorsSnapshot().groupCollaborators?.[authzRepo.repoKey(ns, repo)] ?? {}
   let role: BasePermission = 'none'
   for (const g of groups.map(normalizeGroup).filter(Boolean)) {
     const r = map[g]
@@ -76,8 +76,8 @@ export function customRepoRoleIdsForUser(
     ids.push(direct)
   }
   const map =
-    readCollaborators().groupCollaborators?.[repoKey(ns, repo)] ?? {}
-  for (const g of sessionGroups(user)) {
+    authzRepo.collaboratorsSnapshot().groupCollaborators?.[authzRepo.repoKey(ns, repo)] ?? {}
+  for (const g of authzRepo.sessionGroups(user)) {
     const r = map[g]
     if (r && !isPredefinedRepoRole(r) && getCustomRepoRole(ns, r)) ids.push(r)
   }
@@ -88,8 +88,8 @@ export function listRepoCollaborators(
   ns: string,
   repo: string,
 ): CollaboratorPrincipal[] {
-  const store = readCollaborators()
-  const key = repoKey(ns, repo)
+  const store = authzRepo.collaboratorsSnapshot()
+  const key = authzRepo.repoKey(ns, repo)
   const users = Object.entries(store.collaborators[key] ?? {}).map(
     ([k, role]) => {
       const u = parseUserKey(k)
@@ -104,7 +104,7 @@ export function listRepoCollaborators(
 
 /** All repo collaborator principals across namespaces (for directory store search). */
 export function listAllCollaboratorPrincipals(): CollaboratorPrincipal[] {
-  const store = readCollaborators()
+  const store = authzRepo.collaboratorsSnapshot()
   const out: CollaboratorPrincipal[] = []
   for (const map of Object.values(store.collaborators)) {
     for (const [k, role] of Object.entries(map)) {
@@ -122,39 +122,28 @@ export function listAllCollaboratorPrincipals(): CollaboratorPrincipal[] {
 
 export function setRepoCollaborator(
   ns: string,
-  repo: string,
+  repoName: string,
   target: UserKey,
   role: CollaboratorRoleRef,
 ): { ok: true } | { ok: false; error: string } {
   if (!isValidCollaboratorRole(ns, role)) {
     return { ok: false, error: 'Invalid role' }
   }
-  const store = readCollaborators()
-  const key = repoKey(ns, repo)
-  if (!store.collaborators[key]) store.collaborators[key] = {}
-  if (!store.groupCollaborators) store.groupCollaborators = {}
-  store.collaborators[key][userKey(target)] = role
-  writeCollaborators(store)
+  authzRepo.setCollaborator(ns, repoName, userKey(target), role)
   return { ok: true }
 }
 
 export function removeRepoCollaborator(
   ns: string,
-  repo: string,
+  repoName: string,
   target: UserKey,
 ): boolean {
-  const store = readCollaborators()
-  const key = repoKey(ns, repo)
-  const map = store.collaborators[key]
-  if (!map || !map[userKey(target)]) return false
-  delete map[userKey(target)]
-  writeCollaborators(store)
-  return true
+  return authzRepo.removeCollaborator(ns, repoName, userKey(target))
 }
 
 export function setRepoGroupCollaborator(
   ns: string,
-  repo: string,
+  repoName: string,
   group: string,
   role: CollaboratorRoleRef,
 ): { ok: true } | { ok: false; error: string } {
@@ -163,26 +152,14 @@ export function setRepoGroupCollaborator(
   }
   const g = normalizeGroup(group)
   if (!g) return { ok: false, error: 'Group name required' }
-  const store = readCollaborators()
-  const key = repoKey(ns, repo)
-  if (!store.groupCollaborators) store.groupCollaborators = {}
-  if (!store.groupCollaborators[key]) store.groupCollaborators[key] = {}
-  store.groupCollaborators[key][g] = role
-  writeCollaborators(store)
+  authzRepo.setGroupCollaborator(ns, repoName, g, role)
   return { ok: true }
 }
 
 export function removeRepoGroupCollaborator(
   ns: string,
-  repo: string,
+  repoName: string,
   group: string,
 ): boolean {
-  const g = normalizeGroup(group)
-  const store = readCollaborators()
-  const key = repoKey(ns, repo)
-  const map = store.groupCollaborators?.[key]
-  if (!map || !map[g]) return false
-  delete map[g]
-  writeCollaborators(store)
-  return true
+  return authzRepo.removeGroupCollaborator(ns, repoName, normalizeGroup(group))
 }

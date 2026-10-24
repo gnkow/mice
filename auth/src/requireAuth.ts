@@ -38,26 +38,43 @@ export function resolveBearer(c: Context): SessionUser | null {
   return token ? resolvePat(token) : null
 }
 
-type AuthenticatedHook = (user: SessionUser) => void
-const hooks: AuthenticatedHook[] = []
-/** Registers a callback run for every authenticated request made through `authenticateUser`. */
-export function onAuthenticated(fn: AuthenticatedHook): void {
-  hooks.push(fn)
+export type AuthenticationObserver = (user: SessionUser) => void
+let observer: AuthenticationObserver = () => {}
+
+/**
+ * Sets the observer run for every authenticated request made through `authenticateRequest`.
+ * Returns a function restoring the previous observer.
+ */
+export function setAuthenticationObserver(next: AuthenticationObserver): () => void {
+  const prev = observer
+  observer = next
+  return () => {
+    observer = prev
+  }
+}
+
+/**
+ * `authenticate` plus its request effects: records `via` for audit and notifies the
+ * authentication observer. Keeps the denial status and message for callers that shape them.
+ */
+export async function authenticateOutcome(c: Context, policy: AuthPolicy = {}): Promise<AuthOutcome> {
+  const r = await authenticate(c, policy)
+  if (!r.ok) return r
+  if (r.via === 'pat') c.set('authVia' as never, 'pat' as never)
+  observer(r.user)
+  return r
 }
 
 /**
  * Nullable form of `authenticate` for route handlers: `{ user, via }` or null (the handler
- * answers 401). Records `via` for audit and runs the `onAuthenticated` hooks.
+ * answers 401).
  */
 export async function authenticateRequest(
   c: Context,
   policy: AuthPolicy = {},
 ): Promise<{ user: SessionUser; via: 'session' | 'pat' } | null> {
-  const r = await authenticate(c, policy)
-  if (!r.ok) return null
-  if (r.via === 'pat') c.set('authVia' as never, 'pat' as never)
-  for (const fn of hooks) fn(r.user)
-  return { user: r.user, via: r.via }
+  const r = await authenticateOutcome(c, policy)
+  return r.ok ? { user: r.user, via: r.via } : null
 }
 
 /** Same as `authenticateRequest` for handlers that only need the Principal. */

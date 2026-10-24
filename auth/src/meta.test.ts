@@ -8,7 +8,7 @@ const dataDir = mkdtempSync(join(tmpdir(), 'mice-meta-'))
 process.env.AUTH_DATA_DIR = dataDir
 const { parseRef, refKey, MetaError } = await import('./metaTypes.js')
 const { resolveEffective } = await import('./metaResolve.js')
-const { putOwnRecord, getOwnRecord, getRevision, deleteOwnRecord, listHistory, listOwnRecords } = await import('./metaStore.js')
+const { putOwnRecord, getOwnRecord, getRevision, deleteOwnRecord, listHistory, listOwnRecords, migrateMetaStore } = await import('./metaStore.js')
 const { searchMeta, parseQuerySyntax } = await import('./metaSearch.js')
 const actor = { sub: 's1', email: 'a@x.io', name: 'Ann', iss: 'iss' }
 after(() => rmSync(dataDir, { recursive: true, force: true }))
@@ -118,6 +118,8 @@ describe('storage and concurrency', () => {
     writeFileSync(path, JSON.stringify(file))
     assert.deepEqual(getOwnRecord(explicit)?.tags, ['kept'])
     assert.equal(getOwnRecord(absent), null)
+    assert.ok(Object.hasOwn(JSON.parse(readFileSync(path, 'utf8')).records[refKey(explicit)], 'inherit'), 'reads never write')
+    assert.equal(migrateMetaStore(), true)
     const migrated = JSON.parse(readFileSync(path, 'utf8'))
     for (const field of ['inherit', 'propagation', 'removeTags', 'unset']) assert.equal(Object.hasOwn(migrated.records[refKey(explicit)], field), false)
     assert.equal(migrated.records[refKey(absent)], undefined)

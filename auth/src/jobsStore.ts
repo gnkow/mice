@@ -1,43 +1,28 @@
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { env } from './env.js'
+import { createDocumentStore, createJsonlLog } from './stores.js'
 import type { JobRun, JobStatus } from './jobsTypes.js'
 
-function storePath(): string {
-  return join(env.jobsDataDir, 'jobs.jsonl')
-}
+const jobsLog = createJsonlLog<JobRun>(() => join(env.jobsDataDir, 'jobs.jsonl'))
 
-function aliasPath(): string {
-  return join(env.jobsDataDir, 'job-aliases.json')
-}
-
-function readAliases(): Record<string, string> {
-  const p = aliasPath()
-  if (!existsSync(p)) return {}
-  try {
-    const raw = JSON.parse(readFileSync(p, 'utf8')) as unknown
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-    const out: Record<string, string> = {}
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof v === 'string' && v) out[k] = v
+const aliasStore = createDocumentStore<Record<string, string>>({
+  path: () => join(env.jobsDataDir, 'job-aliases.json'),
+  initial: () => ({}),
+  onCorrupt: 'initial',
+  // Anything but a string-to-string map of non-empty values is dropped, in memory.
+  migrate(doc) {
+    const raw = doc as unknown
+    const clean: Record<string, string> = {}
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' && v) clean[k] = v
     }
-    return out
-  } catch {
-    return {}
-  }
-}
+    for (const k of Object.keys(doc)) delete doc[k]
+    Object.assign(doc, clean)
+  },
+})
 
-function writeAliases(aliases: Record<string, string>): void {
-  mkdirSync(env.jobsDataDir, { recursive: true })
-  writeFileSync(aliasPath(), `${JSON.stringify(aliases, null, 2)}\n`, 'utf8')
-}
+const readAliases = (): Record<string, string> => aliasStore.read()
 
 /** Resolve a job id through rekey aliases (provisional → result commit). */
 export function resolveJobId(id: string): string {
@@ -71,75 +56,70 @@ export function jobsLogPath(jobId: string): string {
 }
 
 export function appendJob(job: JobRun): void {
-  const p = storePath()
-  mkdirSync(env.jobsDataDir, { recursive: true })
-  appendFileSync(p, `${JSON.stringify(job)}\n`, 'utf8')
+  jobsLog.append(job)
 }
 
 function readAll(): JobRun[] {
-  const p = storePath()
-  if (!existsSync(p)) return []
-  const lines = readFileSync(p, 'utf8').split('\n').filter(Boolean)
   const byId = new Map<string, JobRun>()
-  for (const line of lines) {
-    try {
-      const j = JSON.parse(line) as JobRun
-      if (j?.id) byId.set(j.id, j)
-    } catch {
-      /* skip bad line */
-    }
-  }
+  for (const j of jobsLog.readAll()) if (j?.id) byId.set(j.id, j)
   return [...byId.values()]
 }
 
 /** Rewrite store with latest snapshot per id (compaction). */
 export function upsertJob(job: JobRun): void {
-  const all = readAll()
-  const next = all.filter((j) => j.id !== job.id)
+  const next = readAll().filter((j) => j.id !== job.id)
   next.push(job)
-  const p = storePath()
-  mkdirSync(env.jobsDataDir, { recursive: true })
-  writeFileSync(
-    p,
-    next.map((j) => JSON.stringify(j)).join('\n') + (next.length ? '\n' : ''),
-    'utf8',
-  )
+  jobsLog.rewrite(next)
 }
+
+/** Log files stay real files (the runner streams into them); injectable so rekey failure is testable. */
+export type JobLogFiles = {
+  exists(path: string): boolean
+  rename(from: string, to: string): void
+}
+
+const realLogFiles: JobLogFiles = { exists: existsSync, rename: renameSync }
 
 /**
  * Replace a provisional job id with a new canonical id (local runs use the
  * result commit id). Keeps the old id resolvable via alias + renames the log.
+ *
+ * Ordered so the old id is resolvable at every instant, including across a crash:
+ *  1. add the new record (old stays)         failure: nothing changed, throws
+ *  2. repoint aliases to the new id          failure: new record removed again, throws
+ *  3. drop the old record                    failure: throws; alias already resolves, old row is a harmless stale duplicate
+ *  4. rename the log                         failure: tolerated, `logRenamed: false`; log_ref on the job should point at the new path
  */
-export function rekeyJob(oldId: string, job: JobRun): void {
+export function rekeyJob(oldId: string, job: JobRun, logs: JobLogFiles = realLogFiles): { logRenamed: boolean } {
   if (oldId === job.id) {
     upsertJob(job)
-    return
+    return { logRenamed: false }
   }
-  const all = readAll().filter((j) => j.id !== oldId && j.id !== job.id)
-  all.push(job)
-  const p = storePath()
-  mkdirSync(env.jobsDataDir, { recursive: true })
-  writeFileSync(
-    p,
-    all.map((j) => JSON.stringify(j)).join('\n') + (all.length ? '\n' : ''),
-    'utf8',
-  )
+  const before = readAll()
+  jobsLog.rewrite([...before.filter((j) => j.id !== job.id), job])
 
-  const aliases = readAliases()
-  aliases[oldId] = job.id
-  for (const [k, v] of Object.entries(aliases)) {
-    if (v === oldId) aliases[k] = job.id
+  try {
+    aliasStore.transaction((aliases) => {
+      aliases[oldId] = job.id
+      for (const [k, v] of Object.entries(aliases)) {
+        if (v === oldId) aliases[k] = job.id
+      }
+    })
+  } catch (error) {
+    jobsLog.rewrite(before)
+    throw error
   }
-  writeAliases(aliases)
+
+  jobsLog.rewrite([...before.filter((j) => j.id !== oldId && j.id !== job.id), job])
 
   const oldLog = jobsLogPath(oldId)
   const newLog = jobsLogPath(job.id)
-  if (oldLog !== newLog && existsSync(oldLog)) {
-    try {
-      renameSync(oldLog, newLog)
-    } catch {
-      /* keep old path; log_ref on job should already point at newLog */
-    }
+  if (oldLog === newLog || !logs.exists(oldLog)) return { logRenamed: false }
+  try {
+    logs.rename(oldLog, newLog)
+    return { logRenamed: true }
+  } catch {
+    return { logRenamed: false }
   }
 }
 

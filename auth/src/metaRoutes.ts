@@ -1,6 +1,6 @@
 import type { Context, Hono } from 'hono'
 import { createHash } from 'node:crypto'
-import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
+import { actorFromUser } from './audit.js'
 import { getNamespace } from './authzNamespaceStore.js'
 import { env } from './env.js'
 import { getJob } from './jobsStore.js'
@@ -32,9 +32,7 @@ import {
 } from './metaTypes.js'
 import type { SessionUser } from './session.js'
 import { getSessionRecord } from './sessionsStore.js'
-import { authenticateRequest } from './requireAuth.js'
-
-type Authed = { user: SessionUser; via: AuditVia }
+import { guarded, type GuardArgs } from './routeGuard.js'
 
 export const lookup: MetaAuthzDeps = {
   sessionOwner: (id) => {
@@ -113,10 +111,13 @@ function ctxFor(user: SessionUser, candidates: EntityRef[]): SearchCtx {
   }
 }
 
-function fail(c: Context, err: unknown) {
-  if (err instanceof MetaError) return c.json({ error: err.message }, err.status)
-  throw err
+/** Route-family error shape: a MetaError answers its own status. */
+function metaError(err: unknown, c: Context): Response | null {
+  return err instanceof MetaError ? c.json({ error: err.message }, err.status) : null
 }
+
+const readPolicy = { allowScoped: true, fail: metaError } as const
+const writePolicy = { ...readPolicy, body: 'json', invalidBody: 'Invalid JSON' } as const
 
 function refFromQuery(c: Context): { type: string; id: string } | null {
   const type = c.req.query('type')
@@ -189,20 +190,14 @@ function parseSearch(c: Context): MetaSearchQuery {
   }
 }
 
-function auditMeta(
-  a: Authed,
-  c: Context,
+function metaAudit(
+  audit: GuardArgs['audit'],
   action: string,
   ref: EntityRef | null,
   message: string,
   detail: Record<string, unknown>,
 ) {
-  appendAudit({
-    actor: actorFromUser(a.user),
-    via: a.via,
-    method: c.req.method,
-    path: c.req.path,
-    status: 200,
+  audit({
     action,
     ...(ref?.namespace ? { namespace: ref.namespace } : {}),
     ...(ref?.repo ? { repo: ref.repo } : {}),
@@ -212,178 +207,120 @@ function auditMeta(
 }
 
 export function registerMetaRoutes(app: Hono) {
-  app.get('/auth/meta', async (c) => {
-    const authed = await authenticateRequest(c, { allowScoped: true })
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
+  app.get('/auth/meta', guarded(readPolicy, async ({ c, user }) => {
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
-    try {
-      const ref = await resolveRef(q.type, q.id, queryScope(c))
-      if (!canReadEntity(authed.user, ref, lookup)) {
-        return c.json({ error: 'Forbidden' }, 403)
-      }
-      if (c.req.query('trace')) throw new MetaError(400, 'Metadata inheritance traces are no longer supported')
-      const eff = resolveEffective(ref, getOwnRecord)
-      return c.json({
-        ref,
-        revision: getRevision(ref),
-        version: metadataVersion(ref),
-        own: eff.own,
-        effective: eff.effective,
-        canEdit: canEditEntity(authed.user, ref, lookup),
-      })
-    } catch (err) {
-      return fail(c, err)
+    const ref = await resolveRef(q.type, q.id, queryScope(c))
+    if (!canReadEntity(user, ref, lookup)) {
+      return c.json({ error: 'Forbidden' }, 403)
     }
-  })
+    if (c.req.query('trace')) throw new MetaError(400, 'Metadata inheritance traces are no longer supported')
+    const eff = resolveEffective(ref, getOwnRecord)
+    return c.json({
+      ref,
+      revision: getRevision(ref),
+      version: metadataVersion(ref),
+      own: eff.own,
+      effective: eff.effective,
+      canEdit: canEditEntity(user, ref, lookup),
+    })
+  }))
 
   // Bulk explicit metadata for list views; unknown or unreadable entities are omitted.
-  app.post('/auth/meta/batch', async (c) => {
-    const authed = await authenticateRequest(c, { allowScoped: true })
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
-    let body: { refs?: { type?: string; id?: string; scope?: EntityRef['scope'] }[] }
-    try {
-      body = (await c.req.json()) as typeof body
-    } catch {
-      return c.json({ error: 'Invalid JSON' }, 400)
-    }
+  app.post('/auth/meta/batch', guarded(writePolicy, async ({ c, user, body: raw }) => {
+    const body = raw as { refs?: { type?: string; id?: string; scope?: EntityRef['scope'] }[] }
     const refs = Array.isArray(body.refs) ? body.refs.slice(0, 200) : []
     const items: Record<string, unknown> = {}
     for (const r of refs) {
       if (!r?.type || !r.id) continue
       try {
         const ref = await resolveRef(r.type, r.id, r.scope)
-        if (!canReadEntity(authed.user, ref, lookup)) continue
+        if (!canReadEntity(user, ref, lookup)) continue
         items[refKey(ref)] = resolveEffective(ref, getOwnRecord).effective
       } catch (err) {
-        if (!(err instanceof MetaError && [400, 403, 404].includes(err.status))) return fail(c, err)
+        if (!(err instanceof MetaError && [400, 403, 404].includes(err.status))) throw err
       }
     }
     return c.json({ items })
-  })
+  }))
 
-  const write = async (c: Context) => {
-    const authed = await authenticateRequest(c, { allowScoped: true })
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
-    let body: Record<string, unknown>
-    try {
-      body = (await c.req.json()) as Record<string, unknown>
-    } catch {
-      return c.json({ error: 'Invalid JSON' }, 400)
-    }
+  const write = guarded(writePolicy, async ({ c, user, body, audit }) => {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: 'Metadata body must be an object' }, 400)
     const r = body.ref as { type?: string; id?: string; scope?: EntityRef['scope'] } | undefined
     if (!r?.type || !r.id) return c.json({ error: 'ref.type and ref.id are required' }, 400)
-    try {
-      const ref = await resolveRef(r.type, r.id, r.scope)
-      if (!canEditEntity(authed.user, ref, lookup)) {
-        return c.json({ error: 'Forbidden: cannot edit metadata on this entity' }, 403)
-      }
-      for (const field of ['inherit', 'propagation', 'removeTags', 'unset']) {
-        if (Object.hasOwn(body, field)) throw new MetaError(422, `${field} is no longer supported; metadata is explicit-only`)
-      }
-      const patch: MetaPatch = {
-        tags: body.tags as MetaPatch['tags'],
-        labels: body.labels as MetaPatch['labels'],
-      }
-      checkVersion(ref, body.ifVersion)
-      const ifRevision =
-        typeof body.ifRevision === 'number' ? body.ifRevision : undefined
-      if (body.ifRevision !== undefined && (typeof ifRevision !== 'number' || !Number.isSafeInteger(ifRevision) || ifRevision < 0)) throw new MetaError(400, 'ifRevision must be a nonnegative integer')
-      const actor = actorFromUser(authed.user)
-      const prev = getOwnRecord(ref)
-      const next = buildRecord(ref, prev, patch, actor)
-      const { before, after } = putOwnRecord(ref, patch, actor, ifRevision)
-      auditMeta(
-        authed,
-        c,
-        'meta.set',
-        ref,
-        `Updated metadata on ${ref.type} ${ref.id}`,
-        {
-          entity_type: ref.type,
-          entity_id: ref.id,
-          revision: after?.revision ?? next.revision,
-          changed: diff(before, after),
-        },
-      )
-      return c.json({ ok: true, own: after, revision: getRevision(ref) })
-    } catch (err) {
-      return fail(c, err)
+    const ref = await resolveRef(r.type, r.id, r.scope)
+    if (!canEditEntity(user, ref, lookup)) {
+      return c.json({ error: 'Forbidden: cannot edit metadata on this entity' }, 403)
     }
-  }
+    for (const field of ['inherit', 'propagation', 'removeTags', 'unset']) {
+      if (Object.hasOwn(body, field)) throw new MetaError(422, `${field} is no longer supported; metadata is explicit-only`)
+    }
+    const patch: MetaPatch = {
+      tags: body.tags as MetaPatch['tags'],
+      labels: body.labels as MetaPatch['labels'],
+    }
+    checkVersion(ref, body.ifVersion)
+    const ifRevision =
+      typeof body.ifRevision === 'number' ? body.ifRevision : undefined
+    if (body.ifRevision !== undefined && (typeof ifRevision !== 'number' || !Number.isSafeInteger(ifRevision) || ifRevision < 0)) throw new MetaError(400, 'ifRevision must be a nonnegative integer')
+    const actor = actorFromUser(user)
+    const prev = getOwnRecord(ref)
+    const next = buildRecord(ref, prev, patch, actor)
+    const { before, after } = putOwnRecord(ref, patch, actor, ifRevision)
+    metaAudit(audit, 'meta.set', ref, `Updated metadata on ${ref.type} ${ref.id}`, {
+      entity_type: ref.type,
+      entity_id: ref.id,
+      revision: after?.revision ?? next.revision,
+      changed: diff(before, after),
+    })
+    return c.json({ ok: true, own: after, revision: getRevision(ref) })
+  })
   app.put('/auth/meta', write)
   app.patch('/auth/meta', write)
 
-  app.delete('/auth/meta', async (c) => {
-    const authed = await authenticateRequest(c, { allowScoped: true })
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
+  app.delete('/auth/meta', guarded(readPolicy, async ({ c, user, audit }) => {
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
-    try {
-      const ref = await resolveRef(q.type, q.id, queryScope(c))
-      if (!canEditEntity(authed.user, ref, lookup)) {
-        return c.json({ error: 'Forbidden: cannot edit metadata on this entity' }, 403)
-      }
-      checkVersion(ref, c.req.query('ifVersion'))
-      const rawRevision = c.req.query('ifRevision')
-      const revision = rawRevision === undefined ? undefined : Number(rawRevision)
-      if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 0)) throw new MetaError(400, 'ifRevision must be a nonnegative integer')
-      const { before } = deleteOwnRecord(ref, actorFromUser(authed.user), revision)
-      if (before) {
-        auditMeta(
-          authed,
-          c,
-          'meta.delete',
-          ref,
-          `Removed metadata from ${ref.type} ${ref.id}`,
-          {
-            entity_type: ref.type,
-            entity_id: ref.id,
-            revision: getRevision(ref),
-            changed: diff(before, null),
-          },
-        )
-      }
-      return c.json({ ok: true, removed: !!before, revision: getRevision(ref) })
-    } catch (err) {
-      return fail(c, err)
+    const ref = await resolveRef(q.type, q.id, queryScope(c))
+    if (!canEditEntity(user, ref, lookup)) {
+      return c.json({ error: 'Forbidden: cannot edit metadata on this entity' }, 403)
     }
-  })
-
-  app.get('/auth/meta/history', async (c) => {
-    const authed = await authenticateRequest(c, { allowScoped: true })
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
-    const q = refFromQuery(c)
-    if (!q) return c.json({ error: 'type and id are required' }, 400)
-    try {
-      const ref = parseRef(q.type, q.id, queryScope(c))
-      const full = ref.type === 'job' ? await resolveRef(q.type, q.id).catch(() => ref) : ref
-      if (!canReadEntity(authed.user, full, lookup)) {
-        return c.json({ error: 'Forbidden' }, 403)
-      }
-      return c.json({ history: listHistory(ref) })
-    } catch (err) {
-      return fail(c, err)
-    }
-  })
-
-  app.get('/auth/meta/search', async (c) => {
-    const authed = await authenticateRequest(c, { allowScoped: true })
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
-    try {
-      const query = parseSearch(c)
-      const res = searchMeta(query, ctxFor(authed.user, await searchCandidates()))
-      return c.json({
-        hits: res.hits,
-        nextCursor: res.nextCursor,
-        total: res.total,
-        facets: res.facets,
-        coverage,
+    checkVersion(ref, c.req.query('ifVersion'))
+    const rawRevision = c.req.query('ifRevision')
+    const revision = rawRevision === undefined ? undefined : Number(rawRevision)
+    if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 0)) throw new MetaError(400, 'ifRevision must be a nonnegative integer')
+    const { before } = deleteOwnRecord(ref, actorFromUser(user), revision)
+    if (before) {
+      metaAudit(audit, 'meta.delete', ref, `Removed metadata from ${ref.type} ${ref.id}`, {
+        entity_type: ref.type,
+        entity_id: ref.id,
+        revision: getRevision(ref),
+        changed: diff(before, null),
       })
-    } catch (err) {
-      return fail(c, err)
     }
-  })
+    return c.json({ ok: true, removed: !!before, revision: getRevision(ref) })
+  }))
 
+  app.get('/auth/meta/history', guarded(readPolicy, async ({ c, user }) => {
+    const q = refFromQuery(c)
+    if (!q) return c.json({ error: 'type and id are required' }, 400)
+    const ref = parseRef(q.type, q.id, queryScope(c))
+    const full = ref.type === 'job' ? await resolveRef(q.type, q.id).catch(() => ref) : ref
+    if (!canReadEntity(user, full, lookup)) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    return c.json({ history: listHistory(ref) })
+  }))
+
+  app.get('/auth/meta/search', guarded(readPolicy, async ({ c, user }) => {
+    const query = parseSearch(c)
+    const res = searchMeta(query, ctxFor(user, await searchCandidates()))
+    return c.json({
+      hits: res.hits,
+      nextCursor: res.nextCursor,
+      total: res.total,
+      facets: res.facets,
+      coverage,
+    })
+  }))
 }

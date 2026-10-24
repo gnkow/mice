@@ -1,6 +1,7 @@
 import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
 import { setRepoCollaborator } from './authzCollaboratorStore.js'
-import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin } from './authzInstanceStore.js'
+import { decideInstanceAction } from './authz.js'
+import { isAuthzEnforce } from './authzInstanceStore.js'
 import { ensureNamespaceForCreate } from './authzNamespaceStore.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
 import type { SessionUser } from './session.js'
@@ -49,7 +50,7 @@ export async function filterNamespaceCatalog(
 
 /** After a successful repo create: seed the AuthZ namespace (privileged callers) and make the creator repo Admin. */
 export function seedRepoCreate(user: SessionUser, namespace: string, repo: string): void {
-  if (isInstanceAdmin(user) || hasInstancePermission(user, 'create_namespace')) {
+  if (decideInstanceAction(user, 'namespace.create').allow) {
     ensureNamespaceForCreate(user, namespace, 'none')
   }
   void setRepoCollaborator(namespace, repo, user, 'admin')

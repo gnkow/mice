@@ -13,7 +13,7 @@ process.env.AUTHZ_GROUP_BOOTSTRAP = JSON.stringify({
 })
 
 const { Hono } = await import('hono')
-const { authenticate, authenticateUser, authenticateRequest, onAuthenticated } = await import('./requireAuth.js')
+const { authenticate, authenticateUser, authenticateRequest, setAuthenticationObserver } = await import('./requireAuth.js')
 type Policy = NonNullable<Parameters<typeof authenticate>[1]>
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
@@ -77,9 +77,9 @@ describe('authenticate', () => {
     assert.equal((await app.request('/x', { method: 'POST', headers: bearer(token) })).status, 200)
   })
 
-  it('authenticateUser records authVia and runs onAuthenticated hooks', async () => {
+  it('authenticateUser records authVia and notifies the observer', async () => {
     const seen: string[] = []
-    onAuthenticated((u) => seen.push(u.sub))
+    const restore = setAuthenticationObserver((u) => seen.push(u.sub))
     const { token } = createPat(mk('h'), 'h')
     const app = new Hono()
     app.get('/x', async (c) => {
@@ -88,6 +88,7 @@ describe('authenticate', () => {
     })
     assert.deepEqual(await (await app.request('/x', { headers: bearer(token) })).json(), { sub: 'h', via: 'pat' })
     assert.deepEqual(seen, ['h'])
+    restore()
     assert.equal((await (await app.request('/x')).json() as { sub: unknown }).sub, null)
   })
 

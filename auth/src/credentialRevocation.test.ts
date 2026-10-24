@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { fakeClock, useClock } from './clock.js'
 
 process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-revoke-'))
 process.env.SESSION_SECRET = 'test-session-secret-for-revoke'
@@ -51,15 +52,16 @@ describe('session revocation', () => {
     const victim = mk('pat-victim')
     const { token: old } = createPat(victim, 'old')
     assert.ok(resolvePat(old))
-    const realNow = Date.now
+    const clock = fakeClock(Date.now())
+    const restore = useClock(clock)
     try {
       adminRevoke(admin, victim)
       assert.equal(resolvePat(old), null)
-      Date.now = () => realNow() + 2000
+      clock.advance(2000)
       const { token: fresh } = createPat(victim, 'fresh')
       assert.ok(resolvePat(fresh))
     } finally {
-      Date.now = realNow
+      restore()
     }
   })
 })
@@ -85,17 +87,17 @@ describe('two cut-offs', () => {
 
   it('never lowers an existing cut-off', () => {
     const who = mk('monotonic')
-    const realNow = Date.now
+    const clock = fakeClock(10_000_000)
+    const restore = useClock(clock)
     try {
-      Date.now = () => 10_000_000
       const high = revokeSessionsFor(who)
-      Date.now = () => 5_000_000
+      clock.set(5_000_000)
       revokeSessionsFor(who)
       revokeSessionsOnlyFor(who)
       assert.equal(isCredentialRevoked(who, 9_999, 'pat'), true)
       assert.equal(isCredentialRevoked(who, high + 1, 'session'), false)
     } finally {
-      Date.now = realNow
+      restore()
     }
   })
 

@@ -101,7 +101,7 @@ All print JSON (audit export prints CSV text or writes `--out`). They require an
 
 README and the usage text say `MICE_HOME (default ~/.mice)`; credentials actually live under `~/.config/mice` and are not affected by `MICE_HOME` (doc drift, see §9).
 
-**Device flow server side** (`auth/src/cliDevice.ts`, routes in `auth/src/index.ts`): 10-minute device TTL, `interval` default, `slow_down` throttling, approve/deny need a browser session; `GET /auth/cli/device` redirects to `/cli/device` ([`web/src/pages/CliDevicePage.tsx`](../web/src/pages/CliDevicePage.tsx)). PATs are minted as `mice_pat_*` with `source: 'cli-login'` ([`auth/src/tokens.ts`](../auth/src/tokens.ts)); default 90-day expiry — details in [01-authentication.md](./01-authentication.md).
+**Device flow server side** (`auth/src/cliDevice.ts`, routes in [`auth/src/cliDeviceRoutes.ts`](../auth/src/cliDeviceRoutes.ts)): 10-minute device TTL, `interval` default, `slow_down` throttling, approve/deny need a browser session; `GET /auth/cli/device` redirects to `/cli/device` ([`web/src/pages/CliDevicePage.tsx`](../web/src/pages/CliDevicePage.tsx)). PATs are minted as `mice_pat_*` with `source: 'cli-login'` ([`auth/src/tokens.ts`](../auth/src/tokens.ts)); default 90-day expiry — details in [01-authentication.md](./01-authentication.md).
 
 ## 5. Output conventions and exit codes
 

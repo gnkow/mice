@@ -4,9 +4,10 @@ import { Hono, type Context } from 'hono'
 import nodemailer from 'nodemailer'
 import webpush from 'web-push'
 import type { AuditEvent } from './audit.js'
-import { authorizeRepoAction, hasRepoPermission } from './authz.js'
+import { authorizeRepoAction, decideInstanceAction, hasRepoPermission } from './authz.js'
+import { denialResponse } from './decisionHttp.js'
 import { isScopedCredential } from './principal.js'
-import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin } from './authzInstanceStore.js'
+import { isAuthzEnforce } from './authzInstanceStore.js'
 import { userCanSeeNamespace } from './authzVisibility.js'
 import { canReviewAccessRequests } from './accessRequests.js'
 import { getJob } from './jobsStore.js'
@@ -75,7 +76,7 @@ function authorized(user: SessionUser, event: NotificationEvent, personal: boole
   if (event.category === 'sessions' || event.resource?.type === 'session') {
     if (!event.owner) return false
     // Match private desktop API's owner/session_admin policy; repo readability is not sufficient.
-    return same(event.owner, user) || isInstanceAdmin(user) || hasInstancePermission(user, 'session_admin')
+    return same(event.owner, user) || decideInstanceAction(user, 'session.admin').allow
   }
   const r = event.resource
   if (r?.namespace && r.repo) {
@@ -555,7 +556,8 @@ export function registerNotificationRoutes(parent: Hono): void {
   })
   app.post(`${base}/announcements`, async (c) => {
     const user = await self(c)
-    if (!isInstanceAdmin(user)) return c.json({ error: 'Forbidden' }, 403)
+    const denied = denialResponse(c, decideInstanceAction(user, 'instance.admin'))
+    if (denied) return denied
     const body = await jsonBody(c) as { title?: unknown; summary?: unknown }
     if (!body || typeof body.title !== 'string' || typeof body.summary !== 'string' ||
         !body.title.trim() || !body.summary.trim() || body.title.length > 160 || body.summary.length > 1000) {

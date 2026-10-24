@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
+import { fakeClock, useClock } from './clock.js'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-tokens-'))
 process.env.AUTH_DATA_DIR = dataDir
@@ -118,12 +119,12 @@ describe('PAT expiry', () => {
   it('rejects an expired PAT', () => {
     const { token } = createPat(alice, 'short', { expiresInDays: 1 })
     assert.ok(resolvePat(token))
-    const realNow = Date.now
-    Date.now = () => realNow() + 2 * 86_400_000
+    const clock = fakeClock(Date.now() + 2 * 86_400_000)
+    const restore = useClock(clock)
     try {
       assert.equal(resolvePat(token), null)
     } finally {
-      Date.now = realNow
+      restore()
     }
   })
 
@@ -137,22 +138,22 @@ describe('PAT expiry', () => {
 
   it('debounces last-used writes to once a minute', () => {
     const { token, pat } = createPat(bob, 'debounce')
-    const realNow = Date.now
-    const t0 = realNow()
+    const t0 = Date.now()
+    const clock = fakeClock(t0)
+    const restore = useClock(clock)
     const lastUsed = () => listPatsForUser(bob).find((p) => p.id === pat.id)?.lastUsedAt
     try {
-      Date.now = () => t0
       resolvePat(token)
       const first = lastUsed()
       assert.equal(first, new Date(t0).toISOString())
-      Date.now = () => t0 + 10_000
+      clock.set(t0 + 10_000)
       resolvePat(token)
       assert.equal(lastUsed(), first)
-      Date.now = () => t0 + 61_000
+      clock.set(t0 + 61_000)
       resolvePat(token)
       assert.equal(lastUsed(), new Date(t0 + 61_000).toISOString())
     } finally {
-      Date.now = realNow
+      restore()
     }
   })
 
@@ -164,8 +165,7 @@ describe('PAT expiry', () => {
     const first = listPatsForUser(alice)
     const days = (Date.parse(first[0].expiresAt ?? '') - Date.now()) / 86_400_000
     assert.ok(days > 364.9 && days <= 365)
-    const realNow = Date.now
-    Date.now = () => realNow() + 10 * 86_400_000
+    const restore = useClock(fakeClock(Date.now() + 10 * 86_400_000))
     try {
       const second = listPatsForUser(alice)
       assert.deepEqual(
@@ -173,7 +173,7 @@ describe('PAT expiry', () => {
         first.map((p) => p.expiresAt).sort(),
       )
     } finally {
-      Date.now = realNow
+      restore()
     }
   })
 })

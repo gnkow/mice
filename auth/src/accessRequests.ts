@@ -9,8 +9,9 @@ import {
   type InstancePermission,
   type MemberRoleRef,
 } from './authzTypes.js'
-import { hasInstancePermission, instancePermissions, isInstanceAdmin, setInstancePermissions } from './authzInstanceStore.js'
-import { hasNamespaceCapability, namespacesWithCapability, setNamespaceMember } from './authzMembershipStore.js'
+import { decideAccessReview, decideInstanceAction, decideNamespaceAction } from './authz.js'
+import { instancePermissions, setInstancePermissions } from './authzInstanceStore.js'
+import { setNamespaceMember } from './authzMembershipStore.js'
 
 export type AccessRequest = {
   id: string
@@ -52,9 +53,7 @@ export function listAccessRequests(opts?: {
 }
 
 export function canReviewAccessRequests(actor: SessionUser): boolean {
-  if (isInstanceAdmin(actor)) return true
-  if (hasInstancePermission(actor, 'create_namespace')) return true
-  return namespacesWithCapability(actor, 'review_access_requests').length > 0
+  return decideAccessReview(actor).allow
 }
 
 export function submitAccessRequest(
@@ -109,15 +108,8 @@ export function resolveAccessRequest(
   }
 
   if (grant?.namespace && grant.role) {
-    if (
-      !isInstanceAdmin(actor) &&
-      !hasNamespaceCapability(grant.namespace, actor, 'review_access_requests')
-    ) {
-      return {
-        ok: false,
-        error: 'Not allowed to approve into that namespace',
-      }
-    }
+    const review = decideNamespaceAction(actor, grant.namespace, 'namespace.access.review')
+    if (!review.allow) return { ok: false, error: review.reason }
     const result = setNamespaceMember(
       grant.namespace,
       { sub: req.sub, iss: req.iss },
@@ -125,7 +117,8 @@ export function resolveAccessRequest(
     )
     if (!result.ok) return { ok: false, error: result.error }
   } else if (grant?.permission) {
-    if (!isInstanceAdmin(actor)) return { ok: false, error: 'Forbidden' }
+    const admin = decideInstanceAction(actor, 'instance.admin')
+    if (!admin.allow) return { ok: false, error: admin.reason }
     const perms = new Set(instancePermissions({ sub: req.sub, iss: req.iss }))
     perms.add(grant.permission)
     setInstancePermissions(
@@ -133,7 +126,7 @@ export function resolveAccessRequest(
       { sub: req.sub, iss: req.iss },
       [...perms],
     )
-  } else if (isInstanceAdmin(actor)) {
+  } else if (decideInstanceAction(actor, 'instance.admin').allow) {
     setInstancePermissions(actor, { sub: req.sub, iss: req.iss }, [
       'create_namespace',
     ])

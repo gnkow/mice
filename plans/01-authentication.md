@@ -274,7 +274,7 @@ The phases below are **proposed, not approved**; every item is unchecked. Order 
 
 - [x] Self-service "sign out everywhere" on Profile: reuses the per-principal cut-off for **sessions only**; PATs are untouched unless the user also chooses to revoke them. No per-device list (sessions are stateless)
 - [x] `GXP_STRICT` refuses to start when `SESSION_IDLE_SEC` is `0` (the startup gate states the rule; [04-gxp-compliance.md](./04-gxp-compliance.md) owns the value, GXP-R-005)
-- [x] One `isScopedCredential(user)` check (in `principal.ts` or `requireAuth.ts`) replaces the scattered `patScopes?.length` checks in `authz.ts`, `notifications.ts`, `favoritesRoutes.ts` and `index.ts`
+- [x] One `isScopedCredential(user)` check (in `principal.ts` or `requireAuth.ts`) replaces the scattered `patScopes?.length` checks in `authz.ts`, `notifications.ts`, `favoritesRoutes.ts` and the route modules
 - [x] Document PAT scopes in Settings and the CLI; confirm scopes can be set at mint time in UI and `mice`
 
 ### Phase 2.7 — id_token signature verification (proposed)

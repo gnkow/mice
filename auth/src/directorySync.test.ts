@@ -70,7 +70,7 @@ describe('directory sync', () => {
 
   it('lets an instance admin trigger a run and refuses others', async () => {
     let runs = 0
-    const route = makeDirectorySyncRoute(async () => { runs++; return { ok: true, checked: 0, revoked: [] } })
+    const route = makeDirectorySyncRoute(async () => { runs++; return { ok: true, checked: 0, revoked: [], incomplete: [] } })
     const guarded = new Hono()
     applyGlobalGuards(guarded)
     guarded.post('/sync', route)

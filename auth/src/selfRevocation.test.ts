@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, it } from 'node:test'
+import { after, describe, it } from 'node:test'
+import { fakeClock, useClock } from './clock.js'
 
 process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-selfrevoke-'))
 process.env.SESSION_SECRET = 'test-session-secret-for-selfrevoke'
@@ -33,6 +34,10 @@ const post = (headers: Record<string, string>, body: unknown = {}) =>
     body: JSON.stringify(body),
   })
 
+const clock = fakeClock(Date.now())
+const restoreClock = useClock(clock)
+after(restoreClock)
+
 describe('sign out everywhere', () => {
   it('ends other Sessions but keeps PATs by default', async () => {
     const { token } = createPat(mk('al'), 'cli')
@@ -44,7 +49,7 @@ describe('sign out everywhere', () => {
   })
 
   it('also revokes PATs when asked', async () => {
-    await new Promise((r) => setTimeout(r, 1100))
+    clock.advance(1100)
     const { token } = createPat(mk('bo'), 'cli')
     assert.equal((await post({ cookie: await cookie('bo') }, { includePats: true })).status, 200)
     const viaPat = await app.request('/whoami', { headers: { authorization: `Bearer ${token}` } })

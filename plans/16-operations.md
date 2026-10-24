@@ -55,7 +55,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 | `pats.json` | `tokens.ts` (`{version:1, tokens}`) | tmp + rename (own implementation; invalid shape → empty store) |
 | `session-revocations.json` | `credentialRevocation.ts` | `writeJsonFile` |
 | `cli-devices.json` | `cliDevice.ts` | store-local (not verified) |
-| `instance-admins.json`, `namespaces.json`, `namespace-members.json`, `repo-collaborators.json` | `authzStoreFiles.ts` (read/write) with `authzInstanceStore.ts`, `authzNamespaceStore.ts`, `authzMembershipStore.ts`, `authzCollaboratorStore.ts` | `writeJsonFile` read-modify-write; one-off `identityMigration.ts` rewrites them |
+| `instance-admins.json`, `namespaces.json`, `namespace-members.json`, `repo-collaborators.json` | `authzRepository.ts` (owns the documents) with `authzInstanceStore.ts`, `authzNamespaceStore.ts`, `authzMembershipStore.ts`, `authzCollaboratorStore.ts` | `writeJsonFile` read-modify-write; one-off `identityMigration.ts` rewrites them |
 | `custom-roles.json` | `customRoles.ts` | not verified |
 | `access-requests.json` | `accessRequests.ts` (`{version:1, requests}`) | `writeJsonFile` |
 | `announcements.json` | `announcementsStore.ts` | `writeJsonFile` |
@@ -76,7 +76,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 
 | Piece | Behaviour |
 | --- | --- |
-| Liveness | `GET /healthz` → `{ok:true}` ([`auth/src/index.ts`](../auth/src/index.ts)); static — does not check data dir, oxen upstream, or IdP. No readiness endpoint, no Compose `healthcheck:` on any service (Keycloak sets `KC_HEALTH_ENABLED` but it is unused) |
+| Liveness | `GET /healthz` → `{ok:true}` ([`auth/src/app.ts`](../auth/src/app.ts)); static — does not check data dir, oxen upstream, or IdP. No readiness endpoint, no Compose `healthcheck:` on any service (Keycloak sets `KC_HEALTH_ENABLED` but it is unused) |
 | Logging | `console.log`/`console.error` with `[mice-auth]` prefix; one startup line; unstructured, no request IDs, no levels, no access log |
 | Metrics / tracing | None found (no `/metrics`, no OpenTelemetry) |
 | Audit | Business audit trail is `audit.jsonl` ([03-audit.md](./03-audit.md)) — not an operational log |
@@ -94,8 +94,8 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 | Unit | `npm run test:unit` = auth (`auth/package.json` → `scripts/test-fail-fast.mjs --tsx --dir src`), CLI (`--dir cli/lib`), web; harness runs `node:test` files sequentially and stops at first failing file ([`scripts/test-fail-fast.mjs`](../scripts/test-fail-fast.mjs)) |
 | Typecheck | `npm run typecheck` in `auth/` (`tsc --noEmit`) |
 | E2E | Playwright ([`e2e/playwright.config.ts`](../e2e/playwright.config.ts)): chromium, `workers: 1`, `maxFailures: 1`, `retries` 1 only if `CI`; targets a **running** stack (`MICE_BASE_URL` default `http://localhost:5173`, `OXEN_URL` `:3001`); no `webServer` block — `make up` first. `make test-sessions` forces `SESSIONS_PROVISIONER=mock` |
-| Case catalog | README links `TESTS.md`, but **`TESTS.md` does not exist** at repo root |
-| CI | **No `.github/` directory**; no pipeline, no image build/publish, no lockfile/audit/SBOM checks |
+| Case catalog | README points at [`e2e/tests/`](../e2e/tests/) (no separate `TESTS.md`); deny paths live in `deny-paths.spec.ts` |
+| CI | [`.github/workflows/auth-tests.yml`](../.github/workflows/auth-tests.yml): auth typecheck + unit, web typecheck + unit, CLI unit; `e2e-deny-paths` runs only where the Compose stack is available (`vars.MICE_E2E_STACK`). No image build/publish, no lockfile/audit/SBOM checks |
 
 ## 3. Goals & non-goals
 
@@ -117,7 +117,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 
 ### Phase 1 — documentation and hygiene (proposed, not approved)
 
-- [ ] Create `TESTS.md` or remove the dead README link
+- [x] Remove the dead `TESTS.md` README link (README points at `e2e/tests/`)
 - [ ] Operator guide: env var reference grouped by concern, production checklist (`NODE_ENV=production`, `COOKIE_SECURE`, `AUTHZ_DEV_GRANT_ALL=false`, `NODE_TLS_REJECT_UNAUTHORIZED` unset, pinned `oxen-server` tag, Keycloak not in `start-dev`)
 - [ ] Extend production gate: reject `AUTHZ_DEV_GRANT_ALL=true`, `NODE_TLS_REJECT_UNAUTHORIZED=0`, default Keycloak admin
 - [ ] Fix non-atomic `upsertJob`/`rekeyJob`/alias writes in `jobsStore.ts` (reuse tmp+rename); decide fsync policy for `writeJsonFile`

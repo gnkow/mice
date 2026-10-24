@@ -29,7 +29,7 @@ Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md
 | Piece | Behavior |
 | --- | --- |
 | Auth BFF | Proxies `/api/*` with author injection ([`../auth/src/proxy.ts`](../auth/src/proxy.ts)) |
-| Identity | Session cookie or `mice_pat_*` ([`../auth/src/index.ts`](../auth/src/index.ts)) |
+| Identity | Session cookie or `mice_pat_*` ([`../auth/src/requireAuth.ts`](../auth/src/requireAuth.ts)) |
 | PAT store | `AUTH_DATA_DIR/pats.json` |
 | Audit | Append-only JSONL (`../auth/src/audit.ts`); query UI at `/audit`; AuthZ gates on `GET /auth/audit` |
 
@@ -102,7 +102,7 @@ Never log `Authorization`, cookies, or request body blobs.
 
 ## 5.1 BFF-native mutation actions
 
-Mutations handled directly by the auth BFF (not proxied to oxen) emit events via `auditMutation` in `auth/src/index.ts` (jobs and sessions emit from their own modules). Denied/failed attempts are recorded where they reveal privilege changes (`status` 400/403).
+Mutations handled directly by the auth BFF (not proxied to oxen) emit events via `auditMutation` in [`auth/src/auditMutation.ts`](../auth/src/auditMutation.ts), injected into the route modules by `createApp` in `auth/src/app.ts` (jobs and sessions emit from their own modules). Denied/failed attempts are recorded where they reveal privilege changes (`status` 400/403).
 
 | Area | Actions |
 | --- | --- |

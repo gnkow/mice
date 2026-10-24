@@ -61,8 +61,8 @@ latency, and provider acceptance separately; acceptance is not proof of delivery
 
 ## 3. Current integration surfaces
 
-- `auth/src/audit.ts`, `proxy.ts`, and `index.ts`: existing attributed mutation
-  events and BFF entry points. Audit classifications are useful input, not a
+- `auth/src/audit.ts`, `proxy.ts`, `auditMutation.ts`, and `app.ts`: existing attributed
+  mutation events and BFF entry points. Audit classifications are useful input, not a
   complete or reliable notification queue.
 - `auth/src/jobs.ts` and `sessions.ts`: asynchronous lifecycle transitions.
 - `auth/src/metaRoutes.ts`: tag/label changes.

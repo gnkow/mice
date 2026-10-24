@@ -1,14 +1,14 @@
 import { isPredefinedNsRole, normalizeGroup, parseUserKey, userKey, type MemberPrincipal, type MemberRoleRef, type NamespaceCapability, type NamespaceRole, type UserKey } from './authzTypes.js'
 import { getCustomNamespaceRole, isValidMemberRole } from './customRoles.js'
 import { isInstanceAdmin } from './authzInstanceStore.js'
-import { countNamespaceOwnersIn, readMembers, readNamespaces, sessionGroups, writeMembers } from './authzStoreFiles.js'
+import * as repo from './authzRepository.js'
 
 /** Direct user membership role ref (predefined or custom id). */
 export function getNamespaceRoleRef(
   ns: string,
   user: UserKey,
 ): MemberRoleRef | null {
-  return readMembers().members[ns]?.[userKey(user)] ?? null
+  return repo.membersSnapshot().members[ns]?.[userKey(user)] ?? null
 }
 
 /** @deprecated Prefer getNamespaceRoleRef; returns only predefined owner/member. */
@@ -28,8 +28,8 @@ function membershipRoleRefs(
   const out: MemberRoleRef[] = []
   const direct = getNamespaceRoleRef(ns, user)
   if (direct) out.push(direct)
-  const map = readMembers().groupMembers?.[ns] ?? {}
-  for (const g of sessionGroups(user)) {
+  const map = repo.membersSnapshot().groupMembers?.[ns] ?? {}
+  for (const g of repo.sessionGroups(user)) {
     const r = map[g]
     if (r) out.push(r)
   }
@@ -91,14 +91,14 @@ export function namespacesWithCapability(
   cap: NamespaceCapability,
 ): string[] {
   const out: string[] = []
-  for (const ns of Object.keys(readNamespaces().namespaces)) {
+  for (const ns of Object.keys(repo.namespacesSnapshot().namespaces)) {
     if (hasNamespaceCapability(ns, user, cap)) out.push(ns)
   }
   return out.sort()
 }
 
 export function isCustomNamespaceRoleAssigned(ns: string, roleId: string): boolean {
-  const members = readMembers()
+  const members = repo.membersSnapshot()
   for (const r of Object.values(members.members[ns] ?? {})) {
     if (r === roleId) return true
   }
@@ -109,7 +109,7 @@ export function isCustomNamespaceRoleAssigned(ns: string, roleId: string): boole
 }
 
 export function listNamespaceMembers(ns: string): MemberPrincipal[] {
-  const store = readMembers()
+  const store = repo.membersSnapshot()
   const users = Object.entries(store.members[ns] ?? {}).map(([key, role]) => {
     const u = parseUserKey(key)
     return { kind: 'user' as const, ...u, role }
@@ -128,40 +128,14 @@ export function setNamespaceMember(
   if (!isValidMemberRole(ns, role)) {
     return { ok: false, error: 'Invalid role' }
   }
-  const members = readMembers()
-  if (!readNamespaces().namespaces[ns]) {
-    return { ok: false, error: 'Namespace not found' }
-  }
-  if (!members.members[ns]) members.members[ns] = {}
-  if (!members.groupMembers) members.groupMembers = {}
-  const map = members.members[ns]
-  const key = userKey(target)
-  const prev = map[key]
-  map[key] = role
-  if (prev === 'owner' && role !== 'owner') {
-    if (countNamespaceOwnersIn(members, ns) === 0) {
-      map[key] = 'owner'
-      return { ok: false, error: 'Cannot demote the last namespace Owner' }
-    }
-  }
-  writeMembers(members)
-  return { ok: true }
+  return repo.setMember(ns, userKey(target), role)
 }
 
 export function removeNamespaceMember(
   ns: string,
   target: UserKey,
 ): { ok: true } | { ok: false; error: string } {
-  const members = readMembers()
-  const map = members.members[ns]
-  if (!map) return { ok: false, error: 'Namespace not found' }
-  const key = userKey(target)
-  if (map[key] === 'owner' && countNamespaceOwnersIn(members, ns) <= 1) {
-    return { ok: false, error: 'Cannot remove the last namespace Owner' }
-  }
-  delete map[key]
-  writeMembers(members)
-  return { ok: true }
+  return repo.removeMember(ns, userKey(target))
 }
 
 export function setNamespaceGroupMember(
@@ -174,39 +148,12 @@ export function setNamespaceGroupMember(
   }
   const g = normalizeGroup(group)
   if (!g) return { ok: false, error: 'Group name required' }
-  const members = readMembers()
-  if (!readNamespaces().namespaces[ns]) {
-    return { ok: false, error: 'Namespace not found' }
-  }
-  if (!members.groupMembers) members.groupMembers = {}
-  if (!members.groupMembers[ns]) members.groupMembers[ns] = {}
-  const map = members.groupMembers[ns]
-  const prev = map[g]
-  map[g] = role
-  if (
-    prev === 'owner' &&
-    role !== 'owner' &&
-    countNamespaceOwnersIn(members, ns) === 0
-  ) {
-    map[g] = 'owner'
-    return { ok: false, error: 'Cannot demote the last namespace Owner' }
-  }
-  writeMembers(members)
-  return { ok: true }
+  return repo.setGroupMember(ns, g, role)
 }
 
 export function removeNamespaceGroupMember(
   ns: string,
   group: string,
 ): { ok: true } | { ok: false; error: string } {
-  const g = normalizeGroup(group)
-  const members = readMembers()
-  const map = members.groupMembers?.[ns]
-  if (!map || !map[g]) return { ok: false, error: 'Group member not found' }
-  if (map[g] === 'owner' && countNamespaceOwnersIn(members, ns) <= 1) {
-    return { ok: false, error: 'Cannot remove the last namespace Owner' }
-  }
-  delete map[g]
-  writeMembers(members)
-  return { ok: true }
+  return repo.removeGroupMember(ns, normalizeGroup(group))
 }

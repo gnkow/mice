@@ -66,7 +66,7 @@ Cross-cutting UI libs: [`lastBranch.ts`](../web/src/lib/lastBranch.ts) (remember
 | `POST .../rename`, `POST .../transfer` | `other` (no dedicated action) | `admin` via the unknown-mutating fallback |
 | `POST /api/namespaces` | `namespace.create` | namespace-level check |
 
-Namespace create/delete/settings/membership are audited from the AuthZ endpoints in [`auth/src/index.ts`](../auth/src/index.ts) (`namespace.create`, `namespace.settings.update`, `namespace.delete`, `namespace.member.*`); labels in [`auditLabels.ts`](../auth/src/auditLabels.ts).
+Namespace create/delete/settings/membership are audited from the AuthZ endpoints in [`auth/src/namespaceRoutes.ts`](../auth/src/namespaceRoutes.ts) (`namespace.create`, `namespace.settings.update`, `namespace.delete`, `namespace.member.*`); labels in [`auditLabels.ts`](../auth/src/auditLabels.ts).
 
 ### 2.2 CLI and e2e
 

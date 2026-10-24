@@ -2,36 +2,36 @@ import type { SessionUser } from './session.js'
 import { can } from './principal.js'
 import { env } from './env.js'
 import { ALL_INSTANCE_PERMISSIONS, parseUserKey, userKey, type InstancePermission, type UserKey } from './authzTypes.js'
-import { matchesBootstrap, readInstance, writeInstance } from './authzStoreFiles.js'
+import { instanceSnapshot, matchesBootstrap, updateInstance } from './authzRepository.js'
 
 /** Effective enforce: always on in production; else env override, else store flag. */
 export function isAuthzEnforce(): boolean {
   if (process.env.NODE_ENV === 'production') return true
   if (env.authzEnforce === 'true') return true
   if (env.authzEnforce === 'false') return false
-  return readInstance().enforce
+  return instanceSnapshot().enforce
 }
 
 export function setAuthzEnforce(enforce: boolean): void {
-  const s = readInstance()
-  s.enforce = enforce
-  writeInstance(s)
+  updateInstance((s) => {
+    s.enforce = enforce
+  })
 }
 
 export function isInstanceAdmin(user: UserKey): boolean {
   if (!can(user, 'canBeAdmin')) return false
-  return readInstance().admins.includes(userKey(user))
+  return instanceSnapshot().admins.includes(userKey(user))
 }
 
 export function listInstanceAdmins(): UserKey[] {
-  return readInstance().admins.map(parseUserKey)
+  return instanceSnapshot().admins.map(parseUserKey)
 }
 
 export function instancePermissions(user: UserKey): InstancePermission[] {
   if (isInstanceAdmin(user)) {
     return [...ALL_INSTANCE_PERMISSIONS]
   }
-  return readInstance().permissions[userKey(user)] ?? []
+  return instanceSnapshot().permissions[userKey(user)] ?? []
 }
 
 export function hasInstancePermission(
@@ -46,12 +46,12 @@ export function hasInstancePermission(
  * AUTHZ_BOOTSTRAP_ADMINS. Enables enforce when env does not force false.
  */
 export function maybeBootstrapInstanceAdmin(user: SessionUser): boolean {
-  const s = readInstance()
-  if (s.admins.length > 0) return false
+  if (instanceSnapshot().admins.length > 0) return false
   if (!matchesBootstrap(user)) return false
-  s.admins.push(userKey(user))
-  if (env.authzEnforce !== 'false') s.enforce = true
-  writeInstance(s)
+  updateInstance((s) => {
+    s.admins.push(userKey(user))
+    if (env.authzEnforce !== 'false') s.enforce = true
+  })
   return true
 }
 
@@ -61,20 +61,20 @@ export function maybeBootstrapInstanceAdmin(user: SessionUser): boolean {
  */
 export function maybeDevGrantAll(user: SessionUser): void {
   if (!env.authzDevGrantAll) return
-  const s = readInstance()
   const key = userKey(user)
-  if (s.admins.includes(key)) return
-  s.admins.push(key)
-  writeInstance(s)
+  if (instanceSnapshot().admins.includes(key)) return
+  updateInstance((s) => {
+    s.admins.push(key)
+  })
 }
 
 export function addInstanceAdmin(actor: UserKey, target: UserKey): { ok: true } | { ok: false; error: string } {
   if (!isInstanceAdmin(actor)) return { ok: false, error: 'Forbidden' }
   if (!can(target, 'canBeAdmin')) return { ok: false, error: 'A service principal cannot be an instance admin' }
-  const s = readInstance()
   const key = userKey(target)
-  if (!s.admins.includes(key)) s.admins.push(key)
-  writeInstance(s)
+  updateInstance((s) => {
+    if (!s.admins.includes(key)) s.admins.push(key)
+  })
   return { ok: true }
 }
 
@@ -83,12 +83,13 @@ export function removeInstanceAdmin(
   target: UserKey,
 ): { ok: true } | { ok: false; error: string } {
   if (!isInstanceAdmin(actor)) return { ok: false, error: 'Forbidden' }
-  const s = readInstance()
-  if (s.admins.length <= 1 && s.admins.includes(userKey(target))) {
+  const { admins } = instanceSnapshot()
+  if (admins.length <= 1 && admins.includes(userKey(target))) {
     return { ok: false, error: 'Cannot remove the last instance admin' }
   }
-  s.admins = s.admins.filter((k) => k !== userKey(target))
-  writeInstance(s)
+  updateInstance((s) => {
+    s.admins = s.admins.filter((k) => k !== userKey(target))
+  })
   return { ok: true }
 }
 
@@ -112,20 +113,19 @@ export function writeInstancePermissions(
   target: UserKey,
   perms: InstancePermission[],
 ): void {
-  const s = readInstance()
   const key = userKey(target)
   const cleaned = [
     ...new Set(perms.filter((p) => ALL_INSTANCE_PERMISSIONS.includes(p))),
   ]
-  if (cleaned.length === 0) delete s.permissions[key]
-  else s.permissions[key] = cleaned
-  writeInstance(s)
+  updateInstance((s) => {
+    if (cleaned.length === 0) delete s.permissions[key]
+    else s.permissions[key] = cleaned
+  })
 }
 
 /** Users who completed training (Phase 3 gate). */
 export function hasCompletedTraining(user: UserKey): boolean {
-  const s = readInstance()
-  return (s.training ?? []).includes(userKey(user))
+  return (instanceSnapshot().training ?? []).includes(userKey(user))
 }
 
 export function setTrainingCompleted(
@@ -144,12 +144,12 @@ export function setTrainingCompletedSelf(user: UserKey, done: boolean): void {
 }
 
 function writeTraining(target: UserKey, done: boolean): void {
-  const s = readInstance()
-  const set = new Set(s.training ?? [])
-  if (done) set.add(userKey(target))
-  else set.delete(userKey(target))
-  s.training = [...set]
-  writeInstance(s)
+  updateInstance((s) => {
+    const set = new Set(s.training ?? [])
+    if (done) set.add(userKey(target))
+    else set.delete(userKey(target))
+    s.training = [...set]
+  })
 }
 
 export function listInstancePermissionGrants(): Array<{
@@ -157,7 +157,7 @@ export function listInstancePermissionGrants(): Array<{
   iss: string
   permissions: InstancePermission[]
 }> {
-  return Object.entries(readInstance().permissions).map(([key, permissions]) => {
+  return Object.entries(instanceSnapshot().permissions).map(([key, permissions]) => {
     const u = parseUserKey(key)
     return { sub: u.sub, iss: u.iss, permissions }
   })

@@ -19,7 +19,7 @@ const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub 
 maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
 
 const app = new Hono()
-registerServicePrincipalRoutes(app, { audit: () => {} })
+registerServicePrincipalRoutes(app)
 const cookie = async (sub: string) => `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) })}`
 const call = async (as: string | null, method: string, path: string, body?: unknown) =>
   app.request(path, {

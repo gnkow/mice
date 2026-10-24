@@ -1,3 +1,5 @@
+import { parseAuthzMe, type AuthzMe } from './authzContract'
+
 export type AuthUser = {
   sub: string
   iss: string
@@ -25,26 +27,7 @@ export async function fetchAuthMe(signal?: AbortSignal): Promise<AuthMe> {
   return (await res.json()) as AuthMe
 }
 
-export type AuthzInstancePermission =
-  | 'create_namespace'
-  | 'view_audit'
-  | 'view_lineage'
-  | 'manage_own_tokens'
-  | 'cli_device_approve'
-  | 'session_create'
-  | 'session_connect'
-  | 'session_admin'
-
-export type AuthzMe = {
-  enforce: boolean
-  pending: boolean
-  instanceAdmin: boolean
-  permissions: Record<AuthzInstancePermission, boolean>
-  instancePermissionCatalog?: AuthzInstancePermission[]
-  hasAnyGrant: boolean
-  trainingCompleted?: boolean
-  requireTraining?: boolean
-}
+export type { AuthzMe, InstancePermission as AuthzInstancePermission } from './authzContract'
 
 export async function fetchAuthzMe(signal?: AbortSignal): Promise<AuthzMe | null> {
   const res = await fetch('/auth/me/authz', {
@@ -52,7 +35,7 @@ export async function fetchAuthzMe(signal?: AbortSignal): Promise<AuthzMe | null
     signal,
   })
   if (!res.ok) return null
-  return (await res.json()) as AuthzMe
+  return parseAuthzMe(await res.json())
 }
 
 export async function logout(): Promise<LogoutResult> {

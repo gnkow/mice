@@ -10,6 +10,7 @@ import {
   roleAtLeast,
   type BasePermission,
   type InstancePermission,
+  type NamespaceCapability,
   type RepoRole,
 } from './authzTypes.js'
 import type { SessionUser } from './session.js'
@@ -23,6 +24,24 @@ import {
   getCustomNamespaceRole,
   getCustomRepoRole,
 } from './customRoles.js'
+
+/** The one shape every authorization decision resolves to; routes only translate it to HTTP. */
+export interface Decision {
+  allow: boolean
+  status: number
+  reason: string
+}
+
+const ALLOWED: Decision = Object.freeze({ allow: true, status: 200, reason: 'ok' })
+
+function denied(reason: string, status = 403): Decision {
+  return { allow: false, status, reason }
+}
+
+/** The scoped-credential rule: a scoped credential (PAT scopes, service principal) never gets instance-admin power. */
+export function isUnscopedInstanceAdmin(user: SessionUser): boolean {
+  return !isScopedCredential(user) && isInstanceAdmin(user)
+}
 
 export type AuthzDecision = {
   allow: boolean
@@ -53,9 +72,7 @@ export function preparePrincipal(user: SessionUser): void {
 }
 
 export function canSkipPendingGate(user: SessionUser): boolean {
-  if (isInstanceAdmin(user)) return true
-  if (hasInstancePermission(user, 'create_namespace')) return true
-  return false
+  return decideInstanceAction(user, 'namespace.create').allow
 }
 
 export function isPendingUser(user: SessionUser): boolean {
@@ -154,7 +171,7 @@ export function hasRepoPermission(
     return { ok: true, effective, bypass: false }
   }
   // PAT scopes never get site-admin bypass
-  if (isInstanceAdmin(user) && !isScopedCredential(user)) {
+  if (isUnscopedInstanceAdmin(user)) {
     return { ok: true, effective: 'admin', bypass: true }
   }
   return {
@@ -166,6 +183,22 @@ export function hasRepoPermission(
 
 /** Repo Admin, Owner, manage_collaborators fine grant, or instance admin. */
 export function canManageRepoCollaborators(
+  user: SessionUser,
+  ns: string,
+  repo: string,
+): boolean {
+  return decideManageRepoCollaborators(user, ns, repo).allow
+}
+
+export function decideManageRepoCollaborators(
+  user: SessionUser,
+  ns: string,
+  repo: string,
+): Decision {
+  return manageRepoCollaborators(user, ns, repo) ? ALLOWED : denied('Forbidden')
+}
+
+function manageRepoCollaborators(
   user: SessionUser,
   ns: string,
   repo: string,
@@ -233,11 +266,10 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
       if (isInstanceAdmin(user)) return bypass
       return deny('Not allowed to view that namespace')
     }
-    case 'namespace.create':
-      if (isInstanceAdmin(user) || hasInstancePermission(user, 'create_namespace')) {
-        return allow()
-      }
-      return deny('Missing permission create_namespace')
+    case 'namespace.create': {
+      const d = decideInstanceAction(user, 'namespace.create')
+      return d.allow ? allow() : deny(d.reason)
+    }
     case 'repo.create': {
       if (!ns) return deny('Namespace required to create repository')
       if (hasInstancePermission(user, 'create_namespace') && !getNamespace(ns)) {
@@ -421,36 +453,110 @@ export type InstanceAction =
   | 'audit.view'
   | 'lineage.view'
   | 'store.admin'
+  | 'instance.admin'
+  | 'serviceprincipal.admin'
+  | 'directory.sync'
+  | 'namespace.create'
+  | 'access.review.all'
+  | 'session.admin'
+  | 'session.create'
+  | 'session.connect'
+
+type InstancePolicy = {
+  /** Any one of these instance permissions allows the action (besides admin). */
+  permissions?: InstancePermission[]
+  /** 'unscoped': scoped credentials never pass as admin. */
+  admin: 'any' | 'unscoped'
+  /** When false the action is decided even while AuthZ enforcement is off. */
+  enforced: boolean
+  reason: string
+}
 
 /**
- * Instance-wide actions: allowed for an instance admin or a holder of the named
- * permission. `store.admin` has no permission and rejects scoped credentials.
+ * Instance-wide actions: allowed for an instance admin or a holder of a named
+ * permission. Each action records its denial reason and whether enforce-off allows it.
  */
-const INSTANCE_ACTION_POLICY: Record<
-  InstanceAction,
-  { permission?: InstancePermission; reason: string }
-> = {
-  'tokens.manage': { permission: 'manage_own_tokens', reason: 'Missing permission manage_own_tokens' },
-  'cli.device.approve': { permission: 'cli_device_approve', reason: 'Missing permission cli_device_approve' },
-  'audit.view': { permission: 'view_audit', reason: 'Missing permission view_audit' },
-  'lineage.view': { permission: 'view_lineage', reason: 'Missing permission view_lineage' },
-  'store.admin': { reason: 'Requires instance admin' },
+const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
+  'tokens.manage': { permissions: ['manage_own_tokens'], admin: 'any', enforced: true, reason: 'Missing permission manage_own_tokens' },
+  'cli.device.approve': { permissions: ['cli_device_approve'], admin: 'any', enforced: true, reason: 'Missing permission cli_device_approve' },
+  'audit.view': { permissions: ['view_audit'], admin: 'any', enforced: true, reason: 'Missing permission view_audit' },
+  'lineage.view': { permissions: ['view_lineage'], admin: 'any', enforced: true, reason: 'Missing permission view_lineage' },
+  'store.admin': { admin: 'unscoped', enforced: true, reason: 'Requires instance admin' },
+  'instance.admin': { admin: 'any', enforced: false, reason: 'Forbidden' },
+  'serviceprincipal.admin': { admin: 'any', enforced: false, reason: 'Instance admin required' },
+  'directory.sync': { admin: 'any', enforced: false, reason: 'Instance admin required' },
+  'namespace.create': { permissions: ['create_namespace'], admin: 'any', enforced: false, reason: 'Missing permission create_namespace' },
+  'access.review.all': { permissions: ['create_namespace'], admin: 'any', enforced: false, reason: 'Forbidden' },
+  'session.admin': { permissions: ['session_admin'], admin: 'any', enforced: false, reason: 'Missing permission session_admin' },
+  'session.create': { permissions: ['session_admin', 'session_create'], admin: 'any', enforced: true, reason: 'Missing permission session_create' },
+  'session.connect': { permissions: ['session_connect'], admin: 'any', enforced: true, reason: 'Missing permission session_connect' },
+}
+
+export function decideInstanceAction(user: SessionUser, action: InstanceAction): Decision {
+  const policy = INSTANCE_ACTION_POLICY[action]
+  if (policy.enforced && !isAuthzEnforce()) return ALLOWED
+  const admin = policy.admin === 'unscoped' ? isUnscopedInstanceAdmin(user) : isInstanceAdmin(user)
+  if (admin) return ALLOWED
+  if (policy.permissions?.some((p) => hasInstancePermission(user, p))) return ALLOWED
+  return denied(policy.reason)
 }
 
 export function authorizeInstanceAction(
   user: SessionUser,
   action: InstanceAction,
 ): { allow: boolean; reason?: string } {
-  if (!isAuthzEnforce()) return { allow: true }
-  const policy = INSTANCE_ACTION_POLICY[action]
-  if (!policy.permission) {
-    if (isInstanceAdmin(user) && !isScopedCredential(user)) return { allow: true }
-    return { allow: false, reason: policy.reason }
-  }
-  if (isInstanceAdmin(user) || hasInstancePermission(user, policy.permission)) {
-    return { allow: true }
-  }
-  return { allow: false, reason: policy.reason }
+  const d = decideInstanceAction(user, action)
+  return d.allow ? { allow: true } : { allow: false, reason: d.reason }
+}
+
+export type NamespaceAction =
+  | 'namespace.view'
+  | 'namespace.settings'
+  | 'namespace.settings.metadata'
+  | 'namespace.delete'
+  | 'namespace.members.manage'
+  | 'namespace.roles.manage'
+  | 'namespace.access.review'
+
+type NamespacePolicy = {
+  /** Allowed with this namespace capability (instance admin and Owner hold all). */
+  capability?: NamespaceCapability
+  /** Allowed to any namespace member (or instance admin). */
+  member?: true
+  unscopedOnly?: true
+  reason: string
+}
+
+const NAMESPACE_ACTION_POLICY: Record<NamespaceAction, NamespacePolicy> = {
+  'namespace.view': { member: true, reason: 'Forbidden' },
+  'namespace.settings': { capability: 'manage_settings', reason: 'Forbidden' },
+  'namespace.settings.metadata': { capability: 'manage_settings', unscopedOnly: true, reason: 'Forbidden' },
+  'namespace.delete': { capability: 'delete_namespace', reason: 'Forbidden' },
+  'namespace.members.manage': { capability: 'manage_members', reason: 'Forbidden' },
+  'namespace.roles.manage': { capability: 'manage_custom_roles', reason: 'Forbidden' },
+  'namespace.access.review': { capability: 'review_access_requests', reason: 'Not allowed to approve into that namespace' },
+}
+
+/** Namespace management decisions; not gated by the enforce flag. */
+export function decideNamespaceAction(user: SessionUser, ns: string, action: NamespaceAction): Decision {
+  const policy = NAMESPACE_ACTION_POLICY[action]
+  if (policy.unscopedOnly && isScopedCredential(user)) return denied(policy.reason)
+  if (policy.member && (isInstanceAdmin(user) || resolveNamespaceRole(ns, user))) return ALLOWED
+  if (policy.capability && hasNamespaceCapability(ns, user, policy.capability)) return ALLOWED
+  return denied(policy.reason)
+}
+
+/** Reviewing access requests: instance admin, create_namespace, or a review capability in some namespace. */
+export function decideAccessReview(user: SessionUser): Decision {
+  if (decideInstanceAction(user, 'access.review.all').allow) return ALLOWED
+  if (namespacesWithCapability(user, 'review_access_requests').length > 0) return ALLOWED
+  return denied('Forbidden')
+}
+
+/** Managing a service principal: instance admin or its current owner. */
+export function decideServicePrincipalManage(user: SessionUser, isOwner: boolean): Decision {
+  if (isOwner || decideInstanceAction(user, 'serviceprincipal.admin').allow) return ALLOWED
+  return denied('Forbidden')
 }
 
 /** Own PAT mint/list/revoke when enforce is on. */

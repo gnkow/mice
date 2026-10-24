@@ -1,9 +1,9 @@
 import type { Hono } from 'hono'
 import { env } from './env.js'
-import { canManageRepoCollaborators } from './authz.js'
+import { decideInstanceAction, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
+import { denialResponse } from './decisionHttp.js'
 import { isCustomRepoRoleAssigned, listRepoCollaborators, removeRepoCollaborator, removeRepoGroupCollaborator, setRepoCollaborator, setRepoGroupCollaborator } from './authzCollaboratorStore.js'
-import { hasInstancePermission, isInstanceAdmin } from './authzInstanceStore.js'
-import { hasNamespaceCapability, isCustomNamespaceRoleAssigned, listNamespaceMembers, removeNamespaceGroupMember, removeNamespaceMember, resolveNamespaceRole, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
+import { isCustomNamespaceRoleAssigned, listNamespaceMembers, removeNamespaceGroupMember, removeNamespaceMember, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
 import { createNamespaceAuthz, deleteNamespaceAuthz, getNamespace, listNamespacesForUser, updateNamespaceSettings } from './authzNamespaceStore.js'
 import {
   ALL_NAMESPACE_CAPABILITIES,
@@ -25,7 +25,6 @@ import type {
   NamespaceCapability,
   RepoFinePermission,
 } from './authzTypes.js'
-import type { SessionUser } from './session.js'
 import type { AuditDep } from './routeDeps.js'
 import { guarded } from './routeGuard.js'
 
@@ -41,19 +40,6 @@ function memberTarget(body: {
     : { kind, sub: body.sub, iss: body.iss }
 }
 
-function requireOwner(session: SessionUser, ns: string): boolean {
-  if (isInstanceAdmin(session)) return true
-  return resolveNamespaceRole(ns, session) === 'owner'
-}
-
-function requireNsCapability(
-  session: SessionUser,
-  ns: string,
-  cap: NamespaceCapability,
-): boolean {
-  return hasNamespaceCapability(ns, session, cap)
-}
-
 /** Namespaces, members, repo collaborators and custom roles. */
 export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
   app.get('/auth/namespaces', guarded({}, async ({ c, user: session }) => {
@@ -61,12 +47,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   }))
 
   app.post('/auth/namespaces', guarded({}, async ({ c, user: session }) => {
-    if (
-      !isInstanceAdmin(session) &&
-      !hasInstancePermission(session, 'create_namespace')
-    ) {
-      return c.json({ error: 'Missing permission create_namespace' }, 403)
-    }
+    const denied = denialResponse(c, decideInstanceAction(session, 'namespace.create'))
+    if (denied) return denied
     let body: {
       name?: string
       basePermission?: BasePermission
@@ -108,9 +90,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const ns = c.req.param('ns')
     const settings = getNamespace(ns)
     if (!settings) return c.json({ error: 'Not found' }, 404)
-    if (!requireOwner(session, ns) && !resolveNamespaceRole(ns, session)) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.view'))
+    if (denied) return denied
     return c.json({
       name: ns,
       ...settings,
@@ -120,9 +101,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
   app.patch('/auth/namespaces/:ns', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
-    if (!requireNsCapability(session, ns, 'manage_settings')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.settings'))
+    if (denied) return denied
     let body: Partial<{
       basePermission: BasePermission
       membersCanCreateRepos: boolean
@@ -160,9 +140,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
    */
   app.delete('/auth/namespaces/:ns', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
-    if (!requireNsCapability(session, ns, 'delete_namespace')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.delete'))
+    if (denied) return denied
     if (!getNamespace(ns)) return c.json({ error: 'Not found' }, 404)
 
     let deleteRepositories = true
@@ -254,9 +233,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
   app.put('/auth/namespaces/:ns/members', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
-    if (!requireNsCapability(session, ns, 'manage_members')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.members.manage'))
+    if (denied) return denied
     let body: {
       kind?: 'user' | 'group'
       sub?: string
@@ -297,9 +275,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
   app.delete('/auth/namespaces/:ns/members', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
-    if (!requireNsCapability(session, ns, 'manage_members')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.members.manage'))
+    if (denied) return denied
     let body: {
       kind?: 'user' | 'group'
       sub?: string
@@ -335,18 +312,16 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.get('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
-    if (!canManageRepoCollaborators(session, ns, repo)) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideManageRepoCollaborators(session, ns, repo))
+    if (denied) return denied
     return c.json({ collaborators: listRepoCollaborators(ns, repo) })
   }))
 
   app.put('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
-    if (!canManageRepoCollaborators(session, ns, repo)) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideManageRepoCollaborators(session, ns, repo))
+    if (denied) return denied
     let body: {
       kind?: 'user' | 'group'
       sub?: string
@@ -390,9 +365,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
-    if (!canManageRepoCollaborators(session, ns, repo)) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideManageRepoCollaborators(session, ns, repo))
+    if (denied) return denied
     let body: {
       kind?: 'user' | 'group'
       sub?: string
@@ -426,12 +400,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
   app.get('/auth/namespaces/:ns/custom-roles/permissions', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
-    if (
-      !requireNsCapability(session, ns, 'manage_custom_roles') &&
-      !resolveNamespaceRole(ns, session)
-    ) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.view'))
+    if (denied) return denied
     return c.json({
       namespaceCapabilities: ALL_NAMESPACE_CAPABILITIES,
       repoFinePermissions: ALL_REPO_FINE_PERMISSIONS,
@@ -442,13 +412,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.get('/auth/namespaces/:ns/custom-roles', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     if (!getNamespace(ns)) return c.json({ error: 'Not found' }, 404)
-    if (
-      !requireOwner(session, ns) &&
-      !resolveNamespaceRole(ns, session) &&
-      !isInstanceAdmin(session)
-    ) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.view'))
+    if (denied) return denied
     return c.json({
       namespaceRoles: listCustomNamespaceRoles(ns),
       repoRoles: listCustomRepoRoles(ns),
@@ -457,9 +422,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
   app.post('/auth/namespaces/:ns/custom-roles/namespace', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
-    if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
+    if (denied) return denied
     if (!getNamespace(ns)) return c.json({ error: 'Not found' }, 404)
     let body: {
       name?: string
@@ -498,9 +462,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.patch('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
-    if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
+    if (denied) return denied
     let body: Partial<{
       name: string
       description: string | null
@@ -526,9 +489,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.delete('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
-    if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
+    if (denied) return denied
     const result = deleteCustomNamespaceRole(
       ns,
       roleId,
@@ -546,9 +508,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
   app.post('/auth/namespaces/:ns/custom-roles/repo', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
-    if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
+    if (denied) return denied
     if (!getNamespace(ns)) return c.json({ error: 'Not found' }, 404)
     let body: {
       name?: string
@@ -587,9 +548,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.patch('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
-    if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
+    if (denied) return denied
     let body: Partial<{
       name: string
       description: string | null
@@ -615,9 +575,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
-    if (!requireNsCapability(session, ns, 'manage_custom_roles')) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
+    if (denied) return denied
     const result = deleteCustomRepoRole(
       ns,
       roleId,

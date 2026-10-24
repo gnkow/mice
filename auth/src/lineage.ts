@@ -1,7 +1,7 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { env } from './env.js'
+import { createJsonlLog } from './stores.js'
 import type { AuditActor, AuditVia } from './audit.js'
 
 export type LineageKind =
@@ -156,6 +156,8 @@ function storePath(): string {
   return join(env.dataDir, 'lineage.jsonl')
 }
 
+const log = createJsonlLog<LineageOp>(storePath)
+
 function safeDecode(s: string): string {
   try {
     return decodeURIComponent(s)
@@ -272,13 +274,14 @@ export async function fetchFileEntrySnapshot(
   repo: string,
   revision: string,
   filePath: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<FileEntrySnapshot | null> {
   const resource = [revision, ...filePath.split('/').filter(Boolean)]
     .map((p) => encodeURIComponent(p))
     .join('/')
   const url = `${env.oxenUpstream}/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/meta/${resource}`
   try {
-    const res = await fetch(url)
+    const res = await fetchImpl(url)
     if (!res.ok) return null
     const json: unknown = await res.json()
     return parseFileEntrySnapshot(json)
@@ -432,9 +435,7 @@ function findProducer(
 }
 
 function rewriteStore(ops: LineageOp[]): void {
-  mkdirSync(dirname(storePath()), { recursive: true })
-  const body = ops.map((o) => JSON.stringify(o)).join('\n')
-  writeFileSync(storePath(), body ? `${body}\n` : '', 'utf8')
+  log.rewrite(ops)
 }
 
 /**
@@ -551,8 +552,7 @@ export function appendLineage(
       : {}),
   }
   try {
-    mkdirSync(dirname(storePath()), { recursive: true })
-    appendFileSync(storePath(), `${JSON.stringify(op)}\n`, 'utf8')
+    log.append(op)
     if (supersedesDerived && partial.outputs[0]?.path) {
       pruneDuplicateProducers(
         partial.namespace,
@@ -568,22 +568,7 @@ export function appendLineage(
 }
 
 function readAllOps(): LineageOp[] {
-  try {
-    const raw = readFileSync(storePath(), 'utf8')
-    const out: LineageOp[] = []
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      try {
-        out.push(JSON.parse(trimmed) as LineageOp)
-      } catch {
-        /* skip bad lines */
-      }
-    }
-    return out
-  } catch {
-    return []
-  }
+  return log.readAll()
 }
 
 function versionMatchesFocus(

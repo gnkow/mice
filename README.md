@@ -10,7 +10,7 @@ Open-source web UI for [Oxen](https://www.oxen.ai) / self-hosted [`oxen-server`]
 | `auth/` | Auth BFF — OIDC/session, AuthZ, author injection, audit JSONL, proxy to oxen-server |
 | `web/` | Vite + React + TypeScript UI |
 | `cli/` | `mice` CLI — login/logout + Oxen command passthrough via the BFF |
-| `TESTS.md` | Test plan + recommended frameworks for full coverage |
+| `e2e/tests/` | Playwright case catalog (one `TC-*` id per case; deny paths in `deny-paths.spec.ts`) |
 
 ## Prerequisites
 
@@ -231,7 +231,7 @@ make test-view       # headed + slow-mo (watch in browser)
 make clean           # stop stack, wipe volumes + deps + test artifacts
 ```
 
-Atomic E2E case catalog: [`TESTS.md`](./TESTS.md).
+Atomic E2E case catalog: [`e2e/tests/`](./e2e/tests/).
 
 ### Desktop sessions (PLAT-SESS)
 
@@ -301,4 +301,4 @@ message after an ambiguous provider response.
 
 ## Progress
 
-Playwright case catalog: [`TESTS.md`](./TESTS.md). Epics and design plans live under [`plans/`](./plans/EPICS.md), numbered by implementation priority.
+Playwright case catalog: [`e2e/tests/`](./e2e/tests/). Epics and design plans live under [`plans/`](./plans/EPICS.md), numbered by implementation priority.

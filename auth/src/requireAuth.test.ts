@@ -9,7 +9,7 @@ process.env.SESSION_SECRET = 'test-session-secret-for-wiring'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 
 const { Hono } = await import('hono')
-const { applyGlobalGuards, authenticateRequest } = await import('./requireAuth.js')
+const { applyGlobalGuards, authenticateRequest, setAuthenticationObserver } = await import('./requireAuth.js')
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
 const { offboard } = await import('./offboarding.js')
@@ -72,5 +72,29 @@ describe('auth wiring (middleware order + requireAuth)', () => {
       headers: { authorization: `Bearer ${token}`, 'sec-fetch-site': 'cross-site' },
     })
     assert.equal(res.status, 200)
+  })
+})
+
+describe('authentication observer', () => {
+  it('sees each authenticated principal and stops after restore', async () => {
+    const seen: string[] = []
+    const restore = setAuthenticationObserver((u) => seen.push(u.sub))
+    await app.request('/whoami', { headers: { cookie: await cookie('fay') } })
+    await app.request('/whoami')
+    assert.deepEqual(seen, ['fay'])
+    restore()
+    await app.request('/whoami', { headers: { cookie: await cookie('gus') } })
+    assert.deepEqual(seen, ['fay'])
+  })
+
+  it('restore puts back the previous observer', async () => {
+    const outer: string[] = []
+    const inner: string[] = []
+    const restoreOuter = setAuthenticationObserver((u) => outer.push(u.sub))
+    const restoreInner = setAuthenticationObserver((u) => inner.push(u.sub))
+    restoreInner()
+    await app.request('/whoami', { headers: { cookie: await cookie('hal') } })
+    restoreOuter()
+    assert.deepEqual([outer, inner], [['hal'], []])
   })
 })

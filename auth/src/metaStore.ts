@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AuditActor } from './audit.js'
 import { env } from './env.js'
-import { writeJsonFile } from './jsonStore.js'
+import { createDocumentStore, createJsonlLog } from './stores.js'
 import {
   LIMITS,
   MetaError,
@@ -38,23 +37,33 @@ function historyPath(): string {
   return join(env.dataDir, 'meta-history.jsonl')
 }
 
-function read(): StoreFile {
-  if (!existsSync(storePath())) return { records: {}, revisions: {}, history: [] }
-  const f = JSON.parse(readFileSync(storePath(), 'utf8')) as Partial<StoreFile>
-  if (!f.records || typeof f.records !== 'object' || Array.isArray(f.records)) throw new Error('Invalid metadata store')
-  const records: StoreFile['records'] = {}
-  let migrated = false
-  const revisions = { ...(f.revisions ?? {}) }
-  for (const [key, record] of Object.entries(f.records)) {
-    const clean = explicitRecord(record)
-    if (JSON.stringify(record) !== JSON.stringify(clean)) migrated = true
-    if (!isEmpty(clean)) records[key] = clean
-    else migrated = true
-    revisions[key] ??= record.revision
-  }
-  const file = { records, revisions, history: f.history ?? [] }
-  if (migrated) writeJsonFile(storePath(), file)
-  return file
+const store = createDocumentStore<StoreFile>({
+  path: storePath,
+  initial: () => ({ records: {}, revisions: {}, history: [] }),
+  validate(f) {
+    if (!f.records || typeof f.records !== 'object' || Array.isArray(f.records)) throw new Error('Invalid metadata store')
+  },
+  migrate(f) {
+    const records: StoreFile['records'] = {}
+    const revisions = { ...(f.revisions ?? {}) }
+    for (const [key, record] of Object.entries(f.records)) {
+      const clean = explicitRecord(record)
+      if (!isEmpty(clean)) records[key] = clean
+      revisions[key] ??= record.revision
+    }
+    f.records = records
+    f.revisions = revisions
+    f.history ??= []
+  },
+})
+
+const historyLog = createJsonlLog<MetaRevision>(historyPath)
+
+const read = (): StoreFile => store.read()
+
+/** Persists the explicit-only metadata migration; reads apply it in memory and never write. */
+export function migrateMetaStore(): boolean {
+  return store.migrate()
 }
 
 function explicitRecord(record: MetaRecord): MetaRecord {
@@ -80,11 +89,7 @@ export function getRevision(ref: EntityRef): number {
 export function listHistory(ref: EntityRef): MetaRevision[] {
   const key = refKey(ref)
   const out: MetaRevision[] = []
-  for (const line of existsSync(historyPath()) ? readFileSync(historyPath(), 'utf8').split('\n') : []) {
-    if (!line.trim()) continue
-    const rev = JSON.parse(line) as MetaRevision
-    if (rev.key === key) out.push(rev)
-  }
+  for (const rev of historyLog.readAll()) if (rev.key === key) out.push(rev)
   out.push(...read().history.filter((rev) => rev.key === key))
   return out.reverse()
 }
@@ -159,34 +164,34 @@ export function putOwnRecord(
   actor: AuditActor,
   ifRevision?: number,
 ): { before: MetaRecord | null; after: MetaRecord | null } {
-  const file = read()
-  const key = refKey(ref)
-  const prev = file.records[key] ?? null
-  const revision = file.revisions[key] ?? prev?.revision ?? 0
-  if (ifRevision !== undefined && revision !== ifRevision) {
-    throw new MetaError(
-      409,
-      `Revision conflict: expected ${ifRevision}, current ${revision}`,
-    )
-  }
-  const built = buildRecord(ref, prev, patch, actor)
-  built.revision = revision + 1
-  const after = isEmpty(built) ? null : built
-  if (after) file.records[key] = after
-  else delete file.records[key]
-  file.revisions[key] = built.revision
-  file.history.push({
-    key,
-    ref,
-    revision: built.revision,
-    ts: built.updatedAt,
-    actor,
-    op: after ? 'set' : 'delete',
-    before: prev,
-    after,
+  return store.transaction((file) => {
+    const key = refKey(ref)
+    const prev = file.records[key] ?? null
+    const revision = file.revisions[key] ?? prev?.revision ?? 0
+    if (ifRevision !== undefined && revision !== ifRevision) {
+      throw new MetaError(
+        409,
+        `Revision conflict: expected ${ifRevision}, current ${revision}`,
+      )
+    }
+    const built = buildRecord(ref, prev, patch, actor)
+    built.revision = revision + 1
+    const after = isEmpty(built) ? null : built
+    if (after) file.records[key] = after
+    else delete file.records[key]
+    file.revisions[key] = built.revision
+    file.history.push({
+      key,
+      ref,
+      revision: built.revision,
+      ts: built.updatedAt,
+      actor,
+      op: after ? 'set' : 'delete',
+      before: prev,
+      after,
   })
-  writeJsonFile(storePath(), file)
   return { before: prev, after }
+  })
 }
 
 export function deleteOwnRecord(
@@ -194,24 +199,26 @@ export function deleteOwnRecord(
   actor: AuditActor,
   ifRevision?: number,
 ): { before: MetaRecord | null } {
-  const file = read()
   const key = refKey(ref)
-  const prev = file.records[key] ?? null
-  const revision = file.revisions[key] ?? prev?.revision ?? 0
-  if (ifRevision !== undefined && revision !== ifRevision) throw new MetaError(409, `Revision conflict: expected ${ifRevision}, current ${revision}`)
-  if (!prev) return { before: null }
-  delete file.records[key]
-  file.revisions[key] = revision + 1
-  file.history.push({
-    key,
-    ref,
-    revision: revision + 1,
-    ts: new Date().toISOString(),
-    actor,
-    op: 'delete',
-    before: prev,
-    after: null,
+  const current = read()
+  const currentRevision = current.revisions[key] ?? current.records[key]?.revision ?? 0
+  if (ifRevision !== undefined && currentRevision !== ifRevision) throw new MetaError(409, `Revision conflict: expected ${ifRevision}, current ${currentRevision}`)
+  if (!current.records[key]) return { before: null }
+  return store.transaction((file) => {
+    const prev = file.records[key]!
+    const revision = file.revisions[key] ?? prev.revision
+    delete file.records[key]
+    file.revisions[key] = revision + 1
+    file.history.push({
+      key,
+      ref,
+      revision: revision + 1,
+      ts: new Date().toISOString(),
+      actor,
+      op: 'delete',
+      before: prev,
+      after: null,
   })
-  writeJsonFile(storePath(), file)
   return { before: prev }
+  })
 }

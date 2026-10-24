@@ -88,13 +88,34 @@ describe('buildRequest', () => {
   })
 
   it('custom roles', () => {
-    const r = buildRequest('role', ['create', 'acme', 'repo', '--name', 'qa', '--base', 'read', '--permissions', 'a,b'])
+    const r = buildRequest('role', ['create', 'acme', 'repo', '--name', 'qa', '--base', 'read', '--permissions', 'contents_read,merge'])
     assert.equal(r.path, '/auth/namespaces/acme/custom-roles/repo')
-    assert.deepEqual(r.body, { name: 'qa', base: 'read', permissions: ['a', 'b'] })
+    assert.deepEqual(r.body, { name: 'qa', base: 'read', permissions: ['contents_read', 'merge'] })
     const d = buildRequest('role', ['delete', 'acme', 'namespace', 'role1'])
     assert.equal(d.path, '/auth/namespaces/acme/custom-roles/namespace/role1')
     assert.ok(d.confirm)
-    assert.throws(() => buildRequest('role', ['create', 'acme', 'repo', '--name', 'x', '--permissions', 'a']), /--base/)
+    assert.throws(() => buildRequest('role', ['create', 'acme', 'repo', '--name', 'x', '--permissions', 'merge']), /--base/)
+  })
+
+  it('validates role and permission names against the contract', () => {
+    assert.throws(
+      () => buildRequest('instance', ['permissions', 'set', '--sub', 's', '--iss', 'i', '--permissions', 'view_audit,nope']),
+      /Unknown instance permission "nope"/,
+    )
+    assert.throws(
+      () => buildRequest('role', ['create', 'acme', 'namespace', '--name', 'x', '--permissions', 'contents_read']),
+      /Unknown namespace permission "contents_read"/,
+    )
+    assert.throws(
+      () => buildRequest('role', ['create', 'acme', 'repo', '--name', 'x', '--base', 'admin', '--permissions', 'merge']),
+      /--base must be one of read, triage, write, maintain/,
+    )
+    assert.throws(
+      () => buildRequest('role', ['create', 'acme', 'repo', '--name', 'x', '--base', 'read', '--permissions', 'view_audit']),
+      /Unknown repository permission "view_audit"/,
+    )
+    const ok = buildRequest('role', ['create', 'acme', 'namespace', '--name', 'x', '--permissions', 'manage_members', '--base-repository-role', 'none'])
+    assert.deepEqual(ok.body.permissions, ['manage_members'])
   })
 
   it('sessions', () => {

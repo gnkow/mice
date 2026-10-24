@@ -1,7 +1,5 @@
-import { hasRepoPermission } from './authz.js'
-import { isScopedCredential } from './principal.js'
-import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin } from './authzInstanceStore.js'
-import { hasNamespaceCapability } from './authzMembershipStore.js'
+import { decideInstanceAction, decideNamespaceAction, hasRepoPermission, isUnscopedInstanceAdmin } from './authz.js'
+import { isAuthzEnforce } from './authzInstanceStore.js'
 import { userCanSeeNamespace } from './authzVisibility.js'
 import type { EntityRef } from './metaTypes.js'
 import type { SessionUser } from './session.js'
@@ -26,14 +24,14 @@ export function canReadEntity(
   deps: MetaAuthzDeps = {},
 ): boolean {
   if (!isAuthzEnforce()) return true
-  if (isInstanceAdmin(user) && !isScopedCredential(user)) return true
+  if (isUnscopedInstanceAdmin(user)) return true
   switch (ref.type) {
     case 'namespace':
       return !!ref.namespace && userCanSeeNamespace(user, ref.namespace)
     case 'session':
       return (
         deps.sessionOwner?.(ref.id) === selfKey(user) ||
-        hasInstancePermission(user, 'session_admin')
+        decideInstanceAction(user, 'session.admin').allow
       )
     default:
       if (!ref.namespace || !ref.repo) return false
@@ -56,18 +54,17 @@ export function canEditEntity(
   deps: MetaAuthzDeps = {},
 ): boolean {
   if (!isAuthzEnforce()) return true
-  if (isInstanceAdmin(user) && !isScopedCredential(user)) return true
+  if (isUnscopedInstanceAdmin(user)) return true
   switch (ref.type) {
     case 'namespace':
       return (
         !!ref.namespace &&
-        !isScopedCredential(user) &&
-        hasNamespaceCapability(ref.namespace, user, 'manage_settings')
+        decideNamespaceAction(user, ref.namespace, 'namespace.settings.metadata').allow
       )
     case 'session':
       return (
         deps.sessionOwner?.(ref.id) === selfKey(user) ||
-        hasInstancePermission(user, 'session_admin')
+        decideInstanceAction(user, 'session.admin').allow
       )
     default:
       if (!ref.namespace || !ref.repo) return false

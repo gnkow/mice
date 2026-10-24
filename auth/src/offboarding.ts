@@ -21,9 +21,24 @@ export type OffboardRequest = {
   detail?: Record<string, unknown>
 }
 
+export type OffboardStep = 'revoke-credentials' | 'audit-revocation' | 'suspend-service-principals' | 'audit-suspensions'
+
+/**
+ * `ok: true` means every step ran. A step that throws does not stop the others: the result lists
+ * `completed` and `failed` steps so a partial offboarding is visible and retryable (every step is idempotent).
+ * A step whose prerequisite failed is reported failed without running.
+ */
 export type OffboardResult =
-  | { ok: true; cutoff: number; suspended: string[] }
-  | { ok: false; error: string }
+  | { ok: true; cutoff: number; suspended: string[]; completed: OffboardStep[]; failed: [] }
+  | { ok: false; error: 'Forbidden' }
+  | {
+      ok: false
+      error: 'Offboarding incomplete'
+      cutoff: number | null
+      suspended: string[]
+      completed: OffboardStep[]
+      failed: Array<{ step: OffboardStep; error: string }>
+    }
 
 const SYSTEM_ACTOR: AuditActor = { sub: 'directory-sync', iss: 'urn:mice:system', email: '', name: 'Directory sync' }
 
@@ -56,25 +71,51 @@ export function offboard(
     return { ok: false, error: 'Forbidden' }
   }
 
-  const cutoff = req.scope === 'all'
+  const completed: OffboardStep[] = []
+  const failed: Array<{ step: OffboardStep; error: string }> = []
+  const attempt = <T>(step: OffboardStep, fn: () => T | null): T | undefined => {
+    try {
+      const out = fn()
+      if (out === null) throw new Error('audit append failed')
+      completed.push(step)
+      return out
+    } catch (error) {
+      failed.push({ step, error: error instanceof Error ? error.message : String(error) })
+      return undefined
+    }
+  }
+
+  const cutoff = attempt('revoke-credentials', () => req.scope === 'all'
     ? revokeSessionsFor(principal)
-    : revokeSessionsOnlyFor(principal, req.at)
-  appendAudit({
+    : revokeSessionsOnlyFor(principal, req.at))
+  if (cutoff === undefined) failed.push({ step: 'audit-revocation', error: 'skipped: revoke-credentials failed' })
+  else attempt('audit-revocation', () => appendAudit({
     actor, ...audit, status: 200, action: 'session.revoke',
     message: req.message ?? `Revoked ${req.scope === 'all' ? 'all credentials' : 'Sessions'} of ${principal.sub}`,
     detail: { ...req.detail, source: req.cause },
-  })
+  }))
 
-  const suspended = req.scope === 'all' && SUSPENDS_OWNED.has(req.cause)
-    ? suspendOwnedBy(principal, req.cause)
+  const suspendedPrincipals = req.scope === 'all' && SUSPENDS_OWNED.has(req.cause)
+    ? attempt('suspend-service-principals', () => suspendOwnedBy(principal, req.cause)) ?? []
     : []
-  for (const p of suspended) {
-    appendAudit({
-      actor: req.cause === 'admin-revocation' ? actor : SYSTEM_ACTOR,
-      ...audit, status: 200, action: 'service-principal.suspend',
-      message: `Suspended service principal ${p.name}: owner offboarded`,
-      detail: { id: p.id, name: p.name, cause: req.cause, owner: { iss: principal.iss, sub: principal.sub } },
+  if (suspendedPrincipals.length) {
+    attempt('audit-suspensions', () => {
+      for (const p of suspendedPrincipals) {
+        const event = appendAudit({
+          actor: req.cause === 'admin-revocation' ? actor : SYSTEM_ACTOR,
+          ...audit, status: 200, action: 'service-principal.suspend',
+          message: `Suspended service principal ${p.name}: owner offboarded`,
+          detail: { id: p.id, name: p.name, cause: req.cause, owner: { iss: principal.iss, sub: principal.sub } },
+        })
+        if (!event) throw new Error(`audit append failed for ${p.id}`)
+      }
+      return true
     })
   }
-  return { ok: true, cutoff, suspended: suspended.map((p) => p.id) }
+
+  const suspended = suspendedPrincipals.map((p) => p.id)
+  if (failed.length) {
+    return { ok: false, error: 'Offboarding incomplete', cutoff: cutoff ?? null, suspended, completed, failed }
+  }
+  return { ok: true, cutoff: cutoff!, suspended, completed, failed: [] }
 }

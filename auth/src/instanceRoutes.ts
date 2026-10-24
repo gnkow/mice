@@ -1,10 +1,11 @@
 import type { Hono } from 'hono'
-import { addInstanceAdmin, isAuthzEnforce, isInstanceAdmin, listInstanceAdmins, listInstancePermissionGrants, removeInstanceAdmin, setAuthzEnforce, setInstancePermissions } from './authzInstanceStore.js'
+import { addInstanceAdmin, isAuthzEnforce, listInstanceAdmins, listInstancePermissionGrants, removeInstanceAdmin, setAuthzEnforce, setInstancePermissions } from './authzInstanceStore.js'
 import type { InstancePermission } from './authzTypes.js'
+import { instanceGate } from './decisionHttp.js'
 import { guarded } from './routeGuard.js'
 import type { AuditDep } from './routeDeps.js'
 
-const adminOnly = (u: Parameters<typeof isInstanceAdmin>[0]) => (isInstanceAdmin(u) ? null : 'Forbidden')
+const adminOnly = instanceGate('instance.admin')
 const target = (b: Record<string, unknown>) => ({ sub: b.sub as string, iss: b.iss as string })
 
 /** Instance settings, instance admins and instance permission grants. */
