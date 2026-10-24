@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
 import { revokeSessions } from './credentialRevocation.js'
 import { parsePatScopes } from './patScopes.js'
+import { backChannelLogout } from './backChannelLogout.js'
 import { signOutEverywhere } from './selfRevocation.js'
 import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
@@ -1155,6 +1156,7 @@ app.post('/auth/instance/admins', async (c) => {
   return c.json({ ok: true })
 })
 
+app.post('/auth/backchannel-logout', backChannelLogout)
 app.post('/auth/sessions/revoke-all', signOutEverywhere)
 
 app.post('/auth/instance/revoke-sessions', async (c) => {

@@ -130,15 +130,36 @@ export async function buildEndSessionUrl(opts: {
 let jwksSet: ReturnType<typeof createRemoteJWKSet> | undefined
 let jwksSetUri = ''
 
-/** Verifies the JWS signature (RS256/ES256 only) against the IdP key set; refetches on key rotation. */
-async function verifyIdTokenSignature(idToken: string, jwksUri: string | undefined): Promise<void> {
-  if (!jwksUri) throw new Error('IdP publishes no jwks_uri; cannot verify id_token')
+function keySet(jwksUri: string | undefined): ReturnType<typeof createRemoteJWKSet> {
+  if (!jwksUri) throw new Error('IdP publishes no jwks_uri; cannot verify tokens')
   if (!jwksSet || jwksSetUri !== jwksUri) {
     jwksSet = createRemoteJWKSet(new URL(jwksUri), { cooldownDuration: env.jwksCooldownMs })
     jwksSetUri = jwksUri
   }
+  return jwksSet
+}
+
+/**
+ * Verifies a JWT issued by the IdP (signature, RS256/ES256, issuer, audience, exp when present).
+ * Always verifies, independent of OIDC_VERIFY_ID_TOKEN.
+ */
+export async function verifyIdpJwt(token: string): Promise<Record<string, unknown>> {
+  const conf = await loadOidcConfig()
+  const issuers = [conf.issuer, env.oidcIssuer, env.oidcIssuerPublic]
+    .filter(Boolean)
+    .flatMap((i) => [i.replace(/\/$/, ''), `${i.replace(/\/$/, '')}/`])
+  const { payload } = await jwtVerify(token, keySet(conf.jwksUri), {
+    algorithms: ['RS256', 'ES256'],
+    issuer: issuers,
+    audience: env.oidcClientId,
+  })
+  return payload as Record<string, unknown>
+}
+
+/** Verifies the JWS signature (RS256/ES256 only) against the IdP key set; refetches on key rotation. */
+async function verifyIdTokenSignature(idToken: string, jwksUri: string | undefined): Promise<void> {
   try {
-    await jwtVerify(idToken, jwksSet, { algorithms: ['RS256', 'ES256'] })
+    await jwtVerify(idToken, keySet(jwksUri), { algorithms: ['RS256', 'ES256'] })
   } catch (e) {
     throw new Error(`id_token signature verification failed: ${e instanceof Error ? e.message : e}`)
   }

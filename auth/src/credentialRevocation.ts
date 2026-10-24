@@ -35,10 +35,13 @@ export function revokeSessionsFor(principal: { iss: string; sub: string }): numb
 }
 
 /** Invalidate Sessions only; PATs stay valid. Returns the cut-off (epoch s). */
-export function revokeSessionsOnlyFor(principal: { iss: string; sub: string }): number {
+export function revokeSessionsOnlyFor(
+  principal: { iss: string; sub: string },
+  at: number = nowSec(),
+): number {
   const s = read()
   s.sessionsNotBefore ??= {}
-  const cutoff = raise(s.sessionsNotBefore, principalKey(principal), nowSec())
+  const cutoff = raise(s.sessionsNotBefore, principalKey(principal), at)
   writeJsonFile(path(), s)
   return cutoff
 }
