@@ -4,15 +4,10 @@ import {
   listAccessRequests,
 } from './accessRequests.js'
 import { isPendingUser, preparePrincipal } from './authz.js'
-import {
-  isInstanceAdmin,
-  listAllCollaboratorPrincipals,
-  listInstanceAdmins,
-  listInstancePermissionGrants,
-  listNamespaceMembers,
-  listNamespacesAuthz,
-  namespacesWithCapability,
-} from './authzStore.js'
+import { listAllCollaboratorPrincipals } from './authzCollaboratorStore.js'
+import { isInstanceAdmin, listInstanceAdmins, listInstancePermissionGrants } from './authzInstanceStore.js'
+import { listNamespaceMembers, namespacesWithCapability } from './authzMembershipStore.js'
+import { listNamespacesAuthz } from './authzNamespaceStore.js'
 import { normalizeGroup } from './authzTypes.js'
 import { principalKey } from './principal.js'
 import { listPatOwners } from './tokens.js'

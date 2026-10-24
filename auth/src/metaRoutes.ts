@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono'
 import { createHash } from 'node:crypto'
 import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
-import { getNamespace } from './authzStore.js'
+import { getNamespace } from './authzNamespaceStore.js'
 import { env } from './env.js'
 import { getJob } from './jobsStore.js'
 import { canEditEntity, canReadEntity, type MetaAuthzDeps } from './metaAuthz.js'

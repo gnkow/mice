@@ -37,34 +37,10 @@ const {
   isPendingUser,
   preparePrincipal,
 } = await import('./authz.js')
-const {
-  addInstanceAdmin,
-  createNamespaceAuthz,
-  deleteNamespaceAuthz,
-  hasInstancePermission,
-  hasNamespaceCapability,
-  isAuthzEnforce,
-  isCustomNamespaceRoleAssigned,
-  isCustomRepoRoleAssigned,
-  isInstanceAdmin,
-  removeRepoCollaborator,
-  setAuthzEnforce,
-  setInstancePermissions,
-  setNamespaceMember,
-  setNamespaceGroupMember,
-  setRepoCollaborator,
-  setRepoGroupCollaborator,
-  removeInstanceAdmin,
-  removeNamespaceMember,
-  removeNamespaceGroupMember,
-  listInstanceAdmins,
-  listNamespaceMembers,
-  updateNamespaceSettings,
-  setTrainingCompletedSelf,
-  hasCompletedTraining,
-  writeInstancePermissions,
-  getNamespace,
-} = await import('./authzStore.js')
+const { isCustomRepoRoleAssigned, removeRepoCollaborator, setRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
+const { addInstanceAdmin, hasInstancePermission, isAuthzEnforce, isInstanceAdmin, setAuthzEnforce, setInstancePermissions, removeInstanceAdmin, listInstanceAdmins, setTrainingCompletedSelf, hasCompletedTraining, writeInstancePermissions } = await import('./authzInstanceStore.js')
+const { hasNamespaceCapability, isCustomNamespaceRoleAssigned, setNamespaceMember, setNamespaceGroupMember, removeNamespaceMember, removeNamespaceGroupMember, listNamespaceMembers } = await import('./authzMembershipStore.js')
+const { createNamespaceAuthz, deleteNamespaceAuthz, updateNamespaceSettings, getNamespace } = await import('./authzNamespaceStore.js')
 const {
   canReviewAccessRequests,
   submitAccessRequest,

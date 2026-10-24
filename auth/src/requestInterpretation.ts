@@ -1,7 +1,21 @@
 import { authzActionForPath, minRoleForAction } from './authzPathMap.js'
 import type { RepoRole } from './authzTypes.js'
 
+/** How authorization must treat a request; `other` is default-deny. */
+export type RouteKind =
+  | 'public'
+  | 'namespace.list'
+  | 'namespace.detail'
+  | 'namespace.create'
+  | 'repo.create'
+  | 'repo.list'
+  | 'repo'
+  | 'other'
+
 export type RequestInterpretation = {
+  kind: RouteKind
+  /** Namespace named by the path of namespace.detail / repo.list routes. */
+  targetNamespace?: string
   /** Audit label. */
   action: string
   /** Action authorization keys on (push routes differ from the audit label). */
@@ -133,5 +147,32 @@ export function interpretRequest(method: string, pathname: string): RequestInter
   const authzAction = authzActionForPath(m, pathname, classified.action)
   const minRole: RepoRole =
     m === 'GET' || m === 'HEAD' ? 'read' : (minRoleForAction(authzAction) ?? 'admin')
-  return { ...classified, authzAction, minRole }
+  const { kind, targetNamespace } = routeKind(m, pathname, classified)
+  return { ...classified, kind, targetNamespace, authzAction, minRole }
+}
+
+function routeKind(
+  method: string,
+  pathname: string,
+  classified: { action: string; namespace?: string; repo?: string },
+): { kind: RouteKind; targetNamespace?: string } {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  if (path === '/api/version' || path === '/api/health' || path === '/api/oxen_version') {
+    return { kind: 'public' }
+  }
+  const parts = path.split('/').filter(Boolean)
+  const read = method === 'GET' || method === 'HEAD'
+  if (parts[0] === 'api' && parts[1] === 'namespaces' && read) {
+    if (parts.length >= 3) return { kind: 'namespace.detail', targetNamespace: safeDecode(parts[2]!) }
+    return { kind: 'namespace.list' }
+  }
+  if (classified.action === 'namespace.create') return { kind: 'namespace.create' }
+  if (classified.action === 'repo.create' || (path === '/api/repos' && method === 'POST')) {
+    return { kind: 'repo.create' }
+  }
+  if (parts[0] === 'api' && parts[1] === 'repos' && parts.length === 3 && read) {
+    return { kind: 'repo.list', targetNamespace: safeDecode(parts[2]!) }
+  }
+  if (classified.namespace && classified.repo) return { kind: 'repo' }
+  return { kind: 'other' }
 }

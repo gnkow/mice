@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { isAuthzEnforce } from './authzStore.js'
+import { isAuthzEnforce } from './authzInstanceStore.js'
 import { assertProductionStartup, productionStartupProblems } from './startupGate.js'
 
 const good = {

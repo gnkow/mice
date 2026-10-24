@@ -11,7 +11,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS =
   'boss@example.com,https://idp-a.example/realms/mice|admin-sub,ghost@users.local'
 process.env.AUTHZ_GROUP_BOOTSTRAP = '{}'
 
-const { maybeBootstrapInstanceAdmin, isInstanceAdmin } = await import('./authzStore.js')
+const { maybeBootstrapInstanceAdmin, isInstanceAdmin } = await import('./authzInstanceStore.js')
 const { matchesIdentityEntry, isScopedCredential } = await import('./principal.js')
 
 describe('isScopedCredential', () => {

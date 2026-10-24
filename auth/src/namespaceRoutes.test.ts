@@ -11,7 +11,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 const { Hono } = await import('hono')
 const { registerNamespaceRoutes } = await import('./namespaceRoutes.js')
 const { sealSession } = await import('./session.js')
-const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
+const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })

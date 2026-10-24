@@ -208,6 +208,15 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
 
 export const env = loadEnv(process.env)
 
+/** Test seam: override config values in place; returns a function restoring them. */
+export function overrideEnv(patch: Partial<typeof env>): () => void {
+  const previous = { ...env }
+  Object.assign(env, patch)
+  return () => {
+    Object.assign(env, previous)
+  }
+}
+
 export function oidcConfigured(): boolean {
   return Boolean(
     env.oidcIssuer &&

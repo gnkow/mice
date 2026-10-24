@@ -19,7 +19,7 @@ const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
 const { createServicePrincipal, serviceUser } = await import('./servicePrincipals.js')
 const { env } = await import('./env.js')
-const { hasInstancePermission } = await import('./authzStore.js')
+const { hasInstancePermission } = await import('./authzInstanceStore.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
 const appFor = (policy: Policy) => {

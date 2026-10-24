@@ -11,8 +11,8 @@ import {
 import { env } from './env.js'
 import { defineStore } from './typedStore.js'
 import { principalKey } from './principal.js'
-import { getSession } from './session.js'
-import { isInstanceAdmin, listInstanceAdmins } from './authzStore.js'
+import { authenticateUser } from './requireAuth.js'
+import { isInstanceAdmin, listInstanceAdmins } from './authzInstanceStore.js'
 import { emitNotification } from './notifications.js'
 import { offboard } from './offboarding.js'
 
@@ -152,7 +152,7 @@ export function checkDirectorySyncStale(intervalSec: number = env.directorySyncI
 /** Instance-admin on-demand run. */
 export function makeDirectorySyncRoute(run: () => Promise<SyncResult> = runDirectorySync) {
   return async (c: Context): Promise<Response> => {
-    const session = await getSession(c)
+    const session = await authenticateUser(c, { credential: 'session' })
     if (!session) return c.json({ error: 'Authentication required' }, 401)
     if (!isInstanceAdmin(session)) return c.json({ error: 'Instance admin required' }, 403)
     const result = await run()

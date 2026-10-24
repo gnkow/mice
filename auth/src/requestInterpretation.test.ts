@@ -51,4 +51,32 @@ describe('interpretRequest', () => {
   it('treats GET and HEAD as read regardless of action', () => {
     assert.equal(interpretRequest('HEAD', '/api/repos/n/r/anything').minRole, 'read')
   })
+
+  describe('route kind', () => {
+    const KINDS: Array<[string, string, string, string?]> = [
+      ['GET', '/api/version', 'public'],
+      ['GET', '/api/health', 'public'],
+      ['GET', '/api/oxen_version', 'public'],
+      ['GET', '/api/namespaces', 'namespace.list'],
+      ['GET', '/api/namespaces/', 'namespace.list'],
+      ['GET', '/api/namespaces/team%20x', 'namespace.detail', 'team x'],
+      ['HEAD', '/api/namespaces/team', 'namespace.detail', 'team'],
+      ['POST', '/api/namespaces', 'namespace.create'],
+      ['POST', '/api/repos', 'repo.create'],
+      ['GET', '/api/repos/team', 'repo.list', 'team'],
+      ['HEAD', '/api/repos/team/', 'repo.list', 'team'],
+      ['GET', '/api/repos/team/r', 'repo'],
+      ['POST', '/api/repos/team/r/branches', 'repo'],
+      ['GET', '/api/unknown', 'other'],
+      ['DELETE', '/api/repos/team', 'other'],
+      ['GET', '/elsewhere', 'other'],
+    ]
+    for (const [method, path, kind, target] of KINDS) {
+      it(`${method} ${path} is ${kind}`, () => {
+        const r = interpretRequest(method, path)
+        assert.equal(r.kind, kind)
+        assert.equal(r.targetNamespace, target)
+      })
+    }
+  })
 })

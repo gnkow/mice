@@ -26,13 +26,10 @@ const {
   setDirectoryFetchForTests,
   keycloakDirectoryConfigured,
 } = await import('./directory.js')
-const {
-  createNamespaceAuthz,
-  setNamespaceMember,
-  setNamespaceGroupMember,
-  setRepoCollaborator,
-  writeInstancePermissions,
-} = await import('./authzStore.js')
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+const { writeInstancePermissions } = await import('./authzInstanceStore.js')
+const { setNamespaceMember, setNamespaceGroupMember } = await import('./authzMembershipStore.js')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { preparePrincipal } = await import('./authz.js')
 
 const admin = {

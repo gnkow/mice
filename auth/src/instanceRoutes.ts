@@ -1,14 +1,5 @@
 import type { Hono } from 'hono'
-import {
-  addInstanceAdmin,
-  isAuthzEnforce,
-  isInstanceAdmin,
-  listInstanceAdmins,
-  listInstancePermissionGrants,
-  removeInstanceAdmin,
-  setAuthzEnforce,
-  setInstancePermissions,
-} from './authzStore.js'
+import { addInstanceAdmin, isAuthzEnforce, isInstanceAdmin, listInstanceAdmins, listInstancePermissionGrants, removeInstanceAdmin, setAuthzEnforce, setInstancePermissions } from './authzInstanceStore.js'
 import type { InstancePermission } from './authzTypes.js'
 import { guarded } from './routeGuard.js'
 import type { AuditDep } from './routeDeps.js'

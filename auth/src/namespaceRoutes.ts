@@ -1,29 +1,10 @@
 import type { Hono } from 'hono'
 import { env } from './env.js'
 import { canManageRepoCollaborators } from './authz.js'
-import {
-  createNamespaceAuthz,
-  deleteNamespaceAuthz,
-  getNamespace,
-  hasInstancePermission,
-  hasNamespaceCapability,
-  isCustomNamespaceRoleAssigned,
-  isCustomRepoRoleAssigned,
-  isInstanceAdmin,
-  listNamespaceMembers,
-  listNamespacesForUser,
-  listRepoCollaborators,
-  removeNamespaceGroupMember,
-  removeNamespaceMember,
-  removeRepoCollaborator,
-  removeRepoGroupCollaborator,
-  resolveNamespaceRole,
-  setNamespaceGroupMember,
-  setNamespaceMember,
-  setRepoCollaborator,
-  setRepoGroupCollaborator,
-  updateNamespaceSettings,
-} from './authzStore.js'
+import { isCustomRepoRoleAssigned, listRepoCollaborators, removeRepoCollaborator, removeRepoGroupCollaborator, setRepoCollaborator, setRepoGroupCollaborator } from './authzCollaboratorStore.js'
+import { hasInstancePermission, isInstanceAdmin } from './authzInstanceStore.js'
+import { hasNamespaceCapability, isCustomNamespaceRoleAssigned, listNamespaceMembers, removeNamespaceGroupMember, removeNamespaceMember, resolveNamespaceRole, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
+import { createNamespaceAuthz, deleteNamespaceAuthz, getNamespace, listNamespacesForUser, updateNamespaceSettings } from './authzNamespaceStore.js'
 import {
   ALL_NAMESPACE_CAPABILITIES,
   ALL_REPO_FINE_PERMISSIONS,

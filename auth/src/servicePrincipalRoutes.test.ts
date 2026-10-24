@@ -12,7 +12,7 @@ const { Hono } = await import('hono')
 const { registerServicePrincipalRoutes } = await import('./servicePrincipalRoutes.js')
 const { getSession, sealSession } = await import('./session.js')
 const { resolvePat } = await import('./tokens.js')
-const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
+const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })

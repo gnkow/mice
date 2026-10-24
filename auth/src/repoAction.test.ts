@@ -24,7 +24,8 @@ process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
 const { authorizeRepoAction, preparePrincipal } = await import('./authz.js')
-const { createNamespaceAuthz, setRepoCollaborator } = await import('./authzStore.js')
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 
 after(() => restoreBackend())
 

@@ -13,7 +13,7 @@ const { applyGlobalGuards, authenticateRequest } = await import('./requireAuth.j
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
 const { offboard } = await import('./offboarding.js')
-const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
+const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 
 const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string; sub: string }) =>

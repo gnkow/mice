@@ -9,15 +9,8 @@ import {
   type InstancePermission,
   type MemberRoleRef,
 } from './authzTypes.js'
-import {
-  hasInstancePermission,
-  hasNamespaceCapability,
-  instancePermissions,
-  isInstanceAdmin,
-  namespacesWithCapability,
-  setInstancePermissions,
-  setNamespaceMember,
-} from './authzStore.js'
+import { hasInstancePermission, instancePermissions, isInstanceAdmin, setInstancePermissions } from './authzInstanceStore.js'
+import { hasNamespaceCapability, namespacesWithCapability, setNamespaceMember } from './authzMembershipStore.js'
 
 export type AccessRequest = {
   id: string

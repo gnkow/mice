@@ -13,7 +13,7 @@ const { offboard } = await import('./offboarding.js')
 const { revokeSessionsFor, revokeSessionsOnlyFor, isCredentialRevoked } =
   await import('./credentialRevocation.js')
 const { createPat, resolvePat } = await import('./tokens.js')
-const authz = await import('./authzStore.js')
+const authz = await import('./authzInstanceStore.js')
 
 const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string; sub: string }) =>
   offboard(target, { scope: 'all', cause: 'admin-revocation', actor: { ...actor, email: '', name: '' } })

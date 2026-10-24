@@ -25,10 +25,7 @@ const {
   publicSession,
   sessionsAuditRetentionPolicy,
 } = await import('./sessions.js')
-const {
-  setAuthzEnforce,
-  writeInstancePermissions,
-} = await import('./authzStore.js')
+const { setAuthzEnforce, writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { encryptGuacamoleLiteToken, mintConnectPayload } = await import(
   './sessionsConnect.js'
 )

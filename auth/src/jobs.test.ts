@@ -34,11 +34,9 @@ const { validateArity, appendLineage, queryLineage } = await import(
   './lineage.js'
 )
 const { authorizeRepoAction, preparePrincipal } = await import('./authz.js')
-const {
-  createNamespaceAuthz,
-  setRepoCollaborator,
-  setAuthzEnforce,
-} = await import('./authzStore.js')
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+const { setAuthzEnforce } = await import('./authzInstanceStore.js')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { createCustomRepoRole } = await import('./customRoles.js')
 
 const admin = {

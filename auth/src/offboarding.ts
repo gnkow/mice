@@ -1,5 +1,5 @@
 import { appendAudit, actorFromUser, type AuditActor, type AuditVia } from './audit.js'
-import { isInstanceAdmin } from './authzStore.js'
+import { isInstanceAdmin } from './authzInstanceStore.js'
 import { revokeSessionsFor, revokeSessionsOnlyFor } from './credentialRevocation.js'
 import { suspendOwnedBy } from './servicePrincipals.js'
 import type { SessionUser } from './session.js'

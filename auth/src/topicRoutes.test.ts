@@ -14,7 +14,7 @@ const { registerInstanceRoutes } = await import('./instanceRoutes.js')
 const { registerRevocationRoutes } = await import('./revocationRoutes.js')
 const { sealSession } = await import('./session.js')
 const { createPat, resolvePat } = await import('./tokens.js')
-const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
+const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })

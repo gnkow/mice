@@ -1,5 +1,5 @@
 import type { Context, Hono } from 'hono'
-import { isInstanceAdmin } from './authzStore.js'
+import { isInstanceAdmin } from './authzInstanceStore.js'
 import { authenticateUser } from './requireAuth.js'
 import { guarded } from './routeGuard.js'
 import { parsePatScopes } from './patScopes.js'

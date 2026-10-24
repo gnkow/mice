@@ -72,16 +72,9 @@ import {
   canSearchDirectory,
   searchDirectory,
 } from './directory.js'
-import {
-  hasInstancePermission,
-  isAuthzEnforce,
-  isInstanceAdmin,
-  namespacesWithCapability,
-  setTrainingCompleted,
-  setTrainingCompletedSelf,
-  hasCompletedTraining,
-  userHasAnyGrant,
-} from './authzStore.js'
+import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin, setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from './authzInstanceStore.js'
+import { namespacesWithCapability } from './authzMembershipStore.js'
+import { userHasAnyGrant } from './authzVisibility.js'
 import {
   ALL_INSTANCE_PERMISSIONS,
   type InstancePermission,

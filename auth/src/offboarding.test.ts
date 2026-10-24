@@ -11,7 +11,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 const { offboard } = await import('./offboarding.js')
 const { createServicePrincipal, getServicePrincipal } = await import('./servicePrincipals.js')
 const { queryAudit } = await import('./audit.js')
-const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
+const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
 maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })

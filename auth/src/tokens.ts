@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
+import { readJsonFile, writeJsonFile } from './jsonStore.js'
 import { env } from './env.js'
 import { isCredentialRevoked } from './credentialRevocation.js'
 import { kindOf } from './principal.js'
@@ -55,8 +55,7 @@ function hashToken(raw: string): string {
 
 function readStore(): StoreFile {
   try {
-    const raw = readFileSync(storePath(), 'utf8')
-    const parsed = JSON.parse(raw) as StoreFile
+    const parsed = readJsonFile<StoreFile | null>(storePath(), null)
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tokens)) {
       return { version: 1, tokens: [] }
     }
@@ -74,10 +73,7 @@ function readStore(): StoreFile {
 }
 
 function writeStore(store: StoreFile): void {
-  mkdirSync(dirname(storePath()), { recursive: true })
-  const tmp = `${storePath()}.${process.pid}.tmp`
-  writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf8')
-  renameSync(tmp, storePath())
+  writeJsonFile(storePath(), store)
 }
 
 function toPublic(rec: PatRecord): PatPublic {

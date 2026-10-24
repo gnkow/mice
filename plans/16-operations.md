@@ -55,7 +55,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 | `pats.json` | `tokens.ts` (`{version:1, tokens}`) | tmp + rename (own implementation; invalid shape → empty store) |
 | `session-revocations.json` | `credentialRevocation.ts` | `writeJsonFile` |
 | `cli-devices.json` | `cliDevice.ts` | store-local (not verified) |
-| `instance-admins.json`, `namespaces.json`, `namespace-members.json`, `repo-collaborators.json` | `authzStore.ts` | `writeJsonFile` read-modify-write; one-off `identityMigration.ts` rewrites them |
+| `instance-admins.json`, `namespaces.json`, `namespace-members.json`, `repo-collaborators.json` | `authzStoreFiles.ts` (read/write) with `authzInstanceStore.ts`, `authzNamespaceStore.ts`, `authzMembershipStore.ts`, `authzCollaboratorStore.ts` | `writeJsonFile` read-modify-write; one-off `identityMigration.ts` rewrites them |
 | `custom-roles.json` | `customRoles.ts` | not verified |
 | `access-requests.json` | `accessRequests.ts` (`{version:1, requests}`) | `writeJsonFile` |
 | `announcements.json` | `announcementsStore.ts` | `writeJsonFile` |
@@ -133,7 +133,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 ### Phase 3 — state versioning and storage seam (proposed, not approved)
 
 - [ ] Global state schema version file + startup migration runner with refuse-to-start on newer-than-known
-- [ ] **"JSON state store" deep-module candidate:** today each module (`authzStore`, `favoritesStore`, `metaStore`, `accessRequests`, `announcementsStore`, `jobsStore`, `sessionsStore`, `notificationsStore`, `tokens`, `credentialRevocation`) re-implements path, read, shape validation and write. A single store interface (get/put/append/transaction, versioned, atomic) would give one seam for locking, migration, backup and a future SQLite/Postgres adapter
+- [ ] **"JSON state store" deep-module candidate:** today each module (`authzStoreFiles`, `favoritesStore`, `metaStore`, `accessRequests`, `announcementsStore`, `jobsStore`, `sessionsStore`, `notificationsStore`, `tokens`, `credentialRevocation`) re-implements path, read, shape validation and write. A single store interface (get/put/append/transaction, versioned, atomic) would give one seam for locking, migration, backup and a future SQLite/Postgres adapter
 - [ ] Spike SQLite (single node, transactional, easy backup) vs Postgres (HA); decision recorded as an ADR in `docs/adr/`
 
 ### Phase 4 — observability (proposed, not approved)

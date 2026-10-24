@@ -1,28 +1,15 @@
 import { interpretRequest } from './requestInterpretation.js'
-import {
-  customNamespaceRoleIds,
-  customRepoRoleIdsForUser,
-  getNamespace,
-  getRepoCollaboratorRole,
-  getRepoCollaboratorRoleFromGroups,
-  hasCompletedTraining,
-  hasInstancePermission,
-  hasNamespaceCapability,
-  isAuthzEnforce,
-  isInstanceAdmin,
-  maybeBootstrapInstanceAdmin,
-  maybeDevGrantAll,
-  namespacesWithCapability,
-  ownedNamespaces,
-  resolveNamespaceRole,
-  userCanSeeNamespace,
-  userHasAnyGrant,
-} from './authzStore.js'
+import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
+import { hasCompletedTraining, hasInstancePermission, isAuthzEnforce, isInstanceAdmin, maybeBootstrapInstanceAdmin, maybeDevGrantAll } from './authzInstanceStore.js'
+import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
+import { getNamespace } from './authzNamespaceStore.js'
+import { ownedNamespaces, userCanSeeNamespace, userHasAnyGrant } from './authzVisibility.js'
 import {
   maxRepoRole,
   REPO_ROLE_RANK,
   roleAtLeast,
   type BasePermission,
+  type InstancePermission,
   type RepoRole,
 } from './authzTypes.js'
 import type { SessionUser } from './session.js'
@@ -197,11 +184,6 @@ export function canManageRepoCollaborators(
   return false
 }
 
-function isPublicApiPath(pathname: string): boolean {
-  const p = pathname.replace(/\/+$/, '') || '/'
-  return p === '/api/version' || p === '/api/health' || p === '/api/oxen_version'
-}
-
 export type AuthorizeInput = {
   user: SessionUser
   via: AuditVia
@@ -232,79 +214,57 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
     return deny('Training / GxP onboarding required')
   }
 
-  if (isPublicApiPath(pathname)) return allow()
-
   const interpreted = interpretRequest(method, pathname)
-  let ns = interpreted.namespace ?? input.createNamespace
-  let repo = interpreted.repo ?? input.createRepo
+  const ns = interpreted.namespace ?? input.createNamespace
+  const repo = interpreted.repo ?? input.createRepo
   const action = interpreted.authzAction
+  const bypass: AuthzDecision = { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
 
-  // List oxen namespace catalog — non-pending; proxy filters to visible ns.
-  // Single-namespace GET requires membership or repo collab in that ns.
-  if (
-    (pathname === '/api/namespaces' || pathname.startsWith('/api/namespaces/')) &&
-    (method === 'GET' || method === 'HEAD')
-  ) {
-    const parts = pathname.replace(/\/+$/, '').split('/').filter(Boolean)
-    if (parts.length >= 3) {
-      const targetNs = decodeURIComponent(parts[2] ?? '')
+  switch (interpreted.kind) {
+    case 'public':
+      return allow()
+    // The proxy filters the catalog to visible namespaces.
+    case 'namespace.list':
+      return allow()
+    case 'namespace.detail': {
+      const targetNs = interpreted.targetNamespace
       if (!targetNs) return deny('Invalid namespace')
       if (userCanSeeNamespace(user, targetNs)) return allow()
-      if (isInstanceAdmin(user)) {
-        return { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
-      }
+      if (isInstanceAdmin(user)) return bypass
       return deny('Not allowed to view that namespace')
     }
-    return allow()
-  }
-
-  // Create namespace via oxen (rare) — instance permission
-  if (action === 'namespace.create') {
-    if (
-      isInstanceAdmin(user) ||
-      hasInstancePermission(user, 'create_namespace')
-    ) {
-      return allow()
-    }
-    return deny('Missing permission create_namespace')
-  }
-
-  // Create repository
-  if (action === 'repo.create' || (pathname === '/api/repos' && method === 'POST')) {
-    if (!ns) return deny('Namespace required to create repository')
-    if (hasInstancePermission(user, 'create_namespace') && !getNamespace(ns)) {
-      return allow()
-    }
-    const settings = getNamespace(ns)
-    if (!settings) {
-      if (isInstanceAdmin(user)) {
-        return { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
+    case 'namespace.create':
+      if (isInstanceAdmin(user) || hasInstancePermission(user, 'create_namespace')) {
+        return allow()
       }
-      return deny('Namespace not found in AuthZ; create it first')
+      return deny('Missing permission create_namespace')
+    case 'repo.create': {
+      if (!ns) return deny('Namespace required to create repository')
+      if (hasInstancePermission(user, 'create_namespace') && !getNamespace(ns)) {
+        return allow()
+      }
+      const settings = getNamespace(ns)
+      if (!settings) {
+        if (isInstanceAdmin(user)) return bypass
+        return deny('Namespace not found in AuthZ; create it first')
+      }
+      if (hasNamespaceCapability(ns, user, 'create_repos')) return allow()
+      const nsRole = resolveNamespaceRole(ns, user)
+      if (nsRole === 'owner') return allow()
+      if (nsRole === 'member' && settings.membersCanCreateRepos) return allow()
+      if (isInstanceAdmin(user)) return bypass
+      return deny('Not allowed to create repositories in this namespace')
     }
-    if (hasNamespaceCapability(ns, user, 'create_repos')) return allow()
-    const nsRole = resolveNamespaceRole(ns, user)
-    if (nsRole === 'owner') return allow()
-    if (nsRole === 'member' && settings.membersCanCreateRepos) return allow()
-    if (isInstanceAdmin(user)) {
-      return { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
+    case 'repo.list': {
+      const listNs = interpreted.targetNamespace
+      if (!listNs) return deny('Invalid namespace')
+      if (resolveNamespaceRole(listNs, user)) return allow()
+      if (isInstanceAdmin(user)) return bypass
+      return deny('Not a member of this namespace')
     }
-    return deny('Not allowed to create repositories in this namespace')
-  }
-
-  // List repos in namespace
-  if (
-    /^\/api\/repos\/[^/]+$/.test(pathname.replace(/\/+$/, '')) &&
-    (method === 'GET' || method === 'HEAD')
-  ) {
-    const parts = pathname.split('/').filter(Boolean)
-    ns = decodeURIComponent(parts[2] ?? '')
-    if (!ns) return deny('Invalid namespace')
-    if (resolveNamespaceRole(ns, user)) return allow()
-    if (isInstanceAdmin(user)) {
-      return { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
-    }
-    return deny('Not a member of this namespace')
+    case 'other':
+    case 'repo':
+      break
   }
 
   if (!ns || !repo) {
@@ -342,9 +302,7 @@ export function authorizeAuditQuery(
   if (!isAuthzEnforce()) {
     return { allow: true }
   }
-  if (isInstanceAdmin(user) || hasInstancePermission(user, 'view_audit')) {
-    return { allow: true }
-  }
+  if (authorizeInstanceAction(user, 'audit.view').allow) return { allow: true }
   const scoped = [
     ...new Set([
       ...ownedNamespaces(user),
@@ -382,9 +340,7 @@ export function authorizeLineageQuery(
     return { allow: true }
   }
   if (!namespace || !repo) {
-    if (isInstanceAdmin(user) || hasInstancePermission(user, 'view_lineage')) {
-      return { allow: true }
-    }
+    if (authorizeInstanceAction(user, 'lineage.view').allow) return { allow: true }
     return {
       allow: false,
       reason: 'namespace and repo required (or view_lineage / admin)',
@@ -459,36 +415,55 @@ export function authorizeRepoAction(
   return check.ok ? { allow: true } : { allow: false, reason: policy.reason }
 }
 
-/** Own PAT mint/list/revoke when enforce is on. */
-export function authorizeManageOwnTokens(user: SessionUser): {
-  allow: boolean
-  reason?: string
-} {
+export type InstanceAction =
+  | 'tokens.manage'
+  | 'cli.device.approve'
+  | 'audit.view'
+  | 'lineage.view'
+  | 'store.admin'
+
+/**
+ * Instance-wide actions: allowed for an instance admin or a holder of the named
+ * permission. `store.admin` has no permission and rejects scoped credentials.
+ */
+const INSTANCE_ACTION_POLICY: Record<
+  InstanceAction,
+  { permission?: InstancePermission; reason: string }
+> = {
+  'tokens.manage': { permission: 'manage_own_tokens', reason: 'Missing permission manage_own_tokens' },
+  'cli.device.approve': { permission: 'cli_device_approve', reason: 'Missing permission cli_device_approve' },
+  'audit.view': { permission: 'view_audit', reason: 'Missing permission view_audit' },
+  'lineage.view': { permission: 'view_lineage', reason: 'Missing permission view_lineage' },
+  'store.admin': { reason: 'Requires instance admin' },
+}
+
+export function authorizeInstanceAction(
+  user: SessionUser,
+  action: InstanceAction,
+): { allow: boolean; reason?: string } {
   if (!isAuthzEnforce()) return { allow: true }
-  if (isInstanceAdmin(user) || hasInstancePermission(user, 'manage_own_tokens')) {
+  const policy = INSTANCE_ACTION_POLICY[action]
+  if (!policy.permission) {
+    if (isInstanceAdmin(user) && !isScopedCredential(user)) return { allow: true }
+    return { allow: false, reason: policy.reason }
+  }
+  if (isInstanceAdmin(user) || hasInstancePermission(user, policy.permission)) {
     return { allow: true }
   }
-  return { allow: false, reason: 'Missing permission manage_own_tokens' }
+  return { allow: false, reason: policy.reason }
+}
+
+/** Own PAT mint/list/revoke when enforce is on. */
+export function authorizeManageOwnTokens(user: SessionUser) {
+  return authorizeInstanceAction(user, 'tokens.manage')
 }
 
 /** Approve / deny CLI device codes when enforce is on. */
-export function authorizeCliDeviceApprove(user: SessionUser): {
-  allow: boolean
-  reason?: string
-} {
-  if (!isAuthzEnforce()) return { allow: true }
-  if (
-    isInstanceAdmin(user) ||
-    hasInstancePermission(user, 'cli_device_approve')
-  ) {
-    return { allow: true }
-  }
-  return { allow: false, reason: 'Missing permission cli_device_approve' }
+export function authorizeCliDeviceApprove(user: SessionUser) {
+  return authorizeInstanceAction(user, 'cli.device.approve')
 }
 
 /** Store-wide operations (capabilities, GC, checkout delete): instance admin, never PAT-scoped. */
-export function authorizeStoreAdmin(user: SessionUser): { allow: boolean; reason?: string } {
-  if (!isAuthzEnforce()) return { allow: true }
-  if (isInstanceAdmin(user) && !isScopedCredential(user)) return { allow: true }
-  return { allow: false, reason: 'Requires instance admin' }
+export function authorizeStoreAdmin(user: SessionUser) {
+  return authorizeInstanceAction(user, 'store.admin')
 }

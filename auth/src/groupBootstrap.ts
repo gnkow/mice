@@ -1,12 +1,9 @@
 import { env } from './env.js'
 import { matchesIdentityEntry } from './principal.js'
 import type { SessionUser } from './session.js'
-import {
-  createNamespaceAuthz,
-  getNamespace,
-  setNamespaceMember,
-  writeInstancePermissions,
-} from './authzStore.js'
+import { writeInstancePermissions } from './authzInstanceStore.js'
+import { setNamespaceMember } from './authzMembershipStore.js'
+import { createNamespaceAuthz, getNamespace } from './authzNamespaceStore.js'
 import type { InstancePermission, NamespaceRole } from './authzTypes.js'
 
 /**

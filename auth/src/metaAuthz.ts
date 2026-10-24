@@ -1,12 +1,8 @@
 import { hasRepoPermission } from './authz.js'
 import { isScopedCredential } from './principal.js'
-import {
-  hasInstancePermission,
-  hasNamespaceCapability,
-  isAuthzEnforce,
-  isInstanceAdmin,
-  userCanSeeNamespace,
-} from './authzStore.js'
+import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin } from './authzInstanceStore.js'
+import { hasNamespaceCapability } from './authzMembershipStore.js'
+import { userCanSeeNamespace } from './authzVisibility.js'
 import type { EntityRef } from './metaTypes.js'
 import type { SessionUser } from './session.js'
 

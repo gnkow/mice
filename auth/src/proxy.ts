@@ -17,14 +17,7 @@ import { authorizeApiRequest } from './authz.js'
 import { interpretRequest } from './requestInterpretation.js'
 import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
-import {
-  ensureNamespaceForCreate,
-  hasInstancePermission,
-  isAuthzEnforce,
-  isInstanceAdmin,
-  setRepoCollaborator,
-  visibleNamespaceNames,
-} from './authzStore.js'
+import { filterNamespaceCatalog, recordSiteAdminBypass, seedRepoCreate } from './proxyEffects.js'
 
 const HOP_BY_HOP = new Set([
   'connection',
@@ -159,16 +152,14 @@ export async function proxyToOxen(
   }
 
   if (decision.siteAdminBypass) {
-    appendAudit({
-      actor: actorFromUser(user),
+    recordSiteAdminBypass({
+      user,
       via,
       method,
-      path: pathname,
-      status: 0,
-      action: 'site_admin_bypass',
+      pathname,
       namespace: createNs,
       repo: createRepo,
-      detail: { reason: decision.reason },
+      reason: decision.reason,
     })
   }
 
@@ -218,39 +209,8 @@ export async function proxyToOxen(
   let responseBody: BodyInit | null = upstream.body
   let commitId: string | undefined
 
-  // Filter oxen namespace catalog to AuthZ-visible namespaces under enforce.
-  if (
-    isAuthzEnforce() &&
-    method === 'GET' &&
-    (pathname.replace(/\/+$/, '') || '/') === '/api/namespaces' &&
-    upstream.ok
-  ) {
-    const ct = upstream.headers.get('content-type') ?? ''
-    if (ct.includes('application/json')) {
-      try {
-        const text = await upstream.text()
-        try {
-          const parsed = JSON.parse(text) as {
-            namespaces?: Array<{ namespace?: string; name?: string }>
-            [key: string]: unknown
-          }
-          const visible = visibleNamespaceNames(user)
-          if (visible !== 'all' && Array.isArray(parsed.namespaces)) {
-            const allow = new Set(visible)
-            parsed.namespaces = parsed.namespaces.filter((n) => {
-              const name = n.namespace ?? n.name ?? ''
-              return allow.has(name)
-            })
-          }
-          responseBody = JSON.stringify(parsed)
-        } catch {
-          responseBody = text
-        }
-      } catch {
-        /* keep streamed body */
-      }
-    }
-  }
+  const filteredCatalog = await filterNamespaceCatalog(user, method, pathname, upstream)
+  if (filteredCatalog !== null) responseBody = filteredCatalog
 
   if (method !== 'GET' && method !== 'HEAD') {
     const classified = interpretRequest(method, pathname)
@@ -357,13 +317,7 @@ export async function proxyToOxen(
       ns &&
       repo
     ) {
-      if (
-        isInstanceAdmin(user) ||
-        hasInstancePermission(user, 'create_namespace')
-      ) {
-        ensureNamespaceForCreate(user, ns, 'none')
-      }
-      void setRepoCollaborator(ns, repo, user, 'admin')
+      seedRepoCreate(user, ns, repo)
     }
   }
 

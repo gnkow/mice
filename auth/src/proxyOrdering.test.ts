@@ -14,7 +14,8 @@ process.env.OXEN_UPSTREAM = 'http://oxen.invalid'
 const { Hono } = await import('hono')
 const { proxyToOxen, setUpstreamFetch } = await import('./proxy.js')
 const { preparePrincipal } = await import('./authz.js')
-const { createNamespaceAuthz, setRepoCollaborator } = await import('./authzStore.js')
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 
 type Call = { url: string; method: string; headers: Headers; body: string }
 let calls: Call[] = []

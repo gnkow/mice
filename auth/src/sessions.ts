@@ -1,10 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { appendAudit, actorFromUser } from './audit.js'
-import {
-  hasInstancePermission,
-  isAuthzEnforce,
-  isInstanceAdmin,
-} from './authzStore.js'
+import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin } from './authzInstanceStore.js'
 import { env } from './env.js'
 import type { SessionUser } from './session.js'
 import { mintConnectPayload, type ConnectPayload } from './sessionsConnect.js'

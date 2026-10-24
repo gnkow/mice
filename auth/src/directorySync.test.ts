@@ -17,7 +17,7 @@ const { readNotificationState, notificationUserKey } = await import('./notificat
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
 const { queryAudit } = await import('./audit.js')
-const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
+const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })

@@ -32,9 +32,8 @@ const {
   defaultNotificationPreferences, nextNotificationDelivery, notificationQuiet, parseNotificationPreferences, resourceIsMuted,
 } = await import('./notificationsTypes.js')
 const { sealSession } = await import('./session.js')
-const {
-  createNamespaceAuthz, setRepoCollaborator, removeRepoCollaborator, setRepoGroupCollaborator,
-} = await import('./authzStore.js')
+const { setRepoCollaborator, removeRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { preparePrincipal } = await import('./authz.js')
 
 const admin: SessionUser = { iss: 'https://idp.test', sub: 'admin', email: 'admin@notifications.test', emailVerified: true, name: 'Admin' }

@@ -33,7 +33,7 @@ process.env.OXEN_UPSTREAM = `http://127.0.0.1:${(upstream.address() as AddressIn
 const { Hono } = await import('hono')
 const { proxyToOxen } = await import('./proxy.js')
 const { queryAudit } = await import('./audit.js')
-const { setAuthzEnforce } = await import('./authzStore.js')
+const { setAuthzEnforce } = await import('./authzInstanceStore.js')
 
 const alice = {
   sub: 'alice',

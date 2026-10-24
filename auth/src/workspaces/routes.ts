@@ -4,10 +4,9 @@ import { actorFromUser, appendAudit, type AuditActor } from '../audit.js'
 import {
   authorizeStoreAdmin,
   authorizeRepoAction,
-  preparePrincipal,
 } from '../authz.js'
-import { getSession, type SessionUser } from '../session.js'
-import { resolvePat } from '../tokens.js'
+import { authenticateRequest } from '../requireAuth.js'
+import type { SessionUser } from '../session.js'
 import { getCapabilities, logCapabilities } from './capabilities.js'
 import {
   CheckoutStore,
@@ -28,22 +27,9 @@ import { getWorkspaceService, setWorkspaceService, validWorkspaceId, WorkspaceEr
 
 const SYSTEM_ACTOR: AuditActor = { sub: 'system', iss: 'mice', email: 'system@mice', name: 'Mice store' }
 
-async function requireAuth(c: Context): Promise<{ user: SessionUser; via: 'session' | 'pat' } | null> {
-  const session = await getSession(c as never)
-  if (session) {
-    preparePrincipal(session)
-    return { user: session, via: 'session' }
-  }
-  const auth = c.req.header('authorization') ?? ''
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-  if (bearer) {
-    const patUser = resolvePat(bearer)
-    if (patUser) {
-      preparePrincipal(patUser)
-      return { user: patUser, via: 'pat' }
-    }
-  }
-  return null
+/** Scoped PATs are accepted here; the per-repo gates cap them. */
+function requireAuth(c: Context) {
+  return authenticateRequest(c, { allowScoped: true })
 }
 
 function fail(c: Context, err: unknown) {
