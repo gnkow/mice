@@ -34,6 +34,8 @@ export const env = {
   ),
   /** Cookie max age (seconds). */
   sessionTtlSec: Number(process.env.SESSION_TTL_SEC ?? 60 * 60 * 8),
+  /** Idle timeout (seconds); 0 disables. Value owned by PLAT-GXP. */
+  sessionIdleSec: Number(process.env.SESSION_IDLE_SEC ?? 0),
   cookieName: process.env.SESSION_COOKIE_NAME ?? 'mice_session',
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   /** Directory for PAT store (pats.json). */

@@ -25,14 +25,23 @@ export type SessionUser = {
    * effective access. Never exceeds the user's grants.
    */
   patScopes?: PatScope[]
+  /** Epoch seconds the Session was first issued (absolute TTL anchor). */
+  sessionStart?: number
+  /** Epoch seconds of the last activity re-seal (idle timeout anchor). */
+  lastActive?: number
 }
+
+const nowSec = () => Math.floor(Date.now() / 1000)
 
 function secretKey() {
   return createHash('sha256').update(env.sessionSecret).digest()
 }
 
 export async function sealSession(user: SessionUser): Promise<string> {
+  const start = user.sessionStart ?? nowSec()
   return new EncryptJWT({
+    sat: start,
+    act: user.lastActive ?? nowSec(),
     sub: user.sub,
     iss: user.iss,
     email: user.email,
@@ -42,7 +51,7 @@ export async function sealSession(user: SessionUser): Promise<string> {
   })
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
     .setIssuedAt()
-    .setExpirationTime(`${env.sessionTtlSec}s`)
+    .setExpirationTime(start + env.sessionTtlSec)
     .encrypt(secretKey())
 }
 
@@ -55,6 +64,10 @@ export async function openSession(token: string): Promise<SessionUser | null> {
     const name = String(payload.name ?? '')
     const idToken = String(payload.id_token ?? '')
     if (!sub || !iss || !email || !name) return null
+    const iat = Number(payload.iat ?? 0)
+    const sessionStart = Number(payload.sat ?? iat)
+    const lastActive = Number(payload.act ?? iat)
+    if (env.sessionIdleSec > 0 && nowSec() - lastActive > env.sessionIdleSec) return null
     const groupsRaw = payload.groups
     const groups = Array.isArray(groupsRaw)
       ? groupsRaw
@@ -68,6 +81,8 @@ export async function openSession(token: string): Promise<SessionUser | null> {
       email,
       name,
       idToken: idToken || undefined,
+      sessionStart,
+      lastActive,
       ...(groups?.length ? { groups } : {}),
     }
   } catch {
@@ -95,8 +110,20 @@ export async function setSessionCookie(
     secure: env.cookieSecure,
     sameSite: 'Lax',
     path: '/',
-    maxAge: env.sessionTtlSec,
+    maxAge: Math.max(
+      1,
+      (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec(),
+    ),
   })
+}
+
+/** Extend an idle-limited Session on activity without moving its absolute expiry. */
+export async function touchSession(c: Context, user: SessionUser): Promise<void> {
+  if (env.sessionIdleSec <= 0) return
+  const last = user.lastActive ?? 0
+  const throttle = Math.max(1, Math.floor(env.sessionIdleSec / 4))
+  if (nowSec() - last < throttle) return
+  await setSessionCookie(c, { ...user, lastActive: nowSec() })
 }
 
 export function clearSessionCookie(c: Context): void {

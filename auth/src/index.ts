@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
 import { env, oidcConfigured } from './env.js'
 import { sameOriginGuard } from './csrf.js'
+import { sessionActivity } from './sessionActivity.js'
 import {
   buildAuthorizeUrl,
   buildEndSessionUrl,
@@ -180,6 +181,7 @@ assertProductionStartup()
 
 const app = new Hono()
 app.use('*', sameOriginGuard)
+app.use('*', sessionActivity)
 setAuditObserver((event) => {
   try { purgeFavoritesForAudit(event) } catch (err) { console.error('[mice-auth] favorites purge failed', err) }
   captureNotificationAudit(event)
