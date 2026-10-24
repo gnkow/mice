@@ -4,8 +4,8 @@
 
 **Blocked by:** 03 (Migrate topic route files)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] No caller outside the module resolves a bearer PAT directly
-- [ ] `requireSession` and `requireBrowserSession` helpers are gone
-- [ ] All unit and e2e auth tests pass
+- [x] No caller outside the module resolves a bearer PAT directly
+- [x] `requireSession` and `requireBrowserSession` helpers are gone
+- [x] All unit and e2e auth tests pass

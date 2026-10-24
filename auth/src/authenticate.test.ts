@@ -9,7 +9,7 @@ process.env.SESSION_SECRET = 'test-session-secret-for-authn'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 
 const { Hono } = await import('hono')
-const { authenticate } = await import('./requireAuth.js')
+const { authenticate, authenticateUser, onAuthenticated } = await import('./requireAuth.js')
 type Policy = NonNullable<Parameters<typeof authenticate>[1]>
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
@@ -70,5 +70,19 @@ describe('authenticate', () => {
     assert.equal((await app.request('/x', { headers: { cookie: c } })).status, 200)
     const { token } = createPat(mk('o2'), 'o')
     assert.equal((await app.request('/x', { method: 'POST', headers: bearer(token) })).status, 200)
+  })
+
+  it('authenticateUser records authVia and runs onAuthenticated hooks', async () => {
+    const seen: string[] = []
+    onAuthenticated((u) => seen.push(u.sub))
+    const { token } = createPat(mk('h'), 'h')
+    const app = new Hono()
+    app.get('/x', async (c) => {
+      const u = await authenticateUser(c)
+      return c.json({ sub: u?.sub ?? null, via: c.get('authVia' as never) ?? null })
+    })
+    assert.deepEqual(await (await app.request('/x', { headers: bearer(token) })).json(), { sub: 'h', via: 'pat' })
+    assert.deepEqual(seen, ['h'])
+    assert.equal((await (await app.request('/x')).json() as { sub: unknown }).sub, null)
   })
 })

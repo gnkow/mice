@@ -35,23 +35,49 @@ export async function requireAuth(
     return { user: session, via: 'session' }
   }
 
-  const auth = c.req.header('authorization') ?? ''
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-
-  if (bearer) {
-    const patUser = resolvePat(bearer)
-    if (patUser) {
-      preparePrincipal(patUser)
-      return { user: patUser, via: 'pat' }
-    }
+  const patUser = resolveBearer(c)
+  if (patUser) {
+    preparePrincipal(patUser)
+    return { user: patUser, via: 'pat' }
   }
 
   return null
 }
 
+/** The raw `Authorization: Bearer` token, or '' when absent. */
+export function bearerToken(c: Context): string {
+  const auth = c.req.header('authorization') ?? ''
+  return auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+}
+
+/** The PAT's owner for a bearer token, or null when it is expired, revoked or unknown. */
+export function resolveBearer(c: Context): SessionUser | null {
+  const token = bearerToken(c)
+  return token ? resolvePat(token) : null
+}
+
+type AuthenticatedHook = (user: SessionUser) => void
+const hooks: AuthenticatedHook[] = []
+/** Registers a callback run for every authenticated request made through `authenticateUser`. */
+export function onAuthenticated(fn: AuthenticatedHook): void {
+  hooks.push(fn)
+}
+
+/**
+ * Nullable form of `authenticate` for route handlers: records `authVia` on the context
+ * (for audit) and runs the `onAuthenticated` hooks.
+ */
+export async function authenticateUser(c: Context, policy: AuthPolicy = {}): Promise<SessionUser | null> {
+  const r = await authenticate(c, policy)
+  if (!r.ok) return null
+  if (r.via === 'pat') c.set('authVia' as never, 'pat' as never)
+  for (const fn of hooks) fn(r.user)
+  return r.user
+}
+
 export type AuthPolicy = {
   /** `session` accepts only the browser cookie; default accepts a PAT too. */
-  credential?: 'session' | 'any'
+  credential?: 'session' | 'any' | 'pat'
   /** Scoped PATs are rejected unless this is true (default false: they cannot act as their owner). */
   allowScoped?: boolean
   /** Service principals are refused with this message (they have no UI-bound resources). */
@@ -73,7 +99,7 @@ const deny = (status: 400 | 401 | 403, error: string): AuthOutcome => ({ ok: fal
  * scoped-credential and service-principal rules decided here rather than per route.
  */
 export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise<AuthOutcome> {
-  const session = await getSession(c)
+  const session = policy.credential === 'pat' ? null : await getSession(c)
   if (session) {
     if (!['GET', 'HEAD'].includes(c.req.method)) {
       if (policy.originCheck) {
@@ -93,9 +119,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   }
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 
-  const auth = c.req.header('authorization') ?? ''
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-  const pat = bearer ? resolvePat(bearer) : null
+  const pat = resolveBearer(c)
   if (!pat || (!policy.allowScoped && isScopedCredential(pat))) return deny(401, 'Authentication required')
   if (policy.refuseServiceWith && pat.iss === SERVICE_ISSUER) return deny(403, policy.refuseServiceWith)
   preparePrincipal(pat)
