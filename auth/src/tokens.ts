@@ -180,7 +180,7 @@ export function resolvePat(rawBearer: string): SessionUser | null {
   const store = readStore()
   const rec = store.tokens.find((t) => t.tokenHash === tokenHash)
   if (!rec || isExpired(rec)) return null
-  if (isCredentialRevoked(rec, Math.floor(Date.parse(rec.createdAt) / 1000))) return null
+  if (isCredentialRevoked(rec, Math.floor(Date.parse(rec.createdAt) / 1000), 'pat')) return null
   if (!rec.lastUsedAt || Date.now() - Date.parse(rec.lastUsedAt) >= LAST_USED_DEBOUNCE_MS) {
     rec.lastUsedAt = new Date(Date.now()).toISOString()
     writeStore(store)
