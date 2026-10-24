@@ -1,3 +1,4 @@
+import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { normalizeGroupsClaim } from './authzTypes.js'
 import { env, oidcConfigured } from './env.js'
 
@@ -53,12 +54,17 @@ export async function loadOidcConfig(): Promise<OidcConfig> {
     }
   }
 
+  let jwksUri = doc.jwks_uri
+  if (jwksUri && env.oidcIssuerPublic && env.oidcIssuerPublic !== env.oidcIssuer) {
+    jwksUri = rewriteHost(jwksUri, env.oidcIssuer)
+  }
+
   cached = {
     issuer: doc.issuer,
     authorizationEndpoint,
     tokenEndpoint,
     endSessionEndpoint,
-    jwksUri: doc.jwks_uri,
+    jwksUri,
   }
   return cached
 }
@@ -121,10 +127,26 @@ export async function buildEndSessionUrl(opts: {
   return u.toString()
 }
 
+let jwksSet: ReturnType<typeof createRemoteJWKSet> | undefined
+let jwksSetUri = ''
+
+/** Verifies the JWS signature (RS256/ES256 only) against the IdP key set; refetches on key rotation. */
+async function verifyIdTokenSignature(idToken: string, jwksUri: string | undefined): Promise<void> {
+  if (!jwksUri) throw new Error('IdP publishes no jwks_uri; cannot verify id_token')
+  if (!jwksSet || jwksSetUri !== jwksUri) {
+    jwksSet = createRemoteJWKSet(new URL(jwksUri), { cooldownDuration: env.jwksCooldownMs })
+    jwksSetUri = jwksUri
+  }
+  try {
+    await jwtVerify(idToken, jwksSet, { algorithms: ['RS256', 'ES256'] })
+  } catch (e) {
+    throw new Error(`id_token signature verification failed: ${e instanceof Error ? e.message : e}`)
+  }
+}
+
 /**
  * Claim checks for an id_token received directly from the token endpoint over TLS.
- * The JWS signature is deliberately not verified; revisit if tokens ever arrive via the
- * front channel.
+ * The JWS signature is verified only when OIDC_VERIFY_ID_TOKEN is on (default under GXP_STRICT).
  */
 export function validateIdTokenClaims(
   payload: Record<string, unknown>,
@@ -186,6 +208,8 @@ export async function exchangeCode(opts: {
   }
   const idToken = tokens.id_token
   if (!idToken) throw new Error('No id_token in token response')
+
+  if (env.verifyIdToken) await verifyIdTokenSignature(idToken, conf.jwksUri)
 
   const payloadPart = idToken.split('.')[1]
   if (!payloadPart) throw new Error('Malformed id_token')
