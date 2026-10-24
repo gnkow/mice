@@ -37,7 +37,7 @@ const {
 } = await import('./authzStore.js')
 const { preparePrincipal } = await import('./authz.js')
 
-const admin: SessionUser = { iss: 'https://idp.test', sub: 'admin', email: 'admin@notifications.test', name: 'Admin' }
+const admin: SessionUser = { iss: 'https://idp.test', sub: 'admin', email: 'admin@notifications.test', emailVerified: true, name: 'Admin' }
 const reader: SessionUser = { iss: admin.iss, sub: 'reader', email: 'reader@notifications.test', name: 'Reader' }
 const outsider: SessionUser = { iss: admin.iss, sub: 'outsider', email: 'other@notifications.test', name: 'Other' }
 const app = new Hono()

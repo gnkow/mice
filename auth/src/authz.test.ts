@@ -103,6 +103,7 @@ const admin = {
   sub: 'admin',
   iss: 'test',
   email: 'admin@mice.local',
+  emailVerified: true,
   name: 'Admin',
 }
 const alice = {

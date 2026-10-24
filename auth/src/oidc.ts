@@ -157,6 +157,7 @@ export async function exchangeCode(opts: {
   idToken: string
   groups: string[]
   authTime?: number
+  emailVerified: boolean
 }> {
   const conf = await loadOidcConfig()
   const body = new URLSearchParams({
@@ -220,5 +221,7 @@ export async function exchangeCode(opts: {
   if (!sub) throw new Error('id_token missing sub')
   const groups = normalizeGroupsClaim(payload[env.oidcGroupsClaim])
   const authTime = typeof payload.auth_time === 'number' ? payload.auth_time : undefined
-  return { sub, iss, email, name, idToken, groups, authTime }
+  const emailVerified =
+    typeof payload.email === 'string' && payload.email_verified === true
+  return { sub, iss, email, name, idToken, groups, authTime, emailVerified }
 }

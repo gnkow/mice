@@ -1,3 +1,4 @@
+import { matchesIdentityEntry } from './identityMatch.js'
 import { join } from 'node:path'
 import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
@@ -188,16 +189,12 @@ function repoKey(ns: string, repo: string): string {
 function bootstrapAllowlist(): string[] {
   return env.authzBootstrapAdmins
     .split(',')
-    .map((s) => s.trim().toLowerCase())
+    .map((s) => s.trim())
     .filter(Boolean)
 }
 
 function matchesBootstrap(user: SessionUser): boolean {
-  const list = bootstrapAllowlist()
-  if (!list.length) return false
-  const email = user.email.toLowerCase()
-  const sub = user.sub.toLowerCase()
-  return list.includes(email) || list.includes(sub)
+  return bootstrapAllowlist().some((entry) => matchesIdentityEntry(entry, user))
 }
 
 /** Effective enforce: env override wins; else store flag. */

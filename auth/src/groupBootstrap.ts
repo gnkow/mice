@@ -1,4 +1,5 @@
 import { env } from './env.js'
+import { matchesIdentityEntry } from './identityMatch.js'
 import type { SessionUser } from './session.js'
 import {
   createNamespaceAuthz,
@@ -20,7 +21,8 @@ import type { InstancePermission, NamespaceRole } from './authzTypes.js'
  *   },
  *   "team-x": { "namespace": "team-x", "role": "member", "createNamespace": true, "basePermission": "read" }
  * }
- * Applied when session.groups includes the key (or email matches key).
+ * Applied when session.groups includes the key, or the key is `<iss>|<sub>` or a verified email
+ * of the Principal.
  * Under AUTHZ_ENFORCE, sessions/PATs/CLI device require explicit instance perms.
  */
 type BootstrapEntry = {
@@ -47,12 +49,9 @@ export function applyGroupBootstrap(
 ): void {
   const map = parseMap()
   if (!Object.keys(map).length) return
-  const keys = new Set<string>([
-    ...(user.groups ?? []).map((g) => g.toLowerCase()),
-    user.email.toLowerCase(),
-  ])
+  const groups = new Set((user.groups ?? []).map((g) => g.toLowerCase()))
   for (const [key, entry] of Object.entries(map)) {
-    if (!keys.has(key.toLowerCase())) continue
+    if (!groups.has(key.toLowerCase()) && !matchesIdentityEntry(key, user)) continue
     if (entry.instancePermissions?.length) {
       writeInstancePermissions(user, entry.instancePermissions)
     }

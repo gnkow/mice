@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
+import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
 import { sameOriginGuard } from './csrf.js'
 import { sessionActivity } from './sessionActivity.js'
@@ -179,6 +180,7 @@ function safeReturnPath(raw: string | undefined | null): string | undefined {
 }
 
 assertProductionStartup()
+runIdentityMigration()
 
 const app = new Hono()
 app.use('*', sameOriginGuard)
@@ -1070,6 +1072,7 @@ app.get('/auth/callback', async (c) => {
       sub: user.sub,
       iss: user.iss,
       email: user.email,
+      ...(user.emailVerified ? { emailVerified: true } : {}),
       name: user.name,
       idToken: user.idToken,
       ...(user.authTime !== undefined ? { authTime: user.authTime } : {}),

@@ -37,7 +37,7 @@ const sw = await import('./sessionsWorkspaces.js')
 resetHostVolumePathsForTest({ store: '/host/store', ws: '/host/ws' })
 
 const C1 = 'c1111111111111111111111111111111'
-const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin' }
+const admin: { sub: string; iss: string; email: string; emailVerified?: boolean; name: string } = { sub: 'admin', iss: 'test', email: 'admin@mice.local', emailVerified: true, name: 'Admin' }
 const reader = { sub: 'reader', iss: 'test', email: 'reader@example.com', name: 'Reader' }
 setAuthzEnforce(true)
 preparePrincipal(admin)

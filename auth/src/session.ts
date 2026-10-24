@@ -15,6 +15,8 @@ export type SessionUser = {
   sub: string
   iss: string
   email: string
+  /** True only when the IdP asserted `email_verified`. */
+  emailVerified?: boolean
   name: string
   /** OIDC id_token for RP-initiated logout (optional). */
   idToken?: string
@@ -48,6 +50,7 @@ export async function sealSession(user: SessionUser): Promise<string> {
     sub: user.sub,
     iss: user.iss,
     email: user.email,
+    email_verified: user.emailVerified === true,
     name: user.name,
     id_token: user.idToken ?? '',
     groups: user.groups ?? [],
@@ -84,6 +87,7 @@ export async function openSession(token: string): Promise<SessionUser | null> {
       email,
       name,
       idToken: idToken || undefined,
+      ...(payload.email_verified === true ? { emailVerified: true } : {}),
       ...(typeof payload.auth_time === 'number' ? { authTime: payload.auth_time } : {}),
       sessionStart,
       lastActive,

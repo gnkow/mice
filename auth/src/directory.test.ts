@@ -39,6 +39,7 @@ const admin = {
   sub: 'admin-sub',
   iss: 'mice-dev',
   email: 'admin@mice.local',
+  emailVerified: true,
   name: 'Admin',
 }
 

@@ -26,6 +26,7 @@ export async function sealTestSession(user: TestIdentity): Promise<string> {
     sub: user.sub,
     iss: user.iss ?? 'mice-e2e',
     email: user.email,
+    email_verified: true,
     name: user.name,
     id_token: '',
     groups: user.groups ?? [],

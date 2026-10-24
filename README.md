@@ -202,7 +202,7 @@ Compose ships Keycloak for local SSO. The BFF speaks standard OIDC Authorization
    | `OIDC_GROUPS_CLAIM` | Id token claim for groups (default `groups`) |
 
 3. Directory search is Keycloak-specific today. For Entra / Okta / etc., set `DIRECTORY_PROVIDER=none` (pickers still find principals already stored in AuthZ). Optional: leave the `keycloak` service stopped (`docker compose up --build --scale keycloak=0` or remove it from your override).
-4. Bootstrap the first instance admin with `AUTHZ_BOOTSTRAP_ADMINS=<email-or-sub>` matching an IdP user. Keep `AUTHZ_DEV_GRANT_ALL` off outside local/e2e.
+4. Bootstrap the first instance admin with `AUTHZ_BOOTSTRAP_ADMINS=<email>` (matches only when the IdP asserts `email_verified`) or `<iss>|<sub>` (exact IdP identity). A bare `sub` or the `@users.local` fallback never matches. Existing stores with bare-`sub` keys are migrated once to `iss`+`sub` under `AUTH_LEGACY_ISSUER` (default `OIDC_ISSUER`). Keep `AUTHZ_DEV_GRANT_ALL` off outside local/e2e.
 
 Example `.env` fragment (Entra-style issuer; adjust tenant/app values):
 
