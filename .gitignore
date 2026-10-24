@@ -13,7 +13,5 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
-# Local design / epic plans (not shipped in the repo)
-plans/
 # Compiled guest helper binaries (built via make)
 auth/bin/
