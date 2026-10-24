@@ -148,4 +148,17 @@ describe('CLI device auth', () => {
     assert.equal(revokePatByToken(polled.token), true)
     assert.equal(resolvePat(polled.token), null)
   })
+
+  it('mints a scoped PAT when the CLI asked for scopes and shows them to the approver', () => {
+    clearPollThrottle()
+    const scopes = [{ namespace: 'lab', repo: 'data', maxRole: 'read' as const }]
+    const started = startDeviceAuth(scopes)
+    assert.deepEqual(lookupDeviceByUserCode(started.user_code)?.scopes, scopes)
+    approveDevice(started.user_code, alice)
+    clearPollThrottle()
+    const polled = pollDevice(started.device_code)
+    assert.equal(polled.status, 'approved')
+    if (polled.status !== 'approved') return
+    assert.deepEqual(resolvePat(polled.token)?.patScopes, scopes)
+  })
 })

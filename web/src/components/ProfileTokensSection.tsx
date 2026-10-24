@@ -2,9 +2,12 @@ import { Copy, KeyRound, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe } from '../lib/auth'
-import { createToken, listTokens, revokeToken } from '../lib/tokens'
+import { createToken, formatScope, listTokens, revokeToken, type PatScope } from '../lib/tokens'
 
 export function ProfileTokensSection() {
+  const [scopeNs, setScopeNs] = useState('')
+  const [scopeRepo, setScopeRepo] = useState('')
+  const [scopeRole, setScopeRole] = useState<PatScope['maxRole']>('read')
   const [alsoPats, setAlsoPats] = useState(false)
   const [signedOut, setSignedOut] = useState(false)
 
@@ -35,7 +38,7 @@ export function ProfileTokensSection() {
     setError('')
     setSecret(undefined)
     try {
-      const result = await createToken(label, expiresInDays)
+      const result = await createToken(label, expiresInDays, scopeNs.trim() ? [{ namespace: scopeNs.trim(), ...(scopeRepo.trim() ? { repo: scopeRepo.trim() } : {}), maxRole: scopeRole }] : undefined)
       setSecret(result.token)
       tokens.reload()
     } catch (err) { setError(err instanceof Error ? err.message : 'Create failed') }
@@ -81,9 +84,15 @@ mice push`}</pre>
           <label>Expires in<select value={expiresInDays} onChange={event => setExpiresInDays(Number(event.target.value))}>
             {[30, 90, 180, 365].map(d => <option key={d} value={d}>{d} days</option>)}
           </select></label>
+          <label>Scope namespace<input value={scopeNs} onChange={event => setScopeNs(event.target.value)} placeholder="any (unscoped)" autoComplete="off" /></label>
+          <label>Scope repo<input value={scopeRepo} onChange={event => setScopeRepo(event.target.value)} placeholder="all repos" autoComplete="off" disabled={!scopeNs.trim()} /></label>
+          <label>Max role<select value={scopeRole} onChange={event => setScopeRole(event.target.value as PatScope['maxRole'])} disabled={!scopeNs.trim()}>
+            {['read', 'triage', 'write', 'maintain', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
+          </select></label>
           <div className="ns-member-form-actions"><button className="btn primary" type="submit" disabled={busy}><KeyRound size={14} className="button-label-icon" aria-hidden="true" />Create token</button></div>
         </div>
       </form>
+      <p className="muted small">A scoped token only works in the chosen namespace or repo and never exceeds the max role, even if you hold more. Scoped tokens cannot use account management or minting. Leave the namespace empty for an unscoped token.</p>
       {secret && <div className="flash flash-warn" role="status">
         <p>Copy this token now — it will not be shown again.</p>
         <pre className="settings-code mono">{secret}</pre>
@@ -97,7 +106,7 @@ mice push`}</pre>
       {tokens.kind === 'ok' && (tokens.data.length ? <ul className="ns-member-list">
         {tokens.data.map(token => <li key={token.id} className="ns-member-row">
           <div className="ns-member-main"><code className="ns-member-sub">{token.label}</code>
-            <span className="muted small"><span className="mono">{token.prefix}…</span> · Created {new Date(token.createdAt).toLocaleString()}{token.lastUsedAt ? ` · Last used ${new Date(token.lastUsedAt).toLocaleString()}` : ' · Never used'}{token.expiresAt ? ` · Expires ${new Date(token.expiresAt).toLocaleDateString()}` : ''}</span></div>
+            <span className="muted small"><span className="mono">{token.prefix}…</span> · Created {new Date(token.createdAt).toLocaleString()}{token.lastUsedAt ? ` · Last used ${new Date(token.lastUsedAt).toLocaleString()}` : ' · Never used'}{token.expiresAt ? ` · Expires ${new Date(token.expiresAt).toLocaleDateString()}` : ''}{token.scopes?.length ? ` · Scopes ${token.scopes.map(formatScope).join(', ')}` : ' · Unscoped'}</span></div>
           <button className="btn ghost small" type="button" disabled={busy} onClick={() => void revoke(token.id)}><Trash2 size={14} className="button-label-icon" aria-hidden="true" />Revoke</button>
         </li>)}
       </ul> : <p className="muted small">No CLI tokens yet.</p>)}

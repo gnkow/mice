@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
-import type { SessionUser } from './session.js'
+import type { PatScope, SessionUser } from './session.js'
 import { createPat } from './tokens.js'
 
 const DEVICE_TTL_MS = 10 * 60 * 1000
@@ -17,6 +17,7 @@ type DeviceRecord = {
   status: DeviceStatus
   createdAt: string
   expiresAt: string
+  scopes?: PatScope[]
   /** Populated after approve; cleared after successful poll consume. */
   token?: string
   patId?: string
@@ -83,7 +84,7 @@ export type DeviceStartResult = {
 }
 
 /** Create a pending device authorization request. */
-export function startDeviceAuth(): DeviceStartResult {
+export function startDeviceAuth(scopes?: PatScope[]): DeviceStartResult {
   const store = purgeExpired(readStore())
   const deviceCode = randomBytes(32).toString('base64url')
   let userCode = randomUserCode()
@@ -105,6 +106,7 @@ export function startDeviceAuth(): DeviceStartResult {
     status: 'pending',
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + DEVICE_TTL_MS).toISOString(),
+    ...(scopes?.length ? { scopes } : {}),
   }
   store.devices.push(rec)
   writeStore(store)
@@ -125,6 +127,7 @@ export type DeviceLookup = {
   status: DeviceStatus
   expiresAt: string
   expired: boolean
+  scopes?: PatScope[]
 }
 
 export function lookupDeviceByUserCode(userCode: string): DeviceLookup | null {
@@ -138,6 +141,7 @@ export function lookupDeviceByUserCode(userCode: string): DeviceLookup | null {
     status: expired && rec.status === 'pending' ? 'pending' : rec.status,
     expiresAt: rec.expiresAt,
     expired,
+    ...(rec.scopes?.length ? { scopes: rec.scopes } : {}),
   }
 }
 
@@ -161,7 +165,10 @@ export function approveDevice(
     return { ok: false, error: `Device already ${rec.status}`, status: 400 }
   }
 
-  const { token, pat } = createPat(user, 'cli-login', { source: 'cli-login' })
+  const { token, pat } = createPat(user, 'cli-login', {
+    source: 'cli-login',
+    scopes: rec.scopes,
+  })
   rec.status = 'approved'
   rec.token = token
   rec.patId = pat.id

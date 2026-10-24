@@ -44,3 +44,12 @@ export function requireFlag(flags, name, usage) {
   }
   return String(v)
 }
+
+const SCOPE_ROLES = ['read', 'triage', 'write', 'maintain', 'admin']
+
+/** `ns[/repo]:role` -> PAT scope, or null. */
+export function parseScope(text) {
+  const m = /^([A-Za-z0-9][\w.-]*)(?:\/([A-Za-z0-9][\w.-]*))?:([a-z]+)$/.exec(text.trim())
+  if (!m || !SCOPE_ROLES.includes(m[3])) return null
+  return { namespace: m[1], ...(m[2] ? { repo: m[2] } : {}), maxRole: m[3] }
+}

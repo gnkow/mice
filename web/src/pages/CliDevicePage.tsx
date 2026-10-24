@@ -3,12 +3,14 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe } from '../lib/auth'
+import { formatScope, type PatScope } from '../lib/tokens'
 
 type DeviceStatus = {
   userCode: string
   status: string
   expiresAt: string
   expired: boolean
+  scopes?: PatScope[]
 }
 
 async function fetchDeviceStatus(
@@ -170,6 +172,11 @@ export function CliDevicePage() {
                 : lookup.status === 'pending'
                   ? ' is waiting for approval.'
                   : ` is ${lookup.status}.`}
+            </p>
+            <p className="muted small">
+              {lookup.scopes?.length
+                ? `Requested access limited to: ${lookup.scopes.map(formatScope).join(', ')}`
+                : 'Requested access: your full account permissions.'}
             </p>
             {canAct && (
               <div className="btn-row">

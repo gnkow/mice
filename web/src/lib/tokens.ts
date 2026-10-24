@@ -1,4 +1,15 @@
+export type PatScope = {
+  namespace: string
+  repo?: string
+  maxRole: 'read' | 'triage' | 'write' | 'maintain' | 'admin'
+}
+
+export function formatScope(s: PatScope): string {
+  return `${s.namespace}${s.repo ? `/${s.repo}` : ''}: ${s.maxRole}`
+}
+
 export type PatPublic = {
+  scopes?: PatScope[]
   id: string
   label: string
   prefix: string
@@ -44,13 +55,14 @@ export async function listTokens(signal?: AbortSignal): Promise<PatPublic[]> {
 export async function createToken(
   label: string,
   expiresInDays: number,
+  scopes?: PatScope[],
   signal?: AbortSignal,
 ): Promise<CreatePatResponse> {
   const res = await fetch('/auth/tokens', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label, expiresInDays }),
+    body: JSON.stringify({ label, expiresInDays, ...(scopes?.length ? { scopes } : {}) }),
     signal,
   })
   if (!res.ok) throw new Error('Failed to create token')

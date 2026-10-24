@@ -3,6 +3,7 @@ import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
 import { revokeSessions } from './credentialRevocation.js'
+import { parsePatScopes } from './patScopes.js'
 import { signOutEverywhere } from './selfRevocation.js'
 import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
@@ -195,8 +196,16 @@ app.get('/auth/cli-info', (c) => {
 
 // --- CLI device login (Mice-native pairing; no IdP device grant required) ---
 
-app.post('/auth/cli/device/start', (c) => {
-  const started = startDeviceAuth()
+app.post('/auth/cli/device/start', async (c) => {
+  let raw: unknown
+  try {
+    raw = ((await c.req.json()) as { scopes?: unknown }).scopes
+  } catch {
+    /* empty body ok */
+  }
+  const parsed = parsePatScopes(raw)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const started = startDeviceAuth(parsed.scopes)
   return c.json(started)
 })
 
@@ -653,7 +662,9 @@ app.post('/auth/tokens', async (c) => {
     }
     if (body.expiresInDays !== undefined) expiresInDays = body.expiresInDays
     if (body.label?.trim()) label = body.label.trim()
-    if (Array.isArray(body.scopes) && body.scopes.length) scopes = body.scopes
+    const parsed = parsePatScopes(body.scopes)
+    if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+    scopes = parsed.scopes
   } catch {
     /* empty body ok */
   }

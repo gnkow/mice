@@ -16,7 +16,7 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseArgs, requireFlag } from './lib/args.mjs'
+import { parseArgs, parseScope, requireFlag } from './lib/args.mjs'
 import { api } from './lib/api.mjs'
 import { ADMIN_GROUPS, runAdmin } from './lib/admin.mjs'
 import {
@@ -78,7 +78,10 @@ function usage(code = 1) {
   console.error(`mice — Oxen CLI via the Mice auth BFF + local jobs
 
 Usage:
-  mice login [--remote URL] [--no-open]
+  mice login [--remote URL] [--no-open] [--scope <ns>[/<repo>]:<role>]…
+                   --scope limits the minted token to a namespace or repo and a
+                   maximum role (read|triage|write|maintain|admin). Scoped tokens
+                   cannot use management commands.
   mice logout
   mice whoami
   mice remote
@@ -731,14 +734,22 @@ async function cmdReset(flags) {
 const MICE_VERSION = '0.1.0'
 
 function parseLoginFlags(argv) {
-  /** @type {{ remote?: string, open: boolean }} */
-  const opts = { open: true }
+  /** @type {{ remote?: string, open: boolean, scopes: object[] }} */
+  const opts = { open: true, scopes: [] }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--remote' && argv[i + 1]) {
       opts.remote = argv[++i]
     } else if (a.startsWith('--remote=')) {
       opts.remote = a.slice('--remote='.length)
+    } else if ((a === '--scope' && argv[i + 1]) || a.startsWith('--scope=')) {
+      const text = a === '--scope' ? argv[++i] : a.slice('--scope='.length)
+      const scope = parseScope(text)
+      if (!scope) {
+        console.error(`Invalid --scope "${text}". Use <namespace>[/<repo>]:<read|triage|write|maintain|admin>`)
+        process.exit(1)
+      }
+      opts.scopes.push(scope)
     } else if (a === '--no-open') {
       opts.open = false
     } else if (a === '--help' || a === '-h') {

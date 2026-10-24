@@ -16,7 +16,7 @@ function sleep(ms) {
 }
 
 /**
- * @param {{ remote?: string, open?: boolean }} [opts]
+ * @param {{ remote?: string, open?: boolean, scopes?: object[] }} [opts]
  */
 export async function cmdLogin(opts = {}) {
   const remote = resolveRemote({ remote: opts.remote })
@@ -32,7 +32,7 @@ export async function cmdLogin(opts = {}) {
 
   const started = await bffFetch(remote, '/auth/cli/device/start', {
     method: 'POST',
-    body: {},
+    body: opts.scopes?.length ? { scopes: opts.scopes } : {},
   })
   if (!started.res.ok || !started.json?.device_code) {
     console.error(
