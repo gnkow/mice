@@ -20,6 +20,28 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     expect(body.status).toBe('error')
   })
 
+  test('TC-AUTH-CSRF-01: cookie write with foreign Origin is rejected', async ({
+    page,
+  }) => {
+    await mintSession(page, {
+      name: 'Csrf Spec',
+      email: 'csrf-spec@mice.local',
+      sub: 'csrf-spec',
+      iss: 'mice-e2e',
+    })
+    const url = `${BASE_URL}/api/repos/csrf-ns/csrf-repo/branches`
+    const foreign = await page.request.post(url, {
+      headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' },
+      data: { new_name: 'x' },
+    })
+    expect(foreign.status()).toBe(403)
+    const same = await page.request.post(url, {
+      headers: { origin: BASE_URL },
+      data: { new_name: 'x' },
+    })
+    expect(same.status()).not.toBe(403)
+  })
+
   test('TC-AUTH-03: session then /auth/me and /api/version succeed', async ({
     page,
   }) => {

@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { env, oidcConfigured } from './env.js'
+import { sameOriginGuard } from './csrf.js'
 import {
   buildAuthorizeUrl,
   buildEndSessionUrl,
@@ -175,6 +176,7 @@ function safeReturnPath(raw: string | undefined | null): string | undefined {
 }
 
 const app = new Hono()
+app.use('*', sameOriginGuard)
 setAuditObserver((event) => {
   try { purgeFavoritesForAudit(event) } catch (err) { console.error('[mice-auth] favorites purge failed', err) }
   captureNotificationAudit(event)
