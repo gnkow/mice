@@ -16,10 +16,40 @@ function shouldInjectAuthor(body: Record<string, unknown>): boolean {
     'email' in body ||
     'user_name' in body ||
     'user_email' in body ||
+    'author_name' in body ||
+    'author_email' in body ||
+    'committer' in body ||
+    'committer_name' in body ||
+    'committer_email' in body ||
     'message' in body ||
     'commit_message' in body ||
     'new_path' in body
   )
+}
+
+const NAME_KEYS = ['author', 'author_name', 'committer', 'committer_name', 'user_name']
+const EMAIL_KEYS = ['email', 'author_email', 'committer_email', 'user_email']
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
+/**
+ * Overwrite author fields in nested objects and arrays. `name` is only an
+ * author when its object also carries an email field.
+ */
+function overwriteNestedAuthors(value: unknown, user: SessionUser): unknown {
+  if (Array.isArray(value)) return value.map((v) => overwriteNestedAuthors(v, user))
+  if (!isPlainObject(value)) return value
+  const hasEmail = EMAIL_KEYS.some((k) => k in value)
+  const next: Record<string, unknown> = {}
+  for (const [key, v] of Object.entries(value)) {
+    if (EMAIL_KEYS.includes(key)) next[key] = user.email
+    else if (NAME_KEYS.includes(key) && !isPlainObject(v)) next[key] = user.name
+    else if (key === 'name' && hasEmail) next[key] = user.name
+    else next[key] = overwriteNestedAuthors(v, user)
+  }
+  return next
 }
 
 /** Overwrite oxen author-related fields from the authenticated session. */
@@ -27,9 +57,19 @@ export function injectAuthorJson(
   body: Record<string, unknown>,
   user: SessionUser,
 ): Record<string, unknown> {
-  if (!shouldInjectAuthor(body)) return body
+  if (!shouldInjectAuthor(body)) return overwriteNestedAuthors(body, user) as Record<string, unknown>
 
-  const next = { ...body }
+  const flat = { ...body }
+  for (const [key, v] of Object.entries(flat)) {
+    if (isPlainObject(v) || Array.isArray(v)) flat[key] = overwriteNestedAuthors(v, user)
+  }
+  const next = flat
+  for (const k of ['author_name', 'committer', 'committer_name']) {
+    if (k in next && !isPlainObject(next[k])) next[k] = user.name
+  }
+  for (const k of ['author_email', 'committer_email']) {
+    if (k in next) next[k] = user.email
+  }
   next.email = user.email
   if ('author' in next || 'message' in next) {
     next.author = user.name

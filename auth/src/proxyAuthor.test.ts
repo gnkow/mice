@@ -204,6 +204,54 @@ describe('proxy author injection fails closed', () => {
     assert.equal(received.length, 1)
   })
 
+  it('overwrites nested author fields', async () => {
+    await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: JSON.stringify({
+        message: 'm',
+        commit: { author: 'forged', email: 'forged@x.io', name: 'forged' },
+        extra: [{ user_name: 'forged', user_email: 'forged@x.io' }],
+      }),
+    })
+    const sent = JSON.parse(received[0]!.body)
+    assert.deepEqual(sent.commit, {
+      author: 'Alice',
+      email: 'alice@example.com',
+      name: 'Alice',
+    })
+    assert.deepEqual(sent.extra, [
+      { user_name: 'Alice', user_email: 'alice@example.com' },
+    ])
+    assert.doesNotMatch(received[0]!.body, /forged/)
+  })
+
+  it('overwrites committer fields at the top level', async () => {
+    await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: JSON.stringify({ committer: 'forged', committer_email: 'forged@x.io' }),
+    })
+    const sent = JSON.parse(received[0]!.body)
+    assert.equal(sent.committer, 'Alice')
+    assert.equal(sent.committer_email, 'alice@example.com')
+  })
+
+  it('leaves nested objects without author fields untouched', async () => {
+    await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'm', meta: { name: 'dataset', tags: ['x'] } }),
+    })
+    const sent = JSON.parse(received[0]!.body)
+    assert.deepEqual(sent.meta, { name: 'dataset', tags: ['x'] })
+  })
+
+  it('does not treat a repository create body as an author', async () => {
+    await send('/api/repos', {
+      contentType: 'application/json',
+      body: JSON.stringify({ namespace: 'acme', name: 'data' }),
+    })
+    assert.deepEqual(JSON.parse(received[0]!.body), { namespace: 'acme', name: 'data' })
+  })
+
   it('answers 403, not 400, and writes no rejection row for an unauthorized Principal', async () => {
     setAuthzEnforce(true)
     try {
