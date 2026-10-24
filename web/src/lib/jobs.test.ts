@@ -52,7 +52,6 @@ function job(partial: Partial<JobRun> & Pick<JobRun, 'id'>): JobRun {
     error: null,
     log_ref: null,
     source: 'commit_clone',
-    workspace_id: null,
     runner: 'cli',
     ...partial,
   }

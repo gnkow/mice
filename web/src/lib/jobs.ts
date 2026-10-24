@@ -45,8 +45,7 @@ export type JobRun = {
   exit_code: number | null
   error: string | null
   log_ref: string | null
-  source: 'commit_clone' | 'workspace_mount'
-  workspace_id: string | null
+  source: 'commit_clone'
   runner: 'docker' | 'kubernetes' | 'cli'
   /** @deprecated */
   branch?: string

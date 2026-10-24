@@ -1,6 +1,7 @@
-import { ArrowLeftRight as ActionArrowLeftRight, GitMerge as ActionGitMerge } from 'lucide-react'
+import { GitMerge as ActionGitMerge } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { BranchesSubNav } from '../components/BranchesSubNav'
 import { CommitList } from '../components/CommitList'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
@@ -139,7 +140,6 @@ export function MergePage() {
   }
 
   const basePath = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
-  const compareHref = `${basePath}/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`
   const selectOptions = branchNames.length > 0 ? branchNames : [base || defaultBranch]
 
   const mergeData =
@@ -162,6 +162,7 @@ export function MergePage() {
 
   return (
     <main className="page merge-page">
+      <BranchesSubNav />
       <div className="merge-page-head">
         <div>
           <h1 className="merge-title">Merge</h1>
@@ -169,17 +170,6 @@ export function MergePage() {
             Combine changes from one branch into another in this repository.
           </p>
         </div>
-        <Link
-          className={`btn ghost${canCheck ? '' : ' is-disabled'}`}
-          to={canCheck ? compareHref : `${basePath}/compare`}
-          aria-disabled={!canCheck}
-          tabIndex={canCheck ? undefined : -1}
-          onClick={(e) => {
-            if (!canCheck) e.preventDefault()
-          }}
-        >
-          <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />View diff
-        </Link>
       </div>
 
       <div className="merge-range" aria-label="Merge range">
@@ -342,9 +332,6 @@ export function MergePage() {
                   >
                     <ActionGitMerge size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Merging…' : `Merge ${head} → ${base}`}
                   </button>
-                  <Link className="btn ghost" to={compareHref}>
-                    <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />View diff
-                  </Link>
                 </div>
               </section>
             </>

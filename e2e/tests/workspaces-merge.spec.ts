@@ -11,18 +11,18 @@ test.describe('workspaces & merge (W/M)', () => {
     page,
     seededRepo,
   }) => {
-    await page.goto(repoPath(seededRepo, '/workspaces'))
-    await expect(page.getByRole('heading', { name: 'Workspaces' })).toBeVisible()
+    await page.goto(repoPath(seededRepo, '/stages'))
+    await expect(page.getByRole('heading', { name: 'Stages', exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: 'New workspace' }).click()
-    const dialog = page.getByRole('dialog', { name: 'New workspace' })
+    await page.getByRole('button', { name: 'New stage' }).click()
+    const dialog = page.getByRole('dialog', { name: 'New stage' })
     await dialog.getByLabel('Name').fill('e2e-ws')
-    await dialog.getByRole('button', { name: 'Create workspace' }).click()
+    await dialog.getByRole('button', { name: 'Create stage' }).click()
 
-    await expect(page).toHaveURL(/\/workspaces\/[^/]+$/, { timeout: 30_000 })
+    await expect(page).toHaveURL(/\/stages\/[^/]+$/, { timeout: 30_000 })
     await expect(page.getByRole('heading', { name: 'e2e-ws' })).toBeVisible()
 
-    await expect(page.getByRole('tab')).toHaveText(['Changes', 'Jobs', 'Sessions', 'Metadata'])
+    await expect(page.getByRole('tab')).toHaveText(['Changes', 'Metadata'])
     const uploadSection = page.locator('section', { hasText: 'Upload file' })
     await uploadSection.locator('input[name="file"]').setInputFiles(wsNote)
     await uploadSection.getByRole('button', { name: 'Stage upload' }).click()
@@ -36,16 +36,14 @@ test.describe('workspaces & merge (W/M)', () => {
       hasText: 'Commit & merge into branch',
     })
     await commitSection.getByLabel('Commit message').fill('workspace commit via e2e')
-    await commitSection.getByRole('button', { name: 'Commit workspace' }).click()
+    await commitSection.getByRole('button', { name: 'Commit stage' }).click()
 
     await expect(page.locator('main .flash-success')).toContainText(/Committed/i, {
       timeout: 30_000,
     })
     await expect(page.getByText('Nothing staged.', { exact: true })).toBeVisible()
-    await page.getByRole('tab', { name: 'Jobs', exact: true }).click()
-    await expect(page.getByRole('tabpanel')).toContainText('Workspace jobs are not implemented yet.')
-    await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
-    await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Jobs' })).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: 'Sessions' })).toHaveCount(0)
     await page.getByRole('tab', { name: 'Metadata', exact: true }).click()
     await expect(page.getByRole('tabpanel').getByLabel('Add tag', { exact: true })).toBeVisible()
     await page.getByRole('tab', { name: 'Changes', exact: true }).click()

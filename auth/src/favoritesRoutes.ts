@@ -6,6 +6,7 @@ import {
   addFavorite,
   favoriteUserKey,
   listFavorites,
+  normalizeFavoriteType,
   removeFavorite,
   type FavoriteRow,
   type FavoriteType,
@@ -47,11 +48,12 @@ async function requireUser(c: Context): Promise<SessionUser> {
 }
 
 function parseTarget(type: unknown, id: unknown): { type: FavoriteType; id: string } {
-  if (typeof type !== 'string' || !(FAVORITE_TYPES as readonly string[]).includes(type)) {
+  const norm = normalizeFavoriteType(type)
+  if (!norm) {
     throw new HttpError(`type must be one of ${FAVORITE_TYPES.join(', ')}`, 400)
   }
   if (typeof id !== 'string' || !id.trim()) throw new HttpError('id is required', 400)
-  return { type: type as FavoriteType, id: id.trim() }
+  return { type: norm, id: id.trim() }
 }
 
 /** "gone" means the entity no longer exists (safe to drop); anything else keeps the row. */
@@ -62,7 +64,8 @@ async function check(
 ): Promise<'ok' | 'gone' | 'hidden'> {
   let ref: EntityRef
   try {
-    ref = await resolveRef(row.type, row.id)
+    // Oxen stages are `workspace` entities in the meta layer.
+    ref = await resolveRef(row.type === 'stage' ? 'workspace' : row.type, row.id)
   } catch (err) {
     if (err instanceof MetaError && (err.status === 404 || err.status === 400)) return 'gone'
     return 'hidden'
@@ -83,7 +86,7 @@ export function registerFavoritesRoutes(app: Hono): void {
       const user = await requireUser(c)
       const key = favoriteUserKey(user)
       const want = c.req.query('type')
-      if (want) parseTarget(want, 'x')
+      const wantType = want ? parseTarget(want, 'x').type : undefined
       const visible: Array<FavoriteRow & { namespace?: string; repo?: string; name?: string }> = []
       for (const row of listFavorites(key)) {
         const out: { ref?: EntityRef } = {}
@@ -100,7 +103,7 @@ export function registerFavoritesRoutes(app: Hono): void {
         else if (s === 'gone') removeFavorite(key, row.type, row.id)
       }
       const counts = Object.fromEntries(FAVORITE_TYPES.map((t) => [t, visible.filter((r) => r.type === t).length]))
-      return c.json({ counts, items: want ? visible.filter((r) => r.type === want) : visible })
+      return c.json({ counts, items: wantType ? visible.filter((r) => r.type === wantType) : visible })
     } catch (err) {
       return fail(c, err)
     }

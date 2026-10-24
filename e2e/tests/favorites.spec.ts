@@ -41,7 +41,7 @@ test('list toolbar has a single Sort by dropdown', async ({ page, seededRepo }) 
 
 test('scoped listings share the same sort and search toolbar', async ({ page, seededRepo }) => {
   const base = `/n/${encodeURIComponent(seededRepo.namespace)}`
-  for (const path of [base, `${base}/r/${seededRepo.repo}/branches`, `${base}/r/${seededRepo.repo}/workspaces`]) {
+  for (const path of [base, `${base}/r/${seededRepo.repo}/branches`, `${base}/r/${seededRepo.repo}/stages`]) {
     await page.goto(path)
     const toolbar = page.locator('.ns-toolbar')
     await expect(toolbar.getByLabel('Sort by'), path).toBeVisible()

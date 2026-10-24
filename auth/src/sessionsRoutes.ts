@@ -78,8 +78,9 @@ export function registerSessionRoutes(app: Hono) {
       return c.json({ session: publicSession(session) }, 201)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'create failed'
-      const status = /Forbidden|requires repository/i.test(msg) ? 403 : 400
-      return c.json({ error: msg }, status)
+      const explicit = err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 0
+      const status = explicit || (/Forbidden|requires repository/i.test(msg) ? 403 : 400)
+      return c.json({ error: msg }, status as 400 | 403 | 404 | 409 | 503)
     }
   })
 
@@ -87,7 +88,10 @@ export function registerSessionRoutes(app: Hono) {
     const authed = await requireAuth(c)
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const all = c.req.query('all') === '1' || c.req.query('all') === 'true'
-    const sessions = listDesktopSessions({ user: authed.user, all })
+    const workspaceId = c.req.query('workspace_id') || undefined
+    const namespace = c.req.query('namespace') || undefined
+    const repo = c.req.query('repo') || undefined
+    const sessions = listDesktopSessions({ user: authed.user, all, workspaceId, namespace, repo })
     return c.json({ sessions })
   })
 
@@ -159,6 +163,56 @@ export function registerSessionRoutes(app: Hono) {
     }
   })
 
+  app.put('/auth/sessions/:id/mounts', async (c) => {
+    const authed = await requireAuth(c)
+    if (!authed) return c.json({ error: 'Authentication required' }, 401)
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'Invalid JSON' }, 400)
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: 'Invalid body' }, 400)
+    const { parseMountsList, updateSessionMounts } = await import('./sessions.js')
+    const parsed = parseMountsList((body as { mounts?: unknown }).mounts)
+    if ('error' in parsed) return c.json({ error: parsed.error }, 400)
+    try {
+      const session = await updateSessionMounts(authed.user, authed.via, c.req.param('id'), parsed)
+      return c.json({ session })
+    } catch (err) {
+      const status =
+        err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 400
+      const msg = err instanceof Error ? err.message : 'mount update failed'
+      const holder = err && typeof err === 'object' && 'holder' in err ? (err as { holder: unknown }).holder : undefined
+      return c.json({ error: msg, ...(holder ? { holder } : {}) }, status as 400 | 403 | 404 | 409 | 423 | 504)
+    }
+  })
+
+  app.post('/auth/sessions/:id/remount', async (c) => {
+    const authed = await requireAuth(c)
+    if (!authed) return c.json({ error: 'Authentication required' }, 401)
+    let body: { workspace_id?: unknown; mount_path?: unknown } = {}
+    try {
+      body = (await c.req.json()) as typeof body
+    } catch {
+      /* body is optional */
+    }
+    try {
+      const { remountDesktopSession } = await import('./sessions.js')
+      const session = await remountDesktopSession(authed.user, authed.via, c.req.param('id'), {
+        ...(typeof body.workspace_id === 'string' ? { workspace_id: body.workspace_id } : {}),
+        ...(typeof body.mount_path === 'string' ? { mount_path: body.mount_path } : {}),
+      })
+      return c.json({ session })
+    } catch (err) {
+      const status =
+        err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 400
+      const msg = err instanceof Error ? err.message : 'remount failed'
+      const holder = err && typeof err === 'object' && 'holder' in err ? (err as { holder: unknown }).holder : undefined
+      return c.json({ error: msg, ...(holder ? { holder } : {}) }, status as 400 | 403 | 404 | 409 | 423)
+    }
+  })
+
   app.post('/auth/sessions/:id/stop', async (c) => {
     const authed = await requireAuth(c)
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
@@ -224,115 +278,5 @@ export function registerSessionRoutes(app: Hono) {
       ws_path: env.sessionsGuacWsPath,
       backend: 'guacamole_lite',
     })
-  })
-
-  /** Sync workspace mount changes back to the workspace staging area. */
-  app.post('/auth/sessions/:id/sync/:mountKey', async (c) => {
-    const authed = await requireAuth(c)
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
-    const sessionId = c.req.param('id')
-    const mountKey = c.req.param('mountKey')
-    
-    const row = getSessionRecord(sessionId)
-    if (!row || row.status === 'destroyed') {
-      return c.json({ error: 'Session not found' }, 404)
-    }
-    
-    const { authorizeSessionAccess } = await import('./sessions.js')
-    const gate = authorizeSessionAccess(authed.user, row, 'connect')
-    if (!gate.allow) {
-      return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
-    }
-    
-    try {
-      let body: { files?: string[] } = {}
-      try {
-        body = await c.req.json()
-      } catch {
-        // Empty body is ok - sync all files
-      }
-      
-      const { syncMountToWorkspace } = await import('./sessionsSync.js')
-      const { join } = await import('node:path')
-      const workDir = join(env.sessionsDataDir, 'work', sessionId)
-      const mountDir = join(workDir, 'mounts', mountKey)
-      
-      const result = await syncMountToWorkspace(
-        sessionId,
-        mountKey,
-        mountDir,
-        body.files,
-      )
-      appendAudit({
-        actor: actorFromUser(authed.user),
-        via: authed.via,
-        method: 'POST',
-        path: c.req.path,
-        status: 200,
-        action: 'session.sync',
-        detail: {
-          session_id: sessionId,
-          mount_key: mountKey,
-          added: result.added,
-          modified: result.modified,
-          removed: result.removed,
-          uploaded: result.uploaded,
-        },
-      })
-      return c.json({
-        success: true,
-        added: result.added,
-        modified: result.modified,
-        removed: result.removed,
-        uploaded: result.uploaded,
-        errors: result.errors,
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'sync failed'
-      return c.json({ error: msg }, 400)
-    }
-  })
-
-  /** Get workspace mount diff without syncing. */
-  app.get('/auth/sessions/:id/mounts/:mountKey/diff', async (c) => {
-    const authed = await requireAuth(c)
-    if (!authed) return c.json({ error: 'Authentication required' }, 401)
-    const sessionId = c.req.param('id')
-    const mountKey = c.req.param('mountKey')
-    
-    const row = getSessionRecord(sessionId)
-    if (!row || row.status === 'destroyed') {
-      return c.json({ error: 'Session not found' }, 404)
-    }
-    
-    const { authorizeSessionAccess } = await import('./sessions.js')
-    const gate = authorizeSessionAccess(authed.user, row, 'read')
-    if (!gate.allow) {
-      return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
-    }
-    
-    try {
-      const { getMountDiff } = await import('./sessionsSync.js')
-      const { join } = await import('node:path')
-      const workDir = join(env.sessionsDataDir, 'work', sessionId)
-      const mountDir = join(workDir, 'mounts', mountKey)
-      
-      const result = getMountDiff(sessionId, mountKey, mountDir)
-      if (!result.baseline) {
-        return c.json({ error: 'No baseline found for this mount' }, 404)
-      }
-      
-      return c.json({
-        workspace_id: result.baseline.workspaceId,
-        namespace: result.baseline.namespace,
-        repo: result.baseline.repo,
-        added: result.added,
-        modified: result.modified,
-        removed: result.removed,
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'diff failed'
-      return c.json({ error: msg }, 400)
-    }
   })
 }

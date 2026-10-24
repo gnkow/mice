@@ -183,7 +183,7 @@ const summaries: Record<string, [NotificationEvent['category'], string, string]>
   'branch.update': ['repositories', 'Branch updated', 'A repository branch changed.'],
   'branch.delete': ['repositories', 'Branch deleted', 'A repository branch was deleted.'],
   'merge': ['repositories', 'Merge completed', 'Repository changes were merged.'],
-  'workspace.commit': ['repositories', 'Commit published', 'Workspace changes were committed.'],
+  'workspace.commit': ['repositories', 'Commit published', 'Stage changes were committed.'],
   'workspace.merge': ['repositories', 'Merge completed', 'Workspace changes were merged.'],
   'commit.publish': ['repositories', 'Commit published', 'Repository changes were committed.'],
   'file.write': ['files', 'Files changed', 'Repository files changed.'],

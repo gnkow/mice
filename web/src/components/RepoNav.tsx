@@ -3,10 +3,9 @@ import {
   Table,
   History,
   GitBranch,
-  GitMerge,
-  Layers,
   Terminal,
   Monitor,
+  Layers,
   Settings,
 } from 'lucide-react'
 import { lastBranch } from '../lib/lastBranch'
@@ -25,6 +24,12 @@ export function RepoNav() {
   const onHistory =
     location.pathname === `${base}/commits` ||
     location.pathname.startsWith(`${base}/commits/`)
+
+  const onBranches = ['branches', 'compare', 'df-compare', 'merge', 'stages'].some(
+    (seg) =>
+      location.pathname === `${base}/${seg}` ||
+      location.pathname.startsWith(`${base}/${seg}/`),
+  )
 
   const onSettings = location.pathname === `${base}/settings`
   const onWorkspaces =
@@ -54,13 +59,12 @@ export function RepoNav() {
         <History className="repo-nav-icon" size={14} />
         History
       </NavLink>
-      <NavLink to={`${base}/branches`}>
+      <NavLink
+        to={`${base}/branches`}
+        className={() => (onBranches ? 'active' : undefined)}
+      >
         <GitBranch className="repo-nav-icon" size={14} />
         Branches
-      </NavLink>
-      <NavLink to={`${base}/merge`}>
-        <GitMerge className="repo-nav-icon" size={14} />
-        Merge
       </NavLink>
       <NavLink
         to={`${base}/workspaces`}

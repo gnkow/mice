@@ -265,7 +265,7 @@ export function AuditPage() {
         />
         <ResourceSelect
           name="workspace_id"
-          label="Workspace"
+          label="Stage"
           value={draft.workspace_id}
           options={facets?.workspaces ?? []}
           onChange={(v) => set('workspace_id', v)}

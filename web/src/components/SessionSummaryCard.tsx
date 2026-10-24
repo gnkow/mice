@@ -3,12 +3,11 @@ import {
   formatSessionMount,
   sessionImageLabel,
   sessionMounts,
-  sessionStatusClass,
   sessionTitle,
   shortenSessionId,
-  statusLabel,
   type DesktopSession,
 } from '../lib/sessions'
+import { StatusPill } from './StatusPill'
 import { MetaPills } from './MetaPills'
 import { formatRelativeTime } from '../lib/time'
 
@@ -22,7 +21,6 @@ export function SessionSummaryCard({ session }: Props) {
   const title = sessionTitle(session)
   const image = sessionImageLabel(session)
   const mounts = sessionMounts(session)
-  const workspaceMounts = mounts.filter((m) => m.workspace_id)
   const metaParts = [
     image,
     session.guest_user ? `user ${session.guest_user}` : '',
@@ -42,14 +40,7 @@ export function SessionSummaryCard({ session }: Props) {
             </span>
           </span>
           <span className="jobs-card-tags">
-            {workspaceMounts.length > 0 ? (
-              <span className="pill" title={workspaceMounts.map(formatSessionMount).join(', ')}>
-                {workspaceMounts.length === 1 ? 'workspace' : `${workspaceMounts.length} workspaces`}
-              </span>
-            ) : null}
-            <span className={sessionStatusClass(session.status)}>
-              {statusLabel(session.status)}
-            </span>
+            <StatusPill status={session.status} />
           </span>
         </span>
 
@@ -64,17 +55,17 @@ export function SessionSummaryCard({ session }: Props) {
 
         <span className="jobs-card-refs">
           <span className="jobs-ref">
-            <span className="jobs-ref-label">Workspaces</span>
-            {workspaceMounts.length === 0 ? (
+            <span className="jobs-ref-label">Mounts</span>
+            {mounts.length === 0 ? (
               <span className="muted">None</span>
-            ) : workspaceMounts.length === 1 ? (
-              <span className="mono" title={formatSessionMount(workspaceMounts[0]!)}>
-                {formatSessionMount(workspaceMounts[0]!)}
-                {' '}({workspaceMounts[0]!.mount_mode})
+            ) : mounts.length === 1 ? (
+              <span className="mono" title={formatSessionMount(mounts[0]!)}>
+                {formatSessionMount(mounts[0]!)}
+                {' '}({mounts[0]!.mount_mode})
               </span>
             ) : (
-              <span className="mono" title={workspaceMounts.map(formatSessionMount).join('\n')}>
-                {workspaceMounts.length} workspaces
+              <span className="mono" title={mounts.map(formatSessionMount).join('\n')}>
+                {mounts.length} workspaces
               </span>
             )}
           </span>

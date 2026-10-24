@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 
-export const FAVORITE_TYPES = ['namespace', 'repo', 'branch', 'workspace', 'job', 'session'] as const
+export const FAVORITE_TYPES = ['namespace', 'repo', 'branch', 'stage', 'job', 'session'] as const
 export type FavoriteType = (typeof FAVORITE_TYPES)[number]
 export type Favorite = { type: FavoriteType; id: string; at: string; namespace?: string; repo?: string; name?: string }
 
@@ -16,14 +16,14 @@ export function favoriteHref(f: Favorite): string | null {
       const base = `/n/${enc(f.namespace)}/r/${enc(f.repo)}`
       if (f.type === 'repo') return base
       const name = f.id.slice(f.id.search(/[@!]/) + 1)
-      return f.type === 'branch' ? `${base}/branches/${enc(name)}` : `${base}/workspaces/${enc(name)}`
+      return f.type === 'branch' ? `${base}/branches/${enc(name)}` : `${base}/stages/${enc(name)}`
     }
   }
 }
 
 export function favoriteLabel(f: Favorite): string {
   if (f.name) return f.name
-  return f.type === 'branch' || f.type === 'workspace' ? f.id.slice(f.id.search(/[@!]/) + 1) : f.id
+  return f.type === 'branch' || f.type === 'stage' ? f.id.slice(f.id.search(/[@!]/) + 1) : f.id
 }
 
 

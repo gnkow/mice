@@ -44,7 +44,7 @@ async function expectLeadingIcons(page: Page) {
 }
 
 test('text actions use leading icons across lists, detail pages, menus and dialogs', async ({ page, seededRepo }) => {
-  for (const path of ['/branches', '/branches/main', '/workspaces', '/jobs', '/sessions', '/settings', '/tree/main', '/commits']) {
+  for (const path of ['/branches', '/branches/main', '/stages', '/jobs', '/sessions', '/settings', '/tree/main', '/commits']) {
     await page.goto(repoPath(seededRepo, path))
     await expect(page.getByRole('heading', { level: 1 }).last()).toBeVisible()
     await expectLeadingIcons(page)

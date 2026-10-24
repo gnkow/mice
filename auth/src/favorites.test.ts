@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -8,7 +8,7 @@ const dataDir = mkdtempSync(join(tmpdir(), 'mice-fav-'))
 process.env.AUTH_DATA_DIR = dataDir
 process.env.SESSION_SECRET = 'test-session-secret-for-favorites'
 
-const { addFavorite, listFavorites, removeFavorite, purgeFavoritesForAudit, favoriteUserKey } =
+const { normalizeFavoriteType, addFavorite, listFavorites, removeFavorite, purgeFavoritesForAudit, favoriteUserKey } =
   await import('./favoritesStore.js')
 
 const ev = (action: string, rest: Record<string, unknown> = {}) =>
@@ -34,7 +34,7 @@ describe('favorites store', () => {
       addFavorite(k, 'repo', 'ns/r2')
       addFavorite(k, 'branch', 'ns/r@main')
       addFavorite(k, 'branch', 'ns/r2@main')
-      addFavorite(k, 'workspace', 'ns/r!w1')
+      addFavorite(k, 'stage', 'ns/r!w1')
       addFavorite(k, 'session', 'abcdef12')
     }
     purgeFavoritesForAudit(ev('branch.delete', { namespace: 'ns', repo: 'r', detail: { branch: 'main' } }))
@@ -47,5 +47,20 @@ describe('favorites store', () => {
     assert.equal(listFavorites(b).length, 3)
     purgeFavoritesForAudit(ev('namespace.delete', { namespace: 'ns' }))
     assert.equal(listFavorites(a).length, 0)
+  })
+
+  it('normalizes legacy workspace favorites to stage', () => {
+    assert.equal(normalizeFavoriteType('workspace'), 'stage')
+    assert.equal(normalizeFavoriteType('stage'), 'stage')
+    assert.equal(normalizeFavoriteType('bogus'), null)
+    const c = favoriteUserKey({ iss: 'i', sub: 'legacy' })
+    writeFileSync(
+      join(dataDir, 'favorites.json'),
+      JSON.stringify({ users: { [c]: [{ type: 'workspace', id: 'ns/r!w9', at: '2020-01-01T00:00:00Z' }] } }),
+    )
+    assert.deepEqual(listFavorites(c).map((r) => [r.type, r.id]), [['stage', 'ns/r!w9']])
+    assert.equal(addFavorite(c, 'stage', 'ns/r!w9'), false)
+    assert.equal(removeFavorite(c, 'stage', 'ns/r!w9'), true)
+    assert.equal(listFavorites(c).length, 0)
   })
 })

@@ -18,6 +18,7 @@ import {
   shortenJobRef,
   type JobRun,
 } from '../lib/jobs'
+import { StatusPill } from '../components/StatusPill'
 import { formatRelativeTime } from '../lib/time'
 import { FavoriteStar } from '../components/FavoriteStar'
 
@@ -29,13 +30,6 @@ const TABS: { id: JobTab; label: string; icon: LucideIcon }[] = [
   { id: 'logs', label: 'Logs', icon: Terminal },
   { id: 'metadata', label: 'Metadata', icon: Tags },
 ]
-
-function statusClass(s: JobRun['status']) {
-  if (s === 'succeeded') return 'pill ok'
-  if (s === 'failed' || s === 'cancelled') return 'pill bad'
-  if (s === 'running') return 'pill warn'
-  return 'pill'
-}
 
 function runnerBackend(job: JobRun): string {
   if (job.runner === 'kubernetes') return 'Kubernetes'
@@ -139,7 +133,7 @@ export function JobPage() {
               >
                 {jobRunnerLabel(job)}
               </span>
-              <span className={statusClass(job.status)}>{job.status}</span>
+              <StatusPill status={job.status} />
             </span>
           </div>
           {canCancel ? (

@@ -2,6 +2,7 @@ import { GitBranch as ActionGitBranch, X as ActionX } from 'lucide-react'
 import { ArrowLeftRight, FolderOpen, History, Tags, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { BranchesSubNav } from '../components/BranchesSubNav'
 import { AuthorAvatar } from '../components/AuthorAvatar'
 import { CommitSelector } from '../components/CommitSelector'
 import { Modal } from '../components/Modal'
@@ -261,6 +262,7 @@ export function BranchesPage() {
 
   return (
     <main className="page branches-page">
+      <BranchesSubNav />
       <div className="branches-page-head">
         <div>
           <h1 className="branches-title">Branches</h1>

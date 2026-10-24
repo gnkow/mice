@@ -19,7 +19,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
     )
 
     await page.goto(
-      repoPath(seededRepo, `/workspaces/${encodeURIComponent(ws.id)}`),
+      repoPath(seededRepo, `/stages/${encodeURIComponent(ws.id)}`),
     )
     await expect(page.getByRole('heading', { name: 'adv-ws' })).toBeVisible()
     await expect(
@@ -76,7 +76,7 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
     )
 
     await page.goto(
-      repoPath(seededRepo, `/workspaces/${encodeURIComponent(ws.id)}`),
+      repoPath(seededRepo, `/stages/${encodeURIComponent(ws.id)}`),
     )
 
     const upload = page.locator('section', { hasText: 'Upload file' })
@@ -95,17 +95,17 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
 
     await page.getByRole('button', { name: 'Delete', exact: true }).click()
     await acceptConfirmModal(page, 'clear-me')
-    await expect(page).toHaveURL(/\/workspaces$/, { timeout: 30_000 })
+    await expect(page).toHaveURL(/\/stages$/, { timeout: 30_000 })
 
     // recreate two workspaces, then delete each from its detail page
     // (bulk "Clear all" was removed from the UI)
     for (const name of ['to-clear-a', 'to-clear-b']) {
-      await page.getByRole('button', { name: 'New workspace' }).click()
-      const dialog = page.getByRole('dialog', { name: 'New workspace' })
+      await page.getByRole('button', { name: 'New stage' }).click()
+      const dialog = page.getByRole('dialog', { name: 'New stage' })
       await dialog.getByLabel('Name').fill(name)
-      await dialog.getByRole('button', { name: 'Create workspace' }).click()
-      await expect(page).toHaveURL(/\/workspaces\/[^/]+$/)
-      await page.goto(repoPath(seededRepo, '/workspaces'))
+      await dialog.getByRole('button', { name: 'Create stage' }).click()
+      await expect(page).toHaveURL(/\/stages\/[^/]+$/)
+      await page.goto(repoPath(seededRepo, '/stages'))
     }
     await expect(page.getByRole('link', { name: 'to-clear-a', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'to-clear-b', exact: true })).toBeVisible()
@@ -115,9 +115,9 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
       await page.getByRole('link', { name: new RegExp(name) }).first().click()
       await page.getByRole('button', { name: 'Delete', exact: true }).click()
       await acceptConfirmModal(page, name)
-      await expect(page).toHaveURL(/\/workspaces$/, { timeout: 30_000 })
+      await expect(page).toHaveURL(/\/stages$/, { timeout: 30_000 })
     }
-    await expect(page.getByText('No workspaces yet.')).toBeVisible({
+    await expect(page.getByText('No stages yet.')).toBeVisible({
       timeout: 30_000,
     })
   })

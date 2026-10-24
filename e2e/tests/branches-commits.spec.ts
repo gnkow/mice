@@ -17,7 +17,7 @@ test.describe('branches & commits (B/C)', () => {
     await page.getByRole('navigation', { name: 'Repository', exact: true }).getByRole('link', { name: 'Branches', exact: true }).click()
     await row.getByRole('link', { name: 'feature/details', exact: true }).click()
     await expect(page).toHaveURL(/\/branches\/feature%2Fdetails$/)
-    await expect(page.getByRole('heading', { name: 'Branch: feature/details', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Branch: feature\/details/ })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Branch info', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Browse files', exact: true })).toHaveAttribute('href', /\/tree\/feature%2Fdetails$/)
     const metadata = page.getByRole('region', { name: 'Branch metadata', exact: true })

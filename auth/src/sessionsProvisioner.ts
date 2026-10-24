@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { env } from './env.js'
-import { sessionsWorkDir, toSessionsDockerHostPath } from './sessionsPaths.js'
 import type { DesktopSession, SessionsProvisionerKind } from './sessionsTypes.js'
 
 export type ProvisionResult = {
@@ -165,21 +164,8 @@ export function createDockerSessionProvisioner(): SessionProvisioner {
 
       await runCmd(env.sessionsDockerBin, ['rm', '-f', name]).catch(() => {})
 
-      const work = sessionsWorkDir(session.id)
-      mkdirSync(work, { recursive: true })
-      const hostWork = toSessionsDockerHostPath(work)
-
-      const { materializeSessionMounts } = await import('./sessionsMount.js')
-      const { mountWorkKey, normalizeSessionMounts } = await import(
-        './sessionsMounts.js'
-      )
-      const mounts = normalizeSessionMounts(session)
-      if (mounts.length > 0) {
-        console.log(
-          `[sessions] provision ${session.id}: materialize ${mounts.length} mount(s)`,
-        )
-        await materializeSessionMounts(session, work)
-      }
+      const { workspaceDockerMounts } = await import('./sessionsWorkspaces.js')
+      const wsMounts = await workspaceDockerMounts(session)
 
       const memory = session.resources.memory
       const cpus = session.resources.cpu
@@ -201,17 +187,12 @@ export function createDockerSessionProvisioner(): SessionProvisioner {
         `mice.session.owner=${session.owner.sub}`,
         `--memory=${memory}`,
         `--cpus=${cpus}`,
-        '-e',
-        `PUID=1000`,
-        '-e',
-        `PGID=1000`,
+        ...(wsMounts.env.some((e) => e.startsWith('PUID='))
+          ? []
+          : ['-e', 'PUID=1000', '-e', 'PGID=1000']),
+        ...wsMounts.env.flatMap((e) => ['-e', e]),
       ]
-      for (let i = 0; i < mounts.length; i++) {
-        const m = mounts[i]!
-        const key = mountWorkKey(m, i)
-        const mode = m.mount_mode === 'ro' ? 'ro' : 'rw'
-        args.push('-v', `${hostWork}/mounts/${key}:${m.mount_path}:${mode}`)
-      }
+      args.push(...wsMounts.args)
       args.push(session.image)
 
       console.log(`[sessions] provision ${session.id}: docker run ${name}`)

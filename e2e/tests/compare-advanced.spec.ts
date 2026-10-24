@@ -207,10 +207,10 @@ test.describe('compare & DF (D-03–D-07 DF-01–05)', () => {
     })
 
     const schemaSection = page.locator('details', {
-      hasText: 'Schema metadata (workspace)',
+      hasText: 'Schema metadata (stage)',
     })
     await schemaSection.locator('summary').click()
-    await schemaSection.getByLabel('Workspace').selectOption(ws.id)
+    await schemaSection.getByLabel('Stage').first().selectOption(ws.id)
     await schemaSection
       .getByLabel('Schema metadata (JSON object)')
       .fill('{"description":"e2e schema"}')

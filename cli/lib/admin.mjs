@@ -25,6 +25,7 @@ export const ADMIN_GROUPS = [
   'collaborator',
   'role',
   'session',
+  'workspace',
   'notifications',
   'favorite',
   'announcement',
@@ -173,7 +174,7 @@ export function buildRequest(group, argv, ctx = () => ({})) {
         since: str(flags.since),
         until: str(flags.until),
         session_id: str(flags['session-id']),
-        workspace_id: str(flags['workspace-id']),
+        workspace_id: str(flags['stage-id']) ?? str(flags['workspace-id']),
         job_id: str(flags['job-id']),
         via: str(flags.via),
       }
@@ -352,7 +353,10 @@ export function buildRequest(group, argv, ctx = () => ({})) {
     case 'session': {
       if (sub === 'templates') return { method: 'GET', path: '/auth/sessions/templates' }
       if (sub === 'retention') return { method: 'GET', path: '/auth/sessions/retention' }
-      if (sub === 'list') return { method: 'GET', path: `/auth/sessions${flags.all ? '?all=1' : ''}` }
+      if (sub === 'list') {
+        const q = qs({ all: flags.all ? '1' : undefined, workspace_id: str(flags.workspace) })
+        return { method: 'GET', path: `/auth/sessions${q}` }
+      }
       if (sub === 'create') {
         const body = {}
         if (flags.template) body.template_id = str(flags.template)
@@ -361,6 +365,8 @@ export function buildRequest(group, argv, ctx = () => ({})) {
         for (const k of ['cpu', 'memory', 'disk']) if (flags[k]) res[k] = str(flags[k])
         if (Object.keys(res).length) body.resources = res
         const mounts = [].concat(flags.mount ?? []).map((m) => parseMount(String(m)))
+        for (const w of [].concat(flags.workspace ?? [])) mounts.push(parseWorkspaceMount(String(w)))
+        for (const w of [].concat(flags['new-workspace'] ?? [])) mounts.push(parseNewWorkspace(String(w)))
         if (mounts.length) body.mounts = mounts
         if (flags.recording !== undefined) body.recording = bool(flags.recording, 'recording')
         return { method: 'POST', path: '/auth/sessions', body }
@@ -369,18 +375,53 @@ export function buildRequest(group, argv, ctx = () => ({})) {
       const base = `/auth/sessions/${id}`
       if (sub === 'show') return { method: 'GET', path: base }
       if (['connect', 'disconnect', 'retry', 'stop'].includes(sub)) return { method: 'POST', path: `${base}/${sub}` }
+      if (sub === 'remount') {
+        const body = {}
+        if (flags.workspace) body.workspace_id = str(flags.workspace)
+        if (flags['mount-path']) body.mount_path = str(flags['mount-path'])
+        return { method: 'POST', path: `${base}/remount`, body }
+      }
+      if (sub === 'mounts') {
+        const list = (k) => [].concat(flags[k] ?? []).map(String)
+        const set = flags.set === undefined ? undefined : list('set').filter((x) => x !== 'none').map(parseMount)
+        const add = [...list('add').map(parseMount), ...list('new-workspace').map(parseNewWorkspace)]
+        const remove = list('remove').map((r) => {
+          if (!/^w_[0-9a-z]+$/.test(r)) throw new UsageError(`Bad --remove ${r}; expected w_<id>`)
+          return r
+        })
+        if (set === undefined && add.length === 0 && remove.length === 0) {
+          throw new UsageError('mice session mounts <id> needs --set, --add, --remove or --new-workspace')
+        }
+        const edit = { add, remove }
+        if (set !== undefined) return { method: 'PUT', path: `${base}/mounts`, body: { mounts: applyMountEdits(set, edit) } }
+        return { method: 'PUT', path: `${base}/mounts`, mountsEdit: edit, fetchPath: base }
+      }
       if (sub === 'destroy') {
         return { method: 'DELETE', path: base, confirm: `This destroys session ${args[0]}.` }
       }
-      if (sub === 'diff') return { method: 'GET', path: `${base}/mounts/${enc(need(args[1], 'mount key'))}/diff` }
-      if (sub === 'sync') {
-        const files = list(flags.file)
-        return {
-          method: 'POST',
-          path: `${base}/sync/${enc(need(args[1], 'mount key'))}`,
-          body: files.length ? { files } : {},
-        }
+      break
+    }
+
+    case 'workspace': {
+      const base = '/auth/workspaces'
+      if (!sub || sub === 'list') {
+        let namespace
+        let repo
+        if (args[0]) ({ namespace, repo } = parseNsRepo(args[0]))
+        return { method: 'GET', path: `${base}${qs({ namespace, repo })}` }
       }
+      if (sub === 'create') {
+        const { namespace, repo } = parseNsRepo(need(args[0], 'ns/repo'))
+        if (flags.branch && flags.commit) throw new UsageError('Use only one of --branch / --commit')
+        const source = flags.commit ? { commit: str(flags.commit) } : { branch: str(flags.branch) ?? 'main' }
+        return { method: 'POST', path: base, body: { namespace, repo, name: str(flags.name), source } }
+      }
+      const id = need(args[0], 'workspace id')
+      if (!WORKSPACE_ID_RE.test(id)) throw new UsageError(`Bad workspace id ${id}; expected w_<10 chars>`)
+      const one = `${base}/${enc(id)}`
+      if (sub === 'show') return { method: 'GET', path: one }
+      if (sub === 'changes') return { method: 'GET', path: `${one}/changes` }
+      if (sub === 'delete') return { method: 'DELETE', path: one, confirm: `This deletes workspace ${id} and its uncommitted changes.` }
       break
     }
 
@@ -406,18 +447,21 @@ export function buildRequest(group, argv, ctx = () => ({})) {
 
     case 'favorite': {
       const base = '/auth/favorites'
-      const types = ['namespace', 'repo', 'branch', 'workspace', 'job', 'session']
+      const types = ['namespace', 'repo', 'branch', 'stage', 'job', 'session']
+      // `workspace` is a deprecated alias of `stage`.
+      const canon = (t) => (t === 'workspace' ? 'stage' : t)
       if (!sub || sub === 'list') {
-        const type = str(flags.type)
+        const type = canon(str(flags.type))
         if (type && !types.includes(type)) throw new UsageError(`--type must be one of ${types.join(', ')}`)
         return { method: 'GET', path: `${base}${qs({ type })}` }
       }
       if (sub === 'add' || sub === 'remove') {
-        const type = need(args[0], `entity type (${types.join('|')})`)
+        const type = canon(need(args[0], `entity type (${types.join('|')})`))
         if (!types.includes(type)) throw new UsageError(`Unknown entity type "${type}". One of: ${types.join(', ')}`)
         let id
         try {
-          id = resolveEntityId(type, args[1], ctx)
+          // Stage ids share the `ns/repo!<id>` syntax of the meta `workspace` type.
+          id = resolveEntityId(type === 'stage' ? 'workspace' : type, args[1], ctx)
         } catch (err) {
           throw new UsageError(err instanceof Error ? err.message : String(err))
         }
@@ -464,18 +508,68 @@ export function buildRequest(group, argv, ctx = () => ({})) {
   throw new UsageError(`Unknown or incomplete command: mice ${group}${sub ? ` ${sub}` : ''}`)
 }
 
-/** `ns/repo[@workspaceId][#commit][:ro|:rw]` → session mount input. */
+/** Apply --remove then --add/--new-workspace to a desired mount list (an added id replaces its entry). */
+export function applyMountEdits(current, { add = [], remove = [] }) {
+  const drop = new Set(remove)
+  const replaced = new Set(add.map((m) => m.workspace_id).filter(Boolean))
+  return [
+    ...current.filter((m) => !m.workspace_id || (!drop.has(m.workspace_id) && !replaced.has(m.workspace_id))),
+    ...add,
+  ]
+}
+
+/** `w_<id>[:ro|:rw]` → session mount input. Sessions mount workspaces only. */
 export function parseMount(spec) {
-  const m = /^([^/\s]+)\/([^/@#:\s]+)(?:@([^#:\s]+))?(?:#([^:\s]+))?(?::(ro|rw))?$/.exec(spec)
-  if (!m) throw new UsageError(`Bad --mount ${spec}; use ns/repo[@workspace][#commit][:ro|rw]`)
-  const [, namespace, repo, workspace_id, pin_commit, mount_mode] = m
+  if (!/^w_/.test(spec)) {
+    throw new UsageError(`Bad --mount ${spec}; sessions mount workspaces: use w_<id>[:ro|rw] (or --new-workspace ns/repo@branch)`)
+  }
+  return parseWorkspaceMount(spec)
+}
+
+/** `ns/repo@branch|#commit[=name][:ro|:rw]` → mount that creates a workspace on demand. */
+export function parseNewWorkspace(spec) {
+  const usage = `Bad --new-workspace ${spec}; use ns/repo@branch or ns/repo#commit, optional =name and :ro|rw`
+  let rest = spec
+  let mount_mode
+  const mode = /:(ro|rw)$/.exec(rest)
+  if (mode) {
+    mount_mode = mode[1]
+    rest = rest.slice(0, mode.index)
+  }
+  let name
+  const eq = rest.indexOf('=')
+  if (eq >= 0) {
+    name = rest.slice(eq + 1)
+    rest = rest.slice(0, eq)
+    if (!name) throw new UsageError(usage)
+  }
+  const m = /^([^/\s@#]+)\/([^/\s@#]+)([@#])(\S+)$/.exec(rest)
+  if (!m) throw new UsageError(usage)
+  const [, namespace, repo, kind, ref] = m
   return {
-    namespace,
-    repo,
-    ...(workspace_id ? { workspace_id } : {}),
-    ...(pin_commit ? { pin_commit } : {}),
+    new_workspace: {
+      namespace,
+      repo,
+      ...(name ? { name } : {}),
+      source: kind === '@' ? { branch: ref } : { commit: ref },
+    },
     ...(mount_mode ? { mount_mode } : {}),
   }
+}
+
+const WORKSPACE_ID_RE = /^w_[0-9a-z]{10}$/
+
+function parseNsRepo(spec) {
+  const m = /^([^/\s]+)\/([^/\s]+)$/.exec(spec)
+  if (!m) throw new UsageError(`Bad repository ${spec}; use ns/repo`)
+  return { namespace: m[1], repo: m[2] }
+}
+
+/** `w_<id>[:ro|:rw]` → session mount input backed by a Mice workspace. */
+export function parseWorkspaceMount(spec) {
+  const m = /^(w_[0-9a-z]{10})(?::(ro|rw))?$/.exec(spec)
+  if (!m) throw new UsageError(`Bad workspace mount ${spec}; use w_<id>[:ro|rw]`)
+  return { workspace_id: m[1], ...(m[2] ? { mount_mode: m[2] } : {}) }
 }
 
 function parseJsonFlag(v) {
@@ -484,6 +578,21 @@ function parseJsonFlag(v) {
     return JSON.parse(raw)
   } catch {
     throw new UsageError('--json must be valid JSON')
+  }
+}
+
+function printSessionNotes(res) {
+  const sessions = res?.session ? [res.session] : []
+  for (const s of sessions) {
+    for (const m of s.mounts ?? []) {
+      if (!m.workspace_id) {
+        console.error(`mount ${m.mount_path}: legacy commit-pin mount (not mounted)`)
+        continue
+      }
+      const eff = m.effective_mode ?? 'pending (workspace is being prepared; leased when ready)'
+      console.error(`mount ${m.mount_path}: workspace ${m.workspace_id} requested ${m.mount_mode} -> effective ${eff}`)
+    }
+    for (const n of s.notices ?? []) console.error(`warning: ${n}`)
   }
 }
 
@@ -509,6 +618,13 @@ export async function runAdmin(group, argv, deps) {
   const { remote, token } = deps.auth({ remote: str(flags.remote), token: str(flags.token) })
   try {
     if (req.confirm) await confirmOrExit(req.confirm, flags)
+    if (req.mountsEdit) {
+      const cur = await api(remote, token, req.fetchPath, { method: 'GET' })
+      const now = (cur?.session?.mounts ?? [])
+        .filter((m) => m.workspace_id)
+        .map((m) => ({ workspace_id: m.workspace_id, mount_mode: m.mount_mode }))
+      req.body = { mounts: applyMountEdits(now, req.mountsEdit) }
+    }
     const res = await api(remote, token, req.path, {
       method: req.method,
       ...(req.body !== undefined ? { body: JSON.stringify(req.body) } : {}),
@@ -519,6 +635,7 @@ export async function runAdmin(group, argv, deps) {
         console.error(`Wrote ${req.out}`)
       } else process.stdout.write(String(res))
     } else console.log(JSON.stringify(res, null, 2))
+    if (group === 'session') printSessionNotes(res)
   } catch (err) {
     console.error(`mice: ${err instanceof Error ? err.message : err}`)
     process.exitCode = 1

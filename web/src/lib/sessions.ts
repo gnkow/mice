@@ -10,17 +10,24 @@ export type SessionStatus =
 export type SessionMount = {
   namespace: string
   repo: string
-  workspace_id: string | null
   pin_commit: string | null
   mount_mode: 'ro' | 'rw'
   mount_path: string
+  workspace_id?: string | null
+  effective_mode?: 'ro' | 'rw'
+  lease_id?: string | null
+}
+
+export type NewWorkspaceInput = {
+  namespace: string
+  repo: string
+  name?: string
+  source: { branch: string } | { commit: string }
 }
 
 export type SessionMountInput = {
-  namespace: string
-  repo: string
-  workspace_id?: string | null
-  pin_commit?: string | null
+  workspace_id?: string
+  new_workspace?: NewWorkspaceInput
   mount_mode?: 'ro' | 'rw'
 }
 
@@ -39,12 +46,8 @@ export type DesktopSession = {
   } | null
   guest_user: string
   mounts: SessionMount[]
-  /** Legacy mirrors (first mount); prefer mounts[]. */
-  workspace_ref: {
-    namespace: string
-    repo: string
-    workspace_id: string | null
-  } | null
+  workspace_ids?: string[]
+  notices?: string[]
   pin_commit: string | null
   mount_path: string | null
   mount_mode: 'ro' | 'rw' | null
@@ -103,8 +106,26 @@ async function api<T>(
   return (await res.json()) as T
 }
 
-export function listSessions(signal?: AbortSignal) {
-  return api<{ sessions: DesktopSession[] }>('/auth/sessions', undefined, signal)
+export function listSessions(signal?: AbortSignal, filter?: { workspace_id?: string }) {
+  const qs = filter?.workspace_id ? `?workspace_id=${encodeURIComponent(filter.workspace_id)}` : ''
+  return api<{ sessions: DesktopSession[] }>(`/auth/sessions${qs}`, undefined, signal)
+}
+
+export function remountSession(id: string, workspaceId?: string, signal?: AbortSignal) {
+  return api<{ session: DesktopSession }>(
+    `/auth/sessions/${encodeURIComponent(id)}/remount`,
+    { method: 'POST', body: JSON.stringify(workspaceId ? { workspace_id: workspaceId } : {}) },
+    signal,
+  )
+}
+
+/** Replace the full mount list; the session restarts (id and guest user are kept). */
+export function updateSessionMounts(id: string, mounts: SessionMountInput[], signal?: AbortSignal) {
+  return api<{ session: DesktopSession }>(
+    `/auth/sessions/${encodeURIComponent(id)}/mounts`,
+    { method: 'PUT', body: JSON.stringify({ mounts }) },
+    signal,
+  )
 }
 
 export function listSessionTemplates(signal?: AbortSignal) {
@@ -128,11 +149,6 @@ export function createSession(
     template_id?: string
     image?: string
     mounts?: SessionMountInput[]
-    workspace_ref?: {
-      namespace: string
-      repo: string
-      workspace_id?: string | null
-    } | null
     pin_commit?: string | null
     mount_mode?: 'ro' | 'rw'
     recording?: boolean
@@ -152,6 +168,27 @@ export function connectSession(id: string, signal?: AbortSignal) {
     { method: 'POST', body: '{}' },
     signal,
   )
+}
+
+/** Opens the desktop client in a new tab (falls back to same-tab navigation if blocked). */
+export async function connectAndOpen(id: string): Promise<boolean> {
+  const tab = window.open('about:blank', '_blank')
+  try {
+    const result = await connectSession(id)
+    if (tab && !tab.closed) {
+      tab.location.href = result.connect.client_url
+      return true
+    }
+    window.location.assign(result.connect.client_url)
+    return false
+  } catch (err) {
+    try {
+      tab?.close()
+    } catch {
+      /* ignore */
+    }
+    throw err
+  }
 }
 
 export function stopSession(id: string, signal?: AbortSignal) {
@@ -174,45 +211,6 @@ export function retrySession(id: string, signal?: AbortSignal) {
   return api<{ session: DesktopSession }>(
     `/auth/sessions/${encodeURIComponent(id)}/retry`,
     { method: 'POST', body: '{}' },
-    signal,
-  )
-}
-
-export function syncSessionMount(
-  sessionId: string,
-  mountKey: string,
-  files?: string[],
-  signal?: AbortSignal,
-) {
-  return api<{
-    success: boolean
-    added: string[]
-    modified: string[]
-    removed: string[]
-    uploaded: number
-    errors: string[]
-  }>(
-    `/auth/sessions/${encodeURIComponent(sessionId)}/sync/${encodeURIComponent(mountKey)}`,
-    { method: 'POST', body: JSON.stringify({ files }) },
-    signal,
-  )
-}
-
-export function getMountDiff(
-  sessionId: string,
-  mountKey: string,
-  signal?: AbortSignal,
-) {
-  return api<{
-    workspace_id: string
-    namespace: string
-    repo: string
-    added: string[]
-    modified: string[]
-    removed: string[]
-  }>(
-    `/auth/sessions/${encodeURIComponent(sessionId)}/mounts/${encodeURIComponent(mountKey)}/diff`,
-    undefined,
     signal,
   )
 }
@@ -250,20 +248,6 @@ export function statusLabel(status: SessionStatus): string {
   }
 }
 
-/** Pill class for session status (matches Jobs status colors). */
-export function sessionStatusClass(status: SessionStatus): string {
-  if (status === 'ready' || status === 'connected') return 'pill ok'
-  if (status === 'failed' || status === 'destroyed') return 'pill bad'
-  if (
-    status === 'provisioning' ||
-    status === 'stopping' ||
-    status === 'stopped'
-  ) {
-    return 'pill warn'
-  }
-  return 'pill'
-}
-
 export function sessionTitle(session: DesktopSession): string {
   const tpl = (session.template_id || '').trim()
   if (tpl) {
@@ -295,24 +279,13 @@ export function sessionMounts(session: DesktopSession): SessionMount[] {
   if (Array.isArray(session.mounts) && session.mounts.length > 0) {
     return session.mounts
   }
-  const ref = session.workspace_ref
-  if (!ref) return []
-  return [
-    {
-      namespace: ref.namespace,
-      repo: ref.repo,
-      workspace_id: ref.workspace_id,
-      pin_commit: session.pin_commit,
-      mount_mode: session.mount_mode === 'ro' ? 'ro' : 'rw',
-      mount_path: session.mount_path || '/data',
-    },
-  ]
+  return []
 }
 
 export function formatSessionMount(m: SessionMount): string {
   const base = `${m.namespace}/${m.repo}`
-  if (m.workspace_id) return `${base} · ${m.workspace_id}`
-  if (m.pin_commit) return `${base} @ ${m.pin_commit.slice(0, 12)}`
+  if (m.workspace_id) return `${base} · workspace ${m.workspace_id}`
+  if (m.pin_commit) return `${base} @ ${m.pin_commit.slice(0, 12)}` // legacy records
   return base
 }
 
@@ -323,26 +296,19 @@ export function sessionWorkspaceLabel(session: DesktopSession): string | null {
   return `${mounts.length} mounts`
 }
 
-/** True when the session bind-mounts a workspace (not only a commit pin) for this repo. */
-export function sessionMountsRepoWorkspace(
-  session: DesktopSession,
-  namespace: string,
-  repo: string,
-): boolean {
-  const ns = namespace.trim().toLowerCase()
-  const r = repo.trim().toLowerCase()
-  return sessionMounts(session).some(
-    (m) =>
-      m.namespace.trim().toLowerCase() === ns &&
-      m.repo.trim().toLowerCase() === r &&
-      !!m.workspace_id?.trim(),
-  )
-}
-
-export function sessionsMountingRepoWorkspace(
+/** Sessions that mount a workspace of this repo. */
+export function sessionsMountingRepo(
   sessions: DesktopSession[],
   namespace: string,
   repo: string,
 ): DesktopSession[] {
-  return sessions.filter((s) => sessionMountsRepoWorkspace(s, namespace, repo))
+  const ns = namespace.trim().toLowerCase()
+  const r = repo.trim().toLowerCase()
+  return sessions.filter((s) =>
+    sessionMounts(s).some(
+      (m) =>
+        m.namespace.trim().toLowerCase() === ns &&
+        m.repo.trim().toLowerCase() === r,
+    ),
+  )
 }

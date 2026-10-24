@@ -3,8 +3,16 @@ import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
 import type { AuditEvent } from './audit.js'
 
-export const FAVORITE_TYPES = ['namespace', 'repo', 'branch', 'workspace', 'job', 'session'] as const
+export const FAVORITE_TYPES = ['namespace', 'repo', 'branch', 'stage', 'job', 'session'] as const
 export type FavoriteType = (typeof FAVORITE_TYPES)[number]
+
+/** Accepts the deprecated `workspace` alias; returns null for unknown types. */
+export function normalizeFavoriteType(t: unknown): FavoriteType | null {
+  if (t === 'workspace') return 'stage'
+  return typeof t === 'string' && (FAVORITE_TYPES as readonly string[]).includes(t)
+    ? (t as FavoriteType)
+    : null
+}
 
 export type FavoriteRow = { type: FavoriteType; id: string; at: string }
 type FavoritesFile = { users: Record<string, FavoriteRow[]> }
@@ -19,7 +27,21 @@ export function favoriteUserKey(user: { iss: string; sub: string }): string {
 
 function read(): FavoritesFile {
   const f = readJsonFile<FavoritesFile>(path(), { users: {} })
-  return f && typeof f.users === 'object' && f.users ? f : { users: {} }
+  if (!f || typeof f.users !== 'object' || !f.users) return { users: {} }
+  // Legacy rows stored type `workspace`; expose them as `stage`.
+  for (const [key, rows] of Object.entries(f.users)) {
+    const seen = new Set<string>()
+    f.users[key] = rows
+      .map((r) => ({ ...r, type: normalizeFavoriteType(r.type) as FavoriteType }))
+      .filter((r) => {
+        if (!r.type) return false
+        const k = `${r.type}\0${r.id}`
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+  }
+  return f
 }
 
 export function listFavorites(userKey: string): FavoriteRow[] {
@@ -95,7 +117,7 @@ export function purgeFavoritesForAudit(event: AuditEvent): void {
     case 'workspace.delete': {
       const w = str(d.workspace_id)
       if (event.namespace && event.repo && w) {
-        purgeFavorites((r) => r.type === 'workspace' && r.id === `${event.namespace}/${event.repo}!${w}`)
+        purgeFavorites((r) => r.type === 'stage' && r.id === `${event.namespace}/${event.repo}!${w}`)
       }
       break
     }

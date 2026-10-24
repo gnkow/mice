@@ -129,6 +129,8 @@ import {
   revokePatByToken,
 } from './tokens.js'
 import { registerJobRoutes } from './jobsRoutes.js'
+import { startSessionLeaseRenewer } from './sessionsWorkspaces.js'
+import { registerWorkspaceRoutes, startWorkspaceBackground } from './workspaces/routes.js'
 import { registerMetaRoutes } from './metaRoutes.js'
 import { registerFavoritesRoutes } from './favoritesRoutes.js'
 import {
@@ -1918,6 +1920,7 @@ app.all('/api/*', async (c) => {
 })
 
 registerJobRoutes(app)
+registerWorkspaceRoutes(app)
 registerMetaRoutes(app)
 registerFavoritesRoutes(app)
 
@@ -1996,7 +1999,9 @@ registerSessionRoutes(app)
 registerNotificationRoutes(app)
 startNotificationWorker()
 resumeQueuedJobs()
+void startWorkspaceBackground()
 startSessionsLifecycleSweeper()
+startSessionLeaseRenewer()
 resumeInterruptedProvisions()
 
 console.log(

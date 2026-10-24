@@ -1,6 +1,7 @@
-import { Layers as ActionLayers, Monitor as ActionMonitor, X as ActionX, FileDiff, Tags, Terminal } from 'lucide-react'
+import { Layers as ActionLayers, X as ActionX, FileDiff, Tags } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { BranchesSubNav } from '../components/BranchesSubNav'
 import { FavoriteStar } from '../components/FavoriteStar'
 import { ListToolbar } from '../components/ListToolbar'
 import { Modal } from '../components/Modal'
@@ -18,13 +19,6 @@ import {
   listWorkspaces,
 } from '../lib/oxen/api'
 import { OxenApiError, type Workspace } from '../lib/oxen/types'
-import {
-  listSessions,
-  sessionMounts,
-  shortenSessionId,
-  statusLabel,
-  type DesktopSession,
-} from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
 
 const WS_SORTS: SortFields<Workspace> = { name: (w) => w.name || w.id, created: (w) => w.created_at }
@@ -52,10 +46,9 @@ export function WorkspacesPage() {
     (signal) => listBranches(namespace, repo, signal),
     [namespace, repo],
   )
-  const sessions = useAsync((signal) => listSessions(signal), [])
 
   const [filter, setFilter] = useState('')
-  const sort = useListSort('repo-workspaces', WS_SORTS)
+  const sort = useListSort('repo-stages', WS_SORTS)
   const favs = useFavorites()
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
@@ -90,28 +83,6 @@ export function WorkspacesPage() {
   }, [branchNames, defaultBranch])
 
   const list = workspaces.kind === 'ok' ? workspaces.data.workspaces : []
-  const sessionsList = sessions.kind === 'ok' ? sessions.data.sessions : []
-
-  // Build a map from workspace_id to sessions that mount it
-  const workspaceToSessions = useMemo(() => {
-    const map = new Map<string, DesktopSession[]>()
-    for (const session of sessionsList) {
-      const mounts = sessionMounts(session)
-      for (const mount of mounts) {
-        if (
-          mount.namespace.toLowerCase() === namespace.toLowerCase() &&
-          mount.repo.toLowerCase() === repo.toLowerCase() &&
-          mount.workspace_id
-        ) {
-          const existing = map.get(mount.workspace_id) || []
-          existing.push(session)
-          map.set(mount.workspace_id, existing)
-        }
-      }
-    }
-    return map
-  }, [sessionsList, namespace, repo])
-
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase()
     if (!needle) return list
@@ -125,7 +96,7 @@ export function WorkspacesPage() {
     })
   }, [list, filter])
   const ordered = useMemo(
-    () => sort.apply(filtered, (ws) => favs.has('workspace', `${namespace}/${repo}!${ws.id}`)),
+    () => sort.apply(filtered, (ws) => favs.has('stage', `${namespace}/${repo}!${ws.id}`)),
     [filtered, sort.apply, favs, namespace, repo],
   )
 
@@ -140,11 +111,11 @@ export function WorkspacesPage() {
         namespace,
         repo,
         branch || defaultBranch,
-        name.trim() || 'workspace',
+        name.trim() || 'stage',
       )
       setCreateOpen(false)
       setName('')
-      navigate(`${base}/workspaces/${encodeURIComponent(res.workspace.id)}`)
+      navigate(`${base}/stages/${encodeURIComponent(res.workspace.id)}`)
     } catch (err) {
       setError(
         err instanceof OxenApiError
@@ -161,9 +132,9 @@ export function WorkspacesPage() {
   async function onDeleteOne(id: string, label: string) {
     if (
       !(await confirmDelete({
-        title: `Delete workspace ${label}`,
+        title: `Delete stage ${label}`,
         detail:
-          'Staged changes in this workspace will be discarded. Committed history on the branch is unaffected.',
+          'Staged changes in this stage will be discarded. Committed history on the branch is unaffected.',
         confirmWord: label,
       }))
     ) {
@@ -189,9 +160,10 @@ export function WorkspacesPage() {
 
   return (
     <main className="page">
+      <BranchesSubNav />
       <div className="page-head">
         <div>
-          <h1>Workspaces</h1>
+          <h1>Stages</h1>
           <p className="lede">
             Make changes on the server without downloading the entire repository.
           </p>
@@ -205,34 +177,33 @@ export function WorkspacesPage() {
               setCreateOpen(true)
             }}
           >
-            <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />New workspace
+            <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />New stage
           </button>
         </div>
       </div>
 
       <ListToolbar
-        id="workspaces"
+        id="stages"
         sort={sort}
-        search={{ value: filter, onChange: setFilter, placeholder: 'Filter workspaces…', disabled: workspaces.kind !== 'ok' }}
+        search={{ value: filter, onChange: setFilter, placeholder: 'Filter stages…', disabled: workspaces.kind !== 'ok' }}
       />
 
       <StateBlock
         loading={workspaces.kind === 'loading'}
         error={workspaces.kind === 'error' ? workspaces.message : null}
         empty={workspaces.kind === 'ok' && list.length === 0}
-        emptyMessage="No workspaces yet. Create one to work with your data remotely."
+        emptyMessage="No stages yet. Create one to stage changes remotely."
       >
         {workspaces.kind === 'ok' && (
           <div className="table-container">
             {filtered.length === 0 ? (
-              <p className="muted">No matching workspaces.</p>
+              <p className="muted">No matching stages.</p>
             ) : (
               <table className="table workspaces-table">
                 <thead>
                   <tr>
-                    <th scope="col">Workspace</th>
+                    <th scope="col">Stage</th>
                     <th scope="col">Base</th>
-                    <th scope="col">Sessions</th>
                     <th scope="col">Created</th>
                     <th scope="col">
                       <span className="sr-only">Actions</span>
@@ -242,8 +213,7 @@ export function WorkspacesPage() {
                 <tbody>
                   {ordered.map((ws) => {
                     const label = ws.name || ws.id.slice(0, 8)
-                    const href = `${base}/workspaces/${encodeURIComponent(ws.id)}`
-                    const mountedSessions = workspaceToSessions.get(ws.id) || []
+                    const href = `${base}/stages/${encodeURIComponent(ws.id)}`
                     return (
                       <tr key={ws.id} data-workspace={ws.id}>
                         <td>
@@ -251,7 +221,7 @@ export function WorkspacesPage() {
                             <Link className="workspace-name-link" to={href}>
                               {label}
                             </Link>
-                            <FavoriteStar type="workspace" id={`${namespace}/${repo}!${ws.id}`} label={label} />
+                            <FavoriteStar type="stage" id={`${namespace}/${repo}!${ws.id}`} label={label} />
                             <span className="mono muted small" title={ws.id}>
                               {ws.id.slice(0, 8)}
                             </span>
@@ -275,31 +245,6 @@ export function WorkspacesPage() {
                             </span>
                           </div>
                         </td>
-                        <td>
-                          <div className="workspace-sessions-cell">
-                            {mountedSessions.length === 0 ? (
-                              <span className="muted small">No sessions</span>
-                            ) : (
-                              <div className="workspace-sessions-list">
-                                {mountedSessions.map((session) => (
-                                  <Link
-                                    key={session.id}
-                                    to={`/sessions/${encodeURIComponent(session.id)}`}
-                                    className="workspace-session-link"
-                                    title={`${shortenSessionId(session.id)} · ${statusLabel(session.status)}`}
-                                  >
-                                    <span className="mono">
-                                      {shortenSessionId(session.id, 8)}
-                                    </span>
-                                    <span className="muted small">
-                                      {statusLabel(session.status)}
-                                    </span>
-                                  </Link>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </td>
                         <td className="muted small">
                           {ws.created_at
                             ? formatRelativeTime(ws.created_at)
@@ -317,22 +262,6 @@ export function WorkspacesPage() {
                             </Link>
                             <Link
                               className="icon-round"
-                              to={`${href}#jobs`}
-                              aria-label={`Jobs for ${label}`}
-                              title={`Jobs for ${label}`}
-                            >
-                              <Terminal size={14} aria-hidden />
-                            </Link>
-                            <Link
-                              className="icon-round"
-                              to={`${href}#sessions`}
-                              aria-label={`Sessions for ${label}`}
-                              title={`Sessions for ${label}`}
-                            >
-                              <ActionMonitor size={14} aria-hidden />
-                            </Link>
-                            <Link
-                              className="icon-round"
                               to={`${href}#metadata`}
                               aria-label={`Metadata for ${label}`}
                               title={`Metadata for ${label}`}
@@ -343,7 +272,7 @@ export function WorkspacesPage() {
                               className="icon-round workspace-delete"
                               disabled={busy}
                               title={`Delete ${label}`}
-                              aria-label={`Delete workspace ${label}`}
+                              aria-label={`Delete stage ${label}`}
                               onClick={() => void onDeleteOne(ws.id, label)}
                             >
                               <TrashIcon />
@@ -362,14 +291,14 @@ export function WorkspacesPage() {
       </StateBlock>
 
       {createOpen && (
-        <Modal title="New workspace" onClose={() => setCreateOpen(false)}>
+        <Modal title="New stage" onClose={() => setCreateOpen(false)}>
           <form className="form" onSubmit={onCreate}>
             <label>
               Name
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="my-workspace"
+                placeholder="my-stage"
                 autoFocus
               />
             </label>
@@ -400,7 +329,7 @@ export function WorkspacesPage() {
                 <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>
               <button className="btn primary" type="submit" disabled={busy}>
-                <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Creating…' : 'Create workspace'}
+                <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Creating…' : 'Create stage'}
               </button>
             </div>
             {error && <p className="flash flash-error" role="status">{error}</p>}

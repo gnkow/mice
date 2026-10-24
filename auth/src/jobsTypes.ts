@@ -7,7 +7,7 @@ export type JobStatus =
   | 'failed'
   | 'cancelled'
 
-export type JobSource = 'commit_clone' | 'workspace_mount'
+export type JobSource = 'commit_clone'
 
 export type JobPathRef = {
   path: string
@@ -68,7 +68,6 @@ export type JobRun = {
   error: string | null
   log_ref: string | null
   source: JobSource
-  workspace_id: string | null
   /** Docker/K8s runtime id for cancel */
   runtime_id: string | null
   /** `cli` = executed by local `mice job run` (not auth host Docker/K8s). */
@@ -103,7 +102,6 @@ export type JobSubmitBody = {
   resources?: Partial<JobResources>
   max_log_bytes?: number
   source_kind?: JobSource
-  workspace_id?: string
   /**
    * When `cli`, auth records the job but does not execute it — the local
    * `mice` CLI runs Docker and reports completion.

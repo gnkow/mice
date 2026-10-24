@@ -10,15 +10,9 @@ import {
   shortenJobRef,
   type JobRun,
 } from '../lib/jobs'
+import { StatusPill } from './StatusPill'
 import { MetaPills } from './MetaPills'
 import { formatRelativeTime } from '../lib/time'
-
-function statusClass(s: JobRun['status']) {
-  if (s === 'succeeded') return 'pill ok'
-  if (s === 'failed' || s === 'cancelled') return 'pill bad'
-  if (s === 'running') return 'pill warn'
-  return 'pill'
-}
 
 type Props = {
   job: JobRun
@@ -63,7 +57,7 @@ export function JobSummaryCard({ job, showRepo }: Props) {
             >
               {jobRunnerLabel(job)}
             </span>
-            <span className={statusClass(job.status)}>{job.status}</span>
+            <StatusPill status={job.status} />
           </span>
         </span>
 

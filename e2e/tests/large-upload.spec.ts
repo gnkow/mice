@@ -68,7 +68,7 @@ test.describe('upload (unified size-aware flow)', () => {
     }
   })
 
-  test('L-02: large upload staged into workspace', async ({
+  test('L-02: large upload staged in stage', async ({
     page,
     seededRepo,
   }) => {
@@ -82,12 +82,12 @@ test.describe('upload (unified size-aware flow)', () => {
     try {
       const dialog = await openUploadModal(page, seededRepo)
       await dialog.locator('input[name="file"]').setInputFiles(chunky)
-      await dialog.getByLabel('Stage into workspace').selectOption(ws.id)
+      await dialog.getByLabel('Target stage').selectOption(ws.id)
       await dialog.getByRole('button', { name: 'Upload' }).click()
 
       await expect(
         page.locator('.manage-files-toast.flash-success, .flash-success').first(),
-      ).toContainText(/staged into workspace/i, { timeout: 120_000 })
+      ).toContainText(/staged in stage/i, { timeout: 120_000 })
     } finally {
       fs.unlinkSync(chunky)
     }

@@ -1,6 +1,7 @@
-import { ArrowLeftRight as ActionArrowLeftRight, File as ActionFile, GitMerge as ActionGitMerge } from 'lucide-react'
+import { ArrowLeftRight as ActionArrowLeftRight, File as ActionFile } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { BranchesSubNav } from '../components/BranchesSubNav'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { pickOtherBranch } from '../lib/lastBranch'
 import { CommitList } from '../components/CommitList'
@@ -125,6 +126,7 @@ export function ComparePage() {
 
   return (
     <main className="page wide">
+      <BranchesSubNav />
       <div className="page-head">
         <div>
           <Breadcrumbs items={repoCrumbs(namespace, repo, { label: 'Compare' })} />
@@ -137,12 +139,6 @@ export function ComparePage() {
             to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/df-compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`}
           >
             <ActionArrowLeftRight size={14} aria-hidden="true" className="button-label-icon" />DF compare
-          </Link>
-          <Link
-            className="btn ghost"
-            to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/merge?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`}
-          >
-            <ActionGitMerge size={14} aria-hidden="true" className="button-label-icon" />Merge…
           </Link>
         </div>
       </div>

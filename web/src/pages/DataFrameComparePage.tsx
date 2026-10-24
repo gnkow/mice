@@ -1,6 +1,7 @@
 import { ArrowLeftRight as ActionArrowLeftRight, ChevronLeft as ActionChevronLeft, ChevronRight as ActionChevronRight, RefreshCw as ActionRefreshCw, Settings as ActionSettings, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { BranchesSubNav } from '../components/BranchesSubNav'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { useAsync } from '../hooks/useAsync'
 import {
@@ -198,6 +199,7 @@ export function DataFrameComparePage() {
 
   return (
     <main className="page wide">
+      <BranchesSubNav />
       <div className="page-head">
         <div>
           <Breadcrumbs

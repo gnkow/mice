@@ -192,7 +192,7 @@ function NamespaceInfo({
         <p className="ns-card-meta muted small">
           {repoCount === 1 ? '1 repository' : `${repoCount} repositories`}
           {data.workspaceCount > 0 &&
-            ` · ${data.workspaceCount} workspace${data.workspaceCount === 1 ? '' : 's'}`}
+            ` · ${data.workspaceCount} stage${data.workspaceCount === 1 ? '' : 's'}`}
         </p>
         <div className="ns-card-tags">
           {!data.detail && <span className="ns-tag ns-tag-muted">Empty</span>}

@@ -101,7 +101,7 @@ export function DataFramePage() {
   function onSchemaMeta(e: FormEvent) {
     e.preventDefault()
     if (!workspaceId) {
-      setError('Select a workspace to stage schema metadata')
+      setError('Select a stage to stage schema metadata')
       return
     }
     void runMeta(async () => {
@@ -112,13 +112,13 @@ export function DataFramePage() {
         path,
         parseJsonObject(schemaMeta),
       )
-    }, 'Schema metadata staged in workspace. Commit from the workspace page.')
+    }, 'Schema metadata staged. Commit from the stage page.')
   }
 
   function onColumnMeta(e: FormEvent) {
     e.preventDefault()
     if (!workspaceId) {
-      setError('Select a workspace to stage column metadata')
+      setError('Select a stage to stage column metadata')
       return
     }
     if (!columnName.trim()) {
@@ -134,7 +134,7 @@ export function DataFramePage() {
         columnName.trim(),
         parseJsonObject(columnMeta),
       )
-    }, `Column metadata for “${columnName.trim()}” staged. Commit from the workspace page.`)
+    }, `Column metadata for “${columnName.trim()}” staged. Commit from the stage page.`)
   }
 
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
@@ -263,21 +263,21 @@ export function DataFramePage() {
 
       <details className="panel">
         <summary className="section-label" style={{ cursor: 'pointer' }}>
-          Advanced · Schema metadata (workspace)
+          Advanced · Schema metadata (stage)
         </summary>
         <p className="muted">
-          Stages metadata into a workspace; commit from the{' '}
-          <Link to={`${base}/workspaces`}>workspaces</Link> page.
+          Stages metadata into a stage; commit from the{' '}
+          <Link to={`${base}/stages`}>stages</Link> page.
         </p>
         <form className="form" onSubmit={onSchemaMeta}>
           <label>
-            Workspace
+            Stage
             <select
               value={workspaceId}
               onChange={(e) => setWorkspaceId(e.target.value)}
               required
             >
-              <option value="">Select workspace…</option>
+              <option value="">Select stage…</option>
               {workspaces.kind === 'ok' &&
                 workspaces.data.workspaces.map((w) => (
                   <option key={w.id} value={w.id}>

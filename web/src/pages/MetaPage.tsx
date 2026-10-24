@@ -41,7 +41,7 @@ function entityHref(type: string, id: string, scope?: MetaTarget['scope']): stri
     case 'commit':
       return `/n/${e(ns)}/r/${e(repo)}/commits/${e(id.split('#')[1] ?? '')}`
     case 'workspace':
-      return `/n/${e(ns)}/r/${e(repo)}/workspaces/${e(id.split('!')[1] ?? '')}`
+      return `/n/${e(ns)}/r/${e(repo)}/stages/${e(id.split('!')[1] ?? '')}`
     case 'session':
       return `/sessions/${e(id)}`
     case 'file':

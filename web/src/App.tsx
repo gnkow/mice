@@ -30,7 +30,8 @@ import { RepoSettingsPage } from './pages/RepoSettingsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TreePage } from './pages/TreePage'
 import { WorkspacePage } from './pages/WorkspacePage'
-import { WorkspacesListPage } from './pages/WorkspacesListPage'
+import { WorkspaceDetailPage } from './pages/WorkspaceDetailPage'
+import { WorkspacesHubPage } from './pages/WorkspacesHubPage'
 import { WorkspacesPage } from './pages/WorkspacesPage'
 import { JobPage } from './pages/JobPage'
 import { JobsPage } from './pages/JobsPage'
@@ -67,7 +68,7 @@ export default function App() {
                 path="projects"
                 element={<Navigate to="/repositories" replace />}
               />
-              <Route path="workspaces" element={<WorkspacesListPage />} />
+                            <Route path="workspaces" element={<WorkspacesHubPage />} />
               <Route path="jobs" element={<JobsListPage />} />
               <Route path="sessions" element={<SessionsListPage />} />
               <Route path="sessions/:sessionId" element={<SessionPage />} />
@@ -97,11 +98,10 @@ export default function App() {
                 <Route path="df-compare" element={<DataFrameComparePage />} />
                 <Route path="merge" element={<MergePage />} />
                 <Route path="settings" element={<RepoSettingsPage />} />
-                <Route path="workspaces" element={<WorkspacesPage />} />
-                <Route
-                  path="workspaces/:workspaceId"
-                  element={<WorkspacePage />}
-                />
+                <Route path="stages" element={<WorkspacesPage />} />
+                <Route path="stages/:workspaceId" element={<WorkspacePage />} />
+                <Route path="workspaces" element={<WorkspacesHubPage />} />
+                <Route path="workspaces/:workspaceId" element={<WorkspaceDetailPage />} />
                 <Route path="jobs" element={<JobsPage />} />
                 <Route path="jobs/:jobId" element={<JobPage />} />
                 <Route path="sessions" element={<RepoSessionsPage />} />

@@ -5,6 +5,7 @@ import { FavoriteStar } from '../components/FavoriteStar'
 import { ListToolbar } from '../components/ListToolbar'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { SessionCreateModal } from '../components/SessionCreateModal'
+import { SessionRowActions, useMaySessionConnect } from '../components/SessionRowActions'
 import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useListSort, type SortFields } from '../components/SortControl'
@@ -12,7 +13,7 @@ import { useAsync } from '../hooks/useAsync'
 import { useFavorites } from '../lib/favorites'
 import {
   listSessions,
-  sessionsMountingRepoWorkspace,
+  sessionsMountingRepo,
   type DesktopSession,
 } from '../lib/sessions'
 
@@ -27,8 +28,9 @@ export function RepoSessionsPage() {
   const [createOpen, setCreateOpen] = useState(false)
 
   const state = useAsync((signal) => listSessions(signal), [namespace, repo])
+  const mayConnect = useMaySessionConnect()
   const all = state.kind === 'ok' ? state.data.sessions : []
-  const mounting = sessionsMountingRepoWorkspace(all, namespace, repo)
+  const mounting = sessionsMountingRepo(all, namespace, repo)
   const [filter, setFilter] = useState('')
   const sort = useListSort('repo-sessions', SESSION_SORTS)
   const favs = useFavorites()
@@ -54,7 +56,7 @@ export function RepoSessionsPage() {
         <div>
           <h1>Sessions</h1>
           <p className="lede">
-            Remote desktop sessions connected to workspaces in{' '}
+            Remote desktop sessions that mount a workspace of{' '}
             <code className="mono">
               {namespace}/{repo}
             </code>
@@ -96,8 +98,9 @@ export function RepoSessionsPage() {
             />
             <ul className="card-list">
               {slice.items.map((s) => (
-                <li key={s.id} className="fav-row">
+                <li key={s.id} className="fav-row session-row">
                   <SessionSummaryCard session={s} />
+                  <SessionRowActions session={s} mayConnect={mayConnect} onChanged={() => state.reload()} />
                   <FavoriteStar type="session" id={s.id} className="fav-row-star" />
                 </li>
               ))}

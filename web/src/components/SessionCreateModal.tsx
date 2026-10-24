@@ -1,128 +1,135 @@
-import { Layers as ActionLayers, Monitor as ActionMonitor, Trash2 as ActionTrash2, X as ActionX } from 'lucide-react'
+import { Monitor as ActionMonitor, Plus as ActionPlus, Trash2 as ActionTrash, X as ActionX } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Modal } from './Modal'
+import {
+  NewWorkspaceFields,
+  emptyNewWorkspace,
+  newWorkspaceInput,
+  type NewWorkspaceDraft,
+} from './NewWorkspaceFields'
 import { useAsync } from '../hooks/useAsync'
 import { loadCatalog } from '../lib/catalog'
-import {
-  createSession,
-  listSessionTemplates,
-  type SessionMountInput,
-} from '../lib/sessions'
-
-type DraftMount = {
-  key: string
-  namespace: string
-  repo: string
-  workspace_id: string
-  mount_mode: 'ro' | 'rw'
-}
-
-function newDraftKey(): string {
-  return `m_${Math.random().toString(36).slice(2, 10)}`
-}
+import { createSession, listSessionTemplates, type SessionMountInput } from '../lib/sessions'
+import { listMiceWorkspaces, type MiceWorkspace } from '../lib/workspaces'
 
 type Props = {
   onClose: () => void
-  preselectedWorkspace?: {
-    namespace: string
-    repo: string
-    workspaceId: string
-  }
+  /** When set, only this repository's workspaces can be mounted or created. */
   filterRepo?: {
     namespace: string
     repo: string
   }
 }
 
-export function SessionCreateModal({
-  onClose,
-  preselectedWorkspace,
-  filterRepo,
-}: Props) {
+const NEW = '__new__'
+
+type Row = {
+  key: number
+  choice: string // workspace id or NEW
+  mode: 'ro' | 'rw'
+  draft: NewWorkspaceDraft
+}
+
+function readOnlyOnly(w: MiceWorkspace): boolean {
+  if (w.mountable_modes) return !w.mountable_modes.includes('rw')
+  return Boolean(w.writer)
+}
+
+export function SessionCreateModal({ onClose, filterRepo }: Props) {
   const navigate = useNavigate()
   const templates = useAsync((signal) => listSessionTemplates(signal), [])
+  const workspaces = useAsync(
+    (signal) =>
+      listMiceWorkspaces(
+        filterRepo ? { namespace: filterRepo.namespace, repo: filterRepo.repo } : undefined,
+        signal,
+      ),
+    [filterRepo?.namespace, filterRepo?.repo],
+  )
   const catalog = useAsync((signal) => loadCatalog(signal), [])
-  
+
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [templateId, setTemplateId] = useState('linux-xfce')
-  const [drafts, setDrafts] = useState<DraftMount[]>(() => {
-    if (preselectedWorkspace) {
-      return [
-        {
-          key: newDraftKey(),
-          namespace: preselectedWorkspace.namespace,
-          repo: preselectedWorkspace.repo,
-          workspace_id: preselectedWorkspace.workspaceId,
-          mount_mode: 'rw',
-        },
-      ]
-    }
-    return []
-  })
+  const [rows, setRows] = useState<Row[]>([])
+  const [seeded, setSeeded] = useState(false)
 
   const tplList = templates.kind === 'ok' ? templates.data.templates : []
-  const selectedTpl = useMemo(
-    () => tplList.find((t) => t.id === templateId) ?? null,
-    [tplList, templateId],
-  )
-  
-  const allWorkspaces = catalog.kind === 'ok' ? catalog.data.workspaces : []
-  const workspaces = filterRepo
-    ? allWorkspaces.filter(
-        (w) =>
-          w.namespace === filterRepo.namespace && w.repo === filterRepo.repo,
-      )
-    : allWorkspaces
+  const selectedTpl = useMemo(() => tplList.find((t) => t.id === templateId) ?? null, [tplList, templateId])
 
-  function addWorkspaceMount() {
-    const first = workspaces[0]
-    setDrafts((prev) => [
-      ...prev,
+  const ready = useMemo(
+    () => (workspaces.kind === 'ok' ? workspaces.data.workspaces : []).filter((w) => w.status === 'ready'),
+    [workspaces],
+  )
+  const repos = useMemo(() => {
+    if (filterRepo) return [{ namespace: filterRepo.namespace, name: filterRepo.repo }]
+    return catalog.kind === 'ok' ? catalog.data.repositories : []
+  }, [catalog, filterRepo])
+
+  const loaded = workspaces.kind === 'ok'
+  if (loaded && !seeded) {
+    setSeeded(true)
+    const first = ready[0]
+    setRows([
       {
-        key: newDraftKey(),
-        namespace: first?.namespace || '',
-        repo: first?.repo || '',
-        workspace_id: first?.id || '',
-        mount_mode: 'rw',
+        key: 1,
+        choice: first ? first.id : NEW,
+        mode: first && !readOnlyOnly(first) ? 'rw' : 'ro',
+        draft: emptyNewWorkspace(filterRepo ? `${filterRepo.namespace}/${filterRepo.repo}` : ''),
       },
     ])
   }
 
-  function updateDraft(key: string, patch: Partial<DraftMount>) {
-    setDrafts((prev) =>
-      prev.map((d) => (d.key === key ? { ...d, ...patch } : d)),
+  const wsById = (id: string) => ready.find((w) => w.id === id)
+  const nextKey = () => Math.max(0, ...rows.map((r) => r.key)) + 1
+  const patchRow = (key: number, patch: Partial<Row>) =>
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)))
+
+  function onChoose(row: Row, choice: string) {
+    const w = wsById(choice)
+    patchRow(row.key, {
+      choice,
+      mode: w && readOnlyOnly(w) ? 'ro' : row.mode,
+    })
+  }
+
+  function addRow() {
+    const used = new Set(rows.map((r) => r.choice))
+    const free = ready.find((w) => !used.has(w.id))
+    setRows((rs) => [
+      ...rs,
+      {
+        key: nextKey(),
+        choice: free ? free.id : NEW,
+        mode: free && !readOnlyOnly(free) ? 'rw' : 'ro',
+        draft: emptyNewWorkspace(filterRepo ? `${filterRepo.namespace}/${filterRepo.repo}` : ''),
+      },
+    ])
+  }
+
+  const rowsValid = rows.every((r) => {
+    if (r.choice !== NEW) return true
+    const n = r.draft.name.trim()
+    return (
+      r.draft.repoKey !== '' &&
+      n.length !== 1 &&
+      (r.draft.sourceKind === 'branch' ? r.draft.branch !== '' : r.draft.commit !== '')
     )
-  }
-
-  function removeDraft(key: string) {
-    setDrafts((prev) => prev.filter((d) => d.key !== key))
-  }
-
-  function toMountInputs(): SessionMountInput[] {
-    return drafts.map((d) => ({
-      namespace: d.namespace.trim(),
-      repo: d.repo.trim(),
-      workspace_id: d.workspace_id.trim() || null,
-      mount_mode: d.mount_mode,
-    }))
-  }
+  })
+  const duplicate = new Set(rows.filter((r) => r.choice !== NEW).map((r) => r.choice)).size !==
+    rows.filter((r) => r.choice !== NEW).length
 
   async function onCreate(e: FormEvent) {
     e.preventDefault()
     setCreating(true)
     setError(null)
     try {
-      const mounts = toMountInputs()
-      for (const m of mounts) {
-        if (!m.namespace || !m.repo) {
-          throw new Error('Each workspace needs namespace and repo')
-        }
-        if (!m.workspace_id) {
-          throw new Error('Each workspace needs a workspace ID')
-        }
-      }
+      const mounts: SessionMountInput[] = rows.map((r) =>
+        r.choice === NEW
+          ? { new_workspace: newWorkspaceInput(r.draft), mount_mode: r.mode }
+          : { workspace_id: r.choice, mount_mode: r.mode },
+      )
       const { session } = await createSession({
         template_id: templateId,
         mounts: mounts.length > 0 ? mounts : undefined,
@@ -135,119 +142,102 @@ export function SessionCreateModal({
     }
   }
 
-  const wsOptionsFor = (d: DraftMount) =>
-    workspaces.filter(
-      (w) =>
-        (!d.namespace || w.namespace === d.namespace) &&
-        (!d.repo || w.repo === d.repo),
-    )
-
   return (
     <Modal title="New session" onClose={onClose}>
       <form className="form" onSubmit={onCreate}>
         <label>
           Template
-          <select
-            value={templateId}
-            onChange={(e) => setTemplateId(e.target.value)}
-            disabled={creating}
-          >
+          <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} disabled={creating}>
             {tplList.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
-            {tplList.length === 0 ? (
-              <option value="linux-xfce">Linux XFCE desktop</option>
-            ) : null}
+            {tplList.length === 0 ? <option value="linux-xfce">Linux XFCE desktop</option> : null}
           </select>
         </label>
         <p className="muted small">
-          {selectedTpl?.description ||
-            'Full XFCE desktop over RDP (docker provisioner).'}
+          {selectedTpl?.description || 'Full XFCE desktop over RDP (docker provisioner).'}
         </p>
 
-        <div className="form-section">
-          <div className="form-section-head">
-            <label className="form-section-label">Workspaces</label>
-            <button
-              type="button"
-              className="btn ghost small"
-              disabled={creating || workspaces.length === 0}
-              onClick={addWorkspaceMount}
-            >
-              <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />Add workspace
-            </button>
-          </div>
-          {drafts.length === 0 ? (
-            <p className="muted small">
-              No workspaces — desktop only. Add workspaces to access your data.
-            </p>
-          ) : (
-            <div className="workspace-mounts-list">
-              {drafts.map((d) => (
-                <div key={d.key} className="workspace-mount-item">
-                  <select
-                    value={`${d.namespace}/${d.repo}/${d.workspace_id}`}
-                    disabled={creating}
-                    onChange={(e) => {
-                      const w = workspaces.find(
-                        (x) =>
-                          `${x.namespace}/${x.repo}/${x.id}` === e.target.value,
-                      )
-                      if (!w) return
-                      updateDraft(d.key, {
-                        namespace: w.namespace,
-                        repo: w.repo,
-                        workspace_id: w.id,
-                      })
-                    }}
-                  >
-                    {wsOptionsFor(d).length === 0 ? (
-                      <option value="">No workspaces</option>
-                    ) : null}
-                    {(wsOptionsFor(d).length ? wsOptionsFor(d) : workspaces).map(
-                      (w) => (
-                        <option
-                          key={`${w.namespace}/${w.repo}/${w.id}`}
-                          value={`${w.namespace}/${w.repo}/${w.id}`}
-                        >
-                          {w.namespace}/{w.repo} · {w.name || w.id.slice(0, 8)}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                  <select
-                    value={d.mount_mode}
-                    disabled={creating}
-                    onChange={(e) =>
-                      updateDraft(d.key, {
-                        mount_mode: e.target.value as 'ro' | 'rw',
-                      })
-                    }
-                  >
-                    <option value="rw">rw</option>
-                    <option value="ro">ro</option>
-                  </select>
-                  <button
-                    type="button"
-                    className="btn ghost small"
-                    disabled={creating}
-                    onClick={() => removeDraft(d.key)}
-                  >
-                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="form-section-head">
+          <span className="form-section-label">Workspaces</span>
+          <button type="button" className="btn small" onClick={addRow} disabled={creating}>
+            <ActionPlus size={14} aria-hidden="true" className="button-label-icon" />Add workspace
+          </button>
         </div>
+        <p className="muted small">Sessions work on workspaces. Mount existing ones or create one on demand.</p>
+
+        {rows.map((row, i) => {
+          const w = wsById(row.choice)
+          const roOnly = w ? readOnlyOnly(w) : false
+          return (
+            <fieldset key={row.key} className="session-ws-card" disabled={creating}>
+              <legend className="sr-only">Workspace {i + 1}</legend>
+              <div className="session-ws-head">
+                <select
+                  value={row.choice}
+                  onChange={(e) => onChoose(row, e.target.value)}
+                  aria-label={`Workspace ${i + 1}`}
+                >
+                  {ready.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name || x.id} · {x.namespace}/{x.repo}
+                      {readOnlyOnly(x) ? ' (in use — read-only)' : ''}
+                    </option>
+                  ))}
+                  <option value={NEW}>New workspace…</option>
+                </select>
+                <button
+                  type="button"
+                  className="icon-round workspace-delete"
+                  title="Remove workspace"
+                  aria-label={`Remove workspace ${i + 1}`}
+                  onClick={() => setRows((rs) => rs.filter((r) => r.key !== row.key))}
+                >
+                  <ActionTrash size={14} aria-hidden />
+                </button>
+              </div>
+              {row.choice === NEW ? (
+                <NewWorkspaceFields
+                  draft={row.draft}
+                  onChange={(draft) => patchRow(row.key, { draft })}
+                  repos={repos}
+                  disabled={creating}
+                />
+              ) : null}
+              <label>
+                Access
+                <select
+                  value={roOnly ? 'ro' : row.mode}
+                  disabled={roOnly}
+                  onChange={(e) => patchRow(row.key, { mode: e.target.value as 'ro' | 'rw' })}
+                  aria-label={`Workspace ${i + 1} access`}
+                >
+                  <option value="rw">Read-write (single writer)</option>
+                  <option value="ro">Read-only</option>
+                </select>
+              </label>
+              {roOnly ? (
+                <p className="muted small">
+                  <span className="pill warn">In use</span> Another {w?.writer?.kind ?? 'writer'} holds the write
+                  lease, so this workspace can only be mounted read-only.
+                </p>
+              ) : null}
+              {row.choice === NEW ? (
+                <p className="muted small">The workspace is created and prepared before the session starts.</p>
+              ) : null}
+            </fieldset>
+          )
+        })}
+        {duplicate ? <p className="field-hint error-text">The same workspace is selected more than once.</p> : null}
+        {rows.length === 0 ? <p className="muted small">Desktop only — no workspace mounted.</p> : null}
 
         <div className="btn-row modal-actions">
           <button type="button" className="btn ghost" onClick={onClose}>
             <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
           </button>
-          <button className="btn primary" type="submit" disabled={creating}>
+          <button className="btn primary" type="submit" disabled={creating || !rowsValid || duplicate}>
             <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />{creating ? 'Creating…' : 'Create session'}
           </button>
         </div>

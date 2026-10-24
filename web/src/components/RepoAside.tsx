@@ -172,7 +172,7 @@ export function RepoAside() {
                   <strong>{workspaceCount}</strong>
                   <span className="muted">
                     {' '}
-                    workspace{workspaceCount === 1 ? '' : 's'}
+                    stage{workspaceCount === 1 ? '' : 's'}
                   </span>
                 </li>
               )}

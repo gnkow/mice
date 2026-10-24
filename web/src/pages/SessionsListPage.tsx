@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { SessionCreateModal } from '../components/SessionCreateModal'
+import { SessionRowActions, useMaySessionConnect } from '../components/SessionRowActions'
 import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
@@ -43,6 +44,8 @@ export function SessionsListPage() {
   )
   const slice = paginate(ordered, page, PAGE_SIZE)
   const [createOpen, setCreateOpen] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const mayConnect = useMaySessionConnect()
   const canCreateSession =
     authz.kind === 'ok' &&
     !!authz.data &&
@@ -73,7 +76,7 @@ export function SessionsListPage() {
         <div>
           <h1>Sessions</h1>
           <p className="lede">
-            Your personal remote desktop environments for working with data. Connect one or more workspaces to access your files.
+            Your personal remote desktop environments for working with data. Mount one or more workspaces to access your files.
           </p>
         </div>
         <div className="btn-row">
@@ -147,6 +150,8 @@ export function SessionsListPage() {
         )}
       </div>
 
+      {actionError ? <p className="flash flash-error" role="status">{actionError}</p> : null}
+
       <StateBlock
         loading={state.kind === 'loading'}
         error={state.kind === 'error' ? state.message : null}
@@ -162,8 +167,14 @@ export function SessionsListPage() {
           <>
             <ul className="card-list">
               {slice.items.map((s) => (
-                <li key={s.id} className="fav-row">
+                <li key={s.id} className="fav-row session-row">
                   <SessionSummaryCard session={s} />
+                  <SessionRowActions
+                    session={s}
+                    mayConnect={mayConnect}
+                    onChanged={() => state.reload()}
+                    onError={setActionError}
+                  />
                   <FavoriteStar type="session" id={s.id} className="fav-row-star" />
                 </li>
               ))}

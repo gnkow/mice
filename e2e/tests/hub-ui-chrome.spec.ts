@@ -122,13 +122,11 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     })
     await expect(page.locator('.merge-summary')).toContainText(/\d+ commits?/)
 
-    const viewDiff = page
-      .locator('.merge-page-head')
-      .getByRole('link', { name: 'View diff' })
-    await expect(viewDiff).toHaveAttribute(
-      'href',
-      /\/compare\?base=main&head=feature/,
-    )
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Branch views' })
+        .getByRole('link', { name: 'Compare', exact: true }),
+    ).toHaveAttribute('href', /\/compare\?base=main&head=feature/)
 
     await page.getByRole('button', { name: 'Swap base and head branches' }).click()
     await expect(page).toHaveURL(/base=feature&head=main/)
@@ -178,15 +176,15 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
       'beta-ws',
     )
 
-    await page.goto(repoPath(seededRepo, '/workspaces'))
-    await expect(page.getByRole('heading', { name: 'Workspaces' })).toBeVisible()
+    await page.goto(repoPath(seededRepo, '/stages'))
+    await expect(page.getByRole('heading', { name: 'Stages', exact: true })).toBeVisible()
     await expect(
       page.getByText(/Make changes on the server without downloading the entire repository/),
     ).toBeVisible()
 
     const table = page.locator('table.workspaces-table')
     await expect(
-      table.getByRole('columnheader', { name: 'Workspace' }),
+      table.getByRole('columnheader', { name: 'Stage' }),
     ).toBeVisible()
     await expect(table.getByRole('columnheader', { name: 'Base' })).toBeVisible()
     await expect(
@@ -197,32 +195,32 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
     await expect(page.getByRole('link', { name: 'alpha-ws', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'beta-ws', exact: true })).toBeVisible()
 
-    await page.getByPlaceholder('Filter workspaces…').fill('alpha')
+    await page.getByPlaceholder('Filter stages…').fill('alpha')
     await expect(page.getByRole('link', { name: 'alpha-ws', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'beta-ws', exact: true })).toHaveCount(0)
-    await page.getByPlaceholder('Filter workspaces…').fill('')
+    await page.getByPlaceholder('Filter stages…').fill('')
 
     await page
       .locator(`tr[data-workspace="${a.id}"]`)
       .getByRole('link', { name: 'alpha-ws', exact: true })
       .click()
-    await expect(page).toHaveURL(new RegExp(`/workspaces/${a.id}$`))
+    await expect(page).toHaveURL(new RegExp(`/stages/${a.id}$`))
     await expect(page.getByRole('heading', { name: 'alpha-ws' })).toBeVisible()
-    await expect(page.getByRole('link', { name: '← Workspaces' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '← Stages' })).toBeVisible()
 
-    await page.getByRole('link', { name: '← Workspaces' }).click()
-    await expect(page).toHaveURL(/\/workspaces$/)
+    await page.getByRole('link', { name: '← Stages' }).click()
+    await expect(page).toHaveURL(/\/stages$/)
 
     await page
-      .getByRole('button', { name: 'Delete workspace beta-ws' })
+      .getByRole('button', { name: 'Delete stage beta-ws' })
       .click()
     await acceptConfirmModal(page, 'beta-ws')
     await expect(page.getByRole('link', { name: 'beta-ws', exact: true })).toHaveCount(0, {
       timeout: 30_000,
     })
 
-    await page.getByRole('button', { name: 'New workspace' }).click()
-    const dialog = page.getByRole('dialog', { name: 'New workspace' })
+    await page.getByRole('button', { name: 'New stage' }).click()
+    const dialog = page.getByRole('dialog', { name: 'New stage' })
     await expect(dialog.getByLabel('Name')).toBeVisible()
     await expect(dialog.getByLabel('Base branch')).toBeVisible()
     await dialog.getByRole('button', { name: 'Cancel' }).click()
@@ -240,7 +238,7 @@ test.describe('hub UI chrome (Branches / Merge / Workspaces)', () => {
       'staged-ui',
     )
     await page.goto(
-      repoPath(seededRepo, `/workspaces/${encodeURIComponent(ws.id)}`),
+      repoPath(seededRepo, `/stages/${encodeURIComponent(ws.id)}`),
     )
     await expect(page.getByRole('heading', { name: 'staged-ui' })).toBeVisible()
 

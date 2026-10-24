@@ -216,7 +216,9 @@ Atomic E2E case catalog: [`TESTS.md`](./TESTS.md).
 
 ### Desktop sessions (PLAT-SESS)
 
-Interactive Linux desktops (exclusive per user). Default local stack uses the **docker** provisioner (XFCE+xrdp via `lscr.io/linuxserver/rdesktop`). Connect uses **guacamole-lite** + `guacd`. Create-time **multi-mount** of Oxen workspaces/commits under `/data/<ns>/<repo>` (AuthZ mirrors Jobs read/write). UI: **Sessions** in the nav. Use `SESSIONS_PROVISIONER=mock` only for fast API/UI e2e (Connect is disabled — no RDP host).
+Interactive Linux desktops (exclusive per user). Default local stack uses the **docker** provisioner (XFCE+xrdp via `lscr.io/linuxserver/rdesktop`). Connect uses **guacamole-lite** + `guacd`. Sessions mount workspaces under `/data/<ns>/<repo>__<workspace_id>`, so multiple workspaces from the same repository have distinct, stable paths. Existing mount paths are preserved when editing a session. AuthZ mirrors Jobs read/write. UI: **Sessions** in the nav. Use `SESSIONS_PROVISIONER=mock` only for fast API/UI e2e (Connect is disabled — no RDP host).
+
+Workspace names are optional: unnamed workspaces receive `<workspace_id>-<branch>-<8-character commit>` once the source resolves (`commit` replaces the branch for commit-only sources). Explicit names remain unique within a repository. Writable mounts use `WORKSPACES_UID` / `WORKSPACES_GID` (both default to `1000`), matching the desktop user; existing tree ownership is repaired before a read-write mount. The auth service must be able to change ownership of its workspace/store volumes. Change requested access directly in the session's **Workspaces → Access** selector; confirmation restarts the session and discards files outside mounted workspaces. An existing writer or quota limit can still force read-only access, which is shown separately.
 
 ```bash
 make up                 # includes guacd; real desktops by default

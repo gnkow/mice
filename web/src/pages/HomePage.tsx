@@ -7,13 +7,14 @@ import { listAuthzNamespaces } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
 import { listJobs } from '../lib/jobs'
 import { listSessions } from '../lib/sessions'
+import { listMiceWorkspaces } from '../lib/workspaces'
 import { mergeNamespaces } from '../lib/mergeNamespaces'
 import { formatBytes } from '../lib/oxen/client'
 
 type BrowseTile = {
   to: string
-  createTo: string
-  createLabel: string
+  createTo?: string
+  createLabel?: string
   value: string | number
   label: string
   hint: string
@@ -26,6 +27,7 @@ export function HomePage() {
   const authzNs = useAsync((signal) => listAuthzNamespaces(signal), [])
   const jobs = useAsync((signal) => listJobs({ limit: 100 }, signal), [])
   const sessions = useAsync((signal) => listSessions(signal), [])
+  const miceWorkspaces = useAsync((signal) => listMiceWorkspaces(undefined, signal), [])
 
   const mergedNamespaces = useMemo(() => {
     const oxen = catalog.kind === 'ok' ? catalog.data.namespaces : []
@@ -35,11 +37,13 @@ export function HomePage() {
 
   const repositories =
     catalog.kind === 'ok' ? catalog.data.repositories : []
-  const workspaces = catalog.kind === 'ok' ? catalog.data.workspaces : []
   const storageBytes = catalog.kind === 'ok' ? catalog.data.storageBytes : 0
   const jobCount = jobs.kind === 'ok' ? jobs.data.jobs.length : 0
   const sessionCount =
     sessions.kind === 'ok' ? sessions.data.sessions.length : 0
+
+  const workspaceCount =
+    miceWorkspaces.kind === 'ok' ? miceWorkspaces.data.workspaces.length : 0
 
   const firstRepo = repositories[0]
   const firstRepoBase = firstRepo
@@ -80,14 +84,12 @@ export function HomePage() {
     },
     {
       to: '/workspaces',
-      createTo: firstRepoBase
-        ? `${firstRepoBase}/workspaces?new=1`
-        : '/repositories',
+      createTo: '/workspaces?new=1',
       createLabel: 'New workspace',
-      value: workspaces.length,
+      value: workspaceCount,
       label: 'Workspaces',
       icon: Layers,
-      hint: 'Writable mounts on versioned data',
+      hint: 'Mountable working trees for jobs and sessions',
     },
     {
       to: '/jobs',
@@ -98,7 +100,7 @@ export function HomePage() {
       value: jobs.kind === 'loading' ? '…' : jobCount,
       label: 'Jobs',
       icon: Terminal,
-      hint: 'Batch compute against workspaces',
+      hint: 'Batch compute on versioned data',
     },
     {
       to: '/sessions',
@@ -164,14 +166,16 @@ export function HomePage() {
                     <span className="dash-tile-hint">{tile.hint}</span>
                   </span>
                 </Link>
-                <Link
-                  className="dash-tile-add"
-                  to={tile.createTo}
-                  aria-label={tile.createLabel}
-                  title={tile.createLabel}
-                >
-                  <Plus size={18} aria-hidden="true" />
-                </Link>
+                {tile.createTo ? (
+                  <Link
+                    className="dash-tile-add"
+                    to={tile.createTo}
+                    aria-label={tile.createLabel}
+                    title={tile.createLabel}
+                  >
+                    <Plus size={18} aria-hidden="true" />
+                  </Link>
+                ) : null}
               </div>
             ))}
           </div>

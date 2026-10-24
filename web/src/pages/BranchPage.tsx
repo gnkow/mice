@@ -1,6 +1,7 @@
 import { ArrowLeftRight as ActionArrowLeftRight, FolderOpen as ActionFolderOpen, GitMerge as ActionGitMerge, History as ActionHistory, RefreshCw as ActionRefreshCw, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { BranchesSubNav } from '../components/BranchesSubNav'
 import { AuthorAvatar } from '../components/AuthorAvatar'
 import { MetaPanel } from '../components/MetaPanel'
 import { StateBlock } from '../components/StateBlock'
@@ -75,6 +76,7 @@ function BranchDetail({ namespace, repo, branch }: { namespace: string; repo: st
   }
 
   return <main className="page branch-page">
+    <BranchesSubNav />
     <div className="page-head">
       <div>
         <Link to={`${base}/branches`} className="small">All branches</Link>

@@ -21,7 +21,7 @@ help:
 	@echo "Targets:"
 	@echo "  make up         Start oxen-server + web (detached)"
 	@echo "  make down       Stop Compose stack (keep volumes)"
-	@echo "  make reset      Wipe oxen + auth data volumes, restart stack"
+	@echo "  make reset      Wipe oxen, auth, checkout-store and workspace volumes, restart stack"
 	@echo "  make clean      Stop stack, wipe volumes + deps + test artifacts"
 	@echo "  make install    npm install + Playwright Chromium"
 	@echo "  make test-unit  Auth + CLI + web unit tests (no stack required)"
@@ -81,10 +81,11 @@ test-view: install
 test-ui: install
 	npm run test:e2e:ui -- $(ARGS)
 
-# Wipe persisted server data (repos + authz/PATs/audit), keep node_modules.
+# Wipe persisted server data (repos + authz/PATs/audit + workspace checkouts/overlays), keep node_modules.
 reset:
 	docker compose down --remove-orphans
-	-docker volume rm mice_oxen-data mice_auth_data
+	-docker volume rm mice_oxen-data mice_auth_data \
+		$${WORKSPACES_STORE_VOLUME:-mice-store} $${WORKSPACES_VOLUME:-mice-workspaces}
 	rm -rf "$(JOBS_HOST_DATA_DIR)"
 	mkdir -p "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)"
 	docker compose up -d --build

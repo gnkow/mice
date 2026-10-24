@@ -43,7 +43,6 @@ test.describe('platform (P-03 P-04)', () => {
     await expect(browse.getByText('0').first()).toBeVisible()
     await expect(browse.getByText('Namespaces')).toBeVisible()
     await expect(browse.getByText('Repositories')).toBeVisible()
-    await expect(browse.getByText('Workspaces', { exact: true })).toBeVisible()
     await expect(
       browse.getByRole('link', { name: /^0 Repositories/ }),
     ).toBeVisible()

@@ -72,7 +72,7 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
   const meta = [
     summary,
     wsCount != null && wsCount > 0
-      ? `${wsCount} workspace${wsCount === 1 ? '' : 's'}`
+      ? `${wsCount} stage${wsCount === 1 ? '' : 's'}`
       : null,
   ]
     .filter(Boolean)

@@ -1,34 +1,42 @@
-import { Plug as ActionPlug, RefreshCw as ActionRefreshCw, Square as ActionSquare, Trash2 as ActionTrash2 } from 'lucide-react'
+import { Box, Layers, Plug as ActionPlug, Tags, RefreshCw as ActionRefreshCw, Square as ActionSquare, Trash2 as ActionTrash2 } from 'lucide-react'
 import { MetaBody } from '../components/MetaPanel'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { SessionWorkspacesTab } from '../components/SessionWorkspacesTab'
+import { StatusPill } from '../components/StatusPill'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe } from '../lib/auth'
-import { loadCatalog } from '../lib/catalog'
 import { confirmDelete } from '../lib/confirmDelete'
 import {
-  connectSession,
+  connectAndOpen,
   destroySession,
   getSession,
   retrySession,
-  sessionImageLabel,
   sessionMounts,
-  sessionStatusClass,
   sessionTitle,
   shortenSessionId,
-  statusLabel,
   stopSession,
   type DesktopSession,
 } from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
 import { FavoriteStar } from '../components/FavoriteStar'
 
+type Tab = 'workspaces' | 'container' | 'metadata'
+const TABS: { id: Tab; label: string; icon: typeof Layers }[] = [
+  { id: 'workspaces', label: 'Workspaces', icon: Layers },
+  { id: 'container', label: 'Container', icon: Box },
+  { id: 'metadata', label: 'Metadata', icon: Tags },
+]
+
 export function SessionPage() {
   const { sessionId = '' } = useParams()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const tabParam = params.get('tab')
+  const tab: Tab = tabParam === 'metadata' || tabParam === 'container' ? tabParam : 'workspaces'
+  const setTab = (t: Tab) => setParams(t === 'workspaces' ? {} : { tab: t }, { replace: true })
   const authz = useAsync((signal) => fetchAuthzMe(signal), [])
-  const catalog = useAsync((signal) => loadCatalog(signal), [])
   const [session, setSession] = useState<DesktopSession | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,15 +48,6 @@ export function SessionPage() {
       authz.data.instanceAdmin ||
       authz.data.permissions.session_connect ||
       authz.data.permissions.session_admin)
-
-  const workspacesMap = useMemo(() => {
-    if (catalog.kind !== 'ok') return new Map()
-    const map = new Map<string, string>() // key: "namespace/repo/id" -> name
-    for (const ws of catalog.data.workspaces) {
-      map.set(`${ws.namespace}/${ws.repo}/${ws.id}`, ws.name)
-    }
-    return map
-  }, [catalog])
 
   const reload = useCallback(async () => {
     if (!sessionId) return
@@ -79,22 +78,9 @@ export function SessionPage() {
     if (!sessionId) return
     setBusy(true)
     setError(null)
-    const tab = window.open('about:blank', '_blank')
     try {
-      const result = await connectSession(sessionId)
-      if (tab && !tab.closed) {
-        tab.location.href = result.connect.client_url
-      } else {
-        window.location.assign(result.connect.client_url)
-        return
-      }
-      await reload()
+      if (await connectAndOpen(sessionId)) await reload()
     } catch (err) {
-      try {
-        tab?.close()
-      } catch {
-        /* ignore */
-      }
       setError(err instanceof Error ? err.message : 'Connect failed')
     } finally {
       setBusy(false)
@@ -172,9 +158,7 @@ export function SessionPage() {
   }
 
   const title = sessionTitle(session)
-  const image = sessionImageLabel(session)
   const mounts = sessionMounts(session)
-  const workspaceMounts = mounts.filter((m) => m.workspace_id)
   const canConnect =
     mayConnect &&
     (session.status === 'ready' || session.status === 'connected')
@@ -204,9 +188,7 @@ export function SessionPage() {
             </span>
             <span className="job-page-tags">
               <span className="pill">{session.provisioner}</span>
-              <span className={sessionStatusClass(session.status)}>
-                {statusLabel(session.status)}
-              </span>
+              <StatusPill status={session.status} />
             </span>
           </div>
           <div className="session-page-actions">
@@ -266,6 +248,11 @@ export function SessionPage() {
           {error}
         </p>
       ) : null}
+      {(session.notices ?? []).map((n) => (
+        <p key={n} className="flash job-page-error" role="status">
+          {n}
+        </p>
+      ))}
       {session.error ? (
         <p className="flash flash-error job-page-error" role="status">
           {session.error}
@@ -273,96 +260,52 @@ export function SessionPage() {
       ) : null}
 
       <section className="job-page-summary" aria-label="Session summary">
-        <p
-          className="job-page-cmd mono"
-          title={session.image}
-        >
-          <span className="job-page-cmd-image">{image || session.image}</span>
-          {session.resources ? (
-            <>
-              <span className="job-page-cmd-sep" aria-hidden>
-                ·
-              </span>
-              <span>
-                cpu {session.resources.cpu} · mem {session.resources.memory}
-              </span>
-            </>
-          ) : null}
-        </p>
         <div className="jobs-card-refs job-page-refs">
           <span className="jobs-ref">
             <span className="jobs-ref-label">Workspaces</span>
-            {workspaceMounts.length === 0 ? (
-              <span className="muted">None</span>
-            ) : (
-              <span className="mono">
-                {workspaceMounts.length} workspace{workspaceMounts.length === 1 ? '' : 's'}
-              </span>
-            )}
+            {mounts.length === 0 ? <span className="muted">None</span> : <span className="mono">{mounts.length}</span>}
           </span>
-          {session.endpoints?.container_name ? (
-            <>
-              <span className="jobs-ref-arrow" aria-hidden>
-                ·
-              </span>
-              <span className="jobs-ref">
-                <span className="jobs-ref-label">Container</span>
-                <span className="mono" title={session.endpoints.container_name}>
-                  {session.endpoints.container_name}
-                </span>
-              </span>
-            </>
+          <span className="jobs-ref">
+            <span className="jobs-ref-label">Created</span>
+            <span title={session.created_at}>{formatRelativeTime(session.created_at)}</span>
+          </span>
+          {session.ready_at ? (
+            <span className="jobs-ref">
+              <span className="jobs-ref-label">Ready</span>
+              <span title={session.ready_at}>{formatRelativeTime(session.ready_at)}</span>
+            </span>
           ) : null}
         </div>
-        {workspaceMounts.length > 0 ? (
-          <ul className="sessions-detail-mounts mono small">
-            {workspaceMounts.map((m) => {
-              const wsKey = `${m.namespace}/${m.repo}/${m.workspace_id || ''}`
-              const wsName = workspacesMap.get(wsKey) || m.workspace_id?.slice(0, 8) || 'unknown'
-              return (
-                <li key={m.mount_path}>
-                  <Link
-                    to={`/n/${encodeURIComponent(m.namespace)}/r/${encodeURIComponent(m.repo)}/workspaces/${encodeURIComponent(m.workspace_id || '')}`}
-                    className="session-workspace-link"
-                  >
-                    {m.namespace}/{m.repo} · {wsName}
-                  </Link>
-                  <span className="muted small">
-                    {' '}
-                    ({m.mount_mode} at {m.mount_path})
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        ) : null}
       </section>
 
-      <section className="job-page-panel" aria-label="Session details">
-        <dl className="jobs-meta job-page-meta">
-          <dt>Status</dt>
-          <dd>
-            <span className={sessionStatusClass(session.status)}>
-              {statusLabel(session.status)}
-            </span>
-          </dd>
-          <dt>Guest user</dt>
-          <dd className="mono">{session.guest_user}</dd>
-          <dt>Provisioner</dt>
-          <dd>{session.provisioner}</dd>
-          {session.template_id ? (
-            <>
-              <dt>Template</dt>
-              <dd className="mono">{session.template_id}</dd>
-            </>
-          ) : null}
-        </dl>
+      <div className="tab-bar" role="tablist" aria-label="Session views">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`session-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`session-panel-${t.id}`}
+            className={tab === t.id ? 'active' : ''}
+            onClick={() => setTab(t.id)}
+          >
+            <t.icon size={14} aria-hidden="true" className="button-label-icon" />
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        <details className="job-page-more">
-          <summary>More details</summary>
+      <section
+        className="job-page-panel"
+        role="tabpanel"
+        id={`session-panel-${tab}`}
+        aria-labelledby={`session-tab-${tab}`}
+      >
+        {tab === 'workspaces' ? (
+          <SessionWorkspacesTab session={session} onChanged={reload} onError={setError} />
+        ) : tab === 'container' ? (
           <dl className="jobs-meta job-page-meta">
-            <dt>Session id</dt>
-            <dd className="mono">{session.id}</dd>
             <dt>Image</dt>
             <dd className="mono">{session.image}</dd>
             {session.image_digest ? (
@@ -373,39 +316,47 @@ export function SessionPage() {
             ) : null}
             <dt>Resources</dt>
             <dd className="mono">
-              cpu {session.resources.cpu} · mem {session.resources.memory} ·
-              disk {session.resources.disk}
+              cpu {session.resources.cpu} · mem {session.resources.memory} · disk {session.resources.disk}
             </dd>
+            {session.endpoints?.container_name ? (
+              <>
+                <dt>Container</dt>
+                <dd className="mono">{session.endpoints.container_name}</dd>
+              </>
+            ) : null}
+            <dt>Provisioner</dt>
+            <dd>{session.provisioner}</dd>
+            {session.template_id ? (
+              <>
+                <dt>Template</dt>
+                <dd className="mono">{session.template_id}</dd>
+              </>
+            ) : null}
+            <dt>Guest user</dt>
+            <dd className="mono">{session.guest_user || '—'}</dd>
+            <dt>Session id</dt>
+            <dd className="mono">{session.id}</dd>
             <dt>Created</dt>
-            <dd title={session.created_at}>
-              {formatRelativeTime(session.created_at)}
-            </dd>
+            <dd title={session.created_at}>{formatRelativeTime(session.created_at)}</dd>
             {session.ready_at ? (
               <>
                 <dt>Ready</dt>
-                <dd title={session.ready_at}>
-                  {formatRelativeTime(session.ready_at)}
-                </dd>
+                <dd title={session.ready_at}>{formatRelativeTime(session.ready_at)}</dd>
               </>
             ) : null}
             {session.provisioner === 'mock' ? (
               <>
                 <dt>Note</dt>
                 <dd className="muted">
-                  Mock sessions have no RDP guest. For a real desktop, recreate
-                  after{' '}
-                  <span className="mono">SESSIONS_PROVISIONER=docker</span> (and
-                  restart the stack).
+                  Mock sessions have no RDP guest. For a real desktop, recreate after{' '}
+                  <span className="mono">SESSIONS_PROVISIONER=docker</span> (and restart the stack).
                 </dd>
               </>
             ) : null}
           </dl>
-        </details>
-      </section>
-
-      <section className="settings-section" aria-labelledby="meta-heading">
-        <h2 id="meta-heading">Metadata</h2>
-        <MetaBody type="session" id={session.id} />
+        ) : (
+          <MetaBody type="session" id={session.id} />
+        )}
       </section>
     </main>
   )

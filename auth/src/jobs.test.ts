@@ -64,6 +64,35 @@ after(() => {
 })
 
 describe('parseSubmitBody', () => {
+  it('rejects stage sources', () => {
+    const base = { namespace: 'n', repo: 'r', image: 'x', command: 'y' }
+    for (const extra of [
+      { source: 'workspace_mount' },
+      { source_kind: 'workspace_mount' },
+      { workspace_id: 'w1' },
+    ]) {
+      const r = parseSubmitBody({ ...base, ...extra })
+      assert.ok('error' in r)
+      assert.equal(r.error, 'stage sources are no longer supported')
+    }
+  })
+
+  it('publicJob drops legacy workspace_id', () => {
+    const legacy = {
+      id: 'x', name: '', status: 'succeeded', namespace: 'n', repo: 'r',
+      source_ref: 'main:p', pin_commit: 'p', target_branch: '', sync_branch: '',
+      image: 'i', command: 'c', args: [], env: {}, workdir: '/data',
+      input_globs: [], timeout_seconds: 1, max_log_bytes: 1,
+      resources: { cpu: '1', memory: '1', disk: '1' },
+      actor: { sub: 's' }, via: 'session', inputs: [], outputs: [],
+      created_at: '', started_at: null, finished_at: null, exit_code: 0,
+      error: null, log_ref: '', source: 'workspace_mount', workspace_id: 'w1',
+      runtime_id: null,
+    } as never
+    const pub = publicJob(legacy) as unknown as Record<string, unknown>
+    assert.equal('workspace_id' in pub, false)
+  })
+
   it('requires core fields', () => {
     const r = parseSubmitBody({})
     assert.ok('error' in r)
@@ -332,7 +361,6 @@ describe('publicJob', () => {
       error: null,
       log_ref: null,
       source: 'commit_clone',
-      workspace_id: null,
       runtime_id: null,
       runner: 'docker',
     })
@@ -379,7 +407,6 @@ describe('job id rekey', () => {
       error: null,
       log_ref: null,
       source: 'commit_clone' as const,
-      workspace_id: null,
       runtime_id: null,
       runner: 'docker' as const,
     }

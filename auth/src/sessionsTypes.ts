@@ -32,27 +32,55 @@ export type SessionEndpoints = {
 export type SessionWorkspaceRef = {
   namespace: string
   repo: string
-  workspace_id: string | null
 }
 
-/** One Oxen workspace or commit pin bind-mounted into the guest. */
+/**
+ * One mount in the guest: a Mice workspace overlay volume (lease-backed). Records
+ * written before workspaces-only sessions may hold legacy commit-pin mounts
+ * (no `workspace_id`); they still load but are never mounted.
+ */
 export type SessionMount = {
   namespace: string
   repo: string
-  workspace_id: string | null
-  /** Required when workspace_id is null. */
   pin_commit: string | null
+  /** Requested mode. For workspace mounts the effective mode may be downgraded. */
   mount_mode: 'ro' | 'rw'
   /** Server-assigned guest path, e.g. /data/ns/repo */
   mount_path: string
+  /** Workspace mounts only (mutually exclusive with pin_commit). */
+  workspace_id?: string
+  /** Workspace mounts only: what the lease actually allows. */
+  effective_mode?: 'ro' | 'rw'
+  /**
+   * Workspace mounts only: the lease held by this session for this mount. Absent/null
+   * while an on-demand workspace is still preparing (leases are taken at provision time).
+   */
+  lease_id?: string | null
 }
 
-/** Client-supplied mount before path assignment. */
-export type SessionMountInput = {
+/** Create a workspace on demand as part of session creation. */
+export type NewWorkspaceInput = {
   namespace: string
   repo: string
-  workspace_id?: string | null
-  pin_commit?: string | null
+  name?: string
+  source: { branch: string } | { commit: string }
+}
+
+/** Client-supplied mount: an existing workspace, or one to create on demand. */
+export type SessionMountInput = {
+  workspace_id?: string
+  new_workspace?: NewWorkspaceInput
+  mount_mode?: 'ro' | 'rw'
+  /** Optional; must match the workspace when given. */
+  namespace?: string
+  repo?: string
+}
+
+/** A mount whose workspace is known (existing or just created). */
+export type ResolvedMountInput = {
+  namespace: string
+  repo: string
+  workspace_id: string
   mount_mode?: 'ro' | 'rw'
 }
 
@@ -71,7 +99,7 @@ export type DesktopSession = {
   guest_user: string
   /** Redacted in public API */
   guest_password: string
-  /** Zero or more workspace/commit mounts (create-time only). */
+  /** Zero or more workspace mounts (legacy records may hold commit pins). */
   mounts: SessionMount[]
   /**
    * Legacy single-mount fields — kept for JSONL records written before mounts[].
@@ -93,20 +121,15 @@ export type DesktopSession = {
   destroyed_at: string | null
   error: string | null
   runtime_id: string | null
+  /** Non-fatal messages, e.g. a workspace mount downgraded to read-only. */
+  notices?: string[]
 }
 
 export type SessionCreateBody = {
   template_id?: string
   image?: string
   resources?: Partial<SessionResources>
-  /** Preferred: one or more mounts. */
   mounts?: SessionMountInput[]
-  /** @deprecated Use mounts[]; converted to a single mount when mounts omitted. */
-  workspace_ref?: SessionWorkspaceRef | null
-  /** @deprecated Use mounts[].pin_commit */
-  pin_commit?: string | null
-  /** @deprecated Use mounts[].mount_mode */
-  mount_mode?: 'ro' | 'rw'
   recording?: boolean
 }
 
@@ -119,4 +142,7 @@ export type SessionTemplate = {
   default_resources: SessionResources
 }
 
-export type PublicDesktopSession = Omit<DesktopSession, 'guest_password'>
+export type PublicDesktopSession = Omit<DesktopSession, 'guest_password'> & {
+  notices: string[]
+  workspace_ids: string[]
+}

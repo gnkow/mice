@@ -151,7 +151,7 @@ export function ManageFilesMenu({
           })
           results.push(
             workspaceId
-              ? `${file.name} (chunked, ${formatBytes(file.size)}) staged into workspace → ${result.versionId.slice(0, 12)}…`
+              ? `${file.name} (chunked, ${formatBytes(file.size)}) staged in stage → ${result.versionId.slice(0, 12)}…`
               : `${file.name} (chunked, ${formatBytes(file.size)}, ${result.numChunks} chunks) → ${result.versionId.slice(0, 12)}…`,
           )
         } else {
@@ -301,7 +301,7 @@ export function ManageFilesMenu({
               />
             </label>
             <label>
-              Stage into workspace
+              Target stage
               <select
                 value={workspaceId}
                 onChange={(e) => setWorkspaceId(e.target.value)}
@@ -319,8 +319,8 @@ export function ManageFilesMenu({
             {workspaces.kind === 'ok' &&
               workspaces.data.workspaces.length === 0 && (
                 <p className="muted small">
-                  No workspaces yet.{' '}
-                  <Link to={`${base}/workspaces`} onClick={close}>
+                  No stages yet.{' '}
+                  <Link to={`${base}/stages`} onClick={close}>
                     Create one
                   </Link>{' '}
                   to stage large uploads without committing.

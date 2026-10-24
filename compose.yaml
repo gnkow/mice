@@ -107,10 +107,15 @@ services:
       SESSIONS_RUSTGUAC_API_KEY: ${SESSIONS_RUSTGUAC_API_KEY:-}
       SESSIONS_RECORDING: ${SESSIONS_RECORDING:-false}
       SESSIONS_AUDIT_RETENTION_DAYS: ${SESSIONS_AUDIT_RETENTION_DAYS:-365}
+      WORKSPACES_UID: ${WORKSPACES_UID:-1000}
+      WORKSPACES_GID: ${WORKSPACES_GID:-1000}
     volumes:
       - ./auth:/app
       - auth_node_modules:/app/node_modules
       - auth_data:/data
+      # Mice workspaces: shared per-commit checkout store + overlay upper/work dirs.
+      - mice-store:/data/store
+      - mice-workspaces:/data/workspaces
       # Bind-mount so host Docker can re-bind job workdirs into runner containers.
       - ${JOBS_HOST_DATA_DIR:-./.data/jobs}:/data/jobs
       - ${SESSIONS_HOST_DATA_DIR:-./.data/sessions}:/data/sessions
@@ -172,3 +177,7 @@ volumes:
   web_node_modules:
   auth_node_modules:
   auth_data:
+  mice-store:
+    name: ${WORKSPACES_STORE_VOLUME:-mice-store}
+  mice-workspaces:
+    name: ${WORKSPACES_VOLUME:-mice-workspaces}

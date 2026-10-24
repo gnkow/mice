@@ -118,42 +118,6 @@ export async function materializeCommitClone(
   return hashes
 }
 
-/** 
- * Materialize workspace base commit.
- * Note: This materializes the workspace's base commit, not staged changes.
- * For full workspace state with staged files, use the Oxen workspace API.
- */
-export async function materializeWorkspaceMount(
-  namespace: string,
-  repo: string,
-  workspaceId: string,
-  destDir: string,
-): Promise<Map<string, string>> {
-  mkdirSync(destDir, { recursive: true })
-  
-  // Get workspace details to find its base commit
-  const wsRes = await oxenFetch(
-    `/api/repos/${encSeg(namespace)}/${encSeg(repo)}/workspaces/${encSeg(workspaceId)}`,
-  )
-  if (!wsRes.ok) {
-    throw new Error(
-      `oxen workspace lookup failed (${wsRes.status}); workspace mount unavailable`,
-    )
-  }
-  const wsBody = (await wsRes.json()) as { 
-    workspace?: { commit?: { id?: string } } 
-  }
-  const commitId = wsBody.workspace?.commit?.id
-  if (!commitId) {
-    throw new Error(
-      `workspace ${workspaceId} has no base commit; cannot materialize`,
-    )
-  }
-  
-  // Materialize the base commit
-  return await materializeCommitClone(namespace, repo, commitId, destDir)
-}
-
 export function hashFile(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }

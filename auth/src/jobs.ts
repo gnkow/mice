@@ -12,7 +12,6 @@ import {
   diffTrees,
   getEntryHash,
   materializeCommitClone,
-  materializeWorkspaceMount,
   mergeBranch,
   snapshotTree,
   toPathRefs,
@@ -86,7 +85,9 @@ export function normalizeJob(job: JobRun): JobRun {
       : ''
   const runner =
     job.runner === 'kubernetes' || job.runner === 'cli' ? job.runner : 'docker'
-  const { branch: _legacy, ...rest } = job
+  const { branch: _legacy, workspace_id: _ws, ...rest } = job as JobRun & {
+    workspace_id?: unknown
+  }
   return {
     ...rest,
     name,
@@ -108,10 +109,14 @@ export function parseSubmitBody(body: unknown): JobSubmitBody | { error: string 
   const b = body as Record<string, unknown>
   const namespace = typeof b.namespace === 'string' ? b.namespace.trim() : ''
   const repo = typeof b.repo === 'string' ? b.repo.trim() : ''
-  const source =
-    typeof b.source === 'string' && b.source !== 'workspace_mount'
-      ? b.source.trim()
-      : ''
+  if (
+    b.source === 'workspace_mount' ||
+    b.source_kind === 'workspace_mount' ||
+    (b.workspace_id !== undefined && b.workspace_id !== null && b.workspace_id !== '')
+  ) {
+    return { error: 'stage sources are no longer supported' }
+  }
+  const source = typeof b.source === 'string' ? b.source.trim() : ''
   /** Explicit merge destination only (not legacy `branch`). */
   const target =
     typeof b.target === 'string'
@@ -143,10 +148,6 @@ export function parseSubmitBody(body: unknown): JobSubmitBody | { error: string 
       ? (b.resources as Record<string, unknown>)
       : {}
 
-  const source_kind =
-    b.source_kind === 'workspace_mount' || b.source === 'workspace_mount'
-      ? 'workspace_mount'
-      : 'commit_clone'
 
   return {
     namespace,
@@ -195,9 +196,7 @@ export function parseSubmitBody(body: unknown): JobSubmitBody | { error: string 
       typeof b.max_log_bytes === 'number' && b.max_log_bytes > 0
         ? Math.floor(b.max_log_bytes)
         : env.jobsDefaultMaxLogBytes,
-    source_kind,
-    workspace_id:
-      typeof b.workspace_id === 'string' ? b.workspace_id.trim() : undefined,
+    source_kind: 'commit_clone',
     runner:
       b.runner === 'cli' || b.runner === 'docker' || b.runner === 'kubernetes'
         ? b.runner
@@ -210,10 +209,6 @@ export async function submitJob(
   via: AuditVia,
   body: JobSubmitBody,
 ): Promise<JobRun> {
-  if (body.source_kind === 'workspace_mount' && !body.workspace_id) {
-    throw new Error('workspace_id required when source_kind=workspace_mount')
-  }
-
   let source_ref: string
   let pin_commit: string
   /** Merge destination — only when submit included explicit `target`. */
@@ -282,7 +277,6 @@ export async function submitJob(
     error: null,
     log_ref: jobsLogPath(id),
     source: body.source_kind ?? 'commit_clone',
-    workspace_id: body.workspace_id ?? null,
     runtime_id: null,
     runner: runnerName,
   }
@@ -583,7 +577,6 @@ export function publishSyncedCliJobs(
           error: null,
           log_ref: logPath,
           source: 'commit_clone',
-          workspace_id: null,
           runtime_id: null,
           runner: 'cli',
         }
@@ -764,19 +757,12 @@ async function executeJob(id: string) {
     upsertJob(job)
 
     const before =
-      job.source === 'workspace_mount' && job.workspace_id
-        ? await materializeWorkspaceMount(
-            job.namespace,
-            job.repo,
-            job.workspace_id,
-            data,
-          )
-        : await materializeCommitClone(
-            job.namespace,
-            job.repo,
-            job.pin_commit,
-            data,
-          )
+      await materializeCommitClone(
+        job.namespace,
+        job.repo,
+        job.pin_commit,
+        data,
+      )
     writePinMarker(data, job.pin_commit, job.id)
 
     const watcher = startReadWatcher(data)

@@ -14,7 +14,7 @@ const TAB_LABEL: Record<FavoriteType, string> = {
   namespace: 'Namespaces',
   repo: 'Repositories',
   branch: 'Branches',
-  workspace: 'Workspaces',
+  stage: 'Stages',
   job: 'Jobs',
   session: 'Sessions',
 }

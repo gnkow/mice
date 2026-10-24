@@ -1,7 +1,7 @@
-import { FileText as ActionFileText, GitCommitHorizontal as ActionGitCommitHorizontal, Monitor as ActionMonitor, RefreshCw as ActionRefreshCw, Search as ActionSearch, Trash2 as ActionTrash2, Undo2 as ActionUndo2, Upload as ActionUpload, X as ActionX } from 'lucide-react'
-import { FileDiff, Tags, Terminal, type LucideIcon } from 'lucide-react'
+import { FileText as ActionFileText, GitCommitHorizontal as ActionGitCommitHorizontal, Search as ActionSearch, Trash2 as ActionTrash2, Undo2 as ActionUndo2, Upload as ActionUpload, X as ActionX } from 'lucide-react'
+import { FileDiff, Tags, type LucideIcon } from 'lucide-react'
+import { BranchesSubNav } from '../components/BranchesSubNav'
 import { MetaBody } from '../components/MetaPanel'
-import { SessionCreateModal } from '../components/SessionCreateModal'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { StateBlock } from '../components/StateBlock'
@@ -22,22 +22,14 @@ import {
 } from '../lib/oxen/api'
 import { formatBytes } from '../lib/oxen/client'
 import { OxenApiError, type MetadataEntry } from '../lib/oxen/types'
-import {
-  getMountDiff,
-  listSessions,
-  sessionMounts,
-  syncSessionMount,
-} from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
 import { FavoriteStar } from '../components/FavoriteStar'
 
-type WorkspaceTab = 'changes' | 'jobs' | 'sessions' | 'metadata'
+type WorkspaceTab = 'changes' | 'metadata'
 type StagedKind = 'added' | 'modified' | 'removed'
 
 const TABS: { id: WorkspaceTab; label: string; icon: LucideIcon }[] = [
   { id: 'changes', label: 'Changes', icon: FileDiff },
-  { id: 'jobs', label: 'Jobs', icon: Terminal },
-  { id: 'sessions', label: 'Sessions', icon: ActionMonitor },
   { id: 'metadata', label: 'Metadata', icon: Tags },
 ]
 
@@ -167,7 +159,7 @@ export function WorkspacePage() {
   const [directory, setDirectory] = useState('')
   const [removePath, setRemovePath] = useState('')
   const [mergeBranch, setMergeBranch] = useState('main')
-  const [message, setMessage] = useState('Workspace commit via Mice')
+  const [message, setMessage] = useState('Stage commit via Mice')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -319,9 +311,9 @@ export function WorkspacePage() {
         : workspaceId.slice(0, 8)
     if (
       !(await confirmDelete({
-        title: `Delete workspace ${label}`,
+        title: `Delete stage ${label}`,
         detail:
-          'Staged changes in this workspace will be discarded. Committed history on the branch is unaffected.',
+          'Staged changes in this stage will be discarded. Committed history on the branch is unaffected.',
         confirmWord: label,
       })
     )) {
@@ -329,7 +321,7 @@ export function WorkspacePage() {
     }
     void run(async () => {
       await deleteWorkspace(namespace, repo, workspaceId)
-      navigate(`${base}/workspaces`)
+      navigate(`${base}/stages`)
     })
   }
 
@@ -349,14 +341,15 @@ export function WorkspacePage() {
 
   return (
     <main className="page workspace-detail-page">
+      <BranchesSubNav />
       <div className="workspace-detail-head">
         <div>
           <p className="page-back">
-            <Link to={`${base}/workspaces`}>← Workspaces</Link>
+            <Link to={`${base}/stages`}>← Stages</Link>
           </p>
           <h1 className="workspace-detail-title">
             {ws?.name || workspaceId.slice(0, 8)}{' '}
-            <FavoriteStar type="workspace" id={`${namespace}/${repo}!${workspaceId}`} label={ws?.name || workspaceId} />
+            <FavoriteStar type="stage" id={`${namespace}/${repo}!${workspaceId}`} label={ws?.name || workspaceId} />
           </h1>
           {ws && (
             <div className="workspace-meta-row">
@@ -392,7 +385,7 @@ export function WorkspacePage() {
         </button>
       </div>
 
-      <div className="tab-bar" role="tablist" aria-label="Workspace views">
+      <div className="tab-bar" role="tablist" aria-label="Stage views">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -618,40 +611,11 @@ export function WorkspacePage() {
                   type="submit"
                   disabled={busy || (mergeable.kind === 'ok' && !mergeOk)}
                 >
-                  <ActionGitCommitHorizontal size={14} aria-hidden="true" className="button-label-icon" />Commit workspace
+                  <ActionGitCommitHorizontal size={14} aria-hidden="true" className="button-label-icon" />Commit stage
                 </button>
               </div>
             </form>
           </section>
-        </div>
-      )}
-
-      {tab === 'jobs' && (
-        <div
-          className="workspace-page-panel"
-          role="tabpanel"
-          id="workspace-panel-jobs"
-          aria-labelledby="workspace-tab-jobs"
-        >
-          <section className="panel">
-            <h2 className="section-label">Jobs</h2>
-            <p className="muted">Workspace jobs are not implemented yet.</p>
-          </section>
-        </div>
-      )}
-
-      {tab === 'sessions' && (
-        <div
-          className="workspace-page-panel"
-          role="tabpanel"
-          id="workspace-panel-sessions"
-          aria-labelledby="workspace-tab-sessions"
-        >
-          <SessionsTab
-            namespace={namespace}
-            repo={repo}
-            workspaceId={workspaceId}
-          />
         </div>
       )}
 
@@ -672,307 +636,5 @@ export function WorkspacePage() {
         </div>
       )}
     </main>
-  )
-}
-
-type SessionsTabProps = {
-  namespace: string
-  repo: string
-  workspaceId: string
-}
-
-function SessionsTab({ namespace, repo, workspaceId }: SessionsTabProps) {
-  const sessions = useAsync((signal) => listSessions(signal), [])
-  const [createOpen, setCreateOpen] = useState(false)
-  const sessionsList = sessions.kind === 'ok' ? sessions.data.sessions : []
-
-  // Find sessions that mount this workspace
-  const mountedSessions = useMemo(() => {
-    return sessionsList.filter((session) => {
-      const mounts = sessionMounts(session)
-      return mounts.some(
-        (m) =>
-          m.namespace.toLowerCase() === namespace.toLowerCase() &&
-          m.repo.toLowerCase() === repo.toLowerCase() &&
-          m.workspace_id === workspaceId,
-      )
-    })
-  }, [sessionsList, namespace, repo, workspaceId])
-
-  const createButton = (
-    <div className="btn-row">
-      <button
-        type="button"
-        className="btn primary"
-        onClick={() => setCreateOpen(true)}
-      >
-        <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />New session
-      </button>
-    </div>
-  )
-  const createModal = createOpen && (
-    <SessionCreateModal
-      onClose={() => setCreateOpen(false)}
-      preselectedWorkspace={{ namespace, repo, workspaceId }}
-      filterRepo={{ namespace, repo }}
-    />
-  )
-
-  if (sessions.kind === 'loading') {
-    return <StateBlock loading>{null}</StateBlock>
-  }
-
-  if (sessions.kind === 'error') {
-    return (
-      <StateBlock error={sessions.message} onRetry={() => sessions.reload()}>
-        {null}
-      </StateBlock>
-    )
-  }
-
-  if (mountedSessions.length === 0) {
-    return (
-      <div className="panel">
-        <p className="muted">
-          No sessions are currently mounting this workspace.
-        </p>
-        {createButton}
-        {createModal}
-      </div>
-    )
-  }
-
-  return (
-    <div className="sessions-sync-panel">
-      {createButton}
-      {createModal}
-      <p className="muted small workspace-sessions-hint">
-        {mountedSessions.length} session{mountedSessions.length === 1 ? '' : 's'}{' '}
-        mounting this workspace. Sync changes from sessions back to this workspace.
-      </p>
-      {mountedSessions.map((session) => {
-        // Find the mount for this specific workspace
-        const mount = sessionMounts(session).find(
-          (m) =>
-            m.namespace.toLowerCase() === namespace.toLowerCase() &&
-            m.repo.toLowerCase() === repo.toLowerCase() &&
-            m.workspace_id === workspaceId,
-        )
-        if (!mount) return null
-        const mountKey =
-          mount.mount_path.replace(/^\/data\/?/, '').replace(/\//g, '__') ||
-          'm0'
-        return (
-          <SessionMountDiff
-            key={session.id}
-            sessionId={session.id}
-            sessionName={session.template_id || session.id.slice(0, 12)}
-            mountKey={mountKey}
-            mountPath={mount.mount_path}
-          />
-        )
-      })}
-    </div>
-  )
-}
-
-type SessionMountDiffProps = {
-  sessionId: string
-  sessionName: string
-  mountKey: string
-  mountPath: string
-}
-
-function SessionMountDiff({
-  sessionId,
-  sessionName,
-  mountKey,
-  mountPath,
-}: SessionMountDiffProps) {
-  const diff = useAsync(
-    (signal) => getMountDiff(sessionId, mountKey, signal),
-    [sessionId, mountKey],
-  )
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
-  const [syncing, setSyncing] = useState(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
-  const [syncSuccess, setSyncSuccess] = useState<string | null>(null)
-
-  const allFiles =
-    diff.kind === 'ok'
-      ? [...diff.data.added, ...diff.data.modified, ...diff.data.removed]
-      : []
-
-  const allSelected =
-    allFiles.length > 0 && selectedFiles.size === allFiles.length
-
-  function toggleFile(file: string) {
-    const next = new Set(selectedFiles)
-    if (next.has(file)) {
-      next.delete(file)
-    } else {
-      next.add(file)
-    }
-    setSelectedFiles(next)
-  }
-
-  function toggleAll() {
-    if (allSelected) {
-      setSelectedFiles(new Set())
-    } else {
-      setSelectedFiles(new Set(allFiles))
-    }
-  }
-
-  async function onSync() {
-    if (selectedFiles.size === 0) return
-    setSyncing(true)
-    setSyncError(null)
-    setSyncSuccess(null)
-    try {
-      const result = await syncSessionMount(
-        sessionId,
-        mountKey,
-        Array.from(selectedFiles),
-      )
-      setSyncSuccess(
-        `Synced ${result.uploaded} file(s): ${result.added.length} added, ${result.modified.length} modified, ${result.removed.length} removed`,
-      )
-      setSelectedFiles(new Set())
-      diff.reload()
-    } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Sync failed')
-    } finally {
-      setSyncing(false)
-    }
-  }
-
-  if (diff.kind === 'loading') {
-    return (
-      <div className="workspace-mount-diff">
-        <h3 className="workspace-mount-title">
-          Session: {sessionName} · {mountPath}
-        </h3>
-        <StateBlock loading>{null}</StateBlock>
-      </div>
-    )
-  }
-
-  if (diff.kind === 'error') {
-    return (
-      <div className="workspace-mount-diff">
-        <h3 className="workspace-mount-title">
-          Session: {sessionName} · {mountPath}
-        </h3>
-        <StateBlock error={diff.message} onRetry={() => diff.reload()}>
-          {null}
-        </StateBlock>
-      </div>
-    )
-  }
-
-  const hasChanges = allFiles.length > 0
-
-  return (
-    <div className="workspace-mount-diff">
-      <div className="workspace-mount-head">
-        <h3 className="workspace-mount-title">
-          <Link to={`/sessions/${sessionId}`} className="workspace-session-link-title">
-            Session: {sessionName}
-          </Link>
-          <span className="muted"> · {mountPath}</span>
-        </h3>
-        <div className="workspace-mount-actions">
-          <button
-            type="button"
-            className="btn primary"
-            disabled={syncing || selectedFiles.size === 0}
-            onClick={() => void onSync()}
-          >
-            <ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />{syncing
-              ? 'Syncing…'
-              : `Sync ${selectedFiles.size > 0 ? `(${selectedFiles.size})` : ''}`}
-          </button>
-        </div>
-      </div>
-
-      {syncSuccess && (
-        <p className="flash flash-success" role="status">
-          {syncSuccess}
-        </p>
-      )}
-      {syncError && (
-        <p className="flash flash-error" role="status">
-          {syncError}
-        </p>
-      )}
-
-      {!hasChanges ? (
-        <p className="muted workspace-no-changes">No changes detected</p>
-      ) : (
-        <div className="workspace-changes">
-          <div className="workspace-changes-head">
-            <label className="workspace-select-all">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleAll}
-              />
-              <span>
-                {allFiles.length} change{allFiles.length === 1 ? '' : 's'}
-              </span>
-            </label>
-          </div>
-          <ul className="workspace-entry-list">
-            {diff.data.added.map((file) => (
-              <li key={file} className="workspace-entry-row workspace-sync-entry">
-                <input
-                  type="checkbox"
-                  checked={selectedFiles.has(file)}
-                  onChange={() => toggleFile(file)}
-                />
-                <span className="workspace-entry-badge is-added" aria-hidden />
-                <div className="workspace-entry-main">
-                  <code className="mono workspace-entry-name">{file}</code>
-                  <span className="workspace-entry-status muted small">Added</span>
-                </div>
-              </li>
-            ))}
-            {diff.data.modified.map((file) => (
-              <li key={file} className="workspace-entry-row workspace-sync-entry">
-                <input
-                  type="checkbox"
-                  checked={selectedFiles.has(file)}
-                  onChange={() => toggleFile(file)}
-                />
-                <span className="workspace-entry-badge is-modified" aria-hidden />
-                <div className="workspace-entry-main">
-                  <code className="mono workspace-entry-name">{file}</code>
-                  <span className="workspace-entry-status muted small">
-                    Modified
-                  </span>
-                </div>
-              </li>
-            ))}
-            {diff.data.removed.map((file) => (
-              <li key={file} className="workspace-entry-row workspace-sync-entry">
-                <input
-                  type="checkbox"
-                  checked={selectedFiles.has(file)}
-                  onChange={() => toggleFile(file)}
-                />
-                <span className="workspace-entry-badge is-removed" aria-hidden />
-                <div className="workspace-entry-main">
-                  <code className="mono workspace-entry-name">{file}</code>
-                  <span className="workspace-entry-status muted small">
-                    Removed
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
   )
 }

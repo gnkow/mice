@@ -215,7 +215,7 @@ export function NamespacesListPage() {
                             ? '1 repository'
                             : `${ns.repoCount} repositories`}
                           {ns.workspaceCount > 0 &&
-                            ` · ${ns.workspaceCount} workspace${ns.workspaceCount === 1 ? '' : 's'}`}
+                            ` · ${ns.workspaceCount} stage${ns.workspaceCount === 1 ? '' : 's'}`}
                           {ns.onOxen
                             ? ` · ${ns.storageGb.toFixed(3)} GB`
                             : ' · no repositories yet'}

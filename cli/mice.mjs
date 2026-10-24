@@ -139,7 +139,7 @@ Output is JSON. Most commands accept --remote / --token.
   mice access-request deny <id>
   mice training set [--sub s --iss i] [--revoke]
   mice audit list   [--actor a] [--namespace ns] [--repo r] [--action a]
-                    [--since t] [--until t] [--session-id id] [--workspace-id id]
+                    [--since t] [--until t] [--session-id id] [--stage-id id]
                     [--job-id id] [--via session|pat] [--limit n] [--cursor c]
   mice audit facets [--namespace ns]
   mice audit export [same filters] [--out file.csv]
@@ -168,15 +168,20 @@ Output is JSON. Most commands accept --remote / --token.
   mice role delete <ns> namespace|repo <roleId> [--yes]
   mice session templates | retention | list [--all]
   mice session create [--template t] [--image i] [--cpu c] [--memory m] [--disk d]
-                      [--mount ns/repo[@workspace][#commit][:ro|rw]]… [--recording true|false]
+                      [--mount w_<id>[:ro|rw]]… [--workspace w_<id>[:ro|rw]]…
+                      [--new-workspace ns/repo@branch|ns/repo#commit[=name][:ro|rw]]…
+                      [--recording true|false]
   mice session show|connect|disconnect|retry|stop <id>
+  mice session list --workspace w_<id>
+  mice session mounts <id> [--set w_x[:ro|rw]|none]… [--add w_x[:ro|rw]]… [--remove w_x]… [--new-workspace …]…
+  mice session remount <id> [--workspace w_<id>] [--mount-path /data/ns/repo]
+  mice workspace [list [ns/repo]] | show|changes|delete <w_id> [--yes]
+  mice workspace create ns/repo [--name n] [--branch b | --commit c]
   mice session destroy <id> [--yes]
-  mice session diff <id> <mountKey>
-  mice session sync <id> <mountKey> [--file path]…
   mice notifications [list] [--unread] [--cursor c] | unread-count
   mice notifications read|unread <id> | read-all [--before iso]
   mice notifications preferences [set --json '<prefs>'] | resource-overrides
-  mice favorite list [--type namespace|repo|branch|workspace|job|session]
+  mice favorite list [--type namespace|repo|branch|stage|job|session]
   mice favorite add|remove <type> [id]     (id defaults from the current clone)
   mice announcement list [--all]
   mice announcement create --title <t> [--message <m>] [--severity info|warning|critical] [--expires <ISO date>]   (instance admin)

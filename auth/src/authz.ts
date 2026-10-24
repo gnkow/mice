@@ -564,3 +564,34 @@ export function authorizeCliDeviceApprove(user: SessionUser): {
   }
   return { allow: false, reason: 'Missing permission cli_device_approve' }
 }
+
+/** Mice workspaces (/auth/workspaces, /auth/checkouts): read = repo read, write = repo write (fine `workspaces`). */
+export function authorizeWorkspaceRead(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  const r = hasRepoPermission(user, namespace, repo, 'read', { method: 'GET', action: 'workspace.read' })
+  return r.ok ? { allow: true } : { allow: false, reason: 'Requires repository read' }
+}
+
+export function authorizeWorkspaceWrite(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  const r = hasRepoPermission(user, namespace, repo, 'write', { method: 'POST', action: 'workspace.write' })
+  return r.ok ? { allow: true } : { allow: false, reason: 'Requires repository write' }
+}
+
+/** Store-wide operations (capabilities, GC, checkout delete): instance admin, never PAT-scoped. */
+export function authorizeStoreAdmin(user: SessionUser): { allow: boolean; reason?: string } {
+  preparePrincipal(user)
+  if (!isAuthzEnforce()) return { allow: true }
+  if (isInstanceAdmin(user) && !user.patScopes?.length) return { allow: true }
+  return { allow: false, reason: 'Requires instance admin' }
+}
