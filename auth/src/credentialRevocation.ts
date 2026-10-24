@@ -2,6 +2,9 @@ import { join } from 'node:path'
 import { isInstanceAdmin } from './authzStore.js'
 import { env } from './env.js'
 import { principalKey } from './principal.js'
+import { suspendOwnedWithAudit } from './servicePrincipalOffboarding.js'
+import { actorFromUser } from './audit.js'
+import type { SessionUser } from './session.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
 
 /** `notBefore` is the full cut-off (Sessions and PATs); `sessionsNotBefore` ends Sessions only. */
@@ -53,6 +56,7 @@ export function revokeSessions(
 ): { ok: true } | { ok: false; error: string } {
   if (!isInstanceAdmin(actor)) return { ok: false, error: 'Forbidden' }
   revokeSessionsFor(target)
+  suspendOwnedWithAudit(target, 'admin-revocation', actorFromUser(actor as SessionUser))
   return { ok: true }
 }
 

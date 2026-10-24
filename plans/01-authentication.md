@@ -291,12 +291,12 @@ The phases below are **proposed, not approved**; every item is unchecked. Order 
 - [x] **Step-up re-authentication:** `reauthenticate(maxAge)` flow (`prompt=login&max_age`, then a fresh `auth_time` check). AUTH provides the mechanism; [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 3 (GXP-R-052) decides when it is invoked
 - **SCIM:** not planned; the two items above cover offboarding
 
-### Phase 4 — Service principals (proposed; needs its own design review)
+### Phase 4 — Service principals (decisions in `.scratch/auth-lifecycle/spec.md`)
 
-- [ ] Admin-created service principals for CI, keyed `urn:mice:service|<uuid>` through the existing `principalKey` / `parsePrincipalKey`; the reserved issuer `urn:mice:service` is rejected as an OIDC issuer at config load
-- [ ] Each has a required human owner, who is notified before PAT expiry; PATs follow the human rules (default 90 days, max 365)
-- [ ] When the owner is offboarded the principal is **suspended, not deleted**, so CI fails visibly and can be reassigned
-- [ ] Creation is instance-admin only at first; AUTHO membership and audit identity for service principals are specified in [02-authorization.md](./02-authorization.md) and [03-audit.md](./03-audit.md)
+- [x] Admin-created service principals for CI, keyed `urn:mice:service|<uuid>` through the existing `principalKey` / `parsePrincipalKey`; the reserved issuer `urn:mice:service` is rejected as an OIDC issuer at config load
+- [x] Each has a required human owner, who is notified before PAT expiry; PATs follow the human rules (default 90 days, max 365)
+- [x] When the owner is offboarded the principal is **suspended, not deleted**, so CI fails visibly and can be reassigned
+- [x] Creation is instance-admin only at first; AUTHO membership and audit identity for service principals are specified in [02-authorization.md](./02-authorization.md) and [03-audit.md](./03-audit.md)
 
 ## 10. UI changes
 

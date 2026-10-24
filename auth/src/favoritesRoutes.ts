@@ -1,4 +1,5 @@
 import type { Context, Hono } from 'hono'
+import { SERVICE_ISSUER } from './principal.js'
 import { preparePrincipal } from './authz.js'
 import { isScopedCredential } from './principal.js'
 import { env } from './env.js'
@@ -34,6 +35,7 @@ async function requireUser(c: Context): Promise<SessionUser> {
     const auth = c.req.header('authorization') ?? ''
     const pat = auth.startsWith('Bearer ') ? resolvePat(auth.slice('Bearer '.length)) : null
     if (!pat || isScopedCredential(pat)) throw new HttpError('Authentication required', 401)
+    if (pat.iss === SERVICE_ISSUER) throw new HttpError('Service principals have no favorites', 403)
     preparePrincipal(pat)
     return pat
   }

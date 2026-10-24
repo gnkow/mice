@@ -41,6 +41,8 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     sessionIdleSec: Number(src.SESSION_IDLE_SEC ?? 0),
     /** Directory-sync interval (seconds); 0 disables the schedule. */
     directorySyncIntervalSec: Number(src.DIRECTORY_SYNC_INTERVAL_SEC ?? 900),
+    /** Days before a service principal PAT expires that its owner is notified; 0 disables. */
+    servicePatExpiryLeadDays: Number(src.SERVICE_PAT_EXPIRY_LEAD_DAYS ?? 14),
     cookieName: src.SESSION_COOKIE_NAME ?? 'mice_session',
     cookieSecure: src.COOKIE_SECURE === 'true',
     /** Directory for PAT store (pats.json). */

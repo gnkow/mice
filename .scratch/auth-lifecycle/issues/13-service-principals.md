@@ -4,11 +4,11 @@
 
 **Blocked by:** 12 (Service principal design review)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Admin can create and list service principals; non-admins cannot
-- [ ] A service-principal PAT authenticates CI and is authorized like any Principal
-- [ ] Audit events identify the service principal and its owner
-- [ ] Config load fails if the OIDC issuer is the reserved service issuer
-- [ ] An OIDC token can never produce a Session for a service principal
-- [ ] Tested through the HTTP wiring seam; `mice` command to create and mint
+- [x] Admin can create and list service principals; non-admins cannot
+- [x] A service-principal PAT authenticates CI and is authorized like any Principal
+- [x] Audit events identify the service principal and its owner
+- [x] Config load fails if the OIDC issuer is the reserved service issuer
+- [x] An OIDC token can never produce a Session for a service principal
+- [x] Tested through the HTTP wiring seam; `mice` command to create and mint

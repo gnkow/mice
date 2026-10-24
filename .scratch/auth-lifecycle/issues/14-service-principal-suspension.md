@@ -4,10 +4,10 @@
 
 **Blocked by:** 13 (Service principals), 09 (Directory-sync revocation)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Offboarding the owner suspends the principal and its PATs are rejected
-- [ ] The suspension is audited with its cause
-- [ ] Admin can reassign to a new owner and reactivate; the same PATs work again
-- [ ] A principal with an active owner is never suspended by this path
-- [ ] Tested with a stub directory client
+- [x] Offboarding the owner suspends the principal and its PATs are rejected
+- [x] The suspension is audited with its cause
+- [x] Admin can reassign to a new owner and reactivate; the same PATs work again
+- [x] A principal with an active owner is never suspended by this path
+- [x] Tested with a stub directory client

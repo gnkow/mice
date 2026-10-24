@@ -4,10 +4,10 @@
 
 **Blocked by:** 13 (Service principals)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The owner gets one notification at the configured lead time before expiry
-- [ ] The notification names the service principal and expiry date
-- [ ] No notification for already-expired or revoked PATs
-- [ ] Reassigning the owner redirects future notices to the new owner
-- [ ] Tested with a fake clock
+- [x] The owner gets one notification at the configured lead time before expiry
+- [x] The notification names the service principal and expiry date
+- [x] No notification for already-expired or revoked PATs
+- [x] Reassigning the owner redirects future notices to the new owner
+- [x] Tested with a fake clock

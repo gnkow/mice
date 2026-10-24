@@ -4,6 +4,9 @@
  */
 export type PrincipalId = { sub: string; iss: string }
 
+/** Reserved issuer of service principals (`urn:mice:service|<uuid>`); never a valid OIDC issuer. */
+export const SERVICE_ISSUER = 'urn:mice:service'
+
 /** True for a PAT minted with scopes: it never gets admin bypass, fine-grained grants or per-user routes. */
 export function isScopedCredential(user: { patScopes?: readonly unknown[] }): boolean {
   return !!user.patScopes?.length

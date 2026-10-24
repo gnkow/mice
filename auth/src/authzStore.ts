@@ -1,4 +1,4 @@
-import { matchesIdentityEntry } from './principal.js'
+import { SERVICE_ISSUER, matchesIdentityEntry } from './principal.js'
 import { join } from 'node:path'
 import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
@@ -211,6 +211,7 @@ export function setAuthzEnforce(enforce: boolean): void {
 }
 
 export function isInstanceAdmin(user: UserKey): boolean {
+  if (user.iss === SERVICE_ISSUER) return false
   return readInstance().admins.includes(userKey(user))
 }
 
@@ -261,6 +262,7 @@ export function maybeDevGrantAll(user: SessionUser): void {
 
 export function addInstanceAdmin(actor: UserKey, target: UserKey): { ok: true } | { ok: false; error: string } {
   if (!isInstanceAdmin(actor)) return { ok: false, error: 'Forbidden' }
+  if (target.iss === SERVICE_ISSUER) return { ok: false, error: 'A service principal cannot be an instance admin' }
   const s = readInstance()
   const key = userKey(target)
   if (!s.admins.includes(key)) s.admins.push(key)

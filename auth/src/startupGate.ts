@@ -1,3 +1,5 @@
+import { SERVICE_ISSUER } from './principal.js'
+
 const DEV_SESSION_SECRET = 'dev-only-change-me-mice-session-secret'
 const SHIPPED_CLIENT_SECRET = 'mice-auth-secret'
 
@@ -8,6 +10,9 @@ export function productionStartupProblems(
   const problems: string[] = []
   if (e.GXP_STRICT === 'true' && !(Number(e.SESSION_IDLE_SEC ?? 0) > 0)) {
     problems.push('SESSION_IDLE_SEC must be greater than 0 when GXP_STRICT=true (idle timeout is off)')
+  }
+  if ((e.OIDC_ISSUER ?? '').trim().replace(/\/$/, '') === SERVICE_ISSUER) {
+    problems.push(`OIDC_ISSUER must not be the reserved service issuer "${SERVICE_ISSUER}"`)
   }
   if (e.NODE_ENV !== 'production') return problems
   if (!e.SESSION_SECRET || e.SESSION_SECRET === DEV_SESSION_SECRET) {

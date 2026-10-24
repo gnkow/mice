@@ -5,6 +5,8 @@ import { assertProductionStartup } from './startupGate.js'
 import { revokeSessions } from './credentialRevocation.js'
 import { parsePatScopes } from './patScopes.js'
 import { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directorySync.js'
+import { registerServicePrincipalRoutes } from './servicePrincipalRoutes.js'
+import { startServicePatExpirySchedule } from './servicePrincipalExpiry.js'
 import { backChannelLogout } from './backChannelLogout.js'
 import { signOutEverywhere } from './selfRevocation.js'
 import { runIdentityMigration } from './identityMigration.js'
@@ -165,6 +167,7 @@ const PROMPT_LOGIN_COOKIE = 'mice_prompt_login'
 
 assertProductionStartup()
 startDirectorySyncSchedule()
+startServicePatExpirySchedule()
 runIdentityMigration()
 
 const app = new Hono()
@@ -1165,6 +1168,14 @@ app.post('/auth/instance/admins', async (c) => {
 
 app.post('/auth/backchannel-logout', backChannelLogout)
 app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())
+registerServicePrincipalRoutes(app, {
+  requireSession: async (c) => {
+    const s = await requireSession(c)
+    if (s) preparePrincipal(s)
+    return s
+  },
+  audit: (c, user, fields) => auditMutation(c, user, 'session', fields),
+})
 app.post('/auth/sessions/revoke-all', signOutEverywhere)
 
 app.post('/auth/instance/revoke-sessions', async (c) => {

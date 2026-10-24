@@ -15,6 +15,7 @@ import { principalKey } from './principal.js'
 import { getSession } from './session.js'
 import { isInstanceAdmin, listInstanceAdmins } from './authzStore.js'
 import { emitNotification } from './notifications.js'
+import { suspendOwnedWithAudit } from './servicePrincipalOffboarding.js'
 
 type SyncState = {
   version: 1
@@ -108,6 +109,7 @@ export async function runDirectorySync(
       message: `Directory sync revoked ${p.sub}: disabled or removed in the IdP`,
       detail: { source: 'directory-sync' },
     })
+    suspendOwnedWithAudit(p, 'directory-sync', SYSTEM_ACTOR)
   }
   for (const key of stillEnabled) delete state.revoked[key]
   state.lastSuccessAt = now
