@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { env } from './env.js'
 import { auditActionLabel } from './auditLabels.js'
-import { SERVICE_ISSUER } from './principal.js'
+import { kindOf } from './principal.js'
 import { getServicePrincipal } from './servicePrincipals.js'
 import type { SessionUser } from './session.js'
 
@@ -222,7 +222,7 @@ export function extractRepoCreateFromJson(
 }
 
 function serviceActorFields(actor: AuditActor): Pick<AuditEvent, 'actorKind' | 'owner'> {
-  if (actor.iss !== SERVICE_ISSUER) return {}
+  if (kindOf(actor) !== 'service') return {}
   const o = getServicePrincipal(actor.sub)?.owner
   return { actorKind: 'service', ...(o ? { owner: { sub: o.sub, iss: o.iss, email: o.email, name: o.name } } : {}) }
 }

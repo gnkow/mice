@@ -2,10 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
-import { SERVICE_ISSUER, principalKey } from './principal.js'
+import { can, principalKey, serviceIdentity } from './principal.js'
 import type { SessionUser } from './session.js'
 
-export { SERVICE_ISSUER }
 
 export type ServiceOwner = { iss: string; sub: string; email: string; name: string }
 export type ServicePrincipal = {
@@ -34,13 +33,13 @@ const write = (s: Store) => writeJsonFile(path(), s)
 function parseOwner(o: unknown): ServiceOwner | null {
   const v = o as Partial<ServiceOwner> | undefined
   if (!v || typeof v.iss !== 'string' || typeof v.sub !== 'string' || !v.iss || !v.sub) return null
-  if (v.iss === SERVICE_ISSUER) return null
+  if (!can({ iss: v.iss }, 'canOwnServicePrincipals')) return null
   return { iss: v.iss, sub: v.sub, email: v.email ?? '', name: v.name ?? '' }
 }
 
 /** The Principal a service principal authenticates as. */
 export function serviceUser(p: Pick<ServicePrincipal, 'id' | 'name'>): SessionUser {
-  return { sub: p.id, iss: SERVICE_ISSUER, email: '', name: p.name }
+  return { ...serviceIdentity(p.id), email: '', name: p.name }
 }
 
 export function createServicePrincipal(input: {

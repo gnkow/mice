@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { env } from './env.js'
 import { isCredentialRevoked } from './credentialRevocation.js'
-import { SERVICE_ISSUER } from './principal.js'
+import { kindOf } from './principal.js'
 import { isServiceCredentialActive } from './servicePrincipals.js'
 import type { PatScope, SessionUser } from './session.js'
 
@@ -115,7 +115,7 @@ export function listPatsForUser(user: SessionUser): PatPublic[] {
 /** Live PATs of service principals, for expiry notices. */
 export function listServicePats(): Array<{ id: string; sub: string; iss: string; expiresAt: string }> {
   return readStore()
-    .tokens.filter((t) => t.iss === SERVICE_ISSUER && !isExpired(t) && t.expiresAt &&
+    .tokens.filter((t) => kindOf(t) === 'service' && !isExpired(t) && t.expiresAt &&
       !isCredentialRevoked(t, Math.floor(Date.parse(t.createdAt) / 1000), 'pat'))
     .map((t) => ({ id: t.id, sub: t.sub, iss: t.iss, expiresAt: t.expiresAt! }))
 }
@@ -199,7 +199,7 @@ export function resolvePat(rawBearer: string): SessionUser | null {
   const store = readStore()
   const rec = store.tokens.find((t) => t.tokenHash === tokenHash)
   if (!rec || isExpired(rec)) return null
-  if (rec.iss === SERVICE_ISSUER && !isServiceCredentialActive(rec.sub)) return null
+  if (kindOf(rec) === 'service' && !isServiceCredentialActive(rec.sub)) return null
   if (isCredentialRevoked(rec, Math.floor(Date.parse(rec.createdAt) / 1000), 'pat')) return null
   if (!rec.lastUsedAt || Date.now() - Date.parse(rec.lastUsedAt) >= LAST_USED_DEBOUNCE_MS) {
     rec.lastUsedAt = new Date(Date.now()).toISOString()

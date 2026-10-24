@@ -26,7 +26,7 @@ class HttpError extends Error {
 }
 
 async function requireUser(c: Context): Promise<SessionUser> {
-  const r = await authenticate(c, { originCheck: true, refuseServiceWith: 'Service principals have no favorites' })
+  const r = await authenticate(c, { originCheck: true, requires: { capability: 'hasFavorites', message: 'Service principals have no favorites' } })
   if (!r.ok) throw new HttpError(r.error, r.status)
   return r.user
 }

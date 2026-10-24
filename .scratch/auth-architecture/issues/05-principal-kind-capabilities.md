@@ -4,8 +4,8 @@
 
 **Blocked by:** 03 (Migrate topic route files)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Callers ask the capability, not the issuer string
-- [ ] The reserved issuer constant is used only by the kind module and startup validation
-- [ ] A table-driven test covers each capability for each kind
+- [x] Callers ask the capability, not the issuer string
+- [x] The reserved issuer constant is used only by the kind module and startup validation (hasSession dropped: no caller needs it)
+- [x] A table-driven test covers each capability for each kind

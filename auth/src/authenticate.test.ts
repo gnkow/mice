@@ -51,11 +51,11 @@ describe('authenticate', () => {
     assert.equal((await appFor({ credential: 'session' }).request('/x', { headers: { cookie: await cookie('p') } })).status, 200)
   })
 
-  it('refuses service principals when asked', async () => {
+  it('refuses a Principal lacking the required capability', async () => {
     const r = createServicePrincipal({ name: 'ci', owner: mk('owner') })
     assert.ok(r.ok)
     const { token } = createPat(serviceUser(r.principal), 'ci')
-    const refused = await appFor({ refuseServiceWith: 'no favorites' }).request('/x', { headers: bearer(token) })
+    const refused = await appFor({ requires: { capability: 'hasFavorites', message: 'no favorites' } }).request('/x', { headers: bearer(token) })
     assert.equal(refused.status, 403)
     assert.equal((await appFor({}).request('/x', { headers: bearer(token) })).status, 200)
   })

@@ -11,6 +11,7 @@ process.env.OIDC_ISSUER_PUBLIC = 'idp'
 
 const { Hono } = await import('hono')
 const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
+const { SERVICE_ISSUER } = await import('./principal.js')
 const sp = await import('./servicePrincipals.js')
 const { runDirectorySync } = await import('./directorySync.js')
 const { checkServicePatExpiry } = await import('./servicePrincipalExpiry.js')
@@ -39,7 +40,7 @@ describe('service principals', () => {
     assert.equal(sp.createServicePrincipal({ name: 'ci', owner: undefined as never }).ok, false)
     assert.equal(sp.createServicePrincipal({ name: '', owner: human('alice') }).ok, false)
     assert.equal(
-      sp.createServicePrincipal({ name: 'x', owner: { ...human('s'), iss: sp.SERVICE_ISSUER } }).ok,
+      sp.createServicePrincipal({ name: 'x', owner: { ...human('s'), iss: SERVICE_ISSUER } }).ok,
       false,
     )
     const r = sp.createServicePrincipal({ name: 'ci', owner: human('alice') })
@@ -63,7 +64,7 @@ describe('service principals', () => {
     })
     const res = await app.request('/w', { headers: { authorization: `Bearer ${token}` } })
     assert.equal(res.status, 200)
-    assert.deepEqual(await res.json(), { sub: r.principal.id, iss: sp.SERVICE_ISSUER })
+    assert.deepEqual(await res.json(), { sub: r.principal.id, iss: SERVICE_ISSUER })
     const u = sp.serviceUser(r.principal)
     assert.equal(isInstanceAdmin(u), false)
     assert.equal(addInstanceAdmin(root, u).ok, false)
@@ -128,7 +129,7 @@ describe('service principals', () => {
     const t = mint(r.principal)
     sp.suspendOwnedBy(human('frank'), 'admin-revocation')
     assert.equal(resolvePat(t.token), null)
-    assert.equal(sp.reassignServicePrincipal(r.principal.id, { ...human('x'), iss: sp.SERVICE_ISSUER }).ok, false)
+    assert.equal(sp.reassignServicePrincipal(r.principal.id, { ...human('x'), iss: SERVICE_ISSUER }).ok, false)
     const re = sp.reassignServicePrincipal(r.principal.id, human('gina'))
     assert.ok(re.ok)
     assert.equal(sp.getServicePrincipal(r.principal.id)?.owner.sub, 'gina')

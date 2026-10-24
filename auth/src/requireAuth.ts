@@ -3,7 +3,7 @@ import { sameOriginGuard } from './csrf.js'
 import { preparePrincipal } from './authz.js'
 import { env } from './env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
-import { isScopedCredential, SERVICE_ISSUER } from './principal.js'
+import { can, isScopedCredential, type Capability } from './principal.js'
 import { resolvePat } from './tokens.js'
 
 /** Unattended page polls must not keep an idle Session alive. */
@@ -80,8 +80,8 @@ export type AuthPolicy = {
   credential?: 'session' | 'any' | 'pat'
   /** Scoped PATs are rejected unless this is true (default false: they cannot act as their owner). */
   allowScoped?: boolean
-  /** Service principals are refused with this message (they have no UI-bound resources). */
-  refuseServiceWith?: string
+  /** The Principal's kind must have this capability, else 403 with `message`. */
+  requires?: { capability: Capability; message: string }
   /** Cookie Sessions on unsafe methods must carry a same-site Origin (PATs are not CSRF-prone). */
   originCheck?: boolean
   /** Cookie Sessions on unsafe methods must send application/json. */
@@ -113,7 +113,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
         return deny(400, 'Expected application/json')
       }
     }
-    if (policy.refuseServiceWith && session.iss === SERVICE_ISSUER) return deny(403, policy.refuseServiceWith)
+    if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
     preparePrincipal(session)
     return { ok: true, user: session, via: 'session' }
   }
@@ -121,7 +121,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
 
   const pat = resolveBearer(c)
   if (!pat || (!policy.allowScoped && isScopedCredential(pat))) return deny(401, 'Authentication required')
-  if (policy.refuseServiceWith && pat.iss === SERVICE_ISSUER) return deny(403, policy.refuseServiceWith)
+  if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
   preparePrincipal(pat)
   return { ok: true, user: pat, via: 'pat' }
 }
