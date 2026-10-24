@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The recipe documents realm, broker and claim-mapping steps, including `email_verified` and the groups claim
-- [ ] A Playwright case signs in through the brokered path and lands in the app as the expected Principal
-- [ ] No SAML code is added to the BFF
-- [ ] The authentication plan's SAML item is updated to point at the recipe
+- [x] The recipe documents realm, broker and claim-mapping steps, including `email_verified` and the groups claim
+- [x] A Playwright case signs in through the brokered path and lands in the app as the expected Principal
+- [x] No SAML code is added to the BFF
+- [x] The authentication plan's SAML item is updated to point at the recipe

@@ -285,7 +285,7 @@ The phases below are **proposed, not approved**; every item is unchecked. Order 
 
 ### Phase 3 — SAML recipe, deprovisioning, step-up (proposed)
 
-- [ ] **SAML via Keycloak brokering (documented recipe):** not native in the BFF, which stays OIDC-only. One brokering recipe is documented and covered by an e2e test case
+- [x] **SAML via Keycloak brokering (documented recipe):** not native in the BFF, which stays OIDC-only. One brokering recipe is documented and covered by an e2e test case See [docs/saml-brokering.md](../docs/saml-brokering.md).
 - [x] **Back-channel logout:** the IdP sends `sub` (and maybe `sid`); the BFF records a **sessions-only** cut-off. PATs survive an IdP logout, because logout is not offboarding. `credentialRevocation.ts` then stores two cut-offs per principal (sessions-only and full)
 - [x] **Directory-sync revocation:** a job using the existing directory client sets the **full** cut-off (sessions and PATs) for users that are disabled or removed in the IdP. Runs on an env-configurable interval (default 15 min) and on admin demand. If the directory is unreachable it **fails open** (revokes nothing), and raises an audit event plus an admin notification ([14-notifications.md](./14-notifications.md)) once the sync is stale beyond 2× the interval
 - [x] **Step-up re-authentication:** `reauthenticate(maxAge)` flow (`prompt=login&max_age`, then a fresh `auth_time` check). AUTH provides the mechanism; [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 3 (GXP-R-052) decides when it is invoked
