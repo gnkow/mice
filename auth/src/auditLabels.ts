@@ -80,6 +80,7 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['lineage.rebuild', 'Lineage rebuilt', 'Data lineage'],
   ['audit.export', 'Audit log exported', 'Audit'],
   ['site_admin_bypass', 'Site-admin bypass used', 'Audit'],
+  ['request.rejected', 'Request rejected (unclassifiable body)', 'Audit'],
   ['other', 'Other change', 'Other'],
 ]
 

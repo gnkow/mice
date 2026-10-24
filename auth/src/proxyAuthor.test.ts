@@ -1,0 +1,152 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { after, before, beforeEach, describe, it } from 'node:test'
+
+const dataDir = mkdtempSync(join(tmpdir(), 'mice-proxy-author-'))
+
+type Received = { method: string; url: string; contentType: string; body: string }
+let received: Received[] = []
+const upstream: Server = createServer((req, res) => {
+  const chunks: Buffer[] = []
+  req.on('data', (c: Buffer) => chunks.push(c))
+  req.on('end', () => {
+    received.push({
+      method: req.method ?? '',
+      url: req.url ?? '',
+      contentType: String(req.headers['content-type'] ?? ''),
+      body: Buffer.concat(chunks).toString('utf8'),
+    })
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end('{"status":"ok"}')
+  })
+})
+await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r))
+
+process.env.AUTH_DATA_DIR = dataDir
+process.env.SESSION_SECRET = 'test-session-secret-for-proxy-author'
+process.env.AUTHZ_ENFORCE = 'false'
+process.env.OXEN_UPSTREAM = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
+
+const { Hono } = await import('hono')
+const { proxyToOxen } = await import('./proxy.js')
+const { queryAudit } = await import('./audit.js')
+
+const alice = {
+  sub: 'alice',
+  iss: 'test',
+  email: 'alice@example.com',
+  name: 'Alice',
+}
+
+const app = new Hono()
+app.all('/api/*', (c) => proxyToOxen(c, { user: alice, via: 'session' }))
+
+function send(
+  path: string,
+  init: { method?: string; contentType?: string; body?: BodyInit },
+) {
+  return app.request(path, {
+    method: init.method ?? 'POST',
+    headers: init.contentType ? { 'content-type': init.contentType } : {},
+    body: init.body,
+  })
+}
+
+describe('proxy author injection fails closed', () => {
+  before(() => {
+    received = []
+  })
+  beforeEach(() => {
+    received = []
+  })
+  after(() => {
+    upstream.close()
+    rmSync(dataDir, { recursive: true, force: true })
+  })
+
+  it('injects the Principal as author on a valid JSON write', async () => {
+    const res = await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: JSON.stringify({ name: 'forged', email: 'forged@x.io', message: 'm' }),
+    })
+    assert.equal(res.status, 200)
+    const sent = JSON.parse(received[0]!.body) as Record<string, string>
+    assert.equal(sent.email, 'alice@example.com')
+    assert.equal(sent.name, 'Alice')
+  })
+
+  it('rejects malformed JSON with 400 and sends nothing upstream', async () => {
+    const res = await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: '{"email":"forged@x.io",',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('rejects a JSON body that is not an object', async () => {
+    const res = await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: '["forged"]',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('rejects a non-empty body with an unclassified content type', async () => {
+    const res = await send('/api/repos/a/b/branches', {
+      contentType: 'application/x-www-form-urlencoded',
+      body: 'email=forged%40x.io',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('rejects a non-empty body with no content type', async () => {
+    const res = await send('/api/repos/a/b/branches', {
+      body: new TextEncoder().encode('{"email":"forged@x.io"}'),
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('still proxies binary uploads (author-free allowlist)', async () => {
+    const res = await send('/api/repos/a/b/chunks/abc', {
+      method: 'PUT',
+      contentType: 'application/octet-stream',
+      body: new Uint8Array([1, 2, 3]),
+    })
+    assert.equal(res.status, 200)
+    assert.equal(received.length, 1)
+  })
+
+  it('still proxies gzip hash queries (author-free allowlist)', async () => {
+    const res = await send('/api/repos/a/b/versions', {
+      method: 'QUERY',
+      contentType: 'application/gzip',
+      body: new Uint8Array([31, 139, 8]),
+    })
+    assert.equal(res.status, 200)
+    assert.equal(received.length, 1)
+  })
+
+  it('still proxies bodyless writes', async () => {
+    const res = await send('/api/repos/a/b/branches/x', { method: 'DELETE' })
+    assert.equal(res.status, 200)
+    assert.equal(received.length, 1)
+  })
+
+  it('audits the rejection', async () => {
+    await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: 'not json',
+    })
+    const events = queryAudit({ action: 'request.rejected', limit: 10 }).events
+    assert.ok(events.length >= 1)
+    assert.equal(events[0]!.status, 400)
+  })
+})

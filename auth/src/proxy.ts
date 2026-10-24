@@ -52,6 +52,32 @@ function filterRequestHeaders(headers: Headers): Headers {
   return out
 }
 
+function rejectUnclassifiedWrite(
+  user: SessionUser,
+  via: AuditVia,
+  method: string,
+  pathname: string,
+  reason: string,
+): Response {
+  appendAudit({
+    actor: actorFromUser(user),
+    via,
+    method,
+    path: pathname,
+    status: 400,
+    action: 'request.rejected',
+    detail: { reason },
+  })
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: 'bad_request',
+      error: { detail: 'Request body could not be classified' },
+    }),
+    { status: 400, headers: { 'content-type': 'application/json' } },
+  )
+}
+
 export type ProxyAuth = {
   user: SessionUser
   via: AuditVia
@@ -98,30 +124,42 @@ export async function proxyToOxen(
     } else if (contentType.includes('application/json')) {
       const text = await c.req.text()
       if (text) {
+        let parsed: Record<string, unknown>
         try {
-          const parsed = JSON.parse(text) as Record<string, unknown>
-          message = extractMessageFromJson(parsed)
-          const created = extractRepoCreateFromJson(parsed)
-          createNs = created.namespace
-          createRepo = created.repo
-          if (typeof parsed.workspace_id === 'string' && parsed.workspace_id.trim()) {
-            bodyWorkspaceId = parsed.workspace_id.trim()
+          const value: unknown = JSON.parse(text)
+          if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return rejectUnclassifiedWrite(user, via, method, pathname, 'json_not_object')
           }
-          if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
-            moveNewPath = parsed.new_path.trim()
-          }
-          body = JSON.stringify(injectAuthorJson(parsed, user))
-          reqHeaders.set('content-type', 'application/json')
+          parsed = value as Record<string, unknown>
         } catch {
-          body = text
+          return rejectUnclassifiedWrite(user, via, method, pathname, 'json_malformed')
         }
+        message = extractMessageFromJson(parsed)
+        const created = extractRepoCreateFromJson(parsed)
+        createNs = created.namespace
+        createRepo = created.repo
+        if (typeof parsed.workspace_id === 'string' && parsed.workspace_id.trim()) {
+          bodyWorkspaceId = parsed.workspace_id.trim()
+        }
+        if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
+          moveNewPath = parsed.new_path.trim()
+        }
+        body = JSON.stringify(injectAuthorJson(parsed, user))
+        reqHeaders.set('content-type', 'application/json')
       }
     } else if (contentType.includes('application/octet-stream')) {
       body = await c.req.arrayBuffer()
       reqHeaders.set('content-type', 'application/octet-stream')
+    } else if (contentType.includes('application/gzip')) {
+      body = await c.req.arrayBuffer()
+      reqHeaders.set('content-type', 'application/gzip')
     } else {
+      // Author-bearing shapes are JSON/multipart; octet-stream and gzip are the author-free
+      // allowlist. Any other non-empty body could smuggle author fields.
       const buf = await c.req.arrayBuffer()
-      if (buf.byteLength) body = buf
+      if (buf.byteLength) {
+        return rejectUnclassifiedWrite(user, via, method, pathname, 'unclassified_body')
+      }
     }
   }
 
