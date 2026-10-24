@@ -4,6 +4,7 @@ export type PatPublic = {
   prefix: string
   createdAt: string
   lastUsedAt?: string
+  expiresAt?: string
 }
 
 export type CreatePatResponse = {
@@ -42,13 +43,14 @@ export async function listTokens(signal?: AbortSignal): Promise<PatPublic[]> {
 
 export async function createToken(
   label: string,
+  expiresInDays: number,
   signal?: AbortSignal,
 ): Promise<CreatePatResponse> {
   const res = await fetch('/auth/tokens', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label }),
+    body: JSON.stringify({ label, expiresInDays }),
     signal,
   })
   if (!res.ok) throw new Error('Failed to create token')

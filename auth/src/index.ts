@@ -125,6 +125,7 @@ import {
 } from './cliDevice.js'
 import {
   createPat,
+  PatExpiryError,
   findPatByToken,
   listPatsForUser,
   resolvePat,
@@ -661,17 +662,27 @@ app.post('/auth/tokens', async (c) => {
   }
   let label = 'CLI token'
   let scopes: PatScope[] | undefined
+  let expiresInDays: number | undefined
   try {
     const body = (await c.req.json()) as {
       label?: string
       scopes?: PatScope[]
+      expiresInDays?: number
     }
+    if (body.expiresInDays !== undefined) expiresInDays = body.expiresInDays
     if (body.label?.trim()) label = body.label.trim()
     if (Array.isArray(body.scopes) && body.scopes.length) scopes = body.scopes
   } catch {
     /* empty body ok */
   }
-  const { token, pat } = createPat(session, label, scopes)
+  let created: ReturnType<typeof createPat>
+  try {
+    created = createPat(session, label, { scopes, expiresInDays })
+  } catch (e) {
+    if (e instanceof PatExpiryError) return c.json({ error: e.message }, 400)
+    throw e
+  }
+  const { token, pat } = created
   let authHost = env.publicOxenRemote
   try {
     authHost = new URL(env.publicOxenRemote).host
@@ -681,7 +692,7 @@ app.post('/auth/tokens', async (c) => {
   auditMutation(c, session, 'session', {
     action: 'token.create',
     message: `Created token: ${label}`,
-    detail: { tokenId: pat.id, label, scopes },
+    detail: { tokenId: pat.id, label, scopes, expiresAt: pat.expiresAt },
   })
   return c.json({
     token,

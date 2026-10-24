@@ -12,9 +12,16 @@ export type PatPublic = {
   prefix: string
   createdAt: string
   lastUsedAt?: string
+  expiresAt?: string
   scopes?: PatScope[]
   source?: PatSource
 }
+
+export const PAT_DEFAULT_DAYS = 90
+export const PAT_MAX_DAYS = 365
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export class PatExpiryError extends Error {}
 
 type PatRecord = PatPublic & {
   tokenHash: string
@@ -47,6 +54,13 @@ function readStore(): StoreFile {
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tokens)) {
       return { version: 1, tokens: [] }
     }
+    // Grandfather tokens minted before expiry existed; persisted, so it happens once.
+    const legacy = parsed.tokens.filter((t) => !t.expiresAt)
+    if (legacy.length) {
+      const grandfathered = new Date(Date.now() + PAT_MAX_DAYS * DAY_MS).toISOString()
+      for (const t of legacy) t.expiresAt = grandfathered
+      writeStore(parsed)
+    }
     return parsed
   } catch {
     return { version: 1, tokens: [] }
@@ -67,6 +81,7 @@ function toPublic(rec: PatRecord): PatPublic {
     prefix: rec.prefix,
     createdAt: rec.createdAt,
     lastUsedAt: rec.lastUsedAt,
+    expiresAt: rec.expiresAt,
     ...(rec.scopes?.length ? { scopes: rec.scopes } : {}),
     ...(rec.source ? { source: rec.source } : {}),
   }
@@ -75,6 +90,12 @@ function toPublic(rec: PatRecord): PatPublic {
 export type CreatePatOptions = {
   scopes?: PatScope[]
   source?: PatSource
+  /** Lifetime in days: default 90, max 365. */
+  expiresInDays?: number
+}
+
+function isExpired(rec: PatRecord): boolean {
+  return !!rec.expiresAt && Date.parse(rec.expiresAt) <= Date.now()
 }
 
 export function listPatsForUser(user: SessionUser): PatPublic[] {
@@ -95,6 +116,10 @@ export function createPat(
     : (scopesOrOpts ?? {})
   const scopes = opts.scopes
   const source = opts.source ?? 'manual'
+  const days = opts.expiresInDays ?? PAT_DEFAULT_DAYS
+  if (!Number.isInteger(days) || days < 1 || days > PAT_MAX_DAYS) {
+    throw new PatExpiryError(`Token expiry must be 1-${PAT_MAX_DAYS} days`)
+  }
   const id = randomBytes(8).toString('hex')
   const secret = randomBytes(24).toString('base64url')
   const token = `${TOKEN_PREFIX}${secret}`
@@ -108,6 +133,7 @@ export function createPat(
     email: user.email,
     name: user.name,
     createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + days * DAY_MS).toISOString(),
     source,
     ...(scopes?.length ? { scopes } : {}),
     ...(user.groups?.length ? { groups: [...user.groups] } : {}),
@@ -149,7 +175,7 @@ export function resolvePat(rawBearer: string): SessionUser | null {
   const tokenHash = hashToken(token)
   const store = readStore()
   const rec = store.tokens.find((t) => t.tokenHash === tokenHash)
-  if (!rec) return null
+  if (!rec || isExpired(rec)) return null
   rec.lastUsedAt = new Date().toISOString()
   writeStore(store)
   return {

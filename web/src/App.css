@@ -2578,7 +2578,7 @@ p.ok {
   }
 
   .ns-member-form-fields.cols-label-action {
-    grid-template-columns: minmax(12rem, 1fr) auto;
+    grid-template-columns: minmax(12rem, 1fr) auto auto;
   }
 }
 

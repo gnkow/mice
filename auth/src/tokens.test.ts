@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -12,6 +12,7 @@ const {
   createPat,
   findPatByToken,
   listPatsForUser,
+  PatExpiryError,
   resolvePat,
   revokePat,
   revokePatByToken,
@@ -102,5 +103,56 @@ describe('PAT tokens', () => {
     assert.equal(resolvePat('mice_pat_notreal'), null)
     assert.equal(findPatByToken('mice_pat_notreal'), null)
     assert.equal(resolvePat('Bearer something'), null)
+  })
+})
+
+describe('PAT expiry', () => {
+  it('defaults to 90 days and rejects more than 365', () => {
+    const { pat } = createPat(alice, 'default-expiry')
+    const days = (Date.parse(pat.expiresAt ?? '') - Date.now()) / 86_400_000
+    assert.ok(days > 89.9 && days <= 90)
+    assert.throws(() => createPat(alice, 'too-long', { expiresInDays: 366 }), PatExpiryError)
+    assert.throws(() => createPat(alice, 'zero', { expiresInDays: 0 }), PatExpiryError)
+  })
+
+  it('rejects an expired PAT', () => {
+    const { token } = createPat(alice, 'short', { expiresInDays: 1 })
+    assert.ok(resolvePat(token))
+    const realNow = Date.now
+    Date.now = () => realNow() + 2 * 86_400_000
+    try {
+      assert.equal(resolvePat(token), null)
+    } finally {
+      Date.now = realNow
+    }
+  })
+
+  it('records last use', () => {
+    const { token, pat } = createPat(bob, 'used')
+    assert.equal(pat.lastUsedAt, undefined)
+    resolvePat(token)
+    const listed = listPatsForUser(bob).find((p) => p.id === pat.id)
+    assert.ok(listed?.lastUsedAt)
+  })
+
+  it('grandfathers legacy tokens to 365 days exactly once', () => {
+    const file = join(dataDir, 'pats.json')
+    const store = JSON.parse(readFileSync(file, 'utf8'))
+    for (const t of store.tokens) delete t.expiresAt
+    writeFileSync(file, JSON.stringify(store))
+    const first = listPatsForUser(alice)
+    const days = (Date.parse(first[0].expiresAt ?? '') - Date.now()) / 86_400_000
+    assert.ok(days > 364.9 && days <= 365)
+    const realNow = Date.now
+    Date.now = () => realNow() + 10 * 86_400_000
+    try {
+      const second = listPatsForUser(alice)
+      assert.deepEqual(
+        second.map((p) => p.expiresAt).sort(),
+        first.map((p) => p.expiresAt).sort(),
+      )
+    } finally {
+      Date.now = realNow
+    }
   })
 })
