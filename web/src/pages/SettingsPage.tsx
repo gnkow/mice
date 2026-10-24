@@ -12,6 +12,7 @@ import {
   listAuthzNamespaces,
   patchInstanceEnforce,
   removeInstanceAdmin,
+  revokeUserSessions,
   resolveAccessRequest,
   setInstancePermissions,
   type AccessRequestRow,
@@ -364,6 +365,9 @@ function InstanceAdminSection() {
   const [busy, setBusy] = useState(false)
   const [adminSub, setAdminSub] = useState('')
   const [adminIss, setAdminIss] = useState('mice-dev')
+  const [revokeSub, setRevokeSub] = useState('')
+  const [revokeIss, setRevokeIss] = useState('mice-dev')
+  const [notice, setNotice] = useState<string | null>(null)
   const [permSub, setPermSub] = useState('')
   const [permIss, setPermIss] = useState('mice-dev')
   const [permChecks, setPermChecks] = useState<InstancePermission[]>([
@@ -395,6 +399,26 @@ function InstanceAdminSection() {
       state.reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Add failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onRevokeSessions(e: FormEvent) {
+    e.preventDefault()
+    if (!revokeSub.trim() || !revokeIss.trim()) {
+      setError('Choose a user from search or enter sub/iss manually')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await revokeUserSessions({ sub: revokeSub.trim(), iss: revokeIss.trim() })
+      setNotice(`Revoked all sessions of ${revokeSub.trim()}`)
+      setRevokeSub('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Revoke failed')
     } finally {
       setBusy(false)
     }
@@ -526,6 +550,27 @@ function InstanceAdminSection() {
                 </button>
               </div>
             </div>
+          </form>
+          <form className="ns-member-form" onSubmit={onRevokeSessions}>
+            <h3 className="ns-settings-subhead">Revoke sessions</h3>
+            <p className="muted small">Signs the user out everywhere, immediately. They can sign in again.</p>
+            <div className="ns-member-form-fields">
+              <DirectoryPicker
+                kind="user"
+                sub={revokeSub}
+                iss={revokeIss}
+                defaultIss="mice-dev"
+                disabled={busy}
+                onChange={({ sub, iss }) => {
+                  setRevokeSub(sub)
+                  setRevokeIss(iss)
+                }}
+              />
+              <div className="ns-member-form-actions">
+                <button className="btn danger" type="submit" disabled={busy}>Revoke sessions</button>
+              </div>
+            </div>
+            {notice ? <p className="muted small" role="status">{notice}</p> : null}
           </form>
           </section>
 

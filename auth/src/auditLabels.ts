@@ -71,6 +71,7 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['announcement.update', 'Announcement updated', 'Instance'],
   ['announcement.delete', 'Announcement deleted', 'Instance'],
   ['token.create', 'Access token created', 'Tokens & CLI'],
+  ['session.revoke', 'Sessions revoked', 'Access'],
   ['token.revoke', 'Access token revoked', 'Tokens & CLI'],
   ['device.approve', 'CLI login approved', 'Tokens & CLI'],
   ['device.deny', 'CLI login denied', 'Tokens & CLI'],

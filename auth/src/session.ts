@@ -3,6 +3,7 @@ import { EncryptJWT, jwtDecrypt } from 'jose'
 import type { Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { env } from './env.js'
+import { isSessionRevoked } from './sessionRevocation.js'
 
 export type PatScope = {
   namespace: string
@@ -73,6 +74,7 @@ export async function openSession(token: string): Promise<SessionUser | null> {
     const iat = Number(payload.iat ?? 0)
     const sessionStart = Number(payload.sat ?? iat)
     const lastActive = Number(payload.act ?? iat)
+    if (isSessionRevoked({ iss, sub }, sessionStart)) return null
     if (env.sessionIdleSec > 0 && nowSec() - lastActive > env.sessionIdleSec) return null
     const groupsRaw = payload.groups
     const groups = Array.isArray(groupsRaw)

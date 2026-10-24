@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
+import { revokeSessions } from './sessionRevocation.js'
 import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
 import { sameOriginGuard } from './csrf.js'
@@ -1232,6 +1233,38 @@ app.post('/auth/instance/admins', async (c) => {
     action: 'instance.admin.add',
     message: `Added instance admin ${body.sub}`,
     detail: { target: { sub: body.sub, iss: body.iss } },
+  })
+  return c.json({ ok: true })
+})
+
+app.post('/auth/instance/revoke-sessions', async (c) => {
+  const session = await requireSession(c)
+  if (!session) return c.json({ error: 'Authentication required' }, 401)
+  preparePrincipal(session)
+  let body: { sub?: string; iss?: string }
+  try {
+    body = (await c.req.json()) as typeof body
+  } catch {
+    return c.json({ error: 'Invalid body' }, 400)
+  }
+  if (!body.sub || !body.iss) {
+    return c.json({ error: 'sub and iss required' }, 400)
+  }
+  const target = { sub: body.sub, iss: body.iss }
+  const result = revokeSessions(session, target)
+  if (!result.ok) {
+    auditMutation(c, session, 'session', {
+      action: 'session.revoke',
+      status: 403,
+      message: 'Revoke sessions denied',
+      detail: { target },
+    })
+    return c.json({ error: result.error }, 403)
+  }
+  auditMutation(c, session, 'session', {
+    action: 'session.revoke',
+    message: `Revoked all sessions of ${target.sub}`,
+    detail: { target },
   })
   return c.json({ ok: true })
 })

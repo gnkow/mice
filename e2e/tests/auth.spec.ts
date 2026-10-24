@@ -42,6 +42,50 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     expect(same.status()).not.toBe(403)
   })
 
+  test('TC-AUTH-REVOKE-01: admin revokes a signed-in user, who can sign in again', async ({
+    browser,
+  }) => {
+    const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
+    const targetSub = `revoke-target-${Date.now()}`
+    const userCtx = await browser.newContext()
+    const userPage = await userCtx.newPage()
+    await mintSession(userPage, {
+      name: 'Revoke Target',
+      email: `${targetSub}@mice.local`,
+      sub: targetSub,
+      iss: 'mice-e2e',
+    })
+    expect((await userPage.request.get(`${AUTH_URL}/auth/me`)).status()).toBe(200)
+
+    const adminCtx = await browser.newContext()
+    const adminPage = await adminCtx.newPage()
+    await mintSession(adminPage, {
+      name: 'Revoke Admin',
+      email: `revoke-admin-${Date.now()}@mice.local`,
+      sub: `revoke-admin-${Date.now()}`,
+      iss: 'mice-e2e',
+    })
+    const revoke = await adminPage.request.post(
+      `${AUTH_URL}/auth/instance/revoke-sessions`,
+      { data: { sub: targetSub, iss: 'mice-e2e' } },
+    )
+    expect(revoke.ok()).toBeTruthy()
+
+    expect((await userPage.request.get(`${AUTH_URL}/auth/me`)).status()).toBe(401)
+
+    // A session issued after the cut-off works again.
+    await new Promise((r) => setTimeout(r, 1100))
+    await mintSession(userPage, {
+      name: 'Revoke Target',
+      email: `${targetSub}@mice.local`,
+      sub: targetSub,
+      iss: 'mice-e2e',
+    })
+    expect((await userPage.request.get(`${AUTH_URL}/auth/me`)).status()).toBe(200)
+    await userCtx.close()
+    await adminCtx.close()
+  })
+
   test('TC-AUTH-03: session then /auth/me and /api/version succeed', async ({
     page,
   }) => {

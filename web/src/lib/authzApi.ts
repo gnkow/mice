@@ -433,6 +433,13 @@ export function addInstanceAdmin(target: { sub: string; iss: string }) {
   })
 }
 
+export function revokeUserSessions(target: { sub: string; iss: string }) {
+  return authzFetch('/auth/instance/revoke-sessions', {
+    method: 'POST',
+    body: JSON.stringify(target),
+  })
+}
+
 export function removeInstanceAdmin(target: { sub: string; iss: string }) {
   return authzFetch('/auth/instance/admins', {
     method: 'DELETE',
