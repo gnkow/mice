@@ -1,4 +1,4 @@
-# AUTH — PLAT-AUTH implementation plan
+# AUTHENTICATION — PLAT-AUTH implementation plan
 
 Living design and phased plan for epic [`PLAT-AUTH`](./EPICS.md#plat-auth--idp--sso-authn): IdP SSO, session lifecycle, and mapping identities to oxen-server credentials.
 
@@ -45,7 +45,8 @@ Mice is a Vite/React SPA that talks to self-hosted oxen-server **through the aut
 | id_token | `iss`, `aud`, `exp`, `nonce` checked; `auth_time` captured; no JWKS signature check |
 | Bootstrap | `iss`+`sub` or `email_verified` email only; `@users.local` never matches |
 | Production gate | Refuses to start with dev/missing `SESSION_SECRET`, shipped `OIDC_CLIENT_SECRET`, or non-Secure cookies ([`auth/src/startupGate.ts`](../auth/src/startupGate.ts)) |
-| Env | [`.env.example`](./.env.example) — OIDC, session and AuthZ vars (§8) |
+| Scoped PATs | A PAT may carry scopes `{namespace, repo?, maxRole}` that cap the owner's repo role (`capByPatScopes` in [`auth/src/authz.ts`](../auth/src/authz.ts)); scoped PATs never get the instance-admin bypass or fine-grained custom-role grants, and are refused on notifications, favorites and similar per-user routes via scattered `patScopes?.length` checks |
+| Env | [`.env.example`](../.env.example) — OIDC, session and AuthZ vars (§8) |
 
 Commit author name/email are metadata for oxen commits, not authentication.
 
@@ -206,7 +207,7 @@ Exact path/body rewrite table will be maintained next to the BFF proxy code as e
 
 ## 8. Configuration
 
-See [`.env.example`](./.env.example). Compose wires these into the `auth` service.
+See [`.env.example`](../.env.example). Compose wires these into the `auth` service.
 
 | Variable | Purpose |
 | --- | --- |
@@ -253,9 +254,7 @@ Local Keycloak: realm `mice`, client `mice-auth` / secret `mice-auth-secret`, re
 - [x] Settings → CLI tokens UI; Clone box uses BFF remote + `oxen config --auth`
 - [x] Playwright: `e2e/tests/cli-auth.spec.ts` (TC-CLI-01…06)
 
-### Phase 2 — Org / repo RBAC — **moved to PLAT-AUTHO**
-
-See [02-authorization.md](./02-authorization.md) phases. AUTH Phase 2 no longer tracks RBAC delivery.
+Phase 2 (org / repo RBAC) moved to [02-authorization.md](./02-authorization.md).
 
 ### Phase 2.5 — Session & PAT hardening
 
@@ -269,11 +268,35 @@ See [02-authorization.md](./02-authorization.md) phases. AUTH Phase 2 no longer 
 - [x] Validate `iss`, `aud`, `exp`, `nonce` on the id_token; capture `auth_time` (no JWKS signature check)
 - [x] Production startup gate for `SESSION_SECRET`, `OIDC_CLIENT_SECRET` (not `mice-auth-secret`) and cookie Secure; compose override documented for unpublished oxen port
 
-### Phase 3 — SAML + enterprise extras
+The phases below are **proposed, not approved**; every item is unchecked. Order was settled in review: 2.6, 2.7, 3, 4 (GxP Phase 1 in [04-gxp-compliance.md](./04-gxp-compliance.md) still lands first).
 
-- **SAML:** not native in the BFF. The BFF stays OIDC-only; SAML IdPs are brokered through Keycloak
-- **SCIM:** unscheduled; revisit only when a customer IdP needs deprovisioning (session revocation covers offboarding meanwhile)
-- Harden session (and optional future secret storage) for validated deployments
+### Phase 2.6 — Revocation and credential hygiene (proposed)
+
+- [ ] Self-service "sign out everywhere" on Profile: reuses the per-principal cut-off for **sessions only**; PATs are untouched unless the user also chooses to revoke them. No per-device list (sessions are stateless)
+- [ ] `GXP_STRICT` refuses to start when `SESSION_IDLE_SEC` is `0` (the startup gate states the rule; [04-gxp-compliance.md](./04-gxp-compliance.md) owns the value, GXP-R-005)
+- [ ] One `isScopedCredential(user)` check (in `principal.ts` or `requireAuth.ts`) replaces the scattered `patScopes?.length` checks in `authz.ts`, `notifications.ts`, `favoritesRoutes.ts` and `index.ts`
+- [ ] Document PAT scopes in Settings and the CLI; confirm scopes can be set at mint time in UI and `mice`
+
+### Phase 2.7 — id_token signature verification (proposed)
+
+- [ ] Verify the id_token signature with `jose` (`createRemoteJWKSet`, default key rotation); `alg` allowlist RS256 and ES256; a JWKS fetch failure at login returns `500` (fails closed). Only the id_token is verified; access tokens are not used. `jose` is the only new dependency
+- [ ] Enabled by default when `GXP_STRICT` is set; elsewhere the [ADR 0001](../docs/adr/0001-bff-identity-trust-model.md) behaviour stays the default
+- [ ] Production startup gate requires an `https` `OIDC_ISSUER`
+
+### Phase 3 — SAML recipe, deprovisioning, step-up (proposed)
+
+- [ ] **SAML via Keycloak brokering (documented recipe):** not native in the BFF, which stays OIDC-only. One brokering recipe is documented and covered by an e2e test case
+- [ ] **Back-channel logout:** the IdP sends `sub` (and maybe `sid`); the BFF records a **sessions-only** cut-off. PATs survive an IdP logout, because logout is not offboarding. `credentialRevocation.ts` then stores two cut-offs per principal (sessions-only and full)
+- [ ] **Directory-sync revocation:** a job using the existing directory client sets the **full** cut-off (sessions and PATs) for users that are disabled or removed in the IdP. Runs on an env-configurable interval (default 15 min) and on admin demand. If the directory is unreachable it **fails open** (revokes nothing), and raises an audit event plus an admin notification ([14-notifications.md](./14-notifications.md)) once the sync is stale beyond 2× the interval
+- [ ] **Step-up re-authentication:** `reauthenticate(maxAge)` flow (`prompt=login&max_age`, then a fresh `auth_time` check). AUTH provides the mechanism; [04-gxp-compliance.md](./04-gxp-compliance.md) Phase 3 (GXP-R-052) decides when it is invoked
+- **SCIM:** not planned; the two items above cover offboarding
+
+### Phase 4 — Service principals (proposed; needs its own design review)
+
+- [ ] Admin-created service principals for CI, keyed `urn:mice:service|<uuid>` through the existing `principalKey` / `parsePrincipalKey`; the reserved issuer `urn:mice:service` is rejected as an OIDC issuer at config load
+- [ ] Each has a required human owner, who is notified before PAT expiry; PATs follow the human rules (default 90 days, max 365)
+- [ ] When the owner is offboarded the principal is **suspended, not deleted**, so CI fails visibly and can be reassigned
+- [ ] Creation is instance-admin only at first; AUTHO membership and audit identity for service principals are specified in [02-authorization.md](./02-authorization.md) and [03-audit.md](./03-audit.md)
 
 ## 10. UI changes
 
@@ -286,7 +309,7 @@ See [02-authorization.md](./02-authorization.md) phases. AUTH Phase 2 no longer 
 | Settings | CLI tokens for automation; optional API base; **no** commit author name/email fields |
 | Commit author | IdP → BFF injection only; Settings override **removed entirely** |
 
-Touchpoints when coding: [`SettingsPage.tsx`](./web/src/pages/SettingsPage.tsx), [`client.ts`](./web/src/lib/oxen/client.ts), [`Layout.tsx`](./web/src/components/Layout.tsx), new login route in the app router.
+Touchpoints when coding: [`SettingsPage.tsx`](../web/src/pages/SettingsPage.tsx), [`client.ts`](../web/src/lib/oxen/client.ts), [`Layout.tsx`](../web/src/components/Layout.tsx), new login route in the app router.
 
 ## 11. Test plan
 
@@ -313,7 +336,7 @@ Touchpoints when coding: [`SettingsPage.tsx`](./web/src/pages/SettingsPage.tsx),
 
 ### Open questions
 
-1. **Deprovisioning / offboarding:** session revocation is manual (admin action) and the BFF only sees IdP state at login. Should offboarding be automated via SCIM or an event-based path (IdP webhook / back-channel logout / periodic directory sync) that sets the not-valid-before cut-off and removes memberships? Owner and trigger unassigned.
+1. **Deprovisioning / offboarding (resolved in review, proposed Phase 3: back-channel logout plus directory-sync; SCIM not planned):** session revocation is manual (admin action) and the BFF only sees IdP state at login. Should offboarding be automated via SCIM or an event-based path (IdP webhook / back-channel logout / periodic directory sync) that sets the not-valid-before cut-off and removes memberships? Owner and trigger unassigned.
 
 ## 13. How to use this file
 

@@ -220,7 +220,7 @@ flowchart LR
 
 - [ ] `GXP_STRICT` env + wiring in [`../auth/src/env.ts`](../auth/src/env.ts)
 - [ ] **Strict fail-closed audit is still unimplemented:** when `GXP_STRICT=true`, a failed audit append must fail the mutation (GXP-R-025; today best-effort, see [03-audit.md](./03-audit.md) §8) ([`../auth/src/proxy.ts`](../auth/src/proxy.ts) / [`../auth/src/audit.ts`](../auth/src/audit.ts))
-- [ ] Set and document the validated `SESSION_IDLE_SEC` value/default for GxP deployments (GXP-R-005); mechanism shipped in [01-authentication.md](./01-authentication.md) Phase 2.5
+- [ ] Set and document the validated `SESSION_IDLE_SEC` value/default for GxP deployments (GXP-R-005); mechanism shipped in [01-authentication.md](./01-authentication.md) Phase 2.5; AUTH Phase 2.6 (proposed) makes `GXP_STRICT` refuse to start with the idle timeout off, and Phase 3 (proposed) adds the step-up `reauthenticate(maxAge)` mechanism used by e-signatures (GXP-R-052)
 - [ ] Document BFF-only production remote + NTP expectation (GXP-R-009 / R-032)
 - [ ] Tighten action classification where `other` is over-broad (GXP-R-026)
 - [x] Sync EPICS/AUDIT checklist drift for audit query AuthZ

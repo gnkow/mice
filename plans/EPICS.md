@@ -104,7 +104,7 @@ flowchart TB
 - [x] CLI / Python via BFF PATs (`mice_pat_*`); Clone box points at BFF remote
 - [x] Org/repo RBAC — **moved to** [`PLAT-AUTHO`](#plat-autho--authorization-authz) / [02-authorization.md](./02-authorization.md)
 - [x] Phase 2.5 hardening: fail-closed author injection, same-origin CSRF guard, sliding idle timeout, admin session revocation (also cuts off PATs), PAT expiry and last-used, id_token claim checks + `auth_time`, `iss`+`sub` identity with verified-email bootstrap, production startup gate
-- [ ] Deprovisioning / offboarding strategy (SCIM or event-based) — open question in [01-authentication.md](./01-authentication.md)
+- [ ] Proposed, not approved ([01-authentication.md](./01-authentication.md) §9): Phase 2.6 self-service sign-out and scoped-credential consolidation; Phase 2.7 id_token JWKS verification; Phase 3 SAML recipe, back-channel logout, directory-sync revocation, step-up re-auth; Phase 4 service principals. SCIM is not planned
 
 ---
 

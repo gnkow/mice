@@ -359,7 +359,8 @@ Env:
 
 1. **Immediate group-membership revocation:** PAT group claims are snapshotted at mint time, so removing a user from an IdP group does not shrink existing PATs. Define a path that takes effect immediately (e.g. admin "revoke tokens/sessions" per `iss`+`sub`, which already rejects PATs created at or before the cut-off; or unbinding the group in AuthZ; or re-checking groups against the directory on PAT use). Which is the supported route, and does it need a UI action?
 2. **Periodic access review and emergency/delegated-admin expiry:** should the platform support scheduled access-review campaigns (members, collaborators, group bindings, instance admins, instance permissions) with attestation audit events? Should delegated instance permissions and emergency (breakglass) admin grants carry a mandatory expiry that auto-revokes and is audited?
-3. **Directory outage behavior:** if a live directory/group re-check is added, should an outage fail closed (deny) or use last-known groups for a bounded time? Who is alerted?
+3. **Directory outage behavior:** if a live directory/group re-check is added, should an outage fail closed (deny) or use last-known groups for a bounded time? Who is alerted? (For the AUTH directory-sync revocation job the proposed answer is fail open with an alert; see [01-authentication.md](./01-authentication.md) Phase 3. Group re-checks may differ.)
+4. **Service principals (proposed in [01-authentication.md](./01-authentication.md) Phase 4):** membership, instance-permission and audit rules for `urn:mice:service|<uuid>` principals, including suspension when the owner is offboarded.
 
 ## 13. How to use this file
 
