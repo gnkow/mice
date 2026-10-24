@@ -28,12 +28,12 @@ await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r))
 
 process.env.AUTH_DATA_DIR = dataDir
 process.env.SESSION_SECRET = 'test-session-secret-for-proxy-author'
-process.env.AUTHZ_ENFORCE = 'false'
 process.env.OXEN_UPSTREAM = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
 
 const { Hono } = await import('hono')
 const { proxyToOxen } = await import('./proxy.js')
 const { queryAudit } = await import('./audit.js')
+const { setAuthzEnforce } = await import('./authzStore.js')
 
 const alice = {
   sub: 'alice',
@@ -173,6 +173,35 @@ describe('proxy author injection fails closed', () => {
     const res = await send('/api/repos/a/b/branches/x', { method: 'DELETE' })
     assert.equal(res.status, 200)
     assert.equal(received.length, 1)
+  })
+
+  it('answers 403, not 400, and writes no rejection row for an unauthorized Principal', async () => {
+    setAuthzEnforce(true)
+    try {
+      const before = queryAudit({ action: 'request.rejected', limit: 100 }).events.length
+      const res = await send('/api/repos/a/b/branches', {
+        contentType: 'application/json',
+        body: 'not json',
+      })
+      assert.equal(res.status, 403)
+      assert.equal(received.length, 0)
+      assert.equal(
+        queryAudit({ action: 'request.rejected', limit: 100 }).events.length,
+        before,
+      )
+    } finally {
+      setAuthzEnforce(false)
+    }
+  })
+
+  it('records namespace and repo on the rejection row', async () => {
+    await send('/api/repos/acme/data/branches', {
+      contentType: 'application/json',
+      body: 'not json',
+    })
+    const [event] = queryAudit({ action: 'request.rejected', limit: 1 }).events
+    assert.equal(event!.namespace, 'acme')
+    assert.equal(event!.repo, 'data')
   })
 
   it('audits the rejection', async () => {

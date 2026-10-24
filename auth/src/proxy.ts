@@ -58,6 +58,7 @@ function rejectUnclassifiedWrite(
   method: string,
   pathname: string,
   reason: string,
+  scope: { namespace?: string; repo?: string } = {},
 ): Response {
   appendAudit({
     actor: actorFromUser(user),
@@ -66,6 +67,8 @@ function rejectUnclassifiedWrite(
     path: pathname,
     status: 400,
     action: 'request.rejected',
+    ...(scope.namespace ? { namespace: scope.namespace } : {}),
+    ...(scope.repo ? { repo: scope.repo } : {}),
     detail: { reason },
   })
   return new Response(
@@ -105,55 +108,62 @@ export async function proxyToOxen(
   let moveNewPath: string | undefined
   let copyFrom: string | undefined
   let restoreFrom: string | undefined
+  // Rejection is applied after authorization so unauthorized Principals get 403.
+  let rejection: string | undefined
 
   if (method !== 'GET' && method !== 'HEAD') {
     if (contentType === 'multipart/form-data') {
-      let form: FormData
+      let form: FormData | undefined
       try {
         form = await c.req.formData()
       } catch {
-        return rejectUnclassifiedWrite(user, via, method, pathname, 'multipart_malformed')
+        rejection = 'multipart_malformed'
       }
-      message = extractMessageFromForm(form)
-      const copyField = form.get('copy_from')
-      if (typeof copyField === 'string' && copyField.trim()) {
-        copyFrom = copyField.trim().replace(/^\/+|\/+$/g, '')
+      if (form) {
+        message = extractMessageFromForm(form)
+        const copyField = form.get('copy_from')
+        if (typeof copyField === 'string' && copyField.trim()) {
+          copyFrom = copyField.trim().replace(/^\/+|\/+$/g, '')
+        }
+        const restoreField = form.get('restore_from')
+        if (typeof restoreField === 'string' && restoreField.trim()) {
+          restoreFrom = restoreField.trim()
+        }
+        // Mice-only hints for lineage; oxen-server must not see them.
+        form.delete('copy_from')
+        form.delete('restore_from')
+        body = injectAuthorFormData(form, user)
+        // Let fetch set multipart boundary
+        reqHeaders.delete('content-type')
       }
-      const restoreField = form.get('restore_from')
-      if (typeof restoreField === 'string' && restoreField.trim()) {
-        restoreFrom = restoreField.trim()
-      }
-      // Mice-only hints for lineage; oxen-server must not see them.
-      form.delete('copy_from')
-      form.delete('restore_from')
-      body = injectAuthorFormData(form, user)
-      // Let fetch set multipart boundary
-      reqHeaders.delete('content-type')
     } else if (contentType === 'application/json') {
       const text = await c.req.text()
       if (text) {
-        let parsed: Record<string, unknown>
+        let parsed: Record<string, unknown> | undefined
         try {
           const value: unknown = JSON.parse(text)
-          if (!value || typeof value !== 'object' || Array.isArray(value)) {
-            return rejectUnclassifiedWrite(user, via, method, pathname, 'json_not_object')
+          if (value && typeof value === 'object' && !Array.isArray(value)) {
+            parsed = value as Record<string, unknown>
+          } else {
+            rejection = 'json_not_object'
           }
-          parsed = value as Record<string, unknown>
         } catch {
-          return rejectUnclassifiedWrite(user, via, method, pathname, 'json_malformed')
+          rejection = 'json_malformed'
         }
-        message = extractMessageFromJson(parsed)
-        const created = extractRepoCreateFromJson(parsed)
-        createNs = created.namespace
-        createRepo = created.repo
-        if (typeof parsed.workspace_id === 'string' && parsed.workspace_id.trim()) {
-          bodyWorkspaceId = parsed.workspace_id.trim()
+        if (parsed) {
+          message = extractMessageFromJson(parsed)
+          const created = extractRepoCreateFromJson(parsed)
+          createNs = created.namespace
+          createRepo = created.repo
+          if (typeof parsed.workspace_id === 'string' && parsed.workspace_id.trim()) {
+            bodyWorkspaceId = parsed.workspace_id.trim()
+          }
+          if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
+            moveNewPath = parsed.new_path.trim()
+          }
+          body = JSON.stringify(injectAuthorJson(parsed, user))
+          reqHeaders.set('content-type', 'application/json')
         }
-        if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
-          moveNewPath = parsed.new_path.trim()
-        }
-        body = JSON.stringify(injectAuthorJson(parsed, user))
-        reqHeaders.set('content-type', 'application/json')
       }
     } else if (contentType === 'application/octet-stream') {
       body = await c.req.arrayBuffer()
@@ -166,7 +176,7 @@ export async function proxyToOxen(
       // allowlist. Any other non-empty body could smuggle author fields.
       const buf = await c.req.arrayBuffer()
       if (buf.byteLength) {
-        return rejectUnclassifiedWrite(user, via, method, pathname, 'unclassified_body')
+        rejection = 'unclassified_body'
       }
     }
   }
@@ -191,6 +201,14 @@ export async function proxyToOxen(
         headers: { 'content-type': 'application/json' },
       },
     )
+  }
+
+  if (rejection) {
+    const classified = classifyPath(method, pathname)
+    return rejectUnclassifiedWrite(user, via, method, pathname, rejection, {
+      namespace: classified.namespace ?? createNs,
+      repo: classified.repo ?? createRepo,
+    })
   }
 
   if (decision.siteAdminBypass) {
