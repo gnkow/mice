@@ -16,3 +16,4 @@ oxen-server has no authentication, so the BFF is the only identity boundary. We 
 
 - Existing authz, bootstrap and audit stores keyed on bare `sub` need a one-off migration to `iss`+`sub`.
 - New oxen write routes must be classified (author-bearing or allowlisted) before they can be proxied.
+- Admin session revocation (per `iss`+`sub` not-valid-before) also rejects PATs created at or before the cut-off; PATs minted afterwards work.

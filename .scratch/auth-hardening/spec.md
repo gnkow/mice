@@ -42,7 +42,7 @@ Harden the BFF so every Principal is keyed on `iss`+`sub`, author attribution ca
 
 - **Author injection:** every non-GET request must classify as author-bearing (JSON, multipart) or match the author-free allowlist; otherwise the BFF returns `400` and nothing is proxied. Malformed JSON is rejected, not forwarded.
 - **CSRF:** cookie-authenticated non-GET requests must pass an `Origin` / `Sec-Fetch-Site` same-origin check. PAT-authenticated requests are exempt. No token scheme.
-- **Revocation:** a per-`iss`+`sub` "not valid before" timestamp, checked on every request against the Session's issue time. Instance admins can set it ("revoke sessions"). No session table.
+- **Revocation:** a per-`iss`+`sub` "not valid before" timestamp, checked on every request against the Session's issue time. Instance admins can set it ("revoke sessions"). No session table. The same cut-off also rejects PATs created at or before it, so revocation cannot be bypassed by a long-lived token.
 - **Idle timeout:** the BFF re-seals the Session cookie on activity (sliding window). The idle value is `SESSION_IDLE_SEC`, owned by PLAT-GXP; the mechanism is owned here. The absolute TTL remains.
 - **PAT lifetime:** expiry is required at creation (default 90 days, max 365); a last-used timestamp is recorded; existing PATs get 365 days from migration. Expired PATs are rejected.
 - **Identity key:** `iss`+`sub` everywhere (memberships, group bindings, bootstrap lists, audit actors). Email matches only when `email_verified` is true. The `@users.local` fallback never matches.
