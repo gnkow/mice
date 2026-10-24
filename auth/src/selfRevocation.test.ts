@@ -8,7 +8,7 @@ process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-selfrevoke-'))
 process.env.SESSION_SECRET = 'test-session-secret-for-selfrevoke'
 
 const { Hono } = await import('hono')
-const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
+const { applyGlobalGuards, authenticateRequest } = await import('./requireAuth.js')
 const { signOutEverywhere } = await import('./selfRevocation.js')
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
@@ -20,7 +20,7 @@ const app = new Hono()
 applyGlobalGuards(app)
 app.post('/auth/sessions/revoke-all', signOutEverywhere)
 app.get('/whoami', async (c) => {
-  const a = await requireAuth(c)
+  const a = await authenticateRequest(c, { allowScoped: true })
   return a ? c.json({ via: a.via }) : c.json({}, 401)
 })
 

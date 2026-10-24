@@ -21,11 +21,11 @@ import {
 } from './jobs.js'
 import { getJob } from './jobsStore.js'
 import { favoriteUserKey, listFavorites } from './favoritesStore.js'
-import { requireAuth } from './requireAuth.js'
+import { authenticateRequest } from './requireAuth.js'
 
 export function registerJobRoutes(app: Hono) {
   app.post('/auth/jobs', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     let body: unknown
     try {
@@ -55,7 +55,7 @@ export function registerJobRoutes(app: Hono) {
   })
 
   app.get('/auth/jobs', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const namespace = c.req.query('namespace') || ''
     const repo = c.req.query('repo') || ''
@@ -125,7 +125,7 @@ export function registerJobRoutes(app: Hono) {
   })
 
   app.get('/auth/jobs/:id', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const job = getJobPublic(c.req.param('id'))
     if (!job) return c.json({ error: 'Not found' }, 404)
@@ -137,7 +137,7 @@ export function registerJobRoutes(app: Hono) {
   })
 
   app.get('/auth/jobs/:id/logs', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const job = getJob(c.req.param('id'))
     if (!job) return c.json({ error: 'Not found' }, 404)
@@ -150,7 +150,7 @@ export function registerJobRoutes(app: Hono) {
   })
 
   app.post('/auth/jobs/:id/cancel', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const existing = getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
@@ -170,7 +170,7 @@ export function registerJobRoutes(app: Hono) {
   })
 
   app.post('/auth/jobs/:id/complete', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const existing = getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
@@ -248,7 +248,7 @@ export function registerJobRoutes(app: Hono) {
     }
     json: (data: unknown, status?: number) => Response
   }) {
-    const authed = await requireAuth(c as never)
+    const authed = await authenticateRequest(c as never, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     let body: unknown
     try {

@@ -32,7 +32,7 @@ import {
 } from './metaTypes.js'
 import type { SessionUser } from './session.js'
 import { getSessionRecord } from './sessionsStore.js'
-import { requireAuth } from './requireAuth.js'
+import { authenticateRequest } from './requireAuth.js'
 
 type Authed = { user: SessionUser; via: AuditVia }
 
@@ -213,7 +213,7 @@ function auditMeta(
 
 export function registerMetaRoutes(app: Hono) {
   app.get('/auth/meta', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
@@ -239,7 +239,7 @@ export function registerMetaRoutes(app: Hono) {
 
   // Bulk explicit metadata for list views; unknown or unreadable entities are omitted.
   app.post('/auth/meta/batch', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     let body: { refs?: { type?: string; id?: string; scope?: EntityRef['scope'] }[] }
     try {
@@ -263,7 +263,7 @@ export function registerMetaRoutes(app: Hono) {
   })
 
   const write = async (c: Context) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     let body: Record<string, unknown>
     try {
@@ -316,7 +316,7 @@ export function registerMetaRoutes(app: Hono) {
   app.patch('/auth/meta', write)
 
   app.delete('/auth/meta', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
@@ -352,7 +352,7 @@ export function registerMetaRoutes(app: Hono) {
   })
 
   app.get('/auth/meta/history', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
@@ -369,7 +369,7 @@ export function registerMetaRoutes(app: Hono) {
   })
 
   app.get('/auth/meta/search', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     try {
       const query = parseSearch(c)

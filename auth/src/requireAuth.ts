@@ -26,25 +26,6 @@ export function applyGlobalGuards(app: Hono): void {
   app.use('*', sessionActivity)
 }
 
-/** Session cookie wins; a missing, expired or revoked cookie falls back to a Bearer PAT. */
-export async function requireAuth(
-  c: Context,
-): Promise<{ user: SessionUser; via: 'session' | 'pat' } | null> {
-  const session = await getSession(c)
-  if (session) {
-    preparePrincipal(session)
-    return { user: session, via: 'session' }
-  }
-
-  const patUser = resolveBearer(c)
-  if (patUser) {
-    preparePrincipal(patUser)
-    return { user: patUser, via: 'pat' }
-  }
-
-  return null
-}
-
 /** The raw `Authorization: Bearer` token, or '' when absent. */
 export function bearerToken(c: Context): string {
   const auth = c.req.header('authorization') ?? ''
@@ -65,15 +46,23 @@ export function onAuthenticated(fn: AuthenticatedHook): void {
 }
 
 /**
- * Nullable form of `authenticate` for route handlers: records `authVia` on the context
- * (for audit) and runs the `onAuthenticated` hooks.
+ * Nullable form of `authenticate` for route handlers: `{ user, via }` or null (the handler
+ * answers 401). Records `via` for audit and runs the `onAuthenticated` hooks.
  */
-export async function authenticateUser(c: Context, policy: AuthPolicy = {}): Promise<SessionUser | null> {
+export async function authenticateRequest(
+  c: Context,
+  policy: AuthPolicy = {},
+): Promise<{ user: SessionUser; via: 'session' | 'pat' } | null> {
   const r = await authenticate(c, policy)
   if (!r.ok) return null
   if (r.via === 'pat') c.set('authVia' as never, 'pat' as never)
   for (const fn of hooks) fn(r.user)
-  return r.user
+  return { user: r.user, via: r.via }
+}
+
+/** Same as `authenticateRequest` for handlers that only need the Principal. */
+export async function authenticateUser(c: Context, policy: AuthPolicy = {}): Promise<SessionUser | null> {
+  return (await authenticateRequest(c, policy))?.user ?? null
 }
 
 /** The audit `via` for a request: `pat` when it authenticated by PAT, else the given fallback. */

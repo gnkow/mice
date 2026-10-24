@@ -16,11 +16,11 @@ import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
 import {
   applyGlobalGuards,
+  authenticateRequest,
   authenticateUser,
   bearerToken,
   callerVia,
   onAuthenticated,
-  requireAuth,
   resolveBearer,
 } from './requireAuth.js'
 import { buildEndSessionUrl } from './oidc.js'
@@ -1615,7 +1615,7 @@ app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', async (c) => {
 })
 
 app.all('/api/*', async (c) => {
-  const authed = await requireAuth(c)
+  const authed = await authenticateRequest(c, { allowScoped: true })
   if (!authed) {
     return c.json(
       {

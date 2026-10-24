@@ -15,11 +15,11 @@ import {
 import { peekConnectTicket } from './sessionsConnect.js'
 import { getSessionRecord } from './sessionsStore.js'
 import { listSessionTemplates } from './sessionsTemplates.js'
-import { requireAuth } from './requireAuth.js'
+import { authenticateRequest } from './requireAuth.js'
 
 export function registerSessionRoutes(app: Hono) {
   app.get('/auth/sessions/templates', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     if (!env.sessionsEnabled) {
       return c.json({ error: 'Sessions disabled' }, 503)
@@ -28,13 +28,13 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.get('/auth/sessions/retention', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     return c.json(sessionsAuditRetentionPolicy())
   })
 
   app.post('/auth/sessions', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     if (!env.sessionsEnabled) {
       return c.json({ error: 'Sessions disabled' }, 503)
@@ -63,7 +63,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.get('/auth/sessions', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const all = c.req.query('all') === '1' || c.req.query('all') === 'true'
     const workspaceId = c.req.query('workspace_id') || undefined
@@ -74,7 +74,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.get('/auth/sessions/:id', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const row = getSessionRecord(c.req.param('id'))
     if (!row || row.status === 'destroyed') {
@@ -89,7 +89,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.post('/auth/sessions/:id/connect', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     try {
       const result = await connectDesktopSession(
@@ -109,7 +109,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.post('/auth/sessions/:id/disconnect', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const updated = markSessionDisconnect(
       authed.user,
@@ -121,7 +121,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.post('/auth/sessions/:id/retry', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     try {
       const { retryDesktopSession } = await import('./sessions.js')
@@ -142,7 +142,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.put('/auth/sessions/:id/mounts', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     let body: unknown
     try {
@@ -167,7 +167,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.post('/auth/sessions/:id/remount', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     let body: { workspace_id?: unknown; mount_path?: unknown } = {}
     try {
@@ -192,7 +192,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.post('/auth/sessions/:id/stop', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     try {
       const session = await stopDesktopSession(
@@ -212,7 +212,7 @@ export function registerSessionRoutes(app: Hono) {
   })
 
   app.delete('/auth/sessions/:id', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     try {
       const session = await destroyDesktopSession(
@@ -233,7 +233,7 @@ export function registerSessionRoutes(app: Hono) {
 
   /** Resolve a connect ticket to guacamole-lite token (for desktop page). */
   app.get('/auth/sessions/:id/connect-token', async (c) => {
-    const authed = await requireAuth(c)
+    const authed = await authenticateRequest(c, { allowScoped: true })
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const ticket = c.req.query('ticket') || ''
     if (!ticket) return c.json({ error: 'ticket required' }, 400)

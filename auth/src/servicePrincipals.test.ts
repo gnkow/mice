@@ -10,7 +10,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 process.env.OIDC_ISSUER_PUBLIC = 'idp'
 
 const { Hono } = await import('hono')
-const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
+const { applyGlobalGuards, authenticateRequest } = await import('./requireAuth.js')
 const { SERVICE_ISSUER } = await import('./principal.js')
 const sp = await import('./servicePrincipals.js')
 const { runDirectorySync } = await import('./directorySync.js')
@@ -59,7 +59,7 @@ describe('service principals', () => {
     const app = new Hono()
     applyGlobalGuards(app)
     app.get('/w', async (c) => {
-      const a = await requireAuth(c)
+      const a = await authenticateRequest(c, { allowScoped: true })
       return a ? c.json({ sub: a.user.sub, iss: a.user.iss }) : c.json({}, 401)
     })
     const res = await app.request('/w', { headers: { authorization: `Bearer ${token}` } })

@@ -9,7 +9,7 @@ process.env.SESSION_SECRET = 'test-session-secret-for-authn'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 
 const { Hono } = await import('hono')
-const { authenticate, authenticateUser, onAuthenticated } = await import('./requireAuth.js')
+const { authenticate, authenticateUser, authenticateRequest, onAuthenticated } = await import('./requireAuth.js')
 type Policy = NonNullable<Parameters<typeof authenticate>[1]>
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
@@ -84,5 +84,19 @@ describe('authenticate', () => {
     assert.deepEqual(await (await app.request('/x', { headers: bearer(token) })).json(), { sub: 'h', via: 'pat' })
     assert.deepEqual(seen, ['h'])
     assert.equal((await (await app.request('/x')).json() as { sub: unknown }).sub, null)
+  })
+
+  it('authenticateRequest returns user and via, or null; scoped PATs only when allowed', async () => {
+    const { token } = createPat(mk('r'), 'r')
+    const { token: scoped } = createPat(mk('r2'), 'r2', scope)
+    const app = new Hono()
+    app.get('/any', async (c) => c.json(await authenticateRequest(c, {})))
+    app.get('/scoped', async (c) => c.json(await authenticateRequest(c, { allowScoped: true })))
+    const sub = async (path: string, t?: string) =>
+      ((await (await app.request(path, { headers: t ? bearer(t) : {} })).json()) as { user?: { sub: string }; via?: string } | null)
+    assert.deepEqual(await sub('/any', token).then((r) => [r?.user?.sub, r?.via]), ['r', 'pat'])
+    assert.equal(await sub('/any', scoped), null)
+    assert.deepEqual(await sub('/scoped', scoped).then((r) => [r?.user?.sub, r?.via]), ['r2', 'pat'])
+    assert.equal(await sub('/any'), null)
   })
 })

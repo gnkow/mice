@@ -10,7 +10,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 process.env.OIDC_ISSUER_PUBLIC = 'idp'
 
 const { Hono } = await import('hono')
-const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
+const { applyGlobalGuards, authenticateRequest } = await import('./requireAuth.js')
 const { runDirectorySync, makeDirectorySyncRoute, checkDirectorySyncStale } = await import('./directorySync.js')
 const { rememberNotificationUser } = await import('./notifications.js')
 const { readNotificationState, notificationUserKey } = await import('./notificationsStore.js')
@@ -26,7 +26,7 @@ maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
 const app = new Hono()
 applyGlobalGuards(app)
 app.get('/whoami', async (c) => {
-  const a = await requireAuth(c)
+  const a = await authenticateRequest(c, { allowScoped: true })
   return a ? c.json({ via: a.via }) : c.json({}, 401)
 })
 

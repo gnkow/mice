@@ -9,7 +9,7 @@ process.env.SESSION_SECRET = 'test-session-secret-for-wiring'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 
 const { Hono } = await import('hono')
-const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
+const { applyGlobalGuards, authenticateRequest } = await import('./requireAuth.js')
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
 const { offboard } = await import('./offboarding.js')
@@ -25,7 +25,7 @@ maybeBootstrapInstanceAdmin({ ...root, emailVerified: true })
 const app = new Hono()
 applyGlobalGuards(app)
 app.all('/whoami', async (c) => {
-  const authed = await requireAuth(c)
+  const authed = await authenticateRequest(c, { allowScoped: true })
   return authed ? c.json({ sub: authed.user.sub, via: authed.via }) : c.json({}, 401)
 })
 
