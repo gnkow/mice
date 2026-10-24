@@ -41,6 +41,25 @@ Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`,
 
 Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to `AUTH_DATA_DIR/audit.jsonl` (see **Audit** in the UI). Day-to-day CLI auth uses **`mice login`** (browser device pairing). Automation may still mint **CLI PATs** (`Profile → CLI tokens`).
 
+### Production
+
+With `NODE_ENV=production` the BFF refuses to start unless `SESSION_SECRET` is set to a private
+value, `OIDC_CLIENT_SECRET` is not the shipped `mice-auth-secret`, and `COOKIE_SECURE=true`.
+
+`compose.yaml` publishes the raw oxen port (`3001`) for local development. Oxen has no auth of
+its own, so production must not expose it. Keep it private with an override file:
+
+```yaml
+# compose.prod.yaml
+services:
+  oxen-server:
+    ports: !reset []
+```
+
+```sh
+docker compose -f compose.yaml -f compose.prod.yaml up -d
+```
+
 ### Mice CLI (through the BFF)
 
 Requires the [Oxen CLI](https://docs.oxen.ai) on `PATH`. From the repo root (or after `npm link`):

@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
+import { assertProductionStartup } from './startupGate.js'
 import { env, oidcConfigured } from './env.js'
 import { sameOriginGuard } from './csrf.js'
 import {
@@ -174,6 +175,8 @@ function safeReturnPath(raw: string | undefined | null): string | undefined {
   if (raw.startsWith('/login') || raw.startsWith('/auth/')) return undefined
   return raw
 }
+
+assertProductionStartup()
 
 const app = new Hono()
 app.use('*', sameOriginGuard)
