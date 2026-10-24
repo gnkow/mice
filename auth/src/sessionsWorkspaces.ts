@@ -1,5 +1,5 @@
 import { appendAudit } from './audit.js'
-import { authorizeWorkspaceRead, authorizeWorkspaceWrite } from './authz.js'
+import { authorizeRepoAction } from './authz.js'
 import type { SessionUser } from './session.js'
 import { isWorkspaceMount } from './sessionsMounts.js'
 import { getSessionRecord, listSessions, updateSession } from './sessionsStore.js'
@@ -69,8 +69,8 @@ export async function resolveWorkspaceInputs(
     }
     const gate =
       i.mount_mode === 'ro'
-        ? authorizeWorkspaceRead(user, ws.namespace, ws.repo)
-        : authorizeWorkspaceWrite(user, ws.namespace, ws.repo)
+        ? authorizeRepoAction(user, ws.namespace, ws.repo, 'workspace.read')
+        : authorizeRepoAction(user, ws.namespace, ws.repo, 'workspace.write')
     if (!gate.allow) {
       throw new SessionWorkspaceError(
         `${gate.reason ?? 'Forbidden'} (workspace ${ws.id} in ${ws.namespace}/${ws.repo})`,
@@ -90,8 +90,8 @@ export function authorizeWorkspaceMounts(
     const mode = m.effective_mode ?? m.mount_mode
     const gate =
       mode === 'ro'
-        ? authorizeWorkspaceRead(user, m.namespace, m.repo)
-        : authorizeWorkspaceWrite(user, m.namespace, m.repo)
+        ? authorizeRepoAction(user, m.namespace, m.repo, 'workspace.read')
+        : authorizeRepoAction(user, m.namespace, m.repo, 'workspace.write')
     if (!gate.allow) {
       return { allow: false, reason: gate.reason ?? `mount ${m.namespace}/${m.repo} requires repository access` }
     }
@@ -349,7 +349,7 @@ export function authorizeNewWorkspaces(user: SessionUser, inputs: SessionMountIn
   for (const i of inputs) {
     if (!i.new_workspace) continue
     const { namespace, repo } = i.new_workspace
-    const gate = authorizeWorkspaceWrite(user, namespace, repo)
+    const gate = authorizeRepoAction(user, namespace, repo, 'workspace.write')
     if (!gate.allow) {
       throw new SessionWorkspaceError(`${gate.reason ?? 'Forbidden'} (creating a workspace in ${namespace}/${repo})`, 403)
     }

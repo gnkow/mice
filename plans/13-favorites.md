@@ -30,7 +30,7 @@ Related: [EPICS.md](./EPICS.md) · [02-authorization.md](./02-authorization.md) 
 | Profile | `ProfilePage.tsx` (tokens, notification entry points) |
 | Per-user state in BFF | Notification preferences/inbox (`notificationsStore.ts`), PATs (`tokens.ts`); atomic JSON via `jsonStore.ts` |
 | Entity identity | Shared string ids already defined by PLAT-META (`ns`, `ns/repo`, `ns/repo@branch`, `ns/repo!workspace`, job id, session id) — reused here |
-| Access checks | `authz.ts` (repo/namespace read), `authorizeJobRead`, `authorizeSessionAccess` |
+| Access checks | `authz.ts` (repo/namespace read), `authorizeRepoAction(…, 'job.read')`, `authorizeSessionAccess` |
 
 ## 3. Data model
 

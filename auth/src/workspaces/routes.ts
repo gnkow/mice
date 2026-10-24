@@ -3,8 +3,7 @@ import type { Context, Hono } from 'hono'
 import { actorFromUser, appendAudit, type AuditActor } from '../audit.js'
 import {
   authorizeStoreAdmin,
-  authorizeWorkspaceRead,
-  authorizeWorkspaceWrite,
+  authorizeRepoAction,
   preparePrincipal,
 } from '../authz.js'
 import { getSession, type SessionUser } from '../session.js'
@@ -196,7 +195,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const namespace = typeof body.namespace === 'string' ? body.namespace : ''
     const repo = typeof body.repo === 'string' ? body.repo : ''
     if (!namespace || !repo) return c.json({ error: 'namespace and repo are required' }, 400)
-    const z = authorizeWorkspaceWrite(a.user, namespace, repo)
+    const z = authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const src = (body.source ?? {}) as { branch?: unknown; commit?: unknown }
     let source: { branch: string } | { commit: string }
@@ -228,11 +227,11 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (!namespace && !repo) {
       const all = svc.list()
       return c.json({
-        workspaces: all.filter((w) => authorizeWorkspaceRead(a.user, w.namespace, w.repo).allow),
+        workspaces: all.filter((w) => authorizeRepoAction(a.user, w.namespace, w.repo, 'workspace.read').allow),
       })
     }
     if (!namespace || !repo) return c.json({ error: 'namespace and repo are required together' }, 400)
-    const z = authorizeWorkspaceRead(a.user, namespace, repo)
+    const z = authorizeRepoAction(a.user, namespace, repo, 'workspace.read')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     return c.json({ workspaces: svc.list({ namespace, repo }) })
   })
@@ -245,7 +244,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const { svc } = await ctx(c)
     const st = validWorkspaceId(id) ? svc.getState(id) : undefined
     if (!st) return { res: c.json({ error: 'Workspace not found' }, 404) }
-    const z = (write ? authorizeWorkspaceWrite : authorizeWorkspaceRead)(a.user, st.namespace, st.repo)
+    const z = authorizeRepoAction(a.user, st.namespace, st.repo, write ? 'workspace.write' : 'workspace.read')
     if (!z.allow) return { res: c.json({ error: z.reason ?? 'Forbidden' }, 403) }
     return { a, svc, st }
   }
@@ -293,7 +292,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const mode = body.mode
     if (mode !== 'read' && mode !== 'write') return c.json({ error: "mode must be 'read' or 'write'" }, 400)
     if (mode === 'write') {
-      const z = authorizeWorkspaceWrite(w.a.user, w.st.namespace, w.st.repo)
+      const z = authorizeRepoAction(w.a.user, w.st.namespace, w.st.repo, 'workspace.write')
       if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     }
     const kind = (typeof body.holder_kind === 'string' ? body.holder_kind : 'user') as HolderKind
@@ -447,7 +446,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (!a) return c.json({ error: 'Authentication required' }, 401)
     const namespace = c.req.query('namespace') ?? ''
     const repo = c.req.query('repo') ?? ''
-    const z = namespace && repo ? authorizeWorkspaceRead(a.user, namespace, repo) : authorizeStoreAdmin(a.user)
+    const z = namespace && repo ? authorizeRepoAction(a.user, namespace, repo, 'workspace.read') : authorizeStoreAdmin(a.user)
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
     return c.json({ checkouts: await listCheckouts(store, { namespace: namespace || undefined, repo: repo || undefined }) })
@@ -458,7 +457,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (!a) return c.json({ error: 'Authentication required' }, 401)
     const { ns, repo, commit } = c.req.param()
     if (!validNs(ns) || !validNs(repo) || !validCommit(commit)) return c.json({ error: 'invalid path' }, 400)
-    const z = authorizeWorkspaceRead(a.user, ns, repo)
+    const z = authorizeRepoAction(a.user, ns, repo, 'workspace.read')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
     return c.json(await checkoutStatus(store, ns, repo, commit))
@@ -477,7 +476,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const repo = typeof body.repo === 'string' ? body.repo : ''
     const ref = typeof body.ref === 'string' ? body.ref : ''
     if (!namespace || !repo || !ref) return c.json({ error: 'namespace, repo and ref are required' }, 400)
-    const z = authorizeWorkspaceWrite(a.user, namespace, repo)
+    const z = authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     try {
       const { store } = await ctx(c)

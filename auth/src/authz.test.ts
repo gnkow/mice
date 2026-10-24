@@ -26,12 +26,9 @@ const {
   authorizeApiRequest,
   authorizeAuditQuery,
   authorizeCliDeviceApprove,
-  authorizeJobCancel,
-  authorizeJobComplete,
-  authorizeJobRead,
-  authorizeJobSubmit,
   authorizeLineageQuery,
   authorizeLineageRebuild,
+  authorizeRepoAction,
   authorizeManageOwnTokens,
   canManageRepoCollaborators,
   canSkipPendingGate,
@@ -39,7 +36,6 @@ const {
   hasRepoPermission,
   isPendingUser,
   preparePrincipal,
-  requiredRepoRoleForRequest,
 } = await import('./authz.js')
 const {
   addInstanceAdmin,
@@ -76,7 +72,8 @@ const {
 } = await import('./accessRequests.js')
 const { createPat, resolvePat } = await import('./tokens.js')
 const { OXEN_PATH_ROLE_MAP, minRoleForAction } = await import('./authzPathMap.js')
-const { classifyPath } = await import('./audit.js')
+const { classifyPath, interpretRequest } = await import('./requestInterpretation.js')
+const requiredRepoRoleForRequest = (method: string, path: string) => interpretRequest(method, path).minRole
 const { env } = await import('./env.js')
 const {
   createCustomNamespaceRole,
@@ -431,23 +428,23 @@ describe('Phase 2–3 extras', () => {
     }
   })
 
-  it('path role map is non-empty and aligns with requiredRepoRoleForRequest', () => {
+  it('path role map is non-empty and aligns with interpretRequest', () => {
     assert.ok(OXEN_PATH_ROLE_MAP.length >= 8)
-    assert.equal(requiredRepoRoleForRequest('GET', '/api/repos/n/r', 'other'), 'read')
+    assert.equal(requiredRepoRoleForRequest('GET', '/api/repos/n/r'), 'read')
     assert.equal(
-      requiredRepoRoleForRequest('PUT', '/api/repos/n/r/file/main/a', 'file.write'),
+      requiredRepoRoleForRequest('PUT', '/api/repos/n/r/file/main/a'),
       'write',
     )
     assert.equal(
-      requiredRepoRoleForRequest('POST', '/api/repos/n/r/merge', 'merge'),
+      requiredRepoRoleForRequest('POST', '/api/repos/n/r/merge'),
       'maintain',
     )
     assert.equal(
-      requiredRepoRoleForRequest('DELETE', '/api/repos/n/r', 'repo.delete'),
+      requiredRepoRoleForRequest('DELETE', '/api/repos/n/r'),
       'admin',
     )
     assert.equal(
-      requiredRepoRoleForRequest('POST', '/api/repos/n/r/mystery', 'other'),
+      requiredRepoRoleForRequest('POST', '/api/repos/n/r/mystery'),
       'admin',
     )
   })
@@ -540,7 +537,7 @@ describe('Phase 2–3 extras', () => {
     for (const [method, path] of samples) {
       const { action } = classifyPath(method, path)
       assert.ok(minRoleForAction(action), `${method} ${path} -> ${action} missing from table`)
-      assert.equal(requiredRepoRoleForRequest(method, path, action), minRoleForAction(action))
+      assert.equal(requiredRepoRoleForRequest(method, path), minRoleForAction(action))
     }
     for (const row of OXEN_PATH_ROLE_MAP) {
       assert.ok(['read', 'triage', 'write', 'maintain', 'admin'].includes(row.minRole))
@@ -936,14 +933,14 @@ describe('atomic instance + job gates', () => {
     setRepoCollaborator(ns, repo, cancelOnly, role.role.id)
 
     setAuthzEnforce(true)
-    assert.equal(authorizeJobCancel(writer, ns, repo).allow, true)
-    assert.equal(authorizeJobComplete(writer, ns, repo).allow, true)
-    assert.equal(authorizeJobSubmit(writer, ns, repo).allow, true)
+    assert.equal(authorizeRepoAction(writer, ns, repo, 'job.cancel').allow, true)
+    assert.equal(authorizeRepoAction(writer, ns, repo, 'job.complete').allow, true)
+    assert.equal(authorizeRepoAction(writer, ns, repo, 'job.submit').allow, true)
 
-    assert.equal(authorizeJobCancel(cancelOnly, ns, repo).allow, true)
-    assert.equal(authorizeJobSubmit(cancelOnly, ns, repo).allow, false)
-    assert.equal(authorizeJobComplete(cancelOnly, ns, repo).allow, false)
-    assert.equal(authorizeJobRead(cancelOnly, ns, repo).allow, true)
+    assert.equal(authorizeRepoAction(cancelOnly, ns, repo, 'job.cancel').allow, true)
+    assert.equal(authorizeRepoAction(cancelOnly, ns, repo, 'job.submit').allow, false)
+    assert.equal(authorizeRepoAction(cancelOnly, ns, repo, 'job.complete').allow, false)
+    assert.equal(authorizeRepoAction(cancelOnly, ns, repo, 'job.read').allow, true)
   })
 
   it('ns view_lineage allows lineage query without repo collab', () => {
@@ -1093,12 +1090,12 @@ describe('audit ACL and path classification', () => {
       assert.equal(c.namespace, 'n')
       assert.equal(c.repo, 'r')
       // Authz keys must be unchanged by the finer audit names.
-      assert.equal(requiredRepoRoleForRequest(method, path, c.action), 'write')
+      assert.equal(requiredRepoRoleForRequest(method, path), 'write')
       assert.equal(finePermissionForAction(method, c.action), 'workspaces')
     }
     assert.equal(classifyPath('POST', '/api/repos/n/r/workspaces/w1/commit/main').detail?.workspace_id, 'w1')
     assert.equal(
-      requiredRepoRoleForRequest('DELETE', '/api/repos/n/r/file/main/a', 'file.delete'),
+      requiredRepoRoleForRequest('DELETE', '/api/repos/n/r/file/main/a'),
       'write',
     )
     assert.equal(finePermissionForAction('DELETE', 'file.delete'), 'contents_write')

@@ -4,7 +4,7 @@ import { Hono, type Context } from 'hono'
 import nodemailer from 'nodemailer'
 import webpush from 'web-push'
 import type { AuditEvent } from './audit.js'
-import { authorizeJobRead, hasRepoPermission, preparePrincipal } from './authz.js'
+import { authorizeRepoAction, hasRepoPermission } from './authz.js'
 import { isScopedCredential } from './principal.js'
 import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin, userCanSeeNamespace } from './authzStore.js'
 import { canReviewAccessRequests } from './accessRequests.js'
@@ -52,7 +52,6 @@ function principal(s: NotificationState, key: string): SessionUser | undefined {
 
 export function rememberNotificationUser(user: SessionUser): void {
   if (!user.iss || !user.sub || isScopedCredential(user)) return
-  preparePrincipal(user)
   notificationTransaction((s) => {
     const key = notificationUserKey(user)
     const now = new Date().toISOString()
@@ -80,7 +79,7 @@ function authorized(user: SessionUser, event: NotificationEvent, personal: boole
   const r = event.resource
   if (r?.namespace && r.repo) {
     return event.category === 'jobs' || r.type === 'job'
-      ? authorizeJobRead(user, r.namespace, r.repo).allow
+      ? authorizeRepoAction(user, r.namespace, r.repo, 'job.read').allow
       : !isAuthzEnforce() || hasRepoPermission(user, r.namespace, r.repo, 'read').ok
   }
   if (r?.namespace) return !isAuthzEnforce() || userCanSeeNamespace(user, r.namespace)

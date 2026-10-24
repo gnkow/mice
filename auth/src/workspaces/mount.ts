@@ -1,5 +1,5 @@
 import type { SessionUser } from '../session.js'
-import { authorizeWorkspaceRead, authorizeWorkspaceWrite } from '../authz.js'
+import { authorizeRepoAction } from '../authz.js'
 import { env } from '../env.js'
 import { hostVolumePaths, run } from './capabilities.js'
 import { LeaseError, TamperError, upperHashOf, type Lease } from './leases.js'
@@ -116,8 +116,8 @@ export async function mountSpecFor(
   const authz =
     opts.authorize?.(mode, opts.user, ws) ??
     (mode === 'rw'
-      ? authorizeWorkspaceWrite(opts.user, ws.namespace, ws.repo)
-      : authorizeWorkspaceRead(opts.user, ws.namespace, ws.repo))
+      ? authorizeRepoAction(opts.user, ws.namespace, ws.repo, 'workspace.write')
+      : authorizeRepoAction(opts.user, ws.namespace, ws.repo, 'workspace.read'))
   if (!authz.allow) throw new LeaseError(authz.reason ?? 'Forbidden', 403)
   if (ws.status !== 'ready') throw new LeaseError(`workspace is ${ws.status}`, 409)
   if (!validMountDest(dest)) throw new LeaseError('invalid mount destination', 400)

@@ -1,10 +1,5 @@
 import type { Hono } from 'hono'
-import {
-  authorizeJobCancel,
-  authorizeJobComplete,
-  authorizeJobRead,
-  authorizeJobSubmit,
-} from './authz.js'
+import { authorizeRepoAction } from './authz.js'
 import {
   cancelJob,
   completeCliJob,
@@ -36,11 +31,10 @@ export function registerJobRoutes(app: Hono) {
     const parsed = parseSubmitBody(body)
     if ('error' in parsed) return c.json({ error: parsed.error }, 400)
 
-    const gate = authorizeJobSubmit(
+    const gate = authorizeRepoAction(
       authed.user,
       parsed.namespace,
-      parsed.repo,
-    )
+      parsed.repo, 'job.submit')
     if (!gate.allow) {
       return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
     }
@@ -67,7 +61,7 @@ export function registerJobRoutes(app: Hono) {
       )
     }
     if (namespace && repo) {
-      const gate = authorizeJobRead(authed.user, namespace, repo)
+      const gate = authorizeRepoAction(authed.user, namespace, repo, 'job.read')
       if (!gate.allow) {
         return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
       }
@@ -98,7 +92,7 @@ export function registerJobRoutes(app: Hono) {
       namespace && repo
         ? raw
         : raw.filter(
-            (j) => authorizeJobRead(authed.user, j.namespace, j.repo).allow,
+            (j) => authorizeRepoAction(authed.user, j.namespace, j.repo, 'job.read').allow,
           )
     const pageLimit = Math.min(Math.max(1, limit ?? 50), 100)
     let page = jobs.slice(0, pageLimit)
@@ -111,7 +105,7 @@ export function registerJobRoutes(app: Hono) {
           !!j &&
           (!namespace || (j.namespace === namespace && j.repo === repo)) &&
           (!status || j.status === status) &&
-          authorizeJobRead(authed.user, j.namespace, j.repo).allow)
+          authorizeRepoAction(authed.user, j.namespace, j.repo, 'job.read').allow)
       const ids = new Set(pinned.map((j) => j.id))
       page = [...pinned, ...page.filter((j) => !ids.has(j.id))]
     }
@@ -129,7 +123,7 @@ export function registerJobRoutes(app: Hono) {
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const job = getJobPublic(c.req.param('id'))
     if (!job) return c.json({ error: 'Not found' }, 404)
-    const gate = authorizeJobRead(authed.user, job.namespace, job.repo)
+    const gate = authorizeRepoAction(authed.user, job.namespace, job.repo, 'job.read')
     if (!gate.allow) {
       return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
     }
@@ -141,7 +135,7 @@ export function registerJobRoutes(app: Hono) {
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const job = getJob(c.req.param('id'))
     if (!job) return c.json({ error: 'Not found' }, 404)
-    const gate = authorizeJobRead(authed.user, job.namespace, job.repo)
+    const gate = authorizeRepoAction(authed.user, job.namespace, job.repo, 'job.read')
     if (!gate.allow) {
       return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
     }
@@ -154,11 +148,10 @@ export function registerJobRoutes(app: Hono) {
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const existing = getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
-    const gate = authorizeJobCancel(
+    const gate = authorizeRepoAction(
       authed.user,
       existing.namespace,
-      existing.repo,
-    )
+      existing.repo, 'job.cancel')
     if (!gate.allow) {
       return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
     }
@@ -174,11 +167,10 @@ export function registerJobRoutes(app: Hono) {
     if (!authed) return c.json({ error: 'Authentication required' }, 401)
     const existing = getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
-    const gate = authorizeJobComplete(
+    const gate = authorizeRepoAction(
       authed.user,
       existing.namespace,
-      existing.repo,
-    )
+      existing.repo, 'job.complete')
     if (!gate.allow) {
       return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
     }
@@ -286,17 +278,16 @@ export function registerJobRoutes(app: Hono) {
         }
         const namespace = typeof j.namespace === 'string' ? j.namespace : ''
         const repo = typeof j.repo === 'string' ? j.repo : ''
-        const gate = authorizeJobComplete(authed.user, namespace, repo)
+        const gate = authorizeRepoAction(authed.user, namespace, repo, 'job.complete')
         if (!gate.allow) {
           return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
         }
         const existing = getJob(String(j.id || ''))
         if (existing) {
-          const gateExisting = authorizeJobComplete(
+          const gateExisting = authorizeRepoAction(
             authed.user,
             existing.namespace,
-            existing.repo,
-          )
+            existing.repo, 'job.complete')
           if (!gateExisting.allow) {
             return c.json({ error: gateExisting.reason ?? 'Forbidden' }, 403)
           }
@@ -372,11 +363,10 @@ export function registerJobRoutes(app: Hono) {
     for (const id of jobIds) {
       const existing = getJob(id)
       if (!existing) return c.json({ error: `Not found: ${id}` }, 404)
-      const gate = authorizeJobComplete(
+      const gate = authorizeRepoAction(
         authed.user,
         existing.namespace,
-        existing.repo,
-      )
+        existing.repo, 'job.complete')
       if (!gate.allow) {
         return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
       }

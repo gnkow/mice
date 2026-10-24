@@ -1,4 +1,4 @@
-import { hasRepoPermission, preparePrincipal } from './authz.js'
+import { hasRepoPermission } from './authz.js'
 import { isScopedCredential } from './principal.js'
 import {
   hasInstancePermission,
@@ -29,7 +29,6 @@ export function canReadEntity(
   ref: EntityRef,
   deps: MetaAuthzDeps = {},
 ): boolean {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) return true
   if (isInstanceAdmin(user) && !isScopedCredential(user)) return true
   switch (ref.type) {
@@ -60,7 +59,6 @@ export function canEditEntity(
   ref: EntityRef,
   deps: MetaAuthzDeps = {},
 ): boolean {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) return true
   if (isInstanceAdmin(user) && !isScopedCredential(user)) return true
   switch (ref.type) {

@@ -9,7 +9,6 @@ process.env.AUTH_DATA_DIR = dataDir
 
 const {
   appendAudit,
-  classifyPath,
   setAuditObserver,
   auditEventsToCsv,
   auditFacets,
@@ -17,6 +16,7 @@ const {
   queryAudit,
   queryAuditForExport,
 } = await import('./audit.js')
+const { classifyPath } = await import('./requestInterpretation.js')
 const { auditActionLabel, auditActionInfo, knownAuditActions } = await import(
   './auditLabels.js'
 )

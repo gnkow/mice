@@ -33,13 +33,7 @@ const { queryAudit } = await import('./audit.js')
 const { validateArity, appendLineage, queryLineage } = await import(
   './lineage.js'
 )
-const {
-  authorizeJobCancel,
-  authorizeJobComplete,
-  authorizeJobSubmit,
-  authorizeJobRead,
-  preparePrincipal,
-} = await import('./authz.js')
+const { authorizeRepoAction, preparePrincipal } = await import('./authz.js')
 const {
   createNamespaceAuthz,
   setRepoCollaborator,
@@ -294,13 +288,13 @@ describe('job authz', () => {
     setRepoCollaborator(ns, 'r1', reader, 'read')
     setRepoCollaborator(ns, 'r1', writer, 'write')
 
-    assert.equal(authorizeJobRead(reader, ns, 'r1').allow, true)
-    assert.equal(authorizeJobSubmit(reader, ns, 'r1').allow, false)
-    assert.equal(authorizeJobSubmit(writer, ns, 'r1').allow, true)
-    assert.equal(authorizeJobRead(writer, ns, 'r1').allow, true)
-    assert.equal(authorizeJobCancel(writer, ns, 'r1').allow, true)
-    assert.equal(authorizeJobComplete(writer, ns, 'r1').allow, true)
-    assert.equal(authorizeJobCancel(reader, ns, 'r1').allow, false)
+    assert.equal(authorizeRepoAction(reader, ns, 'r1', 'job.read').allow, true)
+    assert.equal(authorizeRepoAction(reader, ns, 'r1', 'job.submit').allow, false)
+    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.submit').allow, true)
+    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.read').allow, true)
+    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.cancel').allow, true)
+    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.complete').allow, true)
+    assert.equal(authorizeRepoAction(reader, ns, 'r1', 'job.cancel').allow, false)
   })
 
   it('custom role can grant job_complete without job_submit', () => {
@@ -321,8 +315,8 @@ describe('job authz', () => {
     if (!role.ok) return
     setRepoCollaborator(ns, 'r1', user, role.role.id)
     setAuthzEnforce(true)
-    assert.equal(authorizeJobComplete(user, ns, 'r1').allow, true)
-    assert.equal(authorizeJobSubmit(user, ns, 'r1').allow, false)
+    assert.equal(authorizeRepoAction(user, ns, 'r1', 'job.complete').allow, true)
+    assert.equal(authorizeRepoAction(user, ns, 'r1', 'job.submit').allow, false)
   })
 })
 

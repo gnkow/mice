@@ -50,7 +50,7 @@ Cross-cutting UI libs: [`lastBranch.ts`](../web/src/lib/lastBranch.ts) (remember
 
 ### 2.1 BFF proxy, authz and audit mapping
 
-[`auth/src/proxy.ts`](../auth/src/proxy.ts) proxies `/api/*` to oxen-server, rejects unclassifiable non-GET bodies, authorizes, then appends an audit event with `classifyPath` ([`audit.ts`](../auth/src/audit.ts)). Role mapping lives in [`authzPathMap.ts`](../auth/src/authzPathMap.ts) and `requiredRepoRoleForRequest` ([`authz.ts`](../auth/src/authz.ts)).
+[`auth/src/proxy.ts`](../auth/src/proxy.ts) proxies `/api/*` to oxen-server, rejects unclassifiable non-GET bodies, authorizes, then appends an audit event with `interpretRequest` ([`requestInterpretation.ts`](../auth/src/requestInterpretation.ts)). Role mapping lives in [`authzPathMap.ts`](../auth/src/authzPathMap.ts) and the `minRole` from `interpretRequest`.
 
 | Oxen route | Audit action | Min repo role |
 | --- | --- | --- |

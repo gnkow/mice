@@ -1,5 +1,4 @@
-import { classifyPath } from './audit.js'
-import { authzActionForPath, minRoleForAction } from './authzPathMap.js'
+import { interpretRequest } from './requestInterpretation.js'
 import {
   customNamespaceRoleIds,
   customRepoRoleIdsForUser,
@@ -56,7 +55,10 @@ function deny(reason: string, extra?: Partial<AuthzDecision>): AuthzDecision {
   return { allow: false, status: 403, reason, ...extra }
 }
 
-/** Prepare principal: bootstrap / dev grant. Call on login and before AuthZ. */
+/**
+ * Prepare principal: bootstrap / dev grant / group bootstrap. Writes state, so it runs
+ * once at authentication and login; authorization decisions are read-only.
+ */
 export function preparePrincipal(user: SessionUser): void {
   maybeBootstrapInstanceAdmin(user)
   maybeDevGrantAll(user)
@@ -64,14 +66,12 @@ export function preparePrincipal(user: SessionUser): void {
 }
 
 export function canSkipPendingGate(user: SessionUser): boolean {
-  preparePrincipal(user)
   if (isInstanceAdmin(user)) return true
   if (hasInstancePermission(user, 'create_namespace')) return true
   return false
 }
 
 export function isPendingUser(user: SessionUser): boolean {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) return false
   if (canSkipPendingGate(user)) return false
   return !userHasAnyGrant(user)
@@ -87,7 +87,6 @@ export function effectiveRepoRole(
   ns: string,
   repo: string,
 ): BasePermission {
-  preparePrincipal(user)
 
   let role: BasePermission = 'none'
   const nsRole = resolveNamespaceRole(ns, user)
@@ -154,7 +153,6 @@ export function hasRepoPermission(
   need: RepoRole,
   opts?: { method?: string; action?: string },
 ): { ok: boolean; effective: BasePermission; bypass: boolean } {
-  preparePrincipal(user)
   let effective = effectiveRepoRole(user, ns, repo)
   effective = capByPatScopes(user, ns, repo, effective)
   if (roleAtLeast(effective, need)) {
@@ -185,7 +183,6 @@ export function canManageRepoCollaborators(
   ns: string,
   repo: string,
 ): boolean {
-  preparePrincipal(user)
   if (isInstanceAdmin(user)) return true
   if (resolveNamespaceRole(ns, user) === 'owner') return true
   const check = hasRepoPermission(user, ns, repo, 'admin')
@@ -198,22 +195,6 @@ export function canManageRepoCollaborators(
   }
   if (check.bypass) return true
   return false
-}
-
-/** Minimum repo role for an oxen API call. */
-export function requiredRepoRoleForRequest(
-  method: string,
-  pathname: string,
-  action: string,
-): RepoRole | null {
-  const m = method.toUpperCase()
-  if (m === 'GET' || m === 'HEAD') return 'read'
-
-  const mapped = minRoleForAction(action)
-  if (mapped) return mapped
-  // Unknown mutating route: require admin (fail closed-ish)
-  if (m !== 'GET' && m !== 'HEAD') return 'admin'
-  return 'read'
 }
 
 function isPublicApiPath(pathname: string): boolean {
@@ -236,7 +217,6 @@ export type AuthorizeInput = {
  */
 export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
   const { user, via, method, pathname } = input
-  preparePrincipal(user)
 
   if (!isAuthzEnforce()) return allow()
 
@@ -254,10 +234,10 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
 
   if (isPublicApiPath(pathname)) return allow()
 
-  const classified = classifyPath(method, pathname)
-  let ns = classified.namespace ?? input.createNamespace
-  let repo = classified.repo ?? input.createRepo
-  const action = authzActionForPath(method, pathname, classified.action)
+  const interpreted = interpretRequest(method, pathname)
+  let ns = interpreted.namespace ?? input.createNamespace
+  let repo = interpreted.repo ?? input.createRepo
+  const action = interpreted.authzAction
 
   // List oxen namespace catalog — non-pending; proxy filters to visible ns.
   // Single-namespace GET requires membership or repo collab in that ns.
@@ -331,8 +311,7 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
     return deny('Unable to authorize path (not an allowlisted unscoped route)')
   }
 
-  const need = requiredRepoRoleForRequest(method, pathname, action)
-  if (!need) return allow()
+  const need = interpreted.minRole
 
   const check = hasRepoPermission(user, ns, repo, need, { method, action })
   if (check.ok) {
@@ -360,7 +339,6 @@ export function authorizeAuditQuery(
   ownedOnly?: string[]
   reason?: string
 } {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) {
     return { allow: true }
   }
@@ -400,7 +378,6 @@ export function authorizeLineageQuery(
   namespace?: string,
   repo?: string,
 ): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) {
     return { allow: true }
   }
@@ -430,7 +407,6 @@ export function authorizeLineageRebuild(
   namespace: string,
   repo: string,
 ): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) {
     return { allow: true }
   }
@@ -443,85 +419,44 @@ export function authorizeLineageRebuild(
   return { allow: false, reason: 'Requires lineage_rebuild on repository' }
 }
 
+export type RepoAction =
+  | 'job.submit'
+  | 'job.read'
+  | 'job.cancel'
+  | 'job.complete'
+  | 'workspace.read'
+  | 'workspace.write'
+
 /**
- * job.submit: dedicated fine (implied by write); custom roles may grant
- * job_submit below the write floor.
+ * Role floor, HTTP verb for fine-permission mapping and denial reason per action.
+ * Custom roles may grant the fine permission below the floor (jobs, workspaces).
  */
-export function authorizeJobSubmit(
-  user: SessionUser,
-  namespace: string,
-  repo: string,
-): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
-  if (!isAuthzEnforce()) return { allow: true }
-  const write = hasRepoPermission(user, namespace, repo, 'write', {
-    method: 'POST',
-    action: 'job.submit',
-  })
-  if (!write.ok) {
-    return { allow: false, reason: 'job.submit requires repository write or job_submit' }
-  }
-  return { allow: true }
+const REPO_ACTION_POLICY: Record<
+  RepoAction,
+  { need: RepoRole; method: string; reason: string }
+> = {
+  'job.submit': { need: 'write', method: 'POST', reason: 'job.submit requires repository write or job_submit' },
+  'job.read': { need: 'read', method: 'GET', reason: 'job.read requires repository read or job_read' },
+  'job.cancel': { need: 'write', method: 'POST', reason: 'job.cancel requires repository write or job_cancel' },
+  'job.complete': { need: 'write', method: 'POST', reason: 'job.complete requires repository write or job_complete' },
+  'workspace.read': { need: 'read', method: 'GET', reason: 'Requires repository read' },
+  'workspace.write': { need: 'write', method: 'POST', reason: 'Requires repository write' },
 }
 
-/** job.read: dedicated fine (implied by read). */
-export function authorizeJobRead(
+/** One decision for repo-scoped Mice actions (jobs, Mice Workspaces). */
+export function authorizeRepoAction(
   user: SessionUser,
   namespace: string,
   repo: string,
+  action: RepoAction,
 ): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) return { allow: true }
-  const read = hasRepoPermission(user, namespace, repo, 'read', {
-    method: 'GET',
-    action: 'job.read',
+  const policy = REPO_ACTION_POLICY[action]
+  const check = hasRepoPermission(user, namespace, repo, policy.need, {
+    method: policy.method,
+    action,
   })
-  if (!read.ok) {
-    return { allow: false, reason: 'job.read requires repository read or job_read' }
-  }
-  return { allow: true }
-}
-
-/** job.cancel: dedicated fine (implied by write); independent of job_submit. */
-export function authorizeJobCancel(
-  user: SessionUser,
-  namespace: string,
-  repo: string,
-): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
-  if (!isAuthzEnforce()) return { allow: true }
-  const check = hasRepoPermission(user, namespace, repo, 'write', {
-    method: 'POST',
-    action: 'job.cancel',
-  })
-  if (!check.ok) {
-    return {
-      allow: false,
-      reason: 'job.cancel requires repository write or job_cancel',
-    }
-  }
-  return { allow: true }
-}
-
-/** job.complete / publish: dedicated fine (implied by write). */
-export function authorizeJobComplete(
-  user: SessionUser,
-  namespace: string,
-  repo: string,
-): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
-  if (!isAuthzEnforce()) return { allow: true }
-  const check = hasRepoPermission(user, namespace, repo, 'write', {
-    method: 'POST',
-    action: 'job.complete',
-  })
-  if (!check.ok) {
-    return {
-      allow: false,
-      reason: 'job.complete requires repository write or job_complete',
-    }
-  }
-  return { allow: true }
+  return check.ok ? { allow: true } : { allow: false, reason: policy.reason }
 }
 
 /** Own PAT mint/list/revoke when enforce is on. */
@@ -529,7 +464,6 @@ export function authorizeManageOwnTokens(user: SessionUser): {
   allow: boolean
   reason?: string
 } {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) return { allow: true }
   if (isInstanceAdmin(user) || hasInstancePermission(user, 'manage_own_tokens')) {
     return { allow: true }
@@ -542,7 +476,6 @@ export function authorizeCliDeviceApprove(user: SessionUser): {
   allow: boolean
   reason?: string
 } {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) return { allow: true }
   if (
     isInstanceAdmin(user) ||
@@ -553,32 +486,8 @@ export function authorizeCliDeviceApprove(user: SessionUser): {
   return { allow: false, reason: 'Missing permission cli_device_approve' }
 }
 
-/** Mice workspaces (/auth/workspaces, /auth/checkouts): read = repo read, write = repo write (fine `workspaces`). */
-export function authorizeWorkspaceRead(
-  user: SessionUser,
-  namespace: string,
-  repo: string,
-): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
-  if (!isAuthzEnforce()) return { allow: true }
-  const r = hasRepoPermission(user, namespace, repo, 'read', { method: 'GET', action: 'workspace.read' })
-  return r.ok ? { allow: true } : { allow: false, reason: 'Requires repository read' }
-}
-
-export function authorizeWorkspaceWrite(
-  user: SessionUser,
-  namespace: string,
-  repo: string,
-): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
-  if (!isAuthzEnforce()) return { allow: true }
-  const r = hasRepoPermission(user, namespace, repo, 'write', { method: 'POST', action: 'workspace.write' })
-  return r.ok ? { allow: true } : { allow: false, reason: 'Requires repository write' }
-}
-
 /** Store-wide operations (capabilities, GC, checkout delete): instance admin, never PAT-scoped. */
 export function authorizeStoreAdmin(user: SessionUser): { allow: boolean; reason?: string } {
-  preparePrincipal(user)
   if (!isAuthzEnforce()) return { allow: true }
   if (isInstanceAdmin(user) && !isScopedCredential(user)) return { allow: true }
   return { allow: false, reason: 'Requires instance admin' }

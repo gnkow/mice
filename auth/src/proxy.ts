@@ -1,19 +1,9 @@
 import type { Context } from 'hono'
 import { env } from './env.js'
-import {
-  hasAuthorQueryParam,
-  isAuthorFreeBinaryRoute,
-  injectAuthorFormData,
-  injectAuthorJson,
-} from './author.js'
 import type { SessionUser } from './session.js'
 import {
   actorFromUser,
   appendAudit,
-  classifyPath,
-  extractMessageFromForm,
-  extractMessageFromJson,
-  extractRepoCreateFromJson,
   type AuditVia,
 } from './audit.js'
 import {
@@ -24,6 +14,8 @@ import {
   type FileEntrySnapshot,
 } from './lineage.js'
 import { authorizeApiRequest } from './authz.js'
+import { interpretRequest } from './requestInterpretation.js'
+import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
 import {
   ensureNamespaceForCreate,
@@ -87,6 +79,17 @@ function rejectUnclassifiedWrite(
   )
 }
 
+let upstreamFetch: typeof fetch = (input, init) => fetch(input, init)
+
+/** Swap the upstream transport (tests); returns a function restoring the previous one. */
+export function setUpstreamFetch(next: typeof fetch): () => void {
+  const prev = upstreamFetch
+  upstreamFetch = next
+  return () => {
+    upstreamFetch = prev
+  }
+}
+
 export type ProxyAuth = {
   user: SessionUser
   via: AuditVia
@@ -113,101 +116,17 @@ export async function proxyToOxen(
   }
   const reqHeaders = filterRequestHeaders(c.req.raw.headers)
 
-  let body: BodyInit | undefined
-  const contentType = (c.req.header('content-type') ?? '')
-    .split(';')[0]!
-    .trim()
-    .toLowerCase()
-  let message: string | undefined
-  let createNs: string | undefined
-  let bodyWorkspaceId: string | undefined
-  let createRepo: string | undefined
-  let moveNewPath: string | undefined
-  let copyFrom: string | undefined
-  let restoreFrom: string | undefined
-  // Rejection is applied after authorization so unauthorized Principals get 403.
-  let rejection: string | undefined
-
-  if (method !== 'GET' && method !== 'HEAD') {
-    if (contentType === 'multipart/form-data') {
-      let form: FormData | undefined
-      try {
-        form = await c.req.formData()
-      } catch {
-        rejection = 'multipart_malformed'
-      }
-      if (form) {
-        message = extractMessageFromForm(form)
-        const copyField = form.get('copy_from')
-        if (typeof copyField === 'string' && copyField.trim()) {
-          copyFrom = copyField.trim().replace(/^\/+|\/+$/g, '')
-        }
-        const restoreField = form.get('restore_from')
-        if (typeof restoreField === 'string' && restoreField.trim()) {
-          restoreFrom = restoreField.trim()
-        }
-        // Mice-only hints for lineage; oxen-server must not see them.
-        form.delete('copy_from')
-        form.delete('restore_from')
-        body = injectAuthorFormData(form, user)
-        // Let fetch set multipart boundary
-        reqHeaders.delete('content-type')
-      }
-    } else if (contentType === 'application/json') {
-      const text = await c.req.text()
-      if (text) {
-        let parsed: Record<string, unknown> | undefined
-        try {
-          const value: unknown = JSON.parse(text)
-          if (value && typeof value === 'object' && !Array.isArray(value)) {
-            parsed = value as Record<string, unknown>
-          } else {
-            rejection = 'json_not_object'
-          }
-        } catch {
-          rejection = 'json_malformed'
-        }
-        if (parsed) {
-          message = extractMessageFromJson(parsed)
-          const created = extractRepoCreateFromJson(parsed)
-          createNs = created.namespace
-          createRepo = created.repo
-          if (typeof parsed.workspace_id === 'string' && parsed.workspace_id.trim()) {
-            bodyWorkspaceId = parsed.workspace_id.trim()
-          }
-          if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
-            moveNewPath = parsed.new_path.trim()
-          }
-          body = JSON.stringify(injectAuthorJson(parsed, user))
-          reqHeaders.set('content-type', 'application/json')
-        }
-      }
-    } else if (contentType === 'application/octet-stream') {
-      body = await c.req.arrayBuffer()
-      if (!isAuthorFreeBinaryRoute(method, pathname)) rejection = 'binary_on_unlisted_route'
-      reqHeaders.set('content-type', 'application/octet-stream')
-    } else if (contentType === 'application/gzip') {
-      body = await c.req.arrayBuffer()
-      if (!isAuthorFreeBinaryRoute(method, pathname)) rejection = 'binary_on_unlisted_route'
-      reqHeaders.set('content-type', 'application/gzip')
-    } else {
-      // Author-bearing shapes are JSON/multipart; octet-stream and gzip are the author-free
-      // allowlist. Any other non-empty body could smuggle author fields.
-      const buf = await c.req.arrayBuffer()
-      if (buf.byteLength) {
-        rejection = 'unclassified_body'
-      }
-    }
-  }
-
-  if (
-    !rejection &&
-    method !== 'GET' &&
-    method !== 'HEAD' &&
-    hasAuthorQueryParam(url.searchParams)
-  ) {
-    rejection = 'author_in_query'
-  }
+  const {
+    body,
+    message,
+    createNs,
+    createRepo,
+    bodyWorkspaceId,
+    moveNewPath,
+    copyFrom,
+    restoreFrom,
+    rejection,
+  } = await interpretRequestBody(c, user, method, pathname, url.searchParams, reqHeaders)
 
   const decision = authorizeApiRequest({
     user,
@@ -232,7 +151,7 @@ export async function proxyToOxen(
   }
 
   if (rejection) {
-    const classified = classifyPath(method, pathname)
+    const classified = interpretRequest(method, pathname)
     return rejectUnclassifiedWrite(user, via, method, pathname, rejection, {
       namespace: classified.namespace ?? createNs,
       repo: classified.repo ?? createRepo,
@@ -286,7 +205,7 @@ export async function proxyToOxen(
     }
   }
 
-  const upstream = await fetch(
+  const upstream = await upstreamFetch(
     `${env.oxenUpstream}${pathname}${url.search}`,
     {
       method,
@@ -334,7 +253,7 @@ export async function proxyToOxen(
   }
 
   if (method !== 'GET' && method !== 'HEAD') {
-    const classified = classifyPath(method, pathname)
+    const classified = interpretRequest(method, pathname)
     const ns = classified.namespace ?? createNs
     const repo = classified.repo ?? createRepo
     const fileOp = classifyFileLineageOp(method, pathname, {
