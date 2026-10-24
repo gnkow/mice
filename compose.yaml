@@ -35,6 +35,7 @@ services:
       KC_HEALTH_ENABLED: "true"
     volumes:
       - ./auth/keycloak/realm-mice.json:/opt/keycloak/data/import/realm-mice.json:ro
+      - ./auth/keycloak/realm-partner-saml.json:/opt/keycloak/data/import/realm-partner-saml.json:ro
     networks:
       - mice
 

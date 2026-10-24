@@ -1,0 +1,47 @@
+{
+  "realm": "partner-saml",
+  "enabled": true,
+  "sslRequired": "none",
+  "loginWithEmailAllowed": true,
+  "clients": [
+    {
+      "clientId": "http://localhost:8180/realms/mice",
+      "name": "Mice (SAML broker SP)",
+      "enabled": true,
+      "protocol": "saml",
+      "redirectUris": ["http://localhost:8180/realms/mice/broker/partner-saml/endpoint*"],
+      "attributes": {
+        "saml.client.signature": "false",
+        "saml.server.signature": "false",
+        "saml.assertion.signature": "false",
+        "saml.force.post.binding": "true",
+        "saml_name_id_format": "email",
+        "saml_assertion_consumer_url_post": "http://localhost:8180/realms/mice/broker/partner-saml/endpoint",
+        "saml_single_logout_service_url_post": "http://localhost:8180/realms/mice/broker/partner-saml/endpoint"
+      },
+      "protocolMappers": [
+        { "name": "email", "protocol": "saml", "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "email", "attribute.name": "email", "attribute.nameformat": "Basic" } },
+        { "name": "firstName", "protocol": "saml", "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "firstName", "attribute.name": "firstName", "attribute.nameformat": "Basic" } },
+        { "name": "lastName", "protocol": "saml", "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "lastName", "attribute.name": "lastName", "attribute.nameformat": "Basic" } },
+        { "name": "groups", "protocol": "saml", "protocolMapper": "saml-group-membership-mapper",
+          "config": { "attribute.name": "groups", "attribute.nameformat": "Basic", "full.path": "false" } }
+      ]
+    }
+  ],
+  "groups": [{ "name": "partner-staff", "path": "/partner-staff" }],
+  "users": [
+    {
+      "username": "partner",
+      "enabled": true,
+      "email": "partner@partner.example",
+      "emailVerified": true,
+      "firstName": "Partner",
+      "lastName": "User",
+      "groups": ["/partner-staff"],
+      "credentials": [{ "type": "password", "value": "partner", "temporary": false }]
+    }
+  ]
+}
