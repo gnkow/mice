@@ -26,12 +26,15 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
+        "backchannel.logout.url": "http://auth:8080/auth/backchannel-logout",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false",
         "post.logout.redirect.uris": "http://localhost:5173/login##http://127.0.0.1:5173/login##http://localhost:5173/*##http://127.0.0.1:5173/*"
       },
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
-      "frontchannelLogout": true
+      "frontchannelLogout": false
     }
   ],
   "groups": [

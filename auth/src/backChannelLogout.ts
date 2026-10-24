@@ -11,7 +11,10 @@ const LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout'
  * PATs are untouched: logout is not offboarding.
  */
 export async function backChannelLogout(c: Context): Promise<Response> {
-  const reject = (why: string) => c.json({ error: 'invalid_request', error_description: why }, 400)
+  const reject = (why: string) => {
+    console.warn('[mice-auth] back-channel logout rejected:', why)
+    return c.json({ error: 'invalid_request', error_description: why }, 400)
+  }
   const form = await c.req.parseBody().catch(() => ({}))
   const token = (form as Record<string, unknown>).logout_token
   if (typeof token !== 'string' || !token) return reject('logout_token required')
@@ -19,8 +22,8 @@ export async function backChannelLogout(c: Context): Promise<Response> {
   let payload: Record<string, unknown>
   try {
     payload = await verifyIdpJwt(token)
-  } catch {
-    return reject('logout_token failed verification')
+  } catch (e) {
+    return reject(`logout_token failed verification: ${e instanceof Error ? e.message : e}`)
   }
   const events = payload.events as Record<string, unknown> | undefined
   if (!events || typeof events !== 'object' || !(LOGOUT_EVENT in events)) {
