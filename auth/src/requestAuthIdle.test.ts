@@ -10,7 +10,7 @@ process.env.SESSION_IDLE_SEC = '600'
 process.env.SESSION_TTL_SEC = '3600'
 
 const { Hono } = await import('hono')
-const { sessionActivity } = await import('./sessionActivity.js')
+const { applyGlobalGuards } = await import('./requireAuth.js')
 const { sealSession, getSession } = await import('./session.js')
 const { env } = await import('./env.js')
 
@@ -18,7 +18,7 @@ const user = { sub: 'alice', iss: 'test', email: 'a@x.io', name: 'Alice' }
 const now = () => Math.floor(Date.now() / 1000)
 
 const app = new Hono()
-app.use('*', sessionActivity)
+applyGlobalGuards(app)
 app.get('/me', async (c) => c.json({ ok: !!(await getSession(c)) }))
 app.get('/auth/notifications/count', (c) => c.json({ ok: true }))
 

@@ -1,12 +1,12 @@
 import { join } from 'node:path'
 import { isInstanceAdmin } from './authzStore.js'
 import { env } from './env.js'
+import { principalKey } from './principal.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
 
 type Store = { version: 1; notBefore: Record<string, number> }
 
 const path = () => join(env.dataDir, 'session-revocations.json')
-const keyOf = (p: { iss: string; sub: string }) => `${p.iss}\0${p.sub}`
 const nowSec = () => Math.floor(Date.now() / 1000)
 
 function read(): Store {
@@ -18,12 +18,12 @@ function read(): Store {
 export function revokeSessionsFor(principal: { iss: string; sub: string }): number {
   const s = read()
   const cutoff = nowSec()
-  s.notBefore[keyOf(principal)] = cutoff
+  s.notBefore[principalKey(principal)] = cutoff
   writeJsonFile(path(), s)
   return cutoff
 }
 
-/** Instance-admin action: revoke every Session of `target`. */
+/** Instance-admin action: revoke every Session and PAT issued to `target` so far. */
 export function revokeSessions(
   actor: { iss: string; sub: string },
   target: { iss: string; sub: string },
@@ -33,11 +33,14 @@ export function revokeSessions(
   return { ok: true }
 }
 
-/** True when the Session (first issued at `sessionStart`) predates a revocation. */
-export function isSessionRevoked(
+/**
+ * True when a credential (Session cookie or PAT) first issued at `issuedAt` (epoch s)
+ * predates the Principal's revocation cut-off. Every credential type must pass this check.
+ */
+export function isCredentialRevoked(
   principal: { iss: string; sub: string },
-  sessionStart: number,
+  issuedAt: number,
 ): boolean {
-  const cutoff = read().notBefore[keyOf(principal)]
-  return cutoff !== undefined && sessionStart <= cutoff
+  const cutoff = read().notBefore[principalKey(principal)]
+  return cutoff !== undefined && issuedAt <= cutoff
 }

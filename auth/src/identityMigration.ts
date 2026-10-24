@@ -1,11 +1,11 @@
 import { join } from 'node:path'
 import { env } from './env.js'
+import { isLegacyPrincipalKey, qualifyLegacyKey } from './principal.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'
 
 type Json = Record<string, any>
 
-const isLegacyKey = (k: unknown): k is string =>
-  typeof k === 'string' && k !== '' && !k.includes('\0')
+const isLegacyKey = isLegacyPrincipalKey
 
 /**
  * One-off rewrite of authz stores from bare `sub` keys to `iss\0sub`, attributing legacy
@@ -14,7 +14,7 @@ const isLegacyKey = (k: unknown): k is string =>
  */
 export function migrateIdentityKeys(issuer: string): number {
   if (!issuer) return 0
-  const qualify = (k: string) => `${issuer}\0${k}`
+  const qualify = (k: string) => qualifyLegacyKey(issuer, k)
   let rewritten = 0
 
   const rekeyMap = (map: Json | undefined): Json | undefined => {

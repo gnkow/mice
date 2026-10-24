@@ -2,18 +2,12 @@ import { serve } from '@hono/node-server'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { assertProductionStartup } from './startupGate.js'
-import { revokeSessions } from './sessionRevocation.js'
+import { revokeSessions } from './credentialRevocation.js'
 import { runIdentityMigration } from './identityMigration.js'
 import { env, oidcConfigured } from './env.js'
 import { applyGlobalGuards, requireAuth } from './requireAuth.js'
-import {
-  buildAuthorizeUrl,
-  buildEndSessionUrl,
-  exchangeCode,
-  loadOidcConfig,
-  pkceChallenge,
-  randomString,
-} from './oidc.js'
+import { buildEndSessionUrl } from './oidc.js'
+import { completeLogin, startLogin } from './loginFlow.js'
 import { proxyToOxen } from './proxy.js'
 import {
   clearSessionCookie,
@@ -163,21 +157,6 @@ import {
 const PKCE_COOKIE = 'mice_oidc_pkce'
 /** After Mice logout, next /auth/login must show IdP credentials (no silent SSO). */
 const PROMPT_LOGIN_COOKIE = 'mice_prompt_login'
-
-type PkceState = {
-  verifier: string
-  state: string
-  nonce: string
-  /** Optional relative path to return to after OIDC (e.g. /cli/device?user_code=…). */
-  next?: string
-}
-
-function safeReturnPath(raw: string | undefined | null): string | undefined {
-  if (!raw) return undefined
-  if (!raw.startsWith('/') || raw.startsWith('//')) return undefined
-  if (raw.startsWith('/login') || raw.startsWith('/auth/')) return undefined
-  return raw
-}
 
 assertProductionStartup()
 runIdentityMigration()
@@ -1003,93 +982,42 @@ app.get('/auth/login', async (c) => {
   if (!oidcConfigured()) {
     return c.json({ error: 'OIDC is not configured' }, 503)
   }
-  await loadOidcConfig()
-  const verifier = randomString(32)
-  const state = randomString(16)
-  const nonce = randomString(16)
-  const challenge = await pkceChallenge(verifier)
-  const next = safeReturnPath(c.req.query('next'))
-  const pkce: PkceState = {
-    verifier,
-    state,
-    nonce,
-    ...(next ? { next } : {}),
-  }
-  setCookie(c, PKCE_COOKIE, Buffer.from(JSON.stringify(pkce)).toString('base64url'), {
+  const { pkceCookie, authorizeUrl } = await startLogin(c.req.query('next'))
+  setCookie(c, PKCE_COOKIE, pkceCookie, {
     httpOnly: true,
     secure: env.cookieSecure,
     sameSite: 'Lax',
     path: '/',
     maxAge: 600,
   })
-  // Always prompt=login so Sign in with SSO shows the IdP credential form
-  // (covers Keycloak SSO cookies that survived Mice-only logout).
   deleteCookie(c, PROMPT_LOGIN_COOKIE, { path: '/' })
-  return c.redirect(
-    buildAuthorizeUrl({
-      state,
-      nonce,
-      codeChallenge: challenge,
-      promptLogin: true,
-    }),
-  )
+  return c.redirect(authorizeUrl)
 })
 
 app.get('/auth/callback', async (c) => {
   if (!oidcConfigured()) return c.json({ error: 'OIDC is not configured' }, 503)
-  const code = c.req.query('code')
-  const state = c.req.query('state')
-  const err = c.req.query('error')
-  if (err) {
-    return c.html(`<p>Login failed: ${err}</p><p><a href="/auth/login">Retry</a></p>`, 400)
-  }
-  const raw = getCookie(c, PKCE_COOKIE)
+  const pkceCookie = getCookie(c, PKCE_COOKIE)
   deleteCookie(c, PKCE_COOKIE, {
     path: '/',
     secure: env.cookieSecure,
     sameSite: 'Lax',
   })
-  if (!code || !state || !raw) {
-    return c.html('<p>Missing OIDC state. <a href="/auth/login">Retry</a></p>', 400)
-  }
-  let pkce: PkceState
-  try {
-    pkce = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as PkceState
-  } catch {
-    return c.html('<p>Invalid OIDC state. <a href="/auth/login">Retry</a></p>', 400)
-  }
-  if (pkce.state !== state) {
-    return c.html('<p>State mismatch. <a href="/auth/login">Retry</a></p>', 400)
-  }
-  try {
-    const user = await exchangeCode({
-      code,
-      codeVerifier: pkce.verifier,
-      nonce: pkce.nonce,
-    })
-    const sessionUser: SessionUser = {
-      sub: user.sub,
-      iss: user.iss,
-      email: user.email,
-      ...(user.emailVerified ? { emailVerified: true } : {}),
-      name: user.name,
-      idToken: user.idToken,
-      ...(user.authTime !== undefined ? { authTime: user.authTime } : {}),
-      ...(user.groups.length ? { groups: user.groups } : {}),
-    }
-    preparePrincipal(sessionUser)
-    rememberNotificationUser(sessionUser)
-    await setSessionCookie(c, sessionUser)
-    auditMutation(c, sessionUser, 'session', {
-      action: 'auth.login',
-      message: 'Signed in via SSO',
-    })
-    const dest = safeReturnPath(pkce.next) ?? '/'
-    return c.redirect(dest)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'login failed'
-    return c.html(`<p>${msg}</p><p><a href="/auth/login">Retry</a></p>`, 500)
-  }
+  const result = await completeLogin({
+    code: c.req.query('code'),
+    state: c.req.query('state'),
+    error: c.req.query('error'),
+    pkceCookie,
+  })
+  if (!result.ok) return c.html(result.html, result.status)
+  const sessionUser = result.user
+  preparePrincipal(sessionUser)
+  rememberNotificationUser(sessionUser)
+  await setSessionCookie(c, sessionUser)
+  auditMutation(c, sessionUser, 'session', {
+    action: 'auth.login',
+    message: 'Signed in via SSO',
+  })
+  return c.redirect(result.dest)
 })
 
 async function finishLogout(c: Parameters<typeof getSession>[0]) {

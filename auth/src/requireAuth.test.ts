@@ -12,7 +12,7 @@ const { Hono } = await import('hono')
 const { applyGlobalGuards, requireAuth } = await import('./requireAuth.js')
 const { sealSession } = await import('./session.js')
 const { createPat } = await import('./tokens.js')
-const { revokeSessions } = await import('./sessionRevocation.js')
+const { revokeSessions } = await import('./credentialRevocation.js')
 const { maybeBootstrapInstanceAdmin } = await import('./authzStore.js')
 const { env } = await import('./env.js')
 

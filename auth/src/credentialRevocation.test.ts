@@ -9,7 +9,7 @@ process.env.SESSION_SECRET = 'test-session-secret-for-revoke'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@x.io'
 
 const { sealSession, openSession } = await import('./session.js')
-const { revokeSessions } = await import('./sessionRevocation.js')
+const { revokeSessions } = await import('./credentialRevocation.js')
 const { createPat, resolvePat } = await import('./tokens.js')
 const authz = await import('./authzStore.js')
 

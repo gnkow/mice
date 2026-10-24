@@ -1,3 +1,4 @@
+import { principalKey, parsePrincipalKey } from './principal.js'
 export type NamespaceRole = 'owner' | 'member'
 
 export type RepoRole = 'read' | 'triage' | 'write' | 'maintain' | 'admin'
@@ -75,15 +76,8 @@ export type CollaboratorPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: CollaboratorRoleRef }
   | { kind: 'group'; group: string; role: CollaboratorRoleRef }
 
-export function userKey(user: UserKey): string {
-  return `${user.iss}\0${user.sub}`
-}
-
-export function parseUserKey(key: string): UserKey {
-  const i = key.indexOf('\0')
-  if (i < 0) return { iss: '', sub: key }
-  return { iss: key.slice(0, i), sub: key.slice(i + 1) }
-}
+export const userKey = principalKey
+export const parseUserKey = parsePrincipalKey
 
 /** Normalize IdP group name for storage and matching (lowercase, trimmed). */
 export function normalizeGroup(name: string): string {

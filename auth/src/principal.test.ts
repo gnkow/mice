@@ -12,7 +12,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS =
 process.env.AUTHZ_GROUP_BOOTSTRAP = '{}'
 
 const { maybeBootstrapInstanceAdmin, isInstanceAdmin } = await import('./authzStore.js')
-const { matchesIdentityEntry } = await import('./identityMatch.js')
+const { matchesIdentityEntry } = await import('./principal.js')
 const { migrateIdentityKeys } = await import('./identityMigration.js')
 
 const reset = () => writeFileSync(join(dataDir, 'instance-admins.json'), '')

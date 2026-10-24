@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { env } from './env.js'
-import { isSessionRevoked } from './sessionRevocation.js'
+import { isCredentialRevoked } from './credentialRevocation.js'
 import type { PatScope, SessionUser } from './session.js'
 
 export type PatSource = 'cli-login' | 'manual'
@@ -180,7 +180,7 @@ export function resolvePat(rawBearer: string): SessionUser | null {
   const store = readStore()
   const rec = store.tokens.find((t) => t.tokenHash === tokenHash)
   if (!rec || isExpired(rec)) return null
-  if (isSessionRevoked(rec, Math.floor(Date.parse(rec.createdAt) / 1000))) return null
+  if (isCredentialRevoked(rec, Math.floor(Date.parse(rec.createdAt) / 1000))) return null
   if (!rec.lastUsedAt || Date.now() - Date.parse(rec.lastUsedAt) >= LAST_USED_DEBOUNCE_MS) {
     rec.lastUsedAt = new Date(Date.now()).toISOString()
     writeStore(store)

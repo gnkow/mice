@@ -1,4 +1,4 @@
-import { matchesIdentityEntry } from './identityMatch.js'
+import { matchesIdentityEntry } from './principal.js'
 import { join } from 'node:path'
 import { env } from './env.js'
 import { readJsonFile, writeJsonFile } from './jsonStore.js'

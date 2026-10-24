@@ -1,5 +1,5 @@
 import { env } from './env.js'
-import { matchesIdentityEntry } from './identityMatch.js'
+import { matchesIdentityEntry } from './principal.js'
 import type { SessionUser } from './session.js'
 import {
   createNamespaceAuthz,

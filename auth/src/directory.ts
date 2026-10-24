@@ -14,6 +14,7 @@ import {
   namespacesWithCapability,
 } from './authzStore.js'
 import { normalizeGroup } from './authzTypes.js'
+import { principalKey } from './principal.js'
 import type { SessionUser } from './session.js'
 
 export type DirectoryUserHit = {
@@ -127,7 +128,7 @@ export function searchStoreDirectory(
     email?: string
     name?: string
   }) {
-    const key = `${u.iss}\0${u.sub}`
+    const key = principalKey(u)
     if (users.has(key)) return
     users.set(key, {
       kind: 'user',
@@ -310,7 +311,7 @@ function mergeHits(
   const out: DirectoryHit[] = []
   for (const h of [...primary, ...secondary]) {
     const key =
-      h.kind === 'user' ? `u:${h.iss}\0${h.sub}` : `g:${normalizeGroup(h.group)}`
+      h.kind === 'user' ? `u:${principalKey(h)}` : `g:${normalizeGroup(h.group)}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push(h)
