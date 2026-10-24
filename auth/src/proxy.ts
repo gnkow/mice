@@ -94,7 +94,10 @@ export async function proxyToOxen(
   const reqHeaders = filterRequestHeaders(c.req.raw.headers)
 
   let body: BodyInit | undefined
-  const contentType = c.req.header('content-type') ?? ''
+  const contentType = (c.req.header('content-type') ?? '')
+    .split(';')[0]!
+    .trim()
+    .toLowerCase()
   let message: string | undefined
   let createNs: string | undefined
   let bodyWorkspaceId: string | undefined
@@ -104,8 +107,13 @@ export async function proxyToOxen(
   let restoreFrom: string | undefined
 
   if (method !== 'GET' && method !== 'HEAD') {
-    if (contentType.includes('multipart/form-data')) {
-      const form = await c.req.formData()
+    if (contentType === 'multipart/form-data') {
+      let form: FormData
+      try {
+        form = await c.req.formData()
+      } catch {
+        return rejectUnclassifiedWrite(user, via, method, pathname, 'multipart_malformed')
+      }
       message = extractMessageFromForm(form)
       const copyField = form.get('copy_from')
       if (typeof copyField === 'string' && copyField.trim()) {
@@ -121,7 +129,7 @@ export async function proxyToOxen(
       body = injectAuthorFormData(form, user)
       // Let fetch set multipart boundary
       reqHeaders.delete('content-type')
-    } else if (contentType.includes('application/json')) {
+    } else if (contentType === 'application/json') {
       const text = await c.req.text()
       if (text) {
         let parsed: Record<string, unknown>
@@ -147,10 +155,10 @@ export async function proxyToOxen(
         body = JSON.stringify(injectAuthorJson(parsed, user))
         reqHeaders.set('content-type', 'application/json')
       }
-    } else if (contentType.includes('application/octet-stream')) {
+    } else if (contentType === 'application/octet-stream') {
       body = await c.req.arrayBuffer()
       reqHeaders.set('content-type', 'application/octet-stream')
-    } else if (contentType.includes('application/gzip')) {
+    } else if (contentType === 'application/gzip') {
       body = await c.req.arrayBuffer()
       reqHeaders.set('content-type', 'application/gzip')
     } else {

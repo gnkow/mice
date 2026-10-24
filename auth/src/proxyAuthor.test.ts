@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, before, beforeEach, describe, it } from 'node:test'
+import { after, beforeEach, describe, it } from 'node:test'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-proxy-author-'))
 
@@ -57,9 +57,6 @@ function send(
 }
 
 describe('proxy author injection fails closed', () => {
-  before(() => {
-    received = []
-  })
   beforeEach(() => {
     received = []
   })
@@ -77,6 +74,44 @@ describe('proxy author injection fails closed', () => {
     const sent = JSON.parse(received[0]!.body) as Record<string, string>
     assert.equal(sent.email, 'alice@example.com')
     assert.equal(sent.name, 'Alice')
+  })
+
+  it('injects the Principal as author on a multipart write', async () => {
+    const form = new FormData()
+    form.set('name', 'forged')
+    form.set('email', 'forged@x.io')
+    form.set('file', new Blob(['x']), 'a.txt')
+    const res = await app.request('/api/repos/a/b/file/main/a.txt', {
+      method: 'PUT',
+      body: form,
+    })
+    assert.equal(res.status, 200)
+    // The proxy first GETs the prior file entry for lineage; the PUT is the write.
+    const put = received.find((r) => r.method === 'PUT')!
+    assert.match(put.body, /alice@example\.com/)
+    assert.doesNotMatch(put.body, /forged@x\.io/)
+  })
+
+  it('rejects malformed multipart with 400 and sends nothing upstream', async () => {
+    const res = await send('/api/repos/a/b/file/main/a.txt', {
+      method: 'PUT',
+      contentType: 'multipart/form-data; boundary=zzz',
+      body: 'not a multipart body',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(received.length, 0)
+  })
+
+  it('accepts media types regardless of case and parameters', async () => {
+    const res = await send('/api/repos/a/b/branches', {
+      contentType: 'Application/JSON; charset=utf-8',
+      body: JSON.stringify({ name: 'forged', email: 'forged@x.io', message: 'm' }),
+    })
+    assert.equal(res.status, 200)
+    assert.equal(
+      (JSON.parse(received[0]!.body) as Record<string, string>).email,
+      'alice@example.com',
+    )
   })
 
   it('rejects malformed JSON with 400 and sends nothing upstream', async () => {
@@ -141,12 +176,14 @@ describe('proxy author injection fails closed', () => {
   })
 
   it('audits the rejection', async () => {
+    const before = queryAudit({ action: 'request.rejected', limit: 100 }).events.length
     await send('/api/repos/a/b/branches', {
       contentType: 'application/json',
       body: 'not json',
     })
-    const events = queryAudit({ action: 'request.rejected', limit: 10 }).events
-    assert.ok(events.length >= 1)
+    const events = queryAudit({ action: 'request.rejected', limit: 100 }).events
+    assert.equal(events.length, before + 1)
     assert.equal(events[0]!.status, 400)
+    assert.equal(events[0]!.actor.sub, 'alice')
   })
 })
