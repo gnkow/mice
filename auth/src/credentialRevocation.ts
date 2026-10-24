@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { env } from './env.js'
 import { principalKey } from './principal.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { defineStore } from './typedStore.js'
 
 /** `notBefore` is the full cut-off (Sessions and PATs); `sessionsNotBefore` ends Sessions only. */
 type Store = {
@@ -11,13 +11,12 @@ type Store = {
 }
 type CredentialKind = 'session' | 'pat'
 
-const path = () => join(env.dataDir, 'session-revocations.json')
+const store = defineStore<Store>({
+  file: () => join(env.dataDir, 'session-revocations.json'),
+  empty: () => ({ version: 1, notBefore: {} }),
+  valid: (raw) => (raw as Store | null)?.version === 1 && !!(raw as Store).notBefore,
+})
 const nowSec = () => Math.floor(Date.now() / 1000)
-
-function read(): Store {
-  const s = readJsonFile<Store | null>(path(), null)
-  return s && s.version === 1 && s.notBefore ? s : { version: 1, notBefore: {} }
-}
 
 function raise(table: Record<string, number>, key: string, cutoff: number): number {
   const next = Math.max(table[key] ?? 0, cutoff)
@@ -27,10 +26,7 @@ function raise(table: Record<string, number>, key: string, cutoff: number): numb
 
 /** Invalidate every Session and PAT of a Principal issued up to now. Returns the cut-off (epoch s). */
 export function revokeSessionsFor(principal: { iss: string; sub: string }): number {
-  const s = read()
-  const cutoff = raise(s.notBefore, principalKey(principal), nowSec())
-  writeJsonFile(path(), s)
-  return cutoff
+  return store.update((s) => raise(s.notBefore, principalKey(principal), nowSec()))
 }
 
 /** Invalidate Sessions only; PATs stay valid. Returns the cut-off (epoch s). */
@@ -38,11 +34,10 @@ export function revokeSessionsOnlyFor(
   principal: { iss: string; sub: string },
   at: number = nowSec(),
 ): number {
-  const s = read()
-  s.sessionsNotBefore ??= {}
-  const cutoff = raise(s.sessionsNotBefore, principalKey(principal), at)
-  writeJsonFile(path(), s)
-  return cutoff
+  return store.update((s) => {
+    s.sessionsNotBefore ??= {}
+    return raise(s.sessionsNotBefore, principalKey(principal), at)
+  })
 }
 
 /**
@@ -54,7 +49,7 @@ export function isCredentialRevoked(
   issuedAt: number,
   kind: CredentialKind,
 ): boolean {
-  const s = read()
+  const s = store.read()
   const key = principalKey(principal)
   const full = s.notBefore[key]
   const sessionsOnly = kind === 'session' ? s.sessionsNotBefore?.[key] : undefined

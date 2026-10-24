@@ -1,19 +1,24 @@
 import { join } from 'node:path'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { defineStore } from './typedStore.js'
 import { emitNotification } from './notifications.js'
 import { getServicePrincipal } from './servicePrincipals.js'
 import { listServicePats } from './tokens.js'
 
 const DAY_MS = 86_400_000
-const statePath = () => join(env.dataDir, 'service-pat-expiry-notified.json')
+/** PAT id -> ISO time the owner was notified. */
+const store = defineStore<Record<string, string>>({
+  file: () => join(env.dataDir, 'service-pat-expiry-notified.json'),
+  empty: () => ({}),
+  valid: (raw) => !!raw && typeof raw === 'object' && !Array.isArray(raw),
+})
 
 /**
  * Notifies each service principal's current owner once per PAT when it is within `leadDays`
  * of expiry. Expired and revoked PATs are never listed. Returns how many notices were sent.
  */
 export function checkServicePatExpiry(leadDays: number = env.servicePatExpiryLeadDays): number {
-  const notified = readJsonFile<Record<string, string>>(statePath(), {})
+  const notified = store.read()
   const now = Date.now()
   let sent = 0
   for (const pat of listServicePats()) {
@@ -34,7 +39,7 @@ export function checkServicePatExpiry(leadDays: number = env.servicePatExpiryLea
     notified[pat.id] = new Date(now).toISOString()
     sent++
   }
-  if (sent) writeJsonFile(statePath(), notified)
+  if (sent) store.write(notified)
   return sent
 }
 

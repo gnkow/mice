@@ -4,10 +4,10 @@
 
 **Blocked by:** 01 (Offboarding module)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The four newer stores use the store module
-- [ ] Corrupt or missing files fall back to the default in one place
-- [ ] Existing tests pass; one test covers the store module's interface
+- [x] The four newer stores use the store module
+- [x] Corrupt or missing files fall back to the default in one place
+- [x] Existing tests pass; one test covers the store module's interface
 
 Speculative: only the file adapter exists today, so no in-memory adapter is added until something needs it.

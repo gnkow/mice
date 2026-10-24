@@ -9,7 +9,7 @@ import {
   type DirectoryUserStatus,
 } from './directory.js'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { defineStore } from './typedStore.js'
 import { principalKey } from './principal.js'
 import { getSession } from './session.js'
 import { isInstanceAdmin, listInstanceAdmins } from './authzStore.js'
@@ -39,12 +39,12 @@ const SYSTEM_ACTOR: AuditActor = {
   name: 'Directory sync',
 }
 
-const statePath = () => join(env.dataDir, 'directory-sync.json')
-
-function readState(): SyncState {
-  const s = readJsonFile<SyncState>(statePath(), { version: 1, revoked: {} })
-  return s?.version === 1 && s.revoked ? s : { version: 1, revoked: {} }
-}
+const store = defineStore<SyncState>({
+  file: () => join(env.dataDir, 'directory-sync.json'),
+  empty: () => ({ version: 1, revoked: {} }),
+  valid: (raw) => (raw as SyncState | null)?.version === 1 && !!(raw as SyncState).revoked,
+})
+const readState = store.read
 
 export function directorySyncState(): Pick<SyncState, 'lastAttemptAt' | 'lastSuccessAt'> {
   const { lastAttemptAt, lastSuccessAt } = readState()
@@ -74,7 +74,7 @@ export async function runDirectorySync(
   for (const p of principals) {
     const status = await lookup(p)
     if (status === 'error') {
-      writeJsonFile(statePath(), state)
+      store.write(state)
       appendAudit({
         actor: SYSTEM_ACTOR,
         via: 'session',
@@ -107,7 +107,7 @@ export async function runDirectorySync(
   for (const key of stillEnabled) delete state.revoked[key]
   state.lastSuccessAt = now
   delete state.staleAlertedAt
-  writeJsonFile(statePath(), state)
+  store.write(state)
   return { ok: true, checked: principals.length, revoked }
 }
 
@@ -122,11 +122,11 @@ export function checkDirectorySyncStale(intervalSec: number = env.directorySyncI
   const baseline = Date.parse(state.lastSuccessAt ?? state.watchingSince)
   const stale = nowMs - baseline > 2 * intervalSec * 1000
   if (!stale || state.staleAlertedAt) {
-    writeJsonFile(statePath(), state)
+    store.write(state)
     return false
   }
   state.staleAlertedAt = new Date(nowMs).toISOString()
-  writeJsonFile(statePath(), state)
+  store.write(state)
   appendAudit({
     actor: SYSTEM_ACTOR,
     via: 'session',

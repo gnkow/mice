@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { defineStore } from './typedStore.js'
 import { can, principalKey, serviceIdentity } from './principal.js'
 import type { SessionUser } from './session.js'
 
@@ -20,14 +20,13 @@ export type ServicePrincipal = {
 type Store = { version: 1; principals: ServicePrincipal[] }
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string }
 
-const path = () => join(env.dataDir, 'service-principals.json')
-
-function read(): Store {
-  const s = readJsonFile<Store | null>(path(), null)
-  return s?.version === 1 && Array.isArray(s.principals) ? s : { version: 1, principals: [] }
-}
-
-const write = (s: Store) => writeJsonFile(path(), s)
+const store = defineStore<Store>({
+  file: () => join(env.dataDir, 'service-principals.json'),
+  empty: () => ({ version: 1, principals: [] }),
+  valid: (raw) => (raw as Store | null)?.version === 1 && Array.isArray((raw as Store).principals),
+})
+const read = store.read
+const write = store.write
 
 /** Owners are always human: a service principal can never own another. */
 function parseOwner(o: unknown): ServiceOwner | null {
