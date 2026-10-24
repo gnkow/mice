@@ -15,6 +15,7 @@ import {
 } from './authzStore.js'
 import { normalizeGroup } from './authzTypes.js'
 import { principalKey } from './principal.js'
+import { listPatOwners } from './tokens.js'
 import type { SessionUser } from './session.js'
 
 export type DirectoryUserHit = {
@@ -119,6 +120,19 @@ export function searchStoreDirectory(
     return out
   }
 
+  const users = collectStorePrincipals()
+  const out: DirectoryUserHit[] = []
+  for (const u of users.values()) {
+    if (matchesQuery(needle, u.sub, u.iss, u.email, u.name)) {
+      out.push(u)
+    }
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/** Every user Principal known to the AuthZ / access-request / PAT stores. */
+export function collectStorePrincipals(opts: { includePatOwners?: boolean } = {}): Map<string, DirectoryUserHit> {
   const users = new Map<string, DirectoryUserHit>()
   const issDefault = issuerForHits()
 
@@ -161,15 +175,8 @@ export function searchStoreDirectory(
   for (const p of listAllCollaboratorPrincipals()) {
     if (p.kind === 'user') addUser({ sub: p.sub, iss: p.iss })
   }
-
-  const out: DirectoryUserHit[] = []
-  for (const u of users.values()) {
-    if (matchesQuery(needle, u.sub, u.iss, u.email, u.name)) {
-      out.push(u)
-    }
-    if (out.length >= limit) break
-  }
-  return out
+  if (opts.includePatOwners) for (const p of listPatOwners()) addUser(p)
+  return users
 }
 
 async function getKeycloakToken(): Promise<string | null> {
@@ -212,6 +219,28 @@ async function getKeycloakToken(): Promise<string | null> {
     console.error('[mice-auth] Keycloak token error', err)
     return null
   }
+}
+
+export type DirectoryUserStatus = 'enabled' | 'disabled' | 'missing' | 'error'
+
+/** Looks a user up by Keycloak id; `error` means the directory could not answer. */
+export async function lookupKeycloakUserStatus(sub: string): Promise<DirectoryUserStatus> {
+  const token = await getKeycloakToken()
+  if (!token) return 'error'
+  const url = `${env.keycloakAdminUrl}/admin/realms/${encodeURIComponent(env.keycloakRealm)}/users/${encodeURIComponent(sub)}`
+  try {
+    const res = await directoryFetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (res.status === 404) return 'missing'
+    if (!res.ok) return 'error'
+    const user = (await res.json()) as { enabled?: boolean }
+    return user.enabled === false ? 'disabled' : 'enabled'
+  } catch {
+    return 'error'
+  }
+}
+
+export function directoryIssuer(): string {
+  return issuerForHits()
 }
 
 async function searchKeycloakUsers(

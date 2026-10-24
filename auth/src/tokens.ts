@@ -110,6 +110,15 @@ export function listPatsForUser(user: SessionUser): PatPublic[] {
     .map(toPublic)
 }
 
+/** Distinct owners of stored PATs (for directory sync). */
+export function listPatOwners(): Array<{ sub: string; iss: string; email: string; name: string }> {
+  const seen = new Map<string, { sub: string; iss: string; email: string; name: string }>()
+  for (const t of readStore().tokens) {
+    seen.set(`${t.iss}\0${t.sub}`, { sub: t.sub, iss: t.iss, email: t.email, name: t.name })
+  }
+  return [...seen.values()]
+}
+
 export function createPat(
   user: SessionUser,
   label: string,

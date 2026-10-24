@@ -39,6 +39,8 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     sessionTtlSec: Number(src.SESSION_TTL_SEC ?? 60 * 60 * 8),
     /** Idle timeout (seconds); 0 disables. Value owned by PLAT-GXP. */
     sessionIdleSec: Number(src.SESSION_IDLE_SEC ?? 0),
+    /** Directory-sync interval (seconds); 0 disables the schedule. */
+    directorySyncIntervalSec: Number(src.DIRECTORY_SYNC_INTERVAL_SEC ?? 900),
     cookieName: src.SESSION_COOKIE_NAME ?? 'mice_session',
     cookieSecure: src.COOKIE_SECURE === 'true',
     /** Directory for PAT store (pats.json). */
