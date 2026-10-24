@@ -21,8 +21,8 @@ test.describe('smoke (P/N/R/F)', () => {
   }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
+    await expect(page.locator('.site-footer')).toContainText(/Server v/)
     await openAccountMenu(page)
-    await expect(page.locator('.profile-menu-panel')).toContainText(/Server v/)
     await page
       .locator('.profile-menu-panel')
       .getByRole('link', { name: 'Settings' })

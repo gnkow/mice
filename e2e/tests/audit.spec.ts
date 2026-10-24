@@ -157,7 +157,7 @@ test.describe('audit log (PLAT-AUDIT)', () => {
 
     await page.goto('/audit')
     await expect(page.getByRole('heading', { name: 'Audit' })).toBeVisible()
-    await page.getByLabel('Namespace').fill(ns)
+    await page.getByLabel('Namespace', { exact: true }).fill(ns)
     await page.getByRole('button', { name: 'Filter' }).click()
     await expect(page.locator('.audit-table tbody tr').first()).toBeVisible({
       timeout: 15_000,
@@ -271,11 +271,11 @@ test.describe('audit log (PLAT-AUDIT)', () => {
       await sessionLogin(page)
       const { ns, workspaceId, jobId } = await seed(page)
       await page.goto('/audit')
-      await page.getByLabel('Namespace').fill(ns)
+      await page.getByLabel('Namespace', { exact: true }).fill(ns)
       await expect(page.locator('select[name="job_id"]').locator(`option[value="${jobId}"]`)).toHaveCount(1, { timeout: 15_000 })
       await expect(page.locator('select[name="workspace_id"]').locator(`option[value="${workspaceId}"]`)).toHaveCount(1)
       await expect(page.locator('.audit-filters select[name="session_id"]')).toBeVisible()
-      await expect(page.getByLabel('Action').locator('optgroup').first()).toBeAttached()
+      await expect(page.locator('select[name="action"]').locator('optgroup').first()).toBeAttached()
 
       await page.locator('select[name="job_id"]').selectOption(jobId)
       await page.getByRole('button', { name: 'Filter' }).click()

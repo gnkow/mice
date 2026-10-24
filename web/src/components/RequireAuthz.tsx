@@ -9,8 +9,13 @@ import { fetchAuthzMe } from '../lib/auth'
  */
 export function RequireAuthz() {
   const location = useLocation()
+  // Re-check on every path change, but keep rendering the page while a previously
+  // 'ok' result is being refreshed: showing the loading gate would unmount the routed
+  // page (losing local state and swallowing in-flight clicks). A 'pending' user stays
+  // gated until the new check completes.
   const [result, setResult] = useState<{ key: string; state: 'ok' | 'pending' }>()
-  const state = result?.key === location.key ? result.state : 'loading'
+  const state =
+    result?.key === location.pathname ? result.state : result?.state === 'ok' ? 'ok' : 'loading'
 
   useEffect(() => {
     let cancelled = false
@@ -18,18 +23,18 @@ export function RequireAuthz() {
       .then((authz) => {
         if (cancelled) return
         if (!authz) {
-          setResult({ key: location.key, state: 'ok' })
+          setResult({ key: location.pathname, state: 'ok' })
           return
         }
-        setResult({ key: location.key, state: authz.enforce && authz.pending ? 'pending' : 'ok' })
+        setResult({ key: location.pathname, state: authz.enforce && authz.pending ? 'pending' : 'ok' })
       })
       .catch(() => {
-        if (!cancelled) setResult({ key: location.key, state: 'ok' })
+        if (!cancelled) setResult({ key: location.pathname, state: 'ok' })
       })
     return () => {
       cancelled = true
     }
-  }, [location.key])
+  }, [location.pathname])
 
   if (state === 'loading') {
     return (

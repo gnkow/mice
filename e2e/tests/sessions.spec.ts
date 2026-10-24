@@ -9,7 +9,7 @@ test.describe('Sessions UI', () => {
     await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible()
   })
 
-  test('nav Sessions page can create a mock session', async ({ page }) => {
+  test('nav Sessions page can create a mock session', async ({ page, seededRepo }) => {
     const existing = (await (await page.request.get('/auth/sessions')).json()) as { sessions: { id: string; status: string }[] }
     for (const s of existing.sessions.filter((x) => !['stopped', 'destroyed', 'failed'].includes(x.status))) {
       await page.request.delete(`/auth/sessions/${s.id}`)
@@ -17,10 +17,12 @@ test.describe('Sessions UI', () => {
     await page.goto('/sessions')
     await expect(page.getByRole('heading', { name: 'Sessions' })).toBeVisible()
     await page.getByRole('button', { name: 'New session' }).click()
-    await page
-      .getByRole('dialog', { name: 'New session' })
-      .getByRole('button', { name: 'Create session' })
-      .click()
+    const dialog = page.getByRole('dialog', { name: 'New session' })
+    // The default repo is whichever comes first in the catalog (possibly empty): pin a seeded one.
+    await dialog
+      .getByRole('combobox', { name: 'Repository' })
+      .selectOption(`${seededRepo.namespace}/${seededRepo.repo}`)
+    await dialog.getByRole('button', { name: 'Create session' }).click()
     // Creation navigates directly to the session detail page.
     await expect(page).toHaveURL(/\/sessions\/[0-9a-f]+/)
     await expect(
