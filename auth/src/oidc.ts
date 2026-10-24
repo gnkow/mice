@@ -121,9 +121,34 @@ export async function buildEndSessionUrl(opts: {
   return u.toString()
 }
 
+/**
+ * Claim checks for an id_token received directly from the token endpoint over TLS.
+ * The JWS signature is deliberately not verified; revisit if tokens ever arrive via the
+ * front channel.
+ */
+export function validateIdTokenClaims(
+  payload: Record<string, unknown>,
+  expected: { issuers: string[]; audience: string; nonce: string; nowSec?: number },
+): void {
+  const norm = (v: string) => v.replace(/\/$/, '')
+  const iss = typeof payload.iss === 'string' ? norm(payload.iss) : ''
+  if (!iss || !expected.issuers.map(norm).includes(iss)) {
+    throw new Error('id_token issuer mismatch')
+  }
+  const aud = payload.aud
+  const auds = Array.isArray(aud) ? aud : [aud]
+  if (!auds.includes(expected.audience)) throw new Error('id_token audience mismatch')
+  const exp = payload.exp
+  if (typeof exp !== 'number' || exp <= (expected.nowSec ?? Math.floor(Date.now() / 1000))) {
+    throw new Error('id_token expired')
+  }
+  if (payload.nonce !== expected.nonce) throw new Error('id_token nonce mismatch')
+}
+
 export async function exchangeCode(opts: {
   code: string
   codeVerifier: string
+  nonce: string
 }): Promise<{
   sub: string
   iss: string
@@ -131,6 +156,7 @@ export async function exchangeCode(opts: {
   name: string
   idToken: string
   groups: string[]
+  authTime?: number
 }> {
   const conf = await loadOidcConfig()
   const body = new URLSearchParams({
@@ -169,6 +195,12 @@ export async function exchangeCode(opts: {
     ).toString('utf8'),
   ) as Record<string, unknown>
 
+  validateIdTokenClaims(payload, {
+    issuers: [conf.issuer, env.oidcIssuer, env.oidcIssuerPublic].filter(Boolean),
+    audience: env.oidcClientId,
+    nonce: opts.nonce,
+  })
+
   const sub = typeof payload.sub === 'string' ? payload.sub : ''
   const iss =
     typeof payload.iss === 'string' ? payload.iss : conf.issuer
@@ -187,5 +219,6 @@ export async function exchangeCode(opts: {
     sub
   if (!sub) throw new Error('id_token missing sub')
   const groups = normalizeGroupsClaim(payload[env.oidcGroupsClaim])
-  return { sub, iss, email, name, idToken, groups }
+  const authTime = typeof payload.auth_time === 'number' ? payload.auth_time : undefined
+  return { sub, iss, email, name, idToken, groups, authTime }
 }

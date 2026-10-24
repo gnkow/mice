@@ -1053,6 +1053,7 @@ app.get('/auth/callback', async (c) => {
     const user = await exchangeCode({
       code,
       codeVerifier: pkce.verifier,
+      nonce: pkce.nonce,
     })
     const sessionUser: SessionUser = {
       sub: user.sub,
@@ -1060,6 +1061,7 @@ app.get('/auth/callback', async (c) => {
       email: user.email,
       name: user.name,
       idToken: user.idToken,
+      ...(user.authTime !== undefined ? { authTime: user.authTime } : {}),
       ...(user.groups.length ? { groups: user.groups } : {}),
     }
     preparePrincipal(sessionUser)

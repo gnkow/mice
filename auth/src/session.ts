@@ -25,6 +25,8 @@ export type SessionUser = {
    * effective access. Never exceeds the user's grants.
    */
   patScopes?: PatScope[]
+  /** Epoch seconds of the IdP authentication (id_token `auth_time`), if provided. */
+  authTime?: number
   /** Epoch seconds the Session was first issued (absolute TTL anchor). */
   sessionStart?: number
   /** Epoch seconds of the last activity re-seal (idle timeout anchor). */
@@ -40,6 +42,7 @@ function secretKey() {
 export async function sealSession(user: SessionUser): Promise<string> {
   const start = user.sessionStart ?? nowSec()
   return new EncryptJWT({
+    ...(user.authTime !== undefined ? { auth_time: user.authTime } : {}),
     sat: start,
     act: user.lastActive ?? nowSec(),
     sub: user.sub,
@@ -81,6 +84,7 @@ export async function openSession(token: string): Promise<SessionUser | null> {
       email,
       name,
       idToken: idToken || undefined,
+      ...(typeof payload.auth_time === 'number' ? { authTime: payload.auth_time } : {}),
       sessionStart,
       lastActive,
       ...(groups?.length ? { groups } : {}),
