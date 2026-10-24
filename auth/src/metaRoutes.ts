@@ -1,7 +1,6 @@
 import type { Context, Hono } from 'hono'
 import { createHash } from 'node:crypto'
 import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
-import { preparePrincipal } from './authz.js'
 import { getNamespace } from './authzStore.js'
 import { env } from './env.js'
 import { getJob } from './jobsStore.js'
@@ -31,29 +30,11 @@ import {
   type EntityType,
   type MetaPatch,
 } from './metaTypes.js'
-import { getSession, type SessionUser } from './session.js'
+import type { SessionUser } from './session.js'
 import { getSessionRecord } from './sessionsStore.js'
-import { resolvePat } from './tokens.js'
+import { requireAuth } from './requireAuth.js'
 
 type Authed = { user: SessionUser; via: AuditVia }
-
-async function requireAuth(c: Context): Promise<Authed | null> {
-  const session = await getSession(c)
-  if (session) {
-    preparePrincipal(session)
-    return { user: session, via: 'session' }
-  }
-  const auth = c.req.header('authorization') ?? ''
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-  if (bearer) {
-    const pat = resolvePat(bearer)
-    if (pat) {
-      preparePrincipal(pat)
-      return { user: pat, via: 'pat' }
-    }
-  }
-  return null
-}
 
 export const lookup: MetaAuthzDeps = {
   sessionOwner: (id) => {

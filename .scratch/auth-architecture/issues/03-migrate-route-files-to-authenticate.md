@@ -4,8 +4,8 @@
 
 **Blocked by:** 02 (Request authentication module)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Five route files use the shared module; their local require helpers are removed
-- [ ] Favorites refuse service principals through the shared rule, not a local check
-- [ ] Existing unit and e2e tests pass unchanged
+- [x] Five route files use the shared module; their local require helpers are removed
+- [x] Favorites refuse service principals through the shared rule, not a local check
+- [x] Existing unit and e2e tests pass unchanged

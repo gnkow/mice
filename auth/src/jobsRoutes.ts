@@ -4,7 +4,6 @@ import {
   authorizeJobComplete,
   authorizeJobRead,
   authorizeJobSubmit,
-  preparePrincipal,
 } from './authz.js'
 import {
   cancelJob,
@@ -21,29 +20,8 @@ import {
   type JobCompleteBody,
 } from './jobs.js'
 import { getJob } from './jobsStore.js'
-import { getSession, type SessionUser } from './session.js'
 import { favoriteUserKey, listFavorites } from './favoritesStore.js'
-import { resolvePat } from './tokens.js'
-
-async function requireAuth(c: {
-  req: { header: (name: string) => string | undefined }
-}): Promise<{ user: SessionUser; via: 'session' | 'pat' } | null> {
-  const session = await getSession(c as never)
-  if (session) {
-    preparePrincipal(session)
-    return { user: session, via: 'session' }
-  }
-  const auth = c.req.header('authorization') ?? ''
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
-  if (bearer) {
-    const patUser = resolvePat(bearer)
-    if (patUser) {
-      preparePrincipal(patUser)
-      return { user: patUser, via: 'pat' }
-    }
-  }
-  return null
-}
+import { requireAuth } from './requireAuth.js'
 
 export function registerJobRoutes(app: Hono) {
   app.post('/auth/jobs', async (c) => {

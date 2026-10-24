@@ -11,8 +11,8 @@ import { canReviewAccessRequests } from './accessRequests.js'
 import { getJob } from './jobsStore.js'
 import { getSessionRecord } from './sessionsStore.js'
 import { env } from './env.js'
-import { getSession, type SessionUser } from './session.js'
-import { resolvePat } from './tokens.js'
+import type { SessionUser } from './session.js'
+import { authenticate } from './requireAuth.js'
 import {
   notificationAuditPath, notificationTransaction, notificationUserKey, readNotificationState,
   type NotificationDelivery, type NotificationEntry, type NotificationState, type NotificationSubscription,
@@ -410,27 +410,9 @@ class RequestError extends Error {
 }
 
 async function requireBrowser(c: Context): Promise<SessionUser> {
-  const user = await getSession(c)
-  if (!user) {
-    // Unscoped CLI PATs may use the inbox; bearer auth is not CSRF-prone, so skip the origin check.
-    const auth = c.req.header('authorization') ?? ''
-    const pat = auth.startsWith('Bearer ') ? resolvePat(auth.slice('Bearer '.length)) : null
-    if (!pat || isScopedCredential(pat)) throw new RequestError('Authentication required', 401)
-    preparePrincipal(pat)
-    return pat
-  }
-  if (!['GET', 'HEAD'].includes(c.req.method)) {
-    const origin = c.req.header('origin')
-    const expected = new URL(env.publicWebOrigin).origin
-    if (!origin || (origin !== new URL(c.req.url).origin && origin !== expected)) {
-      throw new RequestError('Origin check failed', 403)
-    }
-    if (!c.req.header('content-type')?.toLowerCase().startsWith('application/json')) {
-      throw new RequestError('Expected application/json', 400)
-    }
-  }
-  preparePrincipal(user)
-  return user
+  const r = await authenticate(c, { originCheck: true, jsonOnly: true })
+  if (!r.ok) throw new RequestError(r.error, r.status)
+  return r.user
 }
 
 async function jsonBody(c: Context): Promise<unknown> {
