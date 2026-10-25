@@ -113,6 +113,8 @@ test.describe('workspaces advanced (W-03–W-12)', () => {
 
     for (const name of ['to-clear-a', 'to-clear-b']) {
       await page.getByRole('link', { name: new RegExp(name) }).first().click()
+      // The confirm word comes from the loaded stage name, so wait for it.
+      await expect(page.getByRole('heading', { level: 1, name })).toBeVisible()
       await page.getByRole('button', { name: 'Delete', exact: true }).click()
       await acceptConfirmModal(page, name)
       await expect(page).toHaveURL(/\/stages$/, { timeout: 30_000 })

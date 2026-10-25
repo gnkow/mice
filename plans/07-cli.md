@@ -23,7 +23,7 @@ Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md
 
 ## 2. Current state
 
-Single-file entry [`cli/mice.mjs`](../cli/mice.mjs) (1085 lines) plus helpers in [`cli/lib/`](../cli/lib/). Plain Node ESM, no build step, no dependencies of its own. Exposed as the `mice` bin in the root [`package.json`](../package.json) (`"bin": { "mice": "./cli/mice.mjs" }`; also `npm run mice`). `cli/` has no `package.json`; `MICE_VERSION` is a hard-coded `'0.1.0'` constant in `mice.mjs`, unrelated to the root package version.
+Single-file entry [`cli/mice.mjs`](../cli/mice.mjs) (1085 lines) plus helpers in [`cli/lib/`](../cli/lib/). Plain Node ESM, no build step, no dependencies of its own. Exposed as the `mice` bin in the root [`package.json`](../package.json) (`"bin": { "mice": "./cli/mice.mjs" }`; also `npm run mice`). `cli/` has no `package.json`; `MICE_VERSION` is a hard-coded `'0.2.0'` constant in `mice.mjs`, unrelated to the root package version.
 
 | Piece | Behavior | Code |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ Single-file entry [`cli/mice.mjs`](../cli/mice.mjs) (1085 lines) plus helpers in
 | `mice logout` | `POST /auth/cli/logout` (404 tolerated), then clears local credentials |
 | `mice whoami` | `GET /auth/cli/whoami`; prints name, email, `sub`, authz summary, remote (plain text, not JSON) |
 | `mice remote` | Prints resolved remote, auth host, `credentials: present\|none` |
-| `mice version` / `--version` / `-V` | `mice 0.1.0` and the `oxen` version, or `oxen: not found on PATH` |
+| `mice version` / `--version` / `-V` | `mice 0.2.0` and the `oxen` version, or `oxen: not found on PATH` |
 
 ### 3.2 Oxen passthrough and local jobs
 
@@ -102,6 +102,8 @@ All print JSON (audit export prints CSV text or writes `--out`). They require an
 README and the usage text say `MICE_HOME (default ~/.mice)`; credentials actually live under `~/.config/mice` and are not affected by `MICE_HOME` (doc drift, see §9).
 
 **Device flow server side** (`auth/src/cliDevice.ts`, routes in [`auth/src/cliDeviceRoutes.ts`](../auth/src/cliDeviceRoutes.ts)): 10-minute device TTL, `interval` default, `slow_down` throttling, approve/deny need a browser session; `GET /auth/cli/device` redirects to `/cli/device` ([`web/src/pages/CliDevicePage.tsx`](../web/src/pages/CliDevicePage.tsx)). PATs are minted as `mice_pat_*` with `source: 'cli-login'` ([`auth/src/tokens.ts`](../auth/src/tokens.ts)); default 90-day expiry — details in [01-authentication.md](./01-authentication.md).
+
+**Reasons (breaking, CLI 0.2.0).** The BFF rejects mutations without a reason (see [03-audit.md](./03-audit.md)). `--reason <text>` is accepted on every admin group command (sent as `X-Mice-Reason` on non-GET requests), on `job run --push`, and on any oxen passthrough command (`mice push --reason …`): oxen cannot send headers, so the CLI strips the flag and calls `POST /auth/reason` first (declaration lasts 15 minutes, counts as an explicit reason). A `400` with `reason_required`/`reason_too_short` is shown with a hint to use `--reason` or a longer commit message. Code: `cli/lib/reason.mjs`.
 
 ## 5. Output conventions and exit codes
 

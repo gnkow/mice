@@ -6,6 +6,7 @@ import {
   uniqueId,
   waitForOxen,
 } from './helpers/oxenApi'
+import { cleanupContext, cleanupSince, revokeTokensSince, snapshot, trackSessionCookies } from './helpers/cleanup'
 import { mintSession } from './helpers/session'
 
 export type RepoFixture = {
@@ -36,8 +37,28 @@ async function makeRepo(seeded: boolean): Promise<RepoFixture> {
   return { namespace, repo, seeded }
 }
 
+/**
+ * Every test removes the namespaces, instance admins and default-user tokens it
+ * added, even when it fails. Suite runs serially, so a before/after diff is safe.
+ */
+export const cleanTest = base.extend<{ bffCleanup: void }>({
+  bffCleanup: [
+    async ({ context }, use) => {
+      const sessionCookies = trackSessionCookies(context)
+      const startedAt = Date.now() - 1000
+      const ctx = await cleanupContext()
+      const before = await snapshot(ctx)
+      await use()
+      await revokeTokensSince(sessionCookies(), startedAt).catch(() => undefined)
+      await cleanupSince(ctx, before)
+      await ctx.dispose()
+    },
+    { auto: true },
+  ],
+})
+
 /** Establish a BFF session before UI tests hit /api. */
-export const test = base.extend<Fixtures>({
+export const test = cleanTest.extend<Fixtures>({
   page: async ({ page }, use) => {
     await mintSession(page)
     await use(page)

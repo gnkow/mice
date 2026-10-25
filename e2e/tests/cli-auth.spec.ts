@@ -1,4 +1,5 @@
-import { test as base, expect } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { cleanTest as base } from '../fixtures'
 import { createRepo, deleteRepo, uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 

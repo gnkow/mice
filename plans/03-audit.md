@@ -9,7 +9,7 @@ Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md
 **In scope**
 
 - Emit audit events for non-GET/HEAD requests proxied by the auth BFF
-- Append-only JSONL store under `AUTH_DATA_DIR`
+- Append-only, hash-chained JSONL store under `AUTH_DATA_DIR` ([`GXP slice 1–2`](../.scratch/auth-audit-gxp/spec.md))
 - Query API + Audit UI (filter by actor, repo, time, action)
 - Attribution from BFF-resolved identity (`sub` / `iss` / email / name) and auth `via`
 
@@ -45,7 +45,7 @@ Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md
 ### Non-goals (MVP)
 
 - Blocking writes without a GxP reason
-- Cryptographic hash-chaining / WORM media
+- WORM media, signed checkpoints (slice 5 of the GxP spec; hash-chaining is done)
 - Multi-instance shared audit without a later store swap
 
 ## 4. Target architecture
@@ -55,8 +55,8 @@ Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md
 | Topic | Choice |
 | --- | --- |
 | Scope | Capture + query first; message/description from mutation bodies when present |
-| Store | Append-only **JSONL** at `AUTH_DATA_DIR/audit.jsonl` |
-| Emitter | Auth BFF `proxyToOxen` after upstream response (success and failure; include `status`) |
+| Store | Append-only **JSONL** at `AUTH_DATA_DIR/audit.jsonl`, hash-chained (`auditChain.ts`) over an append-only log seam with no rewrite path |
+| Emitter | Auth BFF `proxyToOxen`: **intent** event before forwarding, **outcome** event (with `status`) after; native mutations via `guarded({ mutates: true })` / `auditMutation` |
 | Reads | Never audited |
 | Attribution | Plumb `via` (`session` \| `pat`) with `SessionUser` |
 
@@ -85,12 +85,15 @@ One JSON object per line:
 | Field | Notes |
 | --- | --- |
 | `id` | Random hex id |
+| `prev_hash` / `hash` | SHA-256 chain links. `hash` covers the canonical JSON of the event without `hash`; the genesis event has `prev_hash` of 64 zeros |
+| `phase` | `intent` \| `outcome` \| `genesis`; absent on single events (jobs, sessions, login, …) |
+| `intent_id` | On an outcome: the id of its intent event |
 | `ts` | ISO-8601 |
 | `actor` | `{ sub, iss, email, name }` |
-| `via` | `session` \| `pat` |
+| `via` | `session` \| `pat` (`system` on the genesis event) |
 | `method` | HTTP method |
 | `path` | Request pathname (`/api/...`) |
-| `status` | Upstream HTTP status |
+| `status` | Upstream HTTP status; `0` on an intent event (not yet known) |
 | `action` | Coarse class (`repo.create`, `file.write`, `file.delete`, `branch.*`, `merge`, `workspace.create/delete/commit/merge/file.write/file.delete/other`, `other`). New names keep the `file.`/`workspace` prefixes that AuthZ maps on |
 | `namespace` / `repo` | Parsed from `/api/repos/:ns/:repo/...` when possible |
 | `dataset` | *(proposed)* Dataset version the mutation acted on: oxen commit id / content hash before and after (`{ base, head }`), when determinable; see Open question 2 |
@@ -118,11 +121,22 @@ Mutations handled directly by the auth BFF (not proxied to oxen) emit events via
 
 Token secrets are never written to `detail`.
 
+## 5.2 Chain, intent and outcome (GxP slices 1–2)
+
+- **Chain.** `appendAudit`, `appendIntent` and `appendOutcome` go through one writer: read the tail hash and append in one synchronous critical section (re-entry throws); the data-directory lock keeps other processes out. The first append writes a `audit.genesis` event. The file is never rewritten; `AppendOnlyLog` has no `rewrite`/`appendRaw`.
+- **Verification.** `verifyAudit()` walks the file (unparseable lines count as breaks, they are not skipped) and reports the first break: index, event id, reason. It runs at boot (`initAudit()`) and every `AUDIT_VERIFY_INTERVAL_SEC` (default 3600) via the `Clock` seam. Result is exposed in `/readyz`. Known limit: dropping the *latest* events is not detectable until signed checkpoints (slice 5).
+- **Boot.** A non-empty `audit.jsonl` whose first row has no hashes makes boot throw (`not hash-chained`); the file is not touched. An empty file gets a genesis event. A *broken* chain does not stop boot; it fails `/readyz` and logs (blocking mutations is slice 5).
+- **Intent first.** Proxied non-GET/HEAD requests: intent (same `action` as the outcome, `status: 0`) → upstream → outcome. Native routes marked `mutates: true` in `guarded` (namespaces, members, collaborators, custom roles, instance settings/admins/permissions, tokens, device approve, service principals, metadata writes, access-request decisions, training, lineage rebuild) get a `bff.mutation` intent; every `audit(...)` call becomes an outcome with the real action; a handler that audits nothing gets a `bff.mutation` outcome with the response status. If the intent cannot be written the BFF answers **503** (`audit_unavailable`) and nothing reaches oxen or the handler. An outcome that cannot be written is logged and flips readiness to failing; the mutation already happened.
+- **Readiness.** `GET /readyz` → 200/503 with `{ ok, audit: { store, chain, events, verifiedAt, firstBreak? } }`. `store` is `error` after a failed append until the next success. `/healthz` stays static.
+- **Listing.** `GET /auth/audit` and CSV show one row per mutation: genesis and intents that have an outcome are hidden; an intent **without** an outcome stays visible (possible crash mid-request). `?include=chain` shows every event. CSV gains `event_id`, `intent_id`, `phase` columns, and an intent row has an empty `status`. Other single events (jobs, sessions, bypass, login) are unchanged and unpaired.
+- **Not yet intent-first:** jobs, sessions, workspace routes, offboarding and the other direct `appendAudit` callers stay single best-effort events.
+
 ## 6. Configuration
 
 | Variable | Purpose |
 | --- | --- |
 | `AUTH_DATA_DIR` | Directory for `audit.jsonl` (and `pats.json`) |
+| `AUDIT_VERIFY_INTERVAL_SEC` | Chain re-verification interval, default 3600 |
 
 Same Compose `auth_data` volume as PATs.
 
@@ -159,7 +173,7 @@ Umbrella checklist and sequencing live in [`04-gxp-compliance.md`](./04-gxp-comp
 
 ### Phase 2.1 — Durability & schema (proposed, unchecked)
 
-- [ ] Durable outbox / reconciliation for the mutation→audit crash gap: persist intent before proxying, mark complete after append, and reconcile orphaned intents on restart (needed for [04-gxp-compliance.md](./04-gxp-compliance.md) `GXP_STRICT`, `GXP-R-025`)
+- [x] Persist intent before proxying and write an outcome after (orphan intents stay visible; no automatic reconciliation yet) (needed for [04-gxp-compliance.md](./04-gxp-compliance.md) `GXP_STRICT`, `GXP-R-025`)
 - [ ] Schema: explicit dataset version/commit fields (`dataset.base` / `dataset.head`)
 - [ ] Schema: structured `reason` and `change_control_id` fields (shared with [04-gxp-compliance.md](./04-gxp-compliance.md) `GXP-R-040`…`042`)
 - [ ] Namespace-owner query test coverage: unit + Playwright for Owner scoped to own namespace, other-namespace `403`/empty, ns `view_audit` capability, `403` for insufficient principal (extends the open Phase 1.5 Playwright item)
@@ -171,7 +185,7 @@ Umbrella checklist and sequencing live in [`04-gxp-compliance.md`](./04-gxp-comp
 | `GET /auth/audit` | Session; **AuthZ per [02-authorization.md](./02-authorization.md)** (`authorizeAuditQuery`: instance admin / `view_audit` / ns-scoped Owner) | Query params: `actor`, `namespace`, `repo`, `action`, `since`, `until`, `limit`, `cursor` |
 | (no write routes) | — | Append only from proxy |
 
-Disk append is **best-effort**: if JSONL write fails, the proxied oxen response still returns (logged server-side). Documented risk until a durable queue exists. A crash after the upstream mutation but before append leaves no event at all; Phase 2.1 outbox/reconciliation targets this ([04-gxp-compliance.md](./04-gxp-compliance.md) strict mode).
+Proxied and `mutates` native writes are **fail-closed**: no intent on the chain, no mutation (503). A crash after the intent leaves an intent without an outcome, which lists as such. Other direct `appendAudit` callers remain best-effort.
 
 ## 9. UI
 
@@ -196,8 +210,10 @@ Disk append is **best-effort**: if JSONL write fails, the proxied oxen response 
 | Risk | Mitigation |
 | --- | --- |
 | JSONL scan does not scale | Cap `limit`; swap store in Phase 2 behind same API |
-| Append failure silent to client | Log error; revisit fail-closed if GxP demands |
-| Crash between mutation and audit append | No record of a committed mutation; outbox/reconciliation (Phase 2.1), cross-ref [04-gxp-compliance.md](./04-gxp-compliance.md) |
+| Append failure | Intent failure → 503; outcome failure logged and `/readyz` fails |
+| Crash between intent and outcome | Orphan intent visible in lists; no automatic reconciliation |
+| Tail truncation / full-file replacement | Not detectable until signed checkpoints (GxP slice 5) |
+| Append cost | Each append reads the whole file to find the tail hash (O(n)); revisit with a cached tail or store swap |
 | Owner-scoped query leaks | Server-side ns filter; add explicit test coverage (Phase 2.1) |
 | Direct `:3001` bypass | Production: do not publish oxen port; product remote is BFF |
 | Over-broad `other` actions | Tighten path heuristics as routes are catalogued |

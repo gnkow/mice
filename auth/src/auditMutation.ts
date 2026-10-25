@@ -1,11 +1,11 @@
-import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
+import { actorFromUser, appendOutcomeFor, type AuditVia } from './audit.js'
 import { callerVia } from './requireAuth.js'
 import type { AuditFn } from './routeDeps.js'
 import type { SessionUser } from './session.js'
 
 /** Appends an audit event for a BFF-native (non-proxied) mutation. Never pass secrets in `detail`. */
 export const auditMutation: AuditFn = (c, user, via: AuditVia, fields) => {
-  appendAudit({
+  appendOutcomeFor(c.req.raw, {
     actor: actorFromUser(user as SessionUser),
     via: callerVia(c, via),
     method: c.req.method,

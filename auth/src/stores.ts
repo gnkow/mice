@@ -16,6 +16,24 @@ export interface JsonlLog<T> {
   appendRaw(text: string): void
 }
 
+/** Append-only log over the persistence seam: no rewrite, no raw splice. Rows come back as raw lines so no corruption is hidden. */
+export interface AppendOnlyLog<T> {
+  append(row: T): void
+  /** Every non-blank line in order, unparsed. */
+  readLines(): string[]
+}
+
+export function createAppendOnlyLog<T>(path: PathSource): AppendOnlyLog<T> {
+  return {
+    append: (row) => appendText(resolve(path), `${JSON.stringify(row)}\n`),
+    readLines: () =>
+      (readText(resolve(path)) ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean),
+  }
+}
+
 export function createJsonlLog<T>(path: PathSource): JsonlLog<T> {
   return {
     append: (row) => appendText(resolve(path), `${JSON.stringify(row)}\n`),

@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { api } from './api.mjs'
 import { confirmOrExit } from './confirm.mjs'
+import { reasonHeaders } from './reason.mjs'
 import {
   INSTANCE_PERMISSIONS,
   NAMESPACE_CAPABILITIES,
@@ -649,6 +650,7 @@ export async function runAdmin(group, argv, deps) {
     const res = await api(remote, token, req.path, {
       method: req.method,
       ...(req.body !== undefined ? { body: JSON.stringify(req.body) } : {}),
+      headers: reasonHeaders(req.method, str(flags.reason)),
     })
     if (req.text) {
       if (req.out) {

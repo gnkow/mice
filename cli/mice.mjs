@@ -68,6 +68,7 @@ import {
   runOxenPassthrough,
 } from './lib/oxen.mjs'
 import { confirmOrExit } from './lib/confirm.mjs'
+import { declareReason, extractReason } from './lib/reason.mjs'
 import {
   commitsEqual,
   parsePushRef,
@@ -90,7 +91,7 @@ Usage:
 
   mice job run    [--namespace <ns>] [--repo <repo>]
                    [--source <branch|commit|branch:commit>]
-                   [--name <label>] [--push]
+                   [--name <label>] [--push] [--reason <why>]
                    [--tag <t>]… [--label <k=v>]…
                    --image <image>
                    [--timeout <sec>] [--cpu <n>] [--memory <size>]
@@ -120,6 +121,11 @@ Usage:
     mice job run … --tag nightly                        # job (set once it is published)
 
   mice push       # oxen push via BFF; also publishes pending job metadata
+
+Reasons (breaking in 0.2.0): every change to a dataset or to access needs a reason of at
+least 10 characters (the server's AUDIT_REASON_MIN_LENGTH). A commit message that long is
+used by default where the request carries one; otherwise pass --reason "<why>" on the oxen
+command (mice push --reason "..."), on \`job run --push\`, or on a management command.
 
   mice job list   [--remote <url>] [--token <pat>]
                    [--namespace <ns>] [--repo <repo>]
@@ -503,6 +509,7 @@ async function cmdRun(flags, command) {
   if (wantPush && status === 'succeeded' && resultCommit) {
     const branch = sourceBranch || currentBranch(ctx.root)
     try {
+      if (flags.reason) await declareReason(remote, token, String(flags.reason))
       oxenPush(ctx.root, 'origin', branch || undefined)
       const pub = await publishJobsAfterPush({
         root: ctx.root,
@@ -731,7 +738,7 @@ async function cmdReset(flags) {
   }
 }
 
-const MICE_VERSION = '0.1.0'
+const MICE_VERSION = '0.2.0'
 
 function parseLoginFlags(argv) {
   /** @type {{ remote?: string, open: boolean, scopes: object[] }} */
@@ -914,7 +921,7 @@ async function cmdJob(jobArgv) {
 }
 
 async function main() {
-  const argv = process.argv.slice(2)
+  let argv = process.argv.slice(2)
   if (!argv.length || argv[0] === '-h' || argv[0] === '--help' || argv[0] === 'help') {
     usage(0)
   }
@@ -993,6 +1000,14 @@ async function main() {
   }
 
   // --- Oxen passthrough ---
+  let reason
+  try {
+    ;({ args: argv, reason } = extractReason(argv))
+  } catch (err) {
+    console.error(`mice: ${err instanceof Error ? err.message : err}`)
+    process.exitCode = 1
+    return
+  }
   const remote = resolveRemote()
   if (looksLikeDirectOxenServer(remote)) {
     console.error(
@@ -1035,6 +1050,16 @@ async function main() {
   }
   if (rewritten) {
     console.error(`mice: rewrote :3001 remote URL(s) to ${remote}`)
+  }
+
+  if (reason) {
+    try {
+      await declareReason(remote, resolveToken() ?? '', reason)
+    } catch (err) {
+      console.error(`mice: ${err instanceof Error ? err.message : err}`)
+      process.exitCode = 1
+      return
+    }
   }
 
   const code = await runOxenPassthrough(args)

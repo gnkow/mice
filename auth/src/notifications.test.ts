@@ -67,7 +67,7 @@ function audit(overrides: Partial<AuditEvent> = {}): AuditEvent {
   return {
     id: randomUUID(), ts: new Date().toISOString(), actor: admin, via: 'session', method: 'POST',
     path: '/api/repos/team/data/file/main/a', status: 200, action: 'file.write',
-    namespace: 'team', repo: 'data', ...overrides,
+    namespace: 'team', repo: 'data', prev_hash: '', hash: '', ...overrides,
   }
 }
 function enable(channel: 'email' | 'push') {

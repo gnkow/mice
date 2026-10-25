@@ -29,7 +29,7 @@ registerRevocationRoutes(app)
 
 const cookie = async (sub: string) =>
   ({ cookie: `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })}` })
-const json = { 'content-type': 'application/json' }
+const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' }
 
 describe('token routes', () => {
   it('requires a browser Session', async () => {

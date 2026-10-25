@@ -23,7 +23,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.patch(
     '/auth/instance',
-    guarded({ gate: adminOnly, body: { required: [] } }, ({ c, user, body }) => {
+    guarded({ gate: adminOnly, mutates: true, reason: true, body: { required: [] } }, ({ c, user, body }) => {
       if (typeof body.enforce === 'boolean') {
         const oldValue = isAuthzEnforce()
         setAuthzEnforce(body.enforce)
@@ -39,7 +39,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.post(
     '/auth/instance/admins',
-    guarded({ body: { required: ['sub', 'iss'] } }, ({ c, user, body }) => {
+    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, ({ c, user, body }) => {
       const t = target(body)
       const result = addInstanceAdmin(user, t)
       if (!result.ok) {
@@ -62,7 +62,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.delete(
     '/auth/instance/admins',
-    guarded({ body: { required: ['sub', 'iss'] } }, ({ c, user, body }) => {
+    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, ({ c, user, body }) => {
       const t = target(body)
       const result = removeInstanceAdmin(user, t)
       if (!result.ok) {
@@ -85,7 +85,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.put(
     '/auth/instance/permissions',
-    guarded({ body: { required: [] } }, ({ c, user, body }) => {
+    guarded({ mutates: true, reason: true, body: { required: [] } }, ({ c, user, body }) => {
       if (!body.sub || !body.iss || !Array.isArray(body.permissions)) {
         return c.json({ error: 'sub, iss, permissions required' }, 400)
       }

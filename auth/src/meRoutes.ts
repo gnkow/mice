@@ -85,7 +85,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     })
   }))
 
-  app.post('/auth/access-requests/:id', guarded({ body: 'json' }, async ({ c, user: session, body: raw }) => {
+  app.post('/auth/access-requests/:id', guarded({ mutates: true, reason: true, body: 'json' }, async ({ c, user: session, body: raw }) => {
     const body = raw as {
       action?: 'approve' | 'deny'
       namespace?: string
@@ -124,7 +124,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     return c.json({ ok: true, request: result.request })
   }))
 
-  app.post('/auth/training', guarded({ body: 'json' }, async ({ c, user: session, body: raw }) => {
+  app.post('/auth/training', guarded({ mutates: true, body: 'json' }, async ({ c, user: session, body: raw }) => {
     const body = raw as { sub?: string; iss?: string; completed?: boolean }
     const done = body.completed !== false
     const target = {

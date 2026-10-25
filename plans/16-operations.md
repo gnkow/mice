@@ -51,7 +51,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 
 | File | Owner module | Write pattern |
 | --- | --- | --- |
-| `audit.jsonl` | `audit.ts` (also read by `notificationsStore.ts`) | `appendFileSync` one JSON line per event |
+| `audit.jsonl` | `audit.ts` (also read by `notificationsStore.ts`) | `appendFileSync` one hash-chained JSON line per event (append-only; no rewrite path) |
 | `pats.json` | `tokens.ts` (`{version:1, tokens}`) | tmp + rename (own implementation; invalid shape → empty store) |
 | `session-revocations.json` | `credentialRevocation.ts` | `writeJsonFile` |
 | `cli-devices.json` | `cliDevice.ts` | store-local (not verified) |
@@ -76,7 +76,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 
 | Piece | Behaviour |
 | --- | --- |
-| Liveness | `GET /healthz` → `{ok:true}` ([`auth/src/app.ts`](../auth/src/app.ts)); static — does not check data dir, oxen upstream, or IdP. No readiness endpoint, no Compose `healthcheck:` on any service (Keycloak sets `KC_HEALTH_ENABLED` but it is unused) |
+| Liveness | `GET /healthz` → `{ok:true}` ([`auth/src/app.ts`](../auth/src/app.ts)); static — does not check data dir, oxen upstream, or IdP. Readiness: `GET /readyz` → `{ok, audit}`, 200 or 503; covers the audit store (last write succeeded, readable) and chain state (result of the last verification at boot or on the `AUDIT_VERIFY_INTERVAL_SEC` schedule, default 3600; `chain` is `ok`, `broken` with the first break, or `unverified`). It does not check oxen upstream or the IdP. No Compose `healthcheck:` on any service (Keycloak sets `KC_HEALTH_ENABLED` but it is unused) |
 | Logging | `console.log`/`console.error` with `[mice-auth]` prefix; one startup line; unstructured, no request IDs, no levels, no access log |
 | Metrics / tracing | None found (no `/metrics`, no OpenTelemetry) |
 | Audit | Business audit trail is `audit.jsonl` ([03-audit.md](./03-audit.md)) — not an operational log |
@@ -111,6 +111,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 - [x] Production start gate for secrets/cookie flag ([`startupGate.ts`](../auth/src/startupGate.ts), `startupGate.test.ts`)
 - [x] Atomic tmp+rename JSON writes for most small stores ([`jsonStore.ts`](../auth/src/jsonStore.ts))
 - [x] `/healthz` liveness endpoint
+- [x] `/readyz` readiness endpoint for the audit store and chain (no Compose `healthcheck:` wired yet)
 - [x] README production note: do not publish raw oxen port
 - [x] Queue recovery after restart (`resumeQueuedJobs`, `resumeInterruptedProvisions`)
 - [x] Fail-fast unit harness and Playwright e2e against a live stack

@@ -9,6 +9,7 @@ import {
   getServicePrincipal,
   listServicePrincipals,
   reassignServicePrincipal,
+  updateServicePrincipalReason,
   serviceUser,
   type ServicePrincipal,
 } from './servicePrincipals.js'
@@ -22,8 +23,8 @@ export function registerServicePrincipalRoutes(app: Hono): void {
 
   app.get(base, guarded({ gate: adminOnly }, ({ c }) => c.json({ servicePrincipals: listServicePrincipals() })))
 
-  app.post(base, guarded({ gate: adminOnly, body: 'optional' }, ({ c, audit, body }) => {
-    const r = createServicePrincipal({ name: (body.name as string | undefined) ?? '', owner: body.owner })
+  app.post(base, guarded({ gate: adminOnly, mutates: true, reason: true, body: 'optional' }, ({ c, audit, body }) => {
+    const r = createServicePrincipal({ name: (body.name as string | undefined) ?? '', owner: body.owner, reason: body.reason })
     if (!r.ok) return c.json({ error: r.error }, 400)
     audit({
       action: 'service-principal.create',
@@ -31,6 +32,17 @@ export function registerServicePrincipalRoutes(app: Hono): void {
       detail: { id: r.principal.id, owner: { iss: r.principal.owner.iss, sub: r.principal.owner.sub } },
     })
     return c.json({ servicePrincipal: r.principal }, 201)
+  }))
+
+  app.patch(`${base}/:id`, guarded({ gate: adminOnly, mutates: true, reason: true, body: 'optional' }, ({ c, audit, body }) => {
+    const r = updateServicePrincipalReason(c.req.param('id'), body.reason)
+    if (!r.ok) return c.json({ error: r.error }, r.error === 'Not found' ? 404 : 400)
+    audit({
+      action: 'service-principal.update',
+      message: `Updated registered reason of service principal ${r.principal.name}`,
+      detail: { id: r.principal.id, registeredReason: r.principal.reason ?? null },
+    })
+    return c.json({ servicePrincipal: r.principal })
   }))
 
   /** Admin or the current owner: 404 for an unknown principal, then the manage decision. */
@@ -47,7 +59,7 @@ export function registerServicePrincipalRoutes(app: Hono): void {
 
   app.get(`${base}/:id/tokens`, managed({}, ({ c }, sp) => c.json({ tokens: listPatsForUser(serviceUser(sp)) })))
 
-  app.post(`${base}/:id/tokens`, managed({ body: 'optional' }, ({ c, audit, body: raw }, sp) => {
+  app.post(`${base}/:id/tokens`, managed({ mutates: true, body: 'optional' }, ({ c, audit, body: raw }, sp) => {
     const body = raw as { label?: string; scopes?: unknown; expiresInDays?: number }
     const parsed = parsePatScopes(body.scopes as never)
     if (!parsed.ok) return c.json({ error: parsed.error }, 400)
@@ -68,7 +80,7 @@ export function registerServicePrincipalRoutes(app: Hono): void {
     }
   }))
 
-  app.delete(`${base}/:id/tokens/:tokenId`, managed({}, ({ c, audit }, sp) => {
+  app.delete(`${base}/:id/tokens/:tokenId`, managed({ mutates: true }, ({ c, audit }, sp) => {
     if (!revokePat(serviceUser(sp), c.req.param('tokenId'))) return c.json({ error: 'Token not found' }, 404)
     audit({
       action: 'token.revoke',
@@ -78,7 +90,7 @@ export function registerServicePrincipalRoutes(app: Hono): void {
     return c.json({ ok: true })
   }))
 
-  app.post(`${base}/:id/reassign`, guarded({ gate: adminOnly, body: 'optional' }, ({ c, audit, body }) => {
+  app.post(`${base}/:id/reassign`, guarded({ gate: adminOnly, mutates: true, reason: true, body: 'optional' }, ({ c, audit, body }) => {
     const r = reassignServicePrincipal(c.req.param('id'), body.owner)
     if (!r.ok) return c.json({ error: r.error }, r.error === 'Not found' ? 404 : 400)
     audit({

@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
-import { setAuditObserver } from './audit.js'
+import { initAudit, initAuditSigning, setAuditObserver, startAuditCheckpointSchedule, startAuditVerifySchedule, writeCheckpoint } from './audit.js'
 import { acquireDataDirLock } from './dataDirLock.js'
 import { startDirectorySyncSchedule } from './directorySync.js'
 import { env, oidcConfigured } from './env.js'
@@ -26,9 +26,26 @@ export function boot(): void {
   if (process.env.NODE_ENV === 'production') {
     const dataLock = acquireDataDirLock(env.dataDir)
     process.on('exit', () => dataLock.release())
-    for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-      process.once(sig, () => process.exit(0))
-    }
+  }
+
+  // Throws when no signing key is configured: checkpoints are never skipped.
+  const signing = initAuditSigning()
+  console.log(`[mice-auth] audit checkpoints signed with key ${signing.keyId}`)
+
+  // Refuses a non-empty unchained audit.jsonl (throws), writes genesis on an empty one, verifies the chain.
+  const verification = initAudit()
+  if (!verification.ok) console.error('[mice-auth] audit chain verification FAILED at boot', verification.firstBreak)
+  startAuditVerifySchedule()
+  startAuditCheckpointSchedule()
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(sig, () => {
+      try {
+        writeCheckpoint('shutdown')
+      } catch (err) {
+        console.error('[mice-auth] shutdown audit checkpoint failed', err)
+      }
+      process.exit(0)
+    })
   }
 
   runIdentityMigration()

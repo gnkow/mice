@@ -15,3 +15,5 @@ blob-report/
 playwright/.cache/
 # Compiled guest helper binaries (built via make)
 auth/bin/
+# Dev audit checkpoint signing key (make audit-key)
+.secrets/

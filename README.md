@@ -30,6 +30,7 @@ docker load < /tmp/oxen-server-docker-arm64.tar
 ```bash
 cp .env.example .env   # optional
 cd auth && npm install && cd ..   # host tooling / IDE; Compose installs Linux deps in the auth volume
+make audit-key   # dev Ed25519 key that signs audit checkpoints (kept outside the data volume; `make up` does this too)
 docker compose up --build
 # → UI        http://localhost:5173
 # → Auth BFF  http://localhost:8080
@@ -75,6 +76,17 @@ mice push origin main
 ```
 
 `mice` forwards Oxen commands to the `oxen` binary after configuring Bearer auth for the BFF host. Do not use raw `localhost:3001` as the product remote (that port is for e2e/helpers only).
+
+#### Reasons for changes (breaking, CLI 0.2.0)
+
+Every change to a dataset or to access needs a reason of at least `AUDIT_REASON_MIN_LENGTH` (default 10) characters, recorded in the audit trail. Where the request carries a commit message the server uses it by default; otherwise pass `--reason`:
+
+```bash
+mice push --reason "Correct mislabeled rows from batch 7"   # declares the reason via POST /auth/reason, then runs oxen
+mice namespace member set acme --sub s --iss i --role member --reason "New starter on project X"
+```
+
+Raw API/PAT callers send the `X-Mice-Reason` header (any mutation) or call `POST /auth/reason {reason, ttlSec}` first. A missing or too-short reason gets a `400` (`reason_required` / `reason_too_short`) before the request reaches oxen. Service principals use their registered reason.
 
 #### Management commands
 

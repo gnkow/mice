@@ -4,9 +4,14 @@ import type { SessionUser } from './session.js'
 import {
   actorFromUser,
   appendAudit,
+  appendIntent,
+  appendOutcome,
+  auditChainBlocked,
+  type AuditEvent,
   type AuditVia,
 } from './audit.js'
-import { createLineageCapture } from './proxyLineage.js'
+import { isDatasetMutation, REASON_HEADER, resolveReason, type ReasonRejection, type ResolvedReason } from './auditReason.js'
+import { createDatasetCapture, createLineageCapture, type DatasetVersions } from './proxyLineage.js'
 import { authorizeApiRequest } from './authz.js'
 import { interpretRequest } from './requestInterpretation.js'
 import { interpretRequestBody } from './proxyBody.js'
@@ -26,6 +31,7 @@ const HOP_BY_HOP = new Set([
   'content-length',
   'cookie',
   'authorization',
+  REASON_HEADER,
 ])
 
 function filterRequestHeaders(headers: Headers): Headers {
@@ -63,6 +69,57 @@ function rejectUnclassifiedWrite(
       error: { detail: 'Request body could not be classified' },
     }),
     { status: 400, headers: { 'content-type': 'application/json' } },
+  )
+}
+
+function rejectReason(
+  user: SessionUser,
+  via: AuditVia,
+  method: string,
+  pathname: string,
+  rejection: ReasonRejection,
+  scope: { namespace?: string; repo?: string },
+): Response {
+  appendAudit({
+    actor: actorFromUser(user),
+    via,
+    method,
+    path: pathname,
+    status: 400,
+    action: 'request.rejected',
+    ...(scope.namespace ? { namespace: scope.namespace } : {}),
+    ...(scope.repo ? { repo: scope.repo } : {}),
+    detail: { reason: rejection.code },
+  })
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: rejection.code,
+      error: { detail: rejection.detail },
+    }),
+    { status: 400, headers: { 'content-type': 'application/json' } },
+  )
+}
+
+function auditChainBroken(): Response {
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: 'audit_chain_broken',
+      error: { detail: 'Audit chain verification failed; dataset changes are blocked until an instance admin acknowledges it' },
+    }),
+    { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '300' } },
+  )
+}
+
+function auditUnavailable(): Response {
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: 'audit_unavailable',
+      error: { detail: 'Audit store unavailable; the change was refused and nothing was applied' },
+    }),
+    { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '30' } },
   )
 }
 
@@ -145,6 +202,22 @@ export async function proxyToOxen(
     })
   }
 
+  const mutating = method !== 'GET' && method !== 'HEAD'
+  const classified = interpretRequest(method, pathname)
+  const ns = classified.namespace ?? createNs
+  const repo = classified.repo ?? createRepo
+
+  if (mutating && isDatasetMutation(classified.action) && auditChainBlocked()) return auditChainBroken()
+
+  let reason: ResolvedReason | undefined
+  if (mutating && isDatasetMutation(classified.action)) {
+    const resolved = resolveReason({ actor: user, explicit: c.req.header(REASON_HEADER), message })
+    if (!resolved.ok) {
+      return rejectReason(user, via, method, pathname, resolved.rejection, { namespace: ns, repo })
+    }
+    reason = resolved.value
+  }
+
   if (decision.siteAdminBypass) {
     recordSiteAdminBypass({
       user,
@@ -157,6 +230,7 @@ export async function proxyToOxen(
     })
   }
 
+
   const lineage = createLineageCapture({
     method,
     pathname,
@@ -167,50 +241,83 @@ export async function proxyToOxen(
     via,
     fetchImpl: (input, init) => upstreamFetch(input, init),
   })
-  await lineage.before()
 
-  const upstream = await upstreamFetch(
-    `${env.oxenUpstream}${pathname}${url.search}`,
-    {
-      method,
-      headers: reqHeaders,
-      body,
-      redirect: 'manual',
+  const datasetVersions = createDatasetCapture({
+    method,
+    pathname,
+    action: classified.action,
+    fetchImpl: (input, init) => upstreamFetch(input, init),
+  })
+
+  const auditFields = (status: number, versions: DatasetVersions = {}) => ({
+    actor: actorFromUser(user),
+    via,
+    method,
+    path: pathname,
+    status,
+    action: classified.action,
+    namespace: ns,
+    repo,
+    message,
+    ...reason,
+    ...versions,
+    detail: {
+      ...(bodyWorkspaceId ? { workspace_id: bodyWorkspaceId } : {}),
+      ...classified.detail,
+      ...(moveNewPath ? { new_path: moveNewPath } : {}),
+      ...(copyFrom ? { copy_from: copyFrom } : {}),
+      ...(restoreFrom ? { restore_from: restoreFrom } : {}),
+      ...(lineage.kind() ? { lineage_kind: lineage.kind() } : {}),
     },
-  )
+  })
+
+  // Fail closed: nothing reaches oxen unless the intent is on the chain.
+  let intent: AuditEvent | undefined
+  if (mutating) {
+    try {
+      intent = appendIntent(auditFields(0))
+    } catch {
+      return auditUnavailable()
+    }
+  }
+
+  let upstream: Response
+  try {
+    await lineage.before()
+    if (mutating) await datasetVersions.before()
+    upstream = await upstreamFetch(
+      `${env.oxenUpstream}${pathname}${url.search}`,
+      {
+        method,
+        headers: reqHeaders,
+        body,
+        redirect: 'manual',
+      },
+    )
+  } catch (err) {
+    if (intent) appendOutcome(intent.id, auditFields(502))
+    throw err
+  }
 
   let responseBody: BodyInit | null = upstream.body
 
   const filteredCatalog = await filterNamespaceCatalog(user, method, pathname, upstream)
   if (filteredCatalog !== null) responseBody = filteredCatalog
 
-  if (method !== 'GET' && method !== 'HEAD') {
-    const classified = interpretRequest(method, pathname)
-    const ns = classified.namespace ?? createNs
-    const repo = classified.repo ?? createRepo
-
-    const auditEvent = appendAudit({
-      actor: actorFromUser(user),
-      via,
-      method,
-      path: pathname,
-      status: upstream.status,
-      action: classified.action,
-      namespace: ns,
-      repo,
-      message,
-      detail: {
-        ...(bodyWorkspaceId ? { workspace_id: bodyWorkspaceId } : {}),
-        ...classified.detail,
-        ...(moveNewPath ? { new_path: moveNewPath } : {}),
-        ...(copyFrom ? { copy_from: copyFrom } : {}),
-        ...(restoreFrom ? { restore_from: restoreFrom } : {}),
-        ...(lineage.kind() ? { lineage_kind: lineage.kind() } : {}),
-      },
-    })
-
-    const buffered = await lineage.after(upstream, auditEvent?.id)
+  if (intent) {
+    // Buffered once: the dataset versions and the lineage op both read the answer, and the caller is served it.
+    let buffered: string | undefined
+    if (upstream.ok && (upstream.headers.get('content-type') ?? '').includes('application/json')) {
+      try {
+        buffered = await upstream.text()
+      } catch {
+        buffered = undefined
+      }
+    }
     if (buffered !== undefined) responseBody = buffered
+
+    const auditEvent = appendOutcome(intent.id, auditFields(upstream.status, datasetVersions.after(upstream, buffered)))
+    await lineage.after(upstream, buffered, auditEvent?.id)
 
     // After successful repo create: seed AuthZ namespace + creator Admin
     if (

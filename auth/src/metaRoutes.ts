@@ -117,7 +117,7 @@ function metaError(err: unknown, c: Context): Response | null {
 }
 
 const readPolicy = { allowScoped: true, fail: metaError } as const
-const writePolicy = { ...readPolicy, body: 'json', invalidBody: 'Invalid JSON' } as const
+const writePolicy = { ...readPolicy, mutates: true, body: 'json', invalidBody: 'Invalid JSON' } as const
 
 function refFromQuery(c: Context): { type: string; id: string } | null {
   const type = c.req.query('type')
@@ -278,7 +278,7 @@ export function registerMetaRoutes(app: Hono) {
   app.put('/auth/meta', write)
   app.patch('/auth/meta', write)
 
-  app.delete('/auth/meta', guarded(readPolicy, async ({ c, user, audit }) => {
+  app.delete('/auth/meta', guarded({ ...readPolicy, mutates: true }, async ({ c, user, audit }) => {
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
     const ref = await resolveRef(q.type, q.id, queryScope(c))

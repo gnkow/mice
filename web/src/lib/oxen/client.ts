@@ -1,4 +1,5 @@
 import { loadSettings } from './settings'
+import { REASON_HEADER, withReason } from '../reason'
 import { OxenApiError, type StatusMessage } from './types'
 
 export type RequestOptions = {
@@ -39,13 +40,16 @@ export async function oxenFetch<T>(
     body = JSON.stringify(options.body)
   }
 
-  const res = await fetch(resolveUrl(path), {
-    method: options.method ?? 'GET',
-    headers,
-    body,
-    signal: options.signal,
-    credentials: 'same-origin',
-  })
+  const method = options.method ?? 'GET'
+  const send = (reason?: string) =>
+    fetch(resolveUrl(path), {
+      method,
+      headers: reason ? { ...headers, [REASON_HEADER]: reason } : headers,
+      body,
+      signal: options.signal,
+      credentials: 'same-origin',
+    })
+  const res = method === 'GET' || method === 'HEAD' ? await send() : await withReason(send)
 
   if (options.raw) {
     if (!res.ok) {

@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono'
+import { auditReadiness } from './audit.js'
 import { backChannelLogout } from './backChannelLogout.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
@@ -15,6 +16,7 @@ import { registerNamespaceRoutes } from './namespaceRoutes.js'
 import { registerNotificationRoutes } from './notifications.js'
 import { proxyToOxen } from './proxy.js'
 import { applyGlobalGuards, authenticateRequest } from './requireAuth.js'
+import { registerReasonRoutes } from './reasonRoutes.js'
 import { registerRevocationRoutes } from './revocationRoutes.js'
 import type { AuditFn } from './routeDeps.js'
 import { signOutEverywhere } from './selfRevocation.js'
@@ -43,6 +45,11 @@ export function createApp(deps: AppDeps = {}): Hono {
   applyGlobalGuards(app)
 
   app.get('/healthz', (c) => c.json({ ok: true }))
+  // Readiness covers the audit store and chain state; liveness above stays static.
+  app.get('/readyz', (c) => {
+    const audit = auditReadiness()
+    return c.json({ ok: audit.ok, audit }, audit.ok ? 200 : 503)
+  })
   registerCliDeviceRoutes(app, { audit })
   registerMeRoutes(app, { audit })
   registerAuditRoutes(app, { audit })
@@ -56,6 +63,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerTokenRoutes(app, { audit })
   registerInstanceRoutes(app, { audit })
   registerRevocationRoutes(app)
+  registerReasonRoutes(app)
   registerNamespaceRoutes(app, { audit })
 
   app.all('/api/*', async (c) => {

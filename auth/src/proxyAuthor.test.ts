@@ -51,7 +51,7 @@ function send(
 ) {
   return app.request(path, {
     method: init.method ?? 'POST',
-    headers: init.contentType ? { 'content-type': init.contentType } : {},
+    headers: { ...(init.contentType ? { 'content-type': init.contentType } : {}), 'x-mice-reason': 'Routine test change' },
     body: init.body,
   })
 }
@@ -84,6 +84,7 @@ describe('proxy author injection fails closed', () => {
     const res = await app.request('/api/repos/a/b/file/main/a.txt', {
       method: 'PUT',
       body: form,
+      headers: { 'x-mice-reason': 'Routine test change' },
     })
     assert.equal(res.status, 200)
     // The proxy first GETs the prior file entry for lineage; the PUT is the write.
@@ -130,6 +131,25 @@ describe('proxy author injection fails closed', () => {
     })
     assert.equal(res.status, 400)
     assert.equal(received.length, 0)
+  })
+
+  it('passes an all-string path array on workspace unstage', async () => {
+    const res = await send('/api/repos/a/b/workspaces/w1/changes', {
+      method: 'DELETE',
+      contentType: 'application/json',
+      body: '["x.txt"]',
+    })
+    assert.equal(res.status, 200)
+    assert.equal(received[0]!.body, '["x.txt"]')
+  })
+
+  it('passes an all-string path array on workspace file removal', async () => {
+    const res = await send('/api/repos/a/b/workspaces/w1/files', {
+      method: 'DELETE',
+      contentType: 'application/json',
+      body: '["x.txt"]',
+    })
+    assert.equal(res.status, 200)
   })
 
   it('rejects a non-empty body with an unclassified content type', async () => {

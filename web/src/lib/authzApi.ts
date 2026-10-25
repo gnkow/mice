@@ -1,4 +1,5 @@
 import type { AuthUser } from './auth'
+import { REASON_HEADER, withReason } from './reason'
 
 export type BasePermission =
   | 'none'
@@ -153,15 +154,19 @@ export async function authzFetch<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
 ): Promise<T> {
-  const res = await fetch(path, {
-    credentials: 'same-origin',
-    headers: {
-      Accept: 'application/json',
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-    ...init,
-  })
+  const send = (reason?: string) =>
+    fetch(path, {
+      credentials: 'same-origin',
+      ...init,
+      headers: {
+        Accept: 'application/json',
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+        ...(reason ? { [REASON_HEADER]: reason } : {}),
+      },
+    })
+  const method = (init?.method ?? 'GET').toUpperCase()
+  const res = method === 'GET' || method === 'HEAD' ? await send() : await withReason(send)
   const text = await res.text()
   let body: unknown = {}
   if (text) {

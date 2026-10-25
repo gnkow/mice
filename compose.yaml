@@ -9,7 +9,8 @@ name: mice
 services:
   oxen-server:
     image: oxen/oxen-server:latest
-    # No host port: oxen has no auth, so only the BFF may reach it. Dev publishes it via compose.override.yaml.
+    # INVARIANT: no host port. oxen has no auth, so only the BFF (same compose network) may reach it;
+    # an unaudited mutation must have no path around the BFF. Dev publishes it via compose.override.yaml.
     volumes:
       - oxen-data:/var/oxen/data
     environment:
@@ -47,6 +48,10 @@ services:
       PORT: "8080"
       OXEN_UPSTREAM: http://oxen-server:3001
       AUTH_DATA_DIR: /data
+      # Audit checkpoints are signed with a key kept outside AUTH_DATA_DIR (boot fails without it).
+      # Dev: `make audit-key` creates .secrets/audit-signing.pem. Production: mount your own secret.
+      AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key
+      AUDIT_SIGNING_KEY_ID: ${AUDIT_SIGNING_KEY_ID:-dev-1}
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
       PUBLIC_WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
       # Optional notification delivery (inbox/toasts work without these).
@@ -120,6 +125,8 @@ services:
       - ${SESSIONS_HOST_DATA_DIR:-./.data/sessions}:/data/sessions
       # Local (Docker) runner. Set JOBS_RUNNER=kubernetes for Cluster jobs.
       - ${JOBS_DOCKER_SOCKET_HOST:-/var/run/docker.sock}:/var/run/docker.sock
+    secrets:
+      - audit_signing_key
     depends_on:
       - oxen-server
       - keycloak
@@ -170,6 +177,10 @@ services:
 
 networks:
   mice:
+
+secrets:
+  audit_signing_key:
+    file: ${AUDIT_SIGNING_KEY_PATH:-./.secrets/audit-signing.pem}
 
 volumes:
   oxen-data:

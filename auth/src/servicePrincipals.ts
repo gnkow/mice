@@ -11,6 +11,8 @@ export type ServicePrincipal = {
   id: string
   name: string
   owner: ServiceOwner
+  /** Fixed reason recorded for every mutation this principal makes without an explicit one. */
+  reason?: string
   createdAt: string
   status: 'active' | 'suspended'
   suspendedAt?: string
@@ -41,18 +43,32 @@ export function serviceUser(p: Pick<ServicePrincipal, 'id' | 'name'>): SessionUs
   return { ...serviceIdentity(p.id), email: '', name: p.name }
 }
 
+/** A registered reason must meet the same minimum length as any other reason. */
+function parseRegisteredReason(raw: unknown): Result<{ reason: string | undefined }> {
+  if (raw === undefined || raw === null || raw === '') return { ok: true, reason: undefined }
+  const reason = typeof raw === 'string' ? raw.trim() : ''
+  if (reason.length < env.auditReasonMinLength || reason.length > 1000) {
+    return { ok: false, error: `reason must be ${env.auditReasonMinLength}-1000 characters` }
+  }
+  return { ok: true, reason }
+}
+
 export function createServicePrincipal(input: {
   name: string
   owner: unknown
+  reason?: unknown
 }): Result<{ principal: ServicePrincipal }> {
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   if (!name || name.length > 100) return { ok: false, error: 'name required (max 100 chars)' }
   const owner = parseOwner(input.owner)
   if (!owner) return { ok: false, error: 'A human owner (iss, sub) is required' }
+  const registered = parseRegisteredReason(input.reason)
+  if (!registered.ok) return registered
   const principal: ServicePrincipal = {
     id: randomUUID(),
     name,
     owner,
+    ...(registered.reason ? { reason: registered.reason } : {}),
     createdAt: new Date(Date.now()).toISOString(),
     status: 'active',
   }
@@ -60,6 +76,19 @@ export function createServicePrincipal(input: {
   s.principals.push(principal)
   write(s)
   return { ok: true, principal }
+}
+
+/** Sets (or, with an empty value, clears) the registered reason. */
+export function updateServicePrincipalReason(id: string, raw: unknown): Result<{ principal: ServicePrincipal }> {
+  const registered = parseRegisteredReason(raw)
+  if (!registered.ok) return registered
+  const s = read()
+  const p = s.principals.find((x) => x.id === id)
+  if (!p) return { ok: false, error: 'Not found' }
+  if (registered.reason) p.reason = registered.reason
+  else delete p.reason
+  write(s)
+  return { ok: true, principal: p }
 }
 
 export function listServicePrincipals(): ServicePrincipal[] {

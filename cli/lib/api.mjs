@@ -1,3 +1,5 @@
+import { explainApiError } from './reason.mjs'
+
 /**
  * Jobs CLI helper: fetch JSON/text from the BFF and throw on non-OK.
  * @param {string} remote
@@ -19,15 +21,7 @@ export async function api(remote, token, path, init = {}) {
   const body = ct.includes('application/json')
     ? await res.json()
     : await res.text()
-  if (!res.ok) {
-    const msg =
-      typeof body === 'object' && body && 'error' in body
-        ? body.error
-        : typeof body === 'string'
-          ? body
-          : res.statusText
-    throw new Error(`${res.status}: ${msg}`)
-  }
+  if (!res.ok) throw new Error(explainApiError(res.status, body, res.statusText))
   return body
 }
 

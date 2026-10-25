@@ -1,4 +1,5 @@
-import { test as base, expect } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { cleanTest as base } from '../fixtures'
 import { mintSession } from '../helpers/session'
 
 const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'

@@ -38,7 +38,7 @@ app.all('/api/*', (c) => proxyToOxen(c, { user: admin, via: 'session' }))
 const put = (repo: string) => {
   const form = new FormData()
   form.append('file', new Blob(['a,b\n1,2\n']), 'data.csv')
-  return app.request(`/api/repos/lin/${repo}/file/main/data.csv`, { method: 'PUT', body: form })
+  return app.request(`/api/repos/lin/${repo}/file/main/data.csv`, { method: 'PUT', body: form, headers: { 'x-mice-reason': 'Routine test change' } })
 }
 
 describe('proxy lineage capture', () => {
@@ -53,7 +53,7 @@ describe('proxy lineage capture', () => {
     } finally {
       oxen.restore()
     }
-    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'PUT', 'GET'])
+    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'GET', 'PUT', 'GET'])
     const op = queryLineage({ namespace: 'lin', repo: 'edit' }).operations[0]!
     assert.equal(op.kind, 'edit')
     assert.deepEqual(op.inputs.map((v) => [v.contentHash, v.commitId]), [['h1', 'c0']])
@@ -90,7 +90,7 @@ describe('proxy lineage capture', () => {
       oxen.restore()
     }
     assert.equal(res.status, 500)
-    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'PUT'])
+    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'GET', 'PUT'])
     assert.equal(queryLineage({ namespace: 'lin', repo: 'failed' }).operations.length, 0)
   })
 

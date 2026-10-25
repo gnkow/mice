@@ -38,8 +38,8 @@ Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md
 | Audit query AuthZ | `authorizeAuditQuery` — instance admin / `view_audit` / ns-Owner scoped ([`../auth/src/authz.ts`](../auth/src/authz.ts)) | Restricted audit review |
 | Site-admin bypass | Audited `site_admin_bypass` | Privileged path visibility |
 | Session TTL / idle | `SESSION_TTL_SEC` (default 8h) plus sliding idle timeout `SESSION_IDLE_SEC` (shipped; default `0` = off, validated value set by GXP policy) ([`../auth/src/env.ts`](../auth/src/env.ts)) | Session controls |
-| Audit append | Best-effort (fail-open to client); strict fail-closed mode **not implemented** ([03-audit.md](./03-audit.md) §8) | Integrity gap for strict GxP |
-| Reason / CC id | Not required | Gap |
+| Audit append | Always GxP: intent-first, fail-closed (503 `audit_unavailable`), hash-chained, signed Ed25519 checkpoints, verified export; no off switch ([03-audit.md](./03-audit.md) §5.2). Events keep personal data inline, are never erased, retention is indefinite | Part 11 audit trail |
+| Reason | Mandatory on every dataset mutation and on admin/permission changes (`X-Mice-Reason`, `POST /auth/reason`, commit message default, registered reason for service principals; logins, tokens and announcements exempt). No change-control id | Part 11 reason for change |
 | Electronic signatures | None beyond login + author injection | Gap |
 | Retention / export | None | Gap |
 
@@ -48,7 +48,7 @@ Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md
 ### Goals
 
 1. Single numbered requirements catalog (`GXP-R-*`) with status and owning epic
-2. `GXP_STRICT` mode that fail-closes audit append and enforces reason/e-sig policies
+2. Always-on fail-closed audit append and mandatory reasons (shipped; `GXP_STRICT` was dropped, there is no non-GxP mode); e-sig policies remain
 3. Full Part 11 e-signatures on a closed initial action set (merge approval first)
 4. Retention + filtered export suitable for inspection review
 5. Keep AUTH / AUTHO / AUDIT as implementation detail docs; sync status here

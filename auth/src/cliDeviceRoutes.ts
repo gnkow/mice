@@ -71,7 +71,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   }
   const deviceBody: GuardPolicy = { credential: 'session', gate: approverGate, body: { required: ['user_code'] } }
 
-  app.post('/auth/cli/device/approve', guarded(deviceBody, ({ c, user: session, body }) => {
+  app.post('/auth/cli/device/approve', guarded({ ...deviceBody, mutates: true }, ({ c, user: session, body }) => {
     const userCode = String(body.user_code)
     if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
     const result = approveDevice(userCode, session)

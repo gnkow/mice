@@ -81,6 +81,15 @@ export async function interpretRequestBody(
           const value: unknown = JSON.parse(text)
           if (value && typeof value === 'object' && !Array.isArray(value)) {
             parsed = value as Record<string, unknown>
+          } else if (
+            method === 'DELETE' &&
+            /\/workspaces\/[^/]+\/(?:changes|files)\/?$/.test(pathname) &&
+            Array.isArray(value) &&
+            value.every((v) => typeof v === 'string')
+          ) {
+            // Unstage sends an all-string path array, which cannot carry author fields.
+            body = text
+            reqHeaders.set('content-type', 'application/json')
           } else {
             rejection = 'json_not_object'
           }

@@ -1,4 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { cleanTest as test } from '../fixtures'
+import { INSTANCE_PERMISSIONS } from '../../auth/src/authzContract'
+
+// /auth/me/authz must carry every instance permission or the web rejects it.
+const noPermissions = Object.fromEntries(INSTANCE_PERMISSIONS.map((p) => [p, false]))
 import { mintSession } from '../helpers/session'
 
 test('token events reach the real inbox and profile preferences persist', async ({ page }) => {
@@ -69,7 +74,7 @@ test('notification inbox and profile settings stay available without resource gr
     if (path === '/auth/me/authz') {
       return route.fulfill({ json: {
         enforce: true, pending, instanceAdmin: !pending,
-        permissions: { manage_own_tokens: !pending }, hasAnyGrant: !pending,
+        permissions: { ...noPermissions, manage_own_tokens: !pending }, hasAnyGrant: !pending,
       } })
     }
     if (path === '/auth/instance') {

@@ -15,7 +15,7 @@ export SESSIONS_HOST_DATA_DIR ?= $(CURDIR)/.data/sessions
 #   SESSIONS_PROVISIONER=mock make up
 export SESSIONS_PROVISIONER ?= docker
 
-.PHONY: help up down install test smoke test-view test-ui test-unit test-cli reset clean clear readwatch
+.PHONY: audit-key help up down install test smoke test-view test-ui test-unit test-cli reset clean clear readwatch
 
 help:
 	@echo "Targets:"
@@ -44,7 +44,11 @@ readwatch:
 	  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags='-s -w' -o ../../bin/linux-arm64/mice-readwatch . && \
 	  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o ../../bin/linux-amd64/mice-readwatch .
 
-up:
+# Dev signing key for audit checkpoints (kept outside the data volume; gitignored).
+audit-key:
+	node scripts/gen-audit-key.mjs
+
+up: audit-key
 	@if [ ! -x auth/bin/linux-arm64/mice-readwatch ] || [ ! -x auth/bin/linux-amd64/mice-readwatch ]; then \
 	  $(MAKE) readwatch; \
 	fi

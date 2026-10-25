@@ -1,5 +1,6 @@
 import type { Context, Hono } from 'hono'
-import { auditEventsToCsv, auditFacets, queryAudit, queryAuditForExport, type AuditQuery } from './audit.js'
+import { acknowledgeAuditBreak, actorFromUser, appendAudit, auditEventsToCsv, auditFacets, buildAuditExportBundle, queryAudit, queryAuditForExport, type AuditQuery } from './audit.js'
+import { instanceGate } from './decisionHttp.js'
 import { auditActionLabel, knownAuditActions } from './auditLabels.js'
 import { authorizeAuditQuery, authorizeLineageQuery, authorizeLineageRebuild } from './authz.js'
 import { env } from './env.js'
@@ -30,6 +31,7 @@ function resolveAuditQuery(c: Context, session: SessionUser): { error: Response 
       jobId: c.req.query('job_id') || undefined,
       via: via === 'session' || via === 'pat' ? via : undefined,
       allowedNamespaces: gate.ownedOnly,
+      includeChain: c.req.query('include') === 'chain',
     },
   }
 }
@@ -88,6 +90,50 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     return c.body(csv)
   }))
 
+  /**
+   * Signed evidence bundle: the events (chain order, with hashes), the checkpoints, a fresh
+   * verification result and the public keys. Same scope as the list; the export is audited
+   * first, and refused when that cannot be recorded.
+   */
+  app.get('/auth/audit/export.bundle', guarded({}, ({ c, user, via }) => {
+    const r = resolveAuditQuery(c, user)
+    if ('error' in r) return r.error
+    const query = { ...r.query, includeChain: true }
+    const filters = { ...r.query, allowedNamespaces: undefined, includeChain: undefined }
+    const logged = appendAudit({
+      actor: actorFromUser(user),
+      via,
+      method: c.req.method,
+      path: c.req.path,
+      status: 200,
+      action: 'audit.export',
+      message: 'Exported a signed audit bundle',
+      detail: { format: 'bundle', filters },
+    })
+    if (!logged) return c.json({ error: 'Audit store unavailable; the export was refused' }, 503)
+    const built = buildAuditExportBundle(query, { sub: user.sub, iss: user.iss, email: user.email, name: user.name }, filters)
+    if (!built.ok) return c.json({ error: built.error }, 503)
+    const day = new Date().toISOString().slice(0, 10)
+    c.header('Content-Disposition', `attachment; filename="audit-bundle-${day}.json"`)
+    c.header('Cache-Control', 'no-store')
+    return c.json(built.bundle)
+  }))
+
+  /**
+   * An instance admin accepts a failed chain verification so dataset mutations resume. The break
+   * stays in the trail; the acknowledgement (who, why, which break) is itself an audited event.
+   */
+  app.post('/auth/audit/acknowledge', guarded({ gate: instanceGate('instance.admin'), mutates: true, reason: true, body: 'optional' }, ({ c, audit }) => {
+    const ack = acknowledgeAuditBreak()
+    if (!ack) return c.json({ error: 'The audit chain verifies; there is nothing to acknowledge' }, 409)
+    audit({
+      action: 'audit.break.acknowledge',
+      message: `Acknowledged audit chain break at event ${ack.index}`,
+      detail: { index: ack.index, reason: ack.reason },
+    })
+    return c.json({ ok: true, acknowledged: ack })
+  }))
+
   /** Query file lineage graph for a repo (session required; repo read). */
   app.get('/auth/lineage', guarded({}, ({ c, user: session }) => {
     const namespace = c.req.query('namespace') || undefined
@@ -136,7 +182,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
    * Rebuild derived lineage for a path from oxen path-version history.
    * Body: { namespace, repo, branch?, path }
    */
-  app.post('/auth/lineage/rebuild', guarded({ body: 'json', invalidBody: 'Invalid JSON body' }, async ({ c, user: session, body: raw }) => {
+  app.post('/auth/lineage/rebuild', guarded({ mutates: true, body: 'json', invalidBody: 'Invalid JSON body' }, async ({ c, user: session, body: raw }) => {
     const body = raw as {
       namespace?: string
       repo?: string

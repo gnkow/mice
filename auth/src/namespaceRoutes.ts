@@ -46,7 +46,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ namespaces: listNamespacesForUser(session) })
   }))
 
-  app.post('/auth/namespaces', guarded({}, async ({ c, user: session }) => {
+  app.post('/auth/namespaces', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const denied = denialResponse(c, decideInstanceAction(session, 'namespace.create'))
     if (denied) return denied
     let body: {
@@ -99,7 +99,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     })
   }))
 
-  app.patch('/auth/namespaces/:ns', guarded({}, async ({ c, user: session }) => {
+  app.patch('/auth/namespaces/:ns', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.settings'))
     if (denied) return denied
@@ -138,7 +138,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
    * Body: { deleteRepositories?: boolean } — default true.
    * Owners or instance admins only.
    */
-  app.delete('/auth/namespaces/:ns', guarded({}, async ({ c, user: session }) => {
+  app.delete('/auth/namespaces/:ns', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.delete'))
     if (denied) return denied
@@ -231,7 +231,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, deletedRepositories: deletedRepos })
   }))
 
-  app.put('/auth/namespaces/:ns/members', guarded({}, async ({ c, user: session }) => {
+  app.put('/auth/namespaces/:ns/members', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.members.manage'))
     if (denied) return denied
@@ -273,7 +273,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, members: listNamespaceMembers(ns) })
   }))
 
-  app.delete('/auth/namespaces/:ns/members', guarded({}, async ({ c, user: session }) => {
+  app.delete('/auth/namespaces/:ns/members', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.members.manage'))
     if (denied) return denied
@@ -317,7 +317,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ collaborators: listRepoCollaborators(ns, repo) })
   }))
 
-  app.put('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
+  app.put('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
     const denied = denialResponse(c, decideManageRepoCollaborators(session, ns, repo))
@@ -362,7 +362,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, collaborators: listRepoCollaborators(ns, repo) })
   }))
 
-  app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
+  app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
     const denied = denialResponse(c, decideManageRepoCollaborators(session, ns, repo))
@@ -420,7 +420,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     })
   }))
 
-  app.post('/auth/namespaces/:ns/custom-roles/namespace', guarded({}, async ({ c, user: session }) => {
+  app.post('/auth/namespaces/:ns/custom-roles/namespace', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
     if (denied) return denied
@@ -459,7 +459,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, role: result.role })
   }))
 
-  app.patch('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({}, async ({ c, user: session }) => {
+  app.patch('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
@@ -486,7 +486,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, role: result.role })
   }))
 
-  app.delete('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({}, async ({ c, user: session }) => {
+  app.delete('/auth/namespaces/:ns/custom-roles/namespace/:roleId', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
@@ -506,7 +506,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true })
   }))
 
-  app.post('/auth/namespaces/:ns/custom-roles/repo', guarded({}, async ({ c, user: session }) => {
+  app.post('/auth/namespaces/:ns/custom-roles/repo', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
     if (denied) return denied
@@ -545,7 +545,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, role: result.role })
   }))
 
-  app.patch('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({}, async ({ c, user: session }) => {
+  app.patch('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))
@@ -572,7 +572,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, role: result.role })
   }))
 
-  app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({}, async ({ c, user: session }) => {
+  app.delete('/auth/namespaces/:ns/custom-roles/repo/:roleId', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const roleId = c.req.param('roleId')
     const denied = denialResponse(c, decideNamespaceAction(session, ns, 'namespace.roles.manage'))

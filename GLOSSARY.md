@@ -30,6 +30,20 @@ _Avoid_: Gateway, auth server
 The BFF overwriting commit author name and email from the Principal's IdP claims.
 _Avoid_: Author override
 
+### Audit
+
+**Chain**:
+The audit log as a sequence of events where each stores `prev_hash` and `hash` (SHA-256 over canonical JSON), starting at a genesis event. Editing or removing an event breaks it at that point; verification reports the first break.
+_Avoid_: Signature, ledger
+
+**Intent event**:
+The audit event appended before a mutation reaches oxen or is applied. If it cannot be stored the mutation is refused with 503.
+_Avoid_: Pre-log, attempt
+
+**Outcome event**:
+The audit event appended after a mutation, carrying the result status and `intent_id` of its Intent event. An Intent event with no Outcome event means the mutation may have started and never completed.
+_Avoid_: Result log, completion
+
 ### Compute and data
 
 **Workspace**:

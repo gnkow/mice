@@ -19,7 +19,7 @@ export function registerTokenRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.post(
     '/auth/tokens',
-    guarded({ ...sessionOnly, body: 'optional' }, ({ c, user, body }) => {
+    guarded({ ...sessionOnly, mutates: true, body: 'optional' }, ({ c, user, body }) => {
       const label = typeof body.label === 'string' && body.label.trim() ? body.label.trim() : 'CLI token'
       const expiresInDays = body.expiresInDays as number | undefined
       const parsed = parsePatScopes(body.scopes as PatScope[] | undefined)
@@ -54,7 +54,7 @@ export function registerTokenRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.delete(
     '/auth/tokens/:id',
-    guarded(sessionOnly, ({ c, user }) => {
+    guarded({ ...sessionOnly, mutates: true }, ({ c, user }) => {
       const id = c.req.param('id') ?? ''
       if (!revokePat(user, id)) return c.json({ error: 'Token not found' }, 404)
       audit(c, user, 'session', {
