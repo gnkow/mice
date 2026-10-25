@@ -58,6 +58,10 @@ _Avoid_: Workspace
 A dedicated Linux desktop instance a user connects to over RDP.
 _Avoid_: Session (alone), VM
 
+**Persistence seam**:
+The `DocumentStore` / `Collection` / `AppendOnlyLog` / `JsonlLog` / `DiskDocument` interfaces in `auth/src/stores.ts` over a storage adapter. Production uses the SQLite adapter (`mice.db`); tests use memory. Audit, checkpoint and key logs are append-only in storage.
+_Avoid_: Database layer, JSON store
+
 **Job**:
 A container run against a pinned Oxen commit, with lineage and an optional result commit.
 _Avoid_: Task, run

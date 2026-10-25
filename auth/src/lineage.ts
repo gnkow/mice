@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { env } from './env.js'
-import { createJsonlLog } from './stores.js'
+import { createCollection } from './stores.js'
 import type { AuditActor, AuditVia } from './audit.js'
 
 export type LineageKind =
@@ -156,7 +156,7 @@ function storePath(): string {
   return join(env.dataDir, 'lineage.jsonl')
 }
 
-const log = createJsonlLog<LineageOp>(storePath)
+const opRows = createCollection<LineageOp>(storePath)
 
 function safeDecode(s: string): string {
   try {
@@ -434,10 +434,6 @@ function findProducer(
   return undefined
 }
 
-function rewriteStore(ops: LineageOp[]): void {
-  log.rewrite(ops)
-}
-
 /**
  * Ensure at most one producing op per file version for `path` in a repo.
  * Prefers explicit over derived; keeps the earliest winner. Returns removed count.
@@ -483,7 +479,7 @@ export function pruneDuplicateProducers(
       ...others.map((o) => o.id),
       ...keptScoped.map((o) => o.id),
     ])
-    rewriteStore(all.filter((o) => keepSet.has(o.id)))
+    for (const o of all) if (!keepSet.has(o.id)) opRows.remove(o.id)
   }
   return { removed, kept: keptScoped.length }
 }
@@ -552,7 +548,7 @@ export function appendLineage(
       : {}),
   }
   try {
-    log.append(op)
+    opRows.put(op.id, op)
     if (supersedesDerived && partial.outputs[0]?.path) {
       pruneDuplicateProducers(
         partial.namespace,
@@ -568,7 +564,7 @@ export function appendLineage(
 }
 
 function readAllOps(): LineageOp[] {
-  return log.readAll()
+  return opRows.list()
 }
 
 function versionMatchesFocus(

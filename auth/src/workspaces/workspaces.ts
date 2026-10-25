@@ -4,7 +4,7 @@ import { constants } from 'node:fs'
 import { join } from 'node:path'
 import { validWorkspaceId } from './ids.js'
 import { getJob } from '../jobsStore.js'
-import { writeJsonFile } from '../jsonStore.js'
+import { createDiskDocument } from '../stores.js'
 import { getSessionRecord, listSessions } from '../sessionsStore.js'
 import { cachedCapabilities, getCapabilities, type Driver } from './capabilities.js'
 import {
@@ -182,8 +182,11 @@ export class WorkspaceService {
   dir(id: string): string {
     return join(this.cfg.wsDir, id)
   }
-  private statePath(id: string) {
-    return join(this.dir(id), 'state.json')
+  private stateDoc(id: string) {
+    return createDiskDocument<WorkspaceState>(join(this.dir(id), 'state.json'))
+  }
+  private baseDoc(id: string) {
+    return createDiskDocument<{ files: Record<string, BaseFile> }>(join(this.dir(id), 'base.json'))
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────
@@ -191,12 +194,9 @@ export class WorkspaceService {
     await mkdir(this.cfg.wsDir, { recursive: true })
     for (const e of await readdir(this.cfg.wsDir, { withFileTypes: true })) {
       if (!e.isDirectory() || !validWorkspaceId(e.name)) continue
-      try {
-        const st = JSON.parse(await readFile(this.statePath(e.name), 'utf8')) as WorkspaceState
-        if (st.id === e.name) this.states.set(st.id, st)
-      } catch {
-        /* incomplete create: ignored, left for inspection */
-      }
+      // An unreadable state file is an incomplete create: ignored, left for inspection.
+      const st = this.stateDoc(e.name).read()
+      if (st?.id === e.name) this.states.set(st.id, st)
     }
     for (const st of this.states.values()) {
       if (st.status === 'preparing') this.kick(st.id, 0)
@@ -255,7 +255,7 @@ export class WorkspaceService {
 
   private save(st: WorkspaceState): void {
     st.updated_at = new Date(this.now()).toISOString()
-    writeJsonFile(this.statePath(st.id), st)
+    this.stateDoc(st.id).write(st)
   }
 
   // ── create / retry / delete ────────────────────────────────────────
@@ -414,7 +414,7 @@ export class WorkspaceService {
       await done
       if (!this.states.has(id)) return
       const manifest = await this.store.loadManifest(st.namespace, st.repo, commit)
-      writeJsonFile(join(this.dir(id), 'base.json'), baseToJson(manifest))
+      this.baseDoc(id).write(baseToJson(manifest) as { files: Record<string, BaseFile> })
       this.bases.delete(id)
       await this.prepareDriver(st, manifest)
       if (!this.states.has(id)) {
@@ -594,9 +594,8 @@ export class WorkspaceService {
   private async baseIndex(st: WorkspaceState): Promise<BaseIndex> {
     let b = this.bases.get(st.id)
     if (!b) {
-      const raw = JSON.parse(await readFile(join(this.dir(st.id), 'base.json'), 'utf8')) as {
-        files: Record<string, BaseFile>
-      }
+      const raw = this.baseDoc(st.id).read()
+      if (!raw) throw new Error(`workspace ${st.id} has no readable base index`)
       b = new BaseIndex(new Map(Object.entries(raw.files)))
       this.bases.set(st.id, b)
     }

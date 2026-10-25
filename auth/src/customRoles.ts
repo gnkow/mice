@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 import {
   REPO_ROLE_RANK,
   isPredefinedNsRole,
@@ -102,14 +102,16 @@ function emptyNs(): NsCustomRoles {
   return { namespaceRoles: {}, repoRoles: {} }
 }
 
+const doc = createDocumentStore<Store>({ path, initial: empty, onCorrupt: 'initial' })
+
 function read(): Store {
-  const s = readJsonFile(path(), empty())
+  const s = doc.read()
   if (!s || s.version !== 1 || !s.namespaces) return empty()
   return s
 }
 
 function write(s: Store) {
-  writeJsonFile(path(), s)
+  doc.write(s)
 }
 
 function ensureNs(store: Store, ns: string): NsCustomRoles {

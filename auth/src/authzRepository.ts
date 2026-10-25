@@ -3,7 +3,7 @@ import { matchesIdentityEntry } from './principal.js'
 import { join } from 'node:path'
 import { deleteCustomRolesForNamespace } from './customRoles.js'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 import { normalizeGroup, userKey, type BasePermission, type CollaboratorRoleRef, type InstancePermission, type MemberRoleRef } from './authzTypes.js'
 
 export type InstanceStore = {
@@ -77,8 +77,13 @@ function emptyCollaborators(): CollaboratorsStore {
   return { version: 2, collaborators: {}, groupCollaborators: {} }
 }
 
+const instanceDoc = createDocumentStore<InstanceStore>({ path: instancePath, initial: emptyInstance, onCorrupt: 'initial' })
+const namespacesDoc = createDocumentStore<NamespacesStore>({ path: namespacesPath, initial: emptyNamespaces, onCorrupt: 'initial' })
+const membersDoc = createDocumentStore<MembersStore>({ path: membersPath, initial: emptyMembers, onCorrupt: 'initial' })
+const collaboratorsDoc = createDocumentStore<CollaboratorsStore>({ path: collaboratorsPath, initial: emptyCollaborators, onCorrupt: 'initial' })
+
 function readInstance(): InstanceStore {
-  const s = readJsonFile(instancePath(), emptyInstance())
+  const s = instanceDoc.read()
   if (!s || s.version !== 1) return emptyInstance()
   return {
     version: 1,
@@ -91,21 +96,21 @@ function readInstance(): InstanceStore {
 }
 
 function writeInstance(s: InstanceStore): void {
-  writeJsonFile(instancePath(), s)
+  instanceDoc.write(s)
 }
 
 function readNamespaces(): NamespacesStore {
-  const s = readJsonFile(namespacesPath(), emptyNamespaces())
+  const s = namespacesDoc.read()
   if (!s || s.version !== 1 || !s.namespaces) return emptyNamespaces()
   return s
 }
 
 function writeNamespaces(s: NamespacesStore): void {
-  writeJsonFile(namespacesPath(), s)
+  namespacesDoc.write(s)
 }
 
 function readMembers(): MembersStore {
-  const s = readJsonFile(membersPath(), emptyMembers())
+  const s = membersDoc.read()
   if (!s || (s.version !== 1 && s.version !== 2) || !s.members) {
     return emptyMembers()
   }
@@ -120,7 +125,7 @@ function readMembers(): MembersStore {
 }
 
 function writeMembers(s: MembersStore): void {
-  writeJsonFile(membersPath(), {
+  membersDoc.write({
     version: 2,
     members: s.members,
     groupMembers: s.groupMembers ?? {},
@@ -128,7 +133,7 @@ function writeMembers(s: MembersStore): void {
 }
 
 function readCollaborators(): CollaboratorsStore {
-  const s = readJsonFile(collaboratorsPath(), emptyCollaborators())
+  const s = collaboratorsDoc.read()
   if (!s || (s.version !== 1 && s.version !== 2) || !s.collaborators) {
     return emptyCollaborators()
   }
@@ -143,7 +148,7 @@ function readCollaborators(): CollaboratorsStore {
 }
 
 function writeCollaborators(s: CollaboratorsStore): void {
-  writeJsonFile(collaboratorsPath(), {
+  collaboratorsDoc.write({
     version: 2,
     collaborators: s.collaborators,
     groupCollaborators: s.groupCollaborators ?? {},

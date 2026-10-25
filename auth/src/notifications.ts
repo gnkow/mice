@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { Hono, type Context } from 'hono'
 import nodemailer from 'nodemailer'
 import webpush from 'web-push'
@@ -16,7 +15,7 @@ import { env } from './env.js'
 import type { SessionUser } from './session.js'
 import { authenticate } from './requireAuth.js'
 import {
-  notificationAuditPath, notificationTransaction, notificationUserKey, readNotificationState,
+  notificationAuditLog, notificationTransaction, notificationUserKey, readNotificationState,
   type NotificationDelivery, type NotificationEntry, type NotificationState, type NotificationSubscription,
 } from './notificationsStore.js'
 import {
@@ -298,28 +297,16 @@ function observeDeletion(s: NotificationState, event: AuditEvent): void {
 
 /** The audit journal is a recovery source, not an atomic core-mutation outbox. */
 export function replayNotificationAudit(): void {
-  let bytes: Buffer
-  try { bytes = readFileSync(notificationAuditPath()) } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw error
-  }
   notificationTransaction((s) => {
-    if (s.auditOffset > bytes.length) throw new Error('Notification audit cursor exceeds journal length; journal was truncated')
-    let offset = s.auditOffset
-    const events: AuditEvent[] = []
-    while (offset < bytes.length) {
-      const end = bytes.indexOf(10, offset)
-      if (end < 0) break // A partial append is retried, never acknowledged.
-      const line = bytes.subarray(offset, end).toString('utf8')
-      if (line.trim()) {
-        const audit = JSON.parse(line) as AuditEvent
-        if (!audit.id || !audit.ts || !audit.action || !audit.actor || typeof audit.status !== 'number') {
-          throw new Error('Invalid audit event during notification recovery')
-        }
-        events.push(audit)
+    if (s.auditSeq > notificationAuditLog.lastSeq()) throw new Error('Notification audit cursor exceeds journal length; journal was truncated')
+    const rows = notificationAuditLog.readAfter(s.auditSeq)
+    const events = rows.map(({ line }) => {
+      const audit = JSON.parse(line) as AuditEvent
+      if (!audit.id || !audit.ts || !audit.action || !audit.actor || typeof audit.status !== 'number') {
+        throw new Error('Invalid audit event during notification recovery')
       }
-      offset = end + 1
-    }
+      return audit
+    })
     const recoveryBarrier = events.filter((event) => event.status >= 200 && event.status < 300 &&
       /^(?:authz\.|instance\.|namespace\.(?:member|settings|delete)|repo\.collaborator|custom-role\.|training\.)/.test(event.action))
       .reduce<string | undefined>((latest, event) => !latest || event.ts > latest ? event.ts : latest, undefined)
@@ -328,7 +315,7 @@ export function replayNotificationAudit(): void {
       const event = notificationFromAudit(audit)
       if (event) project(s, event, new Date().toISOString(), recoveryBarrier)
     }
-    s.auditOffset = offset
+    if (rows.length) s.auditSeq = rows[rows.length - 1].seq
     prune(s)
   })
 }

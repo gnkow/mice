@@ -48,6 +48,10 @@ readwatch:
 audit-key:
 	node scripts/gen-audit-key.mjs
 
+# Online, consistent copy of the auth database into the data volume (backups/). Restore: see plans/16-operations.md.
+db-backup:
+	docker compose exec -T auth node scripts/backup-db.mjs
+
 up: audit-key
 	@if [ ! -x auth/bin/linux-arm64/mice-readwatch ] || [ ! -x auth/bin/linux-amd64/mice-readwatch ]; then \
 	  $(MAKE) readwatch; \

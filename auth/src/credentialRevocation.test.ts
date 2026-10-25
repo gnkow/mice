@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fakeClock, useClock } from './clock.js'
+import { readText, removeText, writeText } from './jsonStore.js'
 
 process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-revoke-'))
 process.env.SESSION_SECRET = 'test-session-secret-for-revoke'
@@ -103,7 +104,7 @@ describe('two cut-offs', () => {
 
   it('reads a pre-existing store as full cut-offs', async () => {
     const who = mk('legacy')
-    writeFileSync(
+    writeText(
       join(process.env.AUTH_DATA_DIR!, 'session-revocations.json'),
       JSON.stringify({
         version: 1,

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { currentClock, type Clock } from './clock.js'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 import type { PatScope, SessionUser } from './session.js'
 import { createPat } from './tokens.js'
 
@@ -43,12 +43,13 @@ export function createMemoryDeviceRepository(): DeviceRepository {
 type StoreFile = { version: 1; devices: DeviceRecord[] }
 
 export function createFileDeviceRepository(path: () => string): DeviceRepository {
+  const doc = createDocumentStore<StoreFile>({ path, initial: () => ({ version: 1, devices: [] }), onCorrupt: 'initial' })
   return {
     read() {
-      const parsed = readJsonFile<StoreFile>(path(), { version: 1, devices: [] })
+      const parsed = doc.read()
       return parsed && parsed.version === 1 && Array.isArray(parsed.devices) ? parsed.devices : []
     },
-    write: (devices) => writeJsonFile(path(), { version: 1, devices } satisfies StoreFile),
+    write: (devices) => doc.write({ version: 1, devices } satisfies StoreFile),
   }
 }
 

@@ -232,4 +232,44 @@ describe('readiness', () => {
     verifyAudit()
     assert.equal((await app.request('/readyz')).status, 200)
   })
+
+  it('/readyz fails while the database cannot be written, and reports it as storage', async () => {
+    await put()
+    verifyAudit()
+    const { createMemoryJsonBackend } = await import('./jsonStore.js')
+    const backend = createMemoryJsonBackend()
+    backend.probe = () => { throw new Error('database is locked') }
+    const restoreBackend = useJsonBackend(backend)
+    try {
+      const failed = await app.request('/readyz')
+      assert.equal(failed.status, 503)
+      const body = (await failed.json()) as { ok: boolean; storage: { ok: boolean; detail?: string } }
+      assert.equal(body.storage.ok, false)
+      assert.match(body.storage.detail ?? '', /locked/)
+    } finally {
+      restoreBackend()
+    }
+  })
+
+  it('/readyz checks the audit store from its newest row without reading the trail', async () => {
+    await put()
+    verifyAudit()
+    let rowsRead = 0
+    const lines = (p: string) => (iso.backend.read(p) ?? '').split('\n').filter(Boolean)
+    const restoreBackend = useJsonBackend({
+      ...iso.backend,
+      readLines: (p, after) => {
+        const out = lines(p).map((line, i) => ({ seq: i + 1, line })).filter((r) => r.seq > after)
+        rowsRead += out.length
+        return out
+      },
+      lastSeq: (p) => lines(p).length,
+    })
+    try {
+      assert.equal((await app.request('/readyz')).status, 200)
+      assert.equal(rowsRead, 0)
+    } finally {
+      restoreBackend()
+    }
+  })
 })

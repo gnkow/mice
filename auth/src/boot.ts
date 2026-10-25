@@ -1,5 +1,9 @@
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
+import { dirname, join } from 'node:path'
+import { closeDatabase, databasePath, openDatabase } from './jsonStore.js'
+import { startDatabaseBackupSchedule } from './dbBackup.js'
+import { importLegacyData } from './legacyImport.js'
 import { initAudit, initAuditSigning, setAuditObserver, startAuditCheckpointSchedule, startAuditVerifySchedule, writeCheckpoint } from './audit.js'
 import { acquireDataDirLock } from './dataDirLock.js'
 import { startDirectorySyncSchedule } from './directorySync.js'
@@ -28,6 +32,13 @@ export function boot(): void {
     process.on('exit', () => dataLock.release())
   }
 
+  // Moves pre-database JSON/JSONL files into the database once; a failure throws, so a half-migrated store never serves.
+  const imported = importLegacyData(env.dataDir, openDatabase())
+  if (imported.imported) {
+    console.log(`[mice-auth] imported legacy data: ${imported.documents} documents, ${imported.logs} logs (${imported.rows} rows); originals archived in legacy-import/`)
+    if (imported.partialLines.length) console.warn('[mice-auth] dropped unterminated trailing lines in', imported.partialLines.join(', '))
+  }
+
   // Throws when no signing key is configured: checkpoints are never skipped.
   const signing = initAuditSigning()
   console.log(`[mice-auth] audit checkpoints signed with key ${signing.keyId}`)
@@ -36,6 +47,11 @@ export function boot(): void {
   const verification = initAudit()
   if (!verification.ok) console.error('[mice-auth] audit chain verification FAILED at boot', verification.firstBreak)
   startAuditVerifySchedule()
+  startDatabaseBackupSchedule(openDatabase(), {
+    dir: env.backupDir || join(dirname(databasePath()), 'backups'),
+    keep: env.backupKeep,
+    intervalMs: env.backupIntervalHours * 3_600_000,
+  })
   startAuditCheckpointSchedule()
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.once(sig, () => {
@@ -44,6 +60,7 @@ export function boot(): void {
       } catch (err) {
         console.error('[mice-auth] shutdown audit checkpoint failed', err)
       }
+      closeDatabase()
       process.exit(0)
     })
   }

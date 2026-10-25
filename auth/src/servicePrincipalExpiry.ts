@@ -1,16 +1,19 @@
 import { join } from 'node:path'
 import { env } from './env.js'
-import { defineStore } from './typedStore.js'
+import { createDocumentStore } from './stores.js'
 import { emitNotification } from './notifications.js'
 import { getServicePrincipal } from './servicePrincipals.js'
 import { listServicePats } from './tokens.js'
 
 const DAY_MS = 86_400_000
 /** PAT id -> ISO time the owner was notified. */
-const store = defineStore<Record<string, string>>({
-  file: () => join(env.dataDir, 'service-pat-expiry-notified.json'),
-  empty: () => ({}),
-  valid: (raw) => !!raw && typeof raw === 'object' && !Array.isArray(raw),
+const store = createDocumentStore<Record<string, string>>({
+  path: () => join(env.dataDir, 'service-pat-expiry-notified.json'),
+  initial: () => ({}),
+  validate(doc) {
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) throw new Error('Invalid expiry notice store')
+  },
+  onCorrupt: 'initial',
 })
 
 /**

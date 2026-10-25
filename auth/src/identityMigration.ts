@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { env } from './env.js'
 import { isLegacyPrincipalKey, qualifyLegacyKey } from './principal.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 
 type Json = Record<string, any>
 
@@ -42,11 +42,12 @@ export function migrateIdentityKeys(issuer: string): number {
 
   const file = (name: string) => join(env.dataDir, name)
   const update = (name: string, fn: (s: Json) => void) => {
-    const s = readJsonFile<Json | null>(file(name), null)
+    const doc = createDocumentStore<Json | null>({ path: () => file(name), initial: () => null, onCorrupt: 'initial' })
+    const s = doc.read()
     if (!s) return
     const before = rewritten
     fn(s)
-    if (rewritten !== before) writeJsonFile(file(name), s)
+    if (rewritten !== before) doc.write(s)
   }
 
   update('instance-admins.json', (s) => {

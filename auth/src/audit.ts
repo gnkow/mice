@@ -375,7 +375,7 @@ export function auditReadiness(): AuditReadiness {
   let store: 'ok' | 'error' = lastAppendError ? 'error' : 'ok'
   let detail = lastAppendError ?? undefined
   try {
-    events.readLines()
+    events.lastSeq()
   } catch (err) {
     store = 'error'
     detail = String(err)

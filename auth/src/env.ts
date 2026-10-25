@@ -57,7 +57,10 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     cookieSecure: src.COOKIE_SECURE === 'true',
     /** Directory for PAT store (pats.json). */
     dataDir: (src.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
-    /** Job JSONL + work/logs (defaults under AUTH_DATA_DIR/jobs). */
+    backupIntervalHours: Math.max(0, Number(src.AUTH_BACKUP_INTERVAL_HOURS ?? 0) || 0),
+    backupKeep: Math.max(1, Math.floor(Number(src.AUTH_BACKUP_KEEP ?? 7)) || 7),
+    backupDir: src.AUTH_BACKUP_DIR || '',
+    /** Job records + work/logs (defaults under AUTH_DATA_DIR/jobs). */
     jobsDataDir: (
       src.JOBS_DATA_DIR ??
       `${(src.AUTH_DATA_DIR ?? './data').replace(/\/$/, '')}/jobs`

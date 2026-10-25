@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { auditReadiness } from './audit.js'
+import { storageReadiness } from './jsonStore.js'
 import { backChannelLogout } from './backChannelLogout.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
@@ -45,10 +46,12 @@ export function createApp(deps: AppDeps = {}): Hono {
   applyGlobalGuards(app)
 
   app.get('/healthz', (c) => c.json({ ok: true }))
-  // Readiness covers the audit store and chain state; liveness above stays static.
+  // Readiness covers the database, the audit store and chain state; liveness above stays static.
   app.get('/readyz', (c) => {
     const audit = auditReadiness()
-    return c.json({ ok: audit.ok, audit }, audit.ok ? 200 : 503)
+    const storage = storageReadiness()
+    const ok = audit.ok && storage.ok
+    return c.json({ ok, audit, storage }, ok ? 200 : 503)
   })
   registerCliDeviceRoutes(app, { audit })
   registerMeRoutes(app, { audit })

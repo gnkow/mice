@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { writeJsonFile } from '../jsonStore.js'
+import { createDiskDocument, type DiskDocument } from '../stores.js'
 import type { WorkspacesConfig } from './config.js'
 import type { ScanResult } from './scan.js'
 
@@ -107,23 +106,19 @@ export class LeaseStore {
   private readonly locks = new Map<string, Mutex>()
   private readonly waiting = new Set<string>()
 
+  private readonly doc: DiskDocument<{ version: 1; leases: Lease[] }>
+
   constructor(
-    private readonly path: string,
+    path: string,
     private readonly cfg: Pick<WorkspacesConfig, 'leaseTtlSec' | 'leaseMaxTtlSec' | 'leaseOrphanGraceMs'>,
     private readonly now: () => number = Date.now,
   ) {
-    if (existsSync(path)) {
-      try {
-        const raw = JSON.parse(readFileSync(path, 'utf8')) as { leases?: Lease[] }
-        for (const l of raw.leases ?? []) this.leases.set(l.id, l)
-      } catch {
-        /* corrupt file: start empty rather than refuse to boot */
-      }
-    }
+    this.doc = createDiskDocument(path)
+    for (const l of this.doc.read()?.leases ?? []) this.leases.set(l.id, l)
   }
 
   private persist(): void {
-    writeJsonFile(this.path, { version: 1, leases: [...this.leases.values()] })
+    this.doc.write({ version: 1, leases: [...this.leases.values()] })
   }
 
   private async withLock<T>(id: string, fn: () => Promise<T>): Promise<T> {

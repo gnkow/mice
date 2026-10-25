@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 import type { AuditEvent } from './audit.js'
 
 export const FAVORITE_TYPES = ['namespace', 'repo', 'branch', 'stage', 'job', 'session'] as const
@@ -25,8 +25,10 @@ export function favoriteUserKey(user: { iss: string; sub: string }): string {
   return JSON.stringify([user.iss, user.sub])
 }
 
+const doc = createDocumentStore<FavoritesFile>({ path, initial: () => ({ users: {} }), onCorrupt: 'initial' })
+
 function read(): FavoritesFile {
-  const f = readJsonFile<FavoritesFile>(path(), { users: {} })
+  const f = doc.read()
   if (!f || typeof f.users !== 'object' || !f.users) return { users: {} }
   // Legacy rows stored type `workspace`; expose them as `stage`.
   for (const [key, rows] of Object.entries(f.users)) {
@@ -54,7 +56,7 @@ export function addFavorite(userKey: string, type: FavoriteType, id: string): bo
   const rows = (f.users[userKey] ??= [])
   if (rows.some((r) => r.type === type && r.id === id)) return false
   rows.push({ type, id, at: new Date().toISOString() })
-  writeJsonFile(path(), f)
+  doc.write(f)
   return true
 }
 
@@ -64,7 +66,7 @@ export function removeFavorite(userKey: string, type: FavoriteType, id: string):
   const next = rows.filter((r) => !(r.type === type && r.id === id))
   if (next.length === rows.length) return false
   f.users[userKey] = next
-  writeJsonFile(path(), f)
+  doc.write(f)
   return true
 }
 
@@ -78,7 +80,7 @@ export function purgeFavorites(match: (row: FavoriteRow) => boolean): number {
     if (next.length) f.users[key] = next
     else delete f.users[key]
   }
-  if (n) writeJsonFile(path(), f)
+  if (n) doc.write(f)
   return n
 }
 

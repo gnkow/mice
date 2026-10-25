@@ -1,10 +1,10 @@
 import { join } from 'node:path'
 import { env } from './env.js'
 import { normalizeDesktopSession } from './sessionsMounts.js'
-import { createJsonlLog } from './stores.js'
+import { createCollection } from './stores.js'
 import type { DesktopSession, DesktopSessionStatus } from './sessionsTypes.js'
 
-const log = createJsonlLog<DesktopSession>(() => join(env.sessionsDataDir, 'sessions.jsonl'))
+const sessions = createCollection<DesktopSession>(() => join(env.sessionsDataDir, 'sessions.jsonl'))
 
 export function assertSafeSessionId(sessionId: string): string {
   const id = String(sessionId || '').trim().toLowerCase()
@@ -20,26 +20,22 @@ export function sessionsWorkDir(sessionId: string): string {
 }
 
 export function appendSession(session: DesktopSession): void {
-  log.append(session)
+  sessions.put(session.id, session)
 }
 
 function readAll(): DesktopSession[] {
-  const byId = new Map<string, DesktopSession>()
-  for (const row of log.readAll()) {
-    if (row?.id) byId.set(row.id, normalizeDesktopSession(row))
-  }
-  return [...byId.values()]
+  return sessions.list().filter((row) => row?.id).map(normalizeDesktopSession)
 }
 
-/** Latest record per id (JSONL append-only). */
+/** One record per id, newest first. */
 export function listSessions(): DesktopSession[] {
   return readAll().sort((a, b) => b.created_at.localeCompare(a.created_at))
 }
 
 export function getSessionRecord(id: string): DesktopSession | null {
   try {
-    const safe = assertSafeSessionId(id)
-    return listSessions().find((s) => s.id === safe) ?? null
+    const row = sessions.get(assertSafeSessionId(id))
+    return row?.id ? normalizeDesktopSession(row) : null
   } catch {
     return null
   }
@@ -54,10 +50,6 @@ export function updateSession(
   const next: DesktopSession = { ...cur, ...patch, id: cur.id }
   appendSession(next)
   return next
-}
-
-export function rewriteSessionsCompact(): void {
-  log.rewrite(listSessions())
 }
 
 export function countActiveForOwner(sub: string, iss: string): number {

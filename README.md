@@ -281,7 +281,7 @@ access revocation. Payloads may include resource names and event summaries, neve
 file contents or token secrets.
 
 This implementation supports **one auth process only**. Persist and back up
-`AUTH_DATA_DIR`; notification state and pending delivery survive restarts. The
+`AUTH_DATA_DIR` (the SQLite database `mice.db`; `make db-backup` takes an online copy); notification state and pending delivery survive restarts. The
 audit journal supports replay after interrupted notification projection, but a
 crash between a successful domain/upstream mutation and audit append can still
 lose that event. Direct oxen-server writes and external IdP changes are not

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
+import { readText, removeText, writeText } from './jsonStore.js'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-fav-'))
 process.env.AUTH_DATA_DIR = dataDir
@@ -54,7 +55,7 @@ describe('favorites store', () => {
     assert.equal(normalizeFavoriteType('stage'), 'stage')
     assert.equal(normalizeFavoriteType('bogus'), null)
     const c = favoriteUserKey({ iss: 'i', sub: 'legacy' })
-    writeFileSync(
+    writeText(
       join(dataDir, 'favorites.json'),
       JSON.stringify({ users: { [c]: [{ type: 'workspace', id: 'ns/r!w9', at: '2020-01-01T00:00:00Z' }] } }),
     )

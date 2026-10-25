@@ -1,4 +1,5 @@
-import { appendText, readText, writeText } from './jsonStore.js'
+import { appendText, lastLogSeq, protectLog, rowClear, rowGet, rowList, rowPut, rowRemove, readLogLines, readText, rewriteLogLines, writeJsonOnDisk, writeText, type LogRow } from './jsonStore.js'
+import { readFileSync } from 'node:fs'
 
 type PathSource = string | (() => string)
 const resolve = (p: PathSource): string => (typeof p === 'function' ? p() : p)
@@ -21,16 +22,22 @@ export interface AppendOnlyLog<T> {
   append(row: T): void
   /** Every non-blank line in order, unparsed. */
   readLines(): string[]
+  /** Rows with a sequence greater than `seq`, for consumers that keep a cursor. Sequences start at 1. */
+  readAfter(seq: number): LogRow[]
+  /** Sequence of the newest row; 0 when empty. */
+  lastSeq(): number
 }
 
 export function createAppendOnlyLog<T>(path: PathSource): AppendOnlyLog<T> {
   return {
-    append: (row) => appendText(resolve(path), `${JSON.stringify(row)}\n`),
-    readLines: () =>
-      (readText(resolve(path)) ?? '')
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean),
+    append(row) {
+      const target = resolve(path)
+      protectLog(target)
+      appendText(target, `${JSON.stringify(row)}\n`)
+    },
+    readLines: () => readLogLines(resolve(path), 0).map((r) => r.line),
+    readAfter: (seq) => readLogLines(resolve(path), seq),
+    lastSeq: () => lastLogSeq(resolve(path)),
   }
 }
 
@@ -40,11 +47,9 @@ export function createJsonlLog<T>(path: PathSource): JsonlLog<T> {
     appendRaw: (text) => appendText(resolve(path), text),
     readAll() {
       const out: T[] = []
-      for (const line of (readText(resolve(path)) ?? '').split('\n')) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
+      for (const { line } of readLogLines(resolve(path), 0)) {
         try {
-          out.push(JSON.parse(trimmed) as T)
+          out.push(JSON.parse(line) as T)
         } catch {
           /* corrupt line: skipped by contract */
         }
@@ -52,7 +57,7 @@ export function createJsonlLog<T>(path: PathSource): JsonlLog<T> {
       return out
     },
     rewrite(rows) {
-      writeText(resolve(path), rows.map((r) => `${JSON.stringify(r)}\n`).join(''))
+      rewriteLogLines(resolve(path), rows.map((r) => JSON.stringify(r)))
     },
   }
 }
@@ -67,7 +72,7 @@ export type DocumentStoreOptions<T> = {
    * persisted only by `migrate()`, and by the next transaction since that writes anyway.
    */
   migrate?: (doc: T) => void
-  /** `throw` (default) surfaces unparseable JSON; `initial` treats it as absent. */
+  /** `throw` (default) surfaces unparseable or invalid JSON; `initial` treats either as absent. */
   onCorrupt?: 'throw' | 'initial'
   /** fsync data and directory on every write. */
   durable?: boolean
@@ -78,6 +83,8 @@ export type DocumentStoreOptions<T> = {
 /** Transactional JSON document: read never writes; read-modify-write is one synchronous step. */
 export interface DocumentStore<T> {
   read(): T
+  /** Replace the whole document. */
+  write(doc: T): void
   /** Synchronous and serialized by the single auth process; never await inside `fn`. A throw persists nothing. */
   transaction<R>(fn: (doc: T) => R): R
   /** Explicit migration point: persists the migrated document; returns whether anything changed. */
@@ -95,7 +102,12 @@ export function createDocumentStore<T>(opts: DocumentStoreOptions<T>): DocumentS
       if (opts.onCorrupt === 'initial') return { doc: opts.initial(), exists: false, raw }
       throw error
     }
-    opts.validate?.(doc)
+    try {
+      opts.validate?.(doc)
+    } catch (error) {
+      if (opts.onCorrupt === 'initial') return { doc: opts.initial(), exists: false, raw }
+      throw error
+    }
     opts.migrate?.(doc)
     return { doc, exists: true, raw }
   }
@@ -104,6 +116,7 @@ export function createDocumentStore<T>(opts: DocumentStoreOptions<T>): DocumentS
 
   return {
     read: () => load().doc,
+    write: persist,
     transaction(fn) {
       const { doc } = load()
       const result = fn(doc)
@@ -118,5 +131,62 @@ export function createDocumentStore<T>(opts: DocumentStoreOptions<T>): DocumentS
       persist(doc)
       return true
     },
+  }
+}
+
+/**
+ * Records identified by id: changing one record touches one record. Rows keep first-insert order.
+ * Corruption rule: an unparseable row is skipped. Inside `atomically` on the database adapter, writes commit together.
+ */
+export interface Collection<T> {
+  get(id: string): T | undefined
+  put(id: string, value: T): void
+  remove(id: string): boolean
+  list(): T[]
+  count(): number
+  /** Drop every record (repair tooling and tests). */
+  clear(): void
+}
+
+export function createCollection<T>(path: PathSource): Collection<T> {
+  const parse = (body: string | undefined): T | undefined => {
+    if (body === undefined) return undefined
+    try {
+      return JSON.parse(body) as T
+    } catch {
+      return undefined
+    }
+  }
+  return {
+    get: (id) => parse(rowGet(resolve(path), id)),
+    put: (id, value) => rowPut(resolve(path), id, JSON.stringify(value)),
+    remove: (id) => rowRemove(resolve(path), id),
+    list: () => rowList(resolve(path)).flatMap((r) => { const v = parse(r.body); return v === undefined ? [] : [v] }),
+    count: () => rowList(resolve(path)).length,
+    clear: () => rowClear(resolve(path)),
+  }
+}
+
+/**
+ * A JSON document that stays a plain file because it describes files next to it (workspace state, leases) and is
+ * removed with them. Corruption rule: a missing, unparseable or invalid file reads as absent. Writes are atomic.
+ */
+export interface DiskDocument<T> {
+  read(): T | undefined
+  write(doc: T): void
+}
+
+export function createDiskDocument<T>(path: PathSource, validate?: (value: unknown) => void): DiskDocument<T> {
+  return {
+    read() {
+      try {
+        const value = JSON.parse(readFileSync(resolve(path), 'utf8')) as T
+        validate?.(value)
+        return value
+      } catch {
+        return undefined
+      }
+    },
+    write: (doc) => writeJsonOnDisk(resolve(path), doc),
   }
 }

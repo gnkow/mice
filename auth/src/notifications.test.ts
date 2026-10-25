@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
+import { appendText, readText, removeText, rowClear, rowList, writeText } from './jsonStore.js'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:net'
 import { resolve } from 'node:path'
@@ -26,7 +27,7 @@ const {
   startNotificationWorker,
 } = await import('./notifications.js')
 const {
-  notificationAuditPath, notificationStorePath, notificationTransaction, notificationUserKey, readNotificationState,
+  notificationAuditPath, notificationStorePath, notificationEntriesPath, notificationRowPaths, notificationTransaction, notificationUserKey, readNotificationState,
 } = await import('./notificationsStore.js')
 const {
   defaultNotificationPreferences, nextNotificationDelivery, notificationQuiet, parseNotificationPreferences, resourceIsMuted,
@@ -82,8 +83,9 @@ const subscription = {
 }
 
 beforeEach(() => {
-  rmSync(notificationStorePath(), { force: true })
-  rmSync(notificationAuditPath(), { force: true })
+  removeText(notificationStorePath())
+  removeText(notificationAuditPath())
+  for (const p of notificationRowPaths()) rowClear(p)
   delete process.env.NOTIFICATIONS_SMTP_URL
   delete process.env.NOTIFICATIONS_EMAIL_FROM
   delete process.env.NOTIFICATIONS_VAPID_PUBLIC_KEY
@@ -119,7 +121,7 @@ describe('notification authorization, inbox and API', () => {
     assert.equal((await inbox(reader)).items.length, 1)
     assert.equal((await inbox(admin)).items.length, 0)
     assert.equal((await inbox(outsider)).items.length, 0)
-    const serialized = readFileSync(notificationStorePath(), 'utf8')
+    const serialized = readText(notificationStorePath())!
     assert(!serialized.includes('NEVER_PERSIST_ID_TOKEN'))
     assert(!serialized.includes('patScopes'))
     removeRepoCollaborator('team', 'data', reader)
@@ -268,39 +270,74 @@ describe('notification scheduling and recovery', () => {
 
   it('deduplicates audit capture and replays missed journal appends durably', async () => {
     const first = audit({ message: 'SECRET_TOKEN', detail: { body: 'SECRET_BODY', error: 'SECRET_ERROR' } })
-    appendFileSync(notificationAuditPath(), `${JSON.stringify(first)}\n`)
+    appendText(notificationAuditPath(), `${JSON.stringify(first)}\n`)
     captureNotificationAudit(first)
     replayNotificationAudit()
     assert.equal((await inbox()).items[0].count, 1)
     const second = audit()
-    appendFileSync(notificationAuditPath(), `${JSON.stringify(second)}\n`)
+    appendText(notificationAuditPath(), `${JSON.stringify(second)}\n`)
     replayNotificationAudit()
     replayNotificationAudit()
     assert.equal((await inbox()).items[0].count, 2)
-    const state = readFileSync(notificationStorePath(), 'utf8')
+    const state = readText(notificationStorePath())!
     assert(!state.includes('SECRET_'))
-    assert.equal(readNotificationState().auditOffset, Buffer.byteLength(readFileSync(notificationAuditPath())))
+    assert.equal(readNotificationState().auditSeq, 2)
+  })
+
+  it('keeps entries and deliveries as rows, so a change rewrites a row and not the document', async () => {
+    event()
+    assert.equal((await inbox(reader)).items.length, 1)
+    const doc = JSON.parse(readText(notificationStorePath())!)
+    assert.deepEqual([doc.entries, doc.deliveries, doc.events], [[], [], {}])
+    assert.equal(rowList(notificationEntriesPath()).length, readNotificationState().entries.length)
+    assert(readNotificationState().entries.length > 0)
+    notificationTransaction((s) => { s.entries[0].read = true })
+    assert.equal(JSON.parse(rowList(notificationEntriesPath())[0].body).read, true)
+  })
+
+  it('moves entries embedded in a legacy document into rows on the next change', async () => {
+    event()
+    await inbox(reader)
+    const embedded = { ...readNotificationState() }
+    for (const p of notificationRowPaths()) rowClear(p)
+    writeText(notificationStorePath(), JSON.stringify(embedded))
+    assert.equal(readNotificationState().entries.length, embedded.entries.length)
+    notificationTransaction(() => {})
+    assert.deepEqual(JSON.parse(readText(notificationStorePath())!).entries, [])
+    assert.equal(rowList(notificationEntriesPath()).length, embedded.entries.length)
+  })
+
+  it('upgrades a legacy byte-offset cursor to a row sequence without replaying acknowledged events', async () => {
+    const acknowledged = `${JSON.stringify(audit())}\n${JSON.stringify(audit())}\n`
+    appendText(notificationAuditPath(), acknowledged)
+    const legacy = { ...readNotificationState(), auditOffset: Buffer.byteLength(acknowledged) } as Record<string, unknown>
+    delete legacy.auditSeq
+    writeText(notificationStorePath(), JSON.stringify(legacy))
+    appendText(notificationAuditPath(), `${JSON.stringify(audit())}\n`)
+    replayNotificationAudit()
+    assert.equal(readNotificationState().auditSeq, 3)
+    assert.equal((await inbox()).items[0].count, 1)
   })
 
   it('does not replay across later ACL mutations, while preserving explicit personal notices', async () => {
     const old = audit({ ts: new Date(Date.now() + 1).toISOString() })
     const grant = audit({ ts: new Date(Date.now() + 2).toISOString(), action: 'repo.collaborator.set', detail: { target: reader } })
-    appendFileSync(notificationAuditPath(), `${JSON.stringify(old)}\n${JSON.stringify(grant)}\n`)
+    appendText(notificationAuditPath(), `${JSON.stringify(old)}\n${JSON.stringify(grant)}\n`)
     replayNotificationAudit()
     assert.equal((await inbox()).items.length, 1)
     assert.equal((await inbox()).items[0].resource, undefined)
   })
 
   it('strictly fails corrupt persisted state and malformed journal lines without acknowledging them', async () => {
-    writeFileSync(notificationStorePath(), '{broken')
+    writeText(notificationStorePath(), '{broken')
     assert.throws(() => readNotificationState(), SyntaxError)
     assert.equal((await request('/preferences')).status, 503)
-    rmSync(notificationStorePath())
+    removeText(notificationStorePath())
     rememberNotificationUser(reader)
-    appendFileSync(notificationAuditPath(), '{invalid}\n')
-    const offset = readNotificationState().auditOffset
+    appendText(notificationAuditPath(), '{invalid}\n')
+    const cursor = readNotificationState().auditSeq
     assert.throws(() => replayNotificationAudit(), SyntaxError)
-    assert.equal(readNotificationState().auditOffset, offset)
+    assert.equal(readNotificationState().auditSeq, cursor)
     await assert.rejects(runNotificationWorkerOnce(), SyntaxError)
   })
 

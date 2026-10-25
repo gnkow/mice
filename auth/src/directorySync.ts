@@ -9,7 +9,7 @@ import {
   type DirectoryUserStatus,
 } from './directory.js'
 import { env } from './env.js'
-import { defineStore } from './typedStore.js'
+import { createDocumentStore } from './stores.js'
 import { principalKey } from './principal.js'
 import { authenticateUser } from './requireAuth.js'
 import { listInstanceAdmins } from './authzInstanceStore.js'
@@ -48,10 +48,13 @@ const SYSTEM_ACTOR: AuditActor = {
   name: 'Directory sync',
 }
 
-const store = defineStore<SyncState>({
-  file: () => join(env.dataDir, 'directory-sync.json'),
-  empty: () => ({ version: 1, revoked: {} }),
-  valid: (raw) => (raw as SyncState | null)?.version === 1 && !!(raw as SyncState).revoked,
+const store = createDocumentStore<SyncState>({
+  path: () => join(env.dataDir, 'directory-sync.json'),
+  initial: () => ({ version: 1, revoked: {} }),
+  validate(doc) {
+    if (doc?.version !== 1 || !doc.revoked) throw new Error('Invalid directory sync state')
+  },
+  onCorrupt: 'initial',
 })
 const readState = store.read
 

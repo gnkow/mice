@@ -48,6 +48,11 @@ services:
       PORT: "8080"
       OXEN_UPSTREAM: http://oxen-server:3001
       AUTH_DATA_DIR: /data
+      # All durable state lives in this SQLite file on the auth_data volume; legacy JSON/JSONL is imported once on first boot.
+      AUTH_DATABASE_PATH: ${AUTH_DATABASE_PATH:-/data/mice.db}
+      # Verified scheduled backups (0 = off), newest AUTH_BACKUP_KEEP kept in /data/backups unless AUTH_BACKUP_DIR points elsewhere.
+      AUTH_BACKUP_INTERVAL_HOURS: ${AUTH_BACKUP_INTERVAL_HOURS:-0}
+      AUTH_BACKUP_KEEP: ${AUTH_BACKUP_KEEP:-7}
       # Audit checkpoints are signed with a key kept outside AUTH_DATA_DIR (boot fails without it).
       # Dev: `make audit-key` creates .secrets/audit-signing.pem. Production: mount your own secret.
       AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key

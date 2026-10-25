@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
 import { fakeClock, useClock } from './clock.js'
+import { readText, removeText, writeText } from './jsonStore.js'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-tokens-'))
 process.env.AUTH_DATA_DIR = dataDir
@@ -159,9 +160,9 @@ describe('PAT expiry', () => {
 
   it('grandfathers legacy tokens to 365 days exactly once', () => {
     const file = join(dataDir, 'pats.json')
-    const store = JSON.parse(readFileSync(file, 'utf8'))
+    const store = JSON.parse(readText(file)!)
     for (const t of store.tokens) delete t.expiresAt
-    writeFileSync(file, JSON.stringify(store))
+    writeText(file, JSON.stringify(store))
     const first = listPatsForUser(alice)
     const days = (Date.parse(first[0].expiresAt ?? '') - Date.now()) / 86_400_000
     assert.ok(days > 364.9 && days <= 365)

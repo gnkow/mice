@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { currentClock } from './clock.js'
 import { env } from './env.js'
 import { principalKey } from './principal.js'
-import { defineStore } from './typedStore.js'
+import { createDocumentStore } from './stores.js'
 
 /** `notBefore` is the full cut-off (Sessions and PATs); `sessionsNotBefore` ends Sessions only. */
 type Store = {
@@ -12,10 +12,13 @@ type Store = {
 }
 type CredentialKind = 'session' | 'pat'
 
-const store = defineStore<Store>({
-  file: () => join(env.dataDir, 'session-revocations.json'),
-  empty: () => ({ version: 1, notBefore: {} }),
-  valid: (raw) => (raw as Store | null)?.version === 1 && !!(raw as Store).notBefore,
+const store = createDocumentStore<Store>({
+  path: () => join(env.dataDir, 'session-revocations.json'),
+  initial: () => ({ version: 1, notBefore: {} }),
+  validate(doc) {
+    if (doc?.version !== 1 || !doc.notBefore) throw new Error('Invalid session revocation store')
+  },
+  onCorrupt: 'initial',
 })
 const nowSec = () => Math.floor(currentClock.now() / 1000)
 
@@ -27,7 +30,7 @@ function raise(table: Record<string, number>, key: string, cutoff: number): numb
 
 /** Invalidate every Session and PAT of a Principal issued up to now. Returns the cut-off (epoch s). */
 export function revokeSessionsFor(principal: { iss: string; sub: string }): number {
-  return store.update((s) => raise(s.notBefore, principalKey(principal), nowSec()))
+  return store.transaction((s) => raise(s.notBefore, principalKey(principal), nowSec()))
 }
 
 /** Invalidate Sessions only; PATs stay valid. Returns the cut-off (epoch s). */
@@ -35,7 +38,7 @@ export function revokeSessionsOnlyFor(
   principal: { iss: string; sub: string },
   at: number = nowSec(),
 ): number {
-  return store.update((s) => {
+  return store.transaction((s) => {
     s.sessionsNotBefore ??= {}
     return raise(s.sessionsNotBefore, principalKey(principal), at)
   })

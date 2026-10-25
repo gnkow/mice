@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { readText, removeText, writeText } from './jsonStore.js'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-identity-'))
 process.env.AUTH_DATA_DIR = dataDir
@@ -26,7 +27,7 @@ describe('isScopedCredential', () => {
 })
 const { migrateIdentityKeys } = await import('./identityMigration.js')
 
-const reset = () => writeFileSync(join(dataDir, 'instance-admins.json'), '')
+const reset = () => writeText(join(dataDir, 'instance-admins.json'), '')
 
 describe('bootstrap identity matching', () => {
   it('matches iss+sub and distinguishes issuers sharing a sub', () => {
@@ -62,23 +63,23 @@ describe('identity key migration', () => {
   const q = (s: string) => `${issuer}\0${s}`
 
   it('rewrites bare keys once and preserves access', () => {
-    writeFileSync(
+    writeText(
       join(dataDir, 'instance-admins.json'),
       JSON.stringify({ version: 1, enforce: true, admins: ['old-admin', q('new-admin')], permissions: { 'old-admin': ['view_audit'] } }),
     )
-    writeFileSync(
+    writeText(
       join(dataDir, 'namespace-members.json'),
       JSON.stringify({ version: 2, members: { team: { 'old-member': 'owner' } } }),
     )
     assert.equal(migrateIdentityKeys(issuer), 3)
-    const admins = JSON.parse(readFileSync(join(dataDir, 'instance-admins.json'), 'utf8'))
+    const admins = JSON.parse(readText(join(dataDir, 'instance-admins.json'))!)
     assert.deepEqual(admins.admins, [q('old-admin'), q('new-admin')])
     assert.deepEqual(admins.permissions, { [q('old-admin')]: ['view_audit'] })
-    const members = JSON.parse(readFileSync(join(dataDir, 'namespace-members.json'), 'utf8'))
+    const members = JSON.parse(readText(join(dataDir, 'namespace-members.json'))!)
     assert.deepEqual(members.members.team, { [q('old-member')]: 'owner' })
 
-    const snapshot = readFileSync(join(dataDir, 'instance-admins.json'), 'utf8')
+    const snapshot = readText(join(dataDir, 'instance-admins.json'))!
     assert.equal(migrateIdentityKeys(issuer), 0)
-    assert.equal(readFileSync(join(dataDir, 'instance-admins.json'), 'utf8'), snapshot)
+    assert.equal(readText(join(dataDir, 'instance-admins.json'))!, snapshot)
   })
 })

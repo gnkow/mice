@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { env } from './env.js'
-import { createDocumentStore, createJsonlLog } from './stores.js'
+import { createCollection, createDocumentStore } from './stores.js'
 import type { JobRun, JobStatus } from './jobsTypes.js'
 
-const jobsLog = createJsonlLog<JobRun>(() => join(env.jobsDataDir, 'jobs.jsonl'))
+const jobRows = createCollection<JobRun>(() => join(env.jobsDataDir, 'jobs.jsonl'))
 
 const aliasStore = createDocumentStore<Record<string, string>>({
   path: () => join(env.jobsDataDir, 'job-aliases.json'),
@@ -56,20 +56,12 @@ export function jobsLogPath(jobId: string): string {
 }
 
 export function appendJob(job: JobRun): void {
-  jobsLog.append(job)
+  jobRows.put(job.id, job)
 }
 
-function readAll(): JobRun[] {
-  const byId = new Map<string, JobRun>()
-  for (const j of jobsLog.readAll()) if (j?.id) byId.set(j.id, j)
-  return [...byId.values()]
-}
-
-/** Rewrite store with latest snapshot per id (compaction). */
+/** Replace the stored snapshot of one job. */
 export function upsertJob(job: JobRun): void {
-  const next = readAll().filter((j) => j.id !== job.id)
-  next.push(job)
-  jobsLog.rewrite(next)
+  jobRows.put(job.id, job)
 }
 
 /** Log files stay real files (the runner streams into them); injectable so rekey failure is testable. */
@@ -95,8 +87,8 @@ export function rekeyJob(oldId: string, job: JobRun, logs: JobLogFiles = realLog
     upsertJob(job)
     return { logRenamed: false }
   }
-  const before = readAll()
-  jobsLog.rewrite([...before.filter((j) => j.id !== job.id), job])
+  const displaced = jobRows.get(job.id)
+  jobRows.put(job.id, job)
 
   try {
     aliasStore.transaction((aliases) => {
@@ -106,11 +98,12 @@ export function rekeyJob(oldId: string, job: JobRun, logs: JobLogFiles = realLog
       }
     })
   } catch (error) {
-    jobsLog.rewrite(before)
+    if (displaced) jobRows.put(job.id, displaced)
+    else jobRows.remove(job.id)
     throw error
   }
 
-  jobsLog.rewrite([...before.filter((j) => j.id !== oldId && j.id !== job.id), job])
+  jobRows.remove(oldId)
 
   const oldLog = jobsLogPath(oldId)
   const newLog = jobsLogPath(job.id)
@@ -125,7 +118,7 @@ export function rekeyJob(oldId: string, job: JobRun, logs: JobLogFiles = realLog
 
 export function getJob(id: string): JobRun | null {
   const resolved = resolveJobId(id)
-  return readAll().find((j) => j.id === resolved) ?? null
+  return jobRows.get(resolved) ?? null
 }
 
 export type JobListQuery = {
@@ -143,20 +136,20 @@ export function listJobs(q: JobListQuery): {
 } {
   // Allow higher ceiling for ACL over-fetch on global list routes.
   const limit = Math.min(Math.max(1, q.limit ?? 50), 500)
-  let jobs = readAll().sort((a, b) => b.created_at.localeCompare(a.created_at))
-  if (q.namespace) jobs = jobs.filter((j) => j.namespace === q.namespace)
-  if (q.repo) jobs = jobs.filter((j) => j.repo === q.repo)
-  if (q.status) jobs = jobs.filter((j) => j.status === q.status)
-  if (q.pin_commit) jobs = jobs.filter((j) => j.pin_commit === q.pin_commit)
+  let rows = jobRows.list().sort((a, b) => b.created_at.localeCompare(a.created_at))
+  if (q.namespace) rows = rows.filter((j) => j.namespace === q.namespace)
+  if (q.repo) rows = rows.filter((j) => j.repo === q.repo)
+  if (q.status) rows = rows.filter((j) => j.status === q.status)
+  if (q.pin_commit) rows = rows.filter((j) => j.pin_commit === q.pin_commit)
 
   if (q.cursor) {
-    const idx = jobs.findIndex((j) => j.id === q.cursor)
-    if (idx >= 0) jobs = jobs.slice(idx + 1)
+    const idx = rows.findIndex((j) => j.id === q.cursor)
+    if (idx >= 0) rows = rows.slice(idx + 1)
   }
 
-  const page = jobs.slice(0, limit)
+  const page = rows.slice(0, limit)
   const nextCursor =
-    jobs.length > limit ? (page[page.length - 1]?.id ?? null) : null
+    rows.length > limit ? (page[page.length - 1]?.id ?? null) : null
   return { jobs: page, nextCursor }
 }
 

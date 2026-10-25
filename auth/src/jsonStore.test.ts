@@ -4,22 +4,25 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import {
+  createFileJsonBackend,
   createMemoryJsonBackend,
-  readJsonFile,
+  readText,
   useJsonBackend,
-  writeJsonFile,
+  writeText,
 } from './jsonStore.js'
 
 describe('json store backends', () => {
   it('file backend round-trips and leaves no temp files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mice-json-'))
+    const restore = useJsonBackend(createFileJsonBackend())
     try {
       const path = join(dir, 'a', 'x.json')
-      assert.deepEqual(readJsonFile(path, { n: 0 }), { n: 0 })
-      writeJsonFile(path, { n: 1 })
-      assert.deepEqual(readJsonFile(path, { n: 0 }), { n: 1 })
+      assert.equal(readText(path), undefined)
+      writeText(path, '{"n":1}')
+      assert.equal(readText(path), '{"n":1}')
       assert.deepEqual(readdirSync(join(dir, 'a')), ['x.json'])
     } finally {
+      restore()
       rmSync(dir, { recursive: true, force: true })
     }
   })
@@ -28,25 +31,13 @@ describe('json store backends', () => {
     const path = join(tmpdir(), 'mice-json-never-written', 'y.json')
     const restore = useJsonBackend(createMemoryJsonBackend())
     try {
-      assert.deepEqual(readJsonFile(path, []), [])
-      writeJsonFile(path, ['a'])
-      assert.deepEqual(readJsonFile(path, []), ['a'])
+      assert.equal(readText(path), undefined)
+      writeText(path, '["a"]')
+      assert.equal(readText(path), '["a"]')
       assert.equal(existsSync(path), false)
     } finally {
       restore()
     }
-    assert.deepEqual(readJsonFile(path, 'fallback'), 'fallback')
-  })
-
-  it('memory backend returns copies so callers cannot mutate stored state', () => {
-    const restore = useJsonBackend(createMemoryJsonBackend())
-    try {
-      writeJsonFile('/m/z.json', { list: [1] })
-      const a = readJsonFile<{ list: number[] }>('/m/z.json', { list: [] })
-      a.list.push(2)
-      assert.deepEqual(readJsonFile('/m/z.json', null), { list: [1] })
-    } finally {
-      restore()
-    }
+    assert.equal(readText(path), undefined)
   })
 })

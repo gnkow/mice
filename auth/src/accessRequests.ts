@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 // env.dataDir via path()
 import type { SessionUser } from './session.js'
 import {
@@ -32,8 +32,10 @@ function path() {
   return join(env.dataDir, 'access-requests.json')
 }
 
+const doc = createDocumentStore<Store>({ path, initial: () => ({ version: 1, requests: [] }), onCorrupt: 'initial' })
+
 function read(): Store {
-  const s = readJsonFile(path(), { version: 1, requests: [] } as Store)
+  const s = doc.read()
   if (!s || s.version !== 1 || !Array.isArray(s.requests)) {
     return { version: 1, requests: [] }
   }
@@ -41,7 +43,7 @@ function read(): Store {
 }
 
 function write(s: Store) {
-  writeJsonFile(path(), s)
+  doc.write(s)
 }
 
 export function listAccessRequests(opts?: {

@@ -45,7 +45,11 @@ Everything below was checked against the repo at time of writing (see §10 for w
 | Compose defaults | Dev secrets baked in as `${VAR:-default}`; `NODE_TLS_REJECT_UNAUTHORIZED=0` default; `AUTHZ_DEV_GRANT_ALL=true`; `COOKIE_SECURE=false`; `NODE_ENV` is **not** set by Compose | `compose.yaml` |
 | Secrets | Plain env vars only (`SESSION_SECRET`, `OIDC_CLIENT_SECRET`, `NOTIFICATIONS_SMTP_URL`, `NOTIFICATIONS_VAPID_PRIVATE_KEY`, `SESSIONS_RUSTGUAC_API_KEY`, `SESSIONS_GUAC_CRYPT_KEY`); no `_FILE` variants or secret-manager integration found | `env.ts` |
 
-### 2.3 State stores (single instance, local disk)
+### 2.3 State stores (single instance, SQLite)
+
+> **Update:** durable state now lives in one SQLite database (`AUTH_DATABASE_PATH`, default `$AUTH_DATA_DIR/mice.db`) behind the same persistence seam; see [ADR 0003](../docs/adr/0003-sqlite-persistence.md). The table below names the logical stores and owners; read "file" as "document or log row key". Workspace trees, `state.json`/`base.json`/`changes-cache.json`/`.leases.json`, job logs and checkout caches stay on disk. The first boot imports legacy files and moves them to `legacy-import/`.
+>
+> **Backup:** `make db-backup` writes a consistent copy to `<data>/backups/mice-<timestamp>.db` while the stack runs; set `AUTH_BACKUP_INTERVAL_HOURS` (and `AUTH_BACKUP_KEEP`, `AUTH_BACKUP_DIR`) for verified scheduled copies with retention. **Restore:** `docker compose stop auth`, replace the database file (and delete any `mice.db-wal`/`mice.db-shm`) with the copy, `docker compose start auth`; readiness (`/readyz`, `storage` and `audit`) must be green and the audit chain verified.
 
 All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data`) unless noted. Shared helper: [`auth/src/jsonStore.ts`](../auth/src/jsonStore.ts) — `readJsonFile` (returns the **fallback on any read/parse error**, silently) and `writeJsonFile` (write `path.<pid>.tmp` then `renameSync`; **no fsync**, no lock, no version check).
 

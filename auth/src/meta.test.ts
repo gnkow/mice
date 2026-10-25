@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
+import { readText, removeText, writeText } from './jsonStore.js'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-meta-'))
 process.env.AUTH_DATA_DIR = dataDir
@@ -109,18 +110,18 @@ describe('storage and concurrency', () => {
   })
   it('persistently migrates legacy rules without copying inherited values', () => {
     const path = join(dataDir, 'meta.json')
-    const file = JSON.parse(readFileSync(path, 'utf8'))
+    const file = JSON.parse(readText(path)!)
     const explicit = parseRef('repo', 'legacy/data')
     const absent = parseRef('file', 'legacy/data:a.png')
     const record = { ref: explicit, revision: 8, tags: ['kept'], labels: { owner: 'local' }, inherit: false, propagation: { 'tag:kept': { mode: 'all' } }, removeTags: ['old'], unset: { labels: ['gone'] }, createdAt: '2026-01-01', updatedAt: '2026-01-01', updatedBy: actor }
     file.records[refKey(explicit)] = record
     file.records[refKey(absent)] = { ...record, ref: absent, revision: 9, tags: [], labels: {} }
-    writeFileSync(path, JSON.stringify(file))
+    writeText(path, JSON.stringify(file))
     assert.deepEqual(getOwnRecord(explicit)?.tags, ['kept'])
     assert.equal(getOwnRecord(absent), null)
-    assert.ok(Object.hasOwn(JSON.parse(readFileSync(path, 'utf8')).records[refKey(explicit)], 'inherit'), 'reads never write')
+    assert.ok(Object.hasOwn(JSON.parse(readText(path)!).records[refKey(explicit)], 'inherit'), 'reads never write')
     assert.equal(migrateMetaStore(), true)
-    const migrated = JSON.parse(readFileSync(path, 'utf8'))
+    const migrated = JSON.parse(readText(path)!)
     for (const field of ['inherit', 'propagation', 'removeTags', 'unset']) assert.equal(Object.hasOwn(migrated.records[refKey(explicit)], field), false)
     assert.equal(migrated.records[refKey(absent)], undefined)
     assert.equal(getRevision(absent), 9)
@@ -128,12 +129,12 @@ describe('storage and concurrency', () => {
   })
   it('surfaces corrupt storage rather than replacing it', () => {
     const path = join(dataDir, 'meta.json')
-    const original = readFileSync(path, 'utf8')
+    const original = readText(path)!
     try {
-      writeFileSync(path, '{invalid')
+      writeText(path, '{invalid')
       assert.throws(() => getOwnRecord(ref), SyntaxError)
-      assert.equal(readFileSync(path, 'utf8'), '{invalid')
-    } finally { writeFileSync(path, original) }
+      assert.equal(readText(path)!, '{invalid')
+    } finally { writeText(path, original) }
   })
 })
 

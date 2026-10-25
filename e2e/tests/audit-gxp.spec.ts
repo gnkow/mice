@@ -9,7 +9,8 @@ import { mintSession } from '../helpers/session'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
 const OXEN_URL = process.env.OXEN_URL ?? 'http://127.0.0.1:3001'
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..')
-const AUDIT_FILE = '/data/audit.jsonl'
+const DB_FILE = '/data/mice.db'
+const AUDIT_LOG = 'audit.jsonl'
 
 const test = base
 
@@ -20,6 +21,12 @@ function compose(args: string[], opts: { input?: string } = {}): string {
 /** Runs JS inside the auth container, where the audit volume is mounted at /data. */
 function authNode(script: string): string {
   return compose(['exec', '-T', 'auth', 'node', '-e', script])
+}
+
+/** Runs SQL against the auth database from inside the container (WAL allows a second connection). */
+function authSql(sql: string): string {
+  const script = `const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('${DB_FILE}');db.exec('PRAGMA busy_timeout=5000');${sql};db.close()`
+  return authNode(script)
 }
 
 const dockerStack = (() => {
@@ -119,15 +126,15 @@ test.describe('audit GxP deny paths', () => {
       (await page.request.post(`${AUTH_URL}/auth/namespaces`, { data: { name: ns, basePermission: 'none' } })).ok(),
     ).toBeTruthy()
 
-    // A directory where the log file should be makes every append (and read) fail.
-    authNode(`const fs=require('fs');fs.renameSync('${AUDIT_FILE}','${AUDIT_FILE}.e2e-bak');fs.mkdirSync('${AUDIT_FILE}')`)
+    // A trigger that aborts inserts makes every audit append fail while reads keep working.
+    authSql(`db.exec("CREATE TRIGGER e2e_block_audit BEFORE INSERT ON log_rows WHEN NEW.log='${AUDIT_LOG}' BEGIN SELECT RAISE(ABORT,'e2e: audit store unwritable'); END")`)
     try {
       const refused = await page.request.post(`${AUTH_URL}/api/repos`, { data: { namespace: ns, name: 'never' } })
       expect(refused.status()).toBe(503)
       expect(await oxenHasRepo(ns, 'never')).not.toBe(true)
       expect((await fetch(`${AUTH_URL}/readyz`)).status).toBe(503)
     } finally {
-      authNode(`const fs=require('fs');fs.rmdirSync('${AUDIT_FILE}');fs.renameSync('${AUDIT_FILE}.e2e-bak','${AUDIT_FILE}')`)
+      authSql('db.exec("DROP TRIGGER IF EXISTS e2e_block_audit")')
     }
     const after = await page.request.get(`${AUTH_URL}/api/repos/${ns}/never`)
     expect(after.status()).toBe(404)
@@ -136,7 +143,7 @@ test.describe('audit GxP deny paths', () => {
     await waitForReadyz((status) => status === 200)
   })
 
-  test('TC-AUDIT-GXP-03: a tampered audit.jsonl fails verification and blocks mutations until acknowledged', async ({
+  test('TC-AUDIT-GXP-03: a tampered audit log fails verification and blocks mutations until acknowledged', async ({
     browser,
   }) => {
     test.skip(!dockerStack, 'needs the compose stack and docker')
@@ -150,10 +157,15 @@ test.describe('audit GxP deny paths', () => {
         (await admin.page.request.post(`${AUTH_URL}/auth/namespaces`, { data: { name: ns, basePermission: 'none' }, headers: withReason })).ok(),
       ).toBeTruthy()
 
+      // The database refuses to change audit rows, so tampering means first removing that protection out of band.
       const edit = (from: string, to: string) =>
-        authNode(
-          `const fs=require('fs');const l=fs.readFileSync('${AUDIT_FILE}','utf8').split('\\n');l[0]=l[0].replace('${from}','${to}');fs.writeFileSync('${AUDIT_FILE}',l.join('\\n'))`,
+        authSql(
+          `db.exec("DELETE FROM append_only_logs WHERE log='${AUDIT_LOG}'");db.prepare("UPDATE log_rows SET line=replace(line,?,?) WHERE log=? AND seq=1").run('${from}','${to}','${AUDIT_LOG}');db.exec("INSERT OR IGNORE INTO append_only_logs (log) VALUES ('${AUDIT_LOG}')")`,
         )
+      const protectedFromEdit = authSql(
+        `try{db.prepare("UPDATE log_rows SET line=line WHERE log=?").run('${AUDIT_LOG}');console.log('CHANGED')}catch(e){console.log('REJECTED')}`,
+      )
+      expect(protectedFromEdit).toContain('REJECTED')
       edit('"status":200', '"status":201')
       try {
         compose(['restart', 'auth'])

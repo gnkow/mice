@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 import { currentClock, type Clock } from './clock.js'
 import type { PatScope } from './session.js'
 
@@ -64,10 +64,11 @@ export function createFileCredentialStore(opts: {
   clock?: Clock
 }): CredentialStore {
   const clock = opts.clock ?? currentClock
-  const write = (s: StoreFile) => writeJsonFile(opts.path(), s)
+  const doc = createDocumentStore<StoreFile | null>({ path: opts.path, initial: () => null, onCorrupt: 'initial' })
+  const write = (s: StoreFile) => doc.write(s)
   function read(): StoreFile {
     try {
-      const parsed = readJsonFile<StoreFile | null>(opts.path(), null)
+      const parsed = doc.read()
       if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tokens)) {
         return { version: 1, tokens: [] }
       }

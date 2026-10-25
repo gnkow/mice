@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { env } from './env.js'
-import { readJsonFile, writeJsonFile } from './jsonStore.js'
+import { createDocumentStore } from './stores.js'
 
 export const ANNOUNCEMENT_SEVERITIES = ['info', 'warning', 'critical'] as const
 export type AnnouncementSeverity = (typeof ANNOUNCEMENT_SEVERITIES)[number]
@@ -32,13 +32,15 @@ function path(): string {
   return join(env.dataDir, 'announcements.json')
 }
 
+const doc = createDocumentStore<{ announcements?: Announcement[] }>({ path, initial: () => ({}), onCorrupt: 'initial' })
+
 function read(): Announcement[] {
-  const f = readJsonFile<{ announcements?: Announcement[] }>(path(), {})
+  const f = doc.read()
   return Array.isArray(f.announcements) ? f.announcements : []
 }
 
 function write(list: Announcement[]): void {
-  writeJsonFile(path(), { announcements: list })
+  doc.write({ announcements: list })
 }
 
 export function isLive(a: Announcement, now = Date.now()): boolean {
