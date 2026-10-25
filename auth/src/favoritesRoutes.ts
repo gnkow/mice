@@ -49,7 +49,7 @@ async function check(
     return 'hidden'
   }
   if (out) out.ref = ref
-  return canReadEntity(user, ref, lookup) ? 'ok' : 'hidden'
+  return await canReadEntity(user, ref, lookup) ? 'ok' : 'hidden'
 }
 
 /** Route-family error shape: `{ error }` with the error's own status. */
@@ -71,11 +71,11 @@ export function registerFavoritesRoutes(app: Hono): void {
     const want = c.req.query('type')
     const wantType = want ? parseTarget(want, 'x').type : undefined
     const visible: Array<FavoriteRow & { namespace?: string; repo?: string; name?: string }> = []
-    for (const row of listFavorites(key)) {
+    for (const row of await listFavorites(key)) {
       const out: { ref?: EntityRef } = {}
       const s = await check(user, row, out)
       if (s === 'ok') {
-        const job = row.type === 'job' ? getJob(row.id) : null
+        const job = row.type === 'job' ? await getJob(row.id) : null
         visible.push({
           ...row,
           ...(out.ref?.namespace ? { namespace: out.ref.namespace } : {}),
@@ -83,7 +83,7 @@ export function registerFavoritesRoutes(app: Hono): void {
           ...(job?.name ? { name: job.name } : {}),
         })
       }
-      else if (s === 'gone') removeFavorite(key, row.type, row.id)
+      else if (s === 'gone') await removeFavorite(key, row.type, row.id)
     }
     const counts = Object.fromEntries(FAVORITE_TYPES.map((t) => [t, visible.filter((r) => r.type === t).length]))
     return c.json({ counts, items: wantType ? visible.filter((r) => r.type === wantType) : visible })
@@ -94,13 +94,13 @@ export function registerFavoritesRoutes(app: Hono): void {
     const s = await check(user, t)
     if (s === 'gone') throw new HttpError('Entity not found', 404)
     if (s === 'hidden') throw new HttpError('Forbidden', 403)
-    const created = addFavorite(favoriteUserKey(user), t.type, t.id)
+    const created = await addFavorite(favoriteUserKey(user), t.type, t.id)
     return c.json({ ok: true, favorite: true, ...t }, created ? 201 : 200)
   }))
 
   app.delete('/auth/favorites', guarded(policy, async ({ c, user }) => {
     const t = parseTarget(c.req.query('type'), c.req.query('id'))
-    removeFavorite(favoriteUserKey(user), t.type, t.id)
+    await removeFavorite(favoriteUserKey(user), t.type, t.id)
     return c.json({ ok: true, favorite: false, ...t })
   }))
 
@@ -108,7 +108,7 @@ export function registerFavoritesRoutes(app: Hono): void {
   app.post('/auth/favorites/lookup', guarded({ ...policy, body: 'optional' }, async ({ c, user, body }) => {
     if (!Array.isArray(body.items)) throw new HttpError('items must be an array', 400)
     if (body.items.length > MAX_LOOKUP) throw new HttpError(`At most ${MAX_LOOKUP} items`, 400)
-    const mine = new Set(listFavorites(favoriteUserKey(user)).map((r) => `${r.type}\0${r.id}`))
+    const mine = new Set((await listFavorites(favoriteUserKey(user))).map((r) => `${r.type}\0${r.id}`))
     const favorites = (body.items as Array<{ type?: unknown; id?: unknown }>)
       .map((i) => parseTarget(i?.type, i?.id))
       .filter((i) => mine.has(`${i.type}\0${i.id}`))

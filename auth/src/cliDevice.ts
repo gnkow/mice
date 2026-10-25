@@ -1,13 +1,16 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { join } from 'node:path'
+import { and, desc, eq, gt, lt } from 'drizzle-orm'
 import { currentClock, type Clock } from './clock.js'
 import { env } from './env.js'
-import { createDocumentStore } from './stores.js'
+import { getDb } from './db/database.js'
+import { deviceAuthorizations } from './db/schema.js'
 import type { PatScope, SessionUser } from './session.js'
-import { createPat } from './tokens.js'
+import { createPat, revokePat } from './tokens.js'
 
 const DEVICE_TTL_MS = 10 * 60 * 1000
 const DEFAULT_INTERVAL_SEC = 5
+/** Expired records stay this long so an expired code is told apart from an unknown one. */
+const PURGE_AFTER_MS = 24 * 60 * 60 * 1000
 const USER_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 /** Stored states. `expired` is derived from the clock, never stored. */
@@ -26,30 +29,121 @@ export type DeviceRecord = {
   user?: Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>
 }
 
-/** Where device authorization records live. */
+/** Where device authorization records live. Every state change is one conditional, atomic write. */
 export interface DeviceRepository {
-  read(): DeviceRecord[]
-  write(records: DeviceRecord[]): void
+  insert(record: DeviceRecord): Promise<void>
+  findByHash(deviceCodeHash: string): Promise<DeviceRecord | undefined>
+  /** The newest record carrying this user code, expired or not. */
+  findByUserCode(userCode: string): Promise<DeviceRecord | undefined>
+  /** pending and unexpired → approved. False when another request got there first. */
+  approve(
+    userCode: string,
+    nowIso: string,
+    grant: { token: string; patId: string; user: NonNullable<DeviceRecord['user']> },
+  ): Promise<boolean>
+  /** pending and unexpired → denied. */
+  deny(userCode: string, nowIso: string): Promise<boolean>
+  /** approved → consumed, returning the record (with its token) exactly once. */
+  consume(deviceCodeHash: string, nowIso: string): Promise<DeviceRecord | undefined>
+  /** Drops records that expired before `beforeIso`. */
+  purgeExpired(beforeIso: string): Promise<void>
 }
 
-export function createMemoryDeviceRepository(): DeviceRepository {
-  let records: DeviceRecord[] = []
+type Row = typeof deviceAuthorizations.$inferSelect
+
+function toRecord(r: Row): DeviceRecord {
   return {
-    read: () => structuredClone(records),
-    write: (next) => void (records = structuredClone(next)),
+    deviceCodeHash: r.deviceCodeHash,
+    userCode: r.userCode,
+    status: r.status as DeviceStatus,
+    createdAt: r.createdAt.toISOString(),
+    expiresAt: r.expiresAt.toISOString(),
+    ...(r.scopes?.length ? { scopes: r.scopes } : {}),
+    ...(r.token ? { token: r.token } : {}),
+    ...(r.patId ? { patId: r.patId } : {}),
+    ...(r.userSub && r.userIss && r.userEmail && r.userName
+      ? { user: { sub: r.userSub, iss: r.userIss, email: r.userEmail, name: r.userName } }
+      : {}),
   }
 }
 
-type StoreFile = { version: 1; devices: DeviceRecord[] }
-
-export function createFileDeviceRepository(path: () => string): DeviceRepository {
-  const doc = createDocumentStore<StoreFile>({ path, initial: () => ({ version: 1, devices: [] }), onCorrupt: 'initial' })
+export function createPostgresDeviceRepository(): DeviceRepository {
+  const pendingLive = (userCode: string, nowIso: string) =>
+    and(
+      eq(deviceAuthorizations.userCode, userCode),
+      eq(deviceAuthorizations.status, 'pending'),
+      gt(deviceAuthorizations.expiresAt, new Date(nowIso)),
+    )
   return {
-    read() {
-      const parsed = doc.read()
-      return parsed && parsed.version === 1 && Array.isArray(parsed.devices) ? parsed.devices : []
+    async insert(r) {
+      await getDb().insert(deviceAuthorizations).values({
+        deviceCodeHash: r.deviceCodeHash,
+        userCode: r.userCode,
+        status: r.status,
+        createdAt: new Date(r.createdAt),
+        expiresAt: new Date(r.expiresAt),
+        scopes: r.scopes ?? null,
+      })
     },
-    write: (devices) => doc.write({ version: 1, devices } satisfies StoreFile),
+    async findByHash(hash) {
+      const [row] = await getDb().select().from(deviceAuthorizations).where(eq(deviceAuthorizations.deviceCodeHash, hash))
+      return row && toRecord(row)
+    },
+    async findByUserCode(userCode) {
+      const [row] = await getDb()
+        .select()
+        .from(deviceAuthorizations)
+        .where(eq(deviceAuthorizations.userCode, userCode))
+        .orderBy(desc(deviceAuthorizations.createdAt))
+        .limit(1)
+      return row && toRecord(row)
+    },
+    async approve(userCode, nowIso, grant) {
+      const rows = await getDb()
+        .update(deviceAuthorizations)
+        .set({
+          status: 'approved',
+          token: grant.token,
+          patId: grant.patId,
+          userSub: grant.user.sub,
+          userIss: grant.user.iss,
+          userEmail: grant.user.email,
+          userName: grant.user.name,
+        })
+        .where(pendingLive(userCode, nowIso))
+        .returning({ hash: deviceAuthorizations.deviceCodeHash })
+      return rows.length > 0
+    },
+    async deny(userCode, nowIso) {
+      const rows = await getDb()
+        .update(deviceAuthorizations)
+        .set({ status: 'denied' })
+        .where(pendingLive(userCode, nowIso))
+        .returning({ hash: deviceAuthorizations.deviceCodeHash })
+      return rows.length > 0
+    },
+    async consume(hash, nowIso) {
+      return getDb().transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(deviceAuthorizations)
+          .where(and(
+            eq(deviceAuthorizations.deviceCodeHash, hash),
+            eq(deviceAuthorizations.status, 'approved'),
+            gt(deviceAuthorizations.expiresAt, new Date(nowIso)),
+          ))
+          .for('update')
+        if (!row) return undefined
+        await tx
+          .update(deviceAuthorizations)
+          .set({ status: 'consumed', token: null })
+          .where(eq(deviceAuthorizations.deviceCodeHash, hash))
+        return toRecord(row)
+      })
+    },
+    async purgeExpired(beforeIso) {
+      await getDb().delete(deviceAuthorizations).where(lt(deviceAuthorizations.expiresAt, new Date(beforeIso)))
+    },
   }
 }
 
@@ -81,7 +175,9 @@ export type DeviceDeps = {
   clock: Clock
   config: DeviceConfig | (() => DeviceConfig)
   /** Mints the cli-login credential at approval. */
-  mint: (user: SessionUser, scopes?: PatScope[]) => { token: string; patId: string }
+  mint: (user: SessionUser, scopes?: PatScope[]) => Promise<{ token: string; patId: string }>
+  /** Revokes a minted credential whose approval lost a race. */
+  discard: (user: SessionUser, patId: string) => Promise<unknown>
   throttle?: PollThrottle
 }
 
@@ -166,27 +262,22 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
   const { repo, clock } = deps
   const throttle = deps.throttle ?? createPollThrottle()
   const config = () => (typeof deps.config === 'function' ? deps.config() : deps.config)
-  const live = () => {
-    const now = clock.now()
-    return repo.read().filter((d) => !isExpired(d, now))
-  }
-  const findByUserCode = (devices: DeviceRecord[], userCode: string) => {
-    const normalized = userCode.trim().toUpperCase()
-    return devices.find((d) => d.userCode === normalized)
-  }
+  const normalize = (userCode: string) => userCode.trim().toUpperCase()
+  const nowIso = () => new Date(clock.now()).toISOString()
 
   /** Create a pending device authorization request. */
-  function start(scopes?: PatScope[]): DeviceStartResult {
-    const devices = live()
+  async function start(scopes?: PatScope[]): Promise<DeviceStartResult> {
+    const now = clock.now()
+    await repo.purgeExpired(new Date(now - PURGE_AFTER_MS).toISOString())
     const deviceCode = randomBytes(32).toString('base64url')
     let userCode = randomUserCode()
-    // Avoid colliding active user codes
+    // Avoid colliding with an active pending user code
     for (let i = 0; i < 5; i++) {
-      if (!devices.some((d) => d.userCode === userCode && d.status === 'pending')) break
+      const existing = await repo.findByUserCode(userCode)
+      if (!existing || existing.status !== 'pending' || isExpired(existing, now)) break
       userCode = randomUserCode()
     }
-    const now = clock.now()
-    devices.push({
+    await repo.insert({
       deviceCodeHash: hashDeviceCode(deviceCode),
       userCode,
       status: 'pending',
@@ -194,7 +285,6 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
       expiresAt: new Date(now + DEVICE_TTL_MS).toISOString(),
       ...(scopes?.length ? { scopes } : {}),
     })
-    repo.write(devices)
 
     const verificationUri = `${config().webOrigin}/cli/device`
     return {
@@ -207,9 +297,9 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
     }
   }
 
-  function lookup(userCode: string): DeviceLookup | null {
-    const rec = findByUserCode(live(), userCode)
-    if (!rec) return null
+  async function lookup(userCode: string): Promise<DeviceLookup | null> {
+    const rec = await repo.findByUserCode(normalize(userCode))
+    if (!rec || isExpired(rec, clock.now())) return null
     return {
       userCode: rec.userCode,
       status: rec.status,
@@ -219,18 +309,13 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
     }
   }
 
-  /** Records past expiry are dropped on read, so a stale code reads as unknown or expired. */
-  function pendingFor(
-    devices: DeviceRecord[],
+  /** The error for a user code that cannot be acted on, or the pending record. */
+  async function pendingFor(
     userCode: string,
-  ): { rec: DeviceRecord } | { error: { ok: false; error: string; status: number } } {
-    const rec = findByUserCode(devices, userCode)
-    if (!rec) {
-      const stale = findByUserCode(repo.read(), userCode)
-      return stale
-        ? { error: { ok: false, error: 'Device code expired', status: 400 } }
-        : { error: { ok: false, error: 'Unknown user code', status: 404 } }
-    }
+  ): Promise<{ rec: DeviceRecord } | { error: { ok: false; error: string; status: number } }> {
+    const rec = await repo.findByUserCode(userCode)
+    if (!rec) return { error: { ok: false, error: 'Unknown user code', status: 404 } }
+    if (isExpired(rec, clock.now())) return { error: { ok: false, error: 'Device code expired', status: 400 } }
     if (rec.status !== 'pending') {
       return { error: { ok: false, error: `Device already ${rec.status}`, status: 400 } }
     }
@@ -238,52 +323,52 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
   }
 
   /** Session user approves a pending device; mints a cli-login PAT. */
-  function approve(userCode: string, user: SessionUser): ApproveResult {
-    const devices = live()
-    const found = pendingFor(devices, userCode)
+  async function approve(userCode: string, user: SessionUser): Promise<ApproveResult> {
+    const code = normalize(userCode)
+    const found = await pendingFor(code)
     if ('error' in found) return found.error
     const { rec } = found
-    const { token, patId } = deps.mint(user, rec.scopes)
-    rec.status = 'approved'
-    rec.token = token
-    rec.patId = patId
-    rec.user = { sub: user.sub, iss: user.iss, email: user.email, name: user.name }
-    repo.write(devices)
+    const { token, patId } = await deps.mint(user, rec.scopes)
+    const won = await repo.approve(code, nowIso(), {
+      token,
+      patId,
+      user: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+    })
+    if (!won) {
+      await deps.discard(user, patId)
+      return { ok: false, error: 'Device already approved or denied', status: 400 }
+    }
     return { ok: true, userCode: rec.userCode }
   }
 
-  function deny(userCode: string): DenyResult {
-    const devices = live()
-    const found = pendingFor(devices, userCode)
+  async function deny(userCode: string): Promise<DenyResult> {
+    const code = normalize(userCode)
+    const found = await pendingFor(code)
     if ('error' in found) return found.error
-    found.rec.status = 'denied'
-    repo.write(devices)
+    if (!(await repo.deny(code, nowIso()))) return { ok: false, error: 'Device already approved or denied', status: 400 }
     return { ok: true }
   }
 
   /** CLI polls with device_code until approved/denied/expired. */
-  function poll(deviceCode: string): PollResult {
+  async function poll(deviceCode: string): Promise<PollResult> {
     const hash = hashDeviceCode(deviceCode.trim())
     const now = clock.now()
-    const all = repo.read()
-    const stored = all.find((d) => d.deviceCodeHash === hash)
-    const devices = all.filter((d) => !isExpired(d, now))
-    const rec = devices.find((d) => d.deviceCodeHash === hash)
-    if (!rec) return stored ? { status: 'expired_token' } : { status: 'error', error: 'unknown_device_code' }
+    const rec = await repo.findByHash(hash)
+    if (!rec) return { status: 'error', error: 'unknown_device_code' }
+    if (isExpired(rec, now)) return { status: 'expired_token' }
 
     if (throttle.tooSoon(hash, now)) return { status: 'slow_down', interval: DEFAULT_INTERVAL_SEC }
 
     if (rec.status === 'pending') return { status: 'authorization_pending' }
     if (rec.status === 'denied') return { status: 'access_denied' }
     if (rec.status === 'consumed') return { status: 'error', error: 'already_consumed' }
-    if (rec.status === 'approved' && rec.token && rec.patId && rec.user) {
-      const { token, patId, user } = rec
-      rec.status = 'consumed'
-      delete rec.token
-      repo.write(devices)
+    if (rec.status === 'approved') {
+      const taken = await repo.consume(hash, nowIso())
+      if (!taken) return { status: 'error', error: 'already_consumed' }
+      if (!taken.token || !taken.patId || !taken.user) return { status: 'error', error: 'invalid_state' }
       throttle.forget(hash)
       const { remote, authHost } = config()
-      return { status: 'approved', token, patId, remote, authHost, user }
+      return { status: 'approved', token: taken.token, patId: taken.patId, remote, authHost, user: taken.user }
     }
     return { status: 'error', error: 'invalid_state' }
   }
@@ -294,17 +379,18 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
 const defaultThrottle = createPollThrottle()
 
 const defaults = createDeviceAuthorizations({
-  repo: createFileDeviceRepository(() => join(env.dataDir, 'cli-devices.json')),
+  repo: createPostgresDeviceRepository(),
   clock: currentClock,
   config: () => ({
     webOrigin: env.publicWebOrigin,
     remote: env.publicOxenRemote,
     authHost: hostOf(env.publicOxenRemote),
   }),
-  mint(user, scopes) {
-    const { token, pat } = createPat(user, 'cli-login', { source: 'cli-login', scopes })
+  async mint(user, scopes) {
+    const { token, pat } = await createPat(user, 'cli-login', { source: 'cli-login', scopes })
     return { token, patId: pat.id }
   },
+  discard: (user, patId) => revokePat(user, patId),
   throttle: defaultThrottle,
 })
 

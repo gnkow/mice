@@ -1,5 +1,7 @@
 # JOBS — PLAT-JOB implementation plan
 
+> **Storage update (ADR 0004/0005):** this plan was written for JSON/JSONL files under `AUTH_DATA_DIR`. Those stores are now PostgreSQL, immudb (audit) and Novu (notifications); file names and file-based mechanics below are historical. See [16-operations.md](./16-operations.md) section 2.3.
+
 Living design and phased plan for epic [`PLAT-JOB`](./EPICS.md#plat-job--versioned-workspace-jobs): container-image jobs against a **local clone** of versioned Oxen data, automatic input/output lineage in the **unified** lineage graph, local Docker runner then cluster. Workspaces are an optional later mount source, not a prerequisite.
 
 Related: [EPICS.md](./EPICS.md) · [10-sessions.md](./10-sessions.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [11-lineage.md](./11-lineage.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [14-notifications.md](./14-notifications.md) · [README.md](../README.md)

@@ -16,7 +16,7 @@ export async function signOutEverywhere(c: Context): Promise<Response> {
   } catch {
     // empty body means defaults
   }
-  offboard(session, {
+  await offboard(session, {
     scope: includePats ? 'all' : 'sessions',
     cause: 'self-service',
     method: c.req.method,

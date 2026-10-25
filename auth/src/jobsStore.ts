@@ -1,37 +1,30 @@
 import { existsSync, mkdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
+import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { jobAliases, jobs } from './db/schema.js'
 import { env } from './env.js'
-import { createCollection, createDocumentStore } from './stores.js'
 import type { JobRun, JobStatus } from './jobsTypes.js'
 
-const jobRows = createCollection<JobRun>(() => join(env.jobsDataDir, 'jobs.jsonl'))
-
-const aliasStore = createDocumentStore<Record<string, string>>({
-  path: () => join(env.jobsDataDir, 'job-aliases.json'),
-  initial: () => ({}),
-  onCorrupt: 'initial',
-  // Anything but a string-to-string map of non-empty values is dropped, in memory.
-  migrate(doc) {
-    const raw = doc as unknown
-    const clean: Record<string, string> = {}
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' && v) clean[k] = v
-    }
-    for (const k of Object.keys(doc)) delete doc[k]
-    Object.assign(doc, clean)
-  },
+const toRow = (job: JobRun) => ({
+  id: job.id,
+  namespace: job.namespace,
+  repo: job.repo,
+  status: job.status,
+  pinCommit: job.pin_commit,
+  createdAt: new Date(job.created_at),
+  body: job,
 })
 
-const readAliases = (): Record<string, string> => aliasStore.read()
-
 /** Resolve a job id through rekey aliases (provisional → result commit). */
-export function resolveJobId(id: string): string {
-  const aliases = readAliases()
+export async function resolveJobId(id: string): Promise<string> {
   let cur = id
   const seen = new Set<string>()
-  while (aliases[cur] && !seen.has(cur)) {
+  while (!seen.has(cur)) {
     seen.add(cur)
-    cur = aliases[cur]!
+    const [row] = await getDb().select().from(jobAliases).where(eq(jobAliases.alias, cur))
+    if (!row) break
+    cur = row.target
   }
   return cur
 }
@@ -55,13 +48,14 @@ export function jobsLogPath(jobId: string): string {
   return join(env.jobsDataDir, 'logs', `${id}.log`)
 }
 
-export function appendJob(job: JobRun): void {
-  jobRows.put(job.id, job)
+export async function appendJob(job: JobRun): Promise<void> {
+  await upsertJob(job)
 }
 
 /** Replace the stored snapshot of one job. */
-export function upsertJob(job: JobRun): void {
-  jobRows.put(job.id, job)
+export async function upsertJob(job: JobRun): Promise<void> {
+  const row = toRow(job)
+  await getDb().insert(jobs).values(row).onConflictDoUpdate({ target: jobs.id, set: row })
 }
 
 /** Log files stay real files (the runner streams into them); injectable so rekey failure is testable. */
@@ -82,28 +76,26 @@ const realLogFiles: JobLogFiles = { exists: existsSync, rename: renameSync }
  *  3. drop the old record                    failure: throws; alias already resolves, old row is a harmless stale duplicate
  *  4. rename the log                         failure: tolerated, `logRenamed: false`; log_ref on the job should point at the new path
  */
-export function rekeyJob(oldId: string, job: JobRun, logs: JobLogFiles = realLogFiles): { logRenamed: boolean } {
+export async function rekeyJob(
+  oldId: string,
+  job: JobRun,
+  logs: JobLogFiles = realLogFiles,
+): Promise<{ logRenamed: boolean }> {
   if (oldId === job.id) {
-    upsertJob(job)
+    await upsertJob(job)
     return { logRenamed: false }
   }
-  const displaced = jobRows.get(job.id)
-  jobRows.put(job.id, job)
-
-  try {
-    aliasStore.transaction((aliases) => {
-      aliases[oldId] = job.id
-      for (const [k, v] of Object.entries(aliases)) {
-        if (v === oldId) aliases[k] = job.id
-      }
-    })
-  } catch (error) {
-    if (displaced) jobRows.put(job.id, displaced)
-    else jobRows.remove(job.id)
-    throw error
-  }
-
-  jobRows.remove(oldId)
+  // One transaction: the old id resolves to a job at every instant, and a failure leaves nothing changed.
+  await getDb().transaction(async (tx) => {
+    const row = toRow(job)
+    await tx.insert(jobs).values(row).onConflictDoUpdate({ target: jobs.id, set: row })
+    await tx
+      .insert(jobAliases)
+      .values({ alias: oldId, target: job.id })
+      .onConflictDoUpdate({ target: jobAliases.alias, set: { target: job.id } })
+    await tx.update(jobAliases).set({ target: job.id }).where(eq(jobAliases.target, oldId))
+    await tx.delete(jobs).where(eq(jobs.id, oldId))
+  })
 
   const oldLog = jobsLogPath(oldId)
   const newLog = jobsLogPath(job.id)
@@ -116,9 +108,10 @@ export function rekeyJob(oldId: string, job: JobRun, logs: JobLogFiles = realLog
   }
 }
 
-export function getJob(id: string): JobRun | null {
-  const resolved = resolveJobId(id)
-  return jobRows.get(resolved) ?? null
+export async function getJob(id: string): Promise<JobRun | null> {
+  const resolved = await resolveJobId(id)
+  const [row] = await getDb().select({ body: jobs.body }).from(jobs).where(eq(jobs.id, resolved))
+  return row?.body ?? null
 }
 
 export type JobListQuery = {
@@ -130,26 +123,33 @@ export type JobListQuery = {
   cursor?: string
 }
 
-export function listJobs(q: JobListQuery): {
+export async function listJobs(q: JobListQuery): Promise<{
   jobs: JobRun[]
   nextCursor: string | null
-} {
+}> {
   // Allow higher ceiling for ACL over-fetch on global list routes.
   const limit = Math.min(Math.max(1, q.limit ?? 50), 500)
-  let rows = jobRows.list().sort((a, b) => b.created_at.localeCompare(a.created_at))
-  if (q.namespace) rows = rows.filter((j) => j.namespace === q.namespace)
-  if (q.repo) rows = rows.filter((j) => j.repo === q.repo)
-  if (q.status) rows = rows.filter((j) => j.status === q.status)
-  if (q.pin_commit) rows = rows.filter((j) => j.pin_commit === q.pin_commit)
-
+  const where: SQL[] = []
+  if (q.namespace) where.push(eq(jobs.namespace, q.namespace))
+  if (q.repo) where.push(eq(jobs.repo, q.repo))
+  if (q.status) where.push(eq(jobs.status, q.status))
+  if (q.pin_commit) where.push(eq(jobs.pinCommit, q.pin_commit))
   if (q.cursor) {
-    const idx = rows.findIndex((j) => j.id === q.cursor)
-    if (idx >= 0) rows = rows.slice(idx + 1)
+    const [at] = await getDb().select({ createdAt: jobs.createdAt }).from(jobs).where(eq(jobs.id, q.cursor))
+    if (at) {
+      where.push(
+        or(lt(jobs.createdAt, at.createdAt), and(eq(jobs.createdAt, at.createdAt), lt(jobs.id, q.cursor)))!,
+      )
+    }
   }
-
-  const page = rows.slice(0, limit)
-  const nextCursor =
-    rows.length > limit ? (page[page.length - 1]?.id ?? null) : null
+  const rows = await getDb()
+    .select({ id: jobs.id, body: jobs.body })
+    .from(jobs)
+    .where(and(...where))
+    .orderBy(desc(jobs.createdAt), desc(jobs.id))
+    .limit(limit + 1)
+  const page = rows.slice(0, limit).map((r) => r.body)
+  const nextCursor = rows.length > limit ? (page[page.length - 1]?.id ?? null) : null
   return { jobs: page, nextCursor }
 }
 

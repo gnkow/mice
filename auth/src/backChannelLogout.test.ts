@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -75,12 +76,12 @@ const cookie = async (sub: string, age = 30) =>
 const alive = async (headers: Record<string, string>) =>
   (await app.request('/whoami', { headers })).status === 200
 
-describe('back-channel logout', () => {
+await describe('back-channel logout', async () => {
   after(() => idp.close())
 
-  it('ends Sessions of the Principal and leaves PATs valid', async () => {
+  await it('ends Sessions of the Principal and leaves PATs valid', async () => {
     const stale = await cookie('u1')
-    const { token } = createPat(mk('u1'), 'cli')
+    const { token } = await createPat(mk('u1'), 'cli')
     assert.equal(await alive({ cookie: stale }), true)
     const res = await post(await logoutToken())
     assert.equal(res.status, 200)
@@ -88,7 +89,7 @@ describe('back-channel logout', () => {
     assert.equal(await alive({ authorization: `Bearer ${token}` }), true)
   })
 
-  it('rejects forged, expired, wrong-audience, wrong-issuer and non-logout tokens with no effect', async () => {
+  await it('rejects forged, expired, wrong-audience, wrong-issuer and non-logout tokens with no effect', async () => {
     const other = await generateKeyPair('RS256')
     const cases: Array<[string, string]> = [
       ['forged', await logoutToken({ sub: 'u2' }, other.privateKey)],
@@ -106,7 +107,7 @@ describe('back-channel logout', () => {
     assert.equal(await alive({ cookie: live }), true)
   })
 
-  it('is harmless to replay: a later Session survives', async () => {
+  await it('is harmless to replay: a later Session survives', async () => {
     const t = await logoutToken({ sub: 'u3', iat: now() - 5 })
     assert.equal((await post(t)).status, 200)
     const fresh = await cookie('u3', 0)
@@ -114,9 +115,9 @@ describe('back-channel logout', () => {
     assert.equal(await alive({ cookie: fresh }), true)
   })
 
-  it('audits the Principal with source back-channel-logout', async () => {
+  await it('audits the Principal with source back-channel-logout', async () => {
     await post(await logoutToken({ sub: 'u4' }))
-    const ev = queryAudit({ actor: 'u4', action: 'session.revoke' }).events[0]
+    const ev = (await queryAudit({ actor: 'u4', action: 'session.revoke' })).events[0]
     assert.equal(ev?.actor.sub, 'u4')
     assert.equal(ev?.detail?.source, 'back-channel-logout')
   })

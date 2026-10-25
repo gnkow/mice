@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -35,37 +36,37 @@ const cookie = async (sub: string) =>
 const scope = [{ namespace: 'ns', maxRole: 'read' as const }]
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
 
-describe('authenticate', () => {
-  it('accepts a cookie Session, then an unscoped PAT, by default', async () => {
+await describe('authenticate', async () => {
+  await it('accepts a cookie Session, then an unscoped PAT, by default', async () => {
     const app = appFor({})
-    const { token } = createPat(mk('a'), 'a')
+    const { token } = await createPat(mk('a'), 'a')
     assert.deepEqual(await (await app.request('/x', { headers: { cookie: await cookie('b') } })).json(), { sub: 'b', via: 'session' })
     assert.deepEqual(await (await app.request('/x', { headers: bearer(token) })).json(), { sub: 'a', via: 'pat' })
     assert.equal((await app.request('/x')).status, 401)
   })
 
-  it('rejects scoped PATs unless allowScoped', async () => {
-    const { token } = createPat(mk('s'), 's', scope)
+  await it('rejects scoped PATs unless allowScoped', async () => {
+    const { token } = await createPat(mk('s'), 's', scope)
     assert.equal((await appFor({}).request('/x', { headers: bearer(token) })).status, 401)
     assert.equal((await appFor({ allowScoped: true }).request('/x', { headers: bearer(token) })).status, 200)
   })
 
-  it('credential: session refuses PATs', async () => {
-    const { token } = createPat(mk('p'), 'p')
+  await it('credential: session refuses PATs', async () => {
+    const { token } = await createPat(mk('p'), 'p')
     assert.equal((await appFor({ credential: 'session' }).request('/x', { headers: bearer(token) })).status, 401)
     assert.equal((await appFor({ credential: 'session' }).request('/x', { headers: { cookie: await cookie('p') } })).status, 200)
   })
 
-  it('refuses a Principal lacking the required capability', async () => {
-    const r = createServicePrincipal({ name: 'ci', owner: mk('owner') })
+  await it('refuses a Principal lacking the required capability', async () => {
+    const r = await createServicePrincipal({ name: 'ci', owner: mk('owner') })
     assert.ok(r.ok)
-    const { token } = createPat(serviceUser(r.principal), 'ci')
+    const { token } = await createPat(serviceUser(r.principal), 'ci')
     const refused = await appFor({ requires: { capability: 'hasFavorites', message: 'no favorites' } }).request('/x', { headers: bearer(token) })
     assert.equal(refused.status, 403)
     assert.equal((await appFor({}).request('/x', { headers: bearer(token) })).status, 200)
   })
 
-  it('checks Origin and content type for cookie Sessions on unsafe methods only', async () => {
+  await it('checks Origin and content type for cookie Sessions on unsafe methods only', async () => {
     const app = appFor({ originCheck: true, jsonOnly: true })
     const c = await cookie('o')
     const post = (headers: Record<string, string>) => app.request('/x', { method: 'POST', headers: { cookie: c, ...headers } })
@@ -73,14 +74,14 @@ describe('authenticate', () => {
     assert.equal((await post({ origin: new URL(env.publicWebOrigin).origin })).status, 400)
     assert.equal((await post({ origin: new URL(env.publicWebOrigin).origin, 'content-type': 'application/json' })).status, 200)
     assert.equal((await app.request('/x', { headers: { cookie: c } })).status, 200)
-    const { token } = createPat(mk('o2'), 'o')
+    const { token } = await createPat(mk('o2'), 'o')
     assert.equal((await app.request('/x', { method: 'POST', headers: bearer(token) })).status, 200)
   })
 
-  it('authenticateUser records authVia and notifies the observer', async () => {
+  await it('authenticateUser records authVia and notifies the observer', async () => {
     const seen: string[] = []
     const restore = setAuthenticationObserver((u) => seen.push(u.sub))
-    const { token } = createPat(mk('h'), 'h')
+    const { token } = await createPat(mk('h'), 'h')
     const app = new Hono()
     app.get('/x', async (c) => {
       const u = await authenticateUser(c)
@@ -92,9 +93,9 @@ describe('authenticate', () => {
     assert.equal((await (await app.request('/x')).json() as { sub: unknown }).sub, null)
   })
 
-  it('authenticateRequest returns user and via, or null; scoped PATs only when allowed', async () => {
-    const { token } = createPat(mk('r'), 'r')
-    const { token: scoped } = createPat(mk('r2'), 'r2', scope)
+  await it('authenticateRequest returns user and via, or null; scoped PATs only when allowed', async () => {
+    const { token } = await createPat(mk('r'), 'r')
+    const { token: scoped } = await createPat(mk('r2'), 'r2', scope)
     const app = new Hono()
     app.get('/any', async (c) => c.json(await authenticateRequest(c, {})))
     app.get('/scoped', async (c) => c.json(await authenticateRequest(c, { allowScoped: true })))
@@ -106,17 +107,17 @@ describe('authenticate', () => {
     assert.equal(await sub('/any'), null)
   })
 
-  it('hands handlers a prepared Principal: bootstrap grants apply on first contact', async () => {
+  await it('hands handlers a prepared Principal: bootstrap grants apply on first contact', async () => {
     const app = new Hono()
     app.get('/perm', async (c) =>
-      c.json({ can: hasInstancePermission((await authenticateRequest(c, {}))!.user, 'create_namespace') }),
+      c.json({ can: await hasInstancePermission((await authenticateRequest(c, {}))!.user, 'create_namespace') }),
     )
     const can = async (headers: Record<string, string>) =>
       ((await (await app.request('/perm', { headers })).json()) as { can: boolean }).can
 
-    assert.equal(hasInstancePermission(mk('viacookie'), 'create_namespace'), false)
+    assert.equal(await hasInstancePermission(mk('viacookie'), 'create_namespace'), false)
     assert.equal(await can({ cookie: await cookie('viacookie') }), true)
-    assert.equal(hasInstancePermission(mk('viapat'), 'create_namespace'), false)
-    assert.equal(await can(bearer(createPat(mk('viapat'), 'p').token)), true)
+    assert.equal(await hasInstancePermission(mk('viapat'), 'create_namespace'), false)
+    assert.equal(await can(bearer((await createPat(mk('viapat'), 'p')).token)), true)
   })
 })

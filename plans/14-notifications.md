@@ -1,5 +1,7 @@
 # MICE notifications - design and delivery plan
 
+> **Storage update (ADR 0004/0005):** this plan was written for JSON/JSONL files under `AUTH_DATA_DIR`. Those stores are now PostgreSQL, immudb (audit) and Novu (notifications); file names and file-based mechanics below are historical. See [16-operations.md](./16-operations.md) section 2.3.
+
 Status: single-instance implementation delivered. Deployment scope revised by the user to a
 single auth instance; shared database/multi-instance migrations are out of scope.
 

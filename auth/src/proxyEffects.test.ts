@@ -1,9 +1,7 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
-import { after, describe, it } from 'node:test'
-import { createMemoryJsonBackend, useJsonBackend } from './jsonStore.js'
+import { describe, it } from 'node:test'
 
-const restoreBackend = useJsonBackend(createMemoryJsonBackend())
-process.env.AUTH_DATA_DIR = '/mice-memory-data'
 process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
@@ -16,11 +14,10 @@ const { preparePrincipal } = await import('./authz.js')
 const { getRepoCollaboratorRole, setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz, getNamespace } = await import('./authzNamespaceStore.js')
 
-after(() => restoreBackend())
 
 const person = (sub: string) => ({ sub, iss: 'test', email: `${sub}@example.com`, name: sub })
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin', emailVerified: true }
-preparePrincipal(admin)
+await preparePrincipal(admin)
 
 const catalog = () =>
   new Response(JSON.stringify({ namespaces: [{ namespace: 'pe-a' }, { name: 'pe-b' }] }), {
@@ -31,12 +28,12 @@ const names = (text: string | null) =>
     (n) => n.namespace ?? n.name,
   )
 
-describe('filterNamespaceCatalog', () => {
+describe('filterNamespaceCatalog', async () => {
   const member = person('pe-member')
-  createNamespaceAuthz(admin, 'pe-a', 'none', true)
-  createNamespaceAuthz(admin, 'pe-b', 'none', true)
-  setRepoCollaborator('pe-a', 'r', member, 'read')
-  preparePrincipal(member)
+  await createNamespaceAuthz(admin, 'pe-a', 'none', true)
+  await createNamespaceAuthz(admin, 'pe-b', 'none', true)
+  await setRepoCollaborator('pe-a', 'r', member, 'read')
+  await preparePrincipal(member)
 
   it('narrows the catalog to visible namespaces', async () => {
     const out = await filterNamespaceCatalog(member, 'GET', '/api/namespaces', catalog())
@@ -55,15 +52,15 @@ describe('filterNamespaceCatalog', () => {
 })
 
 describe('seedRepoCreate', () => {
-  it('makes the creator repo admin and seeds the namespace for an instance admin', () => {
-    seedRepoCreate(admin, 'pe-new', 'repo1')
-    assert.ok(getNamespace('pe-new'))
-    assert.equal(getRepoCollaboratorRole('pe-new', 'repo1', admin), 'admin')
+  it('makes the creator repo admin and seeds the namespace for an instance admin', async () => {
+    await seedRepoCreate(admin, 'pe-new', 'repo1')
+    assert.ok(await getNamespace('pe-new'))
+    assert.equal(await getRepoCollaboratorRole('pe-new', 'repo1', admin), 'admin')
   })
-  it('does not seed a namespace for a plain member', () => {
+  it('does not seed a namespace for a plain member', async () => {
     const u = person('pe-plain')
-    preparePrincipal(u)
-    seedRepoCreate(u, 'pe-unseeded', 'repo1')
-    assert.equal(getNamespace('pe-unseeded'), null)
+    await preparePrincipal(u)
+    await seedRepoCreate(u, 'pe-unseeded', 'repo1')
+    assert.equal(await getNamespace('pe-unseeded'), null)
   })
 })

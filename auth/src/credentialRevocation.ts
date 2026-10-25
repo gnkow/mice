@@ -1,62 +1,58 @@
-import { join } from 'node:path'
+import { eq, sql } from 'drizzle-orm'
 import { currentClock } from './clock.js'
-import { env } from './env.js'
+import { getDb } from './db/database.js'
+import { sessionRevocations } from './db/schema.js'
 import { principalKey } from './principal.js'
-import { createDocumentStore } from './stores.js'
 
-/** `notBefore` is the full cut-off (Sessions and PATs); `sessionsNotBefore` ends Sessions only. */
-type Store = {
-  version: 1
-  notBefore: Record<string, number>
-  sessionsNotBefore?: Record<string, number>
-}
 type CredentialKind = 'session' | 'pat'
 
-const store = createDocumentStore<Store>({
-  path: () => join(env.dataDir, 'session-revocations.json'),
-  initial: () => ({ version: 1, notBefore: {} }),
-  validate(doc) {
-    if (doc?.version !== 1 || !doc.notBefore) throw new Error('Invalid session revocation store')
-  },
-  onCorrupt: 'initial',
-})
 const nowSec = () => Math.floor(currentClock.now() / 1000)
 
-function raise(table: Record<string, number>, key: string, cutoff: number): number {
-  const next = Math.max(table[key] ?? 0, cutoff)
-  table[key] = next
-  return next
-}
-
 /** Invalidate every Session and PAT of a Principal issued up to now. Returns the cut-off (epoch s). */
-export function revokeSessionsFor(principal: { iss: string; sub: string }): number {
-  return store.transaction((s) => raise(s.notBefore, principalKey(principal), nowSec()))
+export async function revokeSessionsFor(principal: { iss: string; sub: string }): Promise<number> {
+  const cutoff = nowSec()
+  const [row] = await getDb()
+    .insert(sessionRevocations)
+    .values({ principalKey: principalKey(principal), notBefore: cutoff })
+    .onConflictDoUpdate({
+      target: sessionRevocations.principalKey,
+      set: { notBefore: sql`greatest(coalesce(${sessionRevocations.notBefore}, 0), ${cutoff})` },
+    })
+    .returning({ notBefore: sessionRevocations.notBefore })
+  return row!.notBefore!
 }
 
 /** Invalidate Sessions only; PATs stay valid. Returns the cut-off (epoch s). */
-export function revokeSessionsOnlyFor(
+export async function revokeSessionsOnlyFor(
   principal: { iss: string; sub: string },
   at: number = nowSec(),
-): number {
-  return store.transaction((s) => {
-    s.sessionsNotBefore ??= {}
-    return raise(s.sessionsNotBefore, principalKey(principal), at)
-  })
+): Promise<number> {
+  const [row] = await getDb()
+    .insert(sessionRevocations)
+    .values({ principalKey: principalKey(principal), sessionsNotBefore: at })
+    .onConflictDoUpdate({
+      target: sessionRevocations.principalKey,
+      set: { sessionsNotBefore: sql`greatest(coalesce(${sessionRevocations.sessionsNotBefore}, 0), ${at})` },
+    })
+    .returning({ sessionsNotBefore: sessionRevocations.sessionsNotBefore })
+  return row!.sessionsNotBefore!
 }
 
 /**
  * True when a credential of `kind` (Session cookie or PAT) first issued at `issuedAt` (epoch s)
  * predates the Principal's revocation cut-off. Every credential type must pass this check.
  */
-export function isCredentialRevoked(
+export async function isCredentialRevoked(
   principal: { iss: string; sub: string },
   issuedAt: number,
   kind: CredentialKind,
-): boolean {
-  const s = store.read()
-  const key = principalKey(principal)
-  const full = s.notBefore[key]
-  const sessionsOnly = kind === 'session' ? s.sessionsNotBefore?.[key] : undefined
-  const cutoff = Math.max(full ?? -1, sessionsOnly ?? -1)
+): Promise<boolean> {
+  const [row] = await getDb()
+    .select()
+    .from(sessionRevocations)
+    .where(eq(sessionRevocations.principalKey, principalKey(principal)))
+  if (!row) return false
+  const sessionsOnly = kind === 'session' ? row.sessionsNotBefore : null
+  const cutoff = Math.max(row.notBefore ?? -1, sessionsOnly ?? -1)
   return cutoff >= 0 && issuedAt <= cutoff
 }

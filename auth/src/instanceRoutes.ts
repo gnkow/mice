@@ -12,38 +12,38 @@ const target = (b: Record<string, unknown>) => ({ sub: b.sub as string, iss: b.i
 export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
   app.get(
     '/auth/instance',
-    guarded({ gate: adminOnly }, ({ c }) =>
+    guarded({ gate: adminOnly }, async ({ c }) =>
       c.json({
-        enforce: isAuthzEnforce(),
-        admins: listInstanceAdmins(),
-        permissions: listInstancePermissionGrants(),
+        enforce: await isAuthzEnforce(),
+        admins: await listInstanceAdmins(),
+        permissions: await listInstancePermissionGrants(),
       }),
     ),
   )
 
   app.patch(
     '/auth/instance',
-    guarded({ gate: adminOnly, mutates: true, reason: true, body: { required: [] } }, ({ c, user, body }) => {
+    guarded({ gate: adminOnly, mutates: true, reason: true, body: { required: [] } }, async ({ c, user, body }) => {
       if (typeof body.enforce === 'boolean') {
-        const oldValue = isAuthzEnforce()
-        setAuthzEnforce(body.enforce)
-        audit(c, user, 'session', {
+        const oldValue = await isAuthzEnforce()
+        await setAuthzEnforce(body.enforce)
+        await audit(c, user, 'session', {
           action: 'instance.settings.update',
           message: `Updated instance enforce: ${oldValue} → ${body.enforce}`,
           detail: { enforce: body.enforce, previousEnforce: oldValue },
         })
       }
-      return c.json({ enforce: isAuthzEnforce() })
+      return c.json({ enforce: await isAuthzEnforce() })
     }),
   )
 
   app.post(
     '/auth/instance/admins',
-    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, ({ c, user, body }) => {
+    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, async ({ c, user, body }) => {
       const t = target(body)
-      const result = addInstanceAdmin(user, t)
+      const result = await addInstanceAdmin(user, t)
       if (!result.ok) {
-        audit(c, user, 'session', {
+        await audit(c, user, 'session', {
           action: 'instance.admin.add',
           status: 403,
           message: `Add instance admin denied: ${result.error}`,
@@ -51,7 +51,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
         })
         return c.json({ error: result.error }, 403)
       }
-      audit(c, user, 'session', {
+      await audit(c, user, 'session', {
         action: 'instance.admin.add',
         message: `Added instance admin ${t.sub}`,
         detail: { target: t },
@@ -62,11 +62,11 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.delete(
     '/auth/instance/admins',
-    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, ({ c, user, body }) => {
+    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, async ({ c, user, body }) => {
       const t = target(body)
-      const result = removeInstanceAdmin(user, t)
+      const result = await removeInstanceAdmin(user, t)
       if (!result.ok) {
-        audit(c, user, 'session', {
+        await audit(c, user, 'session', {
           action: 'instance.admin.remove',
           status: 400,
           message: `Remove instance admin failed: ${result.error}`,
@@ -74,7 +74,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
         })
         return c.json({ error: result.error }, 400)
       }
-      audit(c, user, 'session', {
+      await audit(c, user, 'session', {
         action: 'instance.admin.remove',
         message: `Removed instance admin ${t.sub}`,
         detail: { target: t },
@@ -85,15 +85,15 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.put(
     '/auth/instance/permissions',
-    guarded({ mutates: true, reason: true, body: { required: [] } }, ({ c, user, body }) => {
+    guarded({ mutates: true, reason: true, body: { required: [] } }, async ({ c, user, body }) => {
       if (!body.sub || !body.iss || !Array.isArray(body.permissions)) {
         return c.json({ error: 'sub, iss, permissions required' }, 400)
       }
       const permissions = body.permissions as InstancePermission[]
       const t = target(body)
-      const result = setInstancePermissions(user, t, permissions)
+      const result = await setInstancePermissions(user, t, permissions)
       if (!result.ok) {
-        audit(c, user, 'session', {
+        await audit(c, user, 'session', {
           action: 'instance.permissions.update',
           status: 403,
           message: `Instance permissions update denied: ${result.error}`,
@@ -101,7 +101,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
         })
         return c.json({ error: result.error }, 403)
       }
-      audit(c, user, 'session', {
+      await audit(c, user, 'session', {
         action: 'instance.permissions.update',
         message: `Set instance permissions for ${t.sub}`,
         detail: { target: t, permissions },

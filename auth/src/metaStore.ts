@@ -1,7 +1,7 @@
-import { join } from 'node:path'
+import { desc, eq } from 'drizzle-orm'
 import type { AuditActor } from './audit.js'
-import { env } from './env.js'
-import { createDocumentStore, createJsonlLog } from './stores.js'
+import { getDb } from './db/database.js'
+import { metaHistory, metaRecords, metaRevisions } from './db/schema.js'
 import {
   LIMITS,
   MetaError,
@@ -16,8 +16,6 @@ import {
   type MetaRecord,
 } from './metaTypes.js'
 
-type StoreFile = { records: Record<string, MetaRecord>; revisions: Record<string, number>; history: MetaRevision[] }
-
 export type MetaRevision = {
   key: string
   ref: EntityRef
@@ -29,69 +27,24 @@ export type MetaRevision = {
   after: MetaRecord | null
 }
 
-function storePath(): string {
-  return join(env.dataDir, 'meta.json')
+export async function getOwnRecord(ref: EntityRef): Promise<MetaRecord | null> {
+  const [row] = await getDb().select().from(metaRecords).where(eq(metaRecords.key, refKey(ref)))
+  return row?.body ?? null
 }
 
-function historyPath(): string {
-  return join(env.dataDir, 'meta-history.jsonl')
+export async function listOwnRecords(): Promise<MetaRecord[]> {
+  return (await getDb().select().from(metaRecords)).map((r) => r.body)
 }
 
-const store = createDocumentStore<StoreFile>({
-  path: storePath,
-  initial: () => ({ records: {}, revisions: {}, history: [] }),
-  validate(f) {
-    if (!f.records || typeof f.records !== 'object' || Array.isArray(f.records)) throw new Error('Invalid metadata store')
-  },
-  migrate(f) {
-    const records: StoreFile['records'] = {}
-    const revisions = { ...(f.revisions ?? {}) }
-    for (const [key, record] of Object.entries(f.records)) {
-      const clean = explicitRecord(record)
-      if (!isEmpty(clean)) records[key] = clean
-      revisions[key] ??= record.revision
-    }
-    f.records = records
-    f.revisions = revisions
-    f.history ??= []
-  },
-})
-
-const historyLog = createJsonlLog<MetaRevision>(historyPath)
-
-const read = (): StoreFile => store.read()
-
-/** Persists the explicit-only metadata migration; reads apply it in memory and never write. */
-export function migrateMetaStore(): boolean {
-  return store.migrate()
+export async function getRevision(ref: EntityRef): Promise<number> {
+  const [row] = await getDb().select().from(metaRevisions).where(eq(metaRevisions.key, refKey(ref)))
+  return row?.value ?? 0
 }
 
-function explicitRecord(record: MetaRecord): MetaRecord {
-  return {
-    ref: record.ref, revision: record.revision, tags: record.tags, labels: record.labels,
-    createdAt: record.createdAt, updatedAt: record.updatedAt, updatedBy: record.updatedBy,
-  }
-}
-
-export function getOwnRecord(ref: EntityRef): MetaRecord | null {
-  return read().records[refKey(ref)] ?? null
-}
-
-export function listOwnRecords(): MetaRecord[] {
-  return Object.values(read().records)
-}
-
-export function getRevision(ref: EntityRef): number {
-  const f = read()
-  return f.revisions[refKey(ref)] ?? f.records[refKey(ref)]?.revision ?? 0
-}
-
-export function listHistory(ref: EntityRef): MetaRevision[] {
-  const key = refKey(ref)
-  const out: MetaRevision[] = []
-  for (const rev of historyLog.readAll()) if (rev.key === key) out.push(rev)
-  out.push(...read().history.filter((rev) => rev.key === key))
-  return out.reverse()
+/** Newest first; reads only this entity's revisions. */
+export async function listHistory(ref: EntityRef): Promise<MetaRevision[]> {
+  const rows = await getDb().select().from(metaHistory).where(eq(metaHistory.key, refKey(ref))).orderBy(desc(metaHistory.revision))
+  return rows.map((r) => r.body)
 }
 
 function uniq(list: string[]): string[] {
@@ -157,68 +110,67 @@ export function buildRecord(
   return next
 }
 
+/**
+ * Runs `change` against the entity's current record with its revision row locked, so concurrent
+ * edits serialise and a stale `ifRevision` is rejected.
+ */
+async function withLockedEntity<T>(
+  key: string,
+  ifRevision: number | undefined,
+  change: (prev: MetaRecord | null, revision: number, tx: Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0]) => Promise<T>,
+): Promise<T> {
+  return getDb().transaction(async (tx) => {
+    await tx.insert(metaRevisions).values({ key, value: 0 }).onConflictDoNothing()
+    const [counter] = await tx.select().from(metaRevisions).where(eq(metaRevisions.key, key)).for('update')
+    const revision = counter!.value
+    if (ifRevision !== undefined && revision !== ifRevision) {
+      throw new MetaError(409, `Revision conflict: expected ${ifRevision}, current ${revision}`)
+    }
+    const [row] = await tx.select().from(metaRecords).where(eq(metaRecords.key, key))
+    return change(row?.body ?? null, revision, tx)
+  })
+}
+
+async function recordRevision(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0],
+  rev: MetaRevision,
+): Promise<void> {
+  await tx.update(metaRevisions).set({ value: rev.revision }).where(eq(metaRevisions.key, rev.key))
+  await tx.insert(metaHistory).values({ key: rev.key, revision: rev.revision, body: rev })
+}
+
 /** Apply a patch with optimistic concurrency; returns the new own record (null when it became empty). */
-export function putOwnRecord(
+export async function putOwnRecord(
   ref: EntityRef,
   patch: MetaPatch,
   actor: AuditActor,
   ifRevision?: number,
-): { before: MetaRecord | null; after: MetaRecord | null } {
-  return store.transaction((file) => {
-    const key = refKey(ref)
-    const prev = file.records[key] ?? null
-    const revision = file.revisions[key] ?? prev?.revision ?? 0
-    if (ifRevision !== undefined && revision !== ifRevision) {
-      throw new MetaError(
-        409,
-        `Revision conflict: expected ${ifRevision}, current ${revision}`,
-      )
-    }
+): Promise<{ before: MetaRecord | null; after: MetaRecord | null }> {
+  const key = refKey(ref)
+  return withLockedEntity(key, ifRevision, async (prev, revision, tx) => {
     const built = buildRecord(ref, prev, patch, actor)
     built.revision = revision + 1
     const after = isEmpty(built) ? null : built
-    if (after) file.records[key] = after
-    else delete file.records[key]
-    file.revisions[key] = built.revision
-    file.history.push({
-      key,
-      ref,
-      revision: built.revision,
-      ts: built.updatedAt,
-      actor,
-      op: after ? 'set' : 'delete',
-      before: prev,
-      after,
-  })
-  return { before: prev, after }
+    if (after) {
+      await tx.insert(metaRecords).values({ key, body: after }).onConflictDoUpdate({ target: metaRecords.key, set: { body: after } })
+    } else {
+      await tx.delete(metaRecords).where(eq(metaRecords.key, key))
+    }
+    await recordRevision(tx, { key, ref, revision: built.revision, ts: built.updatedAt, actor, op: after ? 'set' : 'delete', before: prev, after })
+    return { before: prev, after }
   })
 }
 
-export function deleteOwnRecord(
+export async function deleteOwnRecord(
   ref: EntityRef,
   actor: AuditActor,
   ifRevision?: number,
-): { before: MetaRecord | null } {
+): Promise<{ before: MetaRecord | null }> {
   const key = refKey(ref)
-  const current = read()
-  const currentRevision = current.revisions[key] ?? current.records[key]?.revision ?? 0
-  if (ifRevision !== undefined && currentRevision !== ifRevision) throw new MetaError(409, `Revision conflict: expected ${ifRevision}, current ${currentRevision}`)
-  if (!current.records[key]) return { before: null }
-  return store.transaction((file) => {
-    const prev = file.records[key]!
-    const revision = file.revisions[key] ?? prev.revision
-    delete file.records[key]
-    file.revisions[key] = revision + 1
-    file.history.push({
-      key,
-      ref,
-      revision: revision + 1,
-      ts: new Date().toISOString(),
-      actor,
-      op: 'delete',
-      before: prev,
-      after: null,
-  })
-  return { before: prev }
+  return withLockedEntity(key, ifRevision, async (prev, revision, tx) => {
+    if (!prev) return { before: null }
+    await tx.delete(metaRecords).where(eq(metaRecords.key, key))
+    await recordRevision(tx, { key, ref, revision: revision + 1, ts: new Date().toISOString(), actor, op: 'delete', before: prev, after: null })
+    return { before: prev }
   })
 }

@@ -14,18 +14,18 @@ function announcementFail(err: unknown, c: Context) {
 
 /** Instance announcements: any signed-in user reads live ones; instance admins manage. */
 export function registerAnnouncementRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
-  app.get('/auth/announcements', guarded({}, ({ c, user, deny }) => {
+  app.get('/auth/announcements', guarded({}, async ({ c, user, deny }) => {
     const wantAll = c.req.query('all') === '1'
     if (wantAll) {
-      const denied = deny(decideInstanceAction(user, 'instance.admin'))
+      const denied = deny(await decideInstanceAction(user, 'instance.admin'))
       if (denied) return denied
     }
-    return c.json({ announcements: listAnnouncements({ all: wantAll }) })
+    return c.json({ announcements: await listAnnouncements({ all: wantAll }) })
   }))
 
-  app.post('/auth/announcements', guarded({ gate: adminOnly, body: 'optional', fail: announcementFail }, ({ c, user, body }) => {
-    const row = createAnnouncement(body, `${user.name || user.email || user.sub}`)
-    auditMutation(c, user, 'session', {
+  app.post('/auth/announcements', guarded({ gate: adminOnly, body: 'optional', fail: announcementFail }, async ({ c, user, body }) => {
+    const row = await createAnnouncement(body, `${user.name || user.email || user.sub}`)
+    await auditMutation(c, user, 'session', {
       action: 'announcement.create',
       message: `Published announcement "${row.title}"`,
       detail: { announcementId: row.id, severity: row.severity },
@@ -33,9 +33,9 @@ export function registerAnnouncementRoutes(app: Hono, { audit: auditMutation }: 
     return c.json({ announcement: row }, 201)
   }))
 
-  app.patch('/auth/announcements/:id', guarded({ gate: adminOnly, body: 'optional', fail: announcementFail }, ({ c, user, body }) => {
-    const row = updateAnnouncement(c.req.param('id'), body)
-    auditMutation(c, user, 'session', {
+  app.patch('/auth/announcements/:id', guarded({ gate: adminOnly, body: 'optional', fail: announcementFail }, async ({ c, user, body }) => {
+    const row = await updateAnnouncement(c.req.param('id'), body)
+    await auditMutation(c, user, 'session', {
       action: 'announcement.update',
       message: `Updated announcement "${row.title}"`,
       detail: { announcementId: row.id, active: row.active },
@@ -43,9 +43,9 @@ export function registerAnnouncementRoutes(app: Hono, { audit: auditMutation }: 
     return c.json({ announcement: row })
   }))
 
-  app.delete('/auth/announcements/:id', guarded({ gate: adminOnly, fail: announcementFail }, ({ c, user }) => {
-    const row = deleteAnnouncement(c.req.param('id'))
-    auditMutation(c, user, 'session', {
+  app.delete('/auth/announcements/:id', guarded({ gate: adminOnly, fail: announcementFail }, async ({ c, user }) => {
+    const row = await deleteAnnouncement(c.req.param('id'))
+    await auditMutation(c, user, 'session', {
       action: 'announcement.delete',
       message: `Deleted announcement "${row.title}"`,
       detail: { announcementId: row.id },

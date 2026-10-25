@@ -1,169 +1,38 @@
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { TransactionRollbackError } from 'drizzle-orm/errors'
 import type { SessionUser } from './session.js'
 import { matchesIdentityEntry } from './principal.js'
-import { join } from 'node:path'
-import { deleteCustomRolesForNamespace } from './customRoles.js'
 import { env } from './env.js'
-import { createDocumentStore } from './stores.js'
-import { normalizeGroup, userKey, type BasePermission, type CollaboratorRoleRef, type InstancePermission, type MemberRoleRef } from './authzTypes.js'
+import { getDb, inTransaction, type Db, type Tx } from './db/database.js'
+import {
+  instanceAdmins,
+  instancePermissions,
+  instanceSettings,
+  instanceTraining,
+  namespaceGroupMembers,
+  namespaceMembers,
+  namespaces,
+  repoCollaborators,
+  repoGroupCollaborators,
+} from './db/schema.js'
+import {
+  normalizeGroup,
+  type BasePermission,
+  type CollaboratorRoleRef,
+  type InstancePermission,
+  type MemberRoleRef,
+} from './authzTypes.js'
 
-export type InstanceStore = {
-  version: 1
-  /** When true (or AUTHZ_ENFORCE=true), hard gate + repo checks apply. */
-  enforce: boolean
-  admins: string[] // userKey
-  permissions: Record<string, InstancePermission[]> // userKey → perms
-  /** Phase 3: userKeys who completed training / GxP onboarding. */
-  training?: string[]
+type Exec = Db | Tx
+
+export type NamespaceSettings = {
+  basePermission: BasePermission
+  membersCanCreateRepos: boolean
+  createdAt: string
+  createdBy: string
 }
 
-export type NamespacesStore = {
-  version: 1
-  namespaces: Record<
-    string,
-    {
-      basePermission: BasePermission
-      membersCanCreateRepos: boolean
-      createdAt: string
-      createdBy: string
-    }
-  >
-}
-
-export type MembersStore = {
-  version: 1 | 2
-  /** namespace → userKey → role (predefined or custom id) */
-  members: Record<string, Record<string, MemberRoleRef>>
-  /** namespace → groupKey → role (v2) */
-  groupMembers?: Record<string, Record<string, MemberRoleRef>>
-}
-
-export type CollaboratorsStore = {
-  version: 1 | 2
-  /** `${ns}/${repo}` → userKey → role (predefined or custom id) */
-  collaborators: Record<string, Record<string, CollaboratorRoleRef>>
-  /** `${ns}/${repo}` → groupKey → role (v2) */
-  groupCollaborators?: Record<string, Record<string, CollaboratorRoleRef>>
-}
-
-function instancePath() {
-  return join(env.dataDir, 'instance-admins.json')
-}
-
-function namespacesPath() {
-  return join(env.dataDir, 'namespaces.json')
-}
-
-function membersPath() {
-  return join(env.dataDir, 'namespace-members.json')
-}
-
-function collaboratorsPath() {
-  return join(env.dataDir, 'repo-collaborators.json')
-}
-
-function emptyInstance(): InstanceStore {
-  return { version: 1, enforce: false, admins: [], permissions: {}, training: [] }
-}
-
-function emptyNamespaces(): NamespacesStore {
-  return { version: 1, namespaces: {} }
-}
-
-function emptyMembers(): MembersStore {
-  return { version: 2, members: {}, groupMembers: {} }
-}
-
-function emptyCollaborators(): CollaboratorsStore {
-  return { version: 2, collaborators: {}, groupCollaborators: {} }
-}
-
-const instanceDoc = createDocumentStore<InstanceStore>({ path: instancePath, initial: emptyInstance, onCorrupt: 'initial' })
-const namespacesDoc = createDocumentStore<NamespacesStore>({ path: namespacesPath, initial: emptyNamespaces, onCorrupt: 'initial' })
-const membersDoc = createDocumentStore<MembersStore>({ path: membersPath, initial: emptyMembers, onCorrupt: 'initial' })
-const collaboratorsDoc = createDocumentStore<CollaboratorsStore>({ path: collaboratorsPath, initial: emptyCollaborators, onCorrupt: 'initial' })
-
-function readInstance(): InstanceStore {
-  const s = instanceDoc.read()
-  if (!s || s.version !== 1) return emptyInstance()
-  return {
-    version: 1,
-    enforce: Boolean(s.enforce),
-    admins: Array.isArray(s.admins) ? s.admins : [],
-    permissions:
-      s.permissions && typeof s.permissions === 'object' ? s.permissions : {},
-    training: Array.isArray(s.training) ? s.training : [],
-  }
-}
-
-function writeInstance(s: InstanceStore): void {
-  instanceDoc.write(s)
-}
-
-function readNamespaces(): NamespacesStore {
-  const s = namespacesDoc.read()
-  if (!s || s.version !== 1 || !s.namespaces) return emptyNamespaces()
-  return s
-}
-
-function writeNamespaces(s: NamespacesStore): void {
-  namespacesDoc.write(s)
-}
-
-function readMembers(): MembersStore {
-  const s = membersDoc.read()
-  if (!s || (s.version !== 1 && s.version !== 2) || !s.members) {
-    return emptyMembers()
-  }
-  return {
-    version: 2,
-    members: s.members,
-    groupMembers:
-      s.groupMembers && typeof s.groupMembers === 'object'
-        ? s.groupMembers
-        : {},
-  }
-}
-
-function writeMembers(s: MembersStore): void {
-  membersDoc.write({
-    version: 2,
-    members: s.members,
-    groupMembers: s.groupMembers ?? {},
-  })
-}
-
-function readCollaborators(): CollaboratorsStore {
-  const s = collaboratorsDoc.read()
-  if (!s || (s.version !== 1 && s.version !== 2) || !s.collaborators) {
-    return emptyCollaborators()
-  }
-  return {
-    version: 2,
-    collaborators: s.collaborators,
-    groupCollaborators:
-      s.groupCollaborators && typeof s.groupCollaborators === 'object'
-        ? s.groupCollaborators
-        : {},
-  }
-}
-
-function writeCollaborators(s: CollaboratorsStore): void {
-  collaboratorsDoc.write({
-    version: 2,
-    collaborators: s.collaborators,
-    groupCollaborators: s.groupCollaborators ?? {},
-  })
-}
-
-function countNamespaceOwnersIn(store: MembersStore, ns: string): number {
-  const users = Object.values(store.members[ns] ?? {}).filter(
-    (r) => r === 'owner',
-  ).length
-  const groups = Object.values(store.groupMembers?.[ns] ?? {}).filter(
-    (r) => r === 'owner',
-  ).length
-  return users + groups
-}
+type Result = { ok: true } | { ok: false; error: string }
 
 export function sessionGroups(user: { groups?: string[] }): string[] {
   return (user.groups ?? []).map(normalizeGroup).filter(Boolean)
@@ -184,242 +53,499 @@ export function matchesBootstrap(user: SessionUser): boolean {
   return bootstrapAllowlist().some((entry) => matchesIdentityEntry(entry, user))
 }
 
-type Result = { ok: true } | { ok: false; error: string }
+// ── Instance ────────────────────────────────────────────────────────────────
 
-export type NamespaceSettings = NamespacesStore['namespaces'][string]
-
-/** Read-only views of the authz documents. Mutate only through the operations below. */
-export function instanceSnapshot(): Readonly<InstanceStore> {
-  return readInstance()
+export async function storedEnforce(): Promise<boolean> {
+  const rows = await getDb().select().from(instanceSettings).limit(1)
+  return rows[0]?.enforce ?? false
 }
 
-export function namespacesSnapshot(): Readonly<NamespacesStore> {
-  return readNamespaces()
+export async function writeEnforce(enforce: boolean, db: Exec = getDb()): Promise<void> {
+  await db
+    .insert(instanceSettings)
+    .values({ id: 1, enforce })
+    .onConflictDoUpdate({ target: instanceSettings.id, set: { enforce } })
 }
 
-export function membersSnapshot(): Readonly<MembersStore> {
-  return readMembers()
+export async function listAdminKeys(): Promise<string[]> {
+  return (await getDb().select().from(instanceAdmins)).map((r) => r.userKey)
 }
 
-export function collaboratorsSnapshot(): Readonly<CollaboratorsStore> {
-  return readCollaborators()
+export async function isAdminKey(key: string): Promise<boolean> {
+  const rows = await getDb().select().from(instanceAdmins).where(eq(instanceAdmins.userKey, key)).limit(1)
+  return rows.length > 0
 }
 
-export function updateInstance(change: (s: InstanceStore) => void): void {
-  const s = readInstance()
-  change(s)
-  writeInstance(s)
+export async function addAdminKey(key: string): Promise<void> {
+  await getDb().insert(instanceAdmins).values({ userKey: key }).onConflictDoNothing()
 }
 
-/**
- * Write several documents as one unit: if any write throws, documents already
- * written are restored to their previous contents.
- */
-function commit(writes: Array<{ apply: () => void; undo: () => void }>): void {
-  const done: Array<() => void> = []
-  try {
-    for (const w of writes) {
-      w.apply()
-      done.push(w.undo)
+/** Removes an admin unless it is the last one. Returns false when refused. */
+export async function removeAdminKey(key: string): Promise<boolean> {
+  return inTransaction(async (tx) => {
+    await tx.execute(sql`lock table instance_admins in share row exclusive mode`)
+    const all = await tx.select().from(instanceAdmins)
+    if (all.length <= 1 && all.some((r) => r.userKey === key)) return false
+    await tx.delete(instanceAdmins).where(eq(instanceAdmins.userKey, key))
+    return true
+  })
+}
+
+/** Makes `key` the first admin only when none exists yet (race-safe). Returns true when it did. */
+export async function bootstrapFirstAdmin(key: string, enableEnforce: boolean): Promise<boolean> {
+  return inTransaction(async (tx) => {
+    await tx.execute(sql`lock table instance_admins in share row exclusive mode`)
+    const existing = await tx.select().from(instanceAdmins).limit(1)
+    if (existing.length > 0) return false
+    await tx.insert(instanceAdmins).values({ userKey: key })
+    if (enableEnforce) await writeEnforce(true, tx)
+    return true
+  })
+}
+
+export async function instancePermissionsOf(key: string): Promise<InstancePermission[]> {
+  const rows = await getDb().select().from(instancePermissions).where(eq(instancePermissions.userKey, key))
+  return rows.map((r) => r.permission as InstancePermission)
+}
+
+export async function replaceInstancePermissions(key: string, perms: InstancePermission[]): Promise<void> {
+  await inTransaction(async (tx) => {
+    await tx.delete(instancePermissions).where(eq(instancePermissions.userKey, key))
+    if (perms.length) {
+      await tx.insert(instancePermissions).values(perms.map((permission) => ({ userKey: key, permission })))
     }
-  } catch (e) {
-    for (const undo of done.reverse()) {
-      try {
-        undo()
-      } catch {
-        // best effort: keep restoring the remaining documents
-      }
-    }
-    throw e
+  })
+}
+
+export async function listInstancePermissionRows(): Promise<Array<{ key: string; permissions: InstancePermission[] }>> {
+  const rows = await getDb().select().from(instancePermissions)
+  const by = new Map<string, InstancePermission[]>()
+  for (const r of rows) by.set(r.userKey, [...(by.get(r.userKey) ?? []), r.permission as InstancePermission])
+  return [...by].map(([key, permissions]) => ({ key, permissions }))
+}
+
+export async function isTrained(key: string): Promise<boolean> {
+  const rows = await getDb().select().from(instanceTraining).where(eq(instanceTraining.userKey, key)).limit(1)
+  return rows.length > 0
+}
+
+export async function writeTrained(key: string, done: boolean): Promise<void> {
+  if (done) await getDb().insert(instanceTraining).values({ userKey: key }).onConflictDoNothing()
+  else await getDb().delete(instanceTraining).where(eq(instanceTraining.userKey, key))
+}
+
+// ── Namespaces ──────────────────────────────────────────────────────────────
+
+function toSettings(r: typeof namespaces.$inferSelect): NamespaceSettings {
+  return {
+    basePermission: r.basePermission as BasePermission,
+    membersCanCreateRepos: r.membersCanCreateRepos,
+    createdAt: r.createdAt.toISOString(),
+    createdBy: r.createdBy,
   }
 }
 
-export function createNamespace(
+export async function readNamespace(name: string): Promise<NamespaceSettings | null> {
+  const rows = await getDb().select().from(namespaces).where(eq(namespaces.name, name)).limit(1)
+  return rows[0] ? toSettings(rows[0]) : null
+}
+
+export async function readNamespaces(): Promise<Record<string, NamespaceSettings>> {
+  const rows = await getDb().select().from(namespaces)
+  return Object.fromEntries(rows.map((r) => [r.name, toSettings(r)]))
+}
+
+export async function createNamespace(
   creator: string,
   name: string,
   basePermission: BasePermission,
   membersCanCreateRepos: boolean,
-): Result {
-  const namespaces = readNamespaces()
-  if (namespaces.namespaces[name]) return { ok: false, error: 'Namespace already exists' }
-  const prevNamespaces = readNamespaces()
-  const prevMembers = readMembers()
-  namespaces.namespaces[name] = {
-    basePermission,
-    membersCanCreateRepos,
-    createdAt: new Date().toISOString(),
-    createdBy: creator,
-  }
-  const members = readMembers()
-  members.members[name] = { [creator]: 'owner' }
-  if (!members.groupMembers) members.groupMembers = {}
-  members.groupMembers[name] = {}
-  commit([
-    { apply: () => writeMembers(members), undo: () => writeMembers(prevMembers) },
-    { apply: () => writeNamespaces(namespaces), undo: () => writeNamespaces(prevNamespaces) },
-  ])
-  return { ok: true }
+): Promise<Result> {
+  return inTransaction(async (tx) => {
+    const inserted = await tx
+      .insert(namespaces)
+      .values({ name, basePermission, membersCanCreateRepos, createdAt: new Date(), createdBy: creator })
+      .onConflictDoNothing()
+      .returning({ name: namespaces.name })
+    if (inserted.length === 0) return { ok: false, error: 'Namespace already exists' } as const
+    await tx.insert(namespaceMembers).values({ namespace: name, userKey: creator, role: 'owner' })
+    return { ok: true } as const
+  })
 }
 
-/** Seed the namespace if missing and make sure `actor` owns it when seeding. */
-export function ensureNamespace(actor: string, name: string, basePermission: BasePermission): void {
-  const namespaces = readNamespaces()
-  if (namespaces.namespaces[name]) return
-  const prevNamespaces = readNamespaces()
-  const prevMembers = readMembers()
-  namespaces.namespaces[name] = {
-    basePermission,
-    membersCanCreateRepos: true,
-    createdAt: new Date().toISOString(),
-    createdBy: actor,
-  }
-  const members = readMembers()
-  if (!members.members[name]) members.members[name] = {}
-  if (!members.members[name][actor]) members.members[name][actor] = 'owner'
-  commit([
-    { apply: () => writeMembers(members), undo: () => writeMembers(prevMembers) },
-    { apply: () => writeNamespaces(namespaces), undo: () => writeNamespaces(prevNamespaces) },
-  ])
+/** Seed the namespace if missing and make `actor` its owner when seeding. */
+export async function ensureNamespace(actor: string, name: string, basePermission: BasePermission): Promise<void> {
+  await inTransaction(async (tx) => {
+    const inserted = await tx
+      .insert(namespaces)
+      .values({ name, basePermission, membersCanCreateRepos: true, createdAt: new Date(), createdBy: actor })
+      .onConflictDoNothing()
+      .returning({ name: namespaces.name })
+    if (inserted.length === 0) return
+    await tx.insert(namespaceMembers).values({ namespace: name, userKey: actor, role: 'owner' }).onConflictDoNothing()
+  })
 }
 
-export function updateNamespaceSettings(
+export async function updateNamespaceSettings(
   name: string,
   patch: Partial<Pick<NamespaceSettings, 'basePermission' | 'membersCanCreateRepos'>>,
-): Result {
-  const store = readNamespaces()
-  const cur = store.namespaces[name]
-  if (!cur) return { ok: false, error: 'Namespace not found' }
-  if (patch.basePermission !== undefined) cur.basePermission = patch.basePermission
-  if (patch.membersCanCreateRepos !== undefined) cur.membersCanCreateRepos = patch.membersCanCreateRepos
-  writeNamespaces(store)
-  return { ok: true }
-}
-
-/**
- * Remove a namespace with its members, collaborators and custom roles as one
- * operation. `hooks.afterCommit` runs before custom roles are removed (failure injection point).
- */
-export function deleteNamespace(name: string, hooks: { afterCommit?: () => void } = {}): Result {
-  const namespaces = readNamespaces()
-  if (!namespaces.namespaces[name]) return { ok: false, error: 'Namespace not found' }
-  const prevNamespaces = readNamespaces()
-  const prevMembers = readMembers()
-  const prevCollab = readCollaborators()
-
-  delete namespaces.namespaces[name]
-  const members = readMembers()
-  delete members.members[name]
-  if (members.groupMembers) delete members.groupMembers[name]
-  const collab = readCollaborators()
-  const prefix = `${name}/`
-  const owned = (key: string) => key.startsWith(prefix) || key === name
-  for (const key of Object.keys(collab.collaborators)) {
-    if (owned(key)) delete collab.collaborators[key]
+): Promise<Result> {
+  const set: Partial<typeof namespaces.$inferInsert> = {}
+  if (patch.basePermission !== undefined) set.basePermission = patch.basePermission
+  if (patch.membersCanCreateRepos !== undefined) set.membersCanCreateRepos = patch.membersCanCreateRepos
+  if (Object.keys(set).length === 0) {
+    return (await readNamespace(name)) ? { ok: true } : { ok: false, error: 'Namespace not found' }
   }
-  for (const key of Object.keys(collab.groupCollaborators ?? {})) {
-    if (owned(key)) delete collab.groupCollaborators![key]
+  const updated = await getDb().update(namespaces).set(set).where(eq(namespaces.name, name)).returning({ name: namespaces.name })
+  return updated.length ? { ok: true } : { ok: false, error: 'Namespace not found' }
+}
+
+/** Removes a namespace; members, collaborators and custom roles go with it through foreign keys. */
+export async function deleteNamespace(name: string): Promise<Result> {
+  const deleted = await getDb().delete(namespaces).where(eq(namespaces.name, name)).returning({ name: namespaces.name })
+  return deleted.length ? { ok: true } : { ok: false, error: 'Namespace not found' }
+}
+
+// ── Members ─────────────────────────────────────────────────────────────────
+
+async function lockNamespace(tx: Tx, ns: string): Promise<boolean> {
+  const rows = await tx.select().from(namespaces).where(eq(namespaces.name, ns)).for('update')
+  return rows.length > 0
+}
+
+async function ownerCount(tx: Tx, ns: string): Promise<number> {
+  const users = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(namespaceMembers)
+    .where(and(eq(namespaceMembers.namespace, ns), eq(namespaceMembers.role, 'owner')))
+  const groups = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(namespaceGroupMembers)
+    .where(and(eq(namespaceGroupMembers.namespace, ns), eq(namespaceGroupMembers.role, 'owner')))
+  return (users[0]?.n ?? 0) + (groups[0]?.n ?? 0)
+}
+
+export async function membershipRefs(
+  user: { key: string; groups: string[] },
+  ns?: string,
+): Promise<Array<{ namespace: string; role: MemberRoleRef }>> {
+  const db = getDb()
+  const direct = await db
+    .select({ namespace: namespaceMembers.namespace, role: namespaceMembers.role })
+    .from(namespaceMembers)
+    .where(and(eq(namespaceMembers.userKey, user.key), ns ? eq(namespaceMembers.namespace, ns) : undefined))
+  const viaGroups = user.groups.length
+    ? await db
+        .select({ namespace: namespaceGroupMembers.namespace, role: namespaceGroupMembers.role })
+        .from(namespaceGroupMembers)
+        .where(and(inArray(namespaceGroupMembers.groupKey, user.groups), ns ? eq(namespaceGroupMembers.namespace, ns) : undefined))
+    : []
+  return [...direct, ...viaGroups]
+}
+
+export async function directMemberRole(ns: string, key: string): Promise<MemberRoleRef | null> {
+  const rows = await getDb()
+    .select()
+    .from(namespaceMembers)
+    .where(and(eq(namespaceMembers.namespace, ns), eq(namespaceMembers.userKey, key)))
+    .limit(1)
+  return rows[0]?.role ?? null
+}
+
+export async function listMemberRows(ns: string): Promise<{
+  users: Array<{ key: string; role: MemberRoleRef }>
+  groups: Array<{ group: string; role: MemberRoleRef }>
+}> {
+  const db = getDb()
+  const users = await db.select().from(namespaceMembers).where(eq(namespaceMembers.namespace, ns))
+  const groups = await db.select().from(namespaceGroupMembers).where(eq(namespaceGroupMembers.namespace, ns))
+  return {
+    users: users.map((r) => ({ key: r.userKey, role: r.role })),
+    groups: groups.map((r) => ({ group: r.groupKey, role: r.role })),
   }
-
-  commit([
-    { apply: () => writeMembers(members), undo: () => writeMembers(prevMembers) },
-    { apply: () => writeCollaborators(collab), undo: () => writeCollaborators(prevCollab) },
-    { apply: () => writeNamespaces(namespaces), undo: () => writeNamespaces(prevNamespaces) },
-    {
-      apply: () => {
-        hooks.afterCommit?.()
-        deleteCustomRolesForNamespace(name)
-      },
-      undo: () => {},
-    },
-  ])
-  return { ok: true }
 }
 
-export function setMember(ns: string, key: string, role: MemberRoleRef): Result {
-  const members = readMembers()
-  if (!readNamespaces().namespaces[ns]) return { ok: false, error: 'Namespace not found' }
-  if (!members.members[ns]) members.members[ns] = {}
-  if (!members.groupMembers) members.groupMembers = {}
-  const map = members.members[ns]
-  const prev = map[key]
-  map[key] = role
-  if (prev === 'owner' && role !== 'owner' && countNamespaceOwnersIn(members, ns) === 0) {
-    return { ok: false, error: 'Cannot demote the last namespace Owner' }
+export async function memberCounts(): Promise<Map<string, number>> {
+  const db = getDb()
+  const out = new Map<string, number>()
+  const add = (rows: Array<{ namespace: string; n: number }>) => {
+    for (const r of rows) out.set(r.namespace, (out.get(r.namespace) ?? 0) + r.n)
   }
-  writeMembers(members)
-  return { ok: true }
+  add(
+    await db
+      .select({ namespace: namespaceMembers.namespace, n: sql<number>`count(*)::int` })
+      .from(namespaceMembers)
+      .groupBy(namespaceMembers.namespace),
+  )
+  add(
+    await db
+      .select({ namespace: namespaceGroupMembers.namespace, n: sql<number>`count(*)::int` })
+      .from(namespaceGroupMembers)
+      .groupBy(namespaceGroupMembers.namespace),
+  )
+  return out
 }
 
-export function removeMember(ns: string, key: string): Result {
-  const members = readMembers()
-  const map = members.members[ns]
-  if (!map) return { ok: false, error: 'Namespace not found' }
-  if (map[key] === 'owner' && countNamespaceOwnersIn(members, ns) <= 1) {
-    return { ok: false, error: 'Cannot remove the last namespace Owner' }
+export async function isMemberRoleAssigned(ns: string, roleId: string): Promise<boolean> {
+  const db = getDb()
+  const u = await db
+    .select()
+    .from(namespaceMembers)
+    .where(and(eq(namespaceMembers.namespace, ns), eq(namespaceMembers.role, roleId)))
+    .limit(1)
+  if (u.length) return true
+  const g = await db
+    .select()
+    .from(namespaceGroupMembers)
+    .where(and(eq(namespaceGroupMembers.namespace, ns), eq(namespaceGroupMembers.role, roleId)))
+    .limit(1)
+  return g.length > 0
+}
+
+export async function ownedNamespaceNames(user: { key: string; groups: string[] }): Promise<string[]> {
+  const refs = await membershipRefs(user)
+  return [...new Set(refs.filter((r) => r.role === 'owner').map((r) => r.namespace))]
+}
+
+export async function setMember(ns: string, key: string, role: MemberRoleRef): Promise<Result> {
+  return inTransaction(async (tx) => {
+    if (!(await lockNamespace(tx, ns))) return { ok: false, error: 'Namespace not found' } as const
+    const prev = (
+      await tx
+        .select()
+        .from(namespaceMembers)
+        .where(and(eq(namespaceMembers.namespace, ns), eq(namespaceMembers.userKey, key)))
+    )[0]?.role
+    await tx
+      .insert(namespaceMembers)
+      .values({ namespace: ns, userKey: key, role })
+      .onConflictDoUpdate({ target: [namespaceMembers.namespace, namespaceMembers.userKey], set: { role } })
+    if (prev === 'owner' && role !== 'owner' && (await ownerCount(tx, ns)) === 0) {
+      tx.rollback()
+    }
+    return { ok: true } as const
+  }).catch((e: unknown) => rollbackAs(e, 'Cannot demote the last namespace Owner'))
+}
+
+export async function removeMember(ns: string, key: string): Promise<Result> {
+  return inTransaction(async (tx) => {
+    if (!(await lockNamespace(tx, ns))) return { ok: false, error: 'Namespace not found' } as const
+    const cur = (
+      await tx
+        .select()
+        .from(namespaceMembers)
+        .where(and(eq(namespaceMembers.namespace, ns), eq(namespaceMembers.userKey, key)))
+    )[0]
+    if (cur?.role === 'owner' && (await ownerCount(tx, ns)) <= 1) {
+      return { ok: false, error: 'Cannot remove the last namespace Owner' } as const
+    }
+    await tx.delete(namespaceMembers).where(and(eq(namespaceMembers.namespace, ns), eq(namespaceMembers.userKey, key)))
+    return { ok: true } as const
+  })
+}
+
+export async function setGroupMember(ns: string, group: string, role: MemberRoleRef): Promise<Result> {
+  return inTransaction(async (tx) => {
+    if (!(await lockNamespace(tx, ns))) return { ok: false, error: 'Namespace not found' } as const
+    const prev = (
+      await tx
+        .select()
+        .from(namespaceGroupMembers)
+        .where(and(eq(namespaceGroupMembers.namespace, ns), eq(namespaceGroupMembers.groupKey, group)))
+    )[0]?.role
+    await tx
+      .insert(namespaceGroupMembers)
+      .values({ namespace: ns, groupKey: group, role })
+      .onConflictDoUpdate({ target: [namespaceGroupMembers.namespace, namespaceGroupMembers.groupKey], set: { role } })
+    if (prev === 'owner' && role !== 'owner' && (await ownerCount(tx, ns)) === 0) {
+      tx.rollback()
+    }
+    return { ok: true } as const
+  }).catch((e: unknown) => rollbackAs(e, 'Cannot demote the last namespace Owner'))
+}
+
+export async function removeGroupMember(ns: string, group: string): Promise<Result> {
+  return inTransaction(async (tx) => {
+    await lockNamespace(tx, ns)
+    const cur = (
+      await tx
+        .select()
+        .from(namespaceGroupMembers)
+        .where(and(eq(namespaceGroupMembers.namespace, ns), eq(namespaceGroupMembers.groupKey, group)))
+    )[0]
+    if (!cur) return { ok: false, error: 'Group member not found' } as const
+    if (cur.role === 'owner' && (await ownerCount(tx, ns)) <= 1) {
+      return { ok: false, error: 'Cannot remove the last namespace Owner' } as const
+    }
+    await tx
+      .delete(namespaceGroupMembers)
+      .where(and(eq(namespaceGroupMembers.namespace, ns), eq(namespaceGroupMembers.groupKey, group)))
+    return { ok: true } as const
+  })
+}
+
+/** `tx.rollback()` throws a TransactionRollbackError; turn it into the intended refusal. */
+function rollbackAs(e: unknown, error: string): Result {
+  if (e instanceof TransactionRollbackError) return { ok: false, error }
+  throw e
+}
+
+// ── Collaborators ───────────────────────────────────────────────────────────
+
+export async function directCollaboratorRole(ns: string, repo: string, key: string): Promise<CollaboratorRoleRef | null> {
+  const rows = await getDb()
+    .select()
+    .from(repoCollaborators)
+    .where(and(eq(repoCollaborators.namespace, ns), eq(repoCollaborators.repo, repo), eq(repoCollaborators.userKey, key)))
+    .limit(1)
+  return rows[0]?.role ?? null
+}
+
+export async function groupCollaboratorRoles(
+  ns: string,
+  repo: string,
+  groups: string[],
+): Promise<Array<{ group: string; role: CollaboratorRoleRef }>> {
+  if (!groups.length) return []
+  const rows = await getDb()
+    .select()
+    .from(repoGroupCollaborators)
+    .where(
+      and(
+        eq(repoGroupCollaborators.namespace, ns),
+        eq(repoGroupCollaborators.repo, repo),
+        inArray(repoGroupCollaborators.groupKey, groups),
+      ),
+    )
+  return rows.map((r) => ({ group: r.groupKey, role: r.role }))
+}
+
+export async function listCollaboratorRows(ns: string, repo: string): Promise<{
+  users: Array<{ key: string; role: CollaboratorRoleRef }>
+  groups: Array<{ group: string; role: CollaboratorRoleRef }>
+}> {
+  const db = getDb()
+  const users = await db
+    .select()
+    .from(repoCollaborators)
+    .where(and(eq(repoCollaborators.namespace, ns), eq(repoCollaborators.repo, repo)))
+  const groups = await db
+    .select()
+    .from(repoGroupCollaborators)
+    .where(and(eq(repoGroupCollaborators.namespace, ns), eq(repoGroupCollaborators.repo, repo)))
+  return {
+    users: users.map((r) => ({ key: r.userKey, role: r.role })),
+    groups: groups.map((r) => ({ group: r.groupKey, role: r.role })),
   }
-  delete map[key]
-  writeMembers(members)
-  return { ok: true }
 }
 
-export function setGroupMember(ns: string, group: string, role: MemberRoleRef): Result {
-  const members = readMembers()
-  if (!readNamespaces().namespaces[ns]) return { ok: false, error: 'Namespace not found' }
-  if (!members.groupMembers) members.groupMembers = {}
-  if (!members.groupMembers[ns]) members.groupMembers[ns] = {}
-  const map = members.groupMembers[ns]
-  const prev = map[group]
-  map[group] = role
-  if (prev === 'owner' && role !== 'owner' && countNamespaceOwnersIn(members, ns) === 0) {
-    return { ok: false, error: 'Cannot demote the last namespace Owner' }
+export async function listAllCollaboratorRows(): Promise<{
+  users: Array<{ key: string; role: CollaboratorRoleRef }>
+  groups: Array<{ group: string; role: CollaboratorRoleRef }>
+}> {
+  const db = getDb()
+  const users = await db.select().from(repoCollaborators)
+  const groups = await db.select().from(repoGroupCollaborators)
+  return {
+    users: users.map((r) => ({ key: r.userKey, role: r.role })),
+    groups: groups.map((r) => ({ group: r.groupKey, role: r.role })),
   }
-  writeMembers(members)
-  return { ok: true }
 }
 
-export function removeGroupMember(ns: string, group: string): Result {
-  const members = readMembers()
-  const map = members.groupMembers?.[ns]
-  if (!map || !map[group]) return { ok: false, error: 'Group member not found' }
-  if (map[group] === 'owner' && countNamespaceOwnersIn(members, ns) <= 1) {
-    return { ok: false, error: 'Cannot remove the last namespace Owner' }
-  }
-  delete map[group]
-  writeMembers(members)
-  return { ok: true }
+export async function isRepoRoleAssigned(ns: string, roleId: string): Promise<boolean> {
+  const db = getDb()
+  const u = await db
+    .select()
+    .from(repoCollaborators)
+    .where(and(eq(repoCollaborators.namespace, ns), eq(repoCollaborators.role, roleId)))
+    .limit(1)
+  if (u.length) return true
+  const g = await db
+    .select()
+    .from(repoGroupCollaborators)
+    .where(and(eq(repoGroupCollaborators.namespace, ns), eq(repoGroupCollaborators.role, roleId)))
+    .limit(1)
+  return g.length > 0
 }
 
-export function setCollaborator(ns: string, repo: string, key: string, role: CollaboratorRoleRef): void {
-  const store = readCollaborators()
-  const rk = repoKey(ns, repo)
-  if (!store.collaborators[rk]) store.collaborators[rk] = {}
-  store.collaborators[rk][key] = role
-  writeCollaborators(store)
+export async function hasCollaboratorGrantIn(
+  ns: string,
+  user: { key: string; groups: string[] },
+): Promise<boolean> {
+  const db = getDb()
+  const u = await db
+    .select()
+    .from(repoCollaborators)
+    .where(and(eq(repoCollaborators.namespace, ns), eq(repoCollaborators.userKey, user.key)))
+    .limit(1)
+  if (u.length) return true
+  if (!user.groups.length) return false
+  const g = await db
+    .select()
+    .from(repoGroupCollaborators)
+    .where(and(eq(repoGroupCollaborators.namespace, ns), inArray(repoGroupCollaborators.groupKey, user.groups)))
+    .limit(1)
+  return g.length > 0
 }
 
-export function removeCollaborator(ns: string, repo: string, key: string): boolean {
-  const store = readCollaborators()
-  const map = store.collaborators[repoKey(ns, repo)]
-  if (!map || !map[key]) return false
-  delete map[key]
-  writeCollaborators(store)
-  return true
+export async function collaboratorNamespaces(user: { key: string; groups: string[] }): Promise<string[]> {
+  const db = getDb()
+  const u = await db
+    .selectDistinct({ namespace: repoCollaborators.namespace })
+    .from(repoCollaborators)
+    .where(eq(repoCollaborators.userKey, user.key))
+  const g = user.groups.length
+    ? await db
+        .selectDistinct({ namespace: repoGroupCollaborators.namespace })
+        .from(repoGroupCollaborators)
+        .where(inArray(repoGroupCollaborators.groupKey, user.groups))
+    : []
+  return [...new Set([...u, ...g].map((r) => r.namespace))]
 }
 
-export function setGroupCollaborator(ns: string, repo: string, group: string, role: CollaboratorRoleRef): void {
-  const store = readCollaborators()
-  const rk = repoKey(ns, repo)
-  if (!store.groupCollaborators) store.groupCollaborators = {}
-  if (!store.groupCollaborators[rk]) store.groupCollaborators[rk] = {}
-  store.groupCollaborators[rk][group] = role
-  writeCollaborators(store)
+export async function hasAnyCollaboratorGrant(user: { key: string; groups: string[] }): Promise<boolean> {
+  return (await collaboratorNamespaces(user)).length > 0
 }
 
-export function removeGroupCollaborator(ns: string, repo: string, group: string): boolean {
-  const store = readCollaborators()
-  const map = store.groupCollaborators?.[repoKey(ns, repo)]
-  if (!map || !map[group]) return false
-  delete map[group]
-  writeCollaborators(store)
-  return true
+export async function setCollaborator(ns: string, repo: string, key: string, role: CollaboratorRoleRef): Promise<void> {
+  await getDb()
+    .insert(repoCollaborators)
+    .values({ namespace: ns, repo, userKey: key, role })
+    .onConflictDoUpdate({
+      target: [repoCollaborators.namespace, repoCollaborators.repo, repoCollaborators.userKey],
+      set: { role },
+    })
 }
+
+export async function removeCollaborator(ns: string, repo: string, key: string): Promise<boolean> {
+  const rows = await getDb()
+    .delete(repoCollaborators)
+    .where(and(eq(repoCollaborators.namespace, ns), eq(repoCollaborators.repo, repo), eq(repoCollaborators.userKey, key)))
+    .returning({ k: repoCollaborators.userKey })
+  return rows.length > 0
+}
+
+export async function setGroupCollaborator(ns: string, repo: string, group: string, role: CollaboratorRoleRef): Promise<void> {
+  await getDb()
+    .insert(repoGroupCollaborators)
+    .values({ namespace: ns, repo, groupKey: group, role })
+    .onConflictDoUpdate({
+      target: [repoGroupCollaborators.namespace, repoGroupCollaborators.repo, repoGroupCollaborators.groupKey],
+      set: { role },
+    })
+}
+
+export async function removeGroupCollaborator(ns: string, repo: string, group: string): Promise<boolean> {
+  const rows = await getDb()
+    .delete(repoGroupCollaborators)
+    .where(
+      and(
+        eq(repoGroupCollaborators.namespace, ns),
+        eq(repoGroupCollaborators.repo, repo),
+        eq(repoGroupCollaborators.groupKey, group),
+      ),
+    )
+    .returning({ k: repoGroupCollaborators.groupKey })
+  return rows.length > 0
+}
+

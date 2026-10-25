@@ -50,10 +50,10 @@ const SUSPENDS_OWNED: ReadonlySet<OffboardCause> = new Set(['admin-revocation', 
  * owns when it is being offboarded (not merely signing out), and the audit events with their
  * cause. Every path that revokes credentials goes through here.
  */
-export function offboard(
+export async function offboard(
   principal: { iss: string; sub: string; email?: string; name?: string },
   req: OffboardRequest,
-): OffboardResult {
+): Promise<OffboardResult> {
   const subject = actorFromUser({ email: '', name: '', ...principal } as SessionUser)
   const actor = req.actor ?? subject
   const audit = {
@@ -62,8 +62,8 @@ export function offboard(
     path: req.path ?? req.cause,
   }
 
-  if (req.cause === 'admin-revocation' && !isInstanceAdmin(actor)) {
-    appendAudit({
+  if (req.cause === 'admin-revocation' && !await isInstanceAdmin(actor)) {
+    await appendAudit({
       actor, ...audit, status: 403, action: 'session.revoke',
       message: 'Revoke sessions denied',
       detail: { ...req.detail, source: req.cause },
@@ -73,9 +73,9 @@ export function offboard(
 
   const completed: OffboardStep[] = []
   const failed: Array<{ step: OffboardStep; error: string }> = []
-  const attempt = <T>(step: OffboardStep, fn: () => T | null): T | undefined => {
+  const attempt = async <T>(step: OffboardStep, fn: () => T | null | Promise<T | null>): Promise<T | undefined> => {
     try {
-      const out = fn()
+      const out = await fn()
       if (out === null) throw new Error('audit append failed')
       completed.push(step)
       return out
@@ -85,23 +85,23 @@ export function offboard(
     }
   }
 
-  const cutoff = attempt('revoke-credentials', () => req.scope === 'all'
+  const cutoff = await attempt('revoke-credentials', () => req.scope === 'all'
     ? revokeSessionsFor(principal)
     : revokeSessionsOnlyFor(principal, req.at))
   if (cutoff === undefined) failed.push({ step: 'audit-revocation', error: 'skipped: revoke-credentials failed' })
-  else attempt('audit-revocation', () => appendAudit({
+  else await attempt('audit-revocation', async () => await appendAudit({
     actor, ...audit, status: 200, action: 'session.revoke',
     message: req.message ?? `Revoked ${req.scope === 'all' ? 'all credentials' : 'Sessions'} of ${principal.sub}`,
     detail: { ...req.detail, source: req.cause },
   }))
 
   const suspendedPrincipals = req.scope === 'all' && SUSPENDS_OWNED.has(req.cause)
-    ? attempt('suspend-service-principals', () => suspendOwnedBy(principal, req.cause)) ?? []
+    ? (await attempt('suspend-service-principals', () => suspendOwnedBy(principal, req.cause))) ?? []
     : []
   if (suspendedPrincipals.length) {
-    attempt('audit-suspensions', () => {
+    await attempt('audit-suspensions', async () => {
       for (const p of suspendedPrincipals) {
-        const event = appendAudit({
+        const event = await appendAudit({
           actor: req.cause === 'admin-revocation' ? actor : SYSTEM_ACTOR,
           ...audit, status: 200, action: 'service-principal.suspend',
           message: `Suspended service principal ${p.name}: owner offboarded`,

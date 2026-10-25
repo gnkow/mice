@@ -8,9 +8,9 @@ export function denialResponse(c: Context, d: Partial<Decision> & { allow: boole
 }
 
 /** A route-guard gate for an instance action. */
-export function instanceGate(action: InstanceAction): (user: SessionUser) => string | null {
-  return (user) => {
-    const d = decideInstanceAction(user, action)
+export function instanceGate(action: InstanceAction): (user: SessionUser) => Promise<string | null> {
+  return async (user) => {
+    const d = await decideInstanceAction(user, action)
     return d.allow ? null : d.reason
   }
 }

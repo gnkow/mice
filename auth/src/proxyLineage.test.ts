@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { isolatedAuth } from './testSupport.js'
@@ -12,7 +13,7 @@ const { queryLineage } = await import('./lineage.js')
 const { queryAudit } = await import('./audit.js')
 
 const admin = ctx.admin
-preparePrincipal(admin)
+await preparePrincipal(admin)
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -41,8 +42,8 @@ const put = (repo: string) => {
   return app.request(`/api/repos/lin/${repo}/file/main/data.csv`, { method: 'PUT', body: form, headers: { 'x-mice-reason': 'Routine test change' } })
 }
 
-describe('proxy lineage capture', () => {
-  it('snapshots before the write and records an edit with prior and new versions after it', async () => {
+await describe('proxy lineage capture', async () => {
+  await it('snapshots before the write and records an edit with prior and new versions after it', async () => {
     const oxen = fakeOxen({
       entries: [{ hash: 'h1', latest_commit: { id: 'c0' } }, { hash: 'h2' }],
       write: () => json({ status: 'ok', commit: { id: 'c1' } }),
@@ -54,16 +55,16 @@ describe('proxy lineage capture', () => {
       oxen.restore()
     }
     assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'GET', 'PUT', 'GET'])
-    const op = queryLineage({ namespace: 'lin', repo: 'edit' }).operations[0]!
+    const op = (await queryLineage({ namespace: 'lin', repo: 'edit' })).operations[0]!
     assert.equal(op.kind, 'edit')
     assert.deepEqual(op.inputs.map((v) => [v.contentHash, v.commitId]), [['h1', 'c0']])
     assert.deepEqual(op.outputs.map((v) => [v.contentHash, v.commitId]), [['h2', 'c1']])
-    const audit = queryAudit({ action: 'file.write' }).events.find((e) => e.repo === 'edit')!
+    const audit = (await queryAudit({ action: 'file.write' })).events.find((e) => e.repo === 'edit')!
     assert.equal(audit.detail?.lineage_kind, 'edit')
     assert.equal(op.auditEventId, audit.id)
   })
 
-  it('records an upload when nothing existed before the write', async () => {
+  await it('records an upload when nothing existed before the write', async () => {
     const oxen = fakeOxen({
       entries: [null, { hash: 'h9' }],
       write: () => json({ status: 'ok', commit: { id: 'c9' } }),
@@ -73,12 +74,12 @@ describe('proxy lineage capture', () => {
     } finally {
       oxen.restore()
     }
-    const op = queryLineage({ namespace: 'lin', repo: 'upload' }).operations[0]!
+    const op = (await queryLineage({ namespace: 'lin', repo: 'upload' })).operations[0]!
     assert.equal(op.kind, 'upload')
     assert.deepEqual(op.inputs, [])
   })
 
-  it('records nothing and passes the response through when the upstream write fails', async () => {
+  await it('records nothing and passes the response through when the upstream write fails', async () => {
     const oxen = fakeOxen({
       entries: [{ hash: 'h1' }],
       write: () => json({ status: 'error' }, 500),
@@ -91,10 +92,10 @@ describe('proxy lineage capture', () => {
     }
     assert.equal(res.status, 500)
     assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'GET', 'PUT'])
-    assert.equal(queryLineage({ namespace: 'lin', repo: 'failed' }).operations.length, 0)
+    assert.equal((await queryLineage({ namespace: 'lin', repo: 'failed' })).operations.length, 0)
   })
 
-  it('does not capture reads', async () => {
+  await it('does not capture reads', async () => {
     const oxen = fakeOxen({ entries: [null], write: () => json({ status: 'ok' }) })
     try {
       await app.request('/api/repos/lin/reads/file/main/data.csv')

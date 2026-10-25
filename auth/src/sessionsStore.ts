@@ -1,10 +1,10 @@
 import { join } from 'node:path'
 import { env } from './env.js'
 import { normalizeDesktopSession } from './sessionsMounts.js'
-import { createCollection } from './stores.js'
+import { and, count, desc, eq, inArray } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { desktopSessions } from './db/schema.js'
 import type { DesktopSession, DesktopSessionStatus } from './sessionsTypes.js'
-
-const sessions = createCollection<DesktopSession>(() => join(env.sessionsDataDir, 'sessions.jsonl'))
 
 export function assertSafeSessionId(sessionId: string): string {
   const id = String(sessionId || '').trim().toLowerCase()
@@ -19,50 +19,70 @@ export function sessionsWorkDir(sessionId: string): string {
   return join(env.sessionsDataDir, 'work', id)
 }
 
-export function appendSession(session: DesktopSession): void {
-  sessions.put(session.id, session)
+export async function appendSession(session: DesktopSession): Promise<void> {
+  const row = {
+    id: session.id,
+    status: session.status,
+    ownerSub: session.owner.sub,
+    ownerIss: session.owner.iss,
+    createdAt: new Date(session.created_at),
+    body: session,
+  }
+  await getDb().insert(desktopSessions).values(row).onConflictDoUpdate({ target: desktopSessions.id, set: row })
 }
 
-function readAll(): DesktopSession[] {
-  return sessions.list().filter((row) => row?.id).map(normalizeDesktopSession)
+const normalized = (rows: Array<{ body: DesktopSession }>) => rows.map((r) => normalizeDesktopSession(r.body))
+
+/** Sessions in one of these states, newest first. */
+export async function listSessionsWithStatus(...statuses: DesktopSessionStatus[]): Promise<DesktopSession[]> {
+  if (!statuses.length) return []
+  return normalized(
+    await getDb()
+      .select({ body: desktopSessions.body })
+      .from(desktopSessions)
+      .where(inArray(desktopSessions.status, statuses))
+      .orderBy(desc(desktopSessions.createdAt)),
+  )
 }
 
 /** One record per id, newest first. */
-export function listSessions(): DesktopSession[] {
-  return readAll().sort((a, b) => b.created_at.localeCompare(a.created_at))
+export async function listSessions(): Promise<DesktopSession[]> {
+  return normalized(
+    await getDb().select({ body: desktopSessions.body }).from(desktopSessions).orderBy(desc(desktopSessions.createdAt)),
+  )
 }
 
-export function getSessionRecord(id: string): DesktopSession | null {
+export async function getSessionRecord(id: string): Promise<DesktopSession | null> {
+  let safe: string
   try {
-    const row = sessions.get(assertSafeSessionId(id))
-    return row?.id ? normalizeDesktopSession(row) : null
+    safe = assertSafeSessionId(id)
   } catch {
     return null
   }
+  const [row] = await getDb().select({ body: desktopSessions.body }).from(desktopSessions).where(eq(desktopSessions.id, safe))
+  return row ? normalizeDesktopSession(row.body) : null
 }
 
-export function updateSession(
+export async function updateSession(
   id: string,
   patch: Partial<DesktopSession>,
-): DesktopSession | null {
-  const cur = getSessionRecord(id)
+): Promise<DesktopSession | null> {
+  const cur = await getSessionRecord(id)
   if (!cur) return null
   const next: DesktopSession = { ...cur, ...patch, id: cur.id }
-  appendSession(next)
+  await appendSession(next)
   return next
 }
 
-export function countActiveForOwner(sub: string, iss: string): number {
-  const active: DesktopSessionStatus[] = [
-    'provisioning',
-    'ready',
-    'connected',
-    'stopping',
-  ]
-  return listSessions().filter(
-    (s) =>
-      s.owner.sub === sub &&
-      s.owner.iss === iss &&
-      active.includes(s.status),
-  ).length
+export async function countActiveForOwner(sub: string, iss: string): Promise<number> {
+  const active: DesktopSessionStatus[] = ['provisioning', 'ready', 'connected', 'stopping']
+  const [row] = await getDb()
+    .select({ n: count() })
+    .from(desktopSessions)
+    .where(and(
+      eq(desktopSessions.ownerSub, sub),
+      eq(desktopSessions.ownerIss, iss),
+      inArray(desktopSessions.status, active),
+    ))
+  return row?.n ?? 0
 }

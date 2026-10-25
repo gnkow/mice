@@ -5,7 +5,7 @@ import type { EntityRef } from './metaTypes.js'
 import type { SessionUser } from './session.js'
 
 export type MetaAuthzDeps = {
-  sessionOwner?: (id: string) => string | null
+  sessionOwner?: (id: string) => string | null | Promise<string | null>
 }
 
 function selfKey(user: SessionUser): string {
@@ -18,27 +18,27 @@ function selfKey(user: SessionUser): string {
  *  - repo-scoped (repo, branch, commit, directory, file, workspace, job): repo read
  *  - session: owner or session_admin
  */
-export function canReadEntity(
+export async function canReadEntity(
   user: SessionUser,
   ref: EntityRef,
   deps: MetaAuthzDeps = {},
-): boolean {
-  if (!isAuthzEnforce()) return true
-  if (isUnscopedInstanceAdmin(user)) return true
+): Promise<boolean> {
+  if (!await isAuthzEnforce()) return true
+  if (await isUnscopedInstanceAdmin(user)) return true
   switch (ref.type) {
     case 'namespace':
-      return !!ref.namespace && userCanSeeNamespace(user, ref.namespace)
+      return !!ref.namespace && await userCanSeeNamespace(user, ref.namespace)
     case 'session':
       return (
-        deps.sessionOwner?.(ref.id) === selfKey(user) ||
-        decideInstanceAction(user, 'session.admin').allow
+        (await deps.sessionOwner?.(ref.id)) === selfKey(user) ||
+        (await decideInstanceAction(user, 'session.admin')).allow
       )
     default:
       if (!ref.namespace || !ref.repo) return false
-      return hasRepoPermission(user, ref.namespace, ref.repo, 'read', {
+      return (await hasRepoPermission(user, ref.namespace, ref.repo, 'read', {
         method: 'GET',
         action: 'meta.read',
-      }).ok
+      })).ok
   }
 }
 
@@ -48,29 +48,29 @@ export function canReadEntity(
  *  - repo-scoped: repo write, or the manage_repo_metadata fine permission
  *  - session: owner or session_admin
  */
-export function canEditEntity(
+export async function canEditEntity(
   user: SessionUser,
   ref: EntityRef,
   deps: MetaAuthzDeps = {},
-): boolean {
-  if (!isAuthzEnforce()) return true
-  if (isUnscopedInstanceAdmin(user)) return true
+): Promise<boolean> {
+  if (!await isAuthzEnforce()) return true
+  if (await isUnscopedInstanceAdmin(user)) return true
   switch (ref.type) {
     case 'namespace':
       return (
         !!ref.namespace &&
-        decideNamespaceAction(user, ref.namespace, 'namespace.settings.metadata').allow
+        (await decideNamespaceAction(user, ref.namespace, 'namespace.settings.metadata')).allow
       )
     case 'session':
       return (
-        deps.sessionOwner?.(ref.id) === selfKey(user) ||
-        decideInstanceAction(user, 'session.admin').allow
+        (await deps.sessionOwner?.(ref.id)) === selfKey(user) ||
+        (await decideInstanceAction(user, 'session.admin')).allow
       )
     default:
       if (!ref.namespace || !ref.repo) return false
-      return hasRepoPermission(user, ref.namespace, ref.repo, 'write', {
+      return (await hasRepoPermission(user, ref.namespace, ref.repo, 'write', {
         method: 'PATCH',
         action: 'meta.set',
-      }).ok
+      })).ok
   }
 }

@@ -33,7 +33,7 @@ export function bearerToken(c: Context): string {
 }
 
 /** The PAT's owner for a bearer token, or null when it is expired, revoked or unknown. */
-export function resolveBearer(c: Context): SessionUser | null {
+export async function resolveBearer(c: Context): Promise<SessionUser | null> {
   const token = bearerToken(c)
   return token ? resolvePat(token) : null
 }
@@ -126,14 +126,14 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
       }
     }
     if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
-    preparePrincipal(session)
+    await preparePrincipal(session)
     return { ok: true, user: session, via: 'session' }
   }
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 
-  const pat = resolveBearer(c)
+  const pat = await resolveBearer(c)
   if (!pat || (!policy.allowScoped && isScopedCredential(pat))) return deny(401, 'Authentication required')
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
-  preparePrincipal(pat)
+  await preparePrincipal(pat)
   return { ok: true, user: pat, via: 'pat' }
 }

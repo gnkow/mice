@@ -41,7 +41,7 @@ export type SearchCtx = {
   candidates: EntityRef[]
   getOwn: GetOwn
   /** Applied inside the query, before paging. */
-  canRead: (ref: EntityRef) => boolean
+  canRead: (ref: EntityRef) => boolean | Promise<boolean>
 }
 
 const DEFAULT_LIMIT = 25
@@ -143,10 +143,10 @@ function filtersMatch(
   return true
 }
 
-export function searchMeta(
+export async function searchMeta(
   query: MetaSearchQuery,
   ctx: SearchCtx,
-): { hits: MetaSearchHit[]; nextCursor: string | null; total: number; facets: MetaFacets } {
+): Promise<{ hits: MetaSearchHit[]; nextCursor: string | null; total: number; facets: MetaFacets }> {
   const limit = Math.min(Math.max(1, query.limit ?? DEFAULT_LIMIT), MAX_LIMIT)
   const syntax = parseQuerySyntax(query.q ?? '')
   const q: MetaSearchQuery = {
@@ -167,8 +167,8 @@ export function searchMeta(
     if (q.namespace && ref.namespace !== q.namespace) continue
     if (q.repo && ref.repo !== q.repo) continue
     // AuthZ scope is applied before scoring and paging.
-    if (!ctx.canRead(ref)) continue
-    const eff = resolveEffective(ref, ctx.getOwn)
+    if (!await ctx.canRead(ref)) continue
+    const eff = await resolveEffective(ref, ctx.getOwn)
     const effective = eff.effective
     const empty =
       !effective.tags.length &&

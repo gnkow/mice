@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { env } from './env.js'
-import { createCollection } from './stores.js'
+import { and, eq, inArray } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { lineageOps } from './db/schema.js'
 import type { AuditActor, AuditVia } from './audit.js'
 
 export type LineageKind =
@@ -152,11 +154,10 @@ const DEFAULT_LIMIT = 50
 const DEFAULT_DEPTH = 8
 const MAX_DEPTH = 32
 
-function storePath(): string {
-  return join(env.dataDir, 'lineage.jsonl')
+async function putOp(op: LineageOp): Promise<void> {
+  const row = { id: op.id, namespace: op.namespace, repo: op.repo, ts: new Date(op.ts), body: op }
+  await getDb().insert(lineageOps).values(row).onConflictDoUpdate({ target: lineageOps.id, set: row })
 }
-
-const opRows = createCollection<LineageOp>(storePath)
 
 function safeDecode(s: string): string {
   try {
@@ -393,8 +394,9 @@ export function derivedOpId(
   return `d${digest}`
 }
 
-function findOpById(id: string): LineageOp | undefined {
-  return readAllOps().find((o) => o.id === id)
+async function findOpById(id: string): Promise<LineageOp | undefined> {
+  const [row] = await getDb().select({ body: lineageOps.body }).from(lineageOps).where(eq(lineageOps.id, id))
+  return row?.body
 }
 
 function preferProducer(cur: LineageOp | undefined, next: LineageOp): LineageOp {
@@ -438,12 +440,12 @@ function findProducer(
  * Ensure at most one producing op per file version for `path` in a repo.
  * Prefers explicit over derived; keeps the earliest winner. Returns removed count.
  */
-export function pruneDuplicateProducers(
+export async function pruneDuplicateProducers(
   namespace: string,
   repo: string,
   path?: string,
-): { removed: number; kept: number } {
-  const all = readAllOps()
+): Promise<{ removed: number; kept: number }> {
+  const all = await opsOfRepo(namespace, repo)
   const inScope = (o: LineageOp) =>
     o.namespace === namespace &&
     o.repo === repo &&
@@ -479,14 +481,15 @@ export function pruneDuplicateProducers(
       ...others.map((o) => o.id),
       ...keptScoped.map((o) => o.id),
     ])
-    for (const o of all) if (!keepSet.has(o.id)) opRows.remove(o.id)
+    const drop = all.filter((o) => !keepSet.has(o.id)).map((o) => o.id)
+    if (drop.length) await getDb().delete(lineageOps).where(inArray(lineageOps.id, drop))
   }
   return { removed, kept: keptScoped.length }
 }
 
-export function appendLineage(
+export async function appendLineage(
   partial: Omit<LineageOp, 'id' | 'ts'> & { id?: string; ts?: string },
-): LineageOp | null {
+): Promise<LineageOp | null> {
   const arityErr = validateArity(partial.kind, partial.inputs, partial.outputs)
   if (arityErr) {
     console.error('[mice-auth] lineage arity', arityErr, partial.kind)
@@ -494,7 +497,7 @@ export function appendLineage(
   }
 
   if (partial.id) {
-    const existing = findOpById(partial.id)
+    const existing = await findOpById(partial.id)
     if (existing) return existing
   }
 
@@ -502,7 +505,7 @@ export function appendLineage(
   // Derived never stacks on an existing producer; explicit may supersede derived.
   // Exception: explicit restore may re-introduce the same content hash at a later
   // commit — hash aliases alone must not block recording that op.
-  const producers = producerIndex(readAllOps())
+  const producers = producerIndex(await opsOfRepo(partial.namespace, partial.repo))
   let supersedesDerived = false
   for (const out of partial.outputs) {
     const prior = findProducer(
@@ -548,9 +551,9 @@ export function appendLineage(
       : {}),
   }
   try {
-    opRows.put(op.id, op)
+    await putOp(op)
     if (supersedesDerived && partial.outputs[0]?.path) {
-      pruneDuplicateProducers(
+      await pruneDuplicateProducers(
         partial.namespace,
         partial.repo,
         partial.outputs[0].path,
@@ -563,8 +566,12 @@ export function appendLineage(
   }
 }
 
-function readAllOps(): LineageOp[] {
-  return opRows.list()
+async function opsOfRepo(namespace: string, repo: string): Promise<LineageOp[]> {
+  const rows = await getDb()
+    .select({ body: lineageOps.body })
+    .from(lineageOps)
+    .where(and(eq(lineageOps.namespace, namespace), eq(lineageOps.repo, repo)))
+  return rows.map((r) => r.body)
 }
 
 function versionMatchesFocus(
@@ -587,17 +594,15 @@ function opTouchesFocus(
 }
 
 /** Build a subgraph around a path and/or content hash. */
-export function queryLineage(q: LineageQuery): {
+export async function queryLineage(q: LineageQuery): Promise<{
   operations: LineageOp[]
   nextCursor: string | null
-} {
+}> {
   const limit = Math.min(Math.max(1, q.limit ?? DEFAULT_LIMIT), MAX_LIMIT)
   const depth = Math.min(Math.max(1, q.depth ?? DEFAULT_DEPTH), MAX_DEPTH)
   const direction = q.direction ?? 'both'
 
-  let ops = readAllOps().filter(
-    (o) => o.namespace === q.namespace && o.repo === q.repo,
-  )
+  let ops = await opsOfRepo(q.namespace, q.repo)
 
   if (q.kind) ops = ops.filter((o) => o.kind === q.kind)
   if (q.jobId) {
@@ -750,19 +755,19 @@ export type PathVersionHint = {
  * (oldest → newest). Idempotent: each file version has at most one producer;
  * re-running rebuild does not create duplicates.
  */
-export function deriveOpsFromPathHistory(
+export async function deriveOpsFromPathHistory(
   namespace: string,
   repo: string,
   branch: string | undefined,
   versionsOldestFirst: PathVersionHint[],
-): LineageOp[] {
+): Promise<LineageOp[]> {
   const focusPath =
     versionsOldestFirst.find((v) => v.path)?.path ?? undefined
-  pruneDuplicateProducers(namespace, repo, focusPath)
+  await pruneDuplicateProducers(namespace, repo, focusPath)
 
-  const knownIds = new Set(readAllOps().map((o) => o.id))
+  const knownIds = new Set((await opsOfRepo(namespace, repo)).map((o) => o.id))
   const producers = producerIndex(
-    readAllOps().filter((o) => o.namespace === namespace && o.repo === repo),
+    await opsOfRepo(namespace, repo),
   )
 
   const created: LineageOp[] = []
@@ -796,7 +801,7 @@ export function deriveOpsFromPathHistory(
     const outputs = [outRef]
     const kind: LineageKind = prev ? 'edit' : 'upload'
     const id = derivedOpId(kind, namespace, repo, inputs, outputs)
-    const op = appendLineage({
+    const op = await appendLineage({
       id,
       kind,
       namespace,
@@ -830,7 +835,7 @@ export function deriveOpsFromPathHistory(
  * Heuristic: same hash removed+added in one commit → low-confidence
  * rename (same parent) or move (different parent).
  */
-export function deriveMoveHeuristic(opts: {
+export async function deriveMoveHeuristic(opts: {
   namespace: string
   repo: string
   branch?: string
@@ -839,7 +844,7 @@ export function deriveMoveHeuristic(opts: {
   newPath: string
   contentHash?: string
   ts?: string
-}): LineageOp | null {
+}): Promise<LineageOp | null> {
   const kind = pathChangeKind(opts.oldPath, opts.newPath)
   const inputs: FileVersion[] = [
     {
@@ -860,7 +865,7 @@ export function deriveMoveHeuristic(opts: {
     },
   ]
   const id = derivedOpId(kind, opts.namespace, opts.repo, inputs, outputs)
-  const known = findOpById(id)
+  const known = await findOpById(id)
   if (known) return known
 
   return appendLineage({
@@ -883,7 +888,7 @@ export function deriveMoveHeuristic(opts: {
  * Heuristic: in a single commit, hash appears at a new path while the source
  * path that already held that hash was not removed → low-confidence copy.
  */
-export function deriveCopyHeuristic(opts: {
+export async function deriveCopyHeuristic(opts: {
   namespace: string
   repo: string
   branch?: string
@@ -894,7 +899,7 @@ export function deriveCopyHeuristic(opts: {
   /** When true, this is a move/rename — refuse to record a copy. */
   sourceRemoved?: boolean
   ts?: string
-}): LineageOp | null {
+}): Promise<LineageOp | null> {
   const sourcePath = normPath(opts.sourcePath)
   const newPath = normPath(opts.newPath)
   const contentHash = opts.contentHash.trim()
@@ -922,7 +927,7 @@ export function deriveCopyHeuristic(opts: {
     },
   ]
   const id = derivedOpId('copy', opts.namespace, opts.repo, inputs, outputs)
-  const known = findOpById(id)
+  const known = await findOpById(id)
   if (known) return known
 
   return appendLineage({
@@ -945,7 +950,7 @@ export function deriveCopyHeuristic(opts: {
  * Apply copy heuristics for one commit using its add/remove set and the
  * base-tree hash index. Skips pairs that look like move/rename (source removed).
  */
-export function deriveCopiesFromCommitDiff(opts: {
+export async function deriveCopiesFromCommitDiff(opts: {
   namespace: string
   repo: string
   branch?: string
@@ -954,7 +959,7 @@ export function deriveCopiesFromCommitDiff(opts: {
   removedPaths: Iterable<string>
   basePathsByHash: Map<string, string[]>
   ts?: string
-}): LineageOp[] {
+}): Promise<LineageOp[]> {
   const pairs = inferCopyPairs({
     added: opts.added,
     removedPaths: opts.removedPaths,
@@ -962,7 +967,7 @@ export function deriveCopiesFromCommitDiff(opts: {
   })
   const created: LineageOp[] = []
   for (const pair of pairs) {
-    const op = deriveCopyHeuristic({
+    const op = await deriveCopyHeuristic({
       namespace: opts.namespace,
       repo: opts.repo,
       branch: opts.branch,
@@ -978,7 +983,7 @@ export function deriveCopiesFromCommitDiff(opts: {
   return created
 }
 
-export function buildExplicitFileOp(opts: {
+export async function buildExplicitFileOp(opts: {
   kind: LineageKind
   namespace: string
   repo: string
@@ -993,7 +998,7 @@ export function buildExplicitFileOp(opts: {
   /** Prior version at the same path (edit) or source path (move/copy/delete). */
   priorContentHash?: string
   priorCommitId?: string
-}): LineageOp | null {
+}): Promise<LineageOp | null> {
   const { kind, namespace, repo } = opts
   const outBase = {
     namespace,
@@ -1049,7 +1054,7 @@ export function buildExplicitFileOp(opts: {
     return null
   }
 
-  return appendLineage({
+  return await appendLineage({
     kind,
     namespace,
     repo,

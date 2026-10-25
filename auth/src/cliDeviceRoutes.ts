@@ -14,7 +14,7 @@ import type { SessionUser } from './session.js'
 /** Public CLI remote hint and the device-login pairing flow (no IdP device grant required). */
 export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
   /** Public CLI remote hint (no secrets). */
-  app.get('/auth/cli-info', (c) => {
+  app.get('/auth/cli-info', async (c) => {
     const remote = env.publicOxenRemote
     let authHost = remote
     try {
@@ -45,41 +45,41 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     }
     const parsed = parsePatScopes(raw)
     if (!parsed.ok) return c.json({ error: parsed.error }, 400)
-    const started = startDeviceAuth(parsed.scopes)
+    const started = await startDeviceAuth(parsed.scopes)
     return c.json(started)
   })
 
   /** Redirect browser to the web UI approve page. */
-  app.get('/auth/cli/device', (c) => {
+  app.get('/auth/cli/device', async (c) => {
     const userCode = c.req.query('user_code') ?? ''
     const target = new URL(`${env.publicWebOrigin}/cli/device`)
     if (userCode) target.searchParams.set('user_code', userCode)
     return c.redirect(target.toString())
   })
 
-  app.get('/auth/cli/device/status', guarded({ credential: 'session' }, ({ c }) => {
+  app.get('/auth/cli/device/status', guarded({ credential: 'session' }, async ({ c }) => {
     const userCode = c.req.query('user_code') ?? ''
     if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
-    const lookup = lookupDeviceByUserCode(userCode)
+    const lookup = await lookupDeviceByUserCode(userCode)
     if (!lookup) return c.json({ error: 'Unknown user code' }, 404)
     return c.json(lookup)
   }))
 
-  const approverGate = (user: SessionUser) => {
-    const gate = authorizeCliDeviceApprove(user)
+  const approverGate = async (user: SessionUser) => {
+    const gate = await authorizeCliDeviceApprove(user)
     return gate.allow ? null : (gate.reason ?? 'Forbidden')
   }
   const deviceBody: GuardPolicy = { credential: 'session', gate: approverGate, body: { required: ['user_code'] } }
 
-  app.post('/auth/cli/device/approve', guarded({ ...deviceBody, mutates: true }, ({ c, user: session, body }) => {
+  app.post('/auth/cli/device/approve', guarded({ ...deviceBody, mutates: true }, async ({ c, user: session, body }) => {
     const userCode = String(body.user_code)
     if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
-    const result = approveDevice(userCode, session)
+    const result = await approveDevice(userCode, session)
     if (!result.ok) {
       const status = result.status === 404 ? 404 : 400
       return c.json({ error: result.error }, status)
     }
-    auditMutation(c, session, 'session', {
+    await auditMutation(c, session, 'session', {
       action: 'device.approve',
       message: `Approved device login: ${result.userCode}`,
       detail: { userCode: result.userCode },
@@ -87,15 +87,15 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, user_code: result.userCode })
   }))
 
-  app.post('/auth/cli/device/deny', guarded(deviceBody, ({ c, user: session, body }) => {
+  app.post('/auth/cli/device/deny', guarded(deviceBody, async ({ c, user: session, body }) => {
     const userCode = String(body.user_code)
     if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
-    const result = denyDevice(userCode)
+    const result = await denyDevice(userCode)
     if (!result.ok) {
       const status = result.status === 404 ? 404 : 400
       return c.json({ error: result.error }, status)
     }
-    auditMutation(c, session, 'session', {
+    await auditMutation(c, session, 'session', {
       action: 'device.deny',
       message: `Denied device login: ${userCode.trim().toUpperCase()}`,
       detail: { userCode: userCode.trim().toUpperCase() },
@@ -112,7 +112,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
       return c.json({ error: 'Invalid body' }, 400)
     }
     if (!deviceCode.trim()) return c.json({ error: 'device_code required' }, 400)
-    const result = pollDevice(deviceCode)
+    const result = await pollDevice(deviceCode)
     if (result.status === 'authorization_pending') {
       return c.json({ status: 'authorization_pending' }, 400)
     }
@@ -131,7 +131,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (result.status === 'error') {
       return c.json({ status: 'error', error: result.error }, 400)
     }
-    auditMutation(c, result.user, 'pat', {
+    await auditMutation(c, result.user, 'pat', {
       action: 'device.redeem',
       message: 'CLI device login completed; token issued',
       detail: { patId: result.patId },
@@ -150,11 +150,11 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.post('/auth/cli/logout', async (c) => {
     const bearer = bearerToken(c)
     if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
-    const user = resolveBearer(c)
-    const ok = revokePatByToken(bearer)
+    const user = await resolveBearer(c)
+    const ok = await revokePatByToken(bearer)
     if (!ok) return c.json({ error: 'Token not found' }, 404)
     if (user) {
-      auditMutation(c, user, 'pat', {
+      await auditMutation(c, user, 'pat', {
         action: 'token.revoke',
         message: 'Revoked token via CLI logout',
       })
@@ -165,11 +165,11 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.get('/auth/cli/whoami', async (c) => {
     const bearer = bearerToken(c)
     if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
-    const user = resolveBearer(c)
+    const user = await resolveBearer(c)
     if (!user) return c.json({ error: 'Invalid token' }, 401)
-    preparePrincipal(user)
-    const pat = findPatByToken(bearer)
-    const pending = isPendingUser(user)
+    await preparePrincipal(user)
+    const pat = await findPatByToken(bearer)
+    const pending = await isPendingUser(user)
     return c.json({
       authenticated: true,
       user: {
@@ -182,10 +182,10 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
         ? { id: pat.id, label: pat.label, source: pat.source ?? 'manual' }
         : null,
       authz: {
-        enforce: isAuthzEnforce(),
+        enforce: await isAuthzEnforce(),
         pending,
-        instanceAdmin: isInstanceAdmin(user),
-        hasAnyGrant: userHasAnyGrant(user),
+        instanceAdmin: await isInstanceAdmin(user),
+        hasAnyGrant: await userHasAnyGrant(user),
       },
       remote: env.publicOxenRemote,
     })

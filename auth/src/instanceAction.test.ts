@@ -1,10 +1,7 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
-import { after, describe, it } from 'node:test'
-import { createMemoryJsonBackend, useJsonBackend } from './jsonStore.js'
+import { describe, it } from 'node:test'
 
-const memory = createMemoryJsonBackend()
-const restoreBackend = useJsonBackend(memory)
-process.env.AUTH_DATA_DIR = '/mice-memory-data'
 process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
@@ -16,11 +13,10 @@ const { authorizeInstanceAction, authorizeManageOwnTokens, authorizeCliDeviceApp
   await import('./authz.js')
 const { setInstancePermissions } = await import('./authzInstanceStore.js')
 
-after(() => restoreBackend())
 
 const person = (sub: string) => ({ sub, iss: 'test', email: `${sub}@example.com`, name: sub })
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin', emailVerified: true }
-preparePrincipal(admin)
+await preparePrincipal(admin)
 
 const ACTIONS = [
   { action: 'tokens.manage', permission: 'manage_own_tokens', reason: 'Missing permission manage_own_tokens' },
@@ -31,33 +27,33 @@ const ACTIONS = [
 
 describe('authorizeInstanceAction', () => {
   for (const { action, permission, reason } of ACTIONS) {
-    it(`${action}: admin and named permission allow, others deny`, () => {
+    it(`${action}: admin and named permission allow, others deny`, async () => {
       const holder = person(`holder-${action}`)
       const outsider = person(`outsider-${action}`)
-      preparePrincipal(holder)
-      preparePrincipal(outsider)
-      setInstancePermissions(admin, holder, [permission])
-      assert.equal(authorizeInstanceAction(admin, action).allow, true)
-      assert.equal(authorizeInstanceAction(holder, action).allow, true)
-      assert.deepEqual(authorizeInstanceAction(outsider, action), { allow: false, reason })
+      await preparePrincipal(holder)
+      await preparePrincipal(outsider)
+      await setInstancePermissions(admin, holder, [permission])
+      assert.equal((await authorizeInstanceAction(admin, action)).allow, true)
+      assert.equal((await authorizeInstanceAction(holder, action)).allow, true)
+      assert.deepEqual(await authorizeInstanceAction(outsider, action), { allow: false, reason })
     })
   }
 
-  it('store.admin requires an unscoped instance admin', () => {
+  it('store.admin requires an unscoped instance admin', async () => {
     const scopedAdmin = { ...admin, patScopes: ['repo:read'] }
-    assert.equal(authorizeInstanceAction(admin, 'store.admin').allow, true)
-    assert.deepEqual(authorizeInstanceAction(scopedAdmin as never, 'store.admin'), {
+    assert.equal((await authorizeInstanceAction(admin, 'store.admin')).allow, true)
+    assert.deepEqual(await authorizeInstanceAction(scopedAdmin as never, 'store.admin'), {
       allow: false,
       reason: 'Requires instance admin',
     })
-    assert.equal(authorizeInstanceAction(person('nobody'), 'store.admin').allow, false)
+    assert.equal((await authorizeInstanceAction(person('nobody'), 'store.admin')).allow, false)
   })
 
-  it('named wrappers agree with the policy table', () => {
+  it('named wrappers agree with the policy table', async () => {
     const u = person('wrapper-user')
-    preparePrincipal(u)
-    assert.deepEqual(authorizeManageOwnTokens(u), authorizeInstanceAction(u, 'tokens.manage'))
-    assert.deepEqual(authorizeCliDeviceApprove(u), authorizeInstanceAction(u, 'cli.device.approve'))
-    assert.deepEqual(authorizeStoreAdmin(u), authorizeInstanceAction(u, 'store.admin'))
+    await preparePrincipal(u)
+    assert.deepEqual(await authorizeManageOwnTokens(u), await authorizeInstanceAction(u, 'tokens.manage'))
+    assert.deepEqual(await authorizeCliDeviceApprove(u), await authorizeInstanceAction(u, 'cli.device.approve'))
+    assert.deepEqual(await authorizeStoreAdmin(u), await authorizeInstanceAction(u, 'store.admin'))
   })
 })

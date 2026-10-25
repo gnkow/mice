@@ -1,6 +1,6 @@
 import type { EntityRef, MetaRecord } from './metaTypes.js'
 
-export type GetOwn = (ref: EntityRef) => MetaRecord | null
+export type GetOwn = (ref: EntityRef) => Promise<MetaRecord | null>
 
 export type EffectiveMeta = {
   ref: EntityRef
@@ -12,8 +12,8 @@ export type EffectiveMeta = {
 }
 
 /** The response envelope is shared by entity panels, search, and batch list views. */
-export function resolveEffective(ref: EntityRef, getOwn: GetOwn): EffectiveMeta {
-  const own = getOwn(ref)
+export async function resolveEffective(ref: EntityRef, getOwn: GetOwn): Promise<EffectiveMeta> {
+  const own = await getOwn(ref)
   return {
     ref,
     own,

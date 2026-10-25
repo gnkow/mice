@@ -1,5 +1,7 @@
 # FAVORITES — PLAT-FAV implementation plan
 
+> **Storage update (ADR 0004/0005):** this plan was written for JSON/JSONL files under `AUTH_DATA_DIR`. Those stores are now PostgreSQL, immudb (audit) and Novu (notifications); file names and file-based mechanics below are historical. See [16-operations.md](./16-operations.md) section 2.3.
+
 Personal **favorites** for the main entities. Favorites are pinned to the top of the existing listings (as a default sort option) and collected in a **Favorites panel on the Profile page**, with one tab per entity type.
 
 Related: [EPICS.md](./EPICS.md) · [02-authorization.md](./02-authorization.md) · [12-metadata-search.md](./12-metadata-search.md) · [14-notifications.md](./14-notifications.md) · [03-audit.md](./03-audit.md) · [09-jobs.md](./09-jobs.md) · [10-sessions.md](./10-sessions.md)

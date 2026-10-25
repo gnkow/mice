@@ -1,9 +1,7 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, beforeEach, describe, it } from 'node:test'
-import { createMemoryJsonBackend, useJsonBackend } from './jsonStore.js'
 
-const restoreBackend = useJsonBackend(createMemoryJsonBackend())
-process.env.AUTH_DATA_DIR = '/mice-memory-proxy'
 process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
@@ -31,13 +29,13 @@ const restoreUpstream = setUpstreamFetch(async (url, init) => {
 
 const person = (sub: string) => ({ sub, iss: 'test', email: `${sub}@example.com`, name: sub })
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin', emailVerified: true }
-preparePrincipal(admin)
+await preparePrincipal(admin)
 const writer = person('po-writer')
 const reader = person('po-reader')
-createNamespaceAuthz(admin, 'po', 'none', true)
-setRepoCollaborator('po', 'r', writer, 'write')
-setRepoCollaborator('po', 'r', reader, 'read')
-for (const u of [writer, reader]) preparePrincipal(u)
+await createNamespaceAuthz(admin, 'po', 'none', true)
+await setRepoCollaborator('po', 'r', writer, 'write')
+await setRepoCollaborator('po', 'r', reader, 'read')
+for (const u of [writer, reader]) await preparePrincipal(u)
 
 function appFor(user: typeof writer) {
   const app = new Hono()
@@ -51,7 +49,6 @@ describe('proxy orchestration order (fake upstream)', () => {
   })
   after(() => {
     restoreUpstream()
-    restoreBackend()
   })
 
   it('forwards an allowed read and strips credentials', async () => {

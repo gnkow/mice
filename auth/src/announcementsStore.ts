@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
-import { env } from './env.js'
-import { createDocumentStore } from './stores.js'
+import { desc, eq } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { announcements } from './db/schema.js'
 
 export const ANNOUNCEMENT_SEVERITIES = ['info', 'warning', 'critical'] as const
 export type AnnouncementSeverity = (typeof ANNOUNCEMENT_SEVERITIES)[number]
@@ -28,28 +28,32 @@ export class AnnouncementError extends Error {
   }
 }
 
-function path(): string {
-  return join(env.dataDir, 'announcements.json')
-}
+const fromRow = (r: typeof announcements.$inferSelect): Announcement => ({
+  id: r.id,
+  title: r.title,
+  message: r.message,
+  severity: r.severity as AnnouncementSeverity,
+  active: r.active,
+  expiresAt: r.expiresAt?.toISOString() ?? null,
+  createdAt: r.createdAt.toISOString(),
+  updatedAt: r.updatedAt.toISOString(),
+  createdBy: r.createdBy,
+})
 
-const doc = createDocumentStore<{ announcements?: Announcement[] }>({ path, initial: () => ({}), onCorrupt: 'initial' })
-
-function read(): Announcement[] {
-  const f = doc.read()
-  return Array.isArray(f.announcements) ? f.announcements : []
-}
-
-function write(list: Announcement[]): void {
-  doc.write({ announcements: list })
-}
+const toRow = (a: Announcement) => ({
+  ...a,
+  expiresAt: a.expiresAt ? new Date(a.expiresAt) : null,
+  createdAt: new Date(a.createdAt),
+  updatedAt: new Date(a.updatedAt),
+})
 
 export function isLive(a: Announcement, now = Date.now()): boolean {
   return a.active && (!a.expiresAt || Date.parse(a.expiresAt) > now)
 }
 
 /** Newest first. `all` includes inactive and expired entries (admin view). */
-export function listAnnouncements(opts: { all?: boolean } = {}): Announcement[] {
-  const rows = read().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+export async function listAnnouncements(opts: { all?: boolean } = {}): Promise<Announcement[]> {
+  const rows = (await getDb().select().from(announcements).orderBy(desc(announcements.createdAt))).map(fromRow)
   return opts.all ? rows : rows.filter((a) => isLive(a))
 }
 
@@ -87,7 +91,7 @@ function parseFields(input: Record<string, unknown>, partial: boolean) {
   return out
 }
 
-export function createAnnouncement(input: Record<string, unknown>, createdBy: string): Announcement {
+export async function createAnnouncement(input: Record<string, unknown>, createdBy: string): Promise<Announcement> {
   const f = parseFields(input, false)
   const now = new Date().toISOString()
   const row: Announcement = {
@@ -101,24 +105,27 @@ export function createAnnouncement(input: Record<string, unknown>, createdBy: st
     updatedAt: now,
     createdBy,
   }
-  write([...read(), row])
+  await getDb().insert(announcements).values(toRow(row))
   return row
 }
 
-export function updateAnnouncement(id: string, input: Record<string, unknown>): Announcement {
+export async function updateAnnouncement(id: string, input: Record<string, unknown>): Promise<Announcement> {
   const f = parseFields(input, true)
-  const list = read()
-  const i = list.findIndex((a) => a.id === id)
-  if (i < 0) throw new AnnouncementError('Announcement not found', 404)
-  list[i] = { ...list[i]!, ...f, updatedAt: new Date().toISOString() }
-  write(list)
-  return list[i]!
+  const [row] = await getDb()
+    .update(announcements)
+    .set({
+      ...f,
+      expiresAt: f.expiresAt === undefined ? undefined : f.expiresAt ? new Date(f.expiresAt) : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(announcements.id, id))
+    .returning()
+  if (!row) throw new AnnouncementError('Announcement not found', 404)
+  return fromRow(row)
 }
 
-export function deleteAnnouncement(id: string): Announcement {
-  const list = read()
-  const row = list.find((a) => a.id === id)
+export async function deleteAnnouncement(id: string): Promise<Announcement> {
+  const [row] = await getDb().delete(announcements).where(eq(announcements.id, id)).returning()
   if (!row) throw new AnnouncementError('Announcement not found', 404)
-  write(list.filter((a) => a.id !== id))
-  return row
+  return fromRow(row)
 }

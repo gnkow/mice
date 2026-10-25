@@ -29,14 +29,15 @@ import {
   type EntityRef,
   type EntityType,
   type MetaPatch,
+  type MetaRecord,
 } from './metaTypes.js'
 import type { SessionUser } from './session.js'
 import { getSessionRecord } from './sessionsStore.js'
 import { guarded, type GuardArgs } from './routeGuard.js'
 
 export const lookup: MetaAuthzDeps = {
-  sessionOwner: (id) => {
-    const s = getSessionRecord(id)
+  sessionOwner: async (id) => {
+    const s = await getSessionRecord(id)
     return s ? `${s.owner.iss}|${s.owner.sub}` : null
   },
 }
@@ -79,16 +80,16 @@ export async function resolveRef(type: string, id: string, scope?: EntityRef['sc
   let ref = parseRef(type, id, scope)
   switch (ref.type) {
     case 'namespace':
-      if (!getNamespace(ref.id)) throw new MetaError(404, `Namespace "${ref.id}" not found`)
+      if (!await getNamespace(ref.id)) throw new MetaError(404, `Namespace "${ref.id}" not found`)
       break
     case 'job': {
-      const job = getJob(ref.id)
+      const job = await getJob(ref.id)
       if (!job) throw new MetaError(404, `Job "${ref.id}" not found`)
       ref = withRepoScope(ref, { namespace: job.namespace, repo: job.repo })
       break
     }
     case 'session':
-      if (!getSessionRecord(ref.id)) throw new MetaError(404, `Session "${ref.id}" not found`)
+      if (!await getSessionRecord(ref.id)) throw new MetaError(404, `Session "${ref.id}" not found`)
       break
     default:
       if (ref.namespace && ref.repo && !(await repoExists(ref.namespace, ref.repo))) {
@@ -100,7 +101,7 @@ export async function resolveRef(type: string, id: string, scope?: EntityRef['sc
 
 /** Only explicitly annotated entities are searchable. */
 async function searchCandidates(): Promise<EntityRef[]> {
-  return listOwnRecords().map(r => r.ref)
+  return (await listOwnRecords()).map(r => r.ref)
 }
 
 function ctxFor(user: SessionUser, candidates: EntityRef[]): SearchCtx {
@@ -138,17 +139,17 @@ function queryScope(c: Context): EntityRef['scope'] {
 
 const coverage = { complete: true, description: 'All explicitly annotated resources visible to you.' }
 
-function metadataVersion(ref: EntityRef): string {
-  return createHash('sha256').update(JSON.stringify([refKey(ref), getRevision(ref)])).digest('hex')
+async function metadataVersion(ref: EntityRef): Promise<string> {
+  return createHash('sha256').update(JSON.stringify([refKey(ref), await getRevision(ref)])).digest('hex')
 }
 
-function checkVersion(ref: EntityRef, expected: unknown): void {
-  if (expected !== undefined && (typeof expected !== 'string' || expected !== metadataVersion(ref))) {
+async function checkVersion(ref: EntityRef, expected: unknown): Promise<void> {
+  if (expected !== undefined && (typeof expected !== 'string' || expected !== await metadataVersion(ref))) {
     throw new MetaError(409, 'Metadata changed. Reload and review before saving.')
   }
 }
 
-function diff(before: ReturnType<typeof getOwnRecord>, after: ReturnType<typeof getOwnRecord>) {
+function diff(before: MetaRecord | null, after: MetaRecord | null) {
   const empty = { tags: [] as string[], labels: {} }
   const b = before ?? empty
   const a = after ?? empty
@@ -190,14 +191,14 @@ function parseSearch(c: Context): MetaSearchQuery {
   }
 }
 
-function metaAudit(
+async function metaAudit(
   audit: GuardArgs['audit'],
   action: string,
   ref: EntityRef | null,
   message: string,
   detail: Record<string, unknown>,
 ) {
-  audit({
+  await audit({
     action,
     ...(ref?.namespace ? { namespace: ref.namespace } : {}),
     ...(ref?.repo ? { repo: ref.repo } : {}),
@@ -211,18 +212,18 @@ export function registerMetaRoutes(app: Hono) {
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
     const ref = await resolveRef(q.type, q.id, queryScope(c))
-    if (!canReadEntity(user, ref, lookup)) {
+    if (!await canReadEntity(user, ref, lookup)) {
       return c.json({ error: 'Forbidden' }, 403)
     }
     if (c.req.query('trace')) throw new MetaError(400, 'Metadata inheritance traces are no longer supported')
-    const eff = resolveEffective(ref, getOwnRecord)
+    const eff = await resolveEffective(ref, getOwnRecord)
     return c.json({
       ref,
-      revision: getRevision(ref),
-      version: metadataVersion(ref),
+      revision: await getRevision(ref),
+      version: await metadataVersion(ref),
       own: eff.own,
       effective: eff.effective,
-      canEdit: canEditEntity(user, ref, lookup),
+      canEdit: await canEditEntity(user, ref, lookup),
     })
   }))
 
@@ -235,8 +236,8 @@ export function registerMetaRoutes(app: Hono) {
       if (!r?.type || !r.id) continue
       try {
         const ref = await resolveRef(r.type, r.id, r.scope)
-        if (!canReadEntity(user, ref, lookup)) continue
-        items[refKey(ref)] = resolveEffective(ref, getOwnRecord).effective
+        if (!await canReadEntity(user, ref, lookup)) continue
+        items[refKey(ref)] = (await resolveEffective(ref, getOwnRecord)).effective
       } catch (err) {
         if (!(err instanceof MetaError && [400, 403, 404].includes(err.status))) throw err
       }
@@ -249,7 +250,7 @@ export function registerMetaRoutes(app: Hono) {
     const r = body.ref as { type?: string; id?: string; scope?: EntityRef['scope'] } | undefined
     if (!r?.type || !r.id) return c.json({ error: 'ref.type and ref.id are required' }, 400)
     const ref = await resolveRef(r.type, r.id, r.scope)
-    if (!canEditEntity(user, ref, lookup)) {
+    if (!await canEditEntity(user, ref, lookup)) {
       return c.json({ error: 'Forbidden: cannot edit metadata on this entity' }, 403)
     }
     for (const field of ['inherit', 'propagation', 'removeTags', 'unset']) {
@@ -259,21 +260,21 @@ export function registerMetaRoutes(app: Hono) {
       tags: body.tags as MetaPatch['tags'],
       labels: body.labels as MetaPatch['labels'],
     }
-    checkVersion(ref, body.ifVersion)
+    await checkVersion(ref, body.ifVersion)
     const ifRevision =
       typeof body.ifRevision === 'number' ? body.ifRevision : undefined
     if (body.ifRevision !== undefined && (typeof ifRevision !== 'number' || !Number.isSafeInteger(ifRevision) || ifRevision < 0)) throw new MetaError(400, 'ifRevision must be a nonnegative integer')
     const actor = actorFromUser(user)
-    const prev = getOwnRecord(ref)
+    const prev = await getOwnRecord(ref)
     const next = buildRecord(ref, prev, patch, actor)
-    const { before, after } = putOwnRecord(ref, patch, actor, ifRevision)
-    metaAudit(audit, 'meta.set', ref, `Updated metadata on ${ref.type} ${ref.id}`, {
+    const { before, after } = await putOwnRecord(ref, patch, actor, ifRevision)
+    await metaAudit(audit, 'meta.set', ref, `Updated metadata on ${ref.type} ${ref.id}`, {
       entity_type: ref.type,
       entity_id: ref.id,
       revision: after?.revision ?? next.revision,
       changed: diff(before, after),
     })
-    return c.json({ ok: true, own: after, revision: getRevision(ref) })
+    return c.json({ ok: true, own: after, revision: await getRevision(ref) })
   })
   app.put('/auth/meta', write)
   app.patch('/auth/meta', write)
@@ -282,23 +283,23 @@ export function registerMetaRoutes(app: Hono) {
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
     const ref = await resolveRef(q.type, q.id, queryScope(c))
-    if (!canEditEntity(user, ref, lookup)) {
+    if (!await canEditEntity(user, ref, lookup)) {
       return c.json({ error: 'Forbidden: cannot edit metadata on this entity' }, 403)
     }
-    checkVersion(ref, c.req.query('ifVersion'))
+    await checkVersion(ref, c.req.query('ifVersion'))
     const rawRevision = c.req.query('ifRevision')
     const revision = rawRevision === undefined ? undefined : Number(rawRevision)
     if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 0)) throw new MetaError(400, 'ifRevision must be a nonnegative integer')
-    const { before } = deleteOwnRecord(ref, actorFromUser(user), revision)
+    const { before } = await deleteOwnRecord(ref, actorFromUser(user), revision)
     if (before) {
-      metaAudit(audit, 'meta.delete', ref, `Removed metadata from ${ref.type} ${ref.id}`, {
+      await metaAudit(audit, 'meta.delete', ref, `Removed metadata from ${ref.type} ${ref.id}`, {
         entity_type: ref.type,
         entity_id: ref.id,
-        revision: getRevision(ref),
+        revision: await getRevision(ref),
         changed: diff(before, null),
       })
     }
-    return c.json({ ok: true, removed: !!before, revision: getRevision(ref) })
+    return c.json({ ok: true, removed: !!before, revision: await getRevision(ref) })
   }))
 
   app.get('/auth/meta/history', guarded(readPolicy, async ({ c, user }) => {
@@ -306,15 +307,15 @@ export function registerMetaRoutes(app: Hono) {
     if (!q) return c.json({ error: 'type and id are required' }, 400)
     const ref = parseRef(q.type, q.id, queryScope(c))
     const full = ref.type === 'job' ? await resolveRef(q.type, q.id).catch(() => ref) : ref
-    if (!canReadEntity(user, full, lookup)) {
+    if (!await canReadEntity(user, full, lookup)) {
       return c.json({ error: 'Forbidden' }, 403)
     }
-    return c.json({ history: listHistory(ref) })
+    return c.json({ history: await listHistory(ref) })
   }))
 
   app.get('/auth/meta/search', guarded(readPolicy, async ({ c, user }) => {
     const query = parseSearch(c)
-    const res = searchMeta(query, ctxFor(user, await searchCandidates()))
+    const res = await searchMeta(query, ctxFor(user, await searchCandidates()))
     return c.json({
       hits: res.hits,
       nextCursor: res.nextCursor,

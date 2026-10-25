@@ -35,7 +35,8 @@ export function isScopedCredential(user: { patScopes?: readonly unknown[] }): bo
   return !!user.patScopes?.length
 }
 
-const SEP = '\0'
+// PostgreSQL text cannot hold NUL, so keys use the ASCII unit separator.
+const SEP = '\u001f'
 const norm = (v: string) => v.trim().replace(/\/$/, '')
 
 /** Canonical storage key for a Principal. */
@@ -47,16 +48,6 @@ export function parsePrincipalKey(key: string): PrincipalId {
   const i = key.indexOf(SEP)
   if (i < 0) return { iss: '', sub: key }
   return { iss: key.slice(0, i), sub: key.slice(i + 1) }
-}
-
-/** A pre-`iss`+`sub` key: a bare `sub` with no issuer. */
-export function isLegacyPrincipalKey(k: unknown): k is string {
-  return typeof k === 'string' && k !== '' && !k.includes(SEP)
-}
-
-/** Attribute a legacy bare-`sub` key to `issuer`. */
-export function qualifyLegacyKey(issuer: string, legacyKey: string): string {
-  return principalKey({ iss: issuer, sub: legacyKey })
 }
 
 /**

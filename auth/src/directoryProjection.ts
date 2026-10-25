@@ -15,26 +15,26 @@ function matchesQuery(q: string, ...fields: string[]): boolean {
 }
 
 /** Local projection: principals already present in AuthZ / access-request stores. */
-export function searchStoreDirectory(
+export async function searchStoreDirectory(
   q: string,
   kind: 'user' | 'group',
   limit: number,
   defaultIssuer: string,
-): DirectoryHit[] {
+): Promise<DirectoryHit[]> {
   const needle = q.trim().toLowerCase()
   if (!needle) return []
 
   if (kind === 'group') {
     const groups = new Map<string, string>()
-    for (const ns of Object.keys(listNamespacesAuthz())) {
-      for (const m of listNamespaceMembers(ns)) {
+    for (const ns of Object.keys(await listNamespacesAuthz())) {
+      for (const m of await listNamespaceMembers(ns)) {
         if (m.kind === 'group') {
           const g = normalizeGroup(m.group)
           if (g) groups.set(g, g)
         }
       }
     }
-    for (const p of listAllCollaboratorPrincipals()) {
+    for (const p of await listAllCollaboratorPrincipals()) {
       if (p.kind === 'group') {
         const g = normalizeGroup(p.group)
         if (g) groups.set(g, g)
@@ -50,7 +50,7 @@ export function searchStoreDirectory(
     return out
   }
 
-  const users = collectStorePrincipals({ defaultIssuer })
+  const users = await collectStorePrincipals({ defaultIssuer })
   const out: DirectoryUserHit[] = []
   for (const u of users.values()) {
     if (matchesQuery(needle, u.sub, u.iss, u.email, u.name)) {
@@ -62,7 +62,7 @@ export function searchStoreDirectory(
 }
 
 /** Every user Principal known to the AuthZ / access-request / PAT stores. */
-export function collectStorePrincipals(opts: { includePatOwners?: boolean; defaultIssuer: string }): Map<string, DirectoryUserHit> {
+export async function collectStorePrincipals(opts: { includePatOwners?: boolean; defaultIssuer: string }): Promise<Map<string, DirectoryUserHit>> {
   const users = new Map<string, DirectoryUserHit>()
   const issDefault = opts.defaultIssuer
 
@@ -83,11 +83,11 @@ export function collectStorePrincipals(opts: { includePatOwners?: boolean; defau
     })
   }
 
-  for (const a of listInstanceAdmins()) addUser(a)
-  for (const g of listInstancePermissionGrants()) {
+  for (const a of await listInstanceAdmins()) addUser(a)
+  for (const g of await listInstancePermissionGrants()) {
     addUser({ sub: g.sub, iss: g.iss })
   }
-  for (const r of listAccessRequests()) {
+  for (const r of await listAccessRequests()) {
     addUser({
       sub: r.sub,
       iss: r.iss,
@@ -95,17 +95,17 @@ export function collectStorePrincipals(opts: { includePatOwners?: boolean; defau
       name: r.name,
     })
   }
-  for (const ns of Object.keys(listNamespacesAuthz())) {
-    for (const m of listNamespaceMembers(ns)) {
+  for (const ns of Object.keys(await listNamespacesAuthz())) {
+    for (const m of await listNamespaceMembers(ns)) {
       if (m.kind === 'user') {
         addUser({ sub: m.sub, iss: m.iss })
       }
     }
   }
-  for (const p of listAllCollaboratorPrincipals()) {
+  for (const p of await listAllCollaboratorPrincipals()) {
     if (p.kind === 'user') addUser({ sub: p.sub, iss: p.iss })
   }
-  if (opts.includePatOwners) for (const p of listPatOwners()) addUser(p)
+  if (opts.includePatOwners) for (const p of await listPatOwners()) addUser(p)
   return users
 }
 

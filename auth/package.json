@@ -7,21 +7,26 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node ../scripts/test-fail-fast.mjs --tsx --dir src"
+    "test": "node ../scripts/test-fail-fast.mjs --tsx --dir src",
+    "db:generate": "rm -rf drizzle && drizzle-kit generate --name baseline && node scripts/unqualify-baseline.mjs",
+    "lint:async": "eslint src"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
+    "drizzle-orm": "^0.45.4",
     "guacamole-lite": "^1.0.1",
     "hono": "^4.11.3",
+    "immudb-node": "^1.1.1",
     "jose": "^6.1.0",
-    "nodemailer": "^10.2.0",
-    "tsx": "^4.21.0",
-    "web-push": "^3.6.7"
+    "pg": "^8.23.1",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "@types/nodemailer": "^7.0.11",
-    "@types/web-push": "^3.6.4",
-    "typescript": "~6.0.2"
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^10.13.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.72.0"
   }
 }

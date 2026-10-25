@@ -1,5 +1,7 @@
 # AUTHO — PLAT-AUTHO authorization plan
 
+> **Storage update (ADR 0004/0005):** this plan was written for JSON/JSONL files under `AUTH_DATA_DIR`. Those stores are now PostgreSQL, immudb (audit) and Novu (notifications); file names and file-based mechanics below are historical. See [16-operations.md](./16-operations.md) section 2.3.
+
 Living design and phased plan for epic [`PLAT-AUTHO`](./EPICS.md#plat-autho--authorization-authz): namespace/repo authorization at the Mice BFF, modeled on **GitHub Enterprise** organization/repository AuthZ.
 
 Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) (AuthN) · [03-audit.md](./03-audit.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [README.md](../README.md)

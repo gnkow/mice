@@ -67,41 +67,8 @@ export function branchFromSourceRef(sourceRef: string): string {
   return s.slice(0, colon).trim()
 }
 
-export function normalizeJob(job: JobRun): JobRun {
-  const legacyBranch =
-    typeof job.branch === 'string' ? job.branch : ''
-  const target = typeof job.target_branch === 'string' ? job.target_branch : ''
-  const sync =
-    typeof job.sync_branch === 'string' ? job.sync_branch.trim() : ''
-  const pin = job.pin_commit || ''
-  const source_ref =
-    job.source_ref ||
-    (legacyBranch && pin
-      ? formatSourceRef(legacyBranch, pin)
-      : pin || legacyBranch)
-  const name =
-    typeof job.name === 'string' && job.name.trim()
-      ? job.name.trim()
-      : ''
-  const runner =
-    job.runner === 'kubernetes' || job.runner === 'cli' ? job.runner : 'docker'
-  const { branch: _legacy, workspace_id: _ws, ...rest } = job as JobRun & {
-    workspace_id?: unknown
-  }
-  return {
-    ...rest,
-    name,
-    target_branch: target,
-    sync_branch: sync,
-    source_ref,
-    pin_commit: pin,
-    runner,
-  }
-}
-
 export function publicJob(job: JobRun): JobRun {
-  const n = normalizeJob(job)
-  return { ...n, env: redactEnv(n.env) }
+  return { ...job, env: redactEnv(job.env) }
 }
 
 export function parseSubmitBody(body: unknown): JobSubmitBody | { error: string } {
@@ -109,25 +76,15 @@ export function parseSubmitBody(body: unknown): JobSubmitBody | { error: string 
   const b = body as Record<string, unknown>
   const namespace = typeof b.namespace === 'string' ? b.namespace.trim() : ''
   const repo = typeof b.repo === 'string' ? b.repo.trim() : ''
-  if (
-    b.source === 'workspace_mount' ||
-    b.source_kind === 'workspace_mount' ||
-    (b.workspace_id !== undefined && b.workspace_id !== null && b.workspace_id !== '')
-  ) {
-    return { error: 'stage sources are no longer supported' }
-  }
   const source = typeof b.source === 'string' ? b.source.trim() : ''
-  /** Explicit merge destination only (not legacy `branch`). */
+  /** Explicit merge destination. */
   const target =
     typeof b.target === 'string'
       ? b.target.trim()
       : typeof b.target_branch === 'string'
         ? b.target_branch.trim()
         : ''
-  const branch = typeof b.branch === 'string' ? b.branch.trim() : ''
   const name = typeof b.name === 'string' ? b.name.trim() : ''
-  const pin_commit =
-    typeof b.pin_commit === 'string' ? b.pin_commit.trim() : ''
   const image = typeof b.image === 'string' ? b.image.trim() : ''
   const command = Array.isArray(b.command)
     ? b.command.filter((x): x is string => typeof x === 'string')
@@ -135,12 +92,7 @@ export function parseSubmitBody(body: unknown): JobSubmitBody | { error: string 
   if (!namespace || !repo || !image) {
     return { error: 'namespace, repo, and image are required' }
   }
-  if (!source && !(pin_commit && (branch || target))) {
-    return {
-      error:
-        'source is required (branch, commit, or branch:commit), or legacy branch+pin_commit',
-    }
-  }
+  if (!source) return { error: 'source is required (branch, commit, or branch:commit)' }
   if (!command.length) return { error: 'command must be a non-empty array' }
 
   const resourcesIn =
@@ -153,10 +105,8 @@ export function parseSubmitBody(body: unknown): JobSubmitBody | { error: string 
     namespace,
     repo,
     ...(name ? { name } : {}),
-    ...(source ? { source } : {}),
+    source,
     ...(target ? { target } : {}),
-    ...(pin_commit ? { pin_commit } : {}),
-    ...(branch ? { branch } : {}),
     image,
     command,
     args: Array.isArray(b.args)
@@ -209,32 +159,12 @@ export async function submitJob(
   via: AuditVia,
   body: JobSubmitBody,
 ): Promise<JobRun> {
-  let source_ref: string
-  let pin_commit: string
+  const parsed = parseSourceSpec(body.source)
+  if ('error' in parsed) throw new Error(parsed.error)
+  const resolved = await resolveSource(body.namespace, body.repo, parsed, body.target || undefined)
+  const { source_ref, pin_commit } = resolved
   /** Merge destination — only when submit included explicit `target`. */
-  let target_branch = ''
-
-  if (body.source) {
-    const parsed = parseSourceSpec(body.source)
-    if ('error' in parsed) throw new Error(parsed.error)
-    const resolved = await resolveSource(
-      body.namespace,
-      body.repo,
-      parsed,
-      body.target || undefined,
-    )
-    source_ref = resolved.source_ref
-    pin_commit = resolved.pin_commit
-    target_branch = body.target?.trim() || ''
-  } else if (body.pin_commit && (body.branch || body.target)) {
-    const sourceBranch = (body.branch || body.target || '').trim()
-    pin_commit = body.pin_commit
-    source_ref = formatSourceRef(sourceBranch, pin_commit)
-    // Legacy `branch` alone does not request a merge; only explicit `target`.
-    target_branch = body.target?.trim() || ''
-  } else {
-    throw new Error('source or branch+pin_commit required')
-  }
+  const target_branch = body.target?.trim() || ''
 
   const isCli = body.runner === 'cli'
   const runnerName = isCli ? 'cli' : getRunner().name
@@ -281,8 +211,8 @@ export async function submitJob(
     runner: runnerName,
   }
 
-  appendJob(job)
-  appendAudit({
+  await appendJob(job)
+  await appendAudit({
     actor: job.actor,
     via,
     method: 'POST',
@@ -324,13 +254,13 @@ type JobErr = { ok: false; error: string; status: number }
 type JobOk = { ok: true; job: JobRun }
 
 /** CLI runner reports terminal state after local Docker + oxen commit. */
-export function completeCliJob(
+export async function completeCliJob(
   user: SessionUser,
   via: AuditVia,
   id: string,
   body: JobCompleteBody,
-): JobOk | JobErr {
-  const job = getJob(id)
+): Promise<JobOk | JobErr> {
+  const job = await getJob(id)
   if (!job) return { ok: false, error: 'Not found', status: 404 }
   if (job.runner !== 'cli') {
     return {
@@ -358,7 +288,7 @@ export function completeCliJob(
   }
 
   const updated: JobRun = {
-    ...normalizeJob(job),
+    ...job,
     status: body.status,
     exit_code: body.exit_code ?? null,
     error: body.error ?? null,
@@ -370,9 +300,9 @@ export function completeCliJob(
     finished_at: new Date().toISOString(),
     log_ref: job.log_ref || jobsLogPath(job.id),
   }
-  upsertJob(updated)
-  if (updated.status === 'succeeded') appendJobLineage(updated)
-  appendAudit({
+  await upsertJob(updated)
+  if (updated.status === 'succeeded') await appendJobLineage(updated)
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -390,42 +320,6 @@ export function completeCliJob(
     },
   })
   return { ok: true, job: updated }
-}
-
-/**
- * Mark jobs as synced to a branch (CLI sync success, including ancestors).
- */
-export function markJobsSynced(
-  user: SessionUser,
-  via: AuditVia,
-  jobIds: string[],
-  syncBranch: string,
-): { jobs: JobRun[] } | { error: string; status: number } {
-  const branch = syncBranch.trim()
-  if (!branch) return { error: 'sync_branch is required', status: 400 }
-  if (!jobIds.length) return { error: 'job_ids required', status: 400 }
-
-  const jobs: JobRun[] = []
-  for (const id of jobIds) {
-    const job = getJob(id)
-    if (!job) return { error: `Not found: ${id}`, status: 404 }
-    const updated: JobRun = {
-      ...normalizeJob(job),
-      sync_branch: branch,
-    }
-    upsertJob(updated)
-    jobs.push(publicJob(updated))
-  }
-  appendAudit({
-    actor: actorFromUser(user),
-    via,
-    method: 'POST',
-    path: '/auth/jobs/sync',
-    status: 200,
-    action: 'job.sync',
-    detail: { job_ids: jobIds, sync_branch: branch },
-  })
-  return { jobs }
 }
 
 /** Local CLI job snapshot published to the BFF on first sync. */
@@ -459,12 +353,12 @@ export type CliJobPublishBody = {
  * Upsert completed local CLI jobs after their result commits were pushed via BFF.
  * Local runs stay off the remote until this publish-on-push path.
  */
-export function publishSyncedCliJobs(
+export async function publishSyncedCliJobs(
   user: SessionUser,
   via: AuditVia,
   payloads: CliJobPublishBody[],
   pushBranch: string,
-): { jobs: JobRun[] } | { error: string; status: number } {
+): Promise<{ jobs: JobRun[] } | { error: string; status: number }> {
   const branch = pushBranch.trim()
   if (!branch) return { error: 'push_branch is required', status: 400 }
   if (!payloads.length) return { error: 'jobs required', status: 400 }
@@ -499,7 +393,7 @@ export function publishSyncedCliJobs(
       return { error: `invalid status for job ${id}`, status: 400 }
     }
 
-    const existing = getJob(id)
+    const existing = await getJob(id)
     if (existing) {
       if (existing.runner !== 'cli') {
         return {
@@ -538,7 +432,7 @@ export function publishSyncedCliJobs(
     }
 
     const base: JobRun = existing
-      ? normalizeJob(existing)
+      ? existing
       : {
           id,
           name: '',
@@ -616,12 +510,12 @@ export function publishSyncedCliJobs(
       sync_branch: branch,
     }
 
-    upsertJob(updated)
+    await upsertJob(updated)
     if (updated.status === 'succeeded' && !existing) {
-      appendJobLineage(updated)
+      await appendJobLineage(updated)
     }
     if (!existing || existing.status !== updated.status) {
-      appendAudit({
+      await appendAudit({
         actor: actorFromUser(user),
         via,
         method: 'POST',
@@ -641,7 +535,7 @@ export function publishSyncedCliJobs(
     jobs.push(publicJob(updated))
   }
 
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -657,18 +551,18 @@ export function publishSyncedCliJobs(
   return { jobs }
 }
 
-export function listJobsPublic(q: JobListQuery) {
-  const { jobs, nextCursor } = listJobs(q)
+export async function listJobsPublic(q: JobListQuery) {
+  const { jobs, nextCursor } = await listJobs(q)
   return { jobs: jobs.map(publicJob), nextCursor }
 }
 
-export function getJobPublic(id: string): JobRun | null {
-  const j = getJob(id)
+export async function getJobPublic(id: string): Promise<JobRun | null> {
+  const j = await getJob(id)
   return j ? publicJob(j) : null
 }
 
-export function readJobLogs(id: string): string | null {
-  const j = getJob(id)
+export async function readJobLogs(id: string): Promise<string | null> {
+  const j = await getJob(id)
   if (!j?.log_ref) return null
   try {
     return readFileSync(j.log_ref, 'utf8')
@@ -682,7 +576,7 @@ export async function cancelJob(
   via: AuditVia,
   id: string,
 ): Promise<JobOk | JobErr> {
-  const job = getJob(id)
+  const job = await getJob(id)
   if (!job) return { ok: false, error: 'Not found', status: 404 }
   if (
     job.status === 'succeeded' ||
@@ -705,8 +599,8 @@ export async function cancelJob(
     finished_at: new Date().toISOString(),
     error: 'cancelled',
   }
-  upsertJob(updated)
-  appendAudit({
+  await upsertJob(updated)
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -737,7 +631,7 @@ async function pumpQueue() {
 }
 
 async function executeJob(id: string) {
-  let job = getJob(id)
+  let job = await getJob(id)
   if (!job || job.status === 'cancelled') return
 
   job = {
@@ -745,7 +639,7 @@ async function executeJob(id: string) {
     status: 'running',
     started_at: new Date().toISOString(),
   }
-  upsertJob(job)
+  await upsertJob(job)
 
   const { data, work, log } = ensureJobDirs(id)
   const runner = getRunner()
@@ -754,7 +648,7 @@ async function executeJob(id: string) {
   try {
     const digest = await runner.pullAndValidateImage(job.image)
     job = { ...job, image_digest: digest }
-    upsertJob(job)
+    await upsertJob(job)
 
     const before =
       await materializeCommitClone(
@@ -768,13 +662,13 @@ async function executeJob(id: string) {
     const watcher = startReadWatcher(data)
     runtime = await runner.start({ job, dataDir: data, logPath: log })
     job = { ...job, runtime_id: runtime.runtimeId, log_ref: log }
-    upsertJob(job)
+    await upsertJob(job)
     activeCancels.set(id, runtime.cancel)
 
     const { exitCode } = await runtime.wait
     activeCancels.delete(id)
 
-    const current = getJob(id)
+    const current = await getJob(id)
     if (current?.status === 'cancelled') {
       cleanupWork(work)
       return
@@ -809,9 +703,9 @@ async function executeJob(id: string) {
         outputs: [],
         error: failDetail,
       }
-      upsertJob(job)
-      appendJobLineage(job)
-      appendAudit({
+      await upsertJob(job)
+      await appendJobLineage(job)
+      await appendAudit({
         actor: job.actor,
         via: job.via,
         method: 'POST',
@@ -949,12 +843,12 @@ async function executeJob(id: string) {
         canonicalId !== provisionalId ? jobsLogPath(canonicalId) : job.log_ref,
     }
     if (canonicalId !== provisionalId) {
-      rekeyJob(provisionalId, job)
+      await rekeyJob(provisionalId, job)
     } else {
-      upsertJob(job)
+      await upsertJob(job)
     }
-    appendJobLineage(job)
-    appendAudit({
+    await appendJobLineage(job)
+    await appendAudit({
       actor: job.actor,
       via: job.via,
       method: 'POST',
@@ -978,20 +872,20 @@ async function executeJob(id: string) {
     cleanupWork(work)
   } catch (err) {
     activeCancels.delete(id)
-    const current = getJob(id)
+    const current = await getJob(id)
     if (current?.status === 'cancelled') {
       cleanupWork(work)
       return
     }
     const message = err instanceof Error ? err.message : String(err)
     job = {
-      ...(getJob(id) ?? job),
+      ...(await getJob(id) ?? job),
       status: 'failed',
       finished_at: new Date().toISOString(),
       error: message,
     }
-    upsertJob(job)
-    appendAudit({
+    await upsertJob(job)
+    await appendAudit({
       actor: job.actor,
       via: job.via,
       method: 'POST',
@@ -1019,7 +913,7 @@ function cleanupWork(work: string) {
   }
 }
 
-function appendJobLineage(job: JobRun) {
+async function appendJobLineage(job: JobRun) {
   const inputs: FileVersion[] = job.inputs.map((i) => ({
     namespace: job.namespace,
     repo: job.repo,
@@ -1035,15 +929,15 @@ function appendJobLineage(job: JobRun) {
     commitId: job.result_commit ?? undefined,
   }))
 
-  appendLineage({
+  await appendLineage({
     kind: 'job',
     namespace: job.namespace,
     repo: job.repo,
     branch:
-      normalizeJob(job).sync_branch ||
+      job.sync_branch ||
       job.result_branch ||
       branchFromSourceRef(job.source_ref) ||
-      normalizeJob(job).target_branch,
+      job.target_branch,
     inputs,
     outputs,
     actor: job.actor,
@@ -1063,14 +957,14 @@ function appendJobLineage(job: JobRun) {
 }
 
 /** Resume queued jobs after process restart. */
-export function resumeQueuedJobs() {
-  const { jobs } = listJobs({ status: 'queued', limit: 100 })
+export async function resumeQueuedJobs() {
+  const { jobs } = await listJobs({ status: 'queued', limit: 100 })
   for (const j of jobs) {
     if (!queue.includes(j.id)) queue.push(j.id)
   }
-  const runningStuck = listJobs({ status: 'running', limit: 100 }).jobs
+  const runningStuck = (await listJobs({ status: 'running', limit: 100 })).jobs
   for (const j of runningStuck) {
-    upsertJob({
+    await upsertJob({
       ...j,
       status: 'failed',
       finished_at: new Date().toISOString(),

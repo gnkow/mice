@@ -105,7 +105,7 @@ export function createLineageCapture(opts: {
           }
         }
 
-        buildExplicitFileOp({
+        await buildExplicitFileOp({
           kind: fileOp.kind,
           namespace: fileOp.namespace,
           repo: fileOp.repo,

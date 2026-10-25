@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -41,12 +42,12 @@ resetHostVolumePathsForTest({ store: '/host/store', ws: '/host/ws' })
 const C1 = 'c1111111111111111111111111111111'
 const admin: { sub: string; iss: string; email: string; emailVerified?: boolean; name: string } = { sub: 'admin', iss: 'test', email: 'admin@mice.local', emailVerified: true, name: 'Admin' }
 const reader = { sub: 'reader', iss: 'test', email: 'reader@example.com', name: 'Reader' }
-setAuthzEnforce(true)
-preparePrincipal(admin)
-preparePrincipal(reader)
-createNamespaceAuthz(admin, 'rns', 'read', true)
-setNamespaceMember('rns', reader, 'member')
-writeInstancePermissions(reader, ['session_create'])
+await setAuthzEnforce(true)
+await preparePrincipal(admin)
+await preparePrincipal(reader)
+await createNamespaceAuthz(admin, 'rns', 'read', true)
+await setNamespaceMember('rns', reader, 'member')
+await writeInstancePermissions(reader, ['session_create'])
 
 const fakeDocker = () => ({
   volumes: new Map<string, string[]>(),
@@ -97,10 +98,10 @@ async function mkWs(ns = 'rns', waitReady = true) {
 
 async function ready(id: string) {
   for (let i = 0; i < 200; i++) {
-    if (getSessionRecord(id)?.status === 'ready') return
+    if ((await getSessionRecord(id))?.status === 'ready') return
     await new Promise((r) => setTimeout(r, 10))
   }
-  throw new Error(`session ${id} not ready: ${getSessionRecord(id)?.status}`)
+  throw new Error(`session ${id} not ready: ${(await getSessionRecord(id))?.status}`)
 }
 
 const create = (user: typeof admin, mounts: unknown[]) => {
@@ -109,7 +110,7 @@ const create = (user: typeof admin, mounts: unknown[]) => {
   return sessions.createDesktopSession(user as never, 'session', parsed)
 }
 
-const mountOf = (id: string) => getSessionRecord(id)!.mounts[0]!
+const mountOf = async (id: string) => (await getSessionRecord(id))!.mounts[0]!
 
 after(() => {
   svc.shutdown()
@@ -117,8 +118,8 @@ after(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('parse + shape', () => {
-  it('accepts workspace_id without namespace/repo; rejects mixes and stage ids', () => {
+await describe('parse + shape', async () => {
+  await it('accepts workspace_id without namespace/repo; rejects mixes and stage ids', () => {
     const ok = sessions.parseCreateBody({ mounts: [{ workspace_id: 'w_abcdefghij', mount_mode: 'ro' }] })
     assert.ok(!('error' in ok))
     assert.equal((ok as { mounts: { workspace_id: string }[] }).mounts[0]!.workspace_id, 'w_abcdefghij')
@@ -127,8 +128,8 @@ describe('parse + shape', () => {
   })
 })
 
-describe('workspace mounts in sessions', () => {
-  it('rw mount takes the write lease; JSON carries effective_mode, lease_id, workspace_ids', async () => {
+await describe('workspace mounts in sessions', async () => {
+  await it('rw mount takes the write lease; JSON carries effective_mode, lease_id, workspace_ids', async () => {
     const w = await mkWs()
     const s = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     const pub = sessions.publicSession(s)
@@ -151,34 +152,34 @@ describe('workspace mounts in sessions', () => {
     await sessions.destroyDesktopSession(admin as never, 'session', s.id)
   })
 
-  it('second rw session degrades to ro with a notice naming the holder; ro with a writer is fine', async () => {
+  await it('second rw session degrades to ro with a notice naming the holder; ro with a writer is fine', async () => {
     const w = await mkWs()
     const a = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     const b = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
-    const mb = mountOf(b.id)
+    const mb = await mountOf(b.id)
     assert.equal(mb.mount_mode, 'rw')
     assert.equal(mb.effective_mode, 'ro')
-    const notice = getSessionRecord(b.id)!.notices![0]!
+    const notice = (await getSessionRecord(b.id))!.notices![0]!
     assert.match(notice, /being written by session/)
     assert.match(notice, /mounted read-only/)
     assert.equal(svc.leases.get(mb.lease_id!)!.mode, 'read')
 
     const c = await create(admin, [{ workspace_id: w, mount_mode: 'ro' }])
-    assert.equal(mountOf(c.id).effective_mode, 'ro')
-    assert.deepEqual(getSessionRecord(c.id)!.notices, [])
+    assert.equal((await mountOf(c.id)).effective_mode, 'ro')
+    assert.deepEqual((await getSessionRecord(c.id))!.notices, [])
     assert.equal(svc.leases.list(w).length, 3)
     assert.equal((await svc.get(w)).session_count, 3)
 
-    const listed = sessions.listDesktopSessions({ user: admin as never, workspaceId: w })
+    const listed = await sessions.listDesktopSessions({ user: admin as never, workspaceId: w })
     assert.equal(listed.length, 3)
-    assert.equal(sessions.listDesktopSessions({ user: admin as never, workspaceId: 'w_nonexistent' }).length, 0)
+    assert.equal((await sessions.listDesktopSessions({ user: admin as never, workspaceId: 'w_nonexistent' })).length, 0)
     for (const s of [a, b, c]) {
       await ready(s.id)
       await sessions.destroyDesktopSession(admin as never, 'session', s.id)
     }
   })
 
-  it('stop releases leases; delete is 423 naming the session while it runs', async () => {
+  await it('stop releases leases; delete is 423 naming the session while it runs', async () => {
     const w = await mkWs()
     const s = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     await ready(s.id)
@@ -192,14 +193,14 @@ describe('workspace mounts in sessions', () => {
     assert.equal(svc.leases.list(w).length, 0)
     await sessions.retryDesktopSession(admin as never, 'session', s.id)
     assert.equal(svc.leases.writer(w)?.holder.id, s.id)
-    assert.equal(mountOf(s.id).effective_mode, 'rw')
+    assert.equal((await mountOf(s.id)).effective_mode, 'rw')
     await ready(s.id)
     await sessions.destroyDesktopSession(admin as never, 'session', s.id)
     assert.equal(svc.leases.list(w).length, 0)
     await svc.delete(w)
   })
 
-  it('a workspace that is not ready → 409 at create; unknown → 404', async () => {
+  await it('a workspace that is not ready → 409 at create; unknown → 404', async () => {
     const w = await mkWs('rns', false)
     const st = svc.getState(w)!
     st.status = 'preparing' as never
@@ -208,17 +209,17 @@ describe('workspace mounts in sessions', () => {
     await svc.whenSettled(w)
   })
 
-  it('repo-read user can mount ro but not rw', async () => {
+  await it('repo-read user can mount ro but not rw', async () => {
     const w = await mkWs()
     await assert.rejects(create(reader, [{ workspace_id: w, mount_mode: 'rw' }]), (e: unknown) => (e as { status?: number }).status === 403)
     assert.equal(svc.leases.list(w).length, 0)
     const s = await create(reader, [{ workspace_id: w, mount_mode: 'ro' }])
-    assert.equal(mountOf(s.id).effective_mode, 'ro')
+    assert.equal((await mountOf(s.id)).effective_mode, 'ro')
     await ready(s.id)
     await sessions.destroyDesktopSession(reader as never, 'session', s.id)
   })
 
-  it('multi-workspace acquire is all-or-nothing', async () => {
+  await it('multi-workspace acquire is all-or-nothing', async () => {
     const a = await mkWs()
     const b = await mkWs()
     const stB = svc.getState(b)!
@@ -243,7 +244,7 @@ describe('workspace mounts in sessions', () => {
     assert.equal(svc.leases.list(a).length + svc.leases.list(b).length, 0)
   })
 
-  it('rejects mounting the same workspace twice', async () => {
+  await it('rejects mounting the same workspace twice', async () => {
     const w = await mkWs()
     await assert.rejects(
       create(admin, [{ workspace_id: w }, { workspace_id: w, mount_mode: 'ro' }]),
@@ -251,57 +252,31 @@ describe('workspace mounts in sessions', () => {
     )
   })
 
-  it('pin mounts are rejected at create (400 message)', () => {
+  await it('pin mounts are rejected at create (400 message)', () => {
     const parsed = sessions.parseCreateBody({ mounts: [{ namespace: 'rns', repo: 'r', pin_commit: 'abc123' }] })
     assert.deepEqual(parsed, { error: 'sessions mount workspaces: use workspace_id' })
   })
 
-  it('legacy stored pin mounts load, display, and retry starts without them + notice', async () => {
-    const w = await mkWs()
-    const s = await create(admin, [{ workspace_id: w, mount_mode: 'ro' }])
-    await ready(s.id)
-    await sessions.stopDesktopSession(admin as never, 'session', s.id)
-    const cur = getSessionRecord(s.id)!
-    updateSession(s.id, {
-      mounts: [
-        { namespace: 'rns', repo: 'old', pin_commit: 'abcdef123456', mount_mode: 'ro', mount_path: '/data/rns/old' },
-        ...cur.mounts,
-      ],
-    })
-    const shown = sessions.publicSession(getSessionRecord(s.id)!)
-    assert.equal(shown.mounts.length, 2)
-    assert.deepEqual(shown.workspace_ids, [w])
-    await sessions.retryDesktopSession(admin as never, 'session', s.id)
-    const after = getSessionRecord(s.id)!
-    assert.equal(after.mounts.length, 1)
-    assert.equal(after.mounts[0]!.workspace_id, w)
-    assert.ok(after.notices!.some((n) => /legacy commit-pin mount rns\/old#abcdef12 .*started without it/.test(n)))
-    await ready(s.id)
-    const argv = await sw.workspaceDockerMounts(getSessionRecord(s.id)!)
-    assert.equal(argv.args.length, 2)
-    await sessions.destroyDesktopSession(admin as never, 'session', s.id)
-  })
-
-  it('mountable_modes: rw+ro when free, ro while a writer exists; sessions list by repo', async () => {
+  await it('mountable_modes: rw+ro when free, ro while a writer exists; sessions list by repo', async () => {
     const w = await mkWs()
     assert.deepEqual((await svc.get(w)).mountable_modes, ['ro', 'rw'])
     const a = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     assert.deepEqual((await svc.get(w)).mountable_modes, ['ro'])
     assert.deepEqual(svc.list({ namespace: 'rns', repo: 'r' }).find((x) => x.id === w)!.mountable_modes, ['ro'])
-    const byRepo = sessions.listDesktopSessions({ user: admin as never, namespace: 'rns', repo: 'r' })
+    const byRepo = await sessions.listDesktopSessions({ user: admin as never, namespace: 'rns', repo: 'r' })
     assert.ok(byRepo.some((x) => x.id === a.id))
-    assert.equal(sessions.listDesktopSessions({ user: admin as never, namespace: 'rns', repo: 'other' }).length, 0)
-    assert.equal(sessions.listDesktopSessions({ user: admin as never, namespace: 'nope' }).length, 0)
+    assert.equal((await sessions.listDesktopSessions({ user: admin as never, namespace: 'rns', repo: 'other' })).length, 0)
+    assert.equal((await sessions.listDesktopSessions({ user: admin as never, namespace: 'nope' })).length, 0)
     await ready(a.id)
     await sessions.destroyDesktopSession(admin as never, 'session', a.id)
     assert.deepEqual((await svc.get(w)).mountable_modes, ['ro', 'rw'])
   })
 
-  it('workspace delete is 423 naming the session even when its lease is missing', async () => {
+  await it('workspace delete is 423 naming the session even when its lease is missing', async () => {
     const w = await mkWs()
     const s = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     await ready(s.id)
-    await svc.leases.release(mountOf(s.id).lease_id!)
+    await svc.leases.release((await mountOf(s.id)).lease_id!)
     assert.equal(svc.leases.list(w).length, 0)
     await assert.rejects(svc.delete(w), (e: unknown) => {
       assert.ok(e instanceof LeaseError)
@@ -313,10 +288,10 @@ describe('workspace mounts in sessions', () => {
     await svc.delete(w)
   })
 
-  it('new_workspace: created on demand, leased at provision time', async () => {
+  await it('new_workspace: created on demand, leased at provision time', async () => {
     const { queryAudit } = await import('./audit.js')
     const s = await create(admin, [{ new_workspace: { namespace: 'rns', repo: 'r', name: 'ondemand', source: { branch: 'main' } }, mount_mode: 'rw' }])
-    const m = mountOf(s.id)
+    const m = await mountOf(s.id)
     assert.match(m.workspace_id!, /^w_[0-9a-z]{10}$/)
     assert.equal(m.namespace, 'rns')
     assert.equal(m.effective_mode, undefined)
@@ -324,16 +299,16 @@ describe('workspace mounts in sessions', () => {
     assert.equal(svc.getState(m.workspace_id!)!.name, 'ondemand')
     assert.deepEqual(sessions.publicSession(s).workspace_ids, [m.workspace_id])
     await ready(s.id)
-    const done = mountOf(s.id)
+    const done = await mountOf(s.id)
     assert.equal(done.effective_mode, 'rw')
     assert.equal(svc.leases.writer(done.workspace_id!)?.holder.id, s.id)
-    const ev = queryAudit({ action: 'workspace.create' }).events.find((e) => (e.detail as { session_id?: string })?.session_id === s.id)
+    const ev = (await queryAudit({ action: 'workspace.create' })).events.find((e) => (e.detail as { session_id?: string })?.session_id === s.id)
     assert.ok(ev)
     await sessions.destroyDesktopSession(admin as never, 'session', s.id)
     assert.equal(svc.leases.list(done.workspace_id!).length, 0)
   })
 
-  it('new_workspace: authz needs repo write; a failing workspace fails the session; bad input → 400', async () => {
+  await it('new_workspace: authz needs repo write; a failing workspace fails the session; bad input → 400', async () => {
     await assert.rejects(
       create(reader, [{ new_workspace: { namespace: 'rns', repo: 'r', source: { branch: 'main' } } }]),
       (e: unknown) => (e as { status?: number }).status === 403,
@@ -342,14 +317,14 @@ describe('workspace mounts in sessions', () => {
     assert.ok('error' in sessions.parseCreateBody({ mounts: [{ new_workspace: { namespace: 'rns', repo: 'r', source: { branch: 'a', commit: 'b' } } }] }))
     assert.ok('error' in sessions.parseCreateBody({ mounts: [{ workspace_id: 'w_abcdefghij', new_workspace: { namespace: 'rns', repo: 'r', source: { branch: 'a' } } }] }))
     const s = await create(admin, [{ new_workspace: { namespace: 'rns', repo: 'r', name: 'doomed', source: { branch: 'does-not-exist' } } }])
-    for (let i = 0; i < 300 && getSessionRecord(s.id)!.status === 'provisioning'; i++) await new Promise((r) => setTimeout(r, 20))
-    const failed = getSessionRecord(s.id)!
+    for (let i = 0; i < 300 && (await getSessionRecord(s.id))!.status === 'provisioning'; i++) await new Promise((r) => setTimeout(r, 20))
+    const failed = (await getSessionRecord(s.id))!
     assert.equal(failed.status, 'failed')
     assert.match(failed.error!, /failed to prepare/)
-    assert.equal(svc.leases.list(mountOf(s.id).workspace_id!).length, 0)
+    assert.equal(svc.leases.list((await mountOf(s.id)).workspace_id!).length, 0)
   })
 
-  it('remount upgrades a degraded mount once the writer ended; 423 while it is still held', async () => {
+  await it('remount upgrades a degraded mount once the writer ended; 423 while it is still held', async () => {
     const w = await mkWs()
     const a = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     const b = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
@@ -365,13 +340,13 @@ describe('workspace mounts in sessions', () => {
     )
     await sessions.destroyDesktopSession(admin as never, 'session', a.id)
     await sessions.remountDesktopSession(admin as never, 'session', b.id, { workspace_id: w })
-    assert.equal(mountOf(b.id).effective_mode, 'rw')
+    assert.equal((await mountOf(b.id)).effective_mode, 'rw')
     assert.equal(svc.leases.writer(w)?.holder.id, b.id)
     await ready(b.id)
     await sessions.destroyDesktopSession(admin as never, 'session', b.id)
   })
 
-  it('PUT mounts: switch mode, add, remove; keeps path + session id; audited', async () => {
+  await it('PUT mounts: switch mode, add, remove; keeps path + session id; audited', async () => {
     const { queryAudit } = await import('./audit.js')
     const w1 = await mkWs()
     const w2 = await mkWs()
@@ -409,12 +384,12 @@ describe('workspace mounts in sessions', () => {
     assert.equal(svc.getState(pub.mounts[0]!.workspace_id!)!.name, 'edit-new')
     assert.equal(svc.leases.list(w1).length, 0)
     await ready(s.id)
-    assert.equal(mountOf(s.id).effective_mode, 'rw')
+    assert.equal((await mountOf(s.id)).effective_mode, 'rw')
     // empty list = desktop only
     pub = await put([])
     assert.deepEqual(pub.mounts, [])
     assert.equal(svc.leases.list(w1).length + svc.leases.list(w2).length, 0)
-    const ev = queryAudit({ action: 'session.mounts.update' }).events.filter((e) => (e.detail as { session_id?: string })?.session_id === s.id)
+    const ev = (await queryAudit({ action: 'session.mounts.update' })).events.filter((e) => (e.detail as { session_id?: string })?.session_id === s.id)
     assert.ok(ev.length >= 4)
     const d = ev.find((e) => (e.detail as { before: unknown[] }).before.length === 1 && (e.detail as { after: unknown[] }).after.length === 2)
     assert.ok(d)
@@ -422,7 +397,7 @@ describe('workspace mounts in sessions', () => {
     await sessions.destroyDesktopSession(admin as never, 'session', s.id)
   })
 
-  it('PUT mounts: validation, state and authz guards', async () => {
+  await it('PUT mounts: validation, state and authz guards', async () => {
     const w = await mkWs()
     const s = await create(admin, [])
     const put = (u: unknown, mounts: unknown[]) => {
@@ -450,30 +425,30 @@ describe('workspace mounts in sessions', () => {
       (e) => status(e) === 403,
     )
     assert.equal(svc.list({ namespace: 'rns', repo: 'r' }).length, before)
-    assert.equal(getSessionRecord(rs.id)!.status, 'ready')
+    assert.equal((await getSessionRecord(rs.id))!.status, 'ready')
     await sessions.destroyDesktopSession(reader as never, 'session', rs.id)
-    assert.equal(getSessionRecord(s.id)!.status, 'ready')
+    assert.equal((await getSessionRecord(s.id))!.status, 'ready')
     await sessions.destroyDesktopSession(admin as never, 'session', s.id)
   })
 
-  it('docker args: ro/rw volumes, nocopy, tamper check', async () => {
+  await it('docker args: ro/rw volumes, nocopy, tamper check', async () => {
     const w = await mkWs()
     const a = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     const b = await create(admin, [{ workspace_id: w, mount_mode: 'ro' }])
-    const ra = await sw.workspaceDockerMounts(getSessionRecord(a.id)!)
+    const ra = await sw.workspaceDockerMounts((await getSessionRecord(a.id))!)
     assert.equal(ra.args[0], '--mount')
     assert.match(ra.args[1]!, /^type=volume,source=mice-ws-w_[0-9a-z]{10}-g\d+,target=\/data\/rns\/r__w_[0-9a-z]{10},volume-nocopy$/)
     assert.ok(ra.env.includes('UMASK=002'))
     assert.ok(ra.env.includes(`PUID=${cfg.uid}`))
     assert.ok(ra.env.includes(`PGID=${cfg.gid}`))
-    const rb = await sw.workspaceDockerMounts(getSessionRecord(b.id)!)
+    const rb = await sw.workspaceDockerMounts((await getSessionRecord(b.id))!)
     assert.ok(rb.args[1]!.endsWith(',readonly'))
 
     const upper = join(svc.dir(w), 'upper')
     mkdirSync(upper, { recursive: true })
     writeFileSync(join(upper, 'sneaky.txt'), 'x')
     await assert.rejects(
-      sw.workspaceDockerMounts(getSessionRecord(a.id)!),
+      sw.workspaceDockerMounts((await getSessionRecord(a.id))!),
       (e: unknown) => e instanceof sw.SessionWorkspaceError && /tamper/.test(e.message),
     )
     for (const s of [a, b]) {
@@ -482,16 +457,16 @@ describe('workspace mounts in sessions', () => {
     }
   })
 
-  it('reconciliation releases leases of terminal sessions; renewer extends live ones', async () => {
+  await it('reconciliation releases leases of terminal sessions; renewer extends live ones', async () => {
     const w = await mkWs()
     const s = await create(admin, [{ workspace_id: w, mount_mode: 'rw' }])
     await ready(s.id)
-    const lid = mountOf(s.id).lease_id!
+    const lid = (await mountOf(s.id)).lease_id!
     const before = Date.parse(svc.leases.get(lid)!.expires_at)
     await new Promise((r) => setTimeout(r, 15))
     await sw.renewSessionLeases()
     assert.ok(Date.parse(svc.leases.get(lid)!.expires_at) > before)
-    updateSession(s.id, { status: 'failed' })
+    await updateSession(s.id, { status: 'failed' })
     await svc.reconcileLeases()
     assert.equal(svc.leases.list(w).length, 0)
   })

@@ -1,7 +1,8 @@
-import { createMemoryJsonBackend, useJsonBackend, type JsonBackend } from './jsonStore.js'
+import { mkdirSync, rmSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { resolve } from 'node:path'
 
 const BASE_ENV: Record<string, string> = {
-  AUTH_DATA_DIR: '/mice-memory-data',
   SESSION_SECRET: 'test-session-secret',
   OXEN_UPSTREAM: 'http://127.0.0.1:3001',
   AUTHZ_ENFORCE: 'true',
@@ -19,7 +20,7 @@ export type TestPerson = {
 }
 
 /**
- * Isolated auth environment for tests: memory persistence, test env vars.
+ * Isolated auth environment for tests: test env vars and a private workspace data directory in the project.
  * Call before importing modules that read `env`; `restore()` undoes both.
  */
 export function isolatedAuth(extraEnv: Record<string, string> = {}) {
@@ -29,8 +30,12 @@ export function isolatedAuth(extraEnv: Record<string, string> = {}) {
     previousEnv[k] = process.env[k]
     process.env[k] = v
   }
-  const backend: JsonBackend = createMemoryJsonBackend()
-  const restoreBackend = useJsonBackend(backend)
+  const dataDir = resolve(`.isolated-${randomUUID()}`)
+  mkdirSync(dataDir, { recursive: true })
+  previousEnv.AUTH_DATA_DIR = process.env.AUTH_DATA_DIR
+  process.env.AUTH_DATA_DIR = dataDir
+  const removeDataDir = () => rmSync(dataDir, { recursive: true, force: true })
+  process.once('exit', removeDataDir)
   let restored = false
 
   const person = (sub: string): TestPerson => ({
@@ -48,7 +53,6 @@ export function isolatedAuth(extraEnv: Record<string, string> = {}) {
   }
 
   return {
-    backend,
     person,
     admin,
     async sessionHeaders(user: TestPerson): Promise<Record<string, string>> {
@@ -60,11 +64,29 @@ export function isolatedAuth(extraEnv: Record<string, string> = {}) {
     restore() {
       if (restored) return
       restored = true
-      restoreBackend()
+      removeDataDir()
       for (const [k, v] of Object.entries(previousEnv)) {
         if (v === undefined) delete process.env[k]
         else process.env[k] = v
       }
     },
+  }
+}
+
+/**
+ * The stored notification events a user's Novu feed holds. Novu creates messages asynchronously, so when
+ * `expect` is given this waits (by attempts, since tests may freeze `Date.now`) until that many exist.
+ */
+export async function novuInbox(user: { iss: string; sub: string }, expect = 0): Promise<Array<{ title: string; summary: string }>> {
+  const { getNovu } = await import('./novu.js')
+  const { subscriberId } = await import('./notifications.js')
+  const { notificationUserKey } = await import('./notificationsStore.js')
+  const id = subscriberId(notificationUserKey(user))
+  for (let attempt = 0; ; attempt++) {
+    const messages = await getNovu().feed(id)
+    if (messages.length >= expect || attempt >= 200) {
+      return messages.map((m) => m.payload as { title: string; summary: string })
+    }
+    await new Promise((r) => setTimeout(r, 100))
   }
 }

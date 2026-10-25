@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,7 +21,7 @@ const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string;
   offboard(target, { scope: 'all', cause: 'admin-revocation', actor: { ...actor, email: '', name: '' } })
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
 const root = mk('root')
-maybeBootstrapInstanceAdmin({ ...root, emailVerified: true })
+await maybeBootstrapInstanceAdmin({ ...root, emailVerified: true })
 
 const app = new Hono()
 applyGlobalGuards(app)
@@ -32,32 +33,32 @@ app.all('/whoami', async (c) => {
 const cookie = async (sub: string) =>
   `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })}`
 
-describe('auth wiring (middleware order + requireAuth)', () => {
-  it('prefers the session over a PAT when both are sent', async () => {
-    const { token } = createPat(mk('bob'), 'b')
+await describe('auth wiring (middleware order + requireAuth)', async () => {
+  await it('prefers the session over a PAT when both are sent', async () => {
+    const { token } = await createPat(mk('bob'), 'b')
     const res = await app.request('/whoami', {
       headers: { cookie: await cookie('alice'), authorization: `Bearer ${token}` },
     })
     assert.deepEqual(await res.json(), { sub: 'alice', via: 'session' })
   })
 
-  it('falls back to the PAT when the session is revoked', async () => {
-    const { token } = createPat(mk('carol'), 'c')
+  await it('falls back to the PAT when the session is revoked', async () => {
+    const { token } = await createPat(mk('carol'), 'c')
     const stale = await cookie('dave')
-    adminRevoke(root, mk('dave'))
+    await adminRevoke(root, mk('dave'))
     const res = await app.request('/whoami', {
       headers: { cookie: stale, authorization: `Bearer ${token}` },
     })
     assert.deepEqual(await res.json(), { sub: 'carol', via: 'pat' })
   })
 
-  it('is 401 with a revoked session and no PAT', async () => {
+  await it('is 401 with a revoked session and no PAT', async () => {
     const stale = await cookie('erin')
-    adminRevoke(root, mk('erin'))
+    await adminRevoke(root, mk('erin'))
     assert.equal((await app.request('/whoami', { headers: { cookie: stale } })).status, 401)
   })
 
-  it('rejects a cross-site write on a cookie session before the route runs', async () => {
+  await it('rejects a cross-site write on a cookie session before the route runs', async () => {
     const res = await app.request('/whoami', {
       method: 'POST',
       headers: { cookie: await cookie('alice'), 'sec-fetch-site': 'cross-site' },
@@ -65,8 +66,8 @@ describe('auth wiring (middleware order + requireAuth)', () => {
     assert.equal(res.status, 403)
   })
 
-  it('lets a cross-site write through when authenticated by PAT', async () => {
-    const { token } = createPat(mk('frank'), 'f')
+  await it('lets a cross-site write through when authenticated by PAT', async () => {
+    const { token } = await createPat(mk('frank'), 'f')
     const res = await app.request('/whoami', {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'sec-fetch-site': 'cross-site' },
@@ -75,8 +76,8 @@ describe('auth wiring (middleware order + requireAuth)', () => {
   })
 })
 
-describe('authentication observer', () => {
-  it('sees each authenticated principal and stops after restore', async () => {
+await describe('authentication observer', async () => {
+  await it('sees each authenticated principal and stops after restore', async () => {
     const seen: string[] = []
     const restore = setAuthenticationObserver((u) => seen.push(u.sub))
     await app.request('/whoami', { headers: { cookie: await cookie('fay') } })
@@ -87,7 +88,7 @@ describe('authentication observer', () => {
     assert.deepEqual(seen, ['fay'])
   })
 
-  it('restore puts back the previous observer', async () => {
+  await it('restore puts back the previous observer', async () => {
     const outer: string[] = []
     const inner: string[] = []
     const restoreOuter = setAuthenticationObserver((u) => outer.push(u.sub))

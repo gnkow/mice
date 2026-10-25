@@ -35,6 +35,7 @@ import {
   countActiveForOwner,
   getSessionRecord,
   listSessions,
+  listSessionsWithStatus,
   updateSession,
 } from './sessionsStore.js'
 import { getSessionTemplate, listSessionTemplates } from './sessionsTemplates.js'
@@ -183,32 +184,32 @@ function defaultResources(partial?: Partial<SessionResources>): SessionResources
 }
 
 /** Authorize workspace mounts (effective ro → repo read, rw → repo write). Legacy pin mounts are never mounted and are skipped. */
-export function authorizeSessionMounts(
+export async function authorizeSessionMounts(
   user: SessionUser,
   mounts: SessionMount[],
-): { allow: boolean; reason?: string } {
-  return authorizeWorkspaceMounts(user, mounts)
+): Promise<{ allow: boolean; reason?: string }> {
+  return await authorizeWorkspaceMounts(user, mounts)
 }
 
-export function authorizeSessionCreate(user: SessionUser): {
+export async function authorizeSessionCreate(user: SessionUser): Promise<{
   allow: boolean
   reason?: string
-} {
+}> {
   if (!env.sessionsEnabled) {
     return { allow: false, reason: 'Sessions disabled' }
   }
-  return authorizeInstanceAction(user, 'session.create')
+  return await authorizeInstanceAction(user, 'session.create')
 }
 
-export function authorizeSessionAccess(
+export async function authorizeSessionAccess(
   user: SessionUser,
   session: DesktopSession,
   action: 'connect' | 'stop' | 'destroy' | 'read',
-): { allow: boolean; reason?: string } {
+): Promise<{ allow: boolean; reason?: string }> {
   if (!env.sessionsEnabled) {
     return { allow: false, reason: 'Sessions disabled' }
   }
-  if (decideInstanceAction(user, 'session.admin').allow) return { allow: true }
+  if ((await decideInstanceAction(user, 'session.admin')).allow) return { allow: true }
   const isOwner =
     session.owner.sub === user.sub && session.owner.iss === user.iss
   if (!isOwner) {
@@ -229,10 +230,10 @@ export async function createDesktopSession(
   via: 'session' | 'pat',
   body: SessionCreateBody,
 ): Promise<DesktopSession> {
-  const gate = authorizeSessionCreate(user)
+  const gate = await authorizeSessionCreate(user)
   if (!gate.allow) throw new Error(gate.reason || 'Forbidden')
 
-  const active = countActiveForOwner(user.sub, user.iss)
+  const active = await countActiveForOwner(user.sub, user.iss)
   if (active >= env.sessionsMaxPerUser) {
     throw new Error(
       `SESSIONS_MAX_PER_USER (${env.sessionsMaxPerUser}) reached`,
@@ -265,7 +266,7 @@ export async function createDesktopSession(
   const id = newSessionId()
   const actor = actorFromUser(user)
   const resolved = await resolveWorkspaceInputs(user, rawInputs)
-  authorizeNewWorkspaces(user, resolved)
+  await authorizeNewWorkspaces(user, resolved)
 
   // From here on, workspaces created on demand are rolled back if creation fails.
   const created: string[] = []
@@ -278,7 +279,7 @@ export async function createDesktopSession(
   try {
     const inputs = await createOnDemandWorkspaces(user, via, id, resolved, created)
     mounts = assignMountPaths(inputs)
-    const mountGate = authorizeSessionMounts(user, mounts)
+    const mountGate = await authorizeSessionMounts(user, mounts)
     if (!mountGate.allow) {
       throw new Error(mountGate.reason || 'mount requires repository access')
     }
@@ -333,13 +334,13 @@ export async function createDesktopSession(
     notices,
   })
   try {
-    appendSession(session)
+    await appendSession(session)
   } catch (err) {
     await releaseSessionLeases(session, 'create_failed')
     await rollback()
     throw err
   }
-  appendAudit({
+  await appendAudit({
     actor: session.owner,
     via,
     method: 'POST',
@@ -364,11 +365,11 @@ export async function teardownWorkspaceMounts(
   provisioner: { destroy: (s: DesktopSession) => Promise<void> },
   reason: string,
 ): Promise<void> {
-  const cur = getSessionRecord(session.id) ?? session
+  const cur = await getSessionRecord(session.id) ?? session
   if (workspaceMountsOf(cur).length === 0) return
   await provisioner.destroy(cur).catch(() => undefined)
   await releaseSessionLeases(cur, reason).catch((e) => console.warn('[sessions] lease release failed:', e))
-  updateSession(cur.id, { mounts: clearedLeaseMounts(getSessionRecord(cur.id)?.mounts ?? cur.mounts) })
+  await updateSession(cur.id, { mounts: clearedLeaseMounts((await getSessionRecord(cur.id))?.mounts ?? cur.mounts) })
 }
 
 const provisioningInFlight = new Set<string>()
@@ -376,7 +377,7 @@ const provisioningInFlight = new Set<string>()
 async function provisionInBackground(id: string): Promise<void> {
   if (provisioningInFlight.has(id)) return
   provisioningInFlight.add(id)
-  const session = getSessionRecord(id)
+  const session = await getSessionRecord(id)
   if (!session) {
     provisioningInFlight.delete(id)
     return
@@ -392,8 +393,8 @@ async function provisionInBackground(id: string): Promise<void> {
   try {
     // On-demand workspaces: wait until ready, then lease them (§ Sessions 11a).
     if (!(await leasePendingMounts(id))) return
-    const result = await provisioner.provision(getSessionRecord(id) ?? session)
-    updateSession(id, {
+    const result = await provisioner.provision(await getSessionRecord(id) ?? session)
+    await updateSession(id, {
       status: 'ready',
       endpoints: result.endpoints,
       runtime_id: result.runtimeId,
@@ -402,7 +403,7 @@ async function provisionInBackground(id: string): Promise<void> {
       last_activity_at: new Date().toISOString(),
       error: null,
     })
-    appendAudit({
+    await appendAudit({
       actor: session.owner,
       via: session.via,
       method: 'POST',
@@ -415,13 +416,13 @@ async function provisionInBackground(id: string): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'provision failed'
     console.error(`[sessions] provision ${id} failed:`, msg)
-    updateSession(id, {
+    await updateSession(id, {
       status: 'failed',
       error: msg,
       stopped_at: new Date().toISOString(),
     })
     await teardownWorkspaceMounts(session, provisioner, 'provision_failed')
-    appendAudit({
+    await appendAudit({
       actor: session.owner,
       via: session.via,
       method: 'POST',
@@ -431,7 +432,7 @@ async function provisionInBackground(id: string): Promise<void> {
       message: msg,
       detail: { session_id: id, failed: true },
     })
-    appendAudit({
+    await appendAudit({
       actor: session.owner,
       via: session.via,
       method: 'POST',
@@ -446,38 +447,37 @@ async function provisionInBackground(id: string): Promise<void> {
 }
 
 /** Resume or fail Sessions left in `provisioning` after auth restart. */
-export function resumeInterruptedProvisions(): void {
-  for (const s of listSessions()) {
-    if (s.status !== 'provisioning') continue
+export async function resumeInterruptedProvisions(): Promise<void> {
+  for (const s of await listSessionsWithStatus('provisioning')) {
     console.log(`[sessions] resuming interrupted provision ${s.id}`)
     void provisionInBackground(s.id)
   }
 }
 
-export function listDesktopSessions(opts: {
+export async function listDesktopSessions(opts: {
   user: SessionUser
   all?: boolean
   workspaceId?: string
   /** Sessions mounting any workspace of this repo (both required together). */
   namespace?: string
   repo?: string
-}): PublicDesktopSession[] {
-  const admin = decideInstanceAction(opts.user, 'session.admin').allow
-  return listSessions()
-    .filter((s) => s.status !== 'destroyed')
-    .filter((s) => !opts.workspaceId || workspaceIdsOf(s).includes(opts.workspaceId))
+}): Promise<PublicDesktopSession[]> {
+  const admin = (await decideInstanceAction(opts.user, 'session.admin')).allow
+  return ((((((await listSessions())
+    .filter((s) => s.status !== 'destroyed'))
+    .filter((s) => !opts.workspaceId || workspaceIdsOf(s).includes(opts.workspaceId)))
     .filter(
       (s) =>
         !opts.namespace ||
         workspaceMountsOf(s).some((m) => m.namespace === opts.namespace && (!opts.repo || m.repo === opts.repo)),
-    )
+    ))
     .filter(
       (s) =>
         opts.all && admin
           ? true
           : s.owner.sub === opts.user.sub && s.owner.iss === opts.user.iss,
-    )
-    .map(publicSession)
+    ))
+    .map(publicSession))
 }
 
 export async function connectDesktopSession(
@@ -485,11 +485,11 @@ export async function connectDesktopSession(
   via: 'session' | 'pat',
   id: string,
 ): Promise<{ session: PublicDesktopSession; connect: ConnectPayload }> {
-  const session = getSessionRecord(id)
+  const session = await getSessionRecord(id)
   if (!session || session.status === 'destroyed') {
     throw Object.assign(new Error('Not found'), { status: 404 })
   }
-  const gate = authorizeSessionAccess(user, session, 'connect')
+  const gate = await authorizeSessionAccess(user, session, 'connect')
   if (!gate.allow) {
     throw Object.assign(new Error(gate.reason || 'Forbidden'), { status: 403 })
   }
@@ -508,7 +508,7 @@ export async function connectDesktopSession(
     )
   }
   const mounts = session.mounts ?? []
-  const mountGate = authorizeSessionMounts(user, mounts)
+  const mountGate = await authorizeSessionMounts(user, mounts)
   if (!mountGate.allow) {
     throw Object.assign(
       new Error(
@@ -521,14 +521,14 @@ export async function connectDesktopSession(
   const connect = await mintConnectPayload(session)
   const now = new Date().toISOString()
   const updated =
-    updateSession(id, {
+    await updateSession(id, {
       status: 'connected',
       connected_at: now,
       last_activity_at: now,
       rustguac_session_id:
         connect.backend === 'rustguac' ? connect.ticket : null,
     }) ?? session
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -550,25 +550,25 @@ export async function stopDesktopSession(
   via: 'session' | 'pat',
   id: string,
 ): Promise<PublicDesktopSession> {
-  const session = getSessionRecord(id)
+  const session = await getSessionRecord(id)
   if (!session || session.status === 'destroyed') {
     throw Object.assign(new Error('Not found'), { status: 404 })
   }
-  const gate = authorizeSessionAccess(user, session, 'stop')
+  const gate = await authorizeSessionAccess(user, session, 'stop')
   if (!gate.allow) {
     throw Object.assign(new Error(gate.reason || 'Forbidden'), { status: 403 })
   }
-  updateSession(id, { status: 'stopping' })
+  await updateSession(id, { status: 'stopping' })
   const provisioner = getSessionProvisioner(session.provisioner)
   await provisioner.stop(session)
   await teardownWorkspaceMounts(session, provisioner, 'session_stopped')
   const updated =
-    updateSession(id, {
+    await updateSession(id, {
       status: 'stopped',
       stopped_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
     }) ?? session
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -586,11 +586,11 @@ export async function retryDesktopSession(
   via: 'session' | 'pat',
   id: string,
 ): Promise<PublicDesktopSession> {
-  const session = getSessionRecord(id)
+  const session = await getSessionRecord(id)
   if (!session || session.status === 'destroyed') {
     throw Object.assign(new Error('Not found'), { status: 404 })
   }
-  const gate = authorizeSessionAccess(user, session, 'stop')
+  const gate = await authorizeSessionAccess(user, session, 'stop')
   if (!gate.allow) {
     throw Object.assign(new Error(gate.reason || 'Forbidden'), { status: 403 })
   }
@@ -600,17 +600,10 @@ export async function retryDesktopSession(
       { status: 409 },
     )
   }
-  // Legacy commit-pin mounts are no longer supported: start without them, with a notice.
-  const legacy = session.mounts.filter((m) => !isWorkspaceMount(m))
-  let mounts = session.mounts.filter(isWorkspaceMount)
-  // Lease-derived notices are recomputed; legacy-mount notices are kept.
-  const notices = (session.notices ?? []).filter((n) => n.startsWith('legacy commit-pin mount'))
-  for (const m of legacy) {
-    const msg = `legacy commit-pin mount ${m.namespace}/${m.repo}#${String(m.pin_commit).slice(0, 8)} is no longer supported; started without it`
-    if (!notices.includes(msg)) notices.push(msg)
-  }
+  let mounts = session.mounts
+  const notices: string[] = []
   if (workspaceMountsOf(session).length > 0) {
-    const mountGate = authorizeSessionMounts(user, mounts)
+    const mountGate = await authorizeSessionMounts(user, mounts)
     if (!mountGate.allow) {
       throw Object.assign(new Error(mountGate.reason || 'Forbidden'), { status: 403 })
     }
@@ -626,7 +619,7 @@ export async function retryDesktopSession(
     }
   }
   const updated =
-    updateSession(id, {
+    await updateSession(id, {
       status: 'provisioning',
       mounts,
       notices,
@@ -637,7 +630,7 @@ export async function retryDesktopSession(
       stopped_at: null,
       last_activity_at: new Date().toISOString(),
     }) ?? session
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -661,11 +654,11 @@ export async function remountDesktopSession(
   id: string,
   sel: { workspace_id?: string; mount_path?: string } = {},
 ): Promise<PublicDesktopSession> {
-  const session = getSessionRecord(id)
+  const session = await getSessionRecord(id)
   if (!session || session.status === 'destroyed') {
     throw Object.assign(new Error('Not found'), { status: 404 })
   }
-  const gate = authorizeSessionAccess(user, session, 'stop')
+  const gate = await authorizeSessionAccess(user, session, 'stop')
   if (!gate.allow) {
     throw Object.assign(new Error(gate.reason || 'Forbidden'), { status: 403 })
   }
@@ -682,7 +675,7 @@ export async function remountDesktopSession(
   if (targets.length === 0) {
     throw Object.assign(new Error('No read-only workspace mount that was requested read-write'), { status: 409 })
   }
-  const mountGate = authorizeSessionMounts(user, session.mounts.map((m) => ({ ...m, effective_mode: m.mount_mode })))
+  const mountGate = await authorizeSessionMounts(user, session.mounts.map((m) => ({ ...m, effective_mode: m.mount_mode })))
   if (!mountGate.allow) {
     throw Object.assign(new Error(mountGate.reason || 'Forbidden'), { status: 403 })
   }
@@ -704,7 +697,7 @@ export async function remountDesktopSession(
   try {
     out = await acquireSessionLeases({ ...session, mounts: released })
   } catch (err) {
-    updateSession(id, {
+    await updateSession(id, {
       status: 'failed',
       mounts: released,
       error: err instanceof Error ? err.message : 'remount failed',
@@ -715,7 +708,7 @@ export async function remountDesktopSession(
     throw Object.assign(new Error(err instanceof Error ? err.message : 'remount failed'), { status })
   }
   const updated =
-    updateSession(id, {
+    await updateSession(id, {
       status: 'provisioning',
       mounts: out.mounts,
       notices: out.notices,
@@ -727,7 +720,7 @@ export async function remountDesktopSession(
       connected_at: null,
       last_activity_at: new Date().toISOString(),
     }) ?? session
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -751,11 +744,11 @@ export async function updateSessionMounts(
   id: string,
   rawInputs: SessionMountInput[],
 ): Promise<PublicDesktopSession> {
-  const session = getSessionRecord(id)
+  const session = await getSessionRecord(id)
   if (!session || session.status === 'destroyed') {
     throw Object.assign(new Error('Not found'), { status: 404 })
   }
-  const gate = authorizeSessionAccess(user, session, 'stop')
+  const gate = await authorizeSessionAccess(user, session, 'stop')
   if (!gate.allow) throw Object.assign(new Error(gate.reason || 'Forbidden'), { status: 403 })
   if (!['ready', 'connected', 'stopped', 'failed'].includes(session.status)) {
     throw Object.assign(new Error(`Mounts cannot be changed while status=${session.status}`), { status: 409 })
@@ -769,7 +762,7 @@ export async function updateSessionMounts(
   }
   const before = workspaceMountsOf(session).map(mountAuditDetail)
   const resolved = await resolveWorkspaceInputs(user, rawInputs)
-  authorizeNewWorkspaces(user, resolved)
+  await authorizeNewWorkspaces(user, resolved)
 
   const created: string[] = []
   const rollback = async () => {
@@ -781,7 +774,7 @@ export async function updateSessionMounts(
     const inputs = await createOnDemandWorkspaces(user, via, id, resolved, created)
     const keep = new Map(workspaceMountsOf(session).map((m) => [m.workspace_id!, m.mount_path]))
     mounts = assignMountPaths(inputs, keep)
-    const mountGate = authorizeSessionMounts(user, mounts)
+    const mountGate = await authorizeSessionMounts(user, mounts)
     if (!mountGate.allow) throw new SessionWorkspaceError(mountGate.reason || 'mount requires repository access', 403)
   } catch (err) {
     await rollback()
@@ -801,7 +794,7 @@ export async function updateSessionMounts(
     }
   } catch (err) {
     await rollback()
-    updateSession(id, {
+    await updateSession(id, {
       status: 'failed',
       mounts: [],
       notices: [],
@@ -814,7 +807,7 @@ export async function updateSessionMounts(
   }
   const first = out.mounts[0] ?? null
   const updated =
-    updateSession(id, {
+    await updateSession(id, {
       status: 'provisioning',
       mounts: out.mounts,
       notices: out.notices,
@@ -830,7 +823,7 @@ export async function updateSessionMounts(
       connected_at: null,
       last_activity_at: new Date().toISOString(),
     }) ?? session
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'PUT',
@@ -848,12 +841,12 @@ export async function destroyDesktopSession(
   via: 'session' | 'pat',
   id: string,
 ): Promise<PublicDesktopSession> {
-  const session = getSessionRecord(id)
+  const session = await getSessionRecord(id)
   if (!session) {
     throw Object.assign(new Error('Not found'), { status: 404 })
   }
   if (session.status === 'destroyed') return publicSession(session)
-  const gate = authorizeSessionAccess(user, session, 'destroy')
+  const gate = await authorizeSessionAccess(user, session, 'destroy')
   if (!gate.allow) {
     throw Object.assign(new Error(gate.reason || 'Forbidden'), { status: 403 })
   }
@@ -861,13 +854,13 @@ export async function destroyDesktopSession(
   await provisioner.destroy(session)
   await teardownWorkspaceMounts(session, provisioner, 'session_destroyed')
   const updated =
-    updateSession(id, {
+    await updateSession(id, {
       status: 'destroyed',
       destroyed_at: new Date().toISOString(),
       endpoints: null,
       runtime_id: null,
     }) ?? session
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'DELETE',
@@ -879,20 +872,20 @@ export async function destroyDesktopSession(
   return publicSession(updated)
 }
 
-export function markSessionDisconnect(
+export async function markSessionDisconnect(
   user: SessionUser,
   via: 'session' | 'pat',
   id: string,
-): PublicDesktopSession | null {
-  const session = getSessionRecord(id)
+): Promise<PublicDesktopSession | null> {
+  const session = await getSessionRecord(id)
   if (!session) return null
-  const gate = authorizeSessionAccess(user, session, 'connect')
+  const gate = await authorizeSessionAccess(user, session, 'connect')
   if (!gate.allow) return null
-  const updated = updateSession(id, {
+  const updated = await updateSession(id, {
     status: session.status === 'destroyed' ? 'destroyed' : 'ready',
     last_activity_at: new Date().toISOString(),
   })
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -909,7 +902,7 @@ export function startSessionsLifecycleSweeper(): void {
   if (!env.sessionsEnabled) return
   const tick = async () => {
     const now = Date.now()
-    for (const s of listSessions()) {
+    for (const s of await listSessions()) {
       if (
         s.status !== 'ready' &&
         s.status !== 'connected' &&
@@ -927,12 +920,12 @@ export function startSessionsLifecycleSweeper(): void {
           const provisioner = getSessionProvisioner(s.provisioner)
           await provisioner.destroy(s)
           await teardownWorkspaceMounts(s, provisioner, 'max_lifetime')
-          updateSession(s.id, {
+          await updateSession(s.id, {
             status: 'destroyed',
             destroyed_at: new Date().toISOString(),
             error: 'max lifetime exceeded',
           })
-          appendAudit({
+          await appendAudit({
             actor: s.owner,
             via: s.via,
             method: 'SYSTEM',
@@ -961,12 +954,12 @@ export function startSessionsLifecycleSweeper(): void {
           const provisioner = getSessionProvisioner(s.provisioner)
           await provisioner.stop(s)
           await teardownWorkspaceMounts(s, provisioner, 'idle_timeout')
-          updateSession(s.id, {
+          await updateSession(s.id, {
             status: 'stopped',
             stopped_at: new Date().toISOString(),
             error: 'idle timeout',
           })
-          appendAudit({
+          await appendAudit({
             actor: s.owner,
             via: s.via,
             method: 'SYSTEM',

@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
@@ -293,9 +294,9 @@ describe('proxy author injection fails closed', () => {
   })
 
   it('answers 403, not 400, and writes no rejection row for an unauthorized Principal', async () => {
-    setAuthzEnforce(true)
+    await setAuthzEnforce(true)
     try {
-      const before = queryAudit({ action: 'request.rejected', limit: 100 }).events.length
+      const before = (await queryAudit({ action: 'request.rejected', limit: 100 })).events.length
       const res = await send('/api/repos/a/b/branches', {
         contentType: 'application/json',
         body: 'not json',
@@ -303,11 +304,11 @@ describe('proxy author injection fails closed', () => {
       assert.equal(res.status, 403)
       assert.equal(received.length, 0)
       assert.equal(
-        queryAudit({ action: 'request.rejected', limit: 100 }).events.length,
+        (await queryAudit({ action: 'request.rejected', limit: 100 })).events.length,
         before,
       )
     } finally {
-      setAuthzEnforce(false)
+      await setAuthzEnforce(false)
     }
   })
 
@@ -316,18 +317,18 @@ describe('proxy author injection fails closed', () => {
       contentType: 'application/json',
       body: 'not json',
     })
-    const [event] = queryAudit({ action: 'request.rejected', limit: 1 }).events
+    const [event] = (await queryAudit({ action: 'request.rejected', limit: 1 })).events
     assert.equal(event!.namespace, 'acme')
     assert.equal(event!.repo, 'data')
   })
 
   it('audits the rejection', async () => {
-    const before = queryAudit({ action: 'request.rejected', limit: 100 }).events.length
+    const before = (await queryAudit({ action: 'request.rejected', limit: 100 })).events.length
     await send('/api/repos/a/b/branches', {
       contentType: 'application/json',
       body: 'not json',
     })
-    const events = queryAudit({ action: 'request.rejected', limit: 100 }).events
+    const events = (await queryAudit({ action: 'request.rejected', limit: 100 })).events
     assert.equal(events.length, before + 1)
     assert.equal(events[0]!.status, 400)
     assert.equal(events[0]!.actor.sub, 'alice')

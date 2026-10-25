@@ -17,6 +17,6 @@ export type AuditFn = (
   user: Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>,
   via: AuditVia,
   fields: AuditFields,
-) => void
+) => Promise<void>
 
 export type AuditDep = { audit: AuditFn }

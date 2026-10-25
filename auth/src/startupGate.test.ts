@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { chmodSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -147,11 +148,11 @@ describe('production startup gate', () => {
     assert.doesNotThrow(() => assertProductionStartup({ NODE_ENV: 'development' }))
   })
 
-  it('keeps AuthZ enforcement on in production regardless of env or store', () => {
+  it('keeps AuthZ enforcement on in production regardless of env or store', async () => {
     const prev = process.env.NODE_ENV
     process.env.NODE_ENV = 'production'
     try {
-      assert.equal(isAuthzEnforce(), true)
+      assert.equal(await isAuthzEnforce(), true)
     } finally {
       if (prev === undefined) delete process.env.NODE_ENV
       else process.env.NODE_ENV = prev

@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,7 +17,7 @@ const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
-maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
+await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
 
 const app = new Hono()
 registerServicePrincipalRoutes(app)
@@ -28,8 +29,8 @@ const call = async (as: string | null, method: string, path: string, body?: unkn
     body: body ? JSON.stringify(body) : undefined,
   })
 
-describe('service principal routes', () => {
-  it('admins create and list; non-admins and anonymous cannot', async () => {
+await describe('service principal routes', async () => {
+  await it('admins create and list; non-admins and anonymous cannot', async () => {
     assert.equal((await call(null, 'GET', '/auth/instance/service-principals')).status, 401)
     assert.equal((await call('alice', 'POST', '/auth/instance/service-principals', { name: 'ci', owner: mk('alice') })).status, 403)
     assert.equal((await call('root', 'POST', '/auth/instance/service-principals', { name: 'ci' })).status, 400)
@@ -39,7 +40,7 @@ describe('service principal routes', () => {
     assert.equal(list.servicePrincipals.length, 1)
   })
 
-  it('lets the owner mint a PAT (expiry rules apply) and admin reassign; others are refused', async () => {
+  await it('lets the owner mint a PAT (expiry rules apply) and admin reassign; others are refused', async () => {
     const { servicePrincipal } = (await (await call('root', 'POST', '/auth/instance/service-principals', { name: 'ci2', owner: mk('bob') })).json()) as { servicePrincipal: { id: string } }
     const tokens = `/auth/instance/service-principals/${servicePrincipal.id}/tokens`
     assert.equal((await call('mallory', 'POST', tokens, {})).status, 403)
@@ -47,7 +48,7 @@ describe('service principal routes', () => {
     const ok = await call('bob', 'POST', tokens, { label: 'ci' })
     assert.equal(ok.status, 201)
     const { token } = (await ok.json()) as { token: string }
-    assert.equal(resolvePat(token)?.sub, servicePrincipal.id)
+    assert.equal((await resolvePat(token))?.sub, servicePrincipal.id)
     const re = `/auth/instance/service-principals/${servicePrincipal.id}/reassign`
     assert.equal((await call('bob', 'POST', re, { owner: mk('carl') })).status, 403)
     assert.equal((await call('root', 'POST', re, { owner: mk('carl') })).status, 200)

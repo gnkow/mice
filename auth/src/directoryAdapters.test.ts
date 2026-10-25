@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { fakeClock } from './clock.js'
@@ -82,10 +83,10 @@ describe('Keycloak directory adapter', () => {
   })
 })
 
-describe('directory search service over a fake Directory', () => {
-  const created = createNamespaceAuthz({ ...t.admin }, 'ns-a', 'none', true)
+describe('directory search service over a fake Directory', async () => {
+  const created = await createNamespaceAuthz({ ...t.admin }, 'ns-a', 'none', true)
   assert.equal(created.ok, true)
-  setNamespaceMember('ns-a', { sub: 'local-lee', iss: 'test' }, 'member')
+  await setNamespaceMember('ns-a', { sub: 'local-lee', iss: 'test' }, 'member')
 
   it('merges directory and local hits as mixed', async () => {
     const directory = createFakeDirectory({

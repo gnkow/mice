@@ -116,8 +116,8 @@ export async function mountSpecFor(
   const authz =
     opts.authorize?.(mode, opts.user, ws) ??
     (mode === 'rw'
-      ? authorizeRepoAction(opts.user, ws.namespace, ws.repo, 'workspace.write')
-      : authorizeRepoAction(opts.user, ws.namespace, ws.repo, 'workspace.read'))
+      ? await authorizeRepoAction(opts.user, ws.namespace, ws.repo, 'workspace.write')
+      : await authorizeRepoAction(opts.user, ws.namespace, ws.repo, 'workspace.read'))
   if (!authz.allow) throw new LeaseError(authz.reason ?? 'Forbidden', 403)
   if (ws.status !== 'ready') throw new LeaseError(`workspace is ${ws.status}`, 409)
   if (!validMountDest(dest)) throw new LeaseError('invalid mount destination', 400)

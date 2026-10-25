@@ -1,131 +1,95 @@
-import { join } from 'node:path'
-import { env } from './env.js'
-import { createDocumentStore } from './stores.js'
+import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { favorites } from './db/schema.js'
 import type { AuditEvent } from './audit.js'
 
 export const FAVORITE_TYPES = ['namespace', 'repo', 'branch', 'stage', 'job', 'session'] as const
 export type FavoriteType = (typeof FAVORITE_TYPES)[number]
 
-/** Accepts the deprecated `workspace` alias; returns null for unknown types. */
+/** Returns null for unknown types. */
 export function normalizeFavoriteType(t: unknown): FavoriteType | null {
-  if (t === 'workspace') return 'stage'
   return typeof t === 'string' && (FAVORITE_TYPES as readonly string[]).includes(t)
     ? (t as FavoriteType)
     : null
 }
 
 export type FavoriteRow = { type: FavoriteType; id: string; at: string }
-type FavoritesFile = { users: Record<string, FavoriteRow[]> }
-
-function path(): string {
-  return join(env.dataDir, 'favorites.json')
-}
 
 export function favoriteUserKey(user: { iss: string; sub: string }): string {
   return JSON.stringify([user.iss, user.sub])
 }
 
-const doc = createDocumentStore<FavoritesFile>({ path, initial: () => ({ users: {} }), onCorrupt: 'initial' })
-
-function read(): FavoritesFile {
-  const f = doc.read()
-  if (!f || typeof f.users !== 'object' || !f.users) return { users: {} }
-  // Legacy rows stored type `workspace`; expose them as `stage`.
-  for (const [key, rows] of Object.entries(f.users)) {
-    const seen = new Set<string>()
-    f.users[key] = rows
-      .map((r) => ({ ...r, type: normalizeFavoriteType(r.type) as FavoriteType }))
-      .filter((r) => {
-        if (!r.type) return false
-        const k = `${r.type}\0${r.id}`
-        if (seen.has(k)) return false
-        seen.add(k)
-        return true
-      })
-  }
-  return f
-}
-
-export function listFavorites(userKey: string): FavoriteRow[] {
-  return [...(read().users[userKey] ?? [])].sort((a, b) => b.at.localeCompare(a.at))
+export async function listFavorites(userKey: string): Promise<FavoriteRow[]> {
+  const rows = await getDb().select().from(favorites).where(eq(favorites.userKey, userKey)).orderBy(desc(favorites.at))
+  return rows.map((r) => ({ type: r.type as FavoriteType, id: r.id, at: r.at.toISOString() }))
 }
 
 /** Idempotent; returns true when newly added. */
-export function addFavorite(userKey: string, type: FavoriteType, id: string): boolean {
-  const f = read()
-  const rows = (f.users[userKey] ??= [])
-  if (rows.some((r) => r.type === type && r.id === id)) return false
-  rows.push({ type, id, at: new Date().toISOString() })
-  doc.write(f)
-  return true
+export async function addFavorite(userKey: string, type: FavoriteType, id: string): Promise<boolean> {
+  const added = await getDb()
+    .insert(favorites)
+    .values({ userKey, type, id, at: new Date() })
+    .onConflictDoNothing()
+    .returning({ id: favorites.id })
+  return added.length > 0
 }
 
-export function removeFavorite(userKey: string, type: FavoriteType, id: string): boolean {
-  const f = read()
-  const rows = f.users[userKey] ?? []
-  const next = rows.filter((r) => !(r.type === type && r.id === id))
-  if (next.length === rows.length) return false
-  f.users[userKey] = next
-  doc.write(f)
-  return true
+export async function removeFavorite(userKey: string, type: FavoriteType, id: string): Promise<boolean> {
+  const gone = await getDb()
+    .delete(favorites)
+    .where(and(eq(favorites.userKey, userKey), eq(favorites.type, type), eq(favorites.id, id)))
+    .returning({ id: favorites.id })
+  return gone.length > 0
 }
 
 /** Remove matching favorites for every user. Returns how many rows were dropped. */
-export function purgeFavorites(match: (row: FavoriteRow) => boolean): number {
-  const f = read()
-  let n = 0
-  for (const [key, rows] of Object.entries(f.users)) {
-    const next = rows.filter((r) => !match(r))
-    n += rows.length - next.length
-    if (next.length) f.users[key] = next
-    else delete f.users[key]
-  }
-  if (n) doc.write(f)
-  return n
+async function purgeWhere(where: SQL): Promise<number> {
+  const gone = await getDb().delete(favorites).where(where).returning({ id: favorites.id })
+  return gone.length
 }
 
-function inRepo(row: FavoriteRow, ns: string, repo?: string): boolean {
-  if (row.type === 'namespace') return false
-  if (row.type === 'job' || row.type === 'session') return false
-  const prefix = repo ? `${ns}/${repo}` : `${ns}/`
-  return repo ? row.id === prefix || row.id.startsWith(`${prefix}@`) || row.id.startsWith(`${prefix}!`) : row.id.startsWith(prefix)
-}
+const startsWith = (prefix: string) => sql`starts_with(${favorites.id}, ${prefix})`
+const target = (type: FavoriteType, id: string) => and(eq(favorites.type, type), eq(favorites.id, id))
+const repoScoped = inArray(favorites.type, ['repo', 'branch', 'stage'])
 
 /** Delete favorites that point at entities removed by an audited mutation. */
-export function purgeFavoritesForAudit(event: AuditEvent): void {
+export async function purgeFavoritesForAudit(event: AuditEvent): Promise<void> {
   if (event.status < 200 || event.status >= 300) return
   const d = event.detail ?? {}
   const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
   switch (event.action) {
     case 'namespace.delete':
       if (event.namespace) {
-        const ns = event.namespace
-        purgeFavorites((r) => (r.type === 'namespace' && r.id === ns) || inRepo(r, ns))
+        await purgeWhere(or(target('namespace', event.namespace), and(repoScoped, startsWith(`${event.namespace}/`)))!)
       }
       break
     case 'repo.delete':
       if (event.namespace && event.repo) {
-        const { namespace: ns, repo } = event
-        purgeFavorites((r) => (r.type === 'repo' && r.id === `${ns}/${repo}`) || inRepo(r, ns, repo))
+        const prefix = `${event.namespace}/${event.repo}`
+        await purgeWhere(
+          or(
+            target('repo', prefix),
+            and(
+              inArray(favorites.type, ['branch', 'stage']),
+              or(eq(favorites.id, prefix), startsWith(`${prefix}@`), startsWith(`${prefix}!`)),
+            ),
+          )!,
+        )
       }
       break
     case 'branch.delete': {
       const b = str(d.branch)
-      if (event.namespace && event.repo && b) {
-        purgeFavorites((r) => r.type === 'branch' && r.id === `${event.namespace}/${event.repo}@${b}`)
-      }
+      if (event.namespace && event.repo && b) await purgeWhere(target('branch', `${event.namespace}/${event.repo}@${b}`)!)
       break
     }
     case 'workspace.delete': {
       const w = str(d.workspace_id)
-      if (event.namespace && event.repo && w) {
-        purgeFavorites((r) => r.type === 'stage' && r.id === `${event.namespace}/${event.repo}!${w}`)
-      }
+      if (event.namespace && event.repo && w) await purgeWhere(target('stage', `${event.namespace}/${event.repo}!${w}`)!)
       break
     }
     case 'session.destroy': {
       const s = str(d.session_id)
-      if (s) purgeFavorites((r) => r.type === 'session' && r.id === s)
+      if (s) await purgeWhere(target('session', s)!)
       break
     }
   }

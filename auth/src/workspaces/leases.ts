@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { createDiskDocument, type DiskDocument } from '../stores.js'
+import { createDiskDocument, type DiskDocument } from '../diskStore.js'
 import type { WorkspacesConfig } from './config.js'
 import type { ScanResult } from './scan.js'
 
@@ -310,7 +310,7 @@ export class LeaseStore {
    */
   async reconcile(opts: {
     workspaceExists: (id: string) => boolean
-    holderState?: (h: LeaseHolder) => HolderState | 'unknown'
+    holderState?: (h: LeaseHolder) => HolderState | 'unknown' | Promise<HolderState | 'unknown'>
   }): Promise<Array<{ lease: Lease; reason: 'expired' | 'workspace_gone' | 'holder_gone' }>> {
     const out: Array<{ lease: Lease; reason: 'expired' | 'workspace_gone' | 'holder_gone' }> = []
     for (const l of [...this.leases.values()]) {
@@ -318,7 +318,7 @@ export class LeaseStore {
       if (this.isExpired(l)) reason = 'expired'
       else if (!opts.workspaceExists(l.workspace_id)) reason = 'workspace_gone'
       else if (opts.holderState && this.now() - Date.parse(l.created_at) >= this.cfg.leaseOrphanGraceMs) {
-        if (opts.holderState(l.holder) === 'gone') reason = 'holder_gone'
+        if ((await opts.holderState(l.holder)) === 'gone') reason = 'holder_gone'
       }
       if (!reason) continue
       const released = await this.release(l.id)

@@ -1,5 +1,5 @@
 import { env } from './env.js'
-import { getServicePrincipal } from './servicePrincipals.js'
+import { peekServicePrincipal } from './servicePrincipals.js'
 import { currentClock } from './clock.js'
 import { kindOf, principalKey } from './principal.js'
 
@@ -93,7 +93,7 @@ export function resolveReason(input: {
   let picked: ResolvedReason | undefined
   if (explicit) picked = { reason: explicit, reason_source: 'explicit' }
   else if (kindOf(input.actor) === 'service') {
-    const registered = clean(getServicePrincipal(input.actor.sub)?.reason)
+    const registered = clean(peekServicePrincipal(input.actor.sub)?.reason)
     if (registered) picked = { reason: registered, reason_source: 'registered' }
   } else {
     const message = clean(input.message)

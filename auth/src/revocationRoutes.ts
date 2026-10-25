@@ -8,9 +8,9 @@ import { guarded } from './routeGuard.js'
 export function registerRevocationRoutes(app: Hono): void {
   app.post(
     '/auth/instance/revoke-sessions',
-    guarded({ body: { required: ['sub', 'iss'] } }, ({ c, user, body }) => {
+    guarded({ body: { required: ['sub', 'iss'] } }, async ({ c, user, body }) => {
       const target = { sub: body.sub as string, iss: body.iss as string }
-      const result = offboard(target, {
+      const result = await offboard(target, {
         scope: 'all',
         cause: 'admin-revocation',
         actor: actorFromUser(user),

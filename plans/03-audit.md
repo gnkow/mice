@@ -1,5 +1,7 @@
 # AUDIT — PLAT-AUDIT implementation plan
 
+> **Storage update (ADR 0004/0005):** this plan was written for JSON/JSONL files under `AUTH_DATA_DIR`. Those stores are now PostgreSQL, immudb (audit) and Novu (notifications); file names and file-based mechanics below are historical. See [16-operations.md](./16-operations.md) section 2.3.
+
 Living design and phased plan for epic [`PLAT-AUDIT`](./EPICS.md#plat-audit--gxp-oriented-change-audit): append-only, attributable audit of mutations through the auth BFF.
 
 Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [README.md](../README.md)

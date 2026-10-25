@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { isolatedAuth } from './testSupport.js'
@@ -29,8 +30,8 @@ app.post(
 app.post('/unshaped', guarded({}, () => {
   throw new Error('boom')
 }))
-app.post('/audited', guarded({}, ({ c, audit }) => {
-  audit({ action: 'test.audited', message: 'did it', namespace: 'ns1', detail: { n: 1 } })
+app.post('/audited', guarded({}, async ({ c, audit }) => {
+  await audit({ action: 'test.audited', message: 'did it', namespace: 'ns1', detail: { n: 1 } })
   return c.json({ ok: true })
 }))
 app.get('/deny', guarded({}, ({ deny }) =>
@@ -65,7 +66,7 @@ describe('route entry', () => {
 
   it('audits as the caller with the request method and path', async () => {
     await app.request('http://localhost/audited', { method: 'POST', headers: await ctx.sessionHeaders(ann) })
-    const e = queryAudit({ action: 'test.audited' }).events[0]!
+    const e = (await queryAudit({ action: 'test.audited' })).events[0]!
     assert.deepEqual(
       [e.actor.sub, e.via, e.method, e.path, e.status, e.namespace, e.message, e.detail],
       ['ann', 'session', 'POST', '/audited', 200, 'ns1', 'did it', { n: 1 }],

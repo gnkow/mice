@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { isolatedAuth } from './testSupport.js'
@@ -8,16 +9,33 @@ const { setUpstreamFetch } = await import('./proxy.js')
 const { preparePrincipal } = await import('./authz.js')
 const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
-const { appendAudit, verifyAudit } = await import('./audit.js')
-const { readText, useJsonBackend, writeText } = await import('./jsonStore.js')
+const { appendAudit, useAuditLedger, verifyAudit } = await import('./audit.js')
+const { immudbConfig, openLedger } = await import('./auditLedger.js')
 
-const FILE = '/mice-memory-data/audit.jsonl'
+const real = await openLedger(immudbConfig())
+let failAppends = false
+let altered = new Set<number>()
+let readAllCalls = 0
+const ledger = {
+  ...real,
+  append: async (id: string, value: string) => {
+    if (failAppends) throw new Error('immudb: no space left on device')
+    return real.append(id, value)
+  },
+  readAll: () => {
+    readAllCalls++
+    return real.readAll()
+  },
+  verify: (opts?: Parameters<typeof real.verify>[0]) =>
+    real.verify({ ...opts, tamper: (r) => (altered.has(r.seq) ? { ...r, value: r.value.replace('"action":"file.write"', '"action":"file.read"') } : r) }),
+}
+useAuditLedger(ledger)
 const admin = iso.admin
-preparePrincipal(admin)
+await preparePrincipal(admin)
 const writer = iso.person('intent-writer')
-createNamespaceAuthz(admin, 'in', 'none', true)
-setRepoCollaborator('in', 'r', writer, 'write')
-preparePrincipal(writer)
+await createNamespaceAuthz(admin, 'in', 'none', true)
+await setRepoCollaborator('in', 'r', writer, 'write')
+await preparePrincipal(writer)
 
 type Row = {
   id: string
@@ -28,25 +46,26 @@ type Row = {
   path: string
   actor: { sub: string }
 }
-const rows = () =>
-  (readText(FILE) ?? '')
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as Row)
-const mutationRows = () => rows().filter((r) => r.action !== 'audit.genesis')
+let since = 0
+/** Events written since the current test began, oldest first. */
+const rows = async () =>
+  (await real.readAll()).filter((r) => r.seq > since).map((r) => JSON.parse(r.value) as Row)
+const mutationRows = rows
 
 let upstreamCalls: string[]
 let restoreUpstream: () => void
 let auditSnapshotAtUpstream: Row[] = []
 const app = createApp()
 
-beforeEach(() => {
-  writeText(FILE, '')
+beforeEach(async () => {
+  since = (await real.readAll()).reduce((m, r) => Math.max(m, r.seq), 0)
+  failAppends = false
+  altered = new Set()
   upstreamCalls = []
   auditSnapshotAtUpstream = []
   restoreUpstream = setUpstreamFetch(async (url, init) => {
     upstreamCalls.push(`${init?.method} ${String(url)}`)
-    if (init?.method === 'PUT') auditSnapshotAtUpstream = rows()
+    if (init?.method === 'PUT') auditSnapshotAtUpstream = await rows()
     return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' } })
   })
 })
@@ -60,23 +79,19 @@ async function put(user = writer) {
   })
 }
 
-/** Makes every append to the audit file fail, as a full disk would. */
+/** Makes every append to the audit ledger fail, as a full disk would. */
 function breakAuditStore(): () => void {
-  return useJsonBackend({
-    read: (p) => iso.backend.read(p),
-    write: (p, t) => iso.backend.write(p, t),
-    append: (p, t) => {
-      if (p === FILE) throw new Error('ENOSPC: no space left on device')
-      iso.backend.append!(p, t)
-    },
-  })
+  failAppends = true
+  return () => {
+    failAppends = false
+  }
 }
 
 describe('intent-first proxied mutations', () => {
   it('writes an intent before the request reaches upstream and an outcome after, linked by id', async () => {
     const res = await put()
     assert.equal(res.status, 200)
-    const [intent, outcome, ...rest] = mutationRows()
+    const [intent, outcome, ...rest] = await mutationRows()
     assert.equal(rest.length, 0)
     assert.equal(intent!.phase, 'intent')
     assert.equal(intent!.action, 'file.write')
@@ -88,7 +103,7 @@ describe('intent-first proxied mutations', () => {
       [intent!.id],
     )
     assert.equal(auditSnapshotAtUpstream.some((r) => r.phase === 'outcome'), false)
-    assert.equal(verifyAudit().ok, true)
+    assert.equal((await verifyAudit()).ok, true)
   })
 
   it('records the upstream failure status in the outcome', async () => {
@@ -96,7 +111,7 @@ describe('intent-first proxied mutations', () => {
     restoreUpstream = setUpstreamFetch(async () => new Response('{}', { status: 409 }))
     const res = await put()
     assert.equal(res.status, 409)
-    assert.equal(mutationRows().find((r) => r.phase === 'outcome')!.status, 409)
+    assert.equal((await mutationRows()).find((r) => r.phase === 'outcome')!.status, 409)
   })
 
   it('refuses with 503 and reaches nothing upstream when the intent cannot be written', async () => {
@@ -138,7 +153,7 @@ describe('intent-first native mutations', () => {
   it('writes intent then outcome around the change', async () => {
     const res = await addAdmin()
     assert.equal(res.status, 200)
-    const [intent, outcome, ...rest] = mutationRows()
+    const [intent, outcome, ...rest] = await mutationRows()
     assert.equal(rest.length, 0)
     assert.equal(intent!.phase, 'intent')
     assert.equal(outcome!.phase, 'outcome')
@@ -167,26 +182,27 @@ describe('intent-first native mutations', () => {
 describe('listing intent and outcome', () => {
   it('lists one row per mutation, and shows intents and ids when asked', async () => {
     await put()
+    const mine = new Set((await rows()).map((r) => r.id))
     const headers = await iso.sessionHeaders(admin)
-    const list = (await (await app.request('/auth/audit', { headers })).json()) as { events: Row[] }
+    const list = (await (await app.request('/auth/audit?limit=100', { headers })).json()) as { events: Row[] }
     assert.deepEqual(
-      list.events.filter((e) => e.actor.sub === writer.sub).map((e) => e.phase),
+      list.events.filter((e) => mine.has(e.id) || (e.intent_id && mine.has(e.intent_id))).map((e) => e.phase),
       ['outcome'],
     )
-    const all = (await (await app.request('/auth/audit?include=chain', { headers })).json()) as { events: Row[] }
+    const all = (await (await app.request('/auth/audit?include=chain&limit=100', { headers })).json()) as { events: Row[] }
     assert.deepEqual(
-      all.events.filter((e) => e.actor.sub === writer.sub).map((e) => e.phase).sort(),
+      all.events.filter((e) => mine.has(e.id)).map((e) => e.phase).sort(),
       ['intent', 'outcome'],
     )
     const csv = await (await app.request('/auth/audit/export.csv', { headers })).text()
     const [head, ...body] = csv.trim().split('\r\n')
     assert.match(head!, /event_id,intent_id,phase/)
-    assert.equal(body.filter((l) => l.includes('file.write')).length, 1)
+    assert.ok(body.some((l) => l.includes('file.write')))
   })
 
   it('keeps an intent that never got an outcome visible', async () => {
     const { appendIntent } = await import('./audit.js')
-    appendIntent({
+    await appendIntent({
       actor: { sub: writer.sub, iss: 'test', email: 'e', name: 'n' },
       via: 'session',
       method: 'PUT',
@@ -195,25 +211,26 @@ describe('listing intent and outcome', () => {
       action: 'file.write',
       namespace: 'in',
     })
-    const list = (await (await app.request('/auth/audit', { headers: await iso.sessionHeaders(admin) })).json()) as {
+    const mine = new Set((await rows()).map((r) => r.id))
+    const list = (await (await app.request('/auth/audit?limit=100', { headers: await iso.sessionHeaders(admin) })).json()) as {
       events: Row[]
     }
-    assert.deepEqual(list.events.map((e) => e.phase), ['intent'])
+    assert.deepEqual(list.events.filter((e) => mine.has(e.id)).map((e) => e.phase), ['intent'])
   })
 })
 
 describe('readiness', () => {
   it('/readyz reports audit store and chain; /healthz stays static', async () => {
     await put()
-    verifyAudit()
+    await verifyAudit()
     const ok = await app.request('/readyz')
     assert.equal(ok.status, 200)
     const body = (await ok.json()) as { ok: boolean; audit: { store: string; chain: string } }
     assert.equal(body.ok, true)
     assert.equal(body.audit.chain, 'ok')
 
-    writeText(FILE, readText(FILE)!.replace('"file.write"', '"file.read"'))
-    verifyAudit()
+    altered = new Set((await real.readAll()).filter((r) => r.value.includes('"action":"file.write"')).map((r) => r.seq))
+    await verifyAudit()
     const broken = await app.request('/readyz')
     assert.equal(broken.status, 503)
     assert.equal(((await broken.json()) as { audit: { chain: string } }).audit.chain, 'broken')
@@ -223,53 +240,44 @@ describe('readiness', () => {
   it('/readyz fails after the audit store failed a write, until a write succeeds', async () => {
     const restore = breakAuditStore()
     try {
-      assert.equal(appendAudit({ actor: { sub: 's', iss: 'i', email: '', name: '' }, via: 'session', method: 'POST', path: '/x', status: 200, action: 'x' }), null)
+      assert.equal(await appendAudit({ actor: { sub: 's', iss: 'i', email: '', name: '' }, via: 'session', method: 'POST', path: '/x', status: 200, action: 'x' }), null)
       assert.equal((await app.request('/readyz')).status, 503)
     } finally {
       restore()
     }
-    appendAudit({ actor: { sub: 's', iss: 'i', email: '', name: '' }, via: 'session', method: 'POST', path: '/x', status: 200, action: 'x' })
-    verifyAudit()
+    await appendAudit({ actor: { sub: 's', iss: 'i', email: '', name: '' }, via: 'session', method: 'POST', path: '/x', status: 200, action: 'x' })
+    await verifyAudit()
     assert.equal((await app.request('/readyz')).status, 200)
   })
 
-  it('/readyz fails while the database cannot be written, and reports it as storage', async () => {
+  it('/readyz fails while the workspace disk cannot be written, and reports it as storage', async () => {
     await put()
-    verifyAudit()
-    const { createMemoryJsonBackend } = await import('./jsonStore.js')
-    const backend = createMemoryJsonBackend()
-    backend.probe = () => { throw new Error('database is locked') }
-    const restoreBackend = useJsonBackend(backend)
+    await verifyAudit()
+    const dataDir = process.env.AUTH_DATA_DIR
+    process.env.AUTH_DATA_DIR = '/dev/null/data'
     try {
       const failed = await app.request('/readyz')
       assert.equal(failed.status, 503)
       const body = (await failed.json()) as { ok: boolean; storage: { ok: boolean; detail?: string } }
       assert.equal(body.storage.ok, false)
-      assert.match(body.storage.detail ?? '', /locked/)
+      assert.ok(body.storage.detail)
     } finally {
-      restoreBackend()
+      process.env.AUTH_DATA_DIR = dataDir
     }
   })
 
-  it('/readyz checks the audit store from its newest row without reading the trail', async () => {
+  it('/readyz pings the ledger without reading the trail', async () => {
     await put()
-    verifyAudit()
-    let rowsRead = 0
-    const lines = (p: string) => (iso.backend.read(p) ?? '').split('\n').filter(Boolean)
-    const restoreBackend = useJsonBackend({
-      ...iso.backend,
-      readLines: (p, after) => {
-        const out = lines(p).map((line, i) => ({ seq: i + 1, line })).filter((r) => r.seq > after)
-        rowsRead += out.length
-        return out
-      },
-      lastSeq: (p) => lines(p).length,
-    })
-    try {
-      assert.equal((await app.request('/readyz')).status, 200)
-      assert.equal(rowsRead, 0)
-    } finally {
-      restoreBackend()
-    }
+    await verifyAudit()
+    readAllCalls = 0
+    assert.equal((await app.request('/readyz')).status, 200)
+    assert.equal(readAllCalls, 0)
+  })
+
+  it('appending an audit event does not read the trail', async () => {
+    for (let i = 0; i < 3; i++) await put()
+    readAllCalls = 0
+    await put()
+    assert.equal(readAllCalls, 0)
   })
 })

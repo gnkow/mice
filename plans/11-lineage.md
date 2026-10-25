@@ -1,5 +1,7 @@
 # TRACEABILITY — PLAT-TRACE implementation plan
 
+> **Storage update (ADR 0004/0005):** this plan was written for JSON/JSONL files under `AUTH_DATA_DIR`. Those stores are now PostgreSQL, immudb (audit) and Novu (notifications); file names and file-based mechanics below are historical. See [16-operations.md](./16-operations.md) section 2.3.
+
 Living design and phased plan for epic [`PLAT-TRACE`](./EPICS.md#plat-trace--file-lineage--operation-graph): trace the origin of files via repository operations in a graph view.
 
 Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [09-jobs.md](./09-jobs.md) · [README.md](../README.md)

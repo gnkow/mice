@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { isolatedAuth } from './testSupport.js'
@@ -40,7 +41,7 @@ describe('createApp', () => {
 
   it('audits a native mutation through the injected audit function', async () => {
     const seen: string[] = []
-    const app = createApp({ audit: (_c, user, _via, fields) => void seen.push(`${user.sub}:${fields.action}`) })
+    const app = createApp({ audit: async (_c, user, _via, fields) => void seen.push(`${user.sub}:${fields.action}`) })
     await app.request('/auth/access-requests', {
       method: 'POST',
       headers: { ...(await ctx.sessionHeaders(ctx.person('bob'))), 'content-type': 'application/json' },

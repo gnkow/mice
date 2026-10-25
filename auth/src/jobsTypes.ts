@@ -72,8 +72,6 @@ export type JobRun = {
   runtime_id: string | null
   /** `cli` = executed by local `mice job run` (not auth host Docker/K8s). */
   runner: 'docker' | 'kubernetes' | 'cli'
-  /** @deprecated legacy field; prefer target_branch */
-  branch?: string
 }
 
 export type JobSubmitBody = {
@@ -85,13 +83,9 @@ export type JobSubmitBody = {
    * Source pin: `branch:commit` | `branch` | `commit`.
    * Resolved server-side to source_ref + pin_commit.
    */
-  source?: string
-  /** @deprecated Legacy server-side merge destination. Prefer `mice push`. */
+  source: string
+  /** Server-side merge destination. */
   target?: string
-  /** @deprecated legacy source branch with pin_commit (not a merge target) */
-  branch?: string
-  /** @deprecated use `source` */
-  pin_commit?: string
   image: string
   command: string[]
   args?: string[]

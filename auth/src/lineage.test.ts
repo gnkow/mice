@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -34,8 +35,8 @@ const actor = {
   name: 'User One',
 }
 
-describe('lineage classify + arity', () => {
-  it('classifies PUT as upload when no prior', () => {
+await describe('lineage classify + arity', async () => {
+  await it('classifies PUT as upload when no prior', () => {
     const c = classifyFileLineageOp(
       'PUT',
       '/api/repos/ns/r/file/main/docs/a.txt',
@@ -47,7 +48,7 @@ describe('lineage classify + arity', () => {
     assert.equal(c.path, 'docs/a.txt')
   })
 
-  it('classifies PUT as edit when prior exists', () => {
+  await it('classifies PUT as edit when prior exists', () => {
     const c = classifyFileLineageOp(
       'PUT',
       '/api/repos/ns/r/file/main/docs/a.txt',
@@ -57,7 +58,7 @@ describe('lineage classify + arity', () => {
     assert.equal(c.path, 'docs/a.txt')
   })
 
-  it('classifies PATCH same-folder as rename', () => {
+  await it('classifies PATCH same-folder as rename', () => {
     const c = classifyFileLineageOp(
       'PATCH',
       '/api/repos/ns/r/file/main/docs/old.txt',
@@ -68,7 +69,7 @@ describe('lineage classify + arity', () => {
     assert.equal(c.newPath, 'docs/new.txt')
   })
 
-  it('classifies PATCH different-folder as move', () => {
+  await it('classifies PATCH different-folder as move', () => {
     const c = classifyFileLineageOp(
       'PATCH',
       '/api/repos/ns/r/file/main/old.txt',
@@ -79,7 +80,7 @@ describe('lineage classify + arity', () => {
     assert.equal(c.newPath, 'archive/old.txt')
   })
 
-  it('classifies PUT with copy_from (same basename) as copy', () => {
+  await it('classifies PUT with copy_from (same basename) as copy', () => {
     const c = classifyFileLineageOp(
       'PUT',
       '/api/repos/ns/r/file/main/archive/report.csv',
@@ -90,7 +91,7 @@ describe('lineage classify + arity', () => {
     assert.equal(c.newPath, 'archive/report.csv')
   })
 
-  it('ignores copy_from when basename differs', () => {
+  await it('ignores copy_from when basename differs', () => {
     const c = classifyFileLineageOp(
       'PUT',
       '/api/repos/ns/r/file/main/archive/other.csv',
@@ -99,7 +100,7 @@ describe('lineage classify + arity', () => {
     assert.equal(c.kind, 'upload')
   })
 
-  it('classifies PUT with restore_from as restore', () => {
+  await it('classifies PUT with restore_from as restore', () => {
     const c = classifyFileLineageOp(
       'PUT',
       '/api/repos/ns/r/file/main/docs/readme.md',
@@ -109,8 +110,8 @@ describe('lineage classify + arity', () => {
     assert.equal(c.path, 'docs/readme.md')
   })
 
-  it('explicit restore records even when same content hash was uploaded before', () => {
-    const up = buildExplicitFileOp({
+  await it('explicit restore records even when same content hash was uploaded before', async () => {
+    const up = await buildExplicitFileOp({
       kind: 'upload',
       namespace: 'rst-ns',
       repo: 'r',
@@ -123,7 +124,7 @@ describe('lineage classify + arity', () => {
     })
     assert.ok(up)
 
-    const del = buildExplicitFileOp({
+    const del = await buildExplicitFileOp({
       kind: 'delete',
       namespace: 'rst-ns',
       repo: 'r',
@@ -138,7 +139,7 @@ describe('lineage classify + arity', () => {
     })
     assert.ok(del)
 
-    const restored = buildExplicitFileOp({
+    const restored = await buildExplicitFileOp({
       kind: 'restore',
       namespace: 'rst-ns',
       repo: 'r',
@@ -158,7 +159,7 @@ describe('lineage classify + arity', () => {
     assert.equal(restored!.outputs[0]?.commitId, 'c-rst')
   })
 
-  it('classifies DELETE as delete', () => {
+  await it('classifies DELETE as delete', () => {
     const c = classifyFileLineageOp(
       'DELETE',
       '/api/repos/ns/r/file/main/gone.txt',
@@ -167,7 +168,7 @@ describe('lineage classify + arity', () => {
     assert.equal(c.path, 'gone.txt')
   })
 
-  it('validates arity rules', () => {
+  await it('validates arity rules', () => {
     assert.equal(validateArity('upload', [], [{ namespace: 'n', repo: 'r', path: 'a' }]), null)
     assert.match(
       validateArity('upload', [{ namespace: 'n', repo: 'r', path: 'a' }], [
@@ -191,7 +192,7 @@ describe('lineage classify + arity', () => {
     )
   })
 
-  it('parses commit id from oxen JSON', () => {
+  await it('parses commit id from oxen JSON', () => {
     assert.equal(
       parseCommitIdFromJson({ commit: { id: 'abc123' } }),
       'abc123',
@@ -200,7 +201,7 @@ describe('lineage classify + arity', () => {
   })
 })
 
-describe('lineage store + query', () => {
+await describe('lineage store + query', async () => {
   before(() => {
     // isolate: each describe shares dataDir; ops accumulate — ok for graph tests
   })
@@ -209,8 +210,8 @@ describe('lineage store + query', () => {
     rmSync(dataDir, { recursive: true, force: true })
   })
 
-  it('appends explicit upload and queries by path', () => {
-    const op = buildExplicitFileOp({
+  await it('appends explicit upload and queries by path', async () => {
+    const op = await buildExplicitFileOp({
       kind: 'upload',
       namespace: 'trace-ns',
       repo: 'trace-repo',
@@ -226,7 +227,7 @@ describe('lineage store + query', () => {
     assert.equal(op!.inputs.length, 0)
     assert.equal(op!.outputs[0]?.contentHash, 'h1')
 
-    const { operations } = queryLineage({
+    const { operations } = await queryLineage({
       namespace: 'trace-ns',
       repo: 'trace-repo',
       path: 'readme.txt',
@@ -234,8 +235,8 @@ describe('lineage store + query', () => {
     assert.ok(operations.some((o) => o.id === op!.id))
   })
 
-  it('appends move with high confidence', () => {
-    const op = buildExplicitFileOp({
+  await it('appends move with high confidence', async () => {
+    const op = await buildExplicitFileOp({
       kind: 'move',
       namespace: 'trace-ns',
       repo: 'trace-repo',
@@ -254,8 +255,8 @@ describe('lineage store + query', () => {
     assert.equal(op!.outputs[0]?.path, 'dir/a.txt')
   })
 
-  it('appends rename with high confidence', () => {
-    const op = buildExplicitFileOp({
+  await it('appends rename with high confidence', async () => {
+    const op = await buildExplicitFileOp({
       kind: 'rename',
       namespace: 'trace-ns',
       repo: 'trace-repo',
@@ -273,8 +274,8 @@ describe('lineage store + query', () => {
     assert.equal(op!.outputs[0]?.path, 'b.txt')
   })
 
-  it('appends explicit edit with prior → new version', () => {
-    const op = buildExplicitFileOp({
+  await it('appends explicit edit with prior → new version', async () => {
+    const op = await buildExplicitFileOp({
       kind: 'edit',
       namespace: 'edit-ns',
       repo: 'r',
@@ -296,8 +297,8 @@ describe('lineage store + query', () => {
     assert.equal(op!.outputs.length, 1)
   })
 
-  it('rejects edit without prior version signal', () => {
-    const op = buildExplicitFileOp({
+  await it('rejects edit without prior version signal', async () => {
+    const op = await buildExplicitFileOp({
       kind: 'edit',
       namespace: 'edit-ns',
       repo: 'r',
@@ -310,8 +311,8 @@ describe('lineage store + query', () => {
     assert.equal(op, null)
   })
 
-  it('derives upload+edit chain from path history', () => {
-    const created = deriveOpsFromPathHistory('derive-ns', 'r', 'main', [
+  await it('derives upload+edit chain from path history', async () => {
+    const created = await deriveOpsFromPathHistory('derive-ns', 'r', 'main', [
       { path: 'f.txt', contentHash: 'v1', commitId: 'd1', ts: '2020-01-01T00:00:00.000Z' },
       { path: 'f.txt', contentHash: 'v2', commitId: 'd2', ts: '2020-01-02T00:00:00.000Z' },
     ])
@@ -320,7 +321,7 @@ describe('lineage store + query', () => {
     assert.equal(created[1]?.kind, 'edit')
     assert.equal(created[1]?.source, 'derived')
 
-    const { operations } = queryLineage({
+    const { operations } = await queryLineage({
       namespace: 'derive-ns',
       repo: 'r',
       path: 'f.txt',
@@ -329,17 +330,17 @@ describe('lineage store + query', () => {
     assert.ok(operations.some((o) => o.kind === 'edit'))
   })
 
-  it('rebuild from history is idempotent', () => {
+  await it('rebuild from history is idempotent', async () => {
     const versions = [
       { path: 'idem.txt', contentHash: 'a1', commitId: 'i1', ts: '2020-01-01T00:00:00.000Z' },
       { path: 'idem.txt', contentHash: 'a2', commitId: 'i2', ts: '2020-01-02T00:00:00.000Z' },
     ]
-    const first = deriveOpsFromPathHistory('idem-ns', 'r', 'main', versions)
+    const first = await deriveOpsFromPathHistory('idem-ns', 'r', 'main', versions)
     assert.equal(first.length, 2)
-    const second = deriveOpsFromPathHistory('idem-ns', 'r', 'main', versions)
+    const second = await deriveOpsFromPathHistory('idem-ns', 'r', 'main', versions)
     assert.equal(second.length, 0)
 
-    const { operations } = queryLineage({
+    const { operations } = await queryLineage({
       namespace: 'idem-ns',
       repo: 'r',
       path: 'idem.txt',
@@ -360,8 +361,8 @@ describe('lineage store + query', () => {
     )
   })
 
-  it('skips derived upload when explicit covers commit+path', () => {
-    appendLineage({
+  await it('skips derived upload when explicit covers commit+path', async () => {
+    await appendLineage({
       kind: 'upload',
       namespace: 'skip-ns',
       repo: 'r',
@@ -375,14 +376,14 @@ describe('lineage store + query', () => {
       actor,
       via: 'session',
     })
-    const created = deriveOpsFromPathHistory('skip-ns', 'r', 'main', [
+    const created = await deriveOpsFromPathHistory('skip-ns', 'r', 'main', [
       { path: 'x.txt', contentHash: 'h', commitId: 's1' },
     ])
     assert.equal(created.length, 0)
   })
 
-  it('explicit producer supersedes derived for the same version', () => {
-    appendLineage({
+  await it('explicit producer supersedes derived for the same version', async () => {
+    await appendLineage({
       id: 'dup1',
       kind: 'upload',
       namespace: 'dup-ns',
@@ -396,7 +397,7 @@ describe('lineage store + query', () => {
       confidence: 'high',
       ts: '2020-01-01T00:00:00.000Z',
     })
-    appendLineage({
+    await appendLineage({
       id: 'dup2',
       kind: 'upload',
       namespace: 'dup-ns',
@@ -412,8 +413,8 @@ describe('lineage store + query', () => {
       via: 'session',
       ts: '2020-01-02T00:00:00.000Z',
     })
-    pruneDuplicateProducers('dup-ns', 'r', 'd.txt')
-    const { operations } = queryLineage({
+    await pruneDuplicateProducers('dup-ns', 'r', 'd.txt')
+    const { operations } = await queryLineage({
       namespace: 'dup-ns',
       repo: 'r',
       path: 'd.txt',
@@ -424,8 +425,8 @@ describe('lineage store + query', () => {
     assert.equal(uploads[0]?.source, 'explicit')
   })
 
-  it('derive path-change heuristic is rename/move by folder and skips if explicit exists', () => {
-    const renamed = deriveMoveHeuristic({
+  await it('derive path-change heuristic is rename/move by folder and skips if explicit exists', async () => {
+    const renamed = await deriveMoveHeuristic({
       namespace: 'mv-ns',
       repo: 'r',
       commitId: 'm1',
@@ -437,7 +438,7 @@ describe('lineage store + query', () => {
     assert.equal(renamed!.kind, 'rename')
     assert.equal(renamed!.confidence, 'low')
 
-    const moved = deriveMoveHeuristic({
+    const moved = await deriveMoveHeuristic({
       namespace: 'mv-ns',
       repo: 'r',
       commitId: 'm1b',
@@ -448,7 +449,7 @@ describe('lineage store + query', () => {
     assert.ok(moved)
     assert.equal(moved!.kind, 'move')
 
-    const explicit = buildExplicitFileOp({
+    const explicit = await buildExplicitFileOp({
       kind: 'move',
       namespace: 'mv-ns',
       repo: 'r',
@@ -459,7 +460,7 @@ describe('lineage store + query', () => {
       via: 'pat',
     })
     assert.ok(explicit)
-    const skipped = deriveMoveHeuristic({
+    const skipped = await deriveMoveHeuristic({
       namespace: 'mv-ns',
       repo: 'r',
       commitId: 'm2',
@@ -471,7 +472,7 @@ describe('lineage store + query', () => {
     assert.equal(skipped?.source, 'explicit')
   })
 
-  it('inferCopyPairs: requires same basename; source must not be removed', () => {
+  await it('inferCopyPairs: requires same basename; source must not be removed', () => {
     const basePathsByHash = new Map<string, string[]>([
       ['hcopy', ['data/report.csv', 'notes/other.csv']],
       ['horphan', ['gone.txt']],
@@ -496,8 +497,8 @@ describe('lineage store + query', () => {
     ])
   })
 
-  it('deriveCopyHeuristic records copy; refuses rename-copy or removed source', () => {
-    const copied = deriveCopyHeuristic({
+  await it('deriveCopyHeuristic records copy; refuses rename-copy or removed source', async () => {
+    const copied = await deriveCopyHeuristic({
       namespace: 'cp-ns',
       repo: 'r',
       commitId: 'c1',
@@ -512,7 +513,7 @@ describe('lineage store + query', () => {
     assert.equal(copied!.outputs[0]?.path, 'dst/a.txt')
 
     assert.equal(
-      deriveCopyHeuristic({
+      await deriveCopyHeuristic({
         namespace: 'cp-ns',
         repo: 'r',
         commitId: 'c2',
@@ -524,7 +525,7 @@ describe('lineage store + query', () => {
     )
 
     assert.equal(
-      deriveCopyHeuristic({
+      await deriveCopyHeuristic({
         namespace: 'cp-ns',
         repo: 'r',
         commitId: 'c2b',
@@ -536,7 +537,7 @@ describe('lineage store + query', () => {
       null,
     )
 
-    const fromDiff = deriveCopiesFromCommitDiff({
+    const fromDiff = await deriveCopiesFromCommitDiff({
       namespace: 'cp-ns',
       repo: 'r',
       commitId: 'c3',
@@ -549,8 +550,8 @@ describe('lineage store + query', () => {
     assert.equal(fromDiff[0]?.outputs[0]?.path, 'mirror/a.txt')
   })
 
-  it('rejects invalid arity on append', () => {
-    const bad = appendLineage({
+  await it('rejects invalid arity on append', async () => {
+    const bad = await appendLineage({
       kind: 'delete',
       namespace: 'bad',
       repo: 'r',
@@ -562,10 +563,10 @@ describe('lineage store + query', () => {
     assert.equal(bad, null)
   })
 
-  it('queryLineage filters by kind, since/until, and paginates with cursor', () => {
+  await it('queryLineage filters by kind, since/until, and paginates with cursor', async () => {
     const ns = 'q-ns'
     const repo = 'r'
-    const up = appendLineage({
+    const up = await appendLineage({
       id: 'q-up',
       kind: 'upload',
       namespace: ns,
@@ -577,7 +578,7 @@ describe('lineage store + query', () => {
       confidence: 'high',
       ts: '2020-01-01T00:00:00.000Z',
     })
-    const ed = appendLineage({
+    const ed = await appendLineage({
       id: 'q-ed',
       kind: 'edit',
       namespace: ns,
@@ -591,11 +592,11 @@ describe('lineage store + query', () => {
     })
     assert.ok(up && ed)
 
-    const byKind = queryLineage({ namespace: ns, repo, path: 'p.txt', kind: 'edit' })
+    const byKind = await queryLineage({ namespace: ns, repo, path: 'p.txt', kind: 'edit' })
     assert.equal(byKind.operations.length, 1)
     assert.equal(byKind.operations[0]?.kind, 'edit')
 
-    const since = queryLineage({
+    const since = await queryLineage({
       namespace: ns,
       repo,
       path: 'p.txt',
@@ -604,7 +605,7 @@ describe('lineage store + query', () => {
     })
     assert.ok(since.operations.every((o) => o.ts >= '2020-01-01T12:00:00.000Z'))
 
-    const page1 = queryLineage({
+    const page1 = await queryLineage({
       namespace: ns,
       repo,
       path: 'p.txt',
@@ -613,7 +614,7 @@ describe('lineage store + query', () => {
     })
     assert.equal(page1.operations.length, 1)
     assert.ok(page1.nextCursor)
-    const page2 = queryLineage({
+    const page2 = await queryLineage({
       namespace: ns,
       repo,
       path: 'p.txt',
@@ -625,11 +626,11 @@ describe('lineage store + query', () => {
     assert.notEqual(page2.operations[0]?.id, page1.operations[0]?.id)
   })
 
-  it('queryLineage ancestors vs descendants walks the graph', () => {
+  await it('queryLineage ancestors vs descendants walks the graph', async () => {
     const ns = 'walk-ns'
     const repo = 'r'
     // a.txt --copy--> b.txt --edit--> b.txt'
-    appendLineage({
+    await appendLineage({
       id: 'w-up',
       kind: 'upload',
       namespace: ns,
@@ -641,7 +642,7 @@ describe('lineage store + query', () => {
       confidence: 'high',
       ts: '2020-01-01T00:00:00.000Z',
     })
-    appendLineage({
+    await appendLineage({
       id: 'w-cp',
       kind: 'copy',
       namespace: ns,
@@ -653,7 +654,7 @@ describe('lineage store + query', () => {
       confidence: 'high',
       ts: '2020-01-02T00:00:00.000Z',
     })
-    appendLineage({
+    await appendLineage({
       id: 'w-ed',
       kind: 'edit',
       namespace: ns,
@@ -666,7 +667,7 @@ describe('lineage store + query', () => {
       ts: '2020-01-03T00:00:00.000Z',
     })
 
-    const ancestors = queryLineage({
+    const ancestors = await queryLineage({
       namespace: ns,
       repo,
       path: 'b.txt',
@@ -678,7 +679,7 @@ describe('lineage store + query', () => {
     assert.ok(ancestorKinds.has('copy') || ancestorKinds.has('edit'))
     assert.ok(ancestorKinds.has('upload') || ancestorKinds.has('copy'))
 
-    const descendants = queryLineage({
+    const descendants = await queryLineage({
       namespace: ns,
       repo,
       path: 'a.txt',
@@ -689,8 +690,8 @@ describe('lineage store + query', () => {
     assert.ok(descendants.operations.some((o) => o.kind === 'copy'))
   })
 
-  it('buildExplicitFileOp records copy with source → dest', () => {
-    const op = buildExplicitFileOp({
+  await it('buildExplicitFileOp records copy with source → dest', async () => {
+    const op = await buildExplicitFileOp({
       kind: 'copy',
       namespace: 'exp-cp-ns',
       repo: 'r',

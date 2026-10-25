@@ -2,7 +2,7 @@ import { appendAudit } from './audit.js'
 import { authorizeRepoAction } from './authz.js'
 import type { SessionUser } from './session.js'
 import { isWorkspaceMount } from './sessionsMounts.js'
-import { getSessionRecord, listSessions, updateSession } from './sessionsStore.js'
+import { getSessionRecord, listSessionsWithStatus, updateSession } from './sessionsStore.js'
 import type { DesktopSession, ResolvedMountInput, SessionMount, SessionMountInput } from './sessionsTypes.js'
 import { loadWorkspacesConfig } from './workspaces/config.js'
 import { LeaseError, type HolderKind, type Lease } from './workspaces/leases.js'
@@ -53,7 +53,7 @@ export async function resolveWorkspaceInputs(
 ): Promise<SessionMountInput[]> {
   if (!inputs.some((i) => i.workspace_id)) return inputs
   const svc = await workspaceServiceOrThrow()
-  return inputs.map((i) => {
+  return Promise.all(inputs.map(async (i) => {
     if (!i.workspace_id) return i // new_workspace: created later
     const ws = svc.getState(i.workspace_id)
     if (!ws) throw new SessionWorkspaceError(`workspace ${i.workspace_id} not found`, 404)
@@ -69,8 +69,8 @@ export async function resolveWorkspaceInputs(
     }
     const gate =
       i.mount_mode === 'ro'
-        ? authorizeRepoAction(user, ws.namespace, ws.repo, 'workspace.read')
-        : authorizeRepoAction(user, ws.namespace, ws.repo, 'workspace.write')
+        ? await authorizeRepoAction(user, ws.namespace, ws.repo, 'workspace.read')
+        : await authorizeRepoAction(user, ws.namespace, ws.repo, 'workspace.write')
     if (!gate.allow) {
       throw new SessionWorkspaceError(
         `${gate.reason ?? 'Forbidden'} (workspace ${ws.id} in ${ws.namespace}/${ws.repo})`,
@@ -78,20 +78,20 @@ export async function resolveWorkspaceInputs(
       )
     }
     return { ...i, namespace: ws.namespace, repo: ws.repo }
-  })
+  }))
 }
 
 /** ro → repo read, rw → repo write, keyed on the effective mode of the lease. */
-export function authorizeWorkspaceMounts(
+export async function authorizeWorkspaceMounts(
   user: SessionUser,
   mounts: SessionMount[],
-): { allow: boolean; reason?: string } {
+): Promise<{ allow: boolean; reason?: string }> {
   for (const m of workspaceMountsOf({ mounts })) {
     const mode = m.effective_mode ?? m.mount_mode
     const gate =
       mode === 'ro'
-        ? authorizeRepoAction(user, m.namespace, m.repo, 'workspace.read')
-        : authorizeRepoAction(user, m.namespace, m.repo, 'workspace.write')
+        ? await authorizeRepoAction(user, m.namespace, m.repo, 'workspace.read')
+        : await authorizeRepoAction(user, m.namespace, m.repo, 'workspace.write')
     if (!gate.allow) {
       return { allow: false, reason: gate.reason ?? `mount ${m.namespace}/${m.repo} requires repository access` }
     }
@@ -105,14 +105,14 @@ type Wanted = { mount: SessionMount; mode: 'read' | 'write'; degradedReason: str
 
 export type LeaseOutcome = { mounts: SessionMount[]; notices: string[] }
 
-function auditLease(
+async function auditLease(
   session: Pick<DesktopSession, 'id' | 'owner' | 'via'>,
   action: 'workspace.lease.acquire' | 'workspace.lease.release',
   ws: Pick<WorkspaceState, 'id' | 'namespace' | 'repo'> | undefined,
   lease: Pick<Lease, 'id' | 'mode'>,
   extra: Record<string, unknown> = {},
-): void {
-  appendAudit({
+): Promise<void> {
+  await appendAudit({
     actor: session.owner,
     via: session.via,
     method: 'SYSTEM',
@@ -188,14 +188,18 @@ export async function acquireSessionLeases(
 
   const byMount = new Map<SessionMount, { lease: Lease; w: Wanted }>()
   wanted.forEach((w, i) => byMount.set(w.mount, { lease: leases[i]!, w }))
-  const mounts = session.mounts.map((m) => {
+  const mounts: SessionMount[] = []
+  for (const m of session.mounts) {
     const hit = byMount.get(m)
-    if (!hit) return m
+    if (!hit) {
+      mounts.push(m)
+      continue
+    }
     const ws = svc.getState(m.workspace_id!)
-    auditLease(session, 'workspace.lease.acquire', ws, hit.lease, { effective_mode: hit.w.mode === 'write' ? 'rw' : 'ro' })
+    await auditLease(session, 'workspace.lease.acquire', ws, hit.lease, { effective_mode: hit.w.mode === 'write' ? 'rw' : 'ro' })
     if (hit.w.degradedReason) notices.push(hit.w.degradedReason)
-    return { ...m, effective_mode: hit.w.mode === 'write' ? ('rw' as const) : ('ro' as const), lease_id: hit.lease.id }
-  })
+    mounts.push({ ...m, effective_mode: hit.w.mode === 'write' ? ('rw' as const) : ('ro' as const), lease_id: hit.lease.id })
+  }
   return { mounts, notices }
 }
 
@@ -219,7 +223,7 @@ export async function releaseSessionLeases(
     const lease = await svc.leases.release(id)
     if (!lease) continue
     n++
-    auditLease(session, 'workspace.lease.release', svc.getState(lease.workspace_id), lease, { reason })
+    await auditLease(session, 'workspace.lease.release', svc.getState(lease.workspace_id), lease, { reason })
   }
   return n
 }
@@ -290,8 +294,7 @@ export async function renewSessionLeases(): Promise<{ renewed: number; lost: num
   let renewed = 0
   let lost = 0
   if (!svc) return { renewed, lost }
-  for (const s of listSessions()) {
-    if (!['provisioning', 'ready', 'connected', 'stopping'].includes(s.status)) continue
+  for (const s of await listSessionsWithStatus('provisioning', 'ready', 'connected', 'stopping')) {
     const wm = workspaceMountsOf(s)
     if (wm.length === 0) continue
     const missing: SessionMount[] = []
@@ -311,14 +314,14 @@ export async function renewSessionLeases(): Promise<{ renewed: number; lost: num
     }
     if (missing.length === 0) continue
     lost += missing.length
-    const cur = getSessionRecord(s.id)
+    const cur = await getSessionRecord(s.id)
     if (!cur) continue
     const notices = [...(cur.notices ?? [])]
     for (const m of missing) {
       const msg = `workspace ${m.workspace_id}: the lease expired while this session was running; the mount is no longer protected`
       if (!notices.includes(msg)) notices.push(msg)
     }
-    updateSession(s.id, { notices })
+    await updateSession(s.id, { notices })
   }
   return { renewed, lost }
 }
@@ -345,11 +348,11 @@ export async function preparingWorkspaceIds(session: Pick<DesktopSession, 'mount
 }
 
 /** Pre-flight for `new_workspace` mounts: the caller must be able to write to the repo. */
-export function authorizeNewWorkspaces(user: SessionUser, inputs: SessionMountInput[]): void {
+export async function authorizeNewWorkspaces(user: SessionUser, inputs: SessionMountInput[]): Promise<void> {
   for (const i of inputs) {
     if (!i.new_workspace) continue
     const { namespace, repo } = i.new_workspace
-    const gate = authorizeRepoAction(user, namespace, repo, 'workspace.write')
+    const gate = await authorizeRepoAction(user, namespace, repo, 'workspace.write')
     if (!gate.allow) {
       throw new SessionWorkspaceError(`${gate.reason ?? 'Forbidden'} (creating a workspace in ${namespace}/${repo})`, 403)
     }
@@ -380,7 +383,7 @@ export async function createOnDemandWorkspaces(
         createdBy: { email: user.email, sub: user.sub },
       })
       created.push(ws.id)
-      appendAudit({
+      await appendAudit({
         actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
         via,
         method: 'POST',
@@ -406,14 +409,14 @@ export async function createOnDemandWorkspaces(
  * workspace fails or disappears (the caller fails the session with that message).
  */
 export async function leasePendingMounts(sessionId: string, pollMs = 250): Promise<boolean> {
-  let session = getSessionRecord(sessionId)
+  let session = await getSessionRecord(sessionId)
   if (!session) return false
   const leaseless = () => workspaceMountsOf(session!).filter((m) => !m.lease_id)
   if (leaseless().length === 0) return true
   const svc = await workspaceServiceOrThrow()
   const deadline = Date.now() + loadWorkspacesConfig().prepareTimeoutSec * 1000
   for (;;) {
-    session = getSessionRecord(sessionId)
+    session = await getSessionRecord(sessionId)
     if (!session || session.status !== 'provisioning') return false
     let waiting = false
     for (const m of leaseless()) {
@@ -432,11 +435,11 @@ export async function leasePendingMounts(sessionId: string, pollMs = 250): Promi
   }
   const have = new Set(workspaceMountsOf(session!).filter((m) => m.lease_id).map((m) => m.workspace_id!))
   const out = await acquireSessionLeases(session!, { skip: have })
-  const cur = getSessionRecord(sessionId)
+  const cur = await getSessionRecord(sessionId)
   if (!cur || cur.status !== 'provisioning') {
     await releaseSessionLeases({ ...session!, mounts: out.mounts }, 'session_left_provisioning')
     return false
   }
-  updateSession(sessionId, { mounts: out.mounts, notices: [...(cur.notices ?? []), ...out.notices] })
+  await updateSession(sessionId, { mounts: out.mounts, notices: [...(cur.notices ?? []), ...out.notices] })
   return true
 }

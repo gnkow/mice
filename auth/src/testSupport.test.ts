@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { isolatedAuth } from './testSupport.js'
@@ -24,11 +25,6 @@ describe('testSupport', () => {
     assert.deepEqual(await res.json(), { sub: 'ann' })
   })
 
-  it('keeps persistence in memory', async () => {
-    const { createPat } = await import('./tokens.js')
-    createPat(ctx.person('ann'), 'laptop')
-    assert.ok(ctx.backend.read('/mice-memory-data/pats.json'))
-  })
 
   it('restores the previous environment', () => {
     ctx.restore()

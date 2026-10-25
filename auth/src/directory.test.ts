@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -48,17 +49,17 @@ const pending = {
 }
 
 describe('directory search', () => {
-  before(() => {
-    preparePrincipal(admin)
-    const created = createNamespaceAuthz(admin, 'dir-ns', 'none', true)
+  before(async () => {
+    await preparePrincipal(admin)
+    const created = await createNamespaceAuthz(admin, 'dir-ns', 'none', true)
     assert.equal(created.ok, true)
-    setNamespaceMember(
+    await setNamespaceMember(
       'dir-ns',
       { sub: 'alice-sub', iss: 'mice-dev' },
       'member',
     )
-    setNamespaceGroupMember('dir-ns', 'engineering', 'member')
-    setRepoCollaborator(
+    await setNamespaceGroupMember('dir-ns', 'engineering', 'member')
+    await setRepoCollaborator(
       'dir-ns',
       'r1',
       { sub: 'bob-collab', iss: 'mice-dev' },
@@ -71,12 +72,12 @@ describe('directory search', () => {
     rmSync(dataDir, { recursive: true, force: true })
   })
 
-  it('store search finds known users and groups', () => {
-    const users = searchStoreDirectory('alice', 'user', 10)
+  it('store search finds known users and groups', async () => {
+    const users = await searchStoreDirectory('alice', 'user', 10)
     assert.ok(users.some((u) => u.kind === 'user' && u.sub === 'alice-sub'))
-    const groups = searchStoreDirectory('engin', 'group', 10)
+    const groups = await searchStoreDirectory('engin', 'group', 10)
     assert.ok(groups.some((g) => g.kind === 'group' && g.group === 'engineering'))
-    const collab = searchStoreDirectory('bob-collab', 'user', 10)
+    const collab = await searchStoreDirectory('bob-collab', 'user', 10)
     assert.ok(collab.some((u) => u.kind === 'user' && u.sub === 'bob-collab'))
   })
 
@@ -86,12 +87,12 @@ describe('directory search', () => {
     assert.equal(res.source, 'none')
   })
 
-  it('canSearchDirectory allows admins and manage_members; denies pending', () => {
-    preparePrincipal(admin)
-    assert.equal(canSearchDirectory(admin), true)
+  it('canSearchDirectory allows admins and manage_members; denies pending', async () => {
+    await preparePrincipal(admin)
+    assert.equal(await canSearchDirectory(admin), true)
 
-    preparePrincipal(pending)
-    assert.equal(canSearchDirectory(pending), false)
+    await preparePrincipal(pending)
+    assert.equal(await canSearchDirectory(pending), false)
 
     const member = {
       sub: 'alice-sub',
@@ -99,13 +100,13 @@ describe('directory search', () => {
       email: 'alice@mice.local',
       name: 'Alice',
     }
-    preparePrincipal(member)
+    await preparePrincipal(member)
     // member without manage_members / owner → deny
-    assert.equal(canSearchDirectory(member), false)
+    assert.equal(await canSearchDirectory(member), false)
 
-    writeInstancePermissions(pending, ['create_namespace'])
-    preparePrincipal(pending)
-    assert.equal(canSearchDirectory(pending), true)
+    await writeInstancePermissions(pending, ['create_namespace'])
+    await preparePrincipal(pending)
+    assert.equal(await canSearchDirectory(pending), true)
   })
 
   it('Keycloak mock merges with store', async () => {

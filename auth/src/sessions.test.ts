@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -120,25 +121,6 @@ describe('sessions', () => {
     assert.ok(!('error' in parseCreateBody({ workspace_ref: null, pin_commit: null })))
   })
 
-  it('legacy stored mounts with workspace_id still load', () => {
-    const legacy = {
-      mounts: [
-        { namespace: 'n', repo: 'a', workspace_id: 'w', pin_commit: null, mount_mode: 'rw', mount_path: '/data/n/a' },
-        { namespace: 'n', repo: 'b', workspace_id: 'w', pin_commit: 'abc', mount_mode: 'rw', mount_path: '/data/n/b' },
-      ],
-    } as unknown as Partial<DesktopSession>
-    const mounts = normalizeSessionMounts(baseSession(legacy))
-    assert.equal(mounts.length, 1)
-    assert.equal(mounts[0]!.repo, 'b')
-    assert.equal('workspace_id' in mounts[0]!, false)
-    const ws = baseSession({
-      mounts: [],
-      workspace_ref: { namespace: 'n', repo: 'r', workspace_id: 'w' } as never,
-      pin_commit: null,
-    })
-    assert.equal(normalizeSessionMounts(ws).length, 0)
-  })
-
   it('assignMountPaths is deterministic and suffixes collisions', () => {
     const mounts = assignMountPaths([
       { namespace: 'Ns', repo: 'Repo', workspace_id: 'w_aaaaaaaaaa', mount_mode: 'ro' },
@@ -162,20 +144,6 @@ describe('sessions', () => {
     assert.equal(kept[1]!.mount_path, mounts[1]!.mount_path)
   })
 
-  it('normalizeSessionMounts lifts legacy singular fields', () => {
-    const s = baseSession({
-      mounts: [],
-      workspace_ref: { namespace: 'n', repo: 'r' },
-      pin_commit: 'abc',
-      mount_path: '/data',
-      mount_mode: 'ro',
-    })
-    const mounts = normalizeSessionMounts(s)
-    assert.equal(mounts.length, 1)
-    assert.equal(mounts[0]!.pin_commit, 'abc')
-    assert.equal(mounts[0]!.mount_mode, 'ro')
-  })
-
   it('publicSession redacts guest_password and exposes mounts', () => {
     const pub = publicSession(
       normalizeDesktopSession(
@@ -184,7 +152,8 @@ describe('sessions', () => {
             {
               namespace: 'n',
               repo: 'r',
-                    pin_commit: 'c'.repeat(40),
+              pin_commit: null,
+              workspace_id: 'w_aaaaaaaaaa',
               mount_mode: 'ro',
               mount_path: '/data/n/r',
             },
@@ -240,28 +209,28 @@ describe('sessions', () => {
     assert.ok(p.actions.includes('session.connect'))
   })
 
-  it('authorizeSessionCreate/connect deny without instance perms under enforce', () => {
+  it('authorizeSessionCreate/connect deny without instance perms under enforce', async () => {
     const user = {
       sub: 'sess-user',
       iss: 'test',
       email: 'sess@example.com',
       name: 'Sess',
     }
-    setAuthzEnforce(true)
-    writeInstancePermissions(user, [])
-    assert.equal(authorizeSessionCreate(user).allow, false)
+    await setAuthzEnforce(true)
+    await writeInstancePermissions(user, [])
+    assert.equal((await authorizeSessionCreate(user)).allow, false)
 
-    writeInstancePermissions(user, ['session_create'])
-    assert.equal(authorizeSessionCreate(user).allow, true)
+    await writeInstancePermissions(user, ['session_create'])
+    assert.equal((await authorizeSessionCreate(user)).allow, true)
 
     const owned = baseSession({
       owner: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
     })
-    assert.equal(authorizeSessionAccess(user, owned, 'connect').allow, false)
-    assert.equal(authorizeSessionAccess(user, owned, 'stop').allow, true)
+    assert.equal((await authorizeSessionAccess(user, owned, 'connect')).allow, false)
+    assert.equal((await authorizeSessionAccess(user, owned, 'stop')).allow, true)
 
-    writeInstancePermissions(user, ['session_create', 'session_connect'])
-    assert.equal(authorizeSessionAccess(user, owned, 'connect').allow, true)
-    writeInstancePermissions(user, [])
+    await writeInstancePermissions(user, ['session_create', 'session_connect'])
+    assert.equal((await authorizeSessionAccess(user, owned, 'connect')).allow, true)
+    await writeInstancePermissions(user, [])
   })
 })

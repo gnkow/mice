@@ -1,8 +1,9 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, it } from 'node:test'
+import { after, afterEach, describe, it } from 'node:test'
 
 process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-sp-'))
 process.env.SESSION_SECRET = 'test-secret-sp'
@@ -19,14 +20,15 @@ const { createPat, resolvePat, revokePat } = await import('./tokens.js')
 const { appendAudit, queryAudit, actorFromUser } = await import('./audit.js')
 const { isInstanceAdmin, addInstanceAdmin, maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { offboard } = await import('./offboarding.js')
-const { readNotificationState, notificationUserKey } = await import('./notificationsStore.js')
+const { novuInbox } = await import('./testSupport.js')
+const { purgeTouchedSubscribers } = await import('./novu.js')
 const { rememberNotificationUser } = await import('./notifications.js')
 const { productionStartupProblems } = await import('./startupGate.js')
 
 const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string; sub: string }) =>
   offboard(target, { scope: 'all', cause: 'admin-revocation', actor: { ...actor, email: '', name: '' } })
 const human = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
-maybeBootstrapInstanceAdmin({ ...human('root'), emailVerified: true })
+await maybeBootstrapInstanceAdmin({ ...human('root'), emailVerified: true })
 const root = human('root')
 
 const realNow = Date.now
@@ -35,26 +37,26 @@ afterEach(() => { Date.now = realNow })
 const mint = (p: { id: string; name: string }, days?: number) =>
   createPat(sp.serviceUser(p as never), 'ci', { expiresInDays: days })
 
-describe('service principals', () => {
-  it('creates a principal with a required human owner under the reserved issuer', () => {
-    assert.equal(sp.createServicePrincipal({ name: 'ci', owner: undefined as never }).ok, false)
-    assert.equal(sp.createServicePrincipal({ name: '', owner: human('alice') }).ok, false)
+await describe('service principals', async () => {
+  await it('creates a principal with a required human owner under the reserved issuer', async () => {
+    assert.equal((await sp.createServicePrincipal({ name: 'ci', owner: undefined as never })).ok, false)
+    assert.equal((await sp.createServicePrincipal({ name: '', owner: human('alice') })).ok, false)
     assert.equal(
-      sp.createServicePrincipal({ name: 'x', owner: { ...human('s'), iss: SERVICE_ISSUER } }).ok,
+      (await sp.createServicePrincipal({ name: 'x', owner: { ...human('s'), iss: SERVICE_ISSUER } })).ok,
       false,
     )
-    const r = sp.createServicePrincipal({ name: 'ci', owner: human('alice') })
+    const r = await sp.createServicePrincipal({ name: 'ci', owner: human('alice') })
     assert.ok(r.ok)
     assert.equal(r.principal.status, 'active')
     assert.equal(sp.serviceUser(r.principal).iss, 'urn:mice:service')
-    assert.equal(sp.listServicePrincipals().some((p) => p.id === r.principal.id), true)
+    assert.equal(((await sp.listServicePrincipals()).some((p) => p.id === r.principal.id)), true)
   })
 
-  it('authenticates a service PAT with human expiry rules, and is never an instance admin', async () => {
-    const r = sp.createServicePrincipal({ name: 'ci2', owner: human('alice') })
+  await it('authenticates a service PAT with human expiry rules, and is never an instance admin', async () => {
+    const r = await sp.createServicePrincipal({ name: 'ci2', owner: human('alice') })
     assert.ok(r.ok)
-    assert.throws(() => mint(r.principal, 366))
-    const { token, pat } = mint(r.principal)
+    await assert.rejects(mint(r.principal, 366))
+    const { token, pat } = await mint(r.principal)
     assert.ok(pat.expiresAt)
     const app = new Hono()
     applyGlobalGuards(app)
@@ -66,125 +68,123 @@ describe('service principals', () => {
     assert.equal(res.status, 200)
     assert.deepEqual(await res.json(), { sub: r.principal.id, iss: SERVICE_ISSUER })
     const u = sp.serviceUser(r.principal)
-    assert.equal(isInstanceAdmin(u), false)
-    assert.equal(addInstanceAdmin(root, u).ok, false)
-    assert.equal(isInstanceAdmin(u), false)
+    assert.equal(await isInstanceAdmin(u), false)
+    assert.equal((await addInstanceAdmin(root, u)).ok, false)
+    assert.equal(await isInstanceAdmin(u), false)
   })
 
-  it('identifies the service principal and its owner in audit events', () => {
-    const r = sp.createServicePrincipal({ name: 'ci3', owner: human('alice') })
+  await it('identifies the service principal and its owner in audit events', async () => {
+    const r = await sp.createServicePrincipal({ name: 'ci3', owner: human('alice') })
     assert.ok(r.ok)
-    appendAudit({
+    await appendAudit({
       actor: actorFromUser(sp.serviceUser(r.principal)), via: 'pat', method: 'POST',
       path: '/x', status: 200, action: 'file.write',
     })
-    const ev = queryAudit({ actor: r.principal.id, limit: 5 }).events[0]
+    const ev = (await queryAudit({ actor: r.principal.id, limit: 5 })).events[0]
     assert.equal(ev.actorKind, 'service')
     assert.equal(ev.owner?.sub, 'alice')
-    appendAudit({ actor: actorFromUser(human('bob') as never), via: 'pat', method: 'POST', path: '/x', status: 200, action: 'file.write' })
-    assert.equal(queryAudit({ actor: 'bob', limit: 1 }).events[0].actorKind, undefined)
+    await appendAudit({ actor: actorFromUser(human('bob') as never), via: 'pat', method: 'POST', path: '/x', status: 200, action: 'file.write' })
+    assert.equal((await queryAudit({ actor: 'bob', limit: 1 })).events[0].actorKind, undefined)
   })
 
-  it('rejects the reserved service issuer as the OIDC issuer', () => {
+  await it('rejects the reserved service issuer as the OIDC issuer', () => {
     const p = productionStartupProblems({ OIDC_ISSUER: 'urn:mice:service' })
     assert.equal(p.length, 1)
     assert.match(p[0], /reserved/)
     assert.deepEqual(productionStartupProblems({ OIDC_ISSUER: 'http://keycloak:8080/realms/mice' }), [])
   })
 
-  it('suspends on owner offboarding (directory sync), audits the cause, and rejects its PATs', async () => {
-    const own = sp.createServicePrincipal({ name: 'ci4', owner: human('carol') })
-    const other = sp.createServicePrincipal({ name: 'ci5', owner: human('dave') })
+  await it('suspends on owner offboarding (directory sync), audits the cause, and rejects its PATs', async () => {
+    const own = await sp.createServicePrincipal({ name: 'ci4', owner: human('carol') })
+    const other = await sp.createServicePrincipal({ name: 'ci5', owner: human('dave') })
     assert.ok(own.ok && other.ok)
-    createPat(human('carol'), 'cli')
-    const a = mint(own.principal)
-    const b = mint(other.principal)
+    await createPat(human('carol'), 'cli')
+    const a = await mint(own.principal)
+    const b = await mint(other.principal)
     const result = await runDirectorySync({
       lookup: async (p) => (p.sub === 'carol' ? 'disabled' : 'enabled'),
     })
     assert.ok(result.ok)
-    assert.equal(sp.getServicePrincipal(own.principal.id)?.status, 'suspended')
-    assert.equal(sp.getServicePrincipal(other.principal.id)?.status, 'active')
-    assert.equal(resolvePat(a.token), null)
-    assert.ok(resolvePat(b.token))
-    const ev = queryAudit({ action: 'service-principal.suspend', limit: 10 }).events
+    assert.equal((await sp.getServicePrincipal(own.principal.id))?.status, 'suspended')
+    assert.equal((await sp.getServicePrincipal(other.principal.id))?.status, 'active')
+    assert.equal(await resolvePat(a.token), null)
+    assert.ok(await resolvePat(b.token))
+    const ev = (await queryAudit({ action: 'service-principal.suspend', limit: 10 })).events
       .find((e) => e.detail?.id === own.principal.id)
     assert.ok(ev)
     assert.equal(ev.detail?.cause, 'directory-sync')
-    assert.ok(sp.getServicePrincipal(own.principal.id)?.record)
+    assert.ok((await sp.getServicePrincipal(own.principal.id))?.record)
   })
 
-  it('suspends on admin revocation of the owner', () => {
-    const r = sp.createServicePrincipal({ name: 'ci6', owner: human('erin') })
+  await it("suspends on admin revocation of the owner", async () => {
+    const r = await sp.createServicePrincipal({ name: 'ci6', owner: human('erin') })
     assert.ok(r.ok)
-    const t = mint(r.principal)
-    assert.ok(adminRevoke(root, human('erin')).ok)
-    assert.equal(sp.getServicePrincipal(r.principal.id)?.status, 'suspended')
-    assert.equal(resolvePat(t.token), null)
+    const t = await mint(r.principal)
+    assert.ok((await adminRevoke(root, human('erin'))).ok)
+    assert.equal((await sp.getServicePrincipal(r.principal.id))?.status, 'suspended')
+    assert.equal(await resolvePat(t.token), null)
   })
 
-  it('reassigns and reactivates; the same PATs work again', () => {
-    const r = sp.createServicePrincipal({ name: 'ci7', owner: human('frank') })
+  await it('reassigns and reactivates; the same PATs work again', async () => {
+    const r = await sp.createServicePrincipal({ name: 'ci7', owner: human('frank') })
     assert.ok(r.ok)
-    const t = mint(r.principal)
-    sp.suspendOwnedBy(human('frank'), 'admin-revocation')
-    assert.equal(resolvePat(t.token), null)
-    assert.equal(sp.reassignServicePrincipal(r.principal.id, { ...human('x'), iss: SERVICE_ISSUER }).ok, false)
-    const re = sp.reassignServicePrincipal(r.principal.id, human('gina'))
+    const t = await mint(r.principal)
+    await sp.suspendOwnedBy(human('frank'), 'admin-revocation')
+    assert.equal(await resolvePat(t.token), null)
+    assert.equal((await sp.reassignServicePrincipal(r.principal.id, { ...human('x'), iss: SERVICE_ISSUER })).ok, false)
+    const re = await sp.reassignServicePrincipal(r.principal.id, human('gina'))
     assert.ok(re.ok)
-    assert.equal(sp.getServicePrincipal(r.principal.id)?.owner.sub, 'gina')
-    assert.equal(sp.getServicePrincipal(r.principal.id)?.status, 'active')
-    assert.ok(resolvePat(t.token))
+    assert.equal((await sp.getServicePrincipal(r.principal.id))?.owner.sub, 'gina')
+    assert.equal((await sp.getServicePrincipal(r.principal.id))?.status, 'active')
+    assert.ok(await resolvePat(t.token))
   })
 
-  it('never suspends a principal whose owner is still active', () => {
-    const r = sp.createServicePrincipal({ name: 'ci8', owner: human('hank') })
+  await it('never suspends a principal whose owner is still active', async () => {
+    const r = await sp.createServicePrincipal({ name: 'ci8', owner: human('hank') })
     assert.ok(r.ok)
-    assert.deepEqual(sp.suspendOwnedBy(human('someone-else'), 'directory-sync'), [])
-    assert.equal(sp.getServicePrincipal(r.principal.id)?.status, 'active')
+    assert.deepEqual(await sp.suspendOwnedBy(human('someone-else'), 'directory-sync'), [])
+    assert.equal((await sp.getServicePrincipal(r.principal.id))?.status, 'active')
   })
 })
 
-describe('service principal PAT expiry notifications', () => {
-  const inbox = (u: { iss: string; sub: string }) => {
-    const s = readNotificationState()
-    return s.entries.filter((e) => e.user === notificationUserKey(u)).map((e) => s.events[e.event])
-  }
+await describe('service principal PAT expiry notifications', async () => {
+  const inbox = novuInbox
+  after(purgeTouchedSubscribers)
 
-  it('notifies the owner once at the lead time, naming principal and date; redirects after reassign', () => {
+  await it('notifies the owner once at the lead time, naming principal and date; redirects after reassign', async () => {
     const t0 = realNow()
     Date.now = () => t0
     const owner = human('olga')
-    rememberNotificationUser({ ...owner })
-    const r = sp.createServicePrincipal({ name: 'deploy-bot', owner })
+    await rememberNotificationUser({ ...owner })
+    const r = await sp.createServicePrincipal({ name: 'deploy-bot', owner })
     assert.ok(r.ok)
-    const { pat } = mint(r.principal, 20)
-    assert.equal(checkServicePatExpiry(14), 0)
+    const { pat } = await mint(r.principal, 20)
+    assert.equal(await checkServicePatExpiry(14), 0)
     Date.now = () => t0 + 7 * 86_400_000
-    assert.equal(checkServicePatExpiry(14), 1)
-    assert.equal(checkServicePatExpiry(14), 0)
-    const got = inbox(owner).filter((n) => n.summary.includes('deploy-bot'))
+    assert.equal(await checkServicePatExpiry(14), 1)
+    assert.equal(await checkServicePatExpiry(14), 0)
+    const got = (await inbox(owner, 1)).filter((n) => n.summary.includes('deploy-bot'))
     assert.equal(got.length, 1)
     assert.ok(got[0].summary.includes(pat.expiresAt!.slice(0, 10)))
 
     const next = human('pia')
-    rememberNotificationUser({ ...next })
-    sp.reassignServicePrincipal(r.principal.id, next)
-    const { pat: later } = mint(r.principal, 10)
-    assert.equal(checkServicePatExpiry(14), 1)
-    assert.equal(inbox(next).filter((n) => n.summary.includes('deploy-bot')).length, 1)
+    await rememberNotificationUser({ ...next })
+    await sp.reassignServicePrincipal(r.principal.id, next)
+    const { pat: later } = await mint(r.principal, 10)
+    assert.equal(await checkServicePatExpiry(14), 1)
+    assert.equal((await inbox(next, 1)).filter((n) => n.summary.includes('deploy-bot')).length, 1)
     assert.ok(later.id)
   })
 
-  it('skips expired and revoked PATs', () => {
+  await it('skips expired and revoked PATs', async () => {
     const t0 = realNow()
     Date.now = () => t0
-    const r = sp.createServicePrincipal({ name: 'skip-bot', owner: human('quinn') })
+    const r = await sp.createServicePrincipal({ name: 'skip-bot', owner: human('quinn') })
     assert.ok(r.ok)
-    mint(r.principal, 1)
-    const revoked = mint(r.principal, 30)
-    revokePat(sp.serviceUser(r.principal), revoked.pat.id)
+    await mint(r.principal, 1)
+    const revoked = await mint(r.principal, 30)
+    await revokePat(sp.serviceUser(r.principal), revoked.pat.id)
     Date.now = () => t0 + 20 * 86_400_000
-    assert.equal(checkServicePatExpiry(14), 0)
+    assert.equal(await checkServicePatExpiry(14), 0)
   })
 })

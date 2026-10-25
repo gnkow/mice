@@ -52,7 +52,7 @@ export function createDirectoryService(directory: Directory) {
       const configured = directory.configured
       if (!q) return { results: [], source: 'none', providerConfigured: configured }
 
-      const storeHits = searchProjection(q, kind, limit, directory.issuer)
+      const storeHits = await searchProjection(q, kind, limit, directory.issuer)
       let remoteHits: DirectoryHit[] = []
       if (configured) {
         remoteHits =
@@ -93,8 +93,8 @@ export const lookupKeycloakUserStatus = (sub: string): Promise<DirectoryUserStat
 export const searchDirectory = (input: SearchInput): Promise<DirectorySearchResult> =>
   createDirectoryService(processDirectory).search(input)
 
-export const searchStoreDirectory = (q: string, kind: 'user' | 'group', limit: number): DirectoryHit[] =>
+export const searchStoreDirectory = (q: string, kind: 'user' | 'group', limit: number): Promise<DirectoryHit[]> =>
   searchProjection(q, kind, limit, processDirectory.issuer)
 export const collectStorePrincipals = (
   opts: { includePatOwners?: boolean } = {},
-): Map<string, DirectoryUserHit> => collectProjection({ ...opts, defaultIssuer: processDirectory.issuer })
+): Promise<Map<string, DirectoryUserHit>> => collectProjection({ ...opts, defaultIssuer: processDirectory.issuer })

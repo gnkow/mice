@@ -4,3 +4,13 @@ services:
     ports:
       # Published for e2e setup helpers (OXEN_URL). Browser traffic must use the BFF.
       - "${OXEN_PORT:-3001}:3001"
+  # Published on localhost so unit tests on the host use the same databases as the BFF.
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+  immudb:
+    ports:
+      - "127.0.0.1:${IMMUDB_PORT:-3322}:3322"
+  novu-api:
+    ports:
+      - "127.0.0.1:${NOVU_PORT:-3010}:3000"

@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -84,15 +85,15 @@ async function reauth(sub: string, authAge: number, returnedAuthTime: number, wh
   return { cb, authorize }
 }
 
-describe('step-up re-authentication', () => {
+await describe('step-up re-authentication', async () => {
   after(() => idp.close())
 
-  it('passes straight through with a fresh authentication time', async () => {
+  await it('passes straight through with a fresh authentication time', async () => {
     const res = await app.request('/auth/step-up/demo', { headers: { cookie: await cookie('u1', 10) } })
     assert.equal(res.status, 200)
   })
 
-  it('sends a stale Session through the IdP and resumes after a fresh login', async () => {
+  await it('sends a stale Session through the IdP and resumes after a fresh login', async () => {
     const { cb } = await reauth('u1', 3600, now())
     assert.equal(cb.status, 302)
     assert.equal(cb.headers.get('location'), '/auth/step-up/demo')
@@ -102,33 +103,33 @@ describe('step-up re-authentication', () => {
     assert.equal(again.status, 200)
   })
 
-  it('rejects a returned authentication time older than the maximum age', async () => {
+  await it('rejects a returned authentication time older than the maximum age', async () => {
     const { cb } = await reauth('u2', 3600, now() - 3000)
     assert.notEqual(cb.status, 302)
-    assert.ok(queryAudit({ action: 'auth.reauth.failed' }).events.length >= 1)
+    assert.ok((await queryAudit({ action: 'auth.reauth.failed' })).events.length >= 1)
   })
 
-  it('rejects a re-authentication by a different Principal', async () => {
+  await it('rejects a re-authentication by a different Principal', async () => {
     const { cb } = await reauth('u3', 3600, now(), 'someone-else')
     assert.notEqual(cb.status, 302)
   })
 
-  it('does nothing and audits when the IdP reports an error', async () => {
+  await it('does nothing and audits when the IdP reports an error', async () => {
     const c = await cookie('u4', 3600)
     const start = await app.request('/auth/reauth?max_age=60&next=/auth/step-up/demo', { headers: { cookie: c } })
     const pkce = decodeURIComponent(/mice_oidc_pkce=([^;]+)/.exec(start.headers.get('set-cookie') ?? '')![1]!)
     const res = await app.request('/auth/callback?error=access_denied&state=x', { headers: { cookie: c, 'x-pkce': pkce } })
     assert.notEqual(res.status, 302)
-    assert.ok(queryAudit({ actor: 'u4', action: 'auth.reauth.failed' }).events.length >= 1)
+    assert.ok((await queryAudit({ actor: 'u4', action: 'auth.reauth.failed' })).events.length >= 1)
   })
 
-  it('refuses PAT callers', async () => {
-    const { token } = createPat(mk('u5'), 'cli')
+  await it('refuses PAT callers', async () => {
+    const { token } = await createPat(mk('u5'), 'cli')
     const res = await app.request('/auth/step-up/demo', { headers: { authorization: `Bearer ${token}` } })
     assert.equal(res.status, 403)
   })
 
-  it('answers API callers with 401 and a re-authentication URL', async () => {
+  await it('answers API callers with 401 and a re-authentication URL', async () => {
     const res = await app.request('/auth/step-up/demo', { headers: { cookie: await cookie('u1', 3600) } })
     assert.equal(res.status, 401)
     const body = (await res.json()) as { error: string; reauthUrl: string }

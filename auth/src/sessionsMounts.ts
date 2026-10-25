@@ -61,42 +61,9 @@ export function assignMountPaths(
   return out
 }
 
-/**
- * Normalize legacy singular workspace_ref fields into mounts[].
- */
-export function normalizeSessionMounts(
-  session: DesktopSession,
-): SessionMount[] {
-  if (Array.isArray(session.mounts) && session.mounts.length > 0) {
-    // Workspace mounts are kept; legacy commit pins are kept for display only; stored
-    // stage ids (not w_…) and unpinned mounts are dropped.
-    return session.mounts
-      .filter((m) => (isWorkspaceMount(m) || Boolean(m.pin_commit && String(m.pin_commit).trim())))
-      .map((m) => {
-        if (isWorkspaceMount(m)) return m
-        const { workspace_id: _legacy, ...rest } = m as SessionMount & {
-          workspace_id?: unknown
-        }
-        return rest
-      })
-  }
-  const ref = session.workspace_ref
-  if (!ref) return []
-  const pin =
-    typeof session.pin_commit === 'string' && session.pin_commit.trim()
-      ? session.pin_commit.trim()
-      : null
-  if (!pin) return []
-  const mode = session.mount_mode === 'ro' ? 'ro' : 'rw'
-  return [
-    {
-      namespace: ref.namespace,
-      repo: ref.repo,
-      pin_commit: pin,
-      mount_mode: mode,
-      mount_path: session.mount_path || '/data',
-    },
-  ]
+/** Only workspace mounts exist; anything else in a stored document is dropped. */
+export function normalizeSessionMounts(session: DesktopSession): SessionMount[] {
+  return (session.mounts ?? []).filter(isWorkspaceMount)
 }
 
 export function normalizeDesktopSession(

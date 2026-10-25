@@ -74,7 +74,7 @@ export async function handleReauthCallback(c: Context, result: LoginResult): Pro
   const current = await getSession(c)
   if (!result.ok) {
     if (current) {
-      appendAudit({
+      await appendAudit({
         actor: actorFromUser(current),
         via: 'session',
         method: c.req.method,
@@ -96,7 +96,7 @@ export async function handleReauthCallback(c: Context, result: LoginResult): Pro
     ...(result.user.authTime !== undefined ? { authTime: result.user.authTime } : {}),
     lastActive: nowSec(),
   })
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(current),
     via: 'session',
     method: c.req.method,

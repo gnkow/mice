@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -38,9 +39,9 @@ const clock = fakeClock(Date.now())
 const restoreClock = useClock(clock)
 after(restoreClock)
 
-describe('sign out everywhere', () => {
-  it('ends other Sessions but keeps PATs by default', async () => {
-    const { token } = createPat(mk('al'), 'cli')
+await describe('sign out everywhere', async () => {
+  await it('ends other Sessions but keeps PATs by default', async () => {
+    const { token } = await createPat(mk('al'), 'cli')
     const other = await cookie('al', 60)
     assert.equal((await post({ cookie: await cookie('al') })).status, 200)
     assert.equal((await app.request('/whoami', { headers: { cookie: other } })).status, 401)
@@ -48,28 +49,28 @@ describe('sign out everywhere', () => {
     assert.equal(viaPat.status, 200)
   })
 
-  it('also revokes PATs when asked', async () => {
+  await it('also revokes PATs when asked', async () => {
     clock.advance(1100)
-    const { token } = createPat(mk('bo'), 'cli')
+    const { token } = await createPat(mk('bo'), 'cli')
     assert.equal((await post({ cookie: await cookie('bo') }, { includePats: true })).status, 200)
     const viaPat = await app.request('/whoami', { headers: { authorization: `Bearer ${token}` } })
     assert.equal(viaPat.status, 401)
   })
 
-  it('rejects PAT callers', async () => {
-    const { token } = createPat(mk('cy'), 'cli')
+  await it('rejects PAT callers', async () => {
+    const { token } = await createPat(mk('cy'), 'cli')
     const res = await post({ authorization: `Bearer ${token}` })
     assert.equal(res.status, 401)
   })
 
-  it('rejects cross-origin requests', async () => {
+  await it('rejects cross-origin requests', async () => {
     const res = await post({ cookie: await cookie('di'), origin: 'https://evil.example' })
     assert.equal(res.status, 403)
   })
 
-  it('audits the Principal with source self-service', async () => {
+  await it('audits the Principal with source self-service', async () => {
     await post({ cookie: await cookie('ed') })
-    const ev = queryAudit({ actor: 'ed', action: 'session.revoke' }).events[0]
+    const ev = (await queryAudit({ actor: 'ed', action: 'session.revoke' })).events[0]
     assert.equal(ev?.actor.sub, 'ed')
     assert.equal(ev?.detail?.source, 'self-service')
   })

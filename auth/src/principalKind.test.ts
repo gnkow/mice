@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { can, kindOf, serviceIdentity, type Capability } from './principal.js'

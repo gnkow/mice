@@ -1,97 +1,38 @@
-import { normalizeGroup, userKey, type UserKey } from './authzTypes.js'
+import { userKey, type UserKey } from './authzTypes.js'
 import { instancePermissions, isInstanceAdmin } from './authzInstanceStore.js'
-import { resolveNamespaceRole } from './authzMembershipStore.js'
+import { namespaceRolesFor, resolveNamespaceRole } from './authzMembershipStore.js'
 import * as repo from './authzRepository.js'
+
+type Who = UserKey & { groups?: string[] }
+const who = (user: Who) => ({ key: userKey(user), groups: repo.sessionGroups(user) })
 
 /**
  * True if the user is a namespace member/owner, instance admin, or has any
  * repo collaborator grant (user or IdP group) under the namespace.
  */
-export function userCanSeeNamespace(
-  user: UserKey & { groups?: string[] },
-  ns: string,
-): boolean {
-  if (isInstanceAdmin(user)) return true
-  if (resolveNamespaceRole(ns, user)) return true
-  const prefix = `${ns}/`
-  const uk = userKey(user)
-  const groups = new Set((user.groups ?? []).map(normalizeGroup))
-  const collab = repo.collaboratorsSnapshot()
-  for (const [key, map] of Object.entries(collab.collaborators)) {
-    if (!key.startsWith(prefix)) continue
-    if (map[uk]) return true
-  }
-  for (const [key, map] of Object.entries(collab.groupCollaborators ?? {})) {
-    if (!key.startsWith(prefix)) continue
-    for (const g of groups) {
-      if (map[g]) return true
-    }
-  }
-  return false
+export async function userCanSeeNamespace(user: Who, ns: string): Promise<boolean> {
+  if (await isInstanceAdmin(user)) return true
+  if (await resolveNamespaceRole(ns, user)) return true
+  return repo.hasCollaboratorGrantIn(ns, who(user))
 }
 
 /** Namespace names visible to the user (member, collab, or instance admin). */
-export function visibleNamespaceNames(
-  user: UserKey & { groups?: string[] },
-): string[] | 'all' {
-  if (isInstanceAdmin(user)) return 'all'
-  const nsStore = repo.namespacesSnapshot()
-  return Object.keys(nsStore.namespaces)
-    .filter((ns) => userCanSeeNamespace(user, ns))
-    .sort()
+export async function visibleNamespaceNames(user: Who): Promise<string[] | 'all'> {
+  if (await isInstanceAdmin(user)) return 'all'
+  const seats = await namespaceRolesFor(user)
+  const collab = new Set(await repo.collaboratorNamespaces(who(user)))
+  const names = Object.keys(await repo.readNamespaces())
+  return names.filter((ns) => seats.get(ns) || collab.has(ns)).sort()
 }
 
-export function userHasAnyGrant(
-  user: UserKey & { groups?: string[] },
-): boolean {
-  if (isInstanceAdmin(user)) return true
-  if (instancePermissions(user).length > 0) return true
-  const members = repo.membersSnapshot()
-  const uk = userKey(user)
-  for (const map of Object.values(members.members)) {
-    if (map[uk]) return true
-  }
-  const groups = repo.sessionGroups(user)
-  if (groups.length) {
-    for (const map of Object.values(members.groupMembers ?? {})) {
-      for (const g of groups) {
-        if (map[g]) return true
-      }
-    }
-  }
-  const collab = repo.collaboratorsSnapshot()
-  for (const map of Object.values(collab.collaborators)) {
-    if (map[uk]) return true
-  }
-  if (groups.length) {
-    for (const map of Object.values(collab.groupCollaborators ?? {})) {
-      for (const g of groups) {
-        if (map[g]) return true
-      }
-    }
-  }
-  return false
+export async function userHasAnyGrant(user: Who): Promise<boolean> {
+  if (await isInstanceAdmin(user)) return true
+  if ((await instancePermissions(user)).length > 0) return true
+  const w = who(user)
+  if ((await repo.membershipRefs(w)).length > 0) return true
+  return repo.hasAnyCollaboratorGrant(w)
 }
 
-export function ownedNamespaces(
-  user: UserKey & { groups?: string[] },
-): string[] {
-  const out: string[] = []
-  const members = repo.membersSnapshot()
-  const uk = userKey(user)
-  const groups = repo.sessionGroups(user)
-  for (const [ns, map] of Object.entries(members.members)) {
-    if (map[uk] === 'owner') {
-      out.push(ns)
-      continue
-    }
-    const gMap = members.groupMembers?.[ns] ?? {}
-    if (groups.some((g) => gMap[g] === 'owner')) out.push(ns)
-  }
-  // Namespaces only present in groupMembers
-  for (const [ns, gMap] of Object.entries(members.groupMembers ?? {})) {
-    if (out.includes(ns)) continue
-    if (groups.some((g) => gMap[g] === 'owner')) out.push(ns)
-  }
-  return out
+export async function ownedNamespaces(user: Who): Promise<string[]> {
+  return repo.ownedNamespaceNames(who(user))
 }

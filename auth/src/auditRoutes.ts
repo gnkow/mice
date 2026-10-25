@@ -10,9 +10,9 @@ import type { AuditDep } from './routeDeps.js'
 import type { SessionUser } from './session.js'
 
 /** The caller's audit scope + filters; returns a Response on denial. */
-function resolveAuditQuery(c: Context, session: SessionUser): { error: Response } | { query: AuditQuery } {
+async function resolveAuditQuery(c: Context, session: SessionUser): Promise<{ error: Response } | { query: AuditQuery }> {
   let namespace = c.req.query('namespace') || undefined
-  const gate = authorizeAuditQuery(session, namespace)
+  const gate = await authorizeAuditQuery(session, namespace)
   if (!gate.allow) {
     return { error: c.json({ error: gate.reason ?? 'Forbidden' }, 403) }
   }
@@ -39,12 +39,12 @@ function resolveAuditQuery(c: Context, session: SessionUser): { error: Response 
 /** Audit log query, facets, CSV export, and the file lineage graph and its rebuild. */
 export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
   /** Query append-only audit log (session required). */
-  app.get('/auth/audit', guarded({}, ({ c, user }) => {
-    const r = resolveAuditQuery(c, user)
+  app.get('/auth/audit', guarded({}, async ({ c, user }) => {
+    const r = await resolveAuditQuery(c, user)
     if ('error' in r) return r.error
     const limitRaw = c.req.query('limit')
     const limit = limitRaw ? Number(limitRaw) : undefined
-    const { events, nextCursor } = queryAudit({
+    const { events, nextCursor } = await queryAudit({
       ...r.query,
       cursor: c.req.query('cursor') || undefined,
       limit: Number.isFinite(limit) ? limit : undefined,
@@ -56,10 +56,10 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
   }))
 
   /** Filter dropdown options: known actions plus sessions/workspaces/jobs seen in the log. */
-  app.get('/auth/audit/facets', guarded({}, ({ c, user }) => {
-    const r = resolveAuditQuery(c, user)
+  app.get('/auth/audit/facets', guarded({}, async ({ c, user }) => {
+    const r = await resolveAuditQuery(c, user)
     if ('error' in r) return r.error
-    const f = auditFacets({
+    const f = await auditFacets({
       namespace: r.query.namespace,
       allowedNamespaces: r.query.allowedNamespaces,
     })
@@ -72,12 +72,12 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
   }))
 
   /** CSV export honouring the same filters and scope as the list. */
-  app.get('/auth/audit/export.csv', guarded({}, ({ c, user, audit }) => {
-    const r = resolveAuditQuery(c, user)
+  app.get('/auth/audit/export.csv', guarded({}, async ({ c, user, audit }) => {
+    const r = await resolveAuditQuery(c, user)
     if ('error' in r) return r.error
-    const { events, truncated } = queryAuditForExport(r.query)
+    const { events, truncated } = await queryAuditForExport(r.query)
     const csv = auditEventsToCsv(events)
-    audit({
+    await audit({
       action: 'audit.export',
       message: `Exported ${events.length} audit events to CSV`,
       detail: { rows: events.length, truncated, filters: { ...r.query, allowedNamespaces: undefined } },
@@ -95,23 +95,23 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
    * verification result and the public keys. Same scope as the list; the export is audited
    * first, and refused when that cannot be recorded.
    */
-  app.get('/auth/audit/export.bundle', guarded({}, ({ c, user, via }) => {
-    const r = resolveAuditQuery(c, user)
+  app.get('/auth/audit/export.bundle', guarded({}, async ({ c, user, via }) => {
+    const r = await resolveAuditQuery(c, user)
     if ('error' in r) return r.error
     const query = { ...r.query, includeChain: true }
     const filters = { ...r.query, allowedNamespaces: undefined, includeChain: undefined }
-    const logged = appendAudit({
+    const logged = await appendAudit({
       actor: actorFromUser(user),
       via,
       method: c.req.method,
       path: c.req.path,
       status: 200,
       action: 'audit.export',
-      message: 'Exported a signed audit bundle',
+      message: 'Exported a audit bundle',
       detail: { format: 'bundle', filters },
     })
     if (!logged) return c.json({ error: 'Audit store unavailable; the export was refused' }, 503)
-    const built = buildAuditExportBundle(query, { sub: user.sub, iss: user.iss, email: user.email, name: user.name }, filters)
+    const built = await buildAuditExportBundle(query, { sub: user.sub, iss: user.iss, email: user.email, name: user.name }, filters)
     if (!built.ok) return c.json({ error: built.error }, 503)
     const day = new Date().toISOString().slice(0, 10)
     c.header('Content-Disposition', `attachment; filename="audit-bundle-${day}.json"`)
@@ -123,22 +123,22 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
    * An instance admin accepts a failed chain verification so dataset mutations resume. The break
    * stays in the trail; the acknowledgement (who, why, which break) is itself an audited event.
    */
-  app.post('/auth/audit/acknowledge', guarded({ gate: instanceGate('instance.admin'), mutates: true, reason: true, body: 'optional' }, ({ c, audit }) => {
-    const ack = acknowledgeAuditBreak()
+  app.post('/auth/audit/acknowledge', guarded({ gate: instanceGate('instance.admin'), mutates: true, reason: true, body: 'optional' }, async ({ c, audit }) => {
+    const ack = await acknowledgeAuditBreak()
     if (!ack) return c.json({ error: 'The audit chain verifies; there is nothing to acknowledge' }, 409)
-    audit({
+    await audit({
       action: 'audit.break.acknowledge',
-      message: `Acknowledged audit chain break at event ${ack.index}`,
-      detail: { index: ack.index, reason: ack.reason },
+      message: `Acknowledged audit chain break at event ${ack.seq}`,
+      detail: { seq: ack.seq, reason: ack.reason },
     })
     return c.json({ ok: true, acknowledged: ack })
   }))
 
   /** Query file lineage graph for a repo (session required; repo read). */
-  app.get('/auth/lineage', guarded({}, ({ c, user: session }) => {
+  app.get('/auth/lineage', guarded({}, async ({ c, user: session }) => {
     const namespace = c.req.query('namespace') || undefined
     const repo = c.req.query('repo') || undefined
-    const gate = authorizeLineageQuery(session, namespace, repo)
+    const gate = await authorizeLineageQuery(session, namespace, repo)
     if (!gate.allow) {
       return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
     }
@@ -160,7 +160,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     const kindRaw = c.req.query('kind')
     const kind = kindRaw as LineageKind | undefined
 
-    const { operations, nextCursor } = queryLineage({
+    const { operations, nextCursor } = await queryLineage({
       namespace,
       repo,
       path: c.req.query('path') || undefined,
@@ -197,7 +197,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
       return c.json({ error: 'namespace, repo, and path are required' }, 400)
     }
 
-    const gate = authorizeLineageRebuild(session, namespace, repo)
+    const gate = await authorizeLineageRebuild(session, namespace, repo)
     if (!gate.allow) {
       return c.json({ error: gate.reason ?? 'Forbidden' }, 403)
     }
@@ -282,8 +282,8 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
         .reverse()
     }
 
-    const created = deriveOpsFromPathHistory(namespace, repo, branch, hints)
-    auditMutation(c, session, 'session', {
+    const created = await deriveOpsFromPathHistory(namespace, repo, branch, hints)
+    await auditMutation(c, session, 'session', {
       action: 'lineage.rebuild',
       namespace,
       repo,

@@ -1,3 +1,4 @@
+import '../db/testSchema.js'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'

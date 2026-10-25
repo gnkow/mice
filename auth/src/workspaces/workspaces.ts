@@ -4,7 +4,7 @@ import { constants } from 'node:fs'
 import { join } from 'node:path'
 import { validWorkspaceId } from './ids.js'
 import { getJob } from '../jobsStore.js'
-import { createDiskDocument } from '../stores.js'
+import { createDiskDocument } from '../diskStore.js'
 import { getSessionRecord, listSessions } from '../sessionsStore.js'
 import { cachedCapabilities, getCapabilities, type Driver } from './capabilities.js'
 import {
@@ -141,7 +141,7 @@ export type ServiceOpts = {
   /** Called for releases the service performs on its own (reconciliation). */
   onLeaseEvent?: (e: { action: 'workspace.lease.release'; namespace: string; repo: string; detail: Record<string, unknown> }) => void
   /** Holder liveness (jobs/sessions stores); default reads them read-only. */
-  holderState?: (h: LeaseHolder) => 'alive' | 'gone' | 'unknown'
+  holderState?: (h: LeaseHolder) => 'alive' | 'gone' | 'unknown' | Promise<'alive' | 'gone' | 'unknown'>
 }
 
 type ScanCache = { at: number; result: ScanResult }
@@ -343,9 +343,9 @@ export class WorkspaceService {
       throw new LeaseError(`workspace is in use: ${shown}`, 423, this.leases.writer(id)?.holder ?? held[0]?.holder)
     }
     // Belt and braces: a live session mounting this workspace blocks delete even if its lease is gone.
-    const sess = listSessions().filter(
+    const sess = ((await listSessions()).filter(
       (x) => !['stopped', 'failed', 'destroyed'].includes(x.status) && (x.mounts ?? []).some((m) => m.workspace_id === id),
-    )
+    ))
     if (sess.length) {
       const who = sess.slice(0, 5).map((x) => `session ${x.id.slice(0, 8)}`)
       const first = sess[0]!
@@ -728,15 +728,15 @@ export class WorkspaceService {
   }
 }
 
-function defaultHolderState(h: LeaseHolder): 'alive' | 'gone' | 'unknown' {
+async function defaultHolderState(h: LeaseHolder): Promise<'alive' | 'gone' | 'unknown'> {
   try {
     if (h.kind === 'job') {
-      const j = getJob(h.id)
+      const j = await getJob(h.id)
       if (!j) return 'gone'
       return ['succeeded', 'failed', 'cancelled'].includes(j.status) ? 'gone' : 'alive'
     }
     if (h.kind === 'session') {
-      const sess = getSessionRecord(h.id)
+      const sess = await getSessionRecord(h.id)
       if (!sess) return 'gone'
       return ['stopped', 'failed', 'destroyed'].includes(sess.status) ? 'gone' : 'alive'
     }

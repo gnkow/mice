@@ -7,8 +7,8 @@ export const LAST_USED_DEBOUNCE_MS = 60_000
 export type CredentialFacts = {
   nowMs: number
   /** Whether the Principal's cut-off covers a credential issued at `issuedAtSec`. */
-  isRevoked(record: PatRecord, issuedAtSec: number): boolean
-  isServiceActive(id: string): boolean
+  isRevoked(record: PatRecord, issuedAtSec: number): Promise<boolean>
+  isServiceActive(id: string): Promise<boolean>
 }
 
 export type CredentialVerdict = 'ok' | 'expired' | 'service-inactive' | 'revoked'
@@ -18,10 +18,10 @@ export function isExpired(record: PatRecord, nowMs: number): boolean {
 }
 
 /** Pure resolution policy: expiry, service-principal activity, revocation. */
-export function judgeCredential(record: PatRecord, facts: CredentialFacts): CredentialVerdict {
+export async function judgeCredential(record: PatRecord, facts: CredentialFacts): Promise<CredentialVerdict> {
   if (isExpired(record, facts.nowMs)) return 'expired'
-  if (kindOf(record) === 'service' && !facts.isServiceActive(record.sub)) return 'service-inactive'
-  if (facts.isRevoked(record, Math.floor(Date.parse(record.createdAt) / 1000))) return 'revoked'
+  if (kindOf(record) === 'service' && !(await facts.isServiceActive(record.sub))) return 'service-inactive'
+  if (await facts.isRevoked(record, Math.floor(Date.parse(record.createdAt) / 1000))) return 'revoked'
   return 'ok'
 }
 

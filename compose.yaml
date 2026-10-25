@@ -19,6 +19,126 @@ services:
     networks:
       - mice
 
+  # Main relational data (ADR 0004). No host port here; compose.override.yaml publishes it on localhost for dev and tests.
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mice
+      POSTGRES_USER: mice
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    secrets:
+      - postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mice -d mice"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - mice
+
+  # Audit trail (ADR 0005). The admin password is loaded from an env file; immudb has no *_FILE variable.
+  immudb:
+    image: codenotary/immudb:1.9.5
+    # No arm64 build of this tag; the newer arm64 image has no binary to health-check with.
+    platform: linux/amd64
+    env_file:
+      - ${IMMUDB_ENV_PATH:-./.secrets/immudb.env}
+    volumes:
+      - immudb-data:/var/lib/immudb
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/immuadmin", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - mice
+
+  # Notifications (ADR 0004). Novu owns messages and read state; the BFF is its only client.
+  novu-mongodb:
+    image: mongo:8.0.17
+    env_file:
+      - ${NOVU_ENV_PATH:-./.secrets/novu.env}
+    volumes:
+      - novu-mongodb:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --eval \"db.adminCommand('ping').ok\" | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - mice
+
+  novu-redis:
+    image: redis:7-alpine
+    env_file:
+      - ${NOVU_ENV_PATH:-./.secrets/novu.env}
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    volumes:
+      - novu-redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - mice
+
+  novu-api:
+    image: ghcr.io/novuhq/novu/api:3.19.0
+    env_file:
+      - ${NOVU_ENV_PATH:-./.secrets/novu.env}
+    environment: &novu-env
+      NODE_ENV: production
+      PORT: "3000"
+      API_ROOT_URL: http://novu-api:3000
+      FRONT_BASE_URL: http://localhost:4000
+      REDIS_HOST: novu-redis
+      REDIS_PORT: "6379"
+      REDIS_CACHE_SERVICE_HOST: novu-redis
+      REDIS_CACHE_SERVICE_PORT: "6379"
+      REDIS_DB_INDEX: "2"
+      MONGO_AUTO_CREATE_INDEXES: "true"
+      IS_SELF_HOSTED: "true"
+      IS_V2_ENABLED: "true"
+      IS_API_IDEMPOTENCY_ENABLED: "true"
+      DISABLE_USER_REGISTRATION: "false"
+    depends_on:
+      novu-mongodb:
+        condition: service_healthy
+      novu-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/v1/health-check || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - mice
+
+  novu-worker:
+    image: ghcr.io/novuhq/novu/worker:3.19.0
+    env_file:
+      - ${NOVU_ENV_PATH:-./.secrets/novu.env}
+    environment:
+      <<: *novu-env
+      PORT: "3004"
+      API_ROOT_URL: http://novu-api:3000
+    depends_on:
+      novu-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - mice
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     command: ["start-dev", "--import-realm"]
@@ -48,23 +168,14 @@ services:
       PORT: "8080"
       OXEN_UPSTREAM: http://oxen-server:3001
       AUTH_DATA_DIR: /data
-      # All durable state lives in this SQLite file on the auth_data volume; legacy JSON/JSONL is imported once on first boot.
-      AUTH_DATABASE_PATH: ${AUTH_DATABASE_PATH:-/data/mice.db}
-      # Verified scheduled backups (0 = off), newest AUTH_BACKUP_KEEP kept in /data/backups unless AUTH_BACKUP_DIR points elsewhere.
-      AUTH_BACKUP_INTERVAL_HOURS: ${AUTH_BACKUP_INTERVAL_HOURS:-0}
-      AUTH_BACKUP_KEEP: ${AUTH_BACKUP_KEEP:-7}
-      # Audit checkpoints are signed with a key kept outside AUTH_DATA_DIR (boot fails without it).
-      # Dev: `make audit-key` creates .secrets/audit-signing.pem. Production: mount your own secret.
-      AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key
-      AUDIT_SIGNING_KEY_ID: ${AUDIT_SIGNING_KEY_ID:-dev-1}
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      IMMUDB_HOST: immudb
+      IMMUDB_PASSWORD_FILE: /run/secrets/immudb_password
+      NOVU_URL: http://novu-api:3000
+      NOVU_PASSWORD_FILE: /run/secrets/novu_password
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
       PUBLIC_WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
-      # Optional notification delivery (inbox/toasts work without these).
-      NOTIFICATIONS_SMTP_URL: ${NOTIFICATIONS_SMTP_URL:-}
-      NOTIFICATIONS_EMAIL_FROM: ${NOTIFICATIONS_EMAIL_FROM:-}
-      NOTIFICATIONS_VAPID_PUBLIC_KEY: ${NOTIFICATIONS_VAPID_PUBLIC_KEY:-}
-      NOTIFICATIONS_VAPID_PRIVATE_KEY: ${NOTIFICATIONS_VAPID_PRIVATE_KEY:-}
-      NOTIFICATIONS_VAPID_SUBJECT: ${NOTIFICATIONS_VAPID_SUBJECT:-}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-mice-session-secret}
       # PLAT-AUTHO: unset = store flag (off until bootstrap).
       AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}
@@ -131,11 +242,22 @@ services:
       # Local (Docker) runner. Set JOBS_RUNNER=kubernetes for Cluster jobs.
       - ${JOBS_DOCKER_SOCKET_HOST:-/var/run/docker.sock}:/var/run/docker.sock
     secrets:
-      - audit_signing_key
+      - postgres_password
+      - immudb_password
+      - novu_password
     depends_on:
-      - oxen-server
-      - keycloak
-      - guacd
+      oxen-server:
+        condition: service_started
+      keycloak:
+        condition: service_started
+      guacd:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      immudb:
+        condition: service_healthy
+      novu-api:
+        condition: service_healthy
     networks:
       - mice
 
@@ -184,10 +306,18 @@ networks:
   mice:
 
 secrets:
-  audit_signing_key:
-    file: ${AUDIT_SIGNING_KEY_PATH:-./.secrets/audit-signing.pem}
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_PATH:-./.secrets/postgres-password}
+  immudb_password:
+    file: ${IMMUDB_PASSWORD_PATH:-./.secrets/immudb-password}
+  novu_password:
+    file: ${NOVU_PASSWORD_PATH:-./.secrets/novu-password}
 
 volumes:
+  postgres-data:
+  immudb-data:
+  novu-mongodb:
+  novu-redis:
   oxen-data:
   web_node_modules:
   auth_node_modules:

@@ -35,7 +35,7 @@ export const sameOriginGuard: MiddlewareHandler = async (c, next) => {
   if (SAFE_METHODS.has(c.req.method) || !isCrossSite(c.req.raw.headers)) return next()
   const session = await getSession(c)
   if (!session) return next()
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(session),
     via: 'session',
     method: c.req.method,

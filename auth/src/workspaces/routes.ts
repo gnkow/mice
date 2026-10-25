@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream'
+import { filterAsync } from '../asyncArray.js'
 import type { Context, Hono } from 'hono'
 import { actorFromUser, appendAudit, type AuditActor } from '../audit.js'
 import {
@@ -47,7 +48,7 @@ function fail(c: Context, err: unknown) {
 
 type Auth = { user: SessionUser; via: 'session' | 'pat' }
 
-function audit(
+async function audit(
   a: Auth,
   c: Context,
   action: string,
@@ -55,7 +56,7 @@ function audit(
   where: { namespace?: string; repo?: string },
   detail: Record<string, unknown>,
 ) {
-  appendAudit({
+  await appendAudit({
     actor: actorFromUser(a.user),
     via: a.via,
     method: c.req.method,
@@ -73,8 +74,8 @@ export async function initWorkspaces(): Promise<{ store: CheckoutStore; svc: Wor
   let svc = getWorkspaceService()
   if (store && svc) return { store, svc }
   const cfg = loadWorkspacesConfig()
-  const onAudit = (e: StoreAuditEvent) => {
-    appendAudit({
+  const onAudit = async (e: StoreAuditEvent) => {
+    await appendAudit({
       actor: SYSTEM_ACTOR,
       via: 'session',
       method: 'SYSTEM',
@@ -96,8 +97,8 @@ export async function initWorkspaces(): Promise<{ store: CheckoutStore; svc: Wor
   svc = new WorkspaceService({
     store,
     cfg,
-    onLeaseEvent: (e) =>
-      appendAudit({
+    onLeaseEvent: async (e) =>
+      await appendAudit({
         actor: SYSTEM_ACTOR,
         via: 'session',
         method: 'SYSTEM',
@@ -130,7 +131,7 @@ export async function startWorkspaceBackground(): Promise<void> {
   const cfg = store.cfg
   const every = (sec: number, fn: () => Promise<unknown>, label: string) => {
     if (sec <= 0) return
-    const t = setInterval(() => fn().catch((e) => console.warn(`[workspaces] ${label} failed:`, e)), sec * 1000)
+    const t = setInterval(() => { void fn().catch((e) => console.warn(`[workspaces] ${label} failed:`, e)) }, sec * 1000)
     t.unref()
   }
   every(cfg.gcIntervalSec, () => runGc(store, { reason: 'scheduled' }), 'gc')
@@ -163,7 +164,7 @@ export function registerWorkspaceRoutes(app: Hono) {
   app.get('/auth/workspaces/capabilities', async (c) => {
     const a = await requireAuth(c)
     if (!a) return c.json({ error: 'Authentication required' }, 401)
-    const z = authorizeStoreAdmin(a.user)
+    const z = await authorizeStoreAdmin(a.user)
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     return c.json(await getCapabilities({ refresh: c.req.query('refresh') === '1' || c.req.query('refresh') === 'true' }))
   })
@@ -181,7 +182,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const namespace = typeof body.namespace === 'string' ? body.namespace : ''
     const repo = typeof body.repo === 'string' ? body.repo : ''
     if (!namespace || !repo) return c.json({ error: 'namespace and repo are required' }, 400)
-    const z = authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
+    const z = await authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const src = (body.source ?? {}) as { branch?: unknown; commit?: unknown }
     let source: { branch: string } | { commit: string }
@@ -197,7 +198,7 @@ export function registerWorkspaceRoutes(app: Hono) {
         source,
         createdBy: { email: a.user.email, sub: a.user.sub },
       })
-      audit(a, c, 'workspace.create', 202, { namespace, repo }, { workspace_id: ws.id, name: ws.name, source })
+      await audit(a, c, 'workspace.create', 202, { namespace, repo }, { workspace_id: ws.id, name: ws.name, source })
       return c.json({ workspace: ws }, 202)
     } catch (err) {
       return fail(c, err)
@@ -213,11 +214,11 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (!namespace && !repo) {
       const all = svc.list()
       return c.json({
-        workspaces: all.filter((w) => authorizeRepoAction(a.user, w.namespace, w.repo, 'workspace.read').allow),
+        workspaces: await filterAsync(all, async (w) => (await authorizeRepoAction(a.user, w.namespace, w.repo, 'workspace.read')).allow),
       })
     }
     if (!namespace || !repo) return c.json({ error: 'namespace and repo are required together' }, 400)
-    const z = authorizeRepoAction(a.user, namespace, repo, 'workspace.read')
+    const z = await authorizeRepoAction(a.user, namespace, repo, 'workspace.read')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     return c.json({ workspaces: svc.list({ namespace, repo }) })
   })
@@ -230,7 +231,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const { svc } = await ctx(c)
     const st = validWorkspaceId(id) ? svc.getState(id) : undefined
     if (!st) return { res: c.json({ error: 'Workspace not found' }, 404) }
-    const z = authorizeRepoAction(a.user, st.namespace, st.repo, write ? 'workspace.write' : 'workspace.read')
+    const z = await authorizeRepoAction(a.user, st.namespace, st.repo, write ? 'workspace.write' : 'workspace.read')
     if (!z.allow) return { res: c.json({ error: z.reason ?? 'Forbidden' }, 403) }
     return { a, svc, st }
   }
@@ -246,7 +247,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     if ('res' in w) return w.res
     try {
       await w.svc.delete(w.st.id)
-      audit(w.a, c, 'workspace.delete', 200, { namespace: w.st.namespace, repo: w.st.repo }, { workspace_id: w.st.id, name: w.st.name })
+      await audit(w.a, c, 'workspace.delete', 200, { namespace: w.st.namespace, repo: w.st.repo }, { workspace_id: w.st.id, name: w.st.name })
       return c.json({ ok: true })
     } catch (err) {
       return fail(c, err)
@@ -278,7 +279,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const mode = body.mode
     if (mode !== 'read' && mode !== 'write') return c.json({ error: "mode must be 'read' or 'write'" }, 400)
     if (mode === 'write') {
-      const z = authorizeRepoAction(w.a.user, w.st.namespace, w.st.repo, 'workspace.write')
+      const z = await authorizeRepoAction(w.a.user, w.st.namespace, w.st.repo, 'workspace.write')
       if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     }
     const kind = (typeof body.holder_kind === 'string' ? body.holder_kind : 'user') as HolderKind
@@ -295,7 +296,7 @@ export function registerWorkspaceRoutes(app: Hono) {
         ownerSub: w.a.user.sub,
         ownerEmail: w.a.user.email,
       })
-      audit(w.a, c, 'workspace.lease.acquire', 201, { namespace: w.st.namespace, repo: w.st.repo }, {
+      await audit(w.a, c, 'workspace.lease.acquire', 201, { namespace: w.st.namespace, repo: w.st.repo }, {
         workspace_id: w.st.id, lease_id: lease.id, mode, holder: lease.holder,
       })
       return c.json({ lease: toPublicLease(lease) }, 201)
@@ -320,7 +321,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const lease = w.svc.leases.get(c.req.param('leaseId') ?? '')
     if (!lease || lease.workspace_id !== w.st.id) return { res: c.json({ error: 'Lease not found' }, 404) }
     const owner = lease.owner_sub === w.a.user.sub
-    const admin = !owner && authorizeStoreAdmin(w.a.user).allow
+    const admin = !owner && (await authorizeStoreAdmin(w.a.user)).allow
     if (!owner && !admin) return { res: c.json({ error: 'Only the lease owner or an admin can do this', holder: lease.holder }, 403) }
     return { ...w, lease, forced: !owner }
   }
@@ -329,7 +330,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const w = await withLease(c)
     if ('res' in w) return w.res
     await w.svc.leases.release(w.lease.id)
-    audit(w.a, c, w.forced ? 'workspace.lease.force_release' : 'workspace.lease.release', 200, { namespace: w.st.namespace, repo: w.st.repo }, {
+    await audit(w.a, c, w.forced ? 'workspace.lease.force_release' : 'workspace.lease.release', 200, { namespace: w.st.namespace, repo: w.st.repo }, {
       workspace_id: w.st.id, lease_id: w.lease.id, mode: w.lease.mode, holder: w.lease.holder,
     })
     return c.json({ ok: true })
@@ -432,7 +433,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (!a) return c.json({ error: 'Authentication required' }, 401)
     const namespace = c.req.query('namespace') ?? ''
     const repo = c.req.query('repo') ?? ''
-    const z = namespace && repo ? authorizeRepoAction(a.user, namespace, repo, 'workspace.read') : authorizeStoreAdmin(a.user)
+    const z = namespace && repo ? await authorizeRepoAction(a.user, namespace, repo, 'workspace.read') : await authorizeStoreAdmin(a.user)
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
     return c.json({ checkouts: await listCheckouts(store, { namespace: namespace || undefined, repo: repo || undefined }) })
@@ -443,7 +444,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (!a) return c.json({ error: 'Authentication required' }, 401)
     const { ns, repo, commit } = c.req.param()
     if (!validNs(ns) || !validNs(repo) || !validCommit(commit)) return c.json({ error: 'invalid path' }, 400)
-    const z = authorizeRepoAction(a.user, ns, repo, 'workspace.read')
+    const z = await authorizeRepoAction(a.user, ns, repo, 'workspace.read')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
     return c.json(await checkoutStatus(store, ns, repo, commit))
@@ -462,7 +463,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const repo = typeof body.repo === 'string' ? body.repo : ''
     const ref = typeof body.ref === 'string' ? body.ref : ''
     if (!namespace || !repo || !ref) return c.json({ error: 'namespace, repo and ref are required' }, 400)
-    const z = authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
+    const z = await authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     try {
       const { store } = await ctx(c)
@@ -477,7 +478,7 @@ export function registerWorkspaceRoutes(app: Hono) {
   app.delete('/auth/checkouts/:ns/:repo/:commit', async (c) => {
     const a = await requireAuth(c)
     if (!a) return c.json({ error: 'Authentication required' }, 401)
-    const z = authorizeStoreAdmin(a.user)
+    const z = await authorizeStoreAdmin(a.user)
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { ns, repo, commit } = c.req.param()
     if (!validNs(ns) || !validNs(repo) || !validCommit(commit)) return c.json({ error: 'invalid path' }, 400)
@@ -485,7 +486,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const r = await evictCheckout(store, ns, repo, commit)
     if (r === 'referenced') return c.json({ error: 'Checkout is referenced by a workspace or running build' }, 409)
     if (r === 'missing') return c.json({ error: 'Checkout not found' }, 404)
-    audit(a, c, 'checkout.evict', 200, { namespace: ns, repo }, { commit, reason: 'manual' })
+    await audit(a, c, 'checkout.evict', 200, { namespace: ns, repo }, { commit, reason: 'manual' })
     return c.json({ ok: true })
   })
 
@@ -493,18 +494,18 @@ export function registerWorkspaceRoutes(app: Hono) {
   app.post('/auth/store/gc', async (c) => {
     const a = await requireAuth(c)
     if (!a) return c.json({ error: 'Authentication required' }, 401)
-    const z = authorizeStoreAdmin(a.user)
+    const z = await authorizeStoreAdmin(a.user)
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
     const report = await runGc(store, { reason: 'manual' })
-    audit(a, c, 'store.gc', 200, {}, { ...report })
+    await audit(a, c, 'store.gc', 200, {}, { ...report })
     return c.json(report)
   })
 
   app.post('/auth/store/scrub', async (c) => {
     const a = await requireAuth(c)
     if (!a) return c.json({ error: 'Authentication required' }, 401)
-    const z = authorizeStoreAdmin(a.user)
+    const z = await authorizeStoreAdmin(a.user)
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
     return c.json(await runScrub(store, { all: true }))

@@ -1,11 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { join } from 'node:path'
 import { currentClock, type Clock } from './clock.js'
-import { env } from './env.js'
 import { isCredentialRevoked } from './credentialRevocation.js'
 import { judgeCredential, isExpired, shouldRecordUse } from './credentialPolicy.js'
 import {
-  createFileCredentialStore,
+  createPostgresCredentialStore,
   type CredentialStore,
   type PatPublic,
   type PatRecord,
@@ -52,8 +50,8 @@ function toPublic(rec: PatRecord): PatPublic {
 export type CredentialDeps = {
   store: CredentialStore
   clock: Clock
-  isRevoked: (principal: { iss: string; sub: string }, issuedAtSec: number) => boolean
-  isServiceActive: (id: string) => boolean
+  isRevoked: (principal: { iss: string; sub: string }, issuedAtSec: number) => Promise<boolean>
+  isServiceActive: (id: string) => Promise<boolean>
 }
 
 export type ResolveOptions = {
@@ -70,43 +68,38 @@ export function createCredentials(deps: CredentialDeps) {
     isServiceActive: deps.isServiceActive,
   })
 
-  function listPatsForUser(user: SessionUser): PatPublic[] {
-    return store
-      .list()
-      .filter((t) => t.sub === user.sub && t.iss === user.iss)
+  async function listPatsForUser(user: SessionUser): Promise<PatPublic[]> {
+    return (await store.listForOwner(user))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(toPublic)
   }
 
   /** Live PATs of service principals, for expiry notices. */
-  function listServicePats(): Array<{ id: string; sub: string; iss: string; expiresAt: string }> {
+  async function listServicePats(): Promise<Array<{ id: string; sub: string; iss: string; expiresAt: string }>> {
     const nowMs = clock.now()
-    return store
-      .list()
-      .filter(
-        (t) =>
-          kindOf(t) === 'service' &&
-          !isExpired(t, nowMs) &&
-          t.expiresAt &&
-          !deps.isRevoked(t, Math.floor(Date.parse(t.createdAt) / 1000)),
-      )
-      .map((t) => ({ id: t.id, sub: t.sub, iss: t.iss, expiresAt: t.expiresAt! }))
+    const live: PatRecord[] = []
+    for (const t of await store.list()) {
+      if (kindOf(t) !== 'service' || isExpired(t, nowMs) || !t.expiresAt) continue
+      if (await deps.isRevoked(t, Math.floor(Date.parse(t.createdAt) / 1000))) continue
+      live.push(t)
+    }
+    return live.map((t) => ({ id: t.id, sub: t.sub, iss: t.iss, expiresAt: t.expiresAt! }))
   }
 
   /** Distinct owners of stored PATs (for directory sync). */
-  function listPatOwners(): Array<{ sub: string; iss: string; email: string; name: string }> {
+  async function listPatOwners(): Promise<Array<{ sub: string; iss: string; email: string; name: string }>> {
     const seen = new Map<string, { sub: string; iss: string; email: string; name: string }>()
-    for (const t of store.list()) {
-      seen.set(`${t.iss}\0${t.sub}`, { sub: t.sub, iss: t.iss, email: t.email, name: t.name })
+    for (const t of await store.list()) {
+      seen.set(`${t.iss}\u001f${t.sub}`, { sub: t.sub, iss: t.iss, email: t.email, name: t.name })
     }
     return [...seen.values()]
   }
 
-  function createPat(
+  async function createPat(
     user: SessionUser,
     label: string,
     scopesOrOpts?: PatScope[] | CreatePatOptions,
-  ): { token: string; pat: PatPublic } {
+  ): Promise<{ token: string; pat: PatPublic }> {
     const opts: CreatePatOptions = Array.isArray(scopesOrOpts)
       ? { scopes: scopesOrOpts }
       : (scopesOrOpts ?? {})
@@ -133,31 +126,31 @@ export function createCredentials(deps: CredentialDeps) {
       ...(scopes?.length ? { scopes } : {}),
       ...(user.groups?.length ? { groups: [...user.groups] } : {}),
     }
-    store.save(rec)
+    await store.save(rec)
     return { token, pat: toPublic(rec) }
   }
 
-  function revokePat(user: SessionUser, id: string): boolean {
-    return store.remove((t) => t.id === id && t.sub === user.sub && t.iss === user.iss) > 0
+  function revokePat(user: SessionUser, id: string): Promise<boolean> {
+    return store.removeOwned(user, id)
   }
 
   /** Revoke a PAT by raw bearer value (CLI logout). */
-  function revokePatByToken(rawBearer: string): boolean {
+  async function revokePatByToken(rawBearer: string): Promise<boolean> {
     const token = rawBearer.trim()
     if (!token.startsWith(TOKEN_PREFIX)) return false
     const tokenHash = hashToken(token)
-    return store.remove((t) => t.tokenHash === tokenHash) > 0
+    return store.removeByHash(tokenHash)
   }
 
   /** Resolve a bearer PAT to a session identity, or null. */
-  function resolvePat(rawBearer: string, opts: ResolveOptions = {}): SessionUser | null {
+  async function resolvePat(rawBearer: string, opts: ResolveOptions = {}): Promise<SessionUser | null> {
     const token = rawBearer.trim()
     if (!token.startsWith(TOKEN_PREFIX)) return null
     const tokenHash = hashToken(token)
-    const rec = store.findByHash(tokenHash)
-    if (!rec || judgeCredential(rec, facts()) !== 'ok') return null
+    const rec = await store.findByHash(tokenHash)
+    if (!rec || (await judgeCredential(rec, facts())) !== 'ok') return null
     if ((opts.touch ?? true) && shouldRecordUse(rec, clock.now())) {
-      store.touch(tokenHash, new Date(clock.now()).toISOString())
+      await store.touch(tokenHash, new Date(clock.now()).toISOString())
     }
     return {
       sub: rec.sub,
@@ -170,10 +163,10 @@ export function createCredentials(deps: CredentialDeps) {
   }
 
   /** Look up public PAT metadata by raw bearer (no lastUsed bump). */
-  function findPatByToken(rawBearer: string): PatPublic | null {
+  async function findPatByToken(rawBearer: string): Promise<PatPublic | null> {
     const token = rawBearer.trim()
     if (!token.startsWith(TOKEN_PREFIX)) return null
-    const rec = store.findByHash(hashToken(token))
+    const rec = await store.findByHash(hashToken(token))
     return rec ? toPublic(rec) : null
   }
 
@@ -189,9 +182,9 @@ export function createCredentials(deps: CredentialDeps) {
   }
 }
 
-/** Process-wide instance: file store under AUTH_DATA_DIR, process clock, real revocation and service policy. */
+/** Process-wide instance: PostgreSQL store, process clock, real revocation and service policy. */
 const defaults = createCredentials({
-  store: createFileCredentialStore({ path: () => join(env.dataDir, 'pats.json') }),
+  store: createPostgresCredentialStore(),
   clock: currentClock,
   isRevoked: (p, issuedAt) => isCredentialRevoked(p, issuedAt, 'pat'),
   isServiceActive: isServiceCredentialActive,

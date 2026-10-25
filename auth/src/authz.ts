@@ -39,8 +39,8 @@ function denied(reason: string, status = 403): Decision {
 }
 
 /** The scoped-credential rule: a scoped credential (PAT scopes, service principal) never gets instance-admin power. */
-export function isUnscopedInstanceAdmin(user: SessionUser): boolean {
-  return !isScopedCredential(user) && isInstanceAdmin(user)
+export async function isUnscopedInstanceAdmin(user: SessionUser): Promise<boolean> {
+  return !isScopedCredential(user) && await isInstanceAdmin(user)
 }
 
 export type AuthzDecision = {
@@ -65,20 +65,20 @@ function deny(reason: string, extra?: Partial<AuthzDecision>): AuthzDecision {
  * Prepare principal: bootstrap / dev grant / group bootstrap. Writes state, so it runs
  * once at authentication and login; authorization decisions are read-only.
  */
-export function preparePrincipal(user: SessionUser): void {
-  maybeBootstrapInstanceAdmin(user)
-  maybeDevGrantAll(user)
-  applyGroupBootstrap(user)
+export async function preparePrincipal(user: SessionUser): Promise<void> {
+  await maybeBootstrapInstanceAdmin(user)
+  await maybeDevGrantAll(user)
+  await applyGroupBootstrap(user)
 }
 
-export function canSkipPendingGate(user: SessionUser): boolean {
-  return decideInstanceAction(user, 'namespace.create').allow
+export async function canSkipPendingGate(user: SessionUser): Promise<boolean> {
+  return (await decideInstanceAction(user, 'namespace.create')).allow
 }
 
-export function isPendingUser(user: SessionUser): boolean {
-  if (!isAuthzEnforce()) return false
-  if (canSkipPendingGate(user)) return false
-  return !userHasAnyGrant(user)
+export async function isPendingUser(user: SessionUser): Promise<boolean> {
+  if (!await isAuthzEnforce()) return false
+  if (await canSkipPendingGate(user)) return false
+  return !await userHasAnyGrant(user)
 }
 
 /**
@@ -86,29 +86,29 @@ export function isPendingUser(user: SessionUser): boolean {
  * Owner ⇒ admin; base perms for members; user + IdP group collaborators; max of all.
  * Instance admin is handled separately (site_admin_bypass).
  */
-export function effectiveRepoRole(
+export async function effectiveRepoRole(
   user: SessionUser,
   ns: string,
   repo: string,
-): BasePermission {
+): Promise<BasePermission> {
 
   let role: BasePermission = 'none'
-  const nsRole = resolveNamespaceRole(ns, user)
+  const nsRole = await resolveNamespaceRole(ns, user)
   if (nsRole === 'owner') role = maxRepoRole(role, 'admin')
   if (nsRole === 'member') {
-    const settings = getNamespace(ns)
+    const settings = await getNamespace(ns)
     const base = settings?.basePermission ?? 'none'
     role = maxRepoRole(role, base)
   }
-  for (const id of customNamespaceRoleIds(ns, user)) {
-    const custom = getCustomNamespaceRole(ns, id)
+  for (const id of await customNamespaceRoleIds(ns, user)) {
+    const custom = await getCustomNamespaceRole(ns, id)
     if (custom?.baseRepositoryRole) {
       role = maxRepoRole(role, custom.baseRepositoryRole)
     }
   }
-  const direct = getRepoCollaboratorRole(ns, repo, user)
+  const direct = await getRepoCollaboratorRole(ns, repo, user)
   if (direct) role = maxRepoRole(role, direct)
-  const groupCollab = getRepoCollaboratorRoleFromGroups(
+  const groupCollab = await getRepoCollaboratorRoleFromGroups(
     ns,
     repo,
     user.groups ?? [],
@@ -117,17 +117,17 @@ export function effectiveRepoRole(
   return role
 }
 
-function hasFineRepoPermission(
+async function hasFineRepoPermission(
   user: SessionUser,
   ns: string,
   repo: string,
   method: string,
   action: string,
-): boolean {
+): Promise<boolean> {
   const fine = finePermissionForAction(method, action)
   if (!fine) return false
-  for (const id of customRepoRoleIdsForUser(ns, repo, user)) {
-    const role = getCustomRepoRole(ns, id)
+  for (const id of await customRepoRoleIdsForUser(ns, repo, user)) {
+    const role = await getCustomRepoRole(ns, id)
     if (role && customRepoRoleCoversFine(role, fine)) return true
   }
   return false
@@ -150,14 +150,14 @@ function capByPatScopes(
   return REPO_ROLE_RANK[role] <= REPO_ROLE_RANK[max] ? role : max
 }
 
-export function hasRepoPermission(
+export async function hasRepoPermission(
   user: SessionUser,
   ns: string,
   repo: string,
   need: RepoRole,
   opts?: { method?: string; action?: string },
-): { ok: boolean; effective: BasePermission; bypass: boolean } {
-  let effective = effectiveRepoRole(user, ns, repo)
+): Promise<{ ok: boolean; effective: BasePermission; bypass: boolean }> {
+  let effective = await effectiveRepoRole(user, ns, repo)
   effective = capByPatScopes(user, ns, repo, effective)
   if (roleAtLeast(effective, need)) {
     return { ok: true, effective, bypass: false }
@@ -166,12 +166,12 @@ export function hasRepoPermission(
     opts?.method &&
     opts?.action &&
     !isScopedCredential(user) &&
-    hasFineRepoPermission(user, ns, repo, opts.method, opts.action)
+    await hasFineRepoPermission(user, ns, repo, opts.method, opts.action)
   ) {
     return { ok: true, effective, bypass: false }
   }
   // PAT scopes never get site-admin bypass
-  if (isUnscopedInstanceAdmin(user)) {
+  if (await isUnscopedInstanceAdmin(user)) {
     return { ok: true, effective: 'admin', bypass: true }
   }
   return {
@@ -182,33 +182,33 @@ export function hasRepoPermission(
 }
 
 /** Repo Admin, Owner, manage_collaborators fine grant, or instance admin. */
-export function canManageRepoCollaborators(
+export async function canManageRepoCollaborators(
   user: SessionUser,
   ns: string,
   repo: string,
-): boolean {
-  return decideManageRepoCollaborators(user, ns, repo).allow
+): Promise<boolean> {
+  return (await decideManageRepoCollaborators(user, ns, repo)).allow
 }
 
-export function decideManageRepoCollaborators(
+export async function decideManageRepoCollaborators(
   user: SessionUser,
   ns: string,
   repo: string,
-): Decision {
-  return manageRepoCollaborators(user, ns, repo) ? ALLOWED : denied('Forbidden')
+): Promise<Decision> {
+  return await manageRepoCollaborators(user, ns, repo) ? ALLOWED : denied('Forbidden')
 }
 
-function manageRepoCollaborators(
+async function manageRepoCollaborators(
   user: SessionUser,
   ns: string,
   repo: string,
-): boolean {
-  if (isInstanceAdmin(user)) return true
-  if (resolveNamespaceRole(ns, user) === 'owner') return true
-  const check = hasRepoPermission(user, ns, repo, 'admin')
+): Promise<boolean> {
+  if (await isInstanceAdmin(user)) return true
+  if (await resolveNamespaceRole(ns, user) === 'owner') return true
+  const check = await hasRepoPermission(user, ns, repo, 'admin')
   if (check.ok && !check.bypass) return true
-  for (const id of customRepoRoleIdsForUser(ns, repo, user)) {
-    const role = getCustomRepoRole(ns, id)
+  for (const id of await customRepoRoleIdsForUser(ns, repo, user)) {
+    const role = await getCustomRepoRole(ns, id)
     if (role && customRepoRoleCoversFine(role, 'manage_collaborators')) {
       return true
     }
@@ -230,19 +230,19 @@ export type AuthorizeInput = {
 /**
  * Authorize a proxied oxen API request. When AuthZ is not enforcing, always allow.
  */
-export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
+export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzDecision> {
   const { user, via, method, pathname } = input
 
-  if (!isAuthzEnforce()) return allow()
+  if (!await isAuthzEnforce()) return allow()
 
-  if (isPendingUser(user)) {
+  if (await isPendingUser(user)) {
     return deny('Access pending: no namespace membership or grants')
   }
 
   if (
     env.authzRequireTraining &&
-    !isInstanceAdmin(user) &&
-    !hasCompletedTraining(user)
+    !await isInstanceAdmin(user) &&
+    !await hasCompletedTraining(user)
   ) {
     return deny('Training / GxP onboarding required')
   }
@@ -262,36 +262,36 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
     case 'namespace.detail': {
       const targetNs = interpreted.targetNamespace
       if (!targetNs) return deny('Invalid namespace')
-      if (userCanSeeNamespace(user, targetNs)) return allow()
-      if (isInstanceAdmin(user)) return bypass
+      if (await userCanSeeNamespace(user, targetNs)) return allow()
+      if (await isInstanceAdmin(user)) return bypass
       return deny('Not allowed to view that namespace')
     }
     case 'namespace.create': {
-      const d = decideInstanceAction(user, 'namespace.create')
+      const d = await decideInstanceAction(user, 'namespace.create')
       return d.allow ? allow() : deny(d.reason)
     }
     case 'repo.create': {
       if (!ns) return deny('Namespace required to create repository')
-      if (hasInstancePermission(user, 'create_namespace') && !getNamespace(ns)) {
+      if (await hasInstancePermission(user, 'create_namespace') && !await getNamespace(ns)) {
         return allow()
       }
-      const settings = getNamespace(ns)
+      const settings = await getNamespace(ns)
       if (!settings) {
-        if (isInstanceAdmin(user)) return bypass
+        if (await isInstanceAdmin(user)) return bypass
         return deny('Namespace not found in AuthZ; create it first')
       }
-      if (hasNamespaceCapability(ns, user, 'create_repos')) return allow()
-      const nsRole = resolveNamespaceRole(ns, user)
+      if (await hasNamespaceCapability(ns, user, 'create_repos')) return allow()
+      const nsRole = await resolveNamespaceRole(ns, user)
       if (nsRole === 'owner') return allow()
       if (nsRole === 'member' && settings.membersCanCreateRepos) return allow()
-      if (isInstanceAdmin(user)) return bypass
+      if (await isInstanceAdmin(user)) return bypass
       return deny('Not allowed to create repositories in this namespace')
     }
     case 'repo.list': {
       const listNs = interpreted.targetNamespace
       if (!listNs) return deny('Invalid namespace')
-      if (resolveNamespaceRole(listNs, user)) return allow()
-      if (isInstanceAdmin(user)) return bypass
+      if (await resolveNamespaceRole(listNs, user)) return allow()
+      if (await isInstanceAdmin(user)) return bypass
       return deny('Not a member of this namespace')
     }
     case 'other':
@@ -305,7 +305,7 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
 
   const need = interpreted.minRole
 
-  const check = hasRepoPermission(user, ns, repo, need, { method, action })
+  const check = await hasRepoPermission(user, ns, repo, need, { method, action })
   if (check.ok) {
     return {
       allow: true,
@@ -322,23 +322,23 @@ export function authorizeApiRequest(input: AuthorizeInput): AuthzDecision {
   })
 }
 
-export function authorizeAuditQuery(
+export async function authorizeAuditQuery(
   user: SessionUser,
   requestedNamespace?: string,
-): {
+): Promise<{
   allow: boolean
   forceNamespace?: string
   ownedOnly?: string[]
   reason?: string
-} {
-  if (!isAuthzEnforce()) {
+}> {
+  if (!await isAuthzEnforce()) {
     return { allow: true }
   }
-  if (authorizeInstanceAction(user, 'audit.view').allow) return { allow: true }
+  if ((await authorizeInstanceAction(user, 'audit.view')).allow) return { allow: true }
   const scoped = [
     ...new Set([
-      ...ownedNamespaces(user),
-      ...namespacesWithCapability(user, 'view_audit'),
+      ...await ownedNamespaces(user),
+      ...await namespacesWithCapability(user, 'view_audit'),
     ]),
   ]
   if (scoped.length === 0) {
@@ -363,25 +363,25 @@ export function authorizeAuditQuery(
  * Lineage read: repo `lineage_read` (implied by read), ns `view_lineage`,
  * or instance `view_lineage` / admin for unscoped.
  */
-export function authorizeLineageQuery(
+export async function authorizeLineageQuery(
   user: SessionUser,
   namespace?: string,
   repo?: string,
-): { allow: boolean; reason?: string } {
-  if (!isAuthzEnforce()) {
+): Promise<{ allow: boolean; reason?: string }> {
+  if (!await isAuthzEnforce()) {
     return { allow: true }
   }
   if (!namespace || !repo) {
-    if (authorizeInstanceAction(user, 'lineage.view').allow) return { allow: true }
+    if ((await authorizeInstanceAction(user, 'lineage.view')).allow) return { allow: true }
     return {
       allow: false,
       reason: 'namespace and repo required (or view_lineage / admin)',
     }
   }
-  if (hasNamespaceCapability(namespace, user, 'view_lineage')) {
+  if (await hasNamespaceCapability(namespace, user, 'view_lineage')) {
     return { allow: true }
   }
-  const check = hasRepoPermission(user, namespace, repo, 'read', {
+  const check = await hasRepoPermission(user, namespace, repo, 'read', {
     method: 'GET',
     action: 'lineage.read',
   })
@@ -390,16 +390,16 @@ export function authorizeLineageQuery(
 }
 
 /** Lineage rebuild: repo `lineage_rebuild` (implied by admin). */
-export function authorizeLineageRebuild(
+export async function authorizeLineageRebuild(
   user: SessionUser,
   namespace: string,
   repo: string,
-): { allow: boolean; reason?: string } {
-  if (!isAuthzEnforce()) {
+): Promise<{ allow: boolean; reason?: string }> {
+  if (!await isAuthzEnforce()) {
     return { allow: true }
   }
-  if (isInstanceAdmin(user)) return { allow: true }
-  const check = hasRepoPermission(user, namespace, repo, 'admin', {
+  if (await isInstanceAdmin(user)) return { allow: true }
+  const check = await hasRepoPermission(user, namespace, repo, 'admin', {
     method: 'POST',
     action: 'lineage.rebuild',
   })
@@ -432,15 +432,15 @@ const REPO_ACTION_POLICY: Record<
 }
 
 /** One decision for repo-scoped Mice actions (jobs, Mice Workspaces). */
-export function authorizeRepoAction(
+export async function authorizeRepoAction(
   user: SessionUser,
   namespace: string,
   repo: string,
   action: RepoAction,
-): { allow: boolean; reason?: string } {
-  if (!isAuthzEnforce()) return { allow: true }
+): Promise<{ allow: boolean; reason?: string }> {
+  if (!await isAuthzEnforce()) return { allow: true }
   const policy = REPO_ACTION_POLICY[action]
-  const check = hasRepoPermission(user, namespace, repo, policy.need, {
+  const check = await hasRepoPermission(user, namespace, repo, policy.need, {
     method: policy.method,
     action,
   })
@@ -492,20 +492,20 @@ const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
   'session.connect': { permissions: ['session_connect'], admin: 'any', enforced: true, reason: 'Missing permission session_connect' },
 }
 
-export function decideInstanceAction(user: SessionUser, action: InstanceAction): Decision {
+export async function decideInstanceAction(user: SessionUser, action: InstanceAction): Promise<Decision> {
   const policy = INSTANCE_ACTION_POLICY[action]
-  if (policy.enforced && !isAuthzEnforce()) return ALLOWED
-  const admin = policy.admin === 'unscoped' ? isUnscopedInstanceAdmin(user) : isInstanceAdmin(user)
+  if (policy.enforced && !await isAuthzEnforce()) return ALLOWED
+  const admin = policy.admin === 'unscoped' ? await isUnscopedInstanceAdmin(user) : await isInstanceAdmin(user)
   if (admin) return ALLOWED
-  if (policy.permissions?.some((p) => hasInstancePermission(user, p))) return ALLOWED
+  for (const p of policy.permissions ?? []) if (await hasInstancePermission(user, p)) return ALLOWED
   return denied(policy.reason)
 }
 
-export function authorizeInstanceAction(
+export async function authorizeInstanceAction(
   user: SessionUser,
   action: InstanceAction,
-): { allow: boolean; reason?: string } {
-  const d = decideInstanceAction(user, action)
+): Promise<{ allow: boolean; reason?: string }> {
+  const d = await decideInstanceAction(user, action)
   return d.allow ? { allow: true } : { allow: false, reason: d.reason }
 }
 
@@ -538,38 +538,38 @@ const NAMESPACE_ACTION_POLICY: Record<NamespaceAction, NamespacePolicy> = {
 }
 
 /** Namespace management decisions; not gated by the enforce flag. */
-export function decideNamespaceAction(user: SessionUser, ns: string, action: NamespaceAction): Decision {
+export async function decideNamespaceAction(user: SessionUser, ns: string, action: NamespaceAction): Promise<Decision> {
   const policy = NAMESPACE_ACTION_POLICY[action]
   if (policy.unscopedOnly && isScopedCredential(user)) return denied(policy.reason)
-  if (policy.member && (isInstanceAdmin(user) || resolveNamespaceRole(ns, user))) return ALLOWED
-  if (policy.capability && hasNamespaceCapability(ns, user, policy.capability)) return ALLOWED
+  if (policy.member && (await isInstanceAdmin(user) || await resolveNamespaceRole(ns, user))) return ALLOWED
+  if (policy.capability && await hasNamespaceCapability(ns, user, policy.capability)) return ALLOWED
   return denied(policy.reason)
 }
 
 /** Reviewing access requests: instance admin, create_namespace, or a review capability in some namespace. */
-export function decideAccessReview(user: SessionUser): Decision {
-  if (decideInstanceAction(user, 'access.review.all').allow) return ALLOWED
-  if (namespacesWithCapability(user, 'review_access_requests').length > 0) return ALLOWED
+export async function decideAccessReview(user: SessionUser): Promise<Decision> {
+  if ((await decideInstanceAction(user, 'access.review.all')).allow) return ALLOWED
+  if ((await namespacesWithCapability(user, 'review_access_requests')).length > 0) return ALLOWED
   return denied('Forbidden')
 }
 
 /** Managing a service principal: instance admin or its current owner. */
-export function decideServicePrincipalManage(user: SessionUser, isOwner: boolean): Decision {
-  if (isOwner || decideInstanceAction(user, 'serviceprincipal.admin').allow) return ALLOWED
+export async function decideServicePrincipalManage(user: SessionUser, isOwner: boolean): Promise<Decision> {
+  if (isOwner || (await decideInstanceAction(user, 'serviceprincipal.admin')).allow) return ALLOWED
   return denied('Forbidden')
 }
 
 /** Own PAT mint/list/revoke when enforce is on. */
-export function authorizeManageOwnTokens(user: SessionUser) {
-  return authorizeInstanceAction(user, 'tokens.manage')
+export async function authorizeManageOwnTokens(user: SessionUser) {
+  return await authorizeInstanceAction(user, 'tokens.manage')
 }
 
 /** Approve / deny CLI device codes when enforce is on. */
-export function authorizeCliDeviceApprove(user: SessionUser) {
-  return authorizeInstanceAction(user, 'cli.device.approve')
+export async function authorizeCliDeviceApprove(user: SessionUser) {
+  return await authorizeInstanceAction(user, 'cli.device.approve')
 }
 
 /** Store-wide operations (capabilities, GC, checkout delete): instance admin, never PAT-scoped. */
-export function authorizeStoreAdmin(user: SessionUser) {
-  return authorizeInstanceAction(user, 'store.admin')
+export async function authorizeStoreAdmin(user: SessionUser) {
+  return await authorizeInstanceAction(user, 'store.admin')
 }

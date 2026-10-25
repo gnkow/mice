@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -75,7 +76,7 @@ describe('same-origin guard on cookie sessions', () => {
 
   it('audits the rejection', async () => {
     await hit('POST', { cookie, 'sec-fetch-site': 'cross-site' })
-    const { events } = queryAudit({ limit: 20 })
+    const { events } = await queryAudit({ limit: 20 })
     assert.ok(events.some((e) => e.action === 'request.cross_site_rejected'))
   })
 })

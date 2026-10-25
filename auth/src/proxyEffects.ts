@@ -2,7 +2,7 @@ import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
 import { setRepoCollaborator } from './authzCollaboratorStore.js'
 import { decideInstanceAction } from './authz.js'
 import { isAuthzEnforce } from './authzInstanceStore.js'
-import { ensureNamespaceForCreate } from './authzNamespaceStore.js'
+import { ensureNamespaceForCreate, getNamespace } from './authzNamespaceStore.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
 import type { SessionUser } from './session.js'
 
@@ -18,7 +18,7 @@ export async function filterNamespaceCatalog(
   upstream: Response,
 ): Promise<string | null> {
   if (
-    !isAuthzEnforce() ||
+    !await isAuthzEnforce() ||
     method !== 'GET' ||
     (pathname.replace(/\/+$/, '') || '/') !== '/api/namespaces' ||
     !upstream.ok
@@ -37,7 +37,7 @@ export async function filterNamespaceCatalog(
       namespaces?: Array<{ namespace?: string; name?: string }>
       [key: string]: unknown
     }
-    const visible = visibleNamespaceNames(user)
+    const visible = await visibleNamespaceNames(user)
     if (visible !== 'all' && Array.isArray(parsed.namespaces)) {
       const allow = new Set(visible)
       parsed.namespaces = parsed.namespaces.filter((n) => allow.has(n.namespace ?? n.name ?? ''))
@@ -49,15 +49,16 @@ export async function filterNamespaceCatalog(
 }
 
 /** After a successful repo create: seed the AuthZ namespace (privileged callers) and make the creator repo Admin. */
-export function seedRepoCreate(user: SessionUser, namespace: string, repo: string): void {
-  if (decideInstanceAction(user, 'namespace.create').allow) {
-    ensureNamespaceForCreate(user, namespace, 'none')
+export async function seedRepoCreate(user: SessionUser, namespace: string, repo: string): Promise<void> {
+  if ((await decideInstanceAction(user, 'namespace.create')).allow) {
+    await ensureNamespaceForCreate(user, namespace, 'none')
   }
-  void setRepoCollaborator(namespace, repo, user, 'admin')
+  // A collaborator grant hangs off a namespace row; an unseeded namespace has nothing to attach to.
+  if (await getNamespace(namespace)) await setRepoCollaborator(namespace, repo, user, 'admin')
 }
 
 /** Audit that a site admin was allowed through on the bypass, not on a grant. */
-export function recordSiteAdminBypass(input: {
+export async function recordSiteAdminBypass(input: {
   user: SessionUser
   via: AuditVia
   method: string
@@ -65,8 +66,8 @@ export function recordSiteAdminBypass(input: {
   namespace?: string
   repo?: string
   reason?: string
-}): void {
-  appendAudit({
+}): Promise<void> {
+  await appendAudit({
     actor: actorFromUser(input.user),
     via: input.via,
     method: input.method,

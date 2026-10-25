@@ -1,6 +1,8 @@
 import { Hono, type Context } from 'hono'
 import { auditReadiness } from './audit.js'
-import { storageReadiness } from './jsonStore.js'
+import { diskReadiness } from './diskStore.js'
+import { postgresReadiness } from './db/database.js'
+import { isStoreOutage } from './db/outage.js'
 import { backChannelLogout } from './backChannelLogout.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
@@ -14,7 +16,7 @@ import { registerLoginRoutes } from './loginRoutes.js'
 import { registerMeRoutes } from './meRoutes.js'
 import { registerMetaRoutes } from './metaRoutes.js'
 import { registerNamespaceRoutes } from './namespaceRoutes.js'
-import { registerNotificationRoutes } from './notifications.js'
+import { notificationReadiness, registerNotificationRoutes } from './notifications.js'
 import { proxyToOxen } from './proxy.js'
 import { applyGlobalGuards, authenticateRequest } from './requireAuth.js'
 import { registerReasonRoutes } from './reasonRoutes.js'
@@ -44,14 +46,24 @@ export function createApp(deps: AppDeps = {}): Hono {
   const proxy = deps.proxy ?? proxyToOxen
   const app = new Hono()
   applyGlobalGuards(app)
+  app.onError((err, c) => {
+    if (isStoreOutage(err)) {
+      console.error('[mice-auth] store unavailable', err instanceof Error ? err.message : 'unknown error')
+      return c.json({ status: 'error', status_message: 'store_unavailable', error: { detail: 'A required store is unavailable' } }, 503)
+    }
+    console.error('[mice-auth] unhandled error', err)
+    return c.json({ status: 'error', status_message: 'internal_error' }, 500)
+  })
 
   app.get('/healthz', (c) => c.json({ ok: true }))
-  // Readiness covers the database, the audit store and chain state; liveness above stays static.
-  app.get('/readyz', (c) => {
-    const audit = auditReadiness()
-    const storage = storageReadiness()
-    const ok = audit.ok && storage.ok
-    return c.json({ ok, audit, storage }, ok ? 200 : 503)
+  // Readiness covers PostgreSQL, the workspace disk, the audit store and chain state, and Novu; liveness above stays static.
+  app.get('/readyz', async (c) => {
+    const audit = await auditReadiness()
+    const storage = diskReadiness()
+    const postgres = await postgresReadiness()
+    const notifications = await notificationReadiness()
+    const ok = audit.ok && storage.ok && postgres.ok && notifications.ok
+    return c.json({ ok, audit, storage, postgres, notifications }, ok ? 200 : 503)
   })
   registerCliDeviceRoutes(app, { audit })
   registerMeRoutes(app, { audit })

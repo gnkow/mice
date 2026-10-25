@@ -62,7 +62,7 @@ export async function sealSession(user: SessionUser): Promise<string> {
     .encrypt(secretKey())
 }
 
-export async function openSession(token: string): Promise<SessionUser | null> {
+async function decodeSession(token: string): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtDecrypt(token, secretKey())
     const sub = String(payload.sub ?? '')
@@ -74,7 +74,6 @@ export async function openSession(token: string): Promise<SessionUser | null> {
     const iat = Number(payload.iat ?? 0)
     const sessionStart = Number(payload.sat ?? iat)
     const lastActive = Number(payload.act ?? iat)
-    if (isCredentialRevoked({ iss, sub }, sessionStart, 'session')) return null
     if (env.sessionIdleSec > 0 && nowSec() - lastActive > env.sessionIdleSec) return null
     const groupsRaw = payload.groups
     const groups = Array.isArray(groupsRaw)
@@ -98,6 +97,14 @@ export async function openSession(token: string): Promise<SessionUser | null> {
   } catch {
     return null
   }
+}
+
+/** A valid, unexpired, unrevoked Session; a revocation lookup that cannot reach its store throws instead of denying. */
+export async function openSession(token: string): Promise<SessionUser | null> {
+  const user = await decodeSession(token)
+  if (!user) return null
+  if (await isCredentialRevoked({ iss: user.iss, sub: user.sub }, user.sessionStart ?? 0, 'session')) return null
+  return user
 }
 
 export function readSessionCookie(c: Context): string | undefined {

@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,11 +16,11 @@ const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
-maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
+await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
 
 const audits: string[] = []
 const app = new Hono()
-registerNamespaceRoutes(app, { audit: (_c, _u, _via, f) => void audits.push(f.action) })
+registerNamespaceRoutes(app, { audit: async (_c, _u, _via, f) => void audits.push(f.action) })
 
 const cookie = async (sub: string) =>
   `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) })}`

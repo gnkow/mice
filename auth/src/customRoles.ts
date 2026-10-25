@@ -1,7 +1,7 @@
-import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { env } from './env.js'
-import { createDocumentStore } from './stores.js'
+import { and, eq, sql } from 'drizzle-orm'
+import { getDb, inTransaction, type Tx } from './db/database.js'
+import { customNamespaceRoles, customRepoRoles, namespaces } from './db/schema.js'
 import {
   REPO_ROLE_RANK,
   isPredefinedNsRole,
@@ -28,16 +28,6 @@ export type CustomRepoRole = {
   /** Inherited predefined role (not admin). */
   base: 'read' | 'triage' | 'write' | 'maintain'
   permissions: RepoFinePermission[]
-}
-
-type NsCustomRoles = {
-  namespaceRoles: Record<string, CustomNamespaceRole>
-  repoRoles: Record<string, CustomRepoRole>
-}
-
-type Store = {
-  version: 1
-  namespaces: Record<string, NsCustomRoles>
 }
 
 const MAX_ROLES_PER_KIND = 20
@@ -90,60 +80,6 @@ export const REPO_FINE_IMPLIED_MIN: Record<RepoFinePermission, RepoRole> = {
   lineage_rebuild: 'admin',
 }
 
-function path() {
-  return join(env.dataDir, 'custom-roles.json')
-}
-
-function empty(): Store {
-  return { version: 1, namespaces: {} }
-}
-
-function emptyNs(): NsCustomRoles {
-  return { namespaceRoles: {}, repoRoles: {} }
-}
-
-const doc = createDocumentStore<Store>({ path, initial: empty, onCorrupt: 'initial' })
-
-function read(): Store {
-  const s = doc.read()
-  if (!s || s.version !== 1 || !s.namespaces) return empty()
-  return s
-}
-
-function write(s: Store) {
-  doc.write(s)
-}
-
-function ensureNs(store: Store, ns: string): NsCustomRoles {
-  if (!store.namespaces[ns]) store.namespaces[ns] = emptyNs()
-  return store.namespaces[ns]
-}
-
-export function listCustomNamespaceRoles(ns: string): CustomNamespaceRole[] {
-  const roles = read().namespaces[ns]?.namespaceRoles ?? {}
-  return Object.values(roles).sort((a, b) => a.name.localeCompare(b.name))
-}
-
-export function listCustomRepoRoles(ns: string): CustomRepoRole[] {
-  const roles = read().namespaces[ns]?.repoRoles ?? {}
-  return Object.values(roles).sort((a, b) => a.name.localeCompare(b.name))
-}
-
-export function getCustomNamespaceRole(
-  ns: string,
-  id: string,
-): CustomNamespaceRole | null {
-  return read().namespaces[ns]?.namespaceRoles[id] ?? null
-}
-
-export function getCustomRepoRole(ns: string, id: string): CustomRepoRole | null {
-  return read().namespaces[ns]?.repoRoles[id] ?? null
-}
-
-function slugName(name: string): string {
-  return name.trim().toLowerCase()
-}
-
 function validateNsPerms(
   perms: unknown,
 ): NamespaceCapability[] | { error: string } {
@@ -185,7 +121,69 @@ export function filterRedundantRepoFines(
   )
 }
 
-export function createCustomNamespaceRole(
+
+type NsRow = typeof customNamespaceRoles.$inferSelect
+type RepoRow = typeof customRepoRoles.$inferSelect
+
+function toNsRole(r: NsRow): CustomNamespaceRole {
+  return {
+    id: r.id,
+    name: r.name,
+    ...(r.description ? { description: r.description } : {}),
+    permissions: r.permissions as NamespaceCapability[],
+    ...(r.baseRepositoryRole ? { baseRepositoryRole: r.baseRepositoryRole as BasePermission } : {}),
+  }
+}
+
+function toRepoRole(r: RepoRow): CustomRepoRole {
+  return {
+    id: r.id,
+    name: r.name,
+    ...(r.description ? { description: r.description } : {}),
+    base: r.base as CustomRepoRole['base'],
+    permissions: r.permissions as RepoFinePermission[],
+  }
+}
+
+function isUniqueViolation(e: unknown): boolean {
+  const code = (e as { code?: string; cause?: { code?: string } })
+  return code?.code === '23505' || code?.cause?.code === '23505'
+}
+
+export async function listCustomNamespaceRoles(ns: string): Promise<CustomNamespaceRole[]> {
+  const rows = await getDb().select().from(customNamespaceRoles).where(eq(customNamespaceRoles.namespace, ns))
+  return rows.map(toNsRole).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function listCustomRepoRoles(ns: string): Promise<CustomRepoRole[]> {
+  const rows = await getDb().select().from(customRepoRoles).where(eq(customRepoRoles.namespace, ns))
+  return rows.map(toRepoRole).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function getCustomNamespaceRole(ns: string, id: string): Promise<CustomNamespaceRole | null> {
+  const rows = await getDb()
+    .select()
+    .from(customNamespaceRoles)
+    .where(and(eq(customNamespaceRoles.namespace, ns), eq(customNamespaceRoles.id, id)))
+    .limit(1)
+  return rows[0] ? toNsRole(rows[0]) : null
+}
+
+export async function getCustomRepoRole(ns: string, id: string): Promise<CustomRepoRole | null> {
+  const rows = await getDb()
+    .select()
+    .from(customRepoRoles)
+    .where(and(eq(customRepoRoles.namespace, ns), eq(customRepoRoles.id, id)))
+    .limit(1)
+  return rows[0] ? toRepoRole(rows[0]) : null
+}
+
+async function lockNamespaceRow(tx: Tx, ns: string): Promise<boolean> {
+  const rows = await tx.select().from(namespaces).where(eq(namespaces.name, ns)).for('update')
+  return rows.length > 0
+}
+
+export async function createCustomNamespaceRole(
   ns: string,
   input: {
     name: string
@@ -193,44 +191,49 @@ export function createCustomNamespaceRole(
     permissions: NamespaceCapability[]
     baseRepositoryRole?: BasePermission
   },
-): { ok: true; role: CustomNamespaceRole } | { ok: false; error: string } {
+): Promise<{ ok: true; role: CustomNamespaceRole } | { ok: false; error: string }> {
   const name = input.name.trim()
   if (!name) return { ok: false, error: 'name required' }
   const perms = validateNsPerms(input.permissions)
   if ('error' in perms) return { ok: false, error: perms.error }
-  const store = read()
-  const bucket = ensureNs(store, ns)
-  if (Object.keys(bucket.namespaceRoles).length >= MAX_ROLES_PER_KIND) {
-    return { ok: false, error: `At most ${MAX_ROLES_PER_KIND} custom namespace roles` }
-  }
-  if (
-    Object.values(bucket.namespaceRoles).some(
-      (r) => slugName(r.name) === slugName(name),
-    )
-  ) {
-    return { ok: false, error: 'Name already in use' }
-  }
-  let baseRepositoryRole = input.baseRepositoryRole
-  if (baseRepositoryRole !== undefined) {
-    const ok =
-      baseRepositoryRole === 'none' || isPredefinedRepoRole(baseRepositoryRole)
-    if (!ok) return { ok: false, error: 'Invalid baseRepositoryRole' }
+  const base = input.baseRepositoryRole
+  if (base !== undefined && !(base === 'none' || isPredefinedRepoRole(base))) {
+    return { ok: false, error: 'Invalid baseRepositoryRole' }
   }
   const role: CustomNamespaceRole = {
     id: randomBytes(8).toString('hex'),
     name,
-    ...(input.description?.trim()
-      ? { description: input.description.trim().slice(0, 200) }
-      : {}),
+    ...(input.description?.trim() ? { description: input.description.trim().slice(0, 200) } : {}),
     permissions: perms,
-    ...(baseRepositoryRole !== undefined ? { baseRepositoryRole } : {}),
+    ...(base !== undefined ? { baseRepositoryRole: base } : {}),
   }
-  bucket.namespaceRoles[role.id] = role
-  write(store)
-  return { ok: true, role }
+  try {
+    return await inTransaction(async (tx) => {
+      if (!(await lockNamespaceRow(tx, ns))) return { ok: false, error: 'Namespace not found' } as const
+      const count = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(customNamespaceRoles)
+        .where(eq(customNamespaceRoles.namespace, ns))
+      if ((count[0]?.n ?? 0) >= MAX_ROLES_PER_KIND) {
+        return { ok: false, error: `At most ${MAX_ROLES_PER_KIND} custom namespace roles` } as const
+      }
+      await tx.insert(customNamespaceRoles).values({
+        id: role.id,
+        namespace: ns,
+        name,
+        description: role.description ?? null,
+        permissions: perms,
+        baseRepositoryRole: base ?? null,
+      })
+      return { ok: true, role } as const
+    })
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
+    throw e
+  }
 }
 
-export function updateCustomNamespaceRole(
+export async function updateCustomNamespaceRole(
   ns: string,
   id: string,
   patch: Partial<{
@@ -239,67 +242,60 @@ export function updateCustomNamespaceRole(
     permissions: NamespaceCapability[]
     baseRepositoryRole: BasePermission | null
   }>,
-): { ok: true; role: CustomNamespaceRole } | { ok: false; error: string } {
-  const store = read()
-  const bucket = store.namespaces[ns]
-  const role = bucket?.namespaceRoles[id]
-  if (!role) return { ok: false, error: 'Not found' }
+): Promise<{ ok: true; role: CustomNamespaceRole } | { ok: false; error: string }> {
+  const cur = await getCustomNamespaceRole(ns, id)
+  if (!cur) return { ok: false, error: 'Not found' }
+  const set: Partial<typeof customNamespaceRoles.$inferInsert> = {}
   if (patch.name !== undefined) {
     const name = patch.name.trim()
     if (!name) return { ok: false, error: 'name required' }
-    if (
-      Object.values(bucket.namespaceRoles).some(
-        (r) => r.id !== id && slugName(r.name) === slugName(name),
-      )
-    ) {
-      return { ok: false, error: 'Name already in use' }
-    }
-    role.name = name
+    set.name = name
   }
   if (patch.description !== undefined) {
-    if (patch.description === null || patch.description.trim() === '') {
-      delete role.description
-    } else {
-      role.description = patch.description.trim().slice(0, 200)
-    }
+    set.description =
+      patch.description === null || patch.description.trim() === '' ? null : patch.description.trim().slice(0, 200)
   }
   if (patch.permissions !== undefined) {
     const perms = validateNsPerms(patch.permissions)
     if ('error' in perms) return { ok: false, error: perms.error }
-    role.permissions = perms
+    set.permissions = perms
   }
   if (patch.baseRepositoryRole !== undefined) {
-    if (patch.baseRepositoryRole === null) {
-      delete role.baseRepositoryRole
-    } else {
-      const b = patch.baseRepositoryRole
-      if (b !== 'none' && !isPredefinedRepoRole(b)) {
-        return { ok: false, error: 'Invalid baseRepositoryRole' }
-      }
-      role.baseRepositoryRole = b
+    const b = patch.baseRepositoryRole
+    if (b !== null && b !== 'none' && !isPredefinedRepoRole(b)) {
+      return { ok: false, error: 'Invalid baseRepositoryRole' }
     }
+    set.baseRepositoryRole = b
   }
-  write(store)
-  return { ok: true, role }
+  try {
+    if (Object.keys(set).length) {
+      await getDb()
+        .update(customNamespaceRoles)
+        .set(set)
+        .where(and(eq(customNamespaceRoles.namespace, ns), eq(customNamespaceRoles.id, id)))
+    }
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
+    throw e
+  }
+  const role = await getCustomNamespaceRole(ns, id)
+  return role ? { ok: true, role } : { ok: false, error: 'Not found' }
 }
 
-export function deleteCustomNamespaceRole(
+export async function deleteCustomNamespaceRole(
   ns: string,
   id: string,
   assigned: boolean,
-): { ok: true } | { ok: false; error: string } {
-  if (assigned) {
-    return { ok: false, error: 'Role is still assigned to members' }
-  }
-  const store = read()
-  const bucket = store.namespaces[ns]
-  if (!bucket?.namespaceRoles[id]) return { ok: false, error: 'Not found' }
-  delete bucket.namespaceRoles[id]
-  write(store)
-  return { ok: true }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (assigned) return { ok: false, error: 'Role is still assigned to members' }
+  const rows = await getDb()
+    .delete(customNamespaceRoles)
+    .where(and(eq(customNamespaceRoles.namespace, ns), eq(customNamespaceRoles.id, id)))
+    .returning({ id: customNamespaceRoles.id })
+  return rows.length ? { ok: true } : { ok: false, error: 'Not found' }
 }
 
-export function createCustomRepoRole(
+export async function createCustomRepoRole(
   ns: string,
   input: {
     name: string
@@ -307,7 +303,7 @@ export function createCustomRepoRole(
     base: CustomRepoRole['base']
     permissions: RepoFinePermission[]
   },
-): { ok: true; role: CustomRepoRole } | { ok: false; error: string } {
+): Promise<{ ok: true; role: CustomRepoRole } | { ok: false; error: string }> {
   const name = input.name.trim()
   if (!name) return { ok: false, error: 'name required' }
   if (!['read', 'triage', 'write', 'maintain'].includes(input.base)) {
@@ -315,33 +311,40 @@ export function createCustomRepoRole(
   }
   const perms = validateRepoFines(input.permissions)
   if ('error' in perms) return { ok: false, error: perms.error }
-  const store = read()
-  const bucket = ensureNs(store, ns)
-  if (Object.keys(bucket.repoRoles).length >= MAX_ROLES_PER_KIND) {
-    return { ok: false, error: `At most ${MAX_ROLES_PER_KIND} custom repo roles` }
-  }
-  if (
-    Object.values(bucket.repoRoles).some(
-      (r) => slugName(r.name) === slugName(name),
-    )
-  ) {
-    return { ok: false, error: 'Name already in use' }
-  }
   const role: CustomRepoRole = {
     id: randomBytes(8).toString('hex'),
     name,
-    ...(input.description?.trim()
-      ? { description: input.description.trim().slice(0, 200) }
-      : {}),
+    ...(input.description?.trim() ? { description: input.description.trim().slice(0, 200) } : {}),
     base: input.base,
     permissions: filterRedundantRepoFines(input.base, perms),
   }
-  bucket.repoRoles[role.id] = role
-  write(store)
-  return { ok: true, role }
+  try {
+    return await inTransaction(async (tx) => {
+      if (!(await lockNamespaceRow(tx, ns))) return { ok: false, error: 'Namespace not found' } as const
+      const count = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(customRepoRoles)
+        .where(eq(customRepoRoles.namespace, ns))
+      if ((count[0]?.n ?? 0) >= MAX_ROLES_PER_KIND) {
+        return { ok: false, error: `At most ${MAX_ROLES_PER_KIND} custom repo roles` } as const
+      }
+      await tx.insert(customRepoRoles).values({
+        id: role.id,
+        namespace: ns,
+        name,
+        description: role.description ?? null,
+        base: role.base,
+        permissions: role.permissions,
+      })
+      return { ok: true, role } as const
+    })
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
+    throw e
+  }
 }
 
-export function updateCustomRepoRole(
+export async function updateCustomRepoRole(
   ns: string,
   id: string,
   patch: Partial<{
@@ -350,78 +353,70 @@ export function updateCustomRepoRole(
     base: CustomRepoRole['base']
     permissions: RepoFinePermission[]
   }>,
-): { ok: true; role: CustomRepoRole } | { ok: false; error: string } {
-  const store = read()
-  const bucket = store.namespaces[ns]
-  const role = bucket?.repoRoles[id]
-  if (!role) return { ok: false, error: 'Not found' }
+): Promise<{ ok: true; role: CustomRepoRole } | { ok: false; error: string }> {
+  const cur = await getCustomRepoRole(ns, id)
+  if (!cur) return { ok: false, error: 'Not found' }
+  const set: Partial<typeof customRepoRoles.$inferInsert> = {}
   if (patch.name !== undefined) {
     const name = patch.name.trim()
     if (!name) return { ok: false, error: 'name required' }
-    if (
-      Object.values(bucket.repoRoles).some(
-        (r) => r.id !== id && slugName(r.name) === slugName(name),
-      )
-    ) {
-      return { ok: false, error: 'Name already in use' }
-    }
-    role.name = name
+    set.name = name
   }
   if (patch.description !== undefined) {
-    if (patch.description === null || patch.description.trim() === '') {
-      delete role.description
-    } else {
-      role.description = patch.description.trim().slice(0, 200)
-    }
+    set.description =
+      patch.description === null || patch.description.trim() === '' ? null : patch.description.trim().slice(0, 200)
   }
+  let base = cur.base
   if (patch.base !== undefined) {
     if (!['read', 'triage', 'write', 'maintain'].includes(patch.base)) {
       return { ok: false, error: 'base must be read|triage|write|maintain' }
     }
-    role.base = patch.base
+    base = patch.base
+    set.base = base
   }
   if (patch.permissions !== undefined) {
     const perms = validateRepoFines(patch.permissions)
     if ('error' in perms) return { ok: false, error: perms.error }
-    role.permissions = filterRedundantRepoFines(role.base, perms)
+    set.permissions = filterRedundantRepoFines(base, perms)
   } else if (patch.base !== undefined) {
-    role.permissions = filterRedundantRepoFines(role.base, role.permissions)
+    set.permissions = filterRedundantRepoFines(base, cur.permissions)
   }
-  write(store)
-  return { ok: true, role }
+  try {
+    if (Object.keys(set).length) {
+      await getDb()
+        .update(customRepoRoles)
+        .set(set)
+        .where(and(eq(customRepoRoles.namespace, ns), eq(customRepoRoles.id, id)))
+    }
+  } catch (e) {
+    if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
+    throw e
+  }
+  const role = await getCustomRepoRole(ns, id)
+  return role ? { ok: true, role } : { ok: false, error: 'Not found' }
 }
 
-export function deleteCustomRepoRole(
+export async function deleteCustomRepoRole(
   ns: string,
   id: string,
   assigned: boolean,
-): { ok: true } | { ok: false; error: string } {
-  if (assigned) {
-    return { ok: false, error: 'Role is still assigned to collaborators' }
-  }
-  const store = read()
-  const bucket = store.namespaces[ns]
-  if (!bucket?.repoRoles[id]) return { ok: false, error: 'Not found' }
-  delete bucket.repoRoles[id]
-  write(store)
-  return { ok: true }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (assigned) return { ok: false, error: 'Role is still assigned to collaborators' }
+  const rows = await getDb()
+    .delete(customRepoRoles)
+    .where(and(eq(customRepoRoles.namespace, ns), eq(customRepoRoles.id, id)))
+    .returning({ id: customRepoRoles.id })
+  return rows.length ? { ok: true } : { ok: false, error: 'Not found' }
 }
 
-export function deleteCustomRolesForNamespace(ns: string): void {
-  const store = read()
-  if (!store.namespaces[ns]) return
-  delete store.namespaces[ns]
-  write(store)
-}
-
-export function isValidMemberRole(ns: string, role: string): boolean {
+export async function isValidMemberRole(ns: string, role: string): Promise<boolean> {
   if (isPredefinedNsRole(role)) return true
-  return Boolean(getCustomNamespaceRole(ns, role))
+  return Boolean(await getCustomNamespaceRole(ns, role))
 }
 
-export function isValidCollaboratorRole(ns: string, role: string): boolean {
+export async function isValidCollaboratorRole(ns: string, role: string): Promise<boolean> {
   if (isPredefinedRepoRole(role)) return true
-  return Boolean(getCustomRepoRole(ns, role))
+  return Boolean(await getCustomRepoRole(ns, role))
 }
 
 /** Map oxen/audit action (+ method) to a fine permission. */

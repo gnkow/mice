@@ -43,15 +43,15 @@ function filterRequestHeaders(headers: Headers): Headers {
   return out
 }
 
-function rejectUnclassifiedWrite(
+async function rejectUnclassifiedWrite(
   user: SessionUser,
   via: AuditVia,
   method: string,
   pathname: string,
   reason: string,
   scope: { namespace?: string; repo?: string } = {},
-): Response {
-  appendAudit({
+): Promise<Response> {
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method,
@@ -72,15 +72,15 @@ function rejectUnclassifiedWrite(
   )
 }
 
-function rejectReason(
+async function rejectReason(
   user: SessionUser,
   via: AuditVia,
   method: string,
   pathname: string,
   rejection: ReasonRejection,
   scope: { namespace?: string; repo?: string },
-): Response {
-  appendAudit({
+): Promise<Response> {
+  await appendAudit({
     actor: actorFromUser(user),
     via,
     method,
@@ -172,7 +172,7 @@ export async function proxyToOxen(
     rejection,
   } = await interpretRequestBody(c, user, method, pathname, url.searchParams, reqHeaders)
 
-  const decision = authorizeApiRequest({
+  const decision = await authorizeApiRequest({
     user,
     via,
     method,
@@ -219,7 +219,7 @@ export async function proxyToOxen(
   }
 
   if (decision.siteAdminBypass) {
-    recordSiteAdminBypass({
+    await recordSiteAdminBypass({
       user,
       via,
       method,
@@ -275,7 +275,7 @@ export async function proxyToOxen(
   let intent: AuditEvent | undefined
   if (mutating) {
     try {
-      intent = appendIntent(auditFields(0))
+      intent = await appendIntent(auditFields(0))
     } catch {
       return auditUnavailable()
     }
@@ -295,7 +295,7 @@ export async function proxyToOxen(
       },
     )
   } catch (err) {
-    if (intent) appendOutcome(intent.id, auditFields(502))
+    if (intent) await appendOutcome(intent.id, auditFields(502))
     throw err
   }
 
@@ -316,7 +316,7 @@ export async function proxyToOxen(
     }
     if (buffered !== undefined) responseBody = buffered
 
-    const auditEvent = appendOutcome(intent.id, auditFields(upstream.status, datasetVersions.after(upstream, buffered)))
+    const auditEvent = await appendOutcome(intent.id, auditFields(upstream.status, datasetVersions.after(upstream, buffered)))
     await lineage.after(upstream, buffered, auditEvent?.id)
 
     // After successful repo create: seed AuthZ namespace + creator Admin
@@ -327,7 +327,7 @@ export async function proxyToOxen(
       ns &&
       repo
     ) {
-      seedRepoCreate(user, ns, repo)
+      await seedRepoCreate(user, ns, repo)
     }
   }
 

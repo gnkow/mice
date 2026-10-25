@@ -15,7 +15,7 @@ export type BodySpec = { required: string[] } | 'json' | 'optional'
 
 export type GuardPolicy = AuthPolicy & {
   /** Returns a denial message (answered 403), or null to allow. Runs before the body is read. */
-  gate?: (user: SessionUser) => string | null
+  gate?: (user: SessionUser) => string | null | Promise<string | null>
   body?: BodySpec
   /**
    * The route changes data or access. An intent event is appended before the handler runs (503
@@ -81,7 +81,7 @@ export function guarded(
     const authed = await authenticateOutcome(c, auth)
     if (!authed.ok) return c.json({ error: authed.error }, authed.status)
     const { user, via } = authed
-    const denial = gate?.(user)
+    const denial = await gate?.(user)
     if (denial) return c.json({ error: denial }, 403)
 
     let body: Record<string, unknown> = {}
@@ -95,14 +95,14 @@ export function guarded(
     if (needsReason) {
       const resolved = resolveReason({ actor: user, explicit: c.req.header(REASON_HEADER) })
       if (!resolved.ok) {
-        appendAudit({ ...base, status: 400, action: 'request.rejected', detail: { reason: resolved.rejection.code } })
+        await appendAudit({ ...base, status: 400, action: 'request.rejected', detail: { reason: resolved.rejection.code } })
         return c.json({ error: resolved.rejection.detail, code: resolved.rejection.code }, 400)
       }
       reason = resolved.value
     }
     if (mutates) {
       try {
-        trackIntent(c.req.raw, appendIntent({ ...base, ...reason, status: 0, action: 'bff.mutation' }))
+        trackIntent(c.req.raw, await appendIntent({ ...base, ...reason, status: 0, action: 'bff.mutation' }))
       } catch {
         return c.json({ error: 'Audit store unavailable; the change was refused and nothing was applied' }, 503)
       }
@@ -113,8 +113,8 @@ export function guarded(
       user,
       via,
       body,
-      audit: (f) =>
-        void appendOutcomeFor(c.req.raw, {
+      audit: async (f) => {
+        await appendOutcomeFor(c.req.raw, {
           ...base,
           ...reason,
           status: f.status ?? 200,
@@ -123,15 +123,16 @@ export function guarded(
           ...(f.namespace ? { namespace: f.namespace } : {}),
           ...(f.repo ? { repo: f.repo } : {}),
           ...(f.detail ? { detail: f.detail } : {}),
-        }),
+        })
+      },
       deny: (d) => denialResponse(c, d),
       readBody: (spec = 'json', invalid = invalidBody) => parseBody(c, spec, invalid),
     }
     // A mutation whose handler audited nothing still gets its outcome, so no intent is left dangling.
-    const closeIntent = (status: number) => {
+    const closeIntent = async (status: number) => {
       const tracked = trackedIntent(c.req.raw)
       if (tracked && tracked.outcomes === 0) {
-        appendOutcomeFor(c.req.raw, { ...base, ...reason, status, action: 'bff.mutation' })
+        await appendOutcomeFor(c.req.raw, { ...base, ...reason, status, action: 'bff.mutation' })
       }
     }
     let res: Response
@@ -139,11 +140,11 @@ export function guarded(
       res = await handler(args)
     } catch (err) {
       const shaped = fail?.(err, c)
-      closeIntent(shaped?.status ?? 500)
+      await closeIntent(shaped?.status ?? 500)
       if (shaped) return shaped
       throw err
     }
-    closeIntent(res.status)
+    await closeIntent(res.status)
     return res
   }
 }

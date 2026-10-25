@@ -1,11 +1,6 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { after, describe, it, mock } from 'node:test'
-
-const dataDir = mkdtempSync(join(tmpdir(), 'mice-audit-'))
-process.env.AUTH_DATA_DIR = dataDir
+import { describe, it, mock } from 'node:test'
 
 const {
   appendAudit,
@@ -23,7 +18,7 @@ const { auditActionLabel, auditActionInfo, knownAuditActions } = await import(
 
 const actor = { sub: 's1', email: 'a@x.io', name: 'Ann', iss: 'iss' }
 
-function add(
+async function add(
   action: string,
   extra: {
     namespace?: string
@@ -32,7 +27,7 @@ function add(
     message?: string
   } = {},
 ) {
-  appendAudit({
+  await appendAudit({
     actor,
     via: 'session',
     method: 'POST',
@@ -43,72 +38,70 @@ function add(
   })
 }
 
-add('session.create', {
+await add('session.create', {
   namespace: 'ns1',
   detail: { session_id: 'sess-1', mounts: [{ workspace_id: 'ws-m' }] },
 })
-add('session.retry', { namespace: 'ns1', detail: { session_id: 'sess-2' } })
-add('workspace.commit', { namespace: 'ns1', repo: 'r', detail: { workspace_id: 'ws-1' } })
-add('file.write', { namespace: 'ns2', repo: 'r2', detail: { workspace_id: 'ws-2' } })
-add('job.create', { namespace: 'ns1', repo: 'r', detail: { job_id: 'job-1' } })
-add('job.sync', { namespace: 'ns2', detail: { job_ids: ['job-2', 'job-3'] } })
-add('repo.create', { namespace: 'ns1', repo: 'r', message: '=HYPERLINK("x")' })
-
-after(() => rmSync(dataDir, { recursive: true, force: true }))
+await add('session.retry', { namespace: 'ns1', detail: { session_id: 'sess-2' } })
+await add('workspace.commit', { namespace: 'ns1', repo: 'r', detail: { workspace_id: 'ws-1' } })
+await add('file.write', { namespace: 'ns2', repo: 'r2', detail: { workspace_id: 'ws-2' } })
+await add('job.create', { namespace: 'ns1', repo: 'r', detail: { job_id: 'job-1' } })
+await add('job.sync', { namespace: 'ns2', detail: { job_ids: ['job-2', 'job-3'] } })
+await add('repo.create', { namespace: 'ns1', repo: 'r', message: '=HYPERLINK("x")' })
 
 describe('audit filters', () => {
-  it('filters by session id, including mounts for workspace', () => {
-    const s = queryAudit({ sessionId: 'sess-1' }).events
+  it('filters by session id, including mounts for workspace', async () => {
+    const s = (await queryAudit({ sessionId: 'sess-1' })).events
     assert.deepEqual(s.map((e) => e.action), ['session.create'])
-    const w = queryAudit({ workspaceId: 'ws-m' }).events
+    const w = (await queryAudit({ workspaceId: 'ws-m' })).events
     assert.deepEqual(w.map((e) => e.action), ['session.create'])
-    assert.equal(queryAudit({ workspaceId: 'ws-1' }).events.length, 1)
+    assert.equal((await queryAudit({ workspaceId: 'ws-1' })).events.length, 1)
   })
 
-  it('filters by job id including batch job_ids', () => {
-    assert.equal(queryAudit({ jobId: 'job-1' }).events.length, 1)
-    const b = queryAudit({ jobId: 'job-3' }).events
+  it('filters by job id including batch job_ids', async () => {
+    assert.equal((await queryAudit({ jobId: 'job-1' })).events.length, 1)
+    const b = (await queryAudit({ jobId: 'job-3' })).events
     assert.deepEqual(b.map((e) => e.action), ['job.sync'])
   })
 
-  it('applies allowedNamespaces before paging', () => {
-    const r = queryAudit({ allowedNamespaces: ['ns2'], limit: 2 })
+  it('applies allowedNamespaces before paging', async () => {
+    const r = await queryAudit({ allowedNamespaces: ['ns2'], limit: 2 })
     assert.equal(r.events.length, 2)
     assert.ok(r.events.every((e) => e.namespace === 'ns2'))
-    assert.equal(queryAudit({ allowedNamespaces: [] }).events.length, 0)
+    assert.equal((await queryAudit({ allowedNamespaces: [] })).events.length, 0)
   })
 
-  it('action prefix groups but exact action does not widen', () => {
-    assert.equal(queryAudit({ action: 'session' }).events.length, 2)
-    assert.equal(queryAudit({ action: 'session.retry' }).events.length, 1)
+  it('action prefix groups but exact action does not widen', async () => {
+    assert.equal((await queryAudit({ action: 'session' })).events.length, 2)
+    assert.equal((await queryAudit({ action: 'session.retry' })).events.length, 1)
   })
 
-  it('combines filters', () => {
+  it('combines filters', async () => {
     assert.equal(
-      queryAudit({ namespace: 'ns1', jobId: 'job-2' }).events.length,
+      (await queryAudit({ namespace: 'ns1', jobId: 'job-2' })).events.length,
       0,
     )
   })
 })
 
 describe('audit facets', () => {
-  it('lists distinct sessions, workspaces and jobs', () => {
-    const f = auditFacets({})
+  it('lists distinct sessions, workspaces and jobs', async () => {
+    const f = await auditFacets({})
     assert.deepEqual(f.sessions.map((s) => s.id).sort(), ['sess-1', 'sess-2'])
     assert.deepEqual(f.workspaces.map((s) => s.id).sort(), ['ws-1', 'ws-2', 'ws-m'])
     assert.deepEqual(f.jobs.map((s) => s.id).sort(), ['job-1', 'job-2', 'job-3'])
     assert.equal(f.jobs.find((j) => j.id === 'job-1')?.repo, 'r')
   })
 
-  it('respects namespace scope', () => {
-    const f = auditFacets({ allowedNamespaces: ['ns2'] })
+  it('respects namespace scope', async () => {
+    const f = await auditFacets({ allowedNamespaces: ['ns2'] })
     assert.deepEqual(f.sessions, [])
     assert.deepEqual(f.jobs.map((s) => s.id).sort(), ['job-2', 'job-3'])
   })
 })
 
 describe('audit CSV', () => {
-  it('quotes and guards formula injection', () => {
+  it('quotes and guards formula injection', async () => {
     assert.equal(csvCell('a,b'), '"a,b"')
     assert.equal(csvCell('say "hi"'), '"say ""hi"""')
     assert.equal(csvCell('=1+1'), "'=1+1")
@@ -117,8 +110,8 @@ describe('audit CSV', () => {
     assert.equal(csvCell(200), '200')
   })
 
-  it('exports filtered rows with header and labels', () => {
-    const { events } = queryAuditForExport({ jobId: 'job-2' })
+  it('exports filtered rows with header and labels', async () => {
+    const { events } = await queryAuditForExport({ jobId: 'job-2' })
     const csv = auditEventsToCsv(events)
     const lines = csv.trim().split('\r\n')
     assert.ok(lines[0].startsWith('timestamp,actor_name'))
@@ -127,14 +120,14 @@ describe('audit CSV', () => {
     assert.ok(lines[1].includes('job-2;job-3'))
   })
 
-  it('neutralises formulas in messages', () => {
-    const { events } = queryAuditForExport({ action: 'repo.create' })
+  it('neutralises formulas in messages', async () => {
+    const { events } = await queryAuditForExport({ action: 'repo.create' })
     assert.ok(auditEventsToCsv(events).includes(`"'=HYPERLINK(""x"")"`))
   })
 })
 
 describe('audit labels', () => {
-  it('has labels for known actions and a fallback', () => {
+  it('has labels for known actions and a fallback', async () => {
     assert.equal(auditActionLabel('audit.export'), 'Audit log exported')
     assert.equal(auditActionInfo('weird.new_thing').group, 'Other')
     assert.ok(auditActionLabel('weird.new_thing').length > 0)
@@ -144,7 +137,7 @@ describe('audit labels', () => {
 })
 
 describe('notification audit integration', () => {
-    it('classifies completed pushes but not intermediate commit uploads', () => {
+    it('classifies completed pushes but not intermediate commit uploads', async () => {
       assert.deepEqual(classifyPath('POST', '/api/repos/ns/repo/commits/abc/complete'), {
         action: 'commit.publish',
         namespace: 'ns',
@@ -155,12 +148,12 @@ describe('notification audit integration', () => {
       assert.equal(classifyPath('POST', '/api/repos/ns/repo/commits/abc').action, 'other')
     })
 
-    it('projects appended events and exposes them for durable replay', () => {
+    it('projects appended events and exposes them for durable replay', async () => {
       let observed: string | undefined
       setAuditObserver((event) => {
         observed = event.id
       })
-      const event = appendAudit({
+      const event = await appendAudit({
         actor,
         via: 'session',
         method: 'POST',
@@ -170,15 +163,15 @@ describe('notification audit integration', () => {
       })
       assert.ok(event)
       assert.equal(observed, event.id)
-      assert.ok(queryAudit({ action: 'commit.publish' }).events.some((e) => e.id === event.id))
+      assert.ok((await queryAudit({ action: 'commit.publish' })).events.some((e) => e.id === event.id))
       setAuditObserver(() => {})
   })
 
-  it('does not lose the journaled event if live projection throws', () => {
+  it('does not lose the journaled event if live projection throws', async () => {
     const logging = mock.method(console, 'error', () => {})
     setAuditObserver(() => { throw new Error('notification store unavailable') })
     try {
-      const event = appendAudit({
+      const event = await appendAudit({
         actor,
         via: 'session',
         method: 'POST',
@@ -188,7 +181,7 @@ describe('notification audit integration', () => {
       })
       assert.ok(event)
       assert.equal(logging.mock.callCount(), 1)
-      assert.ok(queryAudit({ action: 'file.write' }).events.some((entry) => entry.id === event.id))
+      assert.ok((await queryAudit({ action: 'file.write' })).events.some((entry) => entry.id === event.id))
     } finally {
       setAuditObserver(() => {})
       logging.mock.restore()
@@ -197,27 +190,27 @@ describe('notification audit integration', () => {
 })
 
 describe('namespace-scoped audit (Owner scope)', () => {
-  it('never returns other namespaces or events without a namespace', () => {
-    add('access_request.create', { message: 'no namespace' })
+  it('never returns other namespaces or events without a namespace', async () => {
+    await add('access_request.create', { message: 'no namespace' })
     const scope = ['ns1']
-    const { events } = queryAudit({ allowedNamespaces: scope, limit: 100 })
+    const { events } = await queryAudit({ allowedNamespaces: scope, limit: 100 })
     assert.ok(events.length > 0)
     assert.ok(events.every((e) => e.namespace === 'ns1'))
 
-    const exported = queryAuditForExport({ allowedNamespaces: scope })
+    const exported = await queryAuditForExport({ allowedNamespaces: scope })
     assert.ok(exported.events.length > 0)
     assert.ok(exported.events.every((e) => e.namespace === 'ns1'))
     assert.ok(!auditEventsToCsv(exported.events).includes('ns2'))
 
-    const facets = auditFacets({ allowedNamespaces: scope })
+    const facets = await auditFacets({ allowedNamespaces: scope })
     assert.ok(facets.jobs.every((j) => !['job-2', 'job-3'].includes(j.id)))
     assert.ok(facets.workspaces.every((w) => w.id !== 'ws-2'))
   })
 
-  it('an explicit other-namespace filter inside the scope returns nothing', () => {
-    const { events } = queryAudit({ allowedNamespaces: ['ns1'], namespace: 'ns2', limit: 100 })
+  it('an explicit other-namespace filter inside the scope returns nothing', async () => {
+    const { events } = await queryAudit({ allowedNamespaces: ['ns1'], namespace: 'ns2', limit: 100 })
     assert.deepEqual(events, [])
-    const facets = auditFacets({ allowedNamespaces: ['ns1'], namespace: 'ns2' })
+    const facets = await auditFacets({ allowedNamespaces: ['ns1'], namespace: 'ns2' })
     assert.deepEqual(facets.jobs, [])
     assert.deepEqual(facets.workspaces, [])
   })

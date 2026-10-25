@@ -176,7 +176,7 @@ export function createDockerRunner(): Runner {
           resolve({ exitCode: 124 })
         }, job.timeout_seconds * 1000)
 
-        child.on('close', async (code) => {
+        child.on('close', (code) => void (async () => {
           clearTimeout(timer)
           // Capture remaining logs via docker logs if needed
           const logs = await runCmd(env.jobsDockerBin, ['logs', name]).catch(
@@ -188,7 +188,7 @@ export function createDockerRunner(): Runner {
           }
           await runCmd(env.jobsDockerBin, ['rm', '-f', name]).catch(() => {})
           resolve({ exitCode: cancelled ? 137 : (code ?? 1) })
-        })
+        })())
       })
 
       return {

@@ -1,5 +1,7 @@
 # GXP — PLAT-GXP product requirements + implementation plan
 
+> **Validation impact (ADR 0005):** the audit trail now lives in immudb. The SHA-256 hash chain (`prev_hash`/`hash`), `auditChain`, signed Ed25519 checkpoints (`auditCheckpoint`, `auditSigning`) and the old verification endpoint no longer exist; `GET /auth/audit/export.bundle` (`mice-audit-bundle/2`) is unsigned and verification is the audit module's `verify` over immudb. Validation documents that reference the chain or signed checkpoints must be revisited: GXP-R rows on audit integrity in this plan, [03-audit.md](./03-audit.md) section 5.2, the audit-gxp test cases (`e2e/tests/audit-gxp.spec.ts`), and any URS/FS/IQ/OQ/PQ text citing `audit.jsonl`, hash chaining or checkpoint signatures. Backup and restore of the databases is not provided yet (GXP-R-061/063 remain open).
+
 Living catalog of **product/tech controls** for Mice as a GxP-capable platform, plus phased engineering delivery. Grounded in FDA [21 CFR Part 11](https://www.ecfr.gov/current/title-21/chapter-I/subchapter-A/part-11), EU GMP Annex 11, ALCOA+ data integrity, and GAMP 5–style *system* controls the software must support.
 
 Related: [EPICS.md](./EPICS.md) · [01-authentication.md](./01-authentication.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [README.md](../README.md)

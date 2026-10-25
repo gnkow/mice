@@ -17,7 +17,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
   app.get('/auth/me', async (c) => {
     const session = await authenticateUser(c)
     if (!session) return c.json({ authenticated: false }, 401)
-    rememberNotificationUser(session)
+    await rememberNotificationUser(session)
     return c.json({
       authenticated: true,
       user: {
@@ -31,26 +31,25 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
 
   /** Effective AuthZ summary for UI (pending gate, instance flags). */
   app.get('/auth/me/authz', guarded({}, async ({ c, user: session }) => {
-    const pending = isPendingUser(session)
+    const pending = await isPendingUser(session)
     return c.json({
-      enforce: isAuthzEnforce(),
+      enforce: await isAuthzEnforce(),
       pending,
-      instanceAdmin: isInstanceAdmin(session),
+      instanceAdmin: await isInstanceAdmin(session),
       permissions: Object.fromEntries(
-        ALL_INSTANCE_PERMISSIONS.map((p) => [
-          p,
-          hasInstancePermission(session, p),
-        ]),
+        await Promise.all(
+          ALL_INSTANCE_PERMISSIONS.map(async (p) => [p, await hasInstancePermission(session, p)] as const),
+        ),
       ) as Record<(typeof ALL_INSTANCE_PERMISSIONS)[number], boolean>,
       instancePermissionCatalog: ALL_INSTANCE_PERMISSIONS,
-      hasAnyGrant: userHasAnyGrant(session),
-      trainingCompleted: hasCompletedTraining(session),
+      hasAnyGrant: await userHasAnyGrant(session),
+      trainingCompleted: await hasCompletedTraining(session),
       requireTraining: env.authzRequireTraining,
     })
   }))
 
   /** IdP / store directory search for AuthZ member & collaborator pickers. */
-  app.get('/auth/directory/search', guarded({ gate: (u) => (canSearchDirectory(u) ? null : 'Forbidden') }, async ({ c }) => {
+  app.get('/auth/directory/search', guarded({ gate: async (u) => (await canSearchDirectory(u) ? null : 'Forbidden') }, async ({ c }) => {
     const q = c.req.query('q') ?? ''
     const kindRaw = (c.req.query('kind') ?? 'user').toLowerCase()
     const kind = kindRaw === 'group' ? 'group' : 'user'
@@ -65,8 +64,8 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
 
   app.post('/auth/access-requests', guarded({ body: 'optional' }, async ({ c, user: session, body }) => {
     const message = (body.message as string | undefined) ?? ''
-    const req = submitAccessRequest(session, message)
-    auditMutation(c, session, 'session', {
+    const req = await submitAccessRequest(session, message)
+    await auditMutation(c, session, 'session', {
       action: 'access-request.submit',
       message: 'Submitted access request',
       detail: { requestId: req.id },
@@ -74,11 +73,11 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     return c.json({ ok: true, request: req })
   }))
 
-  app.get('/auth/access-requests', guarded({ gate: (u) => (canReviewAccessRequests(u) ? null : 'Forbidden') }, async ({ c, user: session }) => {
-    const fullHistory = decideInstanceAction(session, 'access.review.all').allow
+  app.get('/auth/access-requests', guarded({ gate: async (u) => (await canReviewAccessRequests(u) ? null : 'Forbidden') }, async ({ c, user: session }) => {
+    const fullHistory = (await decideInstanceAction(session, 'access.review.all')).allow
     return c.json({
-      requests: listAccessRequests({ pendingOnly: !fullHistory }),
-      reviewNamespaces: namespacesWithCapability(
+      requests: await listAccessRequests({ pendingOnly: !fullHistory }),
+      reviewNamespaces: await namespacesWithCapability(
         session,
         'review_access_requests',
       ),
@@ -95,13 +94,13 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     if (body.action !== 'approve' && body.action !== 'deny') {
       return c.json({ error: 'action required' }, 400)
     }
-    const result = resolveAccessRequest(session, c.req.param('id'), body.action, {
+    const result = await resolveAccessRequest(session, c.req.param('id'), body.action, {
       namespace: body.namespace,
       role: body.role,
       permission: body.permission,
     })
     if (!result.ok) {
-      auditMutation(c, session, 'session', {
+      await auditMutation(c, session, 'session', {
         action: `access-request.${body.action}`,
         status: 400,
         message: `Access request ${body.action} failed: ${result.error}`,
@@ -109,7 +108,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
       })
       return c.json({ error: result.error }, 400)
     }
-    auditMutation(c, session, 'session', {
+    await auditMutation(c, session, 'session', {
       action: `access-request.${body.action}`,
       namespace: body.action === 'approve' ? body.namespace : undefined,
       message: `Access request ${result.request.status}`,
@@ -133,11 +132,11 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     }
     const self = target.sub === session.sub && target.iss === session.iss
     if (self) {
-      setTrainingCompletedSelf(session, done)
+      await setTrainingCompletedSelf(session, done)
     } else {
-      const result = setTrainingCompleted(session, target, done)
+      const result = await setTrainingCompleted(session, target, done)
       if (!result.ok) {
-        auditMutation(c, session, 'session', {
+        await auditMutation(c, session, 'session', {
           action: 'training.update',
           status: 403,
           message: `Training update denied: ${result.error}`,
@@ -146,14 +145,14 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
         return c.json({ error: result.error }, 403)
       }
     }
-    auditMutation(c, session, 'session', {
+    await auditMutation(c, session, 'session', {
       action: 'training.update',
       message: `Set training completed=${done} for ${self ? 'self' : target.sub}`,
       detail: { target, completed: done, self },
     })
     return c.json({
       ok: true,
-      trainingCompleted: hasCompletedTraining(target),
+      trainingCompleted: await hasCompletedTraining(target),
     })
   }))
 }

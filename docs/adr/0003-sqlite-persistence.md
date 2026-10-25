@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by 0004
 ---
 
 # Durable state lives in one SQLite database behind the persistence seam
@@ -16,8 +16,11 @@ The BFF kept about 25 stores as JSON documents and JSONL logs under `AUTH_DATA_D
 
 - Stays on disk by design: workspace trees, `state.json`, `base.json`, `changes-cache.json`, `.leases.json`, job logs and work directories, checkout caches and the oxen store. They are bulk or tree-shaped artefacts that are read with the filesystem and move with their directory.
 - Tampering with the audit trail now requires deliberately dropping the trigger protection; chain verification still detects it and blocks mutations until acknowledged.
-- Backups use `make db-backup` (`VACUUM INTO`, consistent while running). Restore is: stop the stack, put the copy at `AUTH_DATABASE_PATH`, start.
+- Backups use `make db-backup` (`VACUUM INTO`, consistent while running, verified).
 - Round two: the schema is versioned (`PRAGMA user_version`, ordered migrations in `sqliteBackend.ts`, each in one transaction; a newer database refuses to open) and `PRAGMA quick_check` runs at open. A new `Collection` interface (`get/put/remove/list`, rows in `collection_rows`) holds jobs, desktop sessions and lineage ops, so changing one record writes one row; migration v3 converts the former `jobs.jsonl`, `sessions.jsonl` and `lineage.jsonl` log rows and the importer maps those files the same way. Notification entries, deliveries and events are rows too; the document keeps the cursor, users, preferences, subscriptions and tombstones, and a legacy document that still embeds them is moved out on its next change.
 - `/readyz` checks the audit store from its newest row without reading the trail.
 - Disk-resident JSON (workspace `state.json`, `base.json`, leases) goes through `DiskDocument`: one corruption rule (unreadable reads as absent) and atomic writes. `changes-cache.json` stays a best-effort async cache owned by the scanner.
 - Scheduled backups (`AUTH_BACKUP_INTERVAL_HOURS`, off by default; `AUTH_BACKUP_KEEP`, `AUTH_BACKUP_DIR`) are verified (opened, `quick_check`, schema version) before older copies are pruned. Backups beside the database share its disk: point `AUTH_BACKUP_DIR` at another volume for real protection.
+- Round three: the adapter set is SQLite and memory only; the plain-file adapter and the JSON-pair row fallback are gone, and every `JsonBackend` method is required. `Collection.find(field, value)` filters in the database (`json_extract`) and serves job, session and lineage queries. Credentials (`pats.tokens`, keyed by token hash), notification users, preferences, subscriptions and tombstones, and metadata records, revisions and history (`meta.*`) are collections, so using a token or refreshing a user writes one row. Schema v4 and v5 convert `pats.json` and the notification maps; `migrateMetaStore()` converts `meta.json` and `meta-history.jsonl` at boot (the importer still brings the legacy files in first). Unchanged documents are not rewritten, audit append reads only the newest row, and `atomically` exists on both adapters so authorization changes commit as one transaction instead of a compensating saga.
+- Maintenance: at boot and every `AUTH_MAINTENANCE_INTERVAL_HOURS` (default 6, 0 = off) the BFF optimises, truncates the WAL and runs `quick_check`; a failed check turns `/readyz` `storage` red until a later one passes. `storage` also reports the schema version and WAL size.
+- Restore: `make db-restore FILE=<backup>` stops the BFF, verifies the copy (integrity, not newer than this release), keeps the replaced database as `mice.db.replaced-<stamp>`, swaps, and starts again. `scripts/db-tool.ts` is the single backup/restore path.

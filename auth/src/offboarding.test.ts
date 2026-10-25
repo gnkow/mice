@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -14,35 +15,35 @@ const { queryAudit } = await import('./audit.js')
 const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
-maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
+await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
 
-const mint = (owner: ReturnType<typeof mk>) => {
-  const r = createServicePrincipal({ name: 'ci', owner })
+const mint = async (owner: ReturnType<typeof mk>) => {
+  const r = await createServicePrincipal({ name: 'ci', owner })
   assert.ok(r.ok)
   return r.principal
 }
-describe('offboard', () => {
-  it('suspends owned service principals for directory-sync, audited with the cause', () => {
+await describe('offboard', async () => {
+  await it('suspends owned service principals for directory-sync, audited with the cause', async () => {
     const owner = mk('owner')
-    const sp = mint(owner)
-    const r = offboard(owner, { scope: 'all', cause: 'directory-sync' })
+    const sp = await mint(owner)
+    const r = await offboard(owner, { scope: 'all', cause: 'directory-sync' })
     assert.ok(r.ok && r.suspended.length === 1)
-    assert.equal(getServicePrincipal(sp.id)?.suspendedAt !== undefined, true)
-    assert.equal(queryAudit({ action: 'service-principal.suspend' }).events[0]?.detail?.cause, 'directory-sync')
+    assert.equal((await getServicePrincipal(sp.id))?.suspendedAt !== undefined, true)
+    assert.equal((await queryAudit({ action: 'service-principal.suspend' })).events[0]?.detail?.cause, 'directory-sync')
   })
 
-  it('does not suspend on sign-out or back-channel logout', () => {
+  await it('does not suspend on sign-out or back-channel logout', async () => {
     const owner = mk('owner2')
-    mint(owner)
+    await mint(owner)
     for (const cause of ['self-service', 'back-channel-logout'] as const) {
-      const r = offboard(owner, { scope: 'sessions', cause })
+      const r = await offboard(owner, { scope: 'sessions', cause })
       assert.ok(r.ok && r.suspended.length === 0)
     }
   })
 
-  it('refuses admin revocation by a non-admin and audits the denial', () => {
-    const r = offboard(mk('victim'), { scope: 'all', cause: 'admin-revocation', actor: { ...mk('mallory') } })
+  await it('refuses admin revocation by a non-admin and audits the denial', async () => {
+    const r = await offboard(mk('victim'), { scope: 'all', cause: 'admin-revocation', actor: { ...mk('mallory') } })
     assert.deepEqual(r, { ok: false, error: 'Forbidden' })
-    assert.equal(queryAudit({ actor: 'mallory', action: 'session.revoke' }).events[0]?.status, 403)
+    assert.equal((await queryAudit({ actor: 'mallory', action: 'session.revoke' })).events[0]?.status, 403)
   })
 })

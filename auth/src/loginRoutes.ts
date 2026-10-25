@@ -49,10 +49,10 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
     }
     if (!result.ok) return c.html(result.html, result.status)
     const sessionUser = result.user
-    preparePrincipal(sessionUser)
-    rememberNotificationUser(sessionUser)
+    await preparePrincipal(sessionUser)
+    await rememberNotificationUser(sessionUser)
     await setSessionCookie(c, sessionUser)
-    auditMutation(c, sessionUser, 'session', {
+    await auditMutation(c, sessionUser, 'session', {
       action: 'auth.login',
       message: 'Signed in via SSO',
     })
@@ -62,7 +62,7 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
   async function finishLogout(c: Context) {
     const session = await getSession(c)
     if (session) {
-      auditMutation(c, session, 'session', {
+      await auditMutation(c, session, 'session', {
         action: 'auth.logout',
         message: 'Signed out',
       })

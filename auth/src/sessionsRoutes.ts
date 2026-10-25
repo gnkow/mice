@@ -57,17 +57,17 @@ export function registerSessionRoutes(app: Hono) {
     const workspaceId = c.req.query('workspace_id') || undefined
     const namespace = c.req.query('namespace') || undefined
     const repo = c.req.query('repo') || undefined
-    const sessions = listDesktopSessions({ user, all, workspaceId, namespace, repo })
+    const sessions = await listDesktopSessions({ user, all, workspaceId, namespace, repo })
     return c.json({ sessions })
   }))
 
   app.get('/auth/sessions/:id', guarded({ allowScoped: true }, async ({ c, user, deny }) => {
-    const row = getSessionRecord(c.req.param('id'))
+    const row = await getSessionRecord(c.req.param('id'))
     if (!row || row.status === 'destroyed') {
       return c.json({ error: 'Not found' }, 404)
     }
     const { authorizeSessionAccess } = await import('./sessions.js')
-    const denied = deny(authorizeSessionAccess(user, row, 'read'))
+    const denied = deny(await authorizeSessionAccess(user, row, 'read'))
     if (denied) return denied
     return c.json({ session: publicSession(row) })
   }))
@@ -91,7 +91,7 @@ export function registerSessionRoutes(app: Hono) {
   }))
 
   app.post('/auth/sessions/:id/disconnect', guarded({ allowScoped: true }, async ({ c, user, via }) => {
-    const updated = markSessionDisconnect(
+    const updated = await markSessionDisconnect(
       user,
       via,
       c.req.param('id'),
@@ -198,12 +198,12 @@ export function registerSessionRoutes(app: Hono) {
     if (!peeked || peeked.sessionId !== sessionId) {
       return c.json({ error: 'Invalid or expired ticket' }, 403)
     }
-    const row = getSessionRecord(sessionId)
+    const row = await getSessionRecord(sessionId)
     if (!row || row.status === 'destroyed') {
       return c.json({ error: 'Not found' }, 404)
     }
     const { authorizeSessionAccess } = await import('./sessions.js')
-    const denied = deny(authorizeSessionAccess(user, row, 'connect'))
+    const denied = deny(await authorizeSessionAccess(user, row, 'connect'))
     if (denied) return denied
     return c.json({
       token: peeked.token,

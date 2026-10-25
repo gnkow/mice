@@ -4,8 +4,8 @@ import type { AuditFn } from './routeDeps.js'
 import type { SessionUser } from './session.js'
 
 /** Appends an audit event for a BFF-native (non-proxied) mutation. Never pass secrets in `detail`. */
-export const auditMutation: AuditFn = (c, user, via: AuditVia, fields) => {
-  appendOutcomeFor(c.req.raw, {
+export const auditMutation: AuditFn = async (c, user, via: AuditVia, fields) => {
+  await appendOutcomeFor(c.req.raw, {
     actor: actorFromUser(user as SessionUser),
     via: callerVia(c, via),
     method: c.req.method,

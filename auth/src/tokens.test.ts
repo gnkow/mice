@@ -1,13 +1,8 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { after, describe, it } from 'node:test'
+import { describe, it } from 'node:test'
 import { fakeClock, useClock } from './clock.js'
-import { readText, removeText, writeText } from './jsonStore.js'
 
-const dataDir = mkdtempSync(join(tmpdir(), 'mice-tokens-'))
-process.env.AUTH_DATA_DIR = dataDir
 process.env.SESSION_SECRET = 'test-session-secret-for-tokens'
 
 const {
@@ -35,144 +30,116 @@ const bob = {
   name: 'Bob',
 }
 
-describe('PAT tokens', () => {
-  after(() => {
-    try {
-      rmSync(dataDir, { recursive: true, force: true })
-    } catch {
-      /* ignore */
-    }
-  })
-
-  it('createPat defaults source to manual and snapshots groups', () => {
-    const { token, pat } = createPat(alice, 'manual-token')
+await describe('PAT tokens', async () => {
+  await it('createPat defaults source to manual and snapshots groups', async () => {
+    const { token, pat } = await createPat(alice, 'manual-token')
     assert.match(token, /^mice_pat_/)
     assert.equal(pat.source, 'manual')
     assert.equal(pat.label, 'manual-token')
 
-    const user = resolvePat(token)
+    const user = await resolvePat(token)
     assert.ok(user)
     assert.deepEqual(user?.groups, ['devs'])
     assert.equal(user?.email, alice.email)
 
-    const meta = findPatByToken(token)
+    const meta = await findPatByToken(token)
     assert.ok(meta)
     assert.equal(meta?.source, 'manual')
     assert.equal(meta?.id, pat.id)
   })
 
-  it('createPat accepts cli-login source', () => {
-    const { token, pat } = createPat(alice, 'cli-login', {
+  await it('createPat accepts cli-login source', async () => {
+    const { token, pat } = await createPat(alice, 'cli-login', {
       source: 'cli-login',
     })
     assert.equal(pat.source, 'cli-login')
-    assert.equal(findPatByToken(token)?.source, 'cli-login')
+    assert.equal((await findPatByToken(token))?.source, 'cli-login')
   })
 
-  it('createPat still accepts scopes array as third arg', () => {
+  await it('createPat still accepts scopes array as third arg', async () => {
     const scopes = [{ namespace: 'ns1', maxRole: 'write' as const }]
-    const { token, pat } = createPat(alice, 'scoped', scopes)
+    const { token, pat } = await createPat(alice, 'scoped', scopes)
     assert.ok(pat.scopes?.length)
-    const user = resolvePat(token)
+    const user = await resolvePat(token)
     assert.ok(user?.patScopes?.length)
   })
 
-  it('listPatsForUser only returns that principal', () => {
-    createPat(bob, 'bob-only')
-    const aliceList = listPatsForUser(alice)
-    const bobList = listPatsForUser(bob)
+  await it('listPatsForUser only returns that principal', async () => {
+    await createPat(bob, 'bob-only')
+    const aliceList = await listPatsForUser(alice)
+    const bobList = await listPatsForUser(bob)
     assert.ok(aliceList.every((t) => t.label !== 'bob-only'))
     assert.ok(bobList.some((t) => t.label === 'bob-only'))
   })
 
-  it('revokePat is scoped to owner', () => {
-    const { pat } = createPat(alice, 'revoke-owner')
-    assert.equal(revokePat(bob, pat.id), false)
-    assert.equal(revokePat(alice, pat.id), true)
-    assert.equal(revokePat(alice, pat.id), false)
+  await it('revokePat is scoped to owner', async () => {
+    const { pat } = await createPat(alice, 'revoke-owner')
+    assert.equal(await revokePat(bob, pat.id), false)
+    assert.equal(await revokePat(alice, pat.id), true)
+    assert.equal(await revokePat(alice, pat.id), false)
   })
 
-  it('revokePatByToken removes by bearer hash', () => {
-    const { token } = createPat(alice, 'revoke-bearer')
-    assert.ok(resolvePat(token))
-    assert.equal(revokePatByToken(token), true)
-    assert.equal(resolvePat(token), null)
-    assert.equal(revokePatByToken(token), false)
-    assert.equal(revokePatByToken('not-a-pat'), false)
+  await it('revokePatByToken removes by bearer hash', async () => {
+    const { token } = await createPat(alice, 'revoke-bearer')
+    assert.ok(await resolvePat(token))
+    assert.equal(await revokePatByToken(token), true)
+    assert.equal(await resolvePat(token), null)
+    assert.equal(await revokePatByToken(token), false)
+    assert.equal(await revokePatByToken('not-a-pat'), false)
   })
 
-  it('resolvePat / findPatByToken reject unknown tokens', () => {
-    assert.equal(resolvePat('mice_pat_notreal'), null)
-    assert.equal(findPatByToken('mice_pat_notreal'), null)
-    assert.equal(resolvePat('Bearer something'), null)
+  await it('resolvePat / findPatByToken reject unknown tokens', async () => {
+    assert.equal(await resolvePat('mice_pat_notreal'), null)
+    assert.equal(await findPatByToken('mice_pat_notreal'), null)
+    assert.equal(await resolvePat('Bearer something'), null)
   })
 })
 
-describe('PAT expiry', () => {
-  it('defaults to 90 days and rejects more than 365', () => {
-    const { pat } = createPat(alice, 'default-expiry')
+await describe('PAT expiry', async () => {
+  await it('defaults to 90 days and rejects more than 365', async () => {
+    const { pat } = await createPat(alice, 'default-expiry')
     const days = (Date.parse(pat.expiresAt ?? '') - Date.now()) / 86_400_000
     assert.ok(days > 89.9 && days <= 90)
-    assert.throws(() => createPat(alice, 'too-long', { expiresInDays: 366 }), PatExpiryError)
-    assert.throws(() => createPat(alice, 'zero', { expiresInDays: 0 }), PatExpiryError)
+    await assert.rejects(createPat(alice, 'too-long', { expiresInDays: 366 }), PatExpiryError)
+    await assert.rejects(createPat(alice, 'zero', { expiresInDays: 0 }), PatExpiryError)
   })
 
-  it('rejects an expired PAT', () => {
-    const { token } = createPat(alice, 'short', { expiresInDays: 1 })
-    assert.ok(resolvePat(token))
+  await it('rejects an expired PAT', async () => {
+    const { token } = await createPat(alice, 'short', { expiresInDays: 1 })
+    assert.ok(await resolvePat(token))
     const clock = fakeClock(Date.now() + 2 * 86_400_000)
     const restore = useClock(clock)
     try {
-      assert.equal(resolvePat(token), null)
+      assert.equal(await resolvePat(token), null)
     } finally {
       restore()
     }
   })
 
-  it('records last use', () => {
-    const { token, pat } = createPat(bob, 'used')
+  await it('records last use', async () => {
+    const { token, pat } = await createPat(bob, 'used')
     assert.equal(pat.lastUsedAt, undefined)
-    resolvePat(token)
-    const listed = listPatsForUser(bob).find((p) => p.id === pat.id)
+    await resolvePat(token)
+    const listed = ((await listPatsForUser(bob)).find((p) => p.id === pat.id))
     assert.ok(listed?.lastUsedAt)
   })
 
-  it('debounces last-used writes to once a minute', () => {
-    const { token, pat } = createPat(bob, 'debounce')
+  await it('debounces last-used writes to once a minute', async () => {
+    const { token, pat } = await createPat(bob, 'debounce')
     const t0 = Date.now()
     const clock = fakeClock(t0)
     const restore = useClock(clock)
-    const lastUsed = () => listPatsForUser(bob).find((p) => p.id === pat.id)?.lastUsedAt
+    const lastUsed = async () => ((await listPatsForUser(bob)).find((p) => p.id === pat.id))?.lastUsedAt
     try {
-      resolvePat(token)
-      const first = lastUsed()
+      await resolvePat(token)
+      const first = await lastUsed()
       assert.equal(first, new Date(t0).toISOString())
       clock.set(t0 + 10_000)
-      resolvePat(token)
-      assert.equal(lastUsed(), first)
+      await resolvePat(token)
+      assert.equal(await lastUsed(), first)
       clock.set(t0 + 61_000)
-      resolvePat(token)
-      assert.equal(lastUsed(), new Date(t0 + 61_000).toISOString())
-    } finally {
-      restore()
-    }
-  })
-
-  it('grandfathers legacy tokens to 365 days exactly once', () => {
-    const file = join(dataDir, 'pats.json')
-    const store = JSON.parse(readText(file)!)
-    for (const t of store.tokens) delete t.expiresAt
-    writeText(file, JSON.stringify(store))
-    const first = listPatsForUser(alice)
-    const days = (Date.parse(first[0].expiresAt ?? '') - Date.now()) / 86_400_000
-    assert.ok(days > 364.9 && days <= 365)
-    const restore = useClock(fakeClock(Date.now() + 10 * 86_400_000))
-    try {
-      const second = listPatsForUser(alice)
-      assert.deepEqual(
-        second.map((p) => p.expiresAt).sort(),
-        first.map((p) => p.expiresAt).sort(),
-      )
+      await resolvePat(token)
+      assert.equal(await lastUsed(), new Date(t0 + 61_000).toISOString())
     } finally {
       restore()
     }

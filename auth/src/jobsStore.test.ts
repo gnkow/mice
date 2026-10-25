@@ -1,11 +1,8 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
-import { after, describe, it } from 'node:test'
+import { describe, it } from 'node:test'
 import type { JobRun } from './jobsTypes.js'
-import { useJsonBackend, type JsonBackend } from './jsonStore.js'
-import { isolatedAuth } from './testSupport.js'
-
-const ctx = isolatedAuth()
-after(() => ctx.restore())
+import { breakTable } from './db/testDatabase.js'
 
 const { appendJob, getJob, listJobs, rekeyJob, resolveJobId, upsertJob } = await import('./jobsStore.js')
 
@@ -22,75 +19,74 @@ const job = (id: string): JobRun => ({
   log_ref: null, source: 'commit_clone', runtime_id: null, runner: 'docker',
 } as JobRun)
 
-const ids = () => listJobs({}).jobs.map((j) => j.id).sort()
+const ids = async () => (((await listJobs({})).jobs.map((j) => j.id)).sort())
 
-describe('jobs store on the memory backend', () => {
-  it('appends, upserts and reads a job without touching disk', () => {
-    appendJob(job('cccccccccccccccc'))
-    upsertJob({ ...job('cccccccccccccccc'), name: 'renamed' })
-    assert.equal(getJob('cccccccccccccccc')?.name, 'renamed')
-    assert.ok(ids().includes('cccccccccccccccc'))
+await describe('jobs store', async () => {
+  await it('appends, upserts and reads a job', async () => {
+    await appendJob(job('cccccccccccccccc'))
+    await upsertJob({ ...job('cccccccccccccccc'), name: 'renamed' })
+    assert.equal((await getJob('cccccccccccccccc'))?.name, 'renamed')
+    assert.ok(((await ids()).includes('cccccccccccccccc')))
   })
 })
 
-describe('rekeyJob', () => {
-  it('moves state, alias and log together and reports the log rename', () => {
-    upsertJob(job(OLD))
+await describe('listing jobs by a field', async () => {
+  await it('returns only jobs matching the status filter', async () => {
+    await appendJob({ ...job('dddddddddddddddd'), status: 'queued' })
+    assert.deepEqual((await listJobs({ status: 'queued' })).jobs.map((j) => j.id), ['dddddddddddddddd'])
+  })
+})
+
+await describe('rekeyJob', async () => {
+  await it('moves state, alias and log together and reports the log rename', async () => {
+    await upsertJob(job(OLD))
     const moves: string[][] = []
-    const result = rekeyJob(OLD, job(NEW), { exists: () => true, rename: (a, b) => void moves.push([a, b]) })
+    const result = await rekeyJob(OLD, job(NEW), { exists: () => true, rename: (a, b) => void moves.push([a, b]) })
     assert.deepEqual(result, { logRenamed: true })
-    assert.equal(resolveJobId(OLD), NEW)
-    assert.equal(getJob(OLD)?.id, NEW)
-    assert.deepEqual(ids().filter((i) => i === OLD || i === NEW), [NEW])
+    assert.equal(await resolveJobId(OLD), NEW)
+    assert.equal((await getJob(OLD))?.id, NEW)
+    assert.deepEqual(((await ids()).filter((i) => i === OLD || i === NEW)), [NEW])
     assert.equal(moves.length, 1)
     assert.match(moves[0]![0]!, new RegExp(`${OLD}\\.log$`))
     assert.match(moves[0]![1]!, new RegExp(`${NEW}\\.log$`))
   })
 
-  it('repoints aliases that already targeted the old id', () => {
+  await it('repoints aliases that already targeted the old id', async () => {
     const a = 'dddddddddddddddd', b = 'eeeeeeeeeeeeeeee', c = 'ffffffffffffffff'
-    upsertJob(job(a))
-    rekeyJob(a, job(b), { exists: () => false, rename() {} })
-    rekeyJob(b, job(c), { exists: () => false, rename() {} })
-    assert.equal(resolveJobId(a), c)
-    assert.equal(resolveJobId(b), c)
+    await upsertJob(job(a))
+    await rekeyJob(a, job(b), { exists: () => false, rename() {} })
+    await rekeyJob(b, job(c), { exists: () => false, rename() {} })
+    assert.equal(await resolveJobId(a), c)
+    assert.equal(await resolveJobId(b), c)
   })
 
-  it('a failed log rename is not fatal: state and alias stay consistent', () => {
+  await it('a failed log rename is not fatal: state and alias stay consistent', async () => {
     const o = '1111111111111111', n = '2222222222222222'
-    upsertJob(job(o))
-    const result = rekeyJob(o, job(n), { exists: () => true, rename() { throw new Error('EXDEV') } })
+    await upsertJob(job(o))
+    const result = await rekeyJob(o, job(n), { exists: () => true, rename() { throw new Error('EXDEV') } })
     assert.deepEqual(result, { logRenamed: false })
-    assert.equal(getJob(o)?.id, n)
+    assert.equal((await getJob(o))?.id, n)
   })
 
-  it('a failed alias write rolls back: the old job stays authoritative', () => {
+  await it('a failed alias write rolls back: the old job stays authoritative', async () => {
     const o = '3333333333333333', n = '4444444444444444'
-    upsertJob(job(o))
-    const inner: JsonBackend = ctx.backend
-    const restore = useJsonBackend({
-      read: (p) => inner.read(p),
-      write: (p, t) => {
-        if (p.endsWith('job-aliases.json')) throw new Error('disk full')
-        inner.write(p, t)
-      },
-      append: (p, t) => inner.append!(p, t),
-    })
+    await upsertJob(job(o))
+    const repair = await breakTable('job_aliases')
     try {
-      assert.throws(() => rekeyJob(o, job(n), { exists: () => true, rename() { assert.fail('log must not move') } }), /disk full/)
+      await assert.rejects(rekeyJob(o, job(n), { exists: () => true, rename() { assert.fail('log must not move') } }))
     } finally {
-      restore()
+      await repair()
     }
-    assert.equal(resolveJobId(o), o)
-    assert.equal(getJob(o)?.id, o)
-    assert.equal(getJob(n), null)
-    assert.ok(!ids().includes(n))
+    assert.equal(await resolveJobId(o), o)
+    assert.equal((await getJob(o))?.id, o)
+    assert.equal(await getJob(n), null)
+    assert.ok(!((await ids()).includes(n)))
   })
 
-  it('same id is a plain upsert', () => {
+  await it('same id is a plain upsert', async () => {
     const o = '5555555555555555'
-    upsertJob(job(o))
-    assert.deepEqual(rekeyJob(o, { ...job(o), name: 'x' }), { logRenamed: false })
-    assert.equal(getJob(o)?.name, 'x')
+    await upsertJob(job(o))
+    assert.deepEqual(await rekeyJob(o, { ...job(o), name: 'x' }), { logRenamed: false })
+    assert.equal((await getJob(o))?.name, 'x')
   })
 })

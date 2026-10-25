@@ -32,9 +32,9 @@ _Avoid_: Author override
 
 ### Audit
 
-**Chain**:
-The audit log as a sequence of events where each stores `prev_hash` and `hash` (SHA-256 over canonical JSON), starting at a genesis event. Editing or removing an event breaks it at that point; verification reports the first break.
-_Avoid_: Signature, ledger
+**Audit module**:
+The module with `append`, `read range` and `verify` over immudb. Tamper evidence is immudb's verified reads and proofs; there is no hash chain of our own (ADR 0005).
+_Avoid_: Chain, ledger, audit store
 
 **Intent event**:
 The audit event appended before a mutation reaches oxen or is applied. If it cannot be stored the mutation is refused with 503.
@@ -58,9 +58,13 @@ _Avoid_: Workspace
 A dedicated Linux desktop instance a user connects to over RDP.
 _Avoid_: Session (alone), VM
 
-**Persistence seam**:
-The `DocumentStore` / `Collection` / `AppendOnlyLog` / `JsonlLog` / `DiskDocument` interfaces in `auth/src/stores.ts` over a storage adapter. Production uses the SQLite adapter (`mice.db`); tests use memory. Audit, checkpoint and key logs are append-only in storage.
-_Avoid_: Database layer, JSON store
+**Main database**:
+The containerised PostgreSQL that domain stores reach directly through Drizzle, locally, in CI and in production. There is no generic backend seam and no in-memory or file adapter (ADR 0004).
+_Avoid_: Persistence seam, JSON store
+
+**Notification service**:
+Novu, which owns notification state. The notification worker projects audit events into it.
+_Avoid_: Notification store
 
 **Job**:
 A container run against a pinned Oxen commit, with lineage and an optional result commit.

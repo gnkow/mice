@@ -15,11 +15,12 @@ export SESSIONS_HOST_DATA_DIR ?= $(CURDIR)/.data/sessions
 #   SESSIONS_PROVISIONER=mock make up
 export SESSIONS_PROVISIONER ?= docker
 
-.PHONY: audit-key help up down install test smoke test-view test-ui test-unit test-cli reset clean clear readwatch
+.PHONY: db-secrets help up down install test smoke test-view test-ui test-unit test-cli reset clean clear readwatch
 
 help:
 	@echo "Targets:"
-	@echo "  make up         Start oxen-server + web (detached)"
+	@echo "  make db-secrets Generate dev passwords for PostgreSQL, immudb and Novu (.secrets/)"
+	@echo "  make up         Start the stack (PostgreSQL, immudb, Novu, oxen-server, auth, web)"
 	@echo "  make down       Stop Compose stack (keep volumes)"
 	@echo "  make reset      Wipe oxen, auth, checkout-store and workspace volumes, restart stack"
 	@echo "  make clean      Stop stack, wipe volumes + deps + test artifacts"
@@ -44,15 +45,11 @@ readwatch:
 	  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags='-s -w' -o ../../bin/linux-arm64/mice-readwatch . && \
 	  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o ../../bin/linux-amd64/mice-readwatch .
 
-# Dev signing key for audit checkpoints (kept outside the data volume; gitignored).
-audit-key:
-	node scripts/gen-audit-key.mjs
+# Dev passwords for PostgreSQL and immudb (kept outside the data volumes; gitignored; never overwritten).
+db-secrets:
+	node scripts/gen-db-secrets.mjs
 
-# Online, consistent copy of the auth database into the data volume (backups/). Restore: see plans/16-operations.md.
-db-backup:
-	docker compose exec -T auth node scripts/backup-db.mjs
-
-up: audit-key
+up: db-secrets
 	@if [ ! -x auth/bin/linux-arm64/mice-readwatch ] || [ ! -x auth/bin/linux-amd64/mice-readwatch ]; then \
 	  $(MAKE) readwatch; \
 	fi
@@ -70,6 +67,7 @@ install:
 	npx playwright install chromium
 
 test-unit:
+	node scripts/check-databases.mjs
 	npm run test:unit
 	npm run test:cli:integration
 

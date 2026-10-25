@@ -41,14 +41,8 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     sessionIdleSec: Number(src.SESSION_IDLE_SEC ?? 0),
     /** Directory-sync interval (seconds); 0 disables the schedule. */
     directorySyncIntervalSec: Number(src.DIRECTORY_SYNC_INTERVAL_SEC ?? 900),
-    /** Audit chain re-verification interval (seconds). */
+    /** Audit ledger re-verification interval (seconds). */
     auditVerifyIntervalSec: Number(src.AUDIT_VERIFY_INTERVAL_SEC ?? 3600),
-    /** Ed25519 PEM used to sign audit checkpoints and export bundles; keep it outside AUTH_DATA_DIR. */
-    auditSigningKey: src.AUDIT_SIGNING_KEY ?? '',
-    /** Path of a secret-mounted Ed25519 PEM (used when AUDIT_SIGNING_KEY is empty). */
-    auditSigningKeyFile: src.AUDIT_SIGNING_KEY_FILE ?? '',
-    /** Names the signing key in every checkpoint; defaults to a fingerprint of the public key. */
-    auditSigningKeyId: src.AUDIT_SIGNING_KEY_ID ?? '',
     /** Minimum length of a mutation reason (and of a commit message used as one). */
     auditReasonMinLength: Number(src.AUDIT_REASON_MIN_LENGTH ?? 10),
     /** Days before a service principal PAT expires that its owner is notified; 0 disables. */
@@ -57,9 +51,6 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     cookieSecure: src.COOKIE_SECURE === 'true',
     /** Directory for PAT store (pats.json). */
     dataDir: (src.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
-    backupIntervalHours: Math.max(0, Number(src.AUTH_BACKUP_INTERVAL_HOURS ?? 0) || 0),
-    backupKeep: Math.max(1, Math.floor(Number(src.AUTH_BACKUP_KEEP ?? 7)) || 7),
-    backupDir: src.AUTH_BACKUP_DIR || '',
     /** Job records + work/logs (defaults under AUTH_DATA_DIR/jobs). */
     jobsDataDir: (
       src.JOBS_DATA_DIR ??

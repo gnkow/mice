@@ -1,8 +1,7 @@
-import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { env } from './env.js'
-import { createDocumentStore } from './stores.js'
-// env.dataDir via path()
+import { and, desc, eq } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { accessRequests } from './db/schema.js'
 import type { SessionUser } from './session.js'
 import {
   userKey,
@@ -26,64 +25,63 @@ export type AccessRequest = {
   resolvedBy?: string
 }
 
-type Store = { version: 1; requests: AccessRequest[] }
+type Row = typeof accessRequests.$inferSelect
 
-function path() {
-  return join(env.dataDir, 'access-requests.json')
-}
-
-const doc = createDocumentStore<Store>({ path, initial: () => ({ version: 1, requests: [] }), onCorrupt: 'initial' })
-
-function read(): Store {
-  const s = doc.read()
-  if (!s || s.version !== 1 || !Array.isArray(s.requests)) {
-    return { version: 1, requests: [] }
+function toRequest(r: Row): AccessRequest {
+  return {
+    id: r.id, sub: r.sub, iss: r.iss, email: r.email, name: r.name, message: r.message,
+    createdAt: r.createdAt.toISOString(),
+    status: r.status as AccessRequest['status'],
+    ...(r.resolvedAt ? { resolvedAt: r.resolvedAt.toISOString() } : {}),
+    ...(r.resolvedBy ? { resolvedBy: r.resolvedBy } : {}),
   }
-  return s
 }
 
-function write(s: Store) {
-  doc.write(s)
-}
-
-export function listAccessRequests(opts?: {
+export async function listAccessRequests(opts?: {
   pendingOnly?: boolean
-}): AccessRequest[] {
-  let list = read().requests
-  if (opts?.pendingOnly) list = list.filter((r) => r.status === 'pending')
-  return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}): Promise<AccessRequest[]> {
+  const rows = await getDb().select().from(accessRequests)
+    .where(opts?.pendingOnly ? eq(accessRequests.status, 'pending') : undefined)
+    .orderBy(desc(accessRequests.createdAt))
+  return rows.map(toRequest)
 }
 
-export function canReviewAccessRequests(actor: SessionUser): boolean {
-  return decideAccessReview(actor).allow
+export async function canReviewAccessRequests(actor: SessionUser): Promise<boolean> {
+  return (await decideAccessReview(actor)).allow
 }
 
-export function submitAccessRequest(
+export async function submitAccessRequest(
   user: SessionUser,
   message: string,
-): AccessRequest {
-  const store = read()
-  const existing = store.requests.find(
-    (r) =>
-      r.status === 'pending' && r.sub === user.sub && r.iss === user.iss,
-  )
-  if (existing) return existing
-  const req: AccessRequest = {
+): Promise<AccessRequest> {
+  const db = getDb()
+  const [created] = await db.insert(accessRequests).values({
     id: randomBytes(8).toString('hex'),
     sub: user.sub,
     iss: user.iss,
     email: user.email,
     name: user.name,
     message: message.trim().slice(0, 500),
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
     status: 'pending',
-  }
-  store.requests.push(req)
-  write(store)
-  return req
+  }).onConflictDoNothing().returning()
+  if (created) return toRequest(created)
+  const [existing] = await db.select().from(accessRequests).where(and(
+    eq(accessRequests.sub, user.sub), eq(accessRequests.iss, user.iss), eq(accessRequests.status, 'pending'),
+  ))
+  return toRequest(existing)
 }
 
-export function resolveAccessRequest(
+/** The conditional update makes resolution single-winner under concurrent reviewers. */
+async function markResolved(id: string, status: 'approved' | 'denied', actor: SessionUser): Promise<AccessRequest | null> {
+  const [row] = await getDb().update(accessRequests)
+    .set({ status, resolvedAt: new Date(), resolvedBy: userKey(actor) })
+    .where(and(eq(accessRequests.id, id), eq(accessRequests.status, 'pending')))
+    .returning()
+  return row ? toRequest(row) : null
+}
+
+export async function resolveAccessRequest(
   actor: SessionUser,
   id: string,
   action: 'approve' | 'deny',
@@ -92,53 +90,47 @@ export function resolveAccessRequest(
     role?: MemberRoleRef
     permission?: InstancePermission
   },
-): { ok: true; request: AccessRequest } | { ok: false; error: string } {
-  const store = read()
-  const req = store.requests.find((r) => r.id === id)
-  if (!req) return { ok: false, error: 'Not found' }
-  if (req.status !== 'pending') return { ok: false, error: 'Already resolved' }
+): Promise<{ ok: true; request: AccessRequest } | { ok: false; error: string }> {
+  const [found] = await getDb().select().from(accessRequests).where(eq(accessRequests.id, id))
+  if (!found) return { ok: false, error: 'Not found' }
+  if (found.status !== 'pending') return { ok: false, error: 'Already resolved' }
+  const req = toRequest(found)
 
   if (action === 'deny') {
-    if (!canReviewAccessRequests(actor)) {
+    if (!await canReviewAccessRequests(actor)) {
       return { ok: false, error: 'Forbidden' }
     }
-    req.status = 'denied'
-    req.resolvedAt = new Date().toISOString()
-    req.resolvedBy = userKey(actor)
-    write(store)
-    return { ok: true, request: req }
+    const denied = await markResolved(id, 'denied', actor)
+    return denied ? { ok: true, request: denied } : { ok: false, error: 'Already resolved' }
   }
 
   if (grant?.namespace && grant.role) {
-    const review = decideNamespaceAction(actor, grant.namespace, 'namespace.access.review')
+    const review = await decideNamespaceAction(actor, grant.namespace, 'namespace.access.review')
     if (!review.allow) return { ok: false, error: review.reason }
-    const result = setNamespaceMember(
+    const result = await setNamespaceMember(
       grant.namespace,
       { sub: req.sub, iss: req.iss },
       grant.role,
     )
     if (!result.ok) return { ok: false, error: result.error }
   } else if (grant?.permission) {
-    const admin = decideInstanceAction(actor, 'instance.admin')
+    const admin = await decideInstanceAction(actor, 'instance.admin')
     if (!admin.allow) return { ok: false, error: admin.reason }
-    const perms = new Set(instancePermissions({ sub: req.sub, iss: req.iss }))
+    const perms = new Set(await instancePermissions({ sub: req.sub, iss: req.iss }))
     perms.add(grant.permission)
-    setInstancePermissions(
+    await setInstancePermissions(
       actor,
       { sub: req.sub, iss: req.iss },
       [...perms],
     )
-  } else if (decideInstanceAction(actor, 'instance.admin').allow) {
-    setInstancePermissions(actor, { sub: req.sub, iss: req.iss }, [
+  } else if ((await decideInstanceAction(actor, 'instance.admin')).allow) {
+    await setInstancePermissions(actor, { sub: req.sub, iss: req.iss }, [
       'create_namespace',
     ])
   } else {
     return { ok: false, error: 'Specify namespace+role or permission to grant' }
   }
 
-  req.status = 'approved'
-  req.resolvedAt = new Date().toISOString()
-  req.resolvedBy = userKey(actor)
-  write(store)
-  return { ok: true, request: req }
+  const approved = await markResolved(id, 'approved', actor)
+  return approved ? { ok: true, request: approved } : { ok: false, error: 'Already resolved' }
 }

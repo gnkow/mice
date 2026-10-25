@@ -1,5 +1,6 @@
-import { createDocumentStore } from './stores.js'
-import { currentClock, type Clock } from './clock.js'
+import { and, eq } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { pats } from './db/schema.js'
 import type { PatScope } from './session.js'
 
 export type PatSource = 'cli-login' | 'manual'
@@ -27,85 +28,83 @@ export type PatRecord = PatPublic & {
 
 /** Where credential records live. Holds no policy: expiry, revocation and activity are decided elsewhere. */
 export interface CredentialStore {
-  list(): PatRecord[]
-  findByHash(tokenHash: string): PatRecord | undefined
-  save(record: PatRecord): void
+  list(): Promise<PatRecord[]>
+  listForOwner(owner: { iss: string; sub: string }): Promise<PatRecord[]>
+  findByHash(tokenHash: string): Promise<PatRecord | undefined>
+  /** Rejects when the token hash already exists. */
+  save(record: PatRecord): Promise<void>
   /** Sets `lastUsedAt` on the record with this hash. */
-  touch(tokenHash: string, at: string): void
-  /** Removes every record matching `match`; returns how many went. */
-  remove(match: (record: PatRecord) => boolean): number
+  touch(tokenHash: string, at: string): Promise<void>
+  removeByHash(tokenHash: string): Promise<boolean>
+  removeOwned(owner: { iss: string; sub: string }, id: string): Promise<boolean>
 }
 
-export function createMemoryCredentialStore(initial: PatRecord[] = []): CredentialStore {
-  let records = [...initial]
+type Row = typeof pats.$inferSelect
+
+function toRecord(r: Row): PatRecord {
   return {
-    list: () => records,
-    findByHash: (h) => records.find((r) => r.tokenHash === h),
-    save: (r) => void records.push(r),
-    touch(h, at) {
-      const r = records.find((x) => x.tokenHash === h)
-      if (r) r.lastUsedAt = at
-    },
-    remove(match) {
-      const before = records.length
-      records = records.filter((r) => !match(r))
-      return before - records.length
-    },
+    id: r.id,
+    label: r.label,
+    prefix: r.prefix,
+    tokenHash: r.tokenHash,
+    sub: r.sub,
+    iss: r.iss,
+    email: r.email,
+    name: r.name,
+    createdAt: r.createdAt.toISOString(),
+    ...(r.lastUsedAt ? { lastUsedAt: r.lastUsedAt.toISOString() } : {}),
+    ...(r.expiresAt ? { expiresAt: r.expiresAt.toISOString() } : {}),
+    ...(r.scopes?.length ? { scopes: r.scopes } : {}),
+    ...(r.source ? { source: r.source as PatSource } : {}),
+    ...(r.groups?.length ? { groups: r.groups } : {}),
   }
 }
 
-type StoreFile = { version: 1; tokens: PatRecord[] }
-
-export const LEGACY_EXPIRY_MS = 365 * 24 * 60 * 60 * 1000
-
-/** JSON-file adapter (through the jsonStore persistence seam). */
-export function createFileCredentialStore(opts: {
-  path: () => string
-  clock?: Clock
-}): CredentialStore {
-  const clock = opts.clock ?? currentClock
-  const doc = createDocumentStore<StoreFile | null>({ path: opts.path, initial: () => null, onCorrupt: 'initial' })
-  const write = (s: StoreFile) => doc.write(s)
-  function read(): StoreFile {
-    try {
-      const parsed = doc.read()
-      if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tokens)) {
-        return { version: 1, tokens: [] }
-      }
-      // Grandfather tokens minted before expiry existed; persisted, so it happens once.
-      const legacy = parsed.tokens.filter((t) => !t.expiresAt)
-      if (legacy.length) {
-        const grandfathered = new Date(clock.now() + LEGACY_EXPIRY_MS).toISOString()
-        for (const t of legacy) t.expiresAt = grandfathered
-        write(parsed)
-      }
-      return parsed
-    } catch {
-      return { version: 1, tokens: [] }
-    }
-  }
+/** One row per token, keyed by token hash, so using or revoking a token writes only that row. */
+export function createPostgresCredentialStore(): CredentialStore {
   return {
-    list: () => read().tokens,
-    findByHash: (h) => read().tokens.find((r) => r.tokenHash === h),
-    save(r) {
-      const s = read()
-      s.tokens.push(r)
-      write(s)
+    async list() {
+      return (await getDb().select().from(pats)).map(toRecord)
     },
-    touch(h, at) {
-      const s = read()
-      const r = s.tokens.find((x) => x.tokenHash === h)
-      if (!r) return
-      r.lastUsedAt = at
-      write(s)
+    async listForOwner(owner) {
+      const rows = await getDb().select().from(pats).where(and(eq(pats.iss, owner.iss), eq(pats.sub, owner.sub)))
+      return rows.map(toRecord)
     },
-    remove(match) {
-      const s = read()
-      const before = s.tokens.length
-      s.tokens = s.tokens.filter((r) => !match(r))
-      if (s.tokens.length === before) return 0
-      write(s)
-      return before - s.tokens.length
+    async findByHash(h) {
+      const [row] = await getDb().select().from(pats).where(eq(pats.tokenHash, h))
+      return row ? toRecord(row) : undefined
+    },
+    async save(r) {
+      await getDb().insert(pats).values({
+        tokenHash: r.tokenHash,
+        id: r.id,
+        label: r.label,
+        prefix: r.prefix,
+        sub: r.sub,
+        iss: r.iss,
+        email: r.email,
+        name: r.name,
+        createdAt: new Date(r.createdAt),
+        lastUsedAt: r.lastUsedAt ? new Date(r.lastUsedAt) : null,
+        expiresAt: r.expiresAt ? new Date(r.expiresAt) : null,
+        scopes: r.scopes ?? null,
+        source: r.source ?? null,
+        groups: r.groups ?? null,
+      })
+    },
+    async touch(h, at) {
+      await getDb().update(pats).set({ lastUsedAt: new Date(at) }).where(eq(pats.tokenHash, h))
+    },
+    async removeByHash(h) {
+      const gone = await getDb().delete(pats).where(eq(pats.tokenHash, h)).returning({ id: pats.id })
+      return gone.length > 0
+    },
+    async removeOwned(owner, id) {
+      const gone = await getDb()
+        .delete(pats)
+        .where(and(eq(pats.id, id), eq(pats.iss, owner.iss), eq(pats.sub, owner.sub)))
+        .returning({ id: pats.id })
+      return gone.length > 0
     },
   }
 }

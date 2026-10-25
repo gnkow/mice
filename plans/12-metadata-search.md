@@ -1,5 +1,7 @@
 # META — PLAT-META implementation plan
 
+> **Storage update (ADR 0004/0005):** this plan was written for JSON/JSONL files under `AUTH_DATA_DIR`. Those stores are now PostgreSQL, immudb (audit) and Novu (notifications); file names and file-based mechanics below are historical. See [16-operations.md](./16-operations.md) section 2.3.
+
 Living design and phased plan for a new epic `PLAT-META`: user-defined, **indexable and searchable metadata on every entity** in the system (namespaces, repos, branches, commits, files, workspaces, jobs, sessions, users, …), managed through the auth BFF and surfaced in the web UI.
 
 Related: [EPICS.md](./EPICS.md) · [02-authorization.md](./02-authorization.md) · [03-audit.md](./03-audit.md) · [11-lineage.md](./11-lineage.md) · [04-gxp-compliance.md](./04-gxp-compliance.md) · [09-jobs.md](./09-jobs.md) · [10-sessions.md](./10-sessions.md)

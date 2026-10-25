@@ -1,11 +1,11 @@
 import type { Hono } from 'hono'
 import { authorizeRepoAction } from './authz.js'
+import { filterAsync } from './asyncArray.js'
 import {
   cancelJob,
   completeCliJob,
   getJobPublic,
   listJobsPublic,
-  markJobsSynced,
   parseSubmitBody,
   publicJob,
   publishSyncedCliJobs,
@@ -23,7 +23,7 @@ export function registerJobRoutes(app: Hono) {
     const parsed = parseSubmitBody(body)
     if ('error' in parsed) return c.json({ error: parsed.error }, 400)
 
-    const denied = deny(authorizeRepoAction(user, parsed.namespace, parsed.repo, 'job.submit'))
+    const denied = deny(await authorizeRepoAction(user, parsed.namespace, parsed.repo, 'job.submit'))
     if (denied) return denied
 
     try {
@@ -46,7 +46,7 @@ export function registerJobRoutes(app: Hono) {
       )
     }
     if (namespace && repo) {
-      const denied = deny(authorizeRepoAction(user, namespace, repo, 'job.read'))
+      const denied = deny(await authorizeRepoAction(user, namespace, repo, 'job.read'))
       if (denied) return denied
     }
     const limitRaw = c.req.query('limit')
@@ -63,7 +63,7 @@ export function registerJobRoutes(app: Hono) {
       !namespace && !repo
         ? Math.min(500, Math.max(100, (limit ?? 50) * 5))
         : limit
-    const { jobs: raw, nextCursor: rawCursor } = listJobsPublic({
+    const { jobs: raw, nextCursor: rawCursor } = await listJobsPublic({
       namespace: namespace || undefined,
       repo: repo || undefined,
       status,
@@ -74,21 +74,29 @@ export function registerJobRoutes(app: Hono) {
     const jobs =
       namespace && repo
         ? raw
-        : raw.filter(
-            (j) => authorizeRepoAction(user, j.namespace, j.repo, 'job.read').allow,
+        : await filterAsync(
+            raw,
+            async (j) => (await authorizeRepoAction(user, j.namespace, j.repo, 'job.read')).allow,
           )
     const pageLimit = Math.min(Math.max(1, limit ?? 50), 100)
     let page = jobs.slice(0, pageLimit)
     if (c.req.query('favorites') === 'first' && !c.req.query('cursor')) {
       // Pin the caller's favorite jobs even when they fall outside the newest window.
-      const pinned = listFavorites(favoriteUserKey(user))
-        .filter((f) => f.type === 'job')
-        .map((f) => getJobPublic(f.id))
+      const candidates = (
+        await Promise.all(
+          (await listFavorites(favoriteUserKey(user)))
+            .filter((f) => f.type === 'job')
+            .map((f) => getJobPublic(f.id)),
+        )
+      )
         .filter((j): j is NonNullable<typeof j> =>
           !!j &&
           (!namespace || (j.namespace === namespace && j.repo === repo)) &&
-          (!status || j.status === status) &&
-          authorizeRepoAction(user, j.namespace, j.repo, 'job.read').allow)
+          (!status || j.status === status))
+      const pinned = await filterAsync(
+        candidates,
+        async (j) => (await authorizeRepoAction(user, j.namespace, j.repo, 'job.read')).allow,
+      )
       const ids = new Set(pinned.map((j) => j.id))
       page = [...pinned, ...page.filter((j) => !ids.has(j.id))]
     }
@@ -102,26 +110,26 @@ export function registerJobRoutes(app: Hono) {
   }))
 
   app.get('/auth/jobs/:id', guarded({ allowScoped: true }, async ({ c, user, deny }) => {
-    const job = getJobPublic(c.req.param('id'))
+    const job = await getJobPublic(c.req.param('id'))
     if (!job) return c.json({ error: 'Not found' }, 404)
-    const denied = deny(authorizeRepoAction(user, job.namespace, job.repo, 'job.read'))
+    const denied = deny(await authorizeRepoAction(user, job.namespace, job.repo, 'job.read'))
     if (denied) return denied
     return c.json({ job })
   }))
 
   app.get('/auth/jobs/:id/logs', guarded({ allowScoped: true }, async ({ c, user, deny }) => {
-    const job = getJob(c.req.param('id'))
+    const job = await getJob(c.req.param('id'))
     if (!job) return c.json({ error: 'Not found' }, 404)
-    const denied = deny(authorizeRepoAction(user, job.namespace, job.repo, 'job.read'))
+    const denied = deny(await authorizeRepoAction(user, job.namespace, job.repo, 'job.read'))
     if (denied) return denied
-    const text = readJobLogs(job.id) ?? ''
+    const text = await readJobLogs(job.id) ?? ''
     return c.text(text)
   }))
 
   app.post('/auth/jobs/:id/cancel', guarded({ allowScoped: true }, async ({ c, user, via, deny }) => {
-    const existing = getJob(c.req.param('id'))
+    const existing = await getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
-    const denied = deny(authorizeRepoAction(user, existing.namespace, existing.repo, 'job.cancel'))
+    const denied = deny(await authorizeRepoAction(user, existing.namespace, existing.repo, 'job.cancel'))
     if (denied) return denied
     const result = await cancelJob(user, via, existing.id)
     if (!result.ok) {
@@ -131,9 +139,9 @@ export function registerJobRoutes(app: Hono) {
   }))
 
   app.post('/auth/jobs/:id/complete', guarded({ allowScoped: true }, async ({ c, user, via, deny, readBody }) => {
-    const existing = getJob(c.req.param('id'))
+    const existing = await getJob(c.req.param('id'))
     if (!existing) return c.json({ error: 'Not found' }, 404)
-    const denied = deny(authorizeRepoAction(user, existing.namespace, existing.repo, 'job.complete'))
+    const denied = deny(await authorizeRepoAction(user, existing.namespace, existing.repo, 'job.complete'))
     if (denied) return denied
     const read = await readBody('json', 'Invalid JSON')
     if (!read.ok) return read.res
@@ -179,7 +187,7 @@ export function registerJobRoutes(app: Hono) {
           )
         : undefined,
     }
-    const result = completeCliJob(
+    const result = await completeCliJob(
       user,
       via,
       existing.id,
@@ -191,7 +199,7 @@ export function registerJobRoutes(app: Hono) {
     return c.json({ job: publicJob(result.job) })
   }))
 
-  const publishOrSync = guarded({ allowScoped: true, body: 'json', invalidBody: 'Invalid JSON' }, async ({ c, user, via, body, deny }) => {
+  const publish = guarded({ allowScoped: true, body: 'json', invalidBody: 'Invalid JSON' }, async ({ c, user, via, body, deny }) => {
     const b = (body && typeof body === 'object' ? body : {}) as Record<
       string,
       unknown
@@ -222,11 +230,11 @@ export function registerJobRoutes(app: Hono) {
         }
         const namespace = typeof j.namespace === 'string' ? j.namespace : ''
         const repo = typeof j.repo === 'string' ? j.repo : ''
-        const denied = deny(authorizeRepoAction(user, namespace, repo, 'job.complete'))
+        const denied = deny(await authorizeRepoAction(user, namespace, repo, 'job.complete'))
         if (denied) return denied
-        const existing = getJob(String(j.id || ''))
+        const existing = await getJob(String(j.id || ''))
         if (existing) {
-          const denied = deny(authorizeRepoAction(user, existing.namespace, existing.repo, 'job.complete'))
+          const denied = deny(await authorizeRepoAction(user, existing.namespace, existing.repo, 'job.complete'))
           if (denied) return denied
         }
         payloads.push({
@@ -274,7 +282,7 @@ export function registerJobRoutes(app: Hono) {
             : undefined,
         })
       }
-      const result = publishSyncedCliJobs(
+      const result = await publishSyncedCliJobs(
         user,
         via,
         payloads,
@@ -289,34 +297,8 @@ export function registerJobRoutes(app: Hono) {
       return c.json(result)
     }
 
-    // Legacy: job ids already registered on the BFF.
-    const jobIds = Array.isArray(b.job_ids)
-      ? b.job_ids.filter((x): x is string => typeof x === 'string' && !!x.trim())
-      : []
-    if (!jobIds.length) {
-      return c.json({ error: 'jobs or job_ids required' }, 400)
-    }
-
-    for (const id of jobIds) {
-      const existing = getJob(id)
-      if (!existing) return c.json({ error: `Not found: ${id}` }, 404)
-      const denied = deny(authorizeRepoAction(user, existing.namespace, existing.repo, 'job.complete'))
-      if (denied) return denied
-    }
-
-    const result = markJobsSynced(
-      user,
-      via,
-      jobIds,
-      pushBranch,
-    )
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 404)
-    }
-    return c.json(result)
+    return c.json({ error: 'jobs required' }, 400)
   })
 
-  app.post('/auth/jobs/publish', publishOrSync)
-  /** @deprecated prefer POST /auth/jobs/publish after mice push */
-  app.post('/auth/jobs/sync', publishOrSync)
+  app.post('/auth/jobs/publish', publish)
 }

@@ -1,165 +1,99 @@
-import { isPredefinedRepoRole, maxRepoRole, normalizeGroup, parseUserKey, userKey, type BasePermission, type CollaboratorPrincipal, type CollaboratorRoleRef, type RepoRole, type UserKey } from './authzTypes.js'
+import {
+  isPredefinedRepoRole,
+  maxRepoRole,
+  normalizeGroup,
+  parseUserKey,
+  userKey,
+  type BasePermission,
+  type CollaboratorPrincipal,
+  type CollaboratorRoleRef,
+  type RepoRole,
+  type UserKey,
+} from './authzTypes.js'
 import { getCustomRepoRole, isValidCollaboratorRole } from './customRoles.js'
 import * as authzRepo from './authzRepository.js'
 
-export function isCustomRepoRoleAssigned(ns: string, roleId: string): boolean {
-  const collab = authzRepo.collaboratorsSnapshot()
-  const prefix = `${ns}/`
-  for (const [key, map] of Object.entries(collab.collaborators)) {
-    if (!key.startsWith(prefix)) continue
-    if (Object.values(map).some((r) => r === roleId)) return true
-  }
-  for (const [key, map] of Object.entries(collab.groupCollaborators ?? {})) {
-    if (!key.startsWith(prefix)) continue
-    if (Object.values(map).some((r) => r === roleId)) return true
-  }
-  return false
+type Result = { ok: true } | { ok: false; error: string }
+
+export async function isCustomRepoRoleAssigned(ns: string, roleId: string): Promise<boolean> {
+  return authzRepo.isRepoRoleAssigned(ns, roleId)
 }
 
-export function getRepoCollaboratorRoleRef(
-  ns: string,
-  repo: string,
-  user: UserKey,
-): CollaboratorRoleRef | null {
-  return (
-    authzRepo.collaboratorsSnapshot().collaborators[authzRepo.repoKey(ns, repo)]?.[userKey(user)] ??
-    null
-  )
+export async function getRepoCollaboratorRoleRef(ns: string, repo: string, user: UserKey): Promise<CollaboratorRoleRef | null> {
+  return authzRepo.directCollaboratorRole(ns, repo, userKey(user))
 }
 
 /** Effective predefined rank from a collaborator role ref. */
-export function collaboratorRoleToBase(
-  ns: string,
-  role: CollaboratorRoleRef,
-): BasePermission {
+export async function collaboratorRoleToBase(ns: string, role: CollaboratorRoleRef): Promise<BasePermission> {
   if (isPredefinedRepoRole(role)) return role
-  const custom = getCustomRepoRole(ns, role)
-  return custom?.base ?? 'none'
+  return (await getCustomRepoRole(ns, role))?.base ?? 'none'
 }
 
-export function getRepoCollaboratorRole(
-  ns: string,
-  repo: string,
-  user: UserKey,
-): RepoRole | null {
-  const ref = getRepoCollaboratorRoleRef(ns, repo, user)
+export async function getRepoCollaboratorRole(ns: string, repo: string, user: UserKey): Promise<RepoRole | null> {
+  const ref = await getRepoCollaboratorRoleRef(ns, repo, user)
   if (!ref) return null
-  const base = collaboratorRoleToBase(ns, ref)
+  const base = await collaboratorRoleToBase(ns, ref)
   return base === 'none' ? null : (base as RepoRole)
 }
 
 /** Max repo collaborator role from IdP group bindings (resolved to base rank). */
-export function getRepoCollaboratorRoleFromGroups(
-  ns: string,
-  repo: string,
-  groups: string[],
-): RepoRole | null {
-  const map =
-    authzRepo.collaboratorsSnapshot().groupCollaborators?.[authzRepo.repoKey(ns, repo)] ?? {}
+export async function getRepoCollaboratorRoleFromGroups(ns: string, repo: string, groups: string[]): Promise<RepoRole | null> {
+  const rows = await authzRepo.groupCollaboratorRoles(ns, repo, groups.map(normalizeGroup).filter(Boolean))
   let role: BasePermission = 'none'
-  for (const g of groups.map(normalizeGroup).filter(Boolean)) {
-    const r = map[g]
-    if (r) role = maxRepoRole(role, collaboratorRoleToBase(ns, r))
-  }
+  for (const r of rows) role = maxRepoRole(role, await collaboratorRoleToBase(ns, r.role))
   return role === 'none' ? null : (role as RepoRole)
 }
 
 /** Custom repo role refs held on this repo (user + groups). */
-export function customRepoRoleIdsForUser(
+export async function customRepoRoleIdsForUser(
   ns: string,
   repo: string,
   user: UserKey & { groups?: string[] },
-): string[] {
+): Promise<string[]> {
   const ids: string[] = []
-  const direct = getRepoCollaboratorRoleRef(ns, repo, user)
-  if (direct && !isPredefinedRepoRole(direct) && getCustomRepoRole(ns, direct)) {
-    ids.push(direct)
-  }
-  const map =
-    authzRepo.collaboratorsSnapshot().groupCollaborators?.[authzRepo.repoKey(ns, repo)] ?? {}
-  for (const g of authzRepo.sessionGroups(user)) {
-    const r = map[g]
-    if (r && !isPredefinedRepoRole(r) && getCustomRepoRole(ns, r)) ids.push(r)
+  const direct = await getRepoCollaboratorRoleRef(ns, repo, user)
+  if (direct && !isPredefinedRepoRole(direct) && (await getCustomRepoRole(ns, direct))) ids.push(direct)
+  for (const r of await authzRepo.groupCollaboratorRoles(ns, repo, authzRepo.sessionGroups(user))) {
+    if (!isPredefinedRepoRole(r.role) && (await getCustomRepoRole(ns, r.role))) ids.push(r.role)
   }
   return ids
 }
 
-export function listRepoCollaborators(
-  ns: string,
-  repo: string,
-): CollaboratorPrincipal[] {
-  const store = authzRepo.collaboratorsSnapshot()
-  const key = authzRepo.repoKey(ns, repo)
-  const users = Object.entries(store.collaborators[key] ?? {}).map(
-    ([k, role]) => {
-      const u = parseUserKey(k)
-      return { kind: 'user' as const, ...u, role }
-    },
-  )
-  const groups = Object.entries(store.groupCollaborators?.[key] ?? {}).map(
-    ([group, role]) => ({ kind: 'group' as const, group, role }),
-  )
-  return [...users, ...groups]
+export async function listRepoCollaborators(ns: string, repo: string): Promise<CollaboratorPrincipal[]> {
+  const { users, groups } = await authzRepo.listCollaboratorRows(ns, repo)
+  return [
+    ...users.map((r) => ({ kind: 'user' as const, ...parseUserKey(r.key), role: r.role })),
+    ...groups.map((r) => ({ kind: 'group' as const, group: r.group, role: r.role })),
+  ]
 }
 
 /** All repo collaborator principals across namespaces (for directory store search). */
-export function listAllCollaboratorPrincipals(): CollaboratorPrincipal[] {
-  const store = authzRepo.collaboratorsSnapshot()
-  const out: CollaboratorPrincipal[] = []
-  for (const map of Object.values(store.collaborators)) {
-    for (const [k, role] of Object.entries(map)) {
-      const u = parseUserKey(k)
-      out.push({ kind: 'user', ...u, role })
-    }
-  }
-  for (const map of Object.values(store.groupCollaborators ?? {})) {
-    for (const [group, role] of Object.entries(map)) {
-      out.push({ kind: 'group', group, role })
-    }
-  }
-  return out
+export async function listAllCollaboratorPrincipals(): Promise<CollaboratorPrincipal[]> {
+  const { users, groups } = await authzRepo.listAllCollaboratorRows()
+  return [
+    ...users.map((r) => ({ kind: 'user' as const, ...parseUserKey(r.key), role: r.role })),
+    ...groups.map((r) => ({ kind: 'group' as const, group: r.group, role: r.role })),
+  ]
 }
 
-export function setRepoCollaborator(
-  ns: string,
-  repoName: string,
-  target: UserKey,
-  role: CollaboratorRoleRef,
-): { ok: true } | { ok: false; error: string } {
-  if (!isValidCollaboratorRole(ns, role)) {
-    return { ok: false, error: 'Invalid role' }
-  }
-  authzRepo.setCollaborator(ns, repoName, userKey(target), role)
+export async function setRepoCollaborator(ns: string, repoName: string, target: UserKey, role: CollaboratorRoleRef): Promise<Result> {
+  if (!(await isValidCollaboratorRole(ns, role))) return { ok: false, error: 'Invalid role' }
+  await authzRepo.setCollaborator(ns, repoName, userKey(target), role)
   return { ok: true }
 }
 
-export function removeRepoCollaborator(
-  ns: string,
-  repoName: string,
-  target: UserKey,
-): boolean {
+export async function removeRepoCollaborator(ns: string, repoName: string, target: UserKey): Promise<boolean> {
   return authzRepo.removeCollaborator(ns, repoName, userKey(target))
 }
 
-export function setRepoGroupCollaborator(
-  ns: string,
-  repoName: string,
-  group: string,
-  role: CollaboratorRoleRef,
-): { ok: true } | { ok: false; error: string } {
-  if (!isValidCollaboratorRole(ns, role)) {
-    return { ok: false, error: 'Invalid role' }
-  }
+export async function setRepoGroupCollaborator(ns: string, repoName: string, group: string, role: CollaboratorRoleRef): Promise<Result> {
+  if (!(await isValidCollaboratorRole(ns, role))) return { ok: false, error: 'Invalid role' }
   const g = normalizeGroup(group)
   if (!g) return { ok: false, error: 'Group name required' }
-  authzRepo.setGroupCollaborator(ns, repoName, g, role)
+  await authzRepo.setGroupCollaborator(ns, repoName, g, role)
   return { ok: true }
 }
 
-export function removeRepoGroupCollaborator(
-  ns: string,
-  repoName: string,
-  group: string,
-): boolean {
+export async function removeRepoGroupCollaborator(ns: string, repoName: string, group: string): Promise<boolean> {
   return authzRepo.removeGroupCollaborator(ns, repoName, normalizeGroup(group))
 }

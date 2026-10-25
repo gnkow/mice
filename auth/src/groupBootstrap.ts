@@ -41,27 +41,27 @@ function parseMap(): Record<string, BootstrapEntry> {
   }
 }
 
-export function applyGroupBootstrap(
+export async function applyGroupBootstrap(
   user: SessionUser & { groups?: string[] },
-): void {
+): Promise<void> {
   const map = parseMap()
   if (!Object.keys(map).length) return
   const groups = new Set((user.groups ?? []).map((g) => g.toLowerCase()))
   for (const [key, entry] of Object.entries(map)) {
     if (!groups.has(key.toLowerCase()) && !matchesIdentityEntry(key, user)) continue
     if (entry.instancePermissions?.length) {
-      writeInstancePermissions(user, entry.instancePermissions)
+      await writeInstancePermissions(user, entry.instancePermissions)
     }
     if (entry.namespace && entry.role) {
-      if (entry.createNamespace && !getNamespace(entry.namespace)) {
-        createNamespaceAuthz(
+      if (entry.createNamespace && !await getNamespace(entry.namespace)) {
+        await createNamespaceAuthz(
           user,
           entry.namespace,
           entry.basePermission ?? 'none',
           true,
         )
-      } else if (getNamespace(entry.namespace)) {
-        setNamespaceMember(entry.namespace, user, entry.role)
+      } else if (await getNamespace(entry.namespace)) {
+        await setNamespaceMember(entry.namespace, user, entry.role)
       }
     }
   }

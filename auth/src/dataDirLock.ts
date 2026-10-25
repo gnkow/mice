@@ -12,7 +12,7 @@ function processAlive(pid: number): boolean {
   }
 }
 
-/** JSON stores assume a single writer; refuse to share a data directory between live processes. */
+/** Workspace state on disk assumes a single writer; refuse to share a data directory between live processes. */
 export function acquireDataDirLock(
   dir: string,
   opts: { pid?: number; isAlive?: (pid: number) => boolean } = {},

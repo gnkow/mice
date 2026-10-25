@@ -40,41 +40,32 @@ Everything below was checked against the repo at time of writing (see §10 for w
 
 | Piece | Behaviour | Source |
 | --- | --- | --- |
-| Env surface | Single `loadEnv(process.env)` → `env` object; ~70 vars covering OIDC, session, jobs, sessions, AuthZ, notifications (SMTP/VAPID), directory, public origins. Defaults are dev-friendly (e.g. `AUTH_DATA_DIR=./data`, `JOBS_RUNNER=docker`) | [`auth/src/env.ts`](../auth/src/env.ts), [`.env.example`](../.env.example) |
+| Env surface | Single `loadEnv(process.env)` → `env` object; ~70 vars covering OIDC, session, jobs, sessions, AuthZ, notifications (Novu), directory, public origins. Defaults are dev-friendly (e.g. `AUTH_DATA_DIR=./data`, `JOBS_RUNNER=docker`) | [`auth/src/env.ts`](../auth/src/env.ts), [`.env.example`](../.env.example) |
 | Production gate | `NODE_ENV=production` → refuses to start with missing/dev `SESSION_SECRET`, shipped `OIDC_CLIENT_SECRET`, or `COOKIE_SECURE!=true`. Covers only these three | [`auth/src/startupGate.ts`](../auth/src/startupGate.ts) |
 | Compose defaults | Dev secrets baked in as `${VAR:-default}`; `NODE_TLS_REJECT_UNAUTHORIZED=0` default; `AUTHZ_DEV_GRANT_ALL=true`; `COOKIE_SECURE=false`; `NODE_ENV` is **not** set by Compose | `compose.yaml` |
-| Secrets | Plain env vars only (`SESSION_SECRET`, `OIDC_CLIENT_SECRET`, `NOTIFICATIONS_SMTP_URL`, `NOTIFICATIONS_VAPID_PRIVATE_KEY`, `SESSIONS_RUSTGUAC_API_KEY`, `SESSIONS_GUAC_CRYPT_KEY`); no `_FILE` variants or secret-manager integration found | `env.ts` |
+| Secrets | Plain env vars only (`SESSION_SECRET`, `OIDC_CLIENT_SECRET`, `SESSIONS_RUSTGUAC_API_KEY`, `SESSIONS_GUAC_CRYPT_KEY`); no `_FILE` variants or secret-manager integration found | `env.ts` |
 
-### 2.3 State stores (single instance, SQLite)
+### 2.3 State stores (single instance)
 
-> **Update:** durable state now lives in one SQLite database (`AUTH_DATABASE_PATH`, default `$AUTH_DATA_DIR/mice.db`) behind the same persistence seam; see [ADR 0003](../docs/adr/0003-sqlite-persistence.md). The table below names the logical stores and owners; read "file" as "document or log row key". Workspace trees, `state.json`/`base.json`/`changes-cache.json`/`.leases.json`, job logs and checkout caches stay on disk. The first boot imports legacy files and moves them to `legacy-import/`.
->
-> **Backup:** `make db-backup` writes a consistent copy to `<data>/backups/mice-<timestamp>.db` while the stack runs; set `AUTH_BACKUP_INTERVAL_HOURS` (and `AUTH_BACKUP_KEEP`, `AUTH_BACKUP_DIR`) for verified scheduled copies with retention. **Restore:** `docker compose stop auth`, replace the database file (and delete any `mice.db-wal`/`mice.db-shm`) with the copy, `docker compose start auth`; readiness (`/readyz`, `storage` and `audit`) must be green and the audit chain verified.
+Durable state lives in containerised databases; see [ADR 0004](../docs/adr/0004-postgresql-immudb-novu-persistence.md) and [ADR 0005](../docs/adr/0005-immudb-audit-trail.md). There are no JSON or JSONL stores, no in-memory adapter and no SQLite.
 
-All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data`) unless noted. Shared helper: [`auth/src/jsonStore.ts`](../auth/src/jsonStore.ts) — `readJsonFile` (returns the **fallback on any read/parse error**, silently) and `writeJsonFile` (write `path.<pid>.tmp` then `renameSync`; **no fsync**, no lock, no version check).
-
-| File | Owner module | Write pattern |
+| Store | Holds | Module |
 | --- | --- | --- |
-| `audit.jsonl` | `audit.ts` (also read by `notificationsStore.ts`) | `appendFileSync` one hash-chained JSON line per event (append-only; no rewrite path) |
-| `pats.json` | `tokens.ts` (`{version:1, tokens}`) | tmp + rename (own implementation; invalid shape → empty store) |
-| `session-revocations.json` | `credentialRevocation.ts` | `writeJsonFile` |
-| `cli-devices.json` | `cliDevice.ts` | store-local (not verified) |
-| `instance-admins.json`, `namespaces.json`, `namespace-members.json`, `repo-collaborators.json` | `authzRepository.ts` (owns the documents) with `authzInstanceStore.ts`, `authzNamespaceStore.ts`, `authzMembershipStore.ts`, `authzCollaboratorStore.ts` | `writeJsonFile` read-modify-write; one-off `identityMigration.ts` rewrites them |
-| `custom-roles.json` | `customRoles.ts` | not verified |
-| `access-requests.json` | `accessRequests.ts` (`{version:1, requests}`) | `writeJsonFile` |
-| `announcements.json` | `announcementsStore.ts` | `writeJsonFile` |
-| `favorites.json` | `favoritesStore.ts` | `writeJsonFile`; purged on audit events |
-| `notifications.json` | `notificationsStore.ts` | staging file (`wx`, 0600) + fsync + rename — the strongest pattern in the codebase |
-| `meta.json`, `meta-history.jsonl` | `metaStore.ts` | `writeJsonFile` (snapshot, with in-place migration on read); history appended |
-| `lineage.jsonl` | `lineage.ts` | append (rebuildable from oxen; see index.ts rebuild) |
-| `jobs/jobs.jsonl`, `jobs/job-aliases.json`, job logs/workdirs | `jobsStore.ts`, `jobs.ts`, `jobsRunner.ts` | `upsertJob` **rewrites the whole file with `writeFileSync` (not atomic, no tmp/rename)**; alias file likewise |
-| `sessions/sessions.jsonl` (`SESSIONS_DATA_DIR`) | `sessionsStore.ts` | append on create; rewrite via tmp + rename |
-| `/data/store`, `/data/workspaces` (volumes `mice-store`, `mice-workspaces`) | `auth/src/workspaces/` (`checkout.ts` keeps a journal) | checkout store + overlay upper/work dirs; **not JSON** |
-| `oxen-data` volume | oxen-server | Oxen repositories — the system of record for versioned data |
+| PostgreSQL (Drizzle, baseline migration on boot) | authorization, PATs, revocations, CLI devices, access requests, announcements, favorites, jobs, lineage, sessions, metadata, notification users, preferences, tombstones and the audit replay cursor | `auth/src/db/`, `*Store.ts` |
+| immudb (`audit` database) | the audit trail | `auditLedger.ts`, `audit.ts` |
+| Novu (+ MongoDB, Redis) | notification messages and read state | `novu.ts`, `notifications.ts` |
+| Disk under `AUTH_DATA_DIR` (volumes `auth_data`, `mice-store`, `mice-workspaces`) | workspace state, checkout caches, leases, job and session work directories | `diskStore.ts`, `auth/src/workspaces/` |
+| `oxen-data` volume | Oxen repositories, the system of record for versioned data | oxen-server |
 
-**Concurrency model.** There are no file locks or cross-process coordination. Safety relies on Node's single-threaded, synchronous `*Sync` calls inside **one** auth process. Two auth replicas (or a `tsx watch` restart overlap) sharing a volume would lose updates (read-modify-write) and interleave job rewrites. In-memory state is also process-local: the job queue (`const queue` in `jobs.ts`, rebuilt from `jobs.jsonl` by `resumeQueuedJobs()`), session lifecycle sweepers/lease renewer, notification worker. [`.env.example`](../.env.example) already states "Notifications: one auth process only".
+**Secrets.** `make db-secrets` writes `.secrets/{postgres,immudb,novu}-password` and `novu.env`; the services read them through `*_FILE` variables and Compose secrets.
 
-**Versioning.** Only `pats.json` and `access-requests.json` carry `version: 1`. `metaStore.ts` migrates on read; `identityMigration.ts` is a one-shot identity rewrite. There is no global schema version, migration runner, or downgrade guard.
+**Failure mode.** PostgreSQL, immudb or Novu unreachable: requests that need them answer 503 and `/readyz` reports `postgres`, `audit` or `notifications` red; recovery needs no BFF restart (`e2e/tests/outage.spec.ts`, `audit-gxp.spec.ts`). `/readyz` also reports `storage` for the workspace disk.
+
+**Concurrency.** The BFF is a single instance (data directory lock in production). PostgreSQL transactions replace the old single-writer file assumptions.
+
+**Backups.** None for now. The earlier `make db-backup` / `db-restore` targets and `AUTH_BACKUP_*` variables were removed with SQLite; backup and restore of PostgreSQL, immudb and Novu's MongoDB is open work.
+
+**Tests.** They run against the same containers, with a private schema per file; see the README.
 
 ### 2.4 Health, logging, observability
 
@@ -185,7 +176,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 ## 6. Open questions
 
 1. Target deployment: single Docker host, Kubernetes, or both? This decides whether the Docker-socket runners stay supported in production.
-2. Is SQLite sufficient (single instance + backup) or is Postgres/HA a requirement?
+2. Is a single PostgreSQL instance with backups sufficient, or is HA a requirement?
 3. Who owns backup cadence and restore attestation for GxP deployments ([04-gxp-compliance.md](./04-gxp-compliance.md))?
 4. Should `mice-store`/`mice-workspaces` be backed up or treated as rebuildable from oxen?
 5. Should `lineage.jsonl` be treated as derived (rebuildable) data and excluded from integrity guarantees?
@@ -211,7 +202,7 @@ All paths are relative to `AUTH_DATA_DIR` (Compose: volume `auth_data` at `/data
 | [03-audit.md](./03-audit.md), [04-gxp-compliance.md](./04-gxp-compliance.md) | Backup integrity, retention, WORM; this plan provides the mechanism |
 | [01-authentication.md](./01-authentication.md), [02-authorization.md](./02-authorization.md) | Secrets, production gate, authz/PAT stores as backup scope |
 | [08-workspaces.md](./08-workspaces.md), [09-jobs.md](./09-jobs.md), [10-sessions.md](./10-sessions.md) | Docker socket, host bind mounts, K8s runner, queue/lease HA |
-| [14-notifications.md](./14-notifications.md) | "One auth process only" constraint; SMTP/VAPID secrets |
+| [14-notifications.md](./14-notifications.md) | "One auth process only" constraint; Novu credentials |
 | [15-administration.md](./15-administration.md) | Admin-facing backup/health UI, if any |
 
 ## 9. Suggested order

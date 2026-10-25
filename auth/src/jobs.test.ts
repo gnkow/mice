@@ -1,3 +1,4 @@
+import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -47,51 +48,22 @@ const admin = {
   name: 'Admin',
 }
 
-before(() => {
-  setAuthzEnforce(true)
-  preparePrincipal(admin)
+before(async () => {
+  await setAuthzEnforce(true)
+  await preparePrincipal(admin)
 })
 
 after(() => {
   rmSync(dataDir, { recursive: true, force: true })
 })
 
-describe('parseSubmitBody', () => {
-  it('rejects stage sources', () => {
-    const base = { namespace: 'n', repo: 'r', image: 'x', command: 'y' }
-    for (const extra of [
-      { source: 'workspace_mount' },
-      { source_kind: 'workspace_mount' },
-      { workspace_id: 'w1' },
-    ]) {
-      const r = parseSubmitBody({ ...base, ...extra })
-      assert.ok('error' in r)
-      assert.equal(r.error, 'stage sources are no longer supported')
-    }
-  })
-
-  it('publicJob drops legacy workspace_id', () => {
-    const legacy = {
-      id: 'x', name: '', status: 'succeeded', namespace: 'n', repo: 'r',
-      source_ref: 'main:p', pin_commit: 'p', target_branch: '', sync_branch: '',
-      image: 'i', command: 'c', args: [], env: {}, workdir: '/data',
-      input_globs: [], timeout_seconds: 1, max_log_bytes: 1,
-      resources: { cpu: '1', memory: '1', disk: '1' },
-      actor: { sub: 's' }, via: 'session', inputs: [], outputs: [],
-      created_at: '', started_at: null, finished_at: null, exit_code: 0,
-      error: null, log_ref: '', source: 'workspace_mount', workspace_id: 'w1',
-      runtime_id: null,
-    } as never
-    const pub = publicJob(legacy) as unknown as Record<string, unknown>
-    assert.equal('workspace_id' in pub, false)
-  })
-
-  it('requires core fields', () => {
+await describe('parseSubmitBody', async () => {
+  await it('requires core fields', () => {
     const r = parseSubmitBody({})
     assert.ok('error' in r)
   })
 
-  it('parses source ref and resources', () => {
+  await it('parses source ref and resources', () => {
     const r = parseSubmitBody({
       namespace: 'ns',
       repo: 'r',
@@ -112,7 +84,7 @@ describe('parseSubmitBody', () => {
     assert.equal(r.resources?.cpu, '2')
   })
 
-  it('allows omit target (no merge)', () => {
+  await it('allows omit target (no merge)', () => {
     const r = parseSubmitBody({
       namespace: 'ns',
       repo: 'r',
@@ -122,10 +94,9 @@ describe('parseSubmitBody', () => {
     })
     assert.ok(!('error' in r))
     assert.equal(r.target, undefined)
-    assert.equal(r.branch, undefined)
   })
 
-  it('parses runner: cli', () => {
+  await it('parses runner: cli', () => {
     const r = parseSubmitBody({
       namespace: 'ns',
       repo: 'r',
@@ -138,7 +109,7 @@ describe('parseSubmitBody', () => {
     assert.equal(r.runner, 'cli')
   })
 
-  it('does not treat legacy branch as merge target', () => {
+  await it('requires a source', () => {
     const r = parseSubmitBody({
       namespace: 'ns',
       repo: 'r',
@@ -147,14 +118,12 @@ describe('parseSubmitBody', () => {
       image: 'alpine:3.20',
       command: ['true'],
     })
-    assert.ok(!('error' in r))
-    assert.equal(r.branch, 'main')
-    assert.equal(r.target, undefined)
+    assert.ok('error' in r)
   })
 })
 
-describe('mergeRangePath', () => {
-  it('keeps slashes in job branch names (web baseHead)', () => {
+await describe('mergeRangePath', async () => {
+  await it('keeps slashes in job branch names (web baseHead)', () => {
     assert.equal(
       mergeRangePath('main', 'mice/job/abc123'),
       'main..mice/job/abc123',
@@ -162,8 +131,8 @@ describe('mergeRangePath', () => {
   })
 })
 
-describe('branchFromSourceRef', () => {
-  it('extracts branch before colon', () => {
+await describe('branchFromSourceRef', async () => {
+  await it('extracts branch before colon', () => {
     assert.equal(
       branchFromSourceRef('main:0123456789abcdef0123456789abcdef'),
       'main',
@@ -172,8 +141,8 @@ describe('branchFromSourceRef', () => {
   })
 })
 
-describe('parseSourceSpec', () => {
-  it('parses branch:commit, branch, and commit', () => {
+await describe('parseSourceSpec', async () => {
+  await it('parses branch:commit, branch, and commit', () => {
     const bc = parseSourceSpec('main:0123456789abcdef0123456789abcdef')
     assert.ok(!('error' in bc))
     assert.equal(bc.kind, 'branch_commit')
@@ -186,15 +155,15 @@ describe('parseSourceSpec', () => {
   })
 })
 
-describe('matchGlobs', () => {
-  it('filters paths', () => {
+await describe('matchGlobs', async () => {
+  await it('filters paths', () => {
     const paths = ['a.txt', 'datasets/x.csv', 'other/y.csv']
     assert.deepEqual(matchGlobs(paths, ['datasets/**']), ['datasets/x.csv'])
   })
 })
 
-describe('resolveReadWatchBin', () => {
-  it('finds committed linux prebuild or system watcher when present', () => {
+await describe('resolveReadWatchBin', async () => {
+  await it('finds committed linux prebuild or system watcher when present', () => {
     const bin = resolveReadWatchBin()
     // On macOS unit tests the linux binary exists on disk but is not executable
     // here; resolution only checks existsSync.
@@ -204,8 +173,8 @@ describe('resolveReadWatchBin', () => {
   })
 })
 
-describe('diffTrees', () => {
-  it('only reports real content changes when hashes use the same scheme', async () => {
+await describe('diffTrees', async () => {
+  await it('only reports real content changes when hashes use the same scheme', async () => {
     const { diffTrees } = await import('./jobsOxen.js')
     const before = new Map([
       ['README.md', 'aaa'],
@@ -223,8 +192,8 @@ describe('diffTrees', () => {
   })
 })
 
-describe('toDockerHostPath', () => {
-  it('rewrites JOBS_DATA_DIR prefix to JOBS_HOST_DATA_DIR', () => {
+await describe('toDockerHostPath', async () => {
+  await it('rewrites JOBS_DATA_DIR prefix to JOBS_HOST_DATA_DIR', () => {
     const prevHost = env.jobsHostDataDir
     const prevData = env.jobsDataDir
     ;(env as { jobsHostDataDir: string }).jobsHostDataDir =
@@ -241,13 +210,13 @@ describe('toDockerHostPath', () => {
   })
 })
 
-describe('lineage job kind', () => {
-  it('allows empty I/O', () => {
+await describe('lineage job kind', async () => {
+  await it('allows empty I/O', () => {
     assert.equal(validateArity('job', [], []), null)
   })
 
-  it('stores and queries by jobId', () => {
-    appendLineage({
+  await it('stores and queries by jobId', async () => {
+    await appendLineage({
       kind: 'job',
       namespace: 'ns',
       repo: 'r',
@@ -257,7 +226,7 @@ describe('lineage job kind', () => {
       confidence: 'high',
       detail: { job_id: 'job1', pin_commit: 'p1' },
     })
-    const { operations } = queryLineage({
+    const { operations } = await queryLineage({
       namespace: 'ns',
       repo: 'r',
       kind: 'job',
@@ -267,8 +236,8 @@ describe('lineage job kind', () => {
   })
 })
 
-describe('job authz', () => {
-  it('submit requires write; read requires read', () => {
+await describe('job authz', async () => {
+  await it('submit requires write; read requires read', async () => {
     const ns = 'job-acl'
     const reader = {
       sub: 'reader',
@@ -282,20 +251,20 @@ describe('job authz', () => {
       email: 'writer@example.com',
       name: 'Writer',
     }
-    createNamespaceAuthz(admin, ns, 'none', true)
-    setRepoCollaborator(ns, 'r1', reader, 'read')
-    setRepoCollaborator(ns, 'r1', writer, 'write')
+    await createNamespaceAuthz(admin, ns, 'none', true)
+    await setRepoCollaborator(ns, 'r1', reader, 'read')
+    await setRepoCollaborator(ns, 'r1', writer, 'write')
 
-    assert.equal(authorizeRepoAction(reader, ns, 'r1', 'job.read').allow, true)
-    assert.equal(authorizeRepoAction(reader, ns, 'r1', 'job.submit').allow, false)
-    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.submit').allow, true)
-    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.read').allow, true)
-    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.cancel').allow, true)
-    assert.equal(authorizeRepoAction(writer, ns, 'r1', 'job.complete').allow, true)
-    assert.equal(authorizeRepoAction(reader, ns, 'r1', 'job.cancel').allow, false)
+    assert.equal((await authorizeRepoAction(reader, ns, 'r1', 'job.read')).allow, true)
+    assert.equal((await authorizeRepoAction(reader, ns, 'r1', 'job.submit')).allow, false)
+    assert.equal((await authorizeRepoAction(writer, ns, 'r1', 'job.submit')).allow, true)
+    assert.equal((await authorizeRepoAction(writer, ns, 'r1', 'job.read')).allow, true)
+    assert.equal((await authorizeRepoAction(writer, ns, 'r1', 'job.cancel')).allow, true)
+    assert.equal((await authorizeRepoAction(writer, ns, 'r1', 'job.complete')).allow, true)
+    assert.equal((await authorizeRepoAction(reader, ns, 'r1', 'job.cancel')).allow, false)
   })
 
-  it('custom role can grant job_complete without job_submit', () => {
+  await it('custom role can grant job_complete without job_submit', async () => {
     const ns = 'job-atomic'
     const user = {
       sub: 'completer',
@@ -303,23 +272,23 @@ describe('job authz', () => {
       email: 'completer@example.com',
       name: 'Completer',
     }
-    createNamespaceAuthz(admin, ns, 'none', true)
-    const role = createCustomRepoRole(ns, {
+    await createNamespaceAuthz(admin, ns, 'none', true)
+    const role = await createCustomRepoRole(ns, {
       name: 'Complete only',
       base: 'read',
       permissions: ['job_complete'],
     })
     assert.equal(role.ok, true)
     if (!role.ok) return
-    setRepoCollaborator(ns, 'r1', user, role.role.id)
-    setAuthzEnforce(true)
-    assert.equal(authorizeRepoAction(user, ns, 'r1', 'job.complete').allow, true)
-    assert.equal(authorizeRepoAction(user, ns, 'r1', 'job.submit').allow, false)
+    await setRepoCollaborator(ns, 'r1', user, role.role.id)
+    await setAuthzEnforce(true)
+    assert.equal((await authorizeRepoAction(user, ns, 'r1', 'job.complete')).allow, true)
+    assert.equal((await authorizeRepoAction(user, ns, 'r1', 'job.submit')).allow, false)
   })
 })
 
-describe('publicJob', () => {
-  it('redacts secret-shaped env', () => {
+await describe('publicJob', async () => {
+  await it('redacts secret-shaped env', () => {
     const redacted = publicJob({
       id: 'x',
       name: '',
@@ -362,8 +331,8 @@ describe('publicJob', () => {
   })
 })
 
-describe('job id rekey', () => {
-  it('local runs resolve provisional id to result commit id', () => {
+await describe('job id rekey', async () => {
+  await it('local runs resolve provisional id to result commit id', async () => {
     const provisional = 'abcdabcdabcdabcd'
     const commit = '0123456789abcdef0123456789abcdef'
     const base = {
@@ -403,20 +372,20 @@ describe('job id rekey', () => {
       runtime_id: null,
       runner: 'docker' as const,
     }
-    upsertJob({ ...base, id: provisional, result_commit: null })
-    rekeyJob(provisional, { ...base, id: commit })
-    assert.equal(resolveJobId(provisional), commit)
-    assert.equal(getJob(provisional)?.id, commit)
-    assert.equal(getJob(commit)?.id, commit)
-    assert.equal(getJob(commit)?.result_commit, commit)
+    await upsertJob({ ...base, id: provisional, result_commit: null })
+    await rekeyJob(provisional, { ...base, id: commit })
+    assert.equal(await resolveJobId(provisional), commit)
+    assert.equal((await getJob(provisional))?.id, commit)
+    assert.equal((await getJob(commit))?.id, commit)
+    assert.equal((await getJob(commit))?.result_commit, commit)
   })
 })
 
-describe('publishSyncedCliJobs', () => {
-  it('creates terminal CLI jobs and sets sync_branch', () => {
+await describe('publishSyncedCliJobs', async () => {
+  await it('creates terminal CLI jobs and sets sync_branch', async () => {
     const pin = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     const result = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-    const published = publishSyncedCliJobs(
+    const published = await publishSyncedCliJobs(
       admin,
       'pat',
       [
@@ -441,27 +410,27 @@ describe('publishSyncedCliJobs', () => {
     )
     assert.ok(!('error' in published), 'error' in published ? published.error : '')
     assert.equal(published.jobs.length, 1)
-    const job = getJob('a1b2c3d4e5f67890')
+    const job = await getJob('a1b2c3d4e5f67890')
     assert.ok(job)
     assert.equal(job.runner, 'cli')
     assert.equal(job.status, 'succeeded')
     assert.equal(job.sync_branch, 'main')
     assert.equal(job.result_commit, result)
-    const outcomes = queryAudit({ action: 'job.complete', jobId: job.id }).events
+    const outcomes = (await queryAudit({ action: 'job.complete', jobId: job.id })).events
     assert.equal(outcomes.length, 1)
     assert.deepEqual(outcomes[0].detail?.owner, { sub: admin.sub, iss: admin.iss })
-    const repeated = publishSyncedCliJobs(
+    const repeated = await publishSyncedCliJobs(
       admin,
       'pat',
       [{ ...job, status: 'succeeded' }],
       'main',
     )
     assert.ok(!('error' in repeated))
-    assert.equal(queryAudit({ action: 'job.complete', jobId: job.id }).events.length, 1)
+    assert.equal((await queryAudit({ action: 'job.complete', jobId: job.id })).events.length, 1)
   })
 
-  it('rejects path-traversal job ids', () => {
-    const bad = publishSyncedCliJobs(
+  await it('rejects path-traversal job ids', async () => {
+    const bad = await publishSyncedCliJobs(
       admin,
       'pat',
       [

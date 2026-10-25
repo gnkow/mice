@@ -36,7 +36,7 @@ export async function backChannelLogout(c: Context): Promise<Response> {
   }
 
   const principal = { sub, iss }
-  offboard(principal, {
+  await offboard(principal, {
     scope: 'sessions',
     cause: 'back-channel-logout',
     at: Math.min(payload.iat, Math.floor(Date.now() / 1000)),
