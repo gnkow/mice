@@ -191,8 +191,8 @@ export function NotificationSettingsPage({ embedded = false }: { embedded?: bool
         </div>
         <p className="muted small">Times use your saved timezone, including daylight saving changes. An end earlier than the start spans midnight.</p>
       </fieldset>
-      <fieldset disabled={busy || loading}>
-        <legend>Resource watch and mute overrides</legend>
+      <fieldset disabled={busy || loading} className="ns-settings-subsection">
+        <legend>Watch</legend>
         <p>All accessible resources are included by default. The nearest explicit override wins: a child watch can override a parent mute. Watch never grants access, overrides disabled categories, or enables an external channel. Personal outcomes are separate from resource muting.</p>
         <p className="muted small">Favorites notify by default; mute a resource to override. A favorite never overrides a disabled category.</p>
         <p className="muted small">Hierarchy: instance → namespace → repository → type → resource ID. Empty fields inherit their parent scope; leave all fields empty for the entire instance. Paths and IDs are exact resource identifiers, not wildcard patterns.</p>
