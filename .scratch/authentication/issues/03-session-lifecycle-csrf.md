@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 (web login tracer)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Idle Sessions expire at 30 min; no signing from an idle Session; absolute lifetime 8 h
-- [ ] A user sees and can revoke any of their own Sessions
-- [ ] Logout ends the Session; open redirects through the return target are rejected
-- [ ] Cookie key ring rotates without logging users out
-- [ ] Mutations without the required header or with a foreign Origin are rejected
+- [x] Idle Sessions expire at 30 min; no signing from an idle Session; absolute lifetime 8 h
+- [x] A user sees and can revoke any of their own Sessions
+- [x] Logout ends the Session; open redirects through the return target are rejected
+- [ ] Cookie key ring rotates without logging users out (deferred - requires key rotation mechanism)
+- [x] Mutations without the required header or with a foreign Origin are rejected
