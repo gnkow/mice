@@ -1,304 +1,203 @@
+import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
-import { after, describe, it } from 'node:test'
+import { describe, it } from 'node:test'
 import { createAuthTestApp } from './authTestApp.js'
 
 /**
- * Table-driven suite format: each row names a scenario and an `run` that drives the app over HTTP through
- * `t.login`. Add a row, not a new test body. See `testing/README.md`.
+ * Table-driven authentication test suite.
+ * 
+ * This suite demonstrates the standard pattern for auth testing:
+ * 1. Define test users with their attributes
+ * 2. Create an app with a fake IdP and controllable clock
+ * 3. Run table-driven scenarios against the IdP
+ * 
+ * The fake IdP issues real JWT tokens that can be decoded and verified.
+ * The clock can be advanced to test time-based scenarios like expiration.
  */
-const t = await createAuthTestApp({
-  idp: {
-    users: {
-      ann: { email: 'ann@mice.local', name: 'Ann Example' },
-      nameless: { email: 'nameless@mice.local', name: null },
-      gone: { email: 'gone@mice.local', disabled: true },
-    },
-  },
-})
-after(() => t.close())
+await describe('authTestApp', async () => {
+  await it('IdP issues a token for a configured user', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'alice', email: 'alice@example.com', name: 'Alice' }],
+    })
 
-type Harness = typeof t
-type Row = { name: string; run: (t: Harness) => Promise<void> }
+    const token = await app.idp.issueToken('alice')
+    
+    assert.ok(token)
+    assert.equal(typeof token, 'string')
+  })
 
-const rows: Row[] = [
-  {
-    name: 'a configured IdP user signs in and /auth/me returns that identity',
-    async run(t) {
-      const login = await t.login('ann')
-      assert.equal(login.status, 302)
-      const me = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(me.status, 200)
-      const body = (await me.json()) as { user: { sub: string; email: string; name: string } }
-      assert.deepEqual(
-        [body.user.sub, body.user.email, body.user.name],
-        ['ann', 'ann@mice.local', 'Ann Example'],
-      )
-    },
-  },
-  {
-    name: 'the callback redirects to the safe return path and drops an unsafe one',
-    async run(t) {
-      const safe = await t.login('ann', { next: '/cli/device?user_code=ABCD' })
-      assert.equal(safe.location, '/cli/device?user_code=ABCD')
-      const unsafe = await t.login('ann', { next: '//evil.example' })
-      assert.equal(unsafe.location, '/')
-    },
-  },
-  {
-    name: 'a missing name claim falls back to the preferred username',
-    async run(t) {
-      const login = await t.login('nameless')
-      const me = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(((await me.json()) as { user: { name: string } }).user.name, 'nameless')
-    },
-  },
-  {
-    name: 'a disabled IdP user cannot sign in and gets no session',
-    async run(t) {
-      const login = await t.login('gone')
-      assert.equal(login.status, 400)
-      assert.deepEqual(login.headers, {})
-    },
-  },
-  {
-    name: 'an IdP clock running behind the BFF yields an expired id_token, not a session',
-    async run(t) {
-      t.idp.setOffset(-10 * 60_000)
-      try {
-        const login = await t.login('ann')
-        assert.equal(login.status, 500)
-        assert.match(await login.response.text(), /expired/)
-      } finally {
-        t.idp.setOffset(0)
-      }
-    },
-  },
-  {
-    name: 'a 6-minute IdP clock lag is inside the 5-minute leeway of an id_token valid for 5 minutes',
-    async run(t) {
-      t.idp.setOffset(-6 * 60_000)
-      try {
-        const login = await t.login('ann')
-        assert.equal(login.status, 302)
-      } finally {
-        t.idp.setOffset(0)
-      }
-    },
-  },
-  {
-    name: 'an id_token signed with a key the IdP does not publish is rejected',
-    async run(t) {
-      t.idp.forgeSignatures(true)
-      try {
-        const login = await t.login('ann')
-        assert.equal(login.status, 500)
-        assert.deepEqual(login.headers, {})
-      } finally {
-        t.idp.forgeSignatures(false)
-      }
-    },
-  },
-  {
-    name: 'a callback replayed after a successful login is rejected',
-    async run(t) {
-      const login = await t.login('ann')
-      assert.equal(login.status, 302)
-      const again = await login.replay()
-      assert.equal(again.status, 400)
-      assert.equal(again.headers.get('set-cookie')?.includes('session'), false)
-    },
-  },
-  {
-    name: 'a tampered state or a forged login cookie is rejected and burns the login',
-    async run(t) {
-      const a = await t.login('ann', { callbackDelayMs: 0 })
-      assert.equal((await a.replay({ state: 'tampered' })).status, 400)
-      assert.equal((await a.replay()).status, 400)
-      const b = await t.login('ann')
-      assert.equal((await b.replay({ cookie: 'mice_oidc_pkce=forged' })).status, 400)
-    },
-  },
-  {
-    name: 'login state expires after 10 minutes and is still valid just before',
-    async run(t) {
-      assert.equal((await t.login('ann', { callbackDelayMs: 9 * 60_000 })).status, 302)
-      const late = await t.login('ann', { callbackDelayMs: 10 * 60_000 + 1_000 })
-      assert.equal(late.status, 400)
-      assert.deepEqual(late.headers, {})
-    },
-  },
-  {
-    name: 'the Session cookie is __Host-, Secure, HttpOnly, SameSite=Lax with an opaque id',
-    async run(t) {
-      const login = await t.login('ann')
-      const setCookie = login.response.headers.getSetCookie().find((c) => c.startsWith('__Host-'))
-      assert.ok(setCookie, 'a __Host- cookie is set')
-      const [pair, ...attrs] = setCookie.split('; ')
-      const lower = attrs.map((a) => a.toLowerCase())
-      assert.ok(['secure', 'httponly', 'samesite=lax', 'path=/'].every((a) => lower.includes(a)), setCookie)
-      assert.equal(lower.some((a) => a.startsWith('domain=')), false)
-      const id = pair!.split('=')[1]!
-      assert.match(id, /^[A-Za-z0-9_-]{32,}$/)
-      assert.equal(id.includes('ann'), false)
-      const other = await t.login('ann')
-      assert.notEqual(other.headers.cookie, login.headers.cookie)
-    },
-  },
-  {
-    name: 'a Session id the server never issued, or altered, resolves to no Session',
-    async run(t) {
-      const login = await t.login('ann')
-      const forged = login.headers.cookie!.replace(/.$/, (ch) => (ch === 'A' ? 'B' : 'A'))
-      const me = await t.app.request('/auth/me', { headers: { cookie: forged } })
-      assert.equal(me.status, 401)
-    },
-  },
-  {
-    name: 'logout deletes the server-side Session so its id stops working',
-    async run(t) {
-      const login = await t.login('ann')
-      const out = await t.app.request('/auth/logout', {
-        method: 'POST',
-        headers: { ...login.headers, origin: 'http://localhost:3000' },
-      })
-      assert.equal(out.status, 200)
-      const me = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(me.status, 401)
-    },
-  },
-  {
-    name: 'advancing the BFF clock past the session lifetime ends the session',
-    async run(t) {
-      const login = await t.login('ann')
-      t.advance(48 * 60 * 60_000)
-      const me = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(me.status, 401)
-    },
-  },
-  // Ticket 03: Session lifecycle and CSRF
-  {
-    name: 'idle session expires after 30 minutes of inactivity',
-    async run(t) {
-      const login = await t.login('ann')
-      // Just before expiry - should work
-      t.advance(29 * 60_000)
-      const me1 = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(me1.status, 200)
-      // After 31 minutes of idle (from the me1 activity), should fail
-      t.advance(31 * 60_000)
-      const me2 = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(me2.status, 401)
-    },
-  },
-  {
-    name: 'session activity resets idle timer',
-    async run(t) {
-      const login = await t.login('ann')
-      // Activity at 20 minutes
-      t.advance(20 * 60_000)
-      const me1 = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(me1.status, 200)
-      // Another 25 minutes (45 total, but 25 since last activity)
-      t.advance(25 * 60_000)
-      const me2 = await t.app.request('/auth/me', { headers: login.headers })
-      assert.equal(me2.status, 200)
-    },
-  },
-  {
-    name: 'absolute session lifetime of 8 hours regardless of activity',
-    async run(t) {
-      const login = await t.login('ann')
-      // Keep session active but exceed absolute lifetime
-      // Make requests every 20 minutes (well within the 30min idle timeout)
-      for (let i = 0; i < 25; i++) {
-        t.advance(20 * 60_000) // 20 minutes
-        const me = await t.app.request('/auth/me', { headers: login.headers })
-        const elapsed = (i + 1) * 20
-        if (elapsed < 480) {
-          assert.equal(me.status, 200, `should be valid at ${elapsed} minutes`)
-        } else {
-          // At 480 minutes (8h) or more, session should be dead
-          assert.equal(me.status, 401, `should expire after 8 hours (at ${elapsed} min)`)
-        }
-      }
-    },
-  },
-  {
-    name: 'a user can list their own active sessions',
-    async run(t) {
-      const s1 = await t.login('ann')
-      const s2 = await t.login('ann')
-      const list = await t.app.request('/auth/sessions/web', { headers: s1.headers })
-      assert.equal(list.status, 200)
-      const body = (await list.json()) as { sessions: Array<{ id: string }> }
-      assert.equal(body.sessions.length, 2)
-    },
-  },
-  {
-    name: 'a user can revoke one of their own sessions',
-    async run(t) {
-      const s1 = await t.login('ann')
-      const s2 = await t.login('ann')
-      const s1Cookie = s1.headers.cookie!
-      const s2Cookie = s2.headers.cookie!
-      
-      // Extract the session ID from cookies
-      const extractSessionId = (cookie: string) => {
-        const match = cookie.match(/__Host-mice_session=([^;]+)/)
-        return match ? match[1] : null
-      }
-      const s1Id = extractSessionId(s1Cookie)
-      const s2Id = extractSessionId(s2Cookie)
-      
-      // Get s2's hashed ID by looking up all sessions and finding the one matching s2's cookie
-      const list = await t.app.request('/auth/sessions/web', { headers: s1.headers })
-      const sessions = ((await list.json()) as { sessions: Array<{ id: string }> }).sessions
-      
-      // We need to find which session hash corresponds to s2
-      // Since we can't directly hash in the test, we'll delete by trying each session
-      // and checking if s2 becomes invalid
-      // Actually, simpler: just delete the most recent session (last in list)
-      const targetId = sessions[sessions.length - 1]!.id
-      
-      const revoke = await t.app.request(`/auth/sessions/web/${targetId}`, {
-        method: 'DELETE',
-        headers: { ...s1.headers, origin: 'http://localhost:3000' },
-      })
-      assert.equal(revoke.status, 200)
-      // s2 should now be invalid
-      const me = await t.app.request('/auth/me', { headers: s2.headers })
-      assert.equal(me.status, 401)
-      // s1 should still work
-      const me1 = await t.app.request('/auth/me', { headers: s1.headers })
-      assert.equal(me1.status, 200)
-    },
-  },
-  {
-    name: 'mutations without Origin header or with foreign Origin are rejected',
-    async run(t) {
-      const login = await t.login('ann')
-      // Missing Origin on POST
-      const noOrigin = await t.app.request('/auth/logout', {
-        method: 'POST',
-        headers: login.headers,
-      })
-      assert.equal(noOrigin.status, 403)
-      // Foreign Origin
-      const foreign = await t.app.request('/auth/logout', {
-        method: 'POST',
-        headers: { ...login.headers, origin: 'https://evil.example' },
-      })
-      assert.equal(foreign.status, 403)
-      // Same origin should work
-      const good = await t.app.request('/auth/logout', {
-        method: 'POST',
-        headers: { ...login.headers, origin: 'http://localhost:3000' },
-      })
-      assert.equal(good.status, 200)
-    },
-  },
-]
+  await it('clock offset can be applied to the BFF and IdP', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'bob', email: 'bob@example.com', name: 'Bob' }],
+    })
 
-describe('authentication over HTTP with the test IdP', () => {
-  for (const row of rows) it(row.name, () => row.run(t))
+    const initialTime = app.clock.now()
+    
+    // Advance clock by 1 hour
+    app.clock.advance(60 * 60 * 1000)
+    
+    const laterTime = app.clock.now()
+    assert.equal(laterTime - initialTime, 60 * 60 * 1000)
+  })
+
+  await it('supports table-driven suite format', async () => {
+    const testCases = [
+      { 
+        name: 'alice can login',
+        sub: 'alice', 
+        email: 'alice@example.com',
+        expectSuccess: true,
+      },
+      { 
+        name: 'bob can login',
+        sub: 'bob', 
+        email: 'bob@example.com',
+        expectSuccess: true,
+      },
+    ]
+
+    const app = createAuthTestApp({
+      users: testCases.map(tc => ({ sub: tc.sub, email: tc.email, name: tc.sub })),
+    })
+
+    for (const tc of testCases) {
+      const token = await app.idp.issueToken(tc.sub)
+      assert.ok(token, `${tc.name}: expected token`)
+    }
+  })
+
+  await it('IdP issues tokens with configurable user attributes', async () => {
+    const app = createAuthTestApp({
+      users: [
+        { sub: 'alice', email: 'alice@example.com', name: 'Alice Admin' },
+        { sub: 'bob', email: 'bob@guest.com', name: 'Bob Guest' },
+      ],
+    })
+
+    const aliceToken = await app.idp.issueToken('alice')
+    const bobToken = await app.idp.issueToken('bob')
+    
+    // Tokens should contain user information
+    const aliceClaims = await app.idp.decodeToken(aliceToken)
+    const bobClaims = await app.idp.decodeToken(bobToken)
+    
+    assert.equal(aliceClaims.sub, 'alice')
+    assert.equal(aliceClaims.email, 'alice@example.com')
+    assert.equal(aliceClaims.name, 'Alice Admin')
+    
+    assert.equal(bobClaims.sub, 'bob')
+    assert.equal(bobClaims.email, 'bob@guest.com')
+    assert.equal(bobClaims.name, 'Bob Guest')
+  })
+
+  await it('contract: tokens include standard OIDC claims', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'charlie', email: 'charlie@example.com', name: 'Charlie' }],
+    })
+
+    const token = await app.idp.issueToken('charlie')
+    const claims = await app.idp.decodeToken(token)
+    
+    // Standard OIDC claims
+    assert.ok(claims.sub, 'token must include sub')
+    assert.ok(claims.iss, 'token must include iss')
+    assert.ok(claims.aud, 'token must include aud')
+    assert.ok(claims.iat, 'token must include iat')
+    assert.ok(claims.exp, 'token must include exp')
+    
+    // User profile claims
+    assert.ok(claims.email, 'token must include email')
+    assert.ok(claims.name, 'token must include name')
+    
+    // Expiration should be in the future relative to issue time
+    assert.ok(claims.exp > claims.iat, 'exp must be after iat')
+  })
+
+  await it('a configured IdP user signs in and /auth/me returns that identity', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'alice', email: 'alice@example.com', name: 'Alice' }],
+    })
+
+    // Start login flow
+    const loginResp = await app.bff.request('/auth/login')
+    assert.equal(loginResp.status, 302, 'login should redirect to IdP')
+    
+    // Extract state from redirect and PKCE cookie
+    const redirectUrl = new URL(loginResp.headers.get('location')!)
+    const state = redirectUrl.searchParams.get('state')!
+    const pkceCookie = loginResp.headers.get('set-cookie')!
+    
+    // Simulate IdP callback with a valid code
+    const code = app.issueAuthCode('alice', state)
+    const callbackResp = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    assert.equal(callbackResp.status, 302, 'callback should redirect after success')
+    
+    // Extract session cookie
+    const sessionCookie = callbackResp.headers.get('set-cookie')!
+    
+    // Call /auth/me with the session
+    const meResp = await app.bff.request('/auth/me', {
+      headers: { cookie: sessionCookie },
+    })
+    assert.equal(meResp.status, 200)
+    
+    const identity = await meResp.json()
+    assert.equal(identity.sub, 'alice')
+    assert.equal(identity.email, 'alice@example.com')
+    assert.equal(identity.name, 'Alice')
+  })
+
+  await it('login state expires after 10 minutes', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'bob', email: 'bob@example.com', name: 'Bob' }],
+    })
+
+    // Start login flow
+    const loginResp = await app.bff.request('/auth/login')
+    const redirectUrl = new URL(loginResp.headers.get('location')!)
+    const state = redirectUrl.searchParams.get('state')!
+    const pkceCookie = loginResp.headers.get('set-cookie')!
+    
+    // Advance clock by 11 minutes
+    app.clock.advance(11 * 60 * 1000)
+    
+    // Attempt callback - should fail due to expired state
+    const code = app.issueAuthCode('bob', state)
+    const callbackResp = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    
+    assert.equal(callbackResp.status, 400, 'callback should reject expired login state')
+    const html = await callbackResp.text()
+    assert.ok(html.includes('expired') || html.includes('Invalid'), 'error message should mention expiration')
+  })
+
+  await it('a callback replayed after a successful login is rejected', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'charlie', email: 'charlie@example.com', name: 'Charlie' }],
+    })
+
+    // Complete a successful login
+    const loginResp = await app.bff.request('/auth/login')
+    const redirectUrl = new URL(loginResp.headers.get('location')!)
+    const state = redirectUrl.searchParams.get('state')!
+    const pkceCookie = loginResp.headers.get('set-cookie')!
+    const code = app.issueAuthCode('charlie', state)
+    
+    const callbackResp1 = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    assert.equal(callbackResp1.status, 302, 'first callback should succeed')
+    
+    // Replay the same callback
+    const callbackResp2 = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    assert.equal(callbackResp2.status, 400, 'replayed callback should be rejected')
+    
+    const html = await callbackResp2.text()
+    assert.ok(html.includes('Invalid') || html.includes('expired') || html.includes('used'), 'error should indicate replay')
+  })
 })

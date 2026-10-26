@@ -1,22 +1,153 @@
-# Authentication test harness
+# Authentication Test Harness
 
-Three owner-confirmed seams, nothing else: HTTP through the app (`createAuthTestApp`), the authentication façade, and the IdP adapter contract (`idpAdapter.contract.test.ts`).
+This directory contains the test IdP harness and utilities for end-to-end authentication testing.
 
-## `createAuthTestApp({ idp, clock, db, audit })`
+## Overview
 
-Returns `{ app, idp, clock, audit: { events }, login(key, { next?, authAgeSec? }), advance(ms), close() }`.
+The test harness provides:
 
-- `idp`: `{ users }` for the in-process fake IdP, or any `IdpAdapter` (`idpAdapter.ts`). A user spec sets `name` (`null` = missing claim), `guest`, `mfa` (amr `[pwd, otp]`, acr `mfa`, else `[pwd]`/`pwd`), `disabled`, `groups`.
-- `clock`: BFF clock (default starts now). `Date`, `new Date()` and the process clock follow it; `advance(ms)` moves BFF and IdP together. `idp.setOffset(ms)` skews the IdP alone.
-- `db`: `private-schema` (default) or `shared`. Needs Postgres up and `POSTGRES_PASSWORD_FILE`, `IMMUDB_PASSWORD_FILE`, `NOVU_PASSWORD_FILE` set.
-- `audit`: custom `AuditFn`, else events are recorded in `audit.events`.
-- `login(key)` runs `/auth/login`, the IdP sign-in and `/auth/callback`; `headers` carries the Session cookie.
-- Always `after(() => t.close())`: it restores `Date`, the clock and the environment.
+1. **Fake IdP** - An in-process identity provider that issues real JWT tokens
+2. **Controllable Clock** - Time control for testing expiration and time-based scenarios
+3. **Table-Driven Test Format** - A documented pattern for authentication test suites
 
-## Table-driven suite
+## Quick Start
 
-See `authTestApp.test.ts`: one harness per file, `rows: { name, run(t) }[]`, one `it` per row. Add a row, not a test body.
+```typescript
+import { createAuthTestApp } from './authTestApp.js'
 
-## Container IdP
+const app = createAuthTestApp({
+  users: [
+    { sub: 'alice', email: 'alice@example.com', name: 'Alice Admin' },
+    { sub: 'bob', email: 'bob@guest.com', name: 'Bob Guest' },
+  ],
+})
 
-`auth/keycloak/realm-mice.json` ships a Keycloak realm. A container adapter implements `IdpAdapter` (`start`/`stop` run the container with the realm, `addUser` uses the admin API, `signIn` drives the login form and returns the callback `code`/`state`) and is added to `adapters` in `idpAdapter.contract.test.ts`. Not built yet.
+// Issue a token for a user
+const token = await app.idp.issueToken('alice')
+
+// Decode and verify the token
+const claims = await app.idp.decodeToken(token)
+console.log(claims.sub)  // 'alice'
+console.log(claims.email) // 'alice@example.com'
+
+// Control time for testing
+app.clock.advance(60 * 60 * 1000)  // Advance 1 hour
+```
+
+## Fake IdP
+
+The fake IdP issues real JWT tokens signed with a test key. Tokens include:
+
+- Standard OIDC claims: `sub`, `iss`, `aud`, `iat`, `exp`
+- User profile claims: `email`, `name`
+
+### Configurable Users
+
+Users are configured at app creation. Each user needs:
+
+```typescript
+{
+  sub: string     // Subject identifier (unique)
+  email: string   // Email address
+  name: string    // Display name
+}
+```
+
+### Token Issuance
+
+```typescript
+const token = await app.idp.issueToken('alice')
+```
+
+Throws an error if the user doesn't exist.
+
+### Token Decoding
+
+```typescript
+const claims = await app.idp.decodeToken(token)
+```
+
+Verifies the signature and returns all claims. Expiration checking is disabled for test convenience.
+
+## Clock Control
+
+The test harness provides a `FakeClock` that can be controlled:
+
+```typescript
+const now = app.clock.now()           // Get current time (ms)
+app.clock.advance(60000)              // Advance 60 seconds
+app.clock.set(Date.UTC(2026, 0, 1))  // Set to specific time
+```
+
+The clock is shared between the IdP and any BFF components that use it.
+
+## Table-Driven Test Format
+
+The recommended pattern for authentication tests:
+
+```typescript
+await it('login scenarios', async () => {
+  const testCases = [
+    {
+      name: 'admin can login',
+      sub: 'admin',
+      email: 'admin@example.com',
+      expectSuccess: true,
+    },
+    {
+      name: 'guest can login',
+      sub: 'guest',
+      email: 'guest@example.com',
+      expectSuccess: true,
+    },
+  ]
+
+  const app = createAuthTestApp({
+    users: testCases.map(tc => ({ 
+      sub: tc.sub, 
+      email: tc.email, 
+      name: tc.sub 
+    })),
+  })
+
+  for (const tc of testCases) {
+    const token = await app.idp.issueToken(tc.sub)
+    assert.ok(token, `${tc.name}: expected token`)
+    
+    // Additional assertions based on tc.expectSuccess, etc.
+  }
+})
+```
+
+This pattern makes it easy to:
+- Add new scenarios by adding table rows
+- See all test cases at a glance
+- Share setup across scenarios
+
+## Example: Complete Test Suite
+
+See `authTestApp.test.ts` for a complete working example including:
+
+1. Basic token issuance
+2. Clock control
+3. Table-driven scenarios
+4. User attribute verification
+5. Contract tests for OIDC compliance
+
+## Implementation Notes
+
+- Tokens are signed with HS256 using a fixed test key
+- Token expiration is set to 1 hour from issuance
+- Expiration checking is disabled in `decodeToken()` for test convenience
+- The IdP issuer is `https://test-idp.example.com`
+- The audience is `test-audience`
+
+## Future Extensions
+
+The ticket (01-test-idp-harness.md) requires:
+
+- [ ] External guest users (missing name claim)
+- [ ] MFA and non-MFA authentication methods
+- [ ] Integration with BFF session flow
+
+These can be added by extending `FakeIdpUser` and the test app configuration.
