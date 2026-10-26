@@ -1,8 +1,15 @@
+import { createHash } from 'node:crypto'
+import { eq, lt } from 'drizzle-orm'
+import { getDb } from '../../db/database.js'
+import { loginStates } from '../../db/schema.js'
 import type { SessionUser } from '../session/session.js'
 import { currentClock, type Clock } from '../../clock.js'
 import { defaultOidcProvider, pkceChallenge, randomString, type OidcProvider } from './oidc.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
+
+/** Login state lives in Postgres for 10 minutes and is consumed by the first callback that presents it. */
+export const LOGIN_STATE_TTL_MS = 10 * 60_000
 
 type PkceState = {
   verifier: string
@@ -13,6 +20,8 @@ type PkceState = {
   /** Step-up: who must re-authenticate and how fresh the result must be. */
   reauth?: { maxAge: number; sub: string; iss: string }
 }
+
+const hashId = (id: string) => createHash('sha256').update(id).digest('hex')
 
 /** Only same-site relative paths outside the login and auth routes are valid return targets. */
 export function safeReturnPath(raw: string | undefined | null): string | undefined {
@@ -29,7 +38,7 @@ export function safeReauthReturnPath(raw: string | undefined | null): string | u
 }
 
 /** Begin an OIDC authorization-code login: the PKCE cookie value to set and the IdP redirect. */
-async function beginLogin(provider: OidcProvider, 
+async function beginLogin(provider: OidcProvider, clock: Clock,
   next?: string | null,
   reauth?: { maxAge: number; sub: string; iss: string },
 ): Promise<{ pkceCookie: string; authorizeUrl: string }> {
@@ -43,8 +52,19 @@ async function beginLogin(provider: OidcProvider,
     ...(safeNext ? { next: safeNext } : {}),
     ...(reauth ? { reauth } : {}),
   }
+  const pkceCookie = randomString(32)
+  await getDb().delete(loginStates).where(lt(loginStates.expiresAt, new Date(clock.now())))
+  await getDb().insert(loginStates).values({
+    idHash: hashId(pkceCookie),
+    state,
+    nonce,
+    codeVerifier: verifier,
+    returnPath: pkce.next ?? null,
+    reauth: pkce.reauth ?? null,
+    expiresAt: new Date(clock.now() + LOGIN_STATE_TTL_MS),
+  })
   return {
-    pkceCookie: Buffer.from(JSON.stringify(pkce)).toString('base64url'),
+    pkceCookie,
     // Always prompt=login so SSO shows the IdP credential form (Keycloak SSO cookies can
     // survive a Mice-only logout).
     authorizeUrl: await provider.beginLogin({
@@ -69,12 +89,17 @@ const fail = (status: 400 | 500, msg: string, reauth = false): LoginResult => ({
   ...(reauth ? { reauth: true, reason: msg } : {}),
 })
 
-function readPkce(cookie: string | undefined): PkceState | null {
+/** Deletes and returns the login state for a cookie: the state is single-use even when the callback then fails. */
+async function consumeLoginState(clock: Clock, cookie: string | undefined): Promise<PkceState | null> {
   if (!cookie) return null
-  try {
-    return JSON.parse(Buffer.from(cookie, 'base64url').toString('utf8')) as PkceState
-  } catch {
-    return null
+  const [row] = await getDb().delete(loginStates).where(eq(loginStates.idHash, hashId(cookie))).returning()
+  if (!row || row.expiresAt.getTime() <= clock.now()) return null
+  return {
+    verifier: row.codeVerifier,
+    state: row.state,
+    nonce: row.nonce,
+    ...(row.returnPath ? { next: row.returnPath } : {}),
+    ...(row.reauth ? { reauth: row.reauth } : {}),
   }
 }
 
@@ -85,9 +110,9 @@ async function finishLogin(provider: OidcProvider, clock: Clock, input: {
   error?: string
   pkceCookie?: string
 }): Promise<LoginResult> {
-  if (input.error) return fail(400, `Login failed: ${input.error}`, !!readPkce(input.pkceCookie)?.reauth)
+  const pkce = await consumeLoginState(clock, input.pkceCookie)
+  if (input.error) return fail(400, `Login failed: ${input.error}`, !!pkce?.reauth)
   if (!input.code || !input.state || !input.pkceCookie) return fail(400, 'Missing OIDC state.')
-  const pkce = readPkce(input.pkceCookie)
   if (!pkce) return fail(400, 'Invalid OIDC state.')
   const isReauth = !!pkce.reauth
   if (pkce.state !== input.state) return fail(400, 'State mismatch.', isReauth)
@@ -131,7 +156,7 @@ export function createLoginFlow(deps: { provider: OidcProvider; clock?: Clock })
   const clock = deps.clock ?? currentClock
   return {
     startLogin: (next?: string | null, reauth?: { maxAge: number; sub: string; iss: string }) =>
-      beginLogin(deps.provider, next, reauth),
+      beginLogin(deps.provider, clock, next, reauth),
     completeLogin: (input: Parameters<typeof finishLogin>[2]) => finishLogin(deps.provider, clock, input),
   }
 }

@@ -6,7 +6,7 @@ import { PKCE_COOKIE, completeLogin, startLogin } from './loginFlow.js'
 import { buildEndSessionUrl } from './oidc.js'
 import { rememberNotificationUser } from '../../notifications.js'
 import type { AuditDep } from '../../routeDeps.js'
-import { clearSessionCookie, getSession, setSessionCookie } from '../session/session.js'
+import { clearSessionCookie, destroySession, getSession, setSessionCookie } from '../session/session.js'
 import { handleReauthCallback } from './stepUp.js'
 
 /** After Mice logout, next /auth/login must show IdP credentials (no silent SSO). */
@@ -67,6 +67,7 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
         message: 'Signed out',
       })
     }
+    await destroySession(c)
     clearSessionCookie(c)
     setCookie(c, PROMPT_LOGIN_COOKIE, '1', {
       httpOnly: true,

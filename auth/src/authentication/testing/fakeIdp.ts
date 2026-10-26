@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { SignJWT, exportJWK, generateKeyPair, type JWK } from 'jose'
 import { systemClock, type Clock } from '../../clock.js'
 import type { IdpAdapter, SignInOptions, SignInResult, TestUserSpec } from './idpAdapter.js'
-
-const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
 
 /** The process-wide OIDC provider caches discovery, so every fake IdP in a process reuses the first port. */
 let sharedPort = 0
@@ -12,26 +11,35 @@ let sharedPort = 0
 export type FakeIdp = IdpAdapter & {
   /** Shifts the IdP's time against the clock it was given (IdP skew vs the BFF). */
   setOffset(ms: number): void
+  /** Signs id_tokens with a key the IdP does not publish. */
+  forgeSignatures(on: boolean): void
+  /** How many times the key set has been fetched. */
+  readonly jwksFetches: number
 }
 
 /**
- * In-process OIDC IdP issuing unsigned id_tokens (the BFF runs with id_token signature verification off in
- * tests). Time comes from `clock` plus an adjustable offset, so tests can skew the IdP against the BFF.
+ * In-process OIDC IdP issuing RS256-signed id_tokens and publishing the key set. Time comes from `clock` plus an adjustable offset, so tests can skew the IdP against the BFF.
  */
-export function createFakeIdp(opts: {
+export async function createFakeIdp(opts: {
   clientId?: string
   clock?: Clock
   users?: Record<string, TestUserSpec>
-} = {}): FakeIdp {
+} = {}): Promise<FakeIdp> {
   const clock = opts.clock ?? systemClock
   const clientId = opts.clientId ?? 'mice-web'
   const users = new Map(Object.entries(opts.users ?? {}))
   const codes = new Map<string, { key: string; nonce: string; authTime: number }>()
   let offsetMs = 0
+  let forge = false
+  let jwksFetches = 0
+  const kid = 'fake-idp-key'
+  const signingKey = await generateKeyPair('RS256', { extractable: true })
+  const foreignKey = await generateKeyPair('RS256', { extractable: true })
+  const publicJwk: JWK = { ...(await exportJWK(signingKey.publicKey)), kid, alg: 'RS256', use: 'sig' }
   let issuer = ''
   const nowSec = () => Math.floor((clock.now() + offsetMs) / 1000)
 
-  function idToken(key: string, nonce: string, authTime: number): string {
+  function idToken(key: string, nonce: string, authTime: number): Promise<string> {
     const u = users.get(key)!
     const mfa = u.mfa === true
     const claims = {
@@ -51,18 +59,25 @@ export function createFakeIdp(opts: {
       amr: mfa ? ['pwd', 'otp'] : ['pwd'],
       acr: mfa ? 'mfa' : 'pwd',
     }
-    return `${b64({ alg: 'none' })}.${b64(claims)}.sig`
+    return new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256', kid })
+      .sign(forge ? foreignKey.privateKey : signingKey.privateKey)
   }
 
   const server: Server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
     if (req.url?.endsWith('/.well-known/openid-configuration')) {
-      res.end(JSON.stringify({ issuer, authorization_endpoint: `${issuer}/auth`, token_endpoint: `${issuer}/token` }))
+      res.end(JSON.stringify({ issuer, authorization_endpoint: `${issuer}/auth`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks` }))
+      return
+    }
+    if (req.url === '/jwks') {
+      jwksFetches++
+      res.end(JSON.stringify({ keys: [publicJwk] }))
       return
     }
     let body = ''
     req.on('data', (chunk: Buffer) => (body += chunk.toString()))
-    req.on('end', () => {
+    req.on('end', async () => {
       const entry = codes.get(new URLSearchParams(body).get('code') ?? '')
       if (!entry || !users.has(entry.key) || users.get(entry.key)!.disabled) {
         res.statusCode = 400
@@ -70,7 +85,7 @@ export function createFakeIdp(opts: {
         return
       }
       codes.delete(new URLSearchParams(body).get('code')!)
-      res.end(JSON.stringify({ id_token: idToken(entry.key, entry.nonce, entry.authTime) }))
+      res.end(JSON.stringify({ id_token: await idToken(entry.key, entry.nonce, entry.authTime) }))
     })
   })
 
@@ -90,6 +105,12 @@ export function createFakeIdp(opts: {
     async stop() {
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
+    },
+    forgeSignatures(on) {
+      forge = on
+    },
+    get jwksFetches() {
+      return jwksFetches
     },
     setOffset(ms) {
       offsetMs = ms

@@ -47,7 +47,7 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     auditReasonMinLength: Number(src.AUDIT_REASON_MIN_LENGTH ?? 10),
     /** Days before a service principal PAT expires that its owner is notified; 0 disables. */
     servicePatExpiryLeadDays: Number(src.SERVICE_PAT_EXPIRY_LEAD_DAYS ?? 14),
-    cookieName: src.SESSION_COOKIE_NAME ?? 'mice_session',
+    cookieName: src.SESSION_COOKIE_NAME ?? '__Host-mice_session',
     cookieSecure: src.COOKIE_SECURE === 'true',
     /** Directory for PAT store (pats.json). */
     dataDir: (src.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
@@ -181,10 +181,6 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     oidcIssuer: src.OIDC_ISSUER ?? '',
     /** Issuer URL as seen by the browser (Keycloak published hostname). */
     oidcIssuerPublic: src.OIDC_ISSUER_PUBLIC ?? src.OIDC_ISSUER ?? '',
-    /** Verify the id_token signature against the IdP JWKS. On by default under GXP_STRICT. */
-    verifyIdToken: (src.OIDC_VERIFY_ID_TOKEN ?? src.GXP_STRICT) === 'true',
-    /** Minimum gap between JWKS refetches triggered by an unknown key id. */
-    jwksCooldownMs: Number(src.OIDC_JWKS_COOLDOWN_MS ?? 10_000),
     oidcClientId: src.OIDC_CLIENT_ID ?? '',
     oidcClientSecret: src.OIDC_CLIENT_SECRET ?? '',
     oidcRedirectUri: src.OIDC_REDIRECT_URI ?? '',

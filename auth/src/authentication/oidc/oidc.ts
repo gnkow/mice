@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { compactVerify, createLocalJWKSet, jwtVerify, type JSONWebKeySet } from 'jose'
 import { env, oidcConfigured } from '../../env.js'
 import {
   claimsFromPayload,
@@ -41,9 +41,6 @@ export type OidcProviderConfig = {
   redirectUri: string
   postLogoutRedirectUri: string
   groupsClaim: string
-  /** Verify the id_token signature against the IdP JWKS. */
-  verifyIdToken: boolean
-  jwksCooldownMs: number
 }
 
 type Discovered = {
@@ -70,8 +67,6 @@ export function createOidcProvider(
   const config = () => (typeof configSource === 'function' ? configSource() : configSource)
   const doFetch = deps.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a))
   let discovered: Discovered | null = null
-  let jwks: ReturnType<typeof createRemoteJWKSet> | undefined
-  let jwksUri = ''
 
   async function discover(): Promise<Discovered> {
     if (discovered) return discovered
@@ -106,13 +101,12 @@ export function createOidcProvider(
     return discovered
   }
 
-  function keySet(uri: string | undefined): ReturnType<typeof createRemoteJWKSet> {
+  /** The IdP key set, fetched on every call: no JWKS caching, an unreachable IdP means no verification. */
+  async function keySet(uri: string | undefined): Promise<ReturnType<typeof createLocalJWKSet>> {
     if (!uri) throw new Error('IdP publishes no jwks_uri; cannot verify tokens')
-    if (!jwks || jwksUri !== uri) {
-      jwks = createRemoteJWKSet(new URL(uri), { cooldownDuration: config().jwksCooldownMs })
-      jwksUri = uri
-    }
-    return jwks
+    const res = await doFetch(uri, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status}`)
+    return createLocalJWKSet((await res.json()) as JSONWebKeySet)
   }
 
   const knownIssuers = (conf: Discovered) =>
@@ -156,12 +150,11 @@ export function createOidcProvider(
       const idToken = ((await res.json()) as { id_token?: string }).id_token
       if (!idToken) throw new Error('No id_token in token response')
 
-      if (c.verifyIdToken) {
-        try {
-          await jwtVerify(idToken, keySet(conf.jwksUri), { algorithms: ['RS256', 'ES256'] })
-        } catch (e) {
-          throw new Error(`id_token signature verification failed: ${e instanceof Error ? e.message : e}`)
-        }
+      try {
+        // Signature only: validity times are checked with the leeway in validateIdTokenClaims.
+        await compactVerify(idToken, await keySet(conf.jwksUri), { algorithms: ['RS256', 'ES256'] })
+      } catch (e) {
+        throw new Error(`id_token signature verification failed: ${e instanceof Error ? e.message : e}`)
       }
       const payload = decodeJwtPayload(idToken)
       validateIdTokenClaims(payload, {
@@ -191,7 +184,7 @@ export function createOidcProvider(
     async verifyJwt(token) {
       const conf = await discover()
       const issuers = knownIssuers(conf).flatMap((i) => [i.replace(/\/$/, ''), `${i.replace(/\/$/, '')}/`])
-      const { payload } = await jwtVerify(token, keySet(conf.jwksUri), {
+      const { payload } = await jwtVerify(token, await keySet(conf.jwksUri), {
         algorithms: ['RS256', 'ES256'],
         issuer: issuers,
         audience: config().clientId,
@@ -210,8 +203,6 @@ export function oidcConfigFromEnv(): OidcProviderConfig {
     redirectUri: env.oidcRedirectUri,
     postLogoutRedirectUri: env.oidcPostLogoutRedirectUri,
     groupsClaim: env.oidcGroupsClaim,
-    verifyIdToken: env.verifyIdToken,
-    jwksCooldownMs: env.jwksCooldownMs,
   }
 }
 
