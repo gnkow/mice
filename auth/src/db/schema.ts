@@ -224,6 +224,8 @@ export const webSessions = pgTable(
     authTime: integer('auth_time'),
     sessionStart: integer('session_start').notNull(),
     lastActive: integer('last_active').notNull(),
+    /** Epoch seconds of the last IdP status check (for 5-minute throttling). */
+    lastIdpCheck: integer('last_idp_check'),
   },
   (t) => [index('web_sessions_principal_idx').on(t.principalId)],
 )
