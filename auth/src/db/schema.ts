@@ -408,3 +408,21 @@ export const notificationCursor = pgTable(
   },
   (t) => [check('notification_cursor_singleton', sql`${t.id} = 1`)],
 )
+
+/** Authentication events audit log (ticket 05). */
+export const authEvents = pgTable(
+  'auth_events',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    type: text('type').notNull(),
+    principalKey: text('principal_key').notNull(),
+    requestId: text('request_id').notNull(),
+    outcome: text('outcome').notNull(),
+    reason: text('reason'),
+    timestamp: ts('timestamp').notNull().defaultNow(),
+  },
+  (t) => [
+    index('auth_events_principal_idx').on(t.principalKey, t.timestamp),
+    index('auth_events_timestamp_idx').on(t.timestamp),
+  ],
+)
