@@ -365,9 +365,57 @@ Challenges: Plan §11a multi-mount; user story 7.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs
+
+1. **Recording mandate reversed (Q4)**: Overrides 00 Q22 and 04 Q22 (recording mandatory for GxP-touching Sessions). Compensating controls: one rw session/Workspace + off-box auditd. REGULATORY RISK: no primary capture, accepted by owner.
+
+2. **Workspace layer non-record status (Q12, 08 Q2)**: Transient nature conflicts with ALCOA "original" and "contemporaneous". Commits required at acquisition, no auto-snapshots.
+
+## Open Risks and Blockers
+
+3. **Concurrent-create race (Q13)**: Remains "as is", flagged for implementation.
+
+4. **Guest outside-mount data loss (Q21)**: Remains "as is", documented only.
+
+5. **Deployment target dependency (Q14)**: Now resolved by 16 Q1 (Kubernetes). Pod provisioner is target, Docker dev-only.
+
+6. **Workspace mount dependency (Q26)**: Depends on 08 spike (overlay-on-RWX). Fallback: copy/node-local scratch.
+
+7. **Desktop threat model gap (Q5)**: No separate threat model; relies on repo authz (accepted risk).
+
+8. **Revoke terminates Sessions (Q18, 01 Q20)**: Sessions terminated on revoke. No break-glass (Q17).
+
+9. **Gateway qualification (Q8)**: Entry criterion for gateway qualification not yet scheduled. PENDING.
+
+## Unresolved Design Decisions
+
+10. **Auto-recovery scope**: Beyond `failed`/`stopped` transitions left open for implementation.
+
+11. **Quota units**: Session hours quotas have undefined units (Q13).
+
+12. **Idle timer measurement**: Spec says "from disconnect"; implementation needs gateway event-driven design (Q1).
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Dependencies on Other Specs
+
+- **08 (Workspaces)**: Q26 mount abstraction and overlay-on-RWX spike blocks production RW mounts
+- **16 (Infrastructure)**: Q14 deployment target (Kubernetes) now resolved
+- **01 (Authentication)**: Q18/Q20 revoke terminates Sessions; Q17 no break-glass
+- **14 (Notifications)**: Q22 warnings and lifetime extensions rely on Notifications (dedupe needed)
+
+## Impacts on Other Specs
+
+- **02 (Authorization)**: Desktop principal needs session-scoped data-path endpoint (Q9)
+- **03 (Audit)**: Q4 recording-never decision supersedes 00 Q22; compensating controls documented
+- **04 (Signatures)**: Recording reversal affects validation scope (Q24: analysis/review only)
+- **06 (Data Transfer)**: Q9 dedicated guest-facing BFF endpoint for Oxen data path
+- **11 (Lineage)**: Desktop Session link for attribution (Q10, Q17)
+
+## Cross-Cutting Concerns
+
+- **Multi-instance coordination**: Q1 DB-leased sweeper with CAS; Q7 stateless signed tickets
+- **Fail-closed strict mode**: Q16 gateway events (observations) never fail-closed
+- **N BFF instances**: Q7 WebSocket state, gateway HA, drain semantics
+- **Retention**: Q2 lifetime→stop (disk kept N days); Q21 outside-mount data not preserved
 

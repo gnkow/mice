@@ -429,9 +429,56 @@ Challenges: Cross-cutting testing decision and plan test strategy.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs
+
+1. **Synchronous access-change index update (Q2 vs Q4)**: Contrasts with outbox (Q4) and one-owner-per-fact rule. Failure mode must be defined (fail closed, recheck). RISK: Main-database/index dual-write inconsistency.
+
+2. **Head capture exception (Q10)**: Skipped per-item Intent is documented exception to Intent-before-mutation. Needs ADR-level sign-off from 03/04.
+
+3. **Stripping tombstone values (Q20)**: Conflicts with no-hard-delete unless tombstones and audit kept. Documented exception.
+
+4. **Sparse index non-exhaustive (Q6)**: Search non-exhaustive by design; users must see banner.
+
+## Open Risks and Blockers
+
+5. **Engine choice conditional (Q26/Q24)**: Postgres FTS prototype first; engine only on measured failure (with ADR). 1M target unproven.
+
+6. **User/group metadata removed (Q19)**: Any module referencing it must not assume it exists.
+
+7. **Stable repo IDs and static names (Q17/Q18)**: Depend on inherited global decisions. 16 Q24 wipes pilot, so no migration needed.
+
+## Unresolved Design Decisions
+
+8. **Search engine selection**: ADR required before choosing OpenSearch/Meilisearch over Postgres FTS.
+
+9. **Access-change sync failure mode**: Must define whether fail-closed or recheck on failure.
+
+10. **Relevance set**: 50-query relevance set needed before engine ADR (Q23).
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Dependencies on Other Specs
+
+- **00 (Cross-cutting)**: Q17/Q18 stable repository IDs and static physical oxen names inherited
+- **16 (Infrastructure)**: Q26 Postgres FTS first; engine choice requires ADR
+- **03/04 (Audit/Signatures)**: Q10 head-capture exception needs ADR-level sign-off
+- **11 (Lineage)**: Q28 all metadata revisions recorded in lineage; Q9 metadata revision in Pin/Job lineage
+
+## Impacts on Other Specs
+
+- **05 (Repositories)**: Q8 effective-metadata snapshot at merge with signer identity
+- **09 (Jobs)**: Q9 metadata revision recorded in Pin and Job lineage; Q27 Jobs indexed sparsely
+- **10 (Sessions)**: Q27 Desktop Session metadata deferred
+- **08 (Workspaces)**: Q27 Stage metadata deferred
+- **02 (Authorization)**: Q1 allowed-set filter by stable repo ID; Q14 block filter/sort/facet on sensitive fields
+
+## Cross-Cutting Concerns
+
+- **Fail-closed strict mode**: Q10 documented exception for metadata-only mutations (no dataset head capture)
+- **Multi-instance coordination**: Q4 outbox with revision-guarded idempotent upserts + drift detector; Q5 snapshot+outbox replay with DB lease
+- **AuthZ scope before paging**: Q1 allowed-set filter + authoritative recheck; Q3 facets under scope filter
+- **Sensitive data handling**: Q12 never in audit (keyed hash); Q13 never indexed, masked at read
+- **Inheritance and fan-out**: Q7 namespace edit with advisory preview, query-time resolution ns→repo
+- **Index lifecycle**: Q4 outbox; Q5 reindex with generation swap; Q6 sparse index with non-exhaustive banner
+- **Retention**: Q20 tombstones kept; values stripped after owner period for non-regulated (documented exception)
 

@@ -358,9 +358,56 @@ Challenges: New gap; spec stories 1 and 2.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs
+
+1. **Upload origin fields (Q16 vs 06 Q15, Q7)**: 11 records no upload origin fields while 06 captures client-asserted name/mtime and one lineage op per import. Reconcile where client-asserted metadata is stored. Owner: one owner per fact.
+
+2. **E-signed corrections (Q4 vs 04 Q9, 00 Q9)**: E-signed correction approval must obey no self-signing and "authored by" vs "signed by" separation.
+
+3. **Inferred edges in exports (Q3)**: Excluded from exports by default; auditors must explicitly request them.
+
+4. **Op hash in immudb (Q12 vs 03)**: Adds write per op; covered by 03 latency budget (to be verified).
+
+5. **Redaction process (Q10, 00 Q8)**: Cannot erase; legal sign-off on retention stance still needed.
+
+## Open Risks and Blockers
+
+6. **Restricted-node leakage (Q9)**: Cross-repo stub nodes may leak existence across repositories. Risk to review with 02.
+
+7. **Stable repository IDs (Q21, 05 Q25)**: Lineage uses stable repository ids; static physical names keep commit ids unchanged.
+
+8. **No unresolved blocker**: Q16 vs 06 mismatch is documentation alignment, not a gate.
+
+## Unresolved Design Decisions
+
+9. **XXH3 vs SHA-256 identity (Q8)**: Inherited SHA-256 decision; heuristics use SHA-256 when present.
+
+10. **Cross-repo lineage scope (Q9)**: Cross-repo edges by stable repo id; shown as restricted-node stubs when viewer lacks read.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Dependencies on Other Specs
+
+- **06 (Data Transfer)**: Q16 no origin fields conflicts with 06 Q15 client-asserted metadata
+- **04 (Signatures)**: Q4 e-signed corrections obey no self-signing (04 Q9, 00 Q9)
+- **00 (Cross-cutting)**: Q8 SHA-256 inherited; Q13 reconciler inherited (00 Q5); Q23 inherited (rename)
+- **05 (Repositories)**: Q5 rename=copy+delete with stable id; Q21/Q23 stable repository IDs
+- **08 (Workspaces)**: Q11 inherited lease management (08 Q4/Q11)
+- **03 (Audit)**: Q12 op hash in immudb adds write per op; latency budget verification needed
+
+## Impacts on Other Specs
+
+- **09 (Jobs)**: Q15 op node + edge table, paged; Jobs read I/O from lineage (single writer)
+- **11 (Lineage)**: Q28 all metadata revisions recorded in lineage
+- **10 (Sessions)**: Q17 Desktop Session link only for attribution
+- **02 (Authorization)**: Q10 lineage follows repository access; redaction process needed
+
+## Cross-Cutting Concerns
+
+- **Fail-closed strict mode**: Q1 Intent-time stub; outputs completed at Outcome; reconciler fills gaps
+- **Multi-instance coordination**: Q7 unique constraint on (repo,path,hash,commit); lock on rebuild
+- **Retention**: Q21 never delete; `superseded_by` hidden by default; `as_of` view
+- **Tamper evidence**: Q12 op hash in immudb; lineage tables are derived index
+- **Database design**: Q6 normalized op+version_ref tables, indexed, bounded traversal
+- **Gap detection**: Q18 incremental per-branch scan, classification, allowlist, capture status
 

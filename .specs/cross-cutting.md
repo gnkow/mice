@@ -362,9 +362,132 @@ Challenges: "plans treated as intent only"; "every JSON store ... in the plans i
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs (BLOCKERS)
+
+1. **Erasure impossible (Q8)**: Conflicts with option analysis. Legal sign-off needed. **Status blocker.**
+
+2. **Overlay-on-shared-filesystem (Q1)**: 08 Q1 spike UNRESOLVED. Kubernetes is production target (16 Q1) but Jobs unsupported until spike passes (09 Q11). **Status blocker.**
+
+3. **Recording mandate overridden (Q22)**: Global decision and 10 Q4 override Q22 (desktop sessions never recorded). 04 Q22 still inherits and must be corrected. Compensating controls: one rw session/Workspace + off-box auditd.
+
+4. **Rename superseded (Q7)**: Superseded by 05 Q25 (static physical names, rename only in BFF). 05 Q3-Q6 mostly moot.
+
+## Open Risks and Blockers
+
+5. **Reviewer escalation unresolved (Q24)**: Remains unresolved (04 Q18 also awaits owner confirmation).
+
+6. **Absolute fail-closed (Q3)**: Holds with no exception. 08 Q18 aggregation dropped (auth round 6 S1). Consequence: immudb outage stops Workspace work at lease expiry. RESOLVED but requires careful lease TTL sizing.
+
+7. **URL import disabled (Q15)**: Entry criteria for re-enabling undefined (06 Q9).
+
+8. **Postgres FTS first (Q20)**: Separate engine needs new ADR (16 Q25).
+
+9. **Backup and restore (16 Q2, 04 Q16)**: Hard start gate. Former deferral void.
+
+10. **Supply chain/SBOM (16 Q21)**: DEFERRED - must close before regulated use.
+
+11. **Maintenance windows only (16 Q27)**: Inferred outcomes remain possible after crash.
+
+12. **Research repository exemption (04 Q10)**: Whether research repos need exemption from always-on strict is open.
+
+## Resolved Conflicts
+
+13. **No automatic retries (Q23)**: 09 Q9 finalize Intent retry and 03 Q21 Outcome retry are bounded internal retries, not mutation retries. Spec must clarify.
+
+14. **Service principals removed (Q19)**: Moot - removed (01 Q12, Q13). Jobs use BFF-internal tokens; automated commits never signed (08 Q7).
+
+15. **Derived store repair (Q26)**: Via Postgres outbox. 04 Q17 verification report-only, never repairs or deletes.
+
+## Update from Authentication Review
+
+16. **GxP beats GDPR (R2, round 5)**: No identity data erasable; no IPs stored. Legal sign-off on no-erasure stance remains open.
+
+17. **Single unchanging IdP**: Iss+sub never reused (auth Q29, S8).
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Binds All Module Specs (01-16)
+
+This spec provides decisions that apply to every module. Each module spec inherits these decisions unless explicitly overridden.
+
+## Key Cross-Cutting Decisions
+
+### Persistence (applies to all)
+- PostgreSQL relational state, immudb audit, Novu notifications, search engine derived
+- Q26: One owner per fact - Postgres=permissions/state, immudb=what happened, oxen=data, FS=files, search=derived
+
+### Multi-Instance (applies to all)
+- Q1: Fencing tokens in tree, DB source of truth
+- Q2: Per-module in-process-state inventory + randomized two-instance tests
+
+### GxP Strict (applies to all mutations)
+- Q3: Absolute fail-closed, no exemptions (RESOLVED)
+- Q4: All reads audited
+- Q9: Separate authored-by/signed-by; no self-signing in GxP; step-up at signing
+
+### Intent/Outcome (applies to all mutations)
+- Q5: Infer only when verifiable by digest, else "unknown"
+- Q6: Use oxen commit ID where available; optimistic elsewhere; locks only where needed
+- Q17: Database time orders events; record time and effect time separate
+
+### Repository Identity (applies to 02, 05, 11, 12, 13)
+- Q7: Static physical names (supersedes copy-based rename)
+- Stable repository ID for AuthZ, favorites, metadata, lineage, audit
+
+### Offboarding (applies to 01, 15)
+- Q11: Keep back-channel logout and directory-based revocation
+
+### Retention (applies to 03, 06, 11, 12)
+- Q8: Erasure impossible; legal sign-off needed (BLOCKER)
+- Records kept until deleted, no default expiry
+
+### Notifications (applies to 14)
+- Q12: Defaults by criticality (action-required on incl. email, informational in-app/off)
+
+### SSRF and Security (applies to 06)
+- Q15: URL import disabled until controls exist
+- Fetcher egress-restricted, never in oxen-server
+
+### Integrity Evidence (applies to 06, 11)
+- Q14: SHA-256 authoritative; computed in BFF stream, verified on download/Job input
+
+### Identity Provider (applies to 01, 15)
+- Q18: Always verify id_token signature; amend ADR 0001
+- External IdP required; Keycloak dev-only
+
+### Runners and Jobs (applies to 09, 16)
+- Kubernetes production target; Compose dev-only
+- Jobs use BFF-internal tokens; service principals removed (Q19)
+
+### Testing (applies to all)
+- Q13: Test-only fault-injection hooks at HTTP boundary
+- Q28: One-off parity checklist from code/tests
+
+### Authorization (applies to 02, 16)
+- Stage naming direct, no aliases or migration (Q16)
+
+### Metadata (applies to 12)
+- Q21: Namespace schemas extend instance-level base schema
+
+### Search (applies to 12)
+- Q20: BFF filters hits through AuthZ; Postgres FTS reconsidered before engine
+
+### Deployment (applies to 09, 10, 16)
+- Q1: Kubernetes production (16 Q1); overlay spike blocks Jobs (BLOCKER)
+- Q27: Pin oxen by digest; contract tests; controlled upgrade
+
+## Dependencies and Blocks
+
+### Status Blockers
+- Q8: Legal sign-off on no-erasure stance
+- Q1: Overlay-on-shared-filesystem spike (08 Q1)
+
+### Open Dependencies
+- Q24: Reviewer escalation target unresolved (affects 04, 14, 15)
+- Q15: URL import entry criteria undefined (affects 06)
+- Q20: Search engine ADR if Postgres FTS insufficient (affects 12)
+
+### Hard Gates
+- Backup and restore (16 Q2, 04 Q16)
+- Supply chain/SBOM before regulated use (16 Q21)
 

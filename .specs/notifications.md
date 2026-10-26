@@ -440,9 +440,62 @@ Challenges: Plan "Poll every 10 seconds" and the CLI scope proposal.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs (BLOCKER)
+
+1. **Favorites feeding notifications (Q2/Q3 of 13)**: Unresolved link to 13. Favorites feeding notifications vs removal of implicit-watch claim. Must decide recipient rules here. **Status blocker.**
+
+2. **ADR 0004 superseded (Q8)**: Supersedes ADR 0004 and glossary "Novu owns notification state". Both need updating.
+
+3. **Favorite must not override categories (Q3 vs 13)**: Favorite must not override non-optional or disabled categories.
+
+## Open Risks and Blockers
+
+4. **Dedupe by Novu transaction ID (Q10)**: RISK - Owner overrode ledger recommendation. Leaves gap after long replays (window expiry). Conflicts with one-owner-per-fact since Postgres projection is authoritative.
+
+5. **Inferred outcomes (Q7)**: Maintenance-window-only deploys (16 Q27) may still produce unconfirmed notices.
+
+6. **External delivery freshness (Q12/Q13)**: Depends on IdP claim freshness and offboarding SLA. PATs and service principals removed (Q23), so those recipient classes don't exist.
+
+7. **90-day TTL (Q1)**: Conflicts with any expectation of notifications as records. Delivery facts in immudb audit only.
+
+## Unresolved Design Decisions
+
+8. **Polling vs streaming (Q29)**: Polling first; streaming deferred pending load test.
+
+9. **Stuck-job recipients**: Whether per-job subscription is favorite/watch depends on 13 Q2/Q3 resolution.
+
+## Update from Authentication Review
+
+10. **IdP migration (Q22)**: Moot - IdP change unsupported, iss+sub never reused (auth Q29, Q80, S8).
+
+11. **Recipient e-mail**: Uses IdP claim; bootstrap grants read-only baseline only (auth R1).
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Dependencies on Other Specs
+
+- **13 (Favorites)**: Q2/Q3 contradiction blocks recipient rules; stuck-job subscription ownership unresolved
+- **03 (Audit)**: Q7 inferred outcomes may produce unconfirmed notices
+- **16 (Infrastructure)**: Q7 maintenance-window deploys (16 Q27) affect outcome inference
+- **01 (Authentication)**: Q12/Q13 claim freshness check; Q22 IdP migration moot (auth Q29, Q80, S8); Q23 service principals removed
+- **ADR 0004**: Q8 supersedes "Novu owns state" wording
+
+## Impacts on Other Specs
+
+- **13 (Favorites)**: Q21 persist resolved recipients per event (affects favorites if they feed notifications)
+- **10 (Sessions)**: Lifetime warnings and extensions (10 Q22) rely on Notifications with dedupe
+- **15 (Administration)**: Q24 admin-wide audiences require reason+audit (15 Q26); Q26 announcements with "also notify"
+- **04 (Signatures)**: Q4 assigned reviewer notifications; Q5 on revoke reassign pending reviews
+- **02 (Authorization)**: Q12/Q13 external delivery depends on access; Q16 per-recipient grouping after access filter
+
+## Cross-Cutting Concerns
+
+- **Fail-closed strict mode**: Q25 read state exempt; security/approval preference changes audited
+- **Multi-instance coordination**: Q10 dedupe via Novu transaction ID (RISK); Q8 Postgres projection authoritative
+- **Authority and retention**: Q1 90-day content TTL (non-records); delivery facts in audit; Q8 recipient projection in Postgres
+- **Channels and content**: Q2 inbox on all, e-mail personal+security, push opt-in; Q9 generic external content for restricted
+- **Mandatory notices**: Q3 non-optional own-account security + approvals to current approver
+- **Operational alerts**: Q17 wait-time threshold alerts; Q18 heartbeat-based stuck detection
+- **Delivery SLO**: Q11 p95 per event class with recipient ceiling + CI load test
+- **Testing**: Q28 pure scheduling function + env clock offset in test stacks; Q29 poll+cursor backed by Redis
 

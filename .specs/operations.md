@@ -341,9 +341,62 @@ Challenges: "Single seam: the BFF HTTP boundary" for failure-mode behaviour.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Supply chain and SBOM gap
+- **Q21 DEFERRED: supply chain and SBOM gap must close before regulated use**: With GxP strict always on, this is a release blocker for the regulated release, not for development. Container image provenance, SBOM, and vulnerability scanning are required for Part 11/Annex 11. Deferred but documented as pre-regulated-use requirement.
+
+## Observability and tracing
+- **Q20 (owner overrode "later"decision)**: Full tracing now. Adds redaction and retention obligations. Must respect immutable audit and sensitive-field rules (12 Q12/Q13). Traces stored with scrubbing; retention aligned with audit retention (forever, 00 Q8).
+
+## Pilot data wipe
+- **Q24 (wipe of pilot discards pilot data)**: Acceptable only because stable ids exist from day one and no migration is promised (16 Q24). Contradicts any module expecting migrated pilot data. 13 Q11 migration tool was removed (authentication Q80).
+
+## Maintenance windows and graceful drain
+- **Q27 (maintenance windows only, owner overrode graceful drain)**: A crash can still leave Intent events without Outcome, so inferred outcomes (14 Q7, reconciler) remain possible. No graceful drain means active work interrupted. Accepted operational gap.
+
+## Shared RWX storage unproven
+- **Q7 (shared RWX storage unproven until spike passes)**: Fallback weakens multi-instance sharing. 08 Q1 (overlay-on-RWX spike) is unresolved. If spike fails, copy-based or node-local scratch degrades performance and complicates multi-instance coordination.
+
+## Availability targets and backup
+- **Q4 (availability numbers are examples "e.g.")**: Target not yet fixed. Backup owner assignment not recorded. Must define SLO for audit store (immudb), Main database, and BFF. Impacts 03 Q5 (QA alert threshold), 15 Q18 (notification timing).
+
+## Schema changes and deploy strategy
+- **Q9 and Q27 together**: Schema changes are expand-contract but deploys are windowed (no graceful drain). Rollback story must be documented. A failed deploy with schema mid-migration needs recovery procedure.
+
+## Supplier assessment and dependencies
+- **Q14/Q11 (mTLS and DB audit logging)**: Depend on supplier assessment still to be done. PostgreSQL, immudb, Novu, Kubernetes, oxen-server all need documented assessment before regulated use (04 T6, authentication R6).
+
+## Operational dependencies added
+- **14 Q8 and 15 Q7**: Postgres is notification authority (14 Q8). No break-glass access if IdP unavailable (15 Q7/authentication R7). Both create operational dependencies that affect incident response.
+
+## Authentication review updates
+- **NTP-synced server clock with alert on drift above 1s**: Regulated requirement (authentication R5). Operationally enforced; alert routed to security admins.
+- **Daily IdP baseline check and drift report**: Run as scheduled jobs (authentication Q45, T5). Outage of IdP is an incident with manual procedure (authentication R7), not automated fallback.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks all specs requiring infrastructure**: Deployment target (Q1, Q7), Kubernetes configuration (Q1/16 Q1), backup/restore (Q4/04 Q16/16 Q2), monitoring and alerting (Q5, Q6), and supply chain (Q21) are cross-cutting operational requirements.
+- **Blocks 01 (Authentication)**: NTP-synced clock (authentication R5), IdP baseline check (Q45, T5), back-channel logout (authentication Q65), directory sync are operational features.
+- **Blocks 03 (Audit)**: immudb availability target (Q4/03 Q5), backup (Q4/04 Q16), scheduled verification (Q17/03 Q12), immudb pinning (Q11/03 Q11).
+- **Blocks 08 (Workspaces)**: Shared RWX storage (Q7/08 Q1 spike). Overlay viability determines Workspace implementation.
+- **Blocks 14 (Notifications)**: Novu or replacement (Q8). Supplier assessment (Q14). Postgres as notification authority (14 Q8).
+- **Blocks 15 (Administration)**: Break-glass declined (Q7/15 Q7). IdP outage procedure (authentication R7). No emergency local accounts.
+
+## Depends on
+- **Depends on 00 (Cross-cutting)**: Deployment target undecided (Q1/00 Q1). GxP strict always on (Q10). Absolute fail-closed (Q27/00 Q3).
+- **Depends on 01 (Authentication)**: IdP as qualified supplier (authentication R6). Clock sync (authentication R5). Back-channel logout, directory sync (authentication Q1, Q2).
+- **Depends on 03 (Audit)**: Immudb backup and replication (Q4/03 Q17). Scheduled verification (Q17/03 Q12). Fail-closed on audit outage (00 Q3/03 Q2).
+- **Depends on 04 (GxP Compliance)**: Backup as start gate (Q4/04 Q16). Supply chain/SBOM (Q21/04 T6). Validation pack (Q26/04 Q26).
+- **Depends on 16 (Operations)**: All operational questions are in this spec (16). Kubernetes production target (Q1/16 Q1). Maintenance windows (Q27).
+
+## Cross-cutting impacts
+- **00 (Cross-cutting)**: Deployment target (Q1/00 Q1). Maintenance windows (Q27/00 Q23). Absolute fail-closed (Q27/00 Q3).
+- **01 (Authentication)**: NTP clock (authentication R5). IdP checks (authentication Q45, T5, R6). Back-channel logout (authentication Q65).
+- **03 (Audit)**: Immudb backup (Q4/03 Q17). Availability target (Q4/03 Q5). Scheduled verification (Q17/03 Q12).
+- **04 (GxP Compliance)**: Backup (Q4/04 Q16). Supply chain (Q21/04 T6). Validation (Q26/04 Q26).
+- **08 (Workspaces)**: Shared RWX storage (Q7/08 Q1). Overlay spike (08 Q1) determines viability.
+- **09 (Jobs)**: Kubernetes runner (Q1/09 Q11). Backup (Q4). Supplier assessment (Q14).
+- **14 (Notifications)**: Novu (Q8). Postgres authority (14 Q8). Supplier assessment (Q14).
+- **15 (Administration)**: Break-glass declined (Q7/15 Q7/authentication R7). IdP outage incident response (authentication R7).
+- **16 (Operations)**: This spec IS operations (16). All decisions here impact deployment, monitoring, backup, and incident response.
 

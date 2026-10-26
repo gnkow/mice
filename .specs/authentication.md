@@ -982,9 +982,121 @@ Q69–Q83 answered; see "Round 3 decisions" in spec.md.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Cache Conflicts
+- **Q4 vs 15-Q18/Q21**: Short-TTL cache (2s) conflicts with no-cache requirement. Stricter reading is no cache. Cross-spec reconciliation needed with 02 (authorization staleness) and 15 (administration).
+- **Q59**: 2s cache with NOTIFY needs reconciliation with 15-Q21 (per-request revocation read).
+
+## Cross-Spec Attribution Conflict
+- **Q10 vs Q28**: Oxen commit trailers hold `iss|sub` for humans only. Job commits (automation) have no trailer and are attributed through audit `via` alone. Impacts 08 (workspaces) and 09 (jobs) specs.
+
+## Risks Accepted by Owner
+- **Q1 (IdP outage grace period)**: Live check kept only for short-lived CLI credentials. Revoked users may stay active during IdP outage (bounded grace period).
+- **Q16 (secret leak)**: No key-rotation tooling. Secret leak requires logging everyone out.
+- **Q21 (immudb fail-closed)**: No logins or revokes while immudb is down. Break-glass declined. Incident-response gap noted in 15-Q7.
+- **Q20 (running Jobs)**: Running Jobs finish but result commit blocked on revocation. Held output follows 04-Q12 and 08-Q11.
+
+## MFA Evidence Requirement
+- **Q6 and 04-Q4**: If IdP exposes no `acr`/`amr` claims, step-up is refused for signing. IdP must be validated before use. Blocks 04 (gxp-compliance) signing ceremony.
+
+## Pending Confirmations
+- **Q26**: PENDING owner confirmation that no live credentials, cookies, or cut-offs exist in current deployment.
+
+## Service Principal Removal
+- **Q12, Q13, 00-Q19**: Service principals removed per spec. References in 02 (authorization) stories 11-12 and specs 12-14 are now obsolete and need cleanup.
+
+## Implementation Status
+- Step-up re-authentication: ✅ Core implemented, ❌ MFA evidence extraction (acr/amr) pending
+- Signing ceremony primitives: ✅ Auth layer complete, integration owned by 04 (gxp-compliance)
+- Device flow: ✅ Implemented
+- Web sessions UI: ✅ Complete
+- Admin revocation UI: ✅ Complete
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Provides Foundation For
+
+### 02 - Authorization
+- **Principal identity** (`iss|sub`) used as authorization subject
+- **Session validation** required before authorization checks
+- **Revocation state** checked during permission evaluation
+- **Staleness bounds** must align (Q18, 02-Q12, 15-Q21)
+
+### 03 - Audit
+- **Principal identity** for audit actor attribution
+- **Authentication events** (login, logout, revoke) logged to immudb
+- **Fail-closed requirement**: No mutations when immudb down (Q21)
+- **Via field** distinguishes session vs credential vs job-token
+
+### 04 - GxP Compliance
+- **Step-up re-authentication** provides fresh identity proof for signatures
+- **MFA evidence** extraction (acr/amr) required for signing ceremony (Q43, 04-Q4)
+- **E-signature declaration** stored in immudb (Q44)
+- **Fresh authentication** requirement (60s) enforced by auth layer
+
+### 07 - CLI
+- **Device flow** authentication for CLI users
+- **Scoped credentials** with repository-id and action scopes
+- **Keychain storage** for short-lived tokens
+- **Step-up via device flow** for sensitive CLI actions
+
+### 08 - Workspaces (Desktop Sessions)
+- **Session tokens** for Desktop Session authorization
+- **Revocation** terminates active Desktop Sessions (user story #11)
+- **Job tokens** issued at submission, validated at commit (Q37)
+- **Commit attribution** via audit `via` for Job automation (Q10, Q28)
+
+### 09 - Jobs
+- **Job tokens** (BFF-internal) for automated job execution
+- **Submitter identity** captured at submission, checked at commit (Q37)
+- **Revocation** blocks result commits from running Jobs (Q20, user story #11)
+- **No commit trailer** for automation (Q28)
+
+### 10 - Sessions (Desktop)
+- **Revocation** triggers Desktop Session termination
+- **Principal identity** for session ownership
+- **Access states** (active/revoked) control session validity
+
+### 15 - Administration
+- **Admin revocation** triggers directory sync and back-channel logout
+- **Instance admin** role gates admin operations
+- **Cache reconciliation** needed (Q59 vs 15-Q21)
+- **Incident response** gap during immudb outage (Q21, 15-Q7)
+
+## Depends On
+
+### 00 - Cross-Cutting
+- **Principal identity** decision (`iss|sub` as key)
+- **Service principal removal** decision (impacts all authorization)
+- **Audit fail-closed** requirement
+- **GxP strict mode** always-on decision
+
+### External Dependencies
+- **IdP (OIDC provider)**: Keycloak in dev, external IdP required in production
+- **PostgreSQL**: Session storage, credential storage, login state
+- **ImmuDB**: Audit events, authentication events, signature records
+- **Directory service**: Group membership, user provisioning, revocation sync
+
+## Blocking Relationships
+
+**Blocks implementation of:**
+- 04 (gxp-compliance) - signing ceremony (needs MFA evidence extraction)
+- 07 (cli) - CLI step-up (device flow integration pending)
+- 08 (workspaces) - Job token validation (commit identity complete, trailer integration pending)
+
+**Blocked by:**
+- IdP MFA evidence exposure (acr/amr claims) - blocks 04 signing ceremony
+- Owner confirmation on migration cut-off (Q26) - deployment prerequisite
+
+## Cross-Spec Cleanup Required
+
+**Service principal references to remove:**
+- 02 (authorization) - stories 11-12 mention service principals
+- Specs 12-14 - service principal references obsolete (Q12, Q13, 00-Q19)
+
+**Staleness alignment needed:**
+- 01-Q18, 02-Q12, 15-Q21 - single staleness figure must be shared
+
+**Commit attribution:**
+- 08, 09 - must document that automation has no commit trailer (Q28)
+
 

@@ -340,9 +340,65 @@ Challenges: "tests at BFF HTTP boundary against real containers" applied to a UI
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs
+
+1. **Break-glass declined (Q7)**: RISK - No incident-response path if IdP down or admin locked out. Aligns with 00 Q3 (absolute fail-closed) but accepted operational gap.
+
+2. **Second approver dependency (Q6 vs 02/04)**: Depends on enough distinct admins. Separation of duties may be unmeetable on small instances.
+
+3. **No auto-escalation (Q13)**: Consistent with 14 Q4. Stalled reviewer handled only by reassignment (14 Q5).
+
+4. **Notify-on-publish (Q26)**: Depends on 14. Admin-wide audiences require reason+audit (14 Q24).
+
+5. **Env reseeding persistence (Q9/Q10 interplay)**: Env never overwrites UI keys, so corrupted UI value persists until edited.
+
+## Open Risks and Blockers
+
+6. **No caching (Q18/Q21)**: Per-poll and per-request database reads add load. Covered by 16 Q18 targets.
+
+7. **Mice namespace membership (Q5)**: Uses Mice namespace membership not IdP groups, so IdP-side changes don't retarget sensitive notices.
+
+8. **Service principals removed**: Story 1 and 7 removed references per global decisions (Q14, Q15).
+
+## Update from Authentication Review
+
+9. **IdP migration tooling (Q16)**: Moot (auth Q80). Keep only directory adapter for single IdP.
+
+10. **Bootstrap rules (Q9/Q10)**: Grant read-only baseline only (auth R1). Write/sign/approve need recorded admin grant. Rules apply to everyone including externals.
+
+11. **No revocation cache (Q21)**: Confirmed (auth Q79).
+
+12. **Revocation fail-closed (Q7)**: Revoke/suspend fail with 503 when immudb down; no deferred append (auth R8).
+
+13. **Access review reports**: Quarterly signed access review (auth S3) and daily IdP drift report (auth T5) are administration features.
+
+14. **Support access removed**: Auth T3 - Auditors only cross-user readers.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Dependencies on Other Specs
+
+- **00 (Cross-cutting)**: Q7 aligns with 00 Q3 (absolute fail-closed); break-glass declined
+- **14 (Notifications)**: Q26 notify-on-publish with recipient-count confirmation; Q24 admin-wide audiences
+- **01 (Authentication)**: Q16 IdP migration moot (auth Q80); Q9/Q10 bootstrap rules (auth R1); Q21 no revocation cache (auth Q79); Q7 revoke fail-closed (auth R8)
+- **02/04 (Authorization/Signatures)**: Q6 second approver for elevation; Q13 self-approval forbidden
+- **16 (Infrastructure)**: Q18/Q21 no-cache load covered by 16 Q18 targets
+
+## Impacts on Other Specs
+
+- **02 (Authorization)**: Q9 rule-derived grants tagged by source, revoked at next login; Q10 env seeds absent keys only
+- **01 (Authentication)**: Q8 bulk revoke by directory group; Q16 directory adapter for chosen IdP
+- **04 (Signatures)**: Q13 second reviewer for maintain/admin; no auto-escalation
+- **14 (Notifications)**: Q4 live audience with join-time rule; Q26 recipient-count confirmation for announcements
+- **15 (Administration)**: Q25 effective-permissions view with why-trace; auth S3 quarterly access review; auth T5 daily IdP drift report
+
+## Cross-Cutting Concerns
+
+- **Fail-closed strict mode**: Q7 no break-glass (RISK); revoke/suspend fail 503 when immudb down
+- **Multi-instance coordination**: Q18 no cache on announcements; Q19 unique (principal, revision) idempotent receipts
+- **Announcements**: Q1 receipt=digest+version; Q3 immutable (change=new+retire); Q4 live audience; Q22 plain text, link allowlist, step-up
+- **Access administration**: Q6 notify admins+QA on access changes; Q8 bulk revoke by directory group; Q9 rule-derived grants tagged
+- **Bootstrap rules**: Q10 seed absent keys only; UI-owned never overwritten; Q9 revoked at next login
+- **Directory integration**: Q16 adapter interface + chosen-IdP adapter; Q17 min length, caps, audit
+- **Docs and testing**: Q23 docs versioned with release; Q24 error codes + client translation; Q28 table-driven HTTP suite on 2 instances
 

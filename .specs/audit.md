@@ -322,9 +322,60 @@ Challenges: "Testing seam: BFF HTTP boundary, black-box, real containers".
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Lease renewal audit reconciliation
+- **Lease renewals audited per renewal (08 Q18 revised)**: RESOLVED. No aggregation, no exemption. Every renewal has Intent/Outcome. CONSEQUENCE: high event volume – must capacity-plan immudb for lease renewal load (every few seconds per active Workspace or Job). Relates to authentication round 6 S1 (strict, no exemption).
+
+## Backup and replication conflicts
+- **Q17 (immudb follower replication + scheduled snapshot now) contradicts former "backup of immudb out of scope"**: OVERRODE the deferral. Spec is corrected; 04 Q16 and 16 Q2 make backup and restore a hard start gate before regulated use. Audit is the only non-reconstructable store.
+
+## Browsing read summarization alignment
+- **Q15 (browsing reads summarized per page or session) versus 02 Q9**: Alignment needed on summary granularity. Sensitive reads and bypass mutations are individual events; routine listing reads become summary events. Must define what "routine" and "sensitive" mean for each list endpoint.
+- **Q15 contradicts earlier "export reads are not audited" line**: CORRECTED. Every export is audited (filters + row count); browsing reads as summary events.
+
+## Integrity failure response
+- **Q12 (read-only flip on integrity failure)**: The read-only flip is itself a mutation freeze. Interacts with 15 Q7 (break-glass declined), creating an incident-response RISK. If immudb integrity fails and GXP_STRICT flips to read-only, no mutations can occur until manual intervention. No break-glass path exists.
+
+## Audit pending header and reconciler guarantee
+- **Q21 (audit pending header lets user see result before Outcome stored)**: The user receives the mutation result with "audit pending" header before the Outcome is persisted. The reconciler MUST guarantee eventual completion. If the reconciler fails, the mutation succeeded but has no Outcome, violating Intent/Outcome pairing.
+
+## Open questions and unconfirmed details
+- **Q26 (answer truncated, "No ci worker" interpretation)**: Interpreted as: no parallel CI workers sharing immudb; destructive suite runs serially. NEEDS CONFIRM from owner. If parallel workers must share immudb, fault-injection strategy changes.
+- **Q5 (QA alert after 15 minutes)**: Depends on 16 Q4/Q5 availability targets (not yet set). Alert threshold for orphaned Intents cannot be calibrated until availability targets are defined.
+- **Q10 (external publication of root hash)**: Destination for periodic root hash publication not chosen by owner. Options include QA-owned signed root, object-locked storage, or external signing service. PENDING.
+
+## Exception documentation and ADR needs
+- **Q9 (compensating Outcome after failed database commit)**: Exception to "Outcome follows mutation". Must be documented in event schema. The Outcome is appended even though the domain transaction rolled back, marking it as "failed" or "rolled back".
+
+## Single-writer contention spike
+- **Q1 (single-writer contention only spiked)**: A failed spike would force a redesign of the outbox and relay architecture. Central audit-writer path with Postgres outbox is unproven at load. Latency SLO must be met.
+
+## Signature record size and storage
+- **Q23 and 04 Q8 (signature records in immudb with Postgres index only)**: Signature manifestation is large (name, iss, sub, time, meaning, record hash, MFA evidence). Immudb handles it, but index must stay non-authoritative. Queries use Postgres; verification and legal evidence use immudb.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks all mutation specs**: Fail-closed Intent/Outcome (Q2, inherited 00 Q3) means every mutation in every module depends on audit append succeeding. Any module with mutations (01, 02, 03, 04, 05, 08, 09, 11, 12, 13, 14, 15, 16) must handle 503 on audit outage.
+- **Blocks 04 (GxP Compliance)**: Signature records (Q8, 04 Q8) live in immudb; must handle record size and proofs. Integrity verification (Q12) can flip GxP_STRICT to read-only.
+- **Blocks 08 (Workspaces)**: Lease renewal audit (Q18) adds high event volume. Compensating Outcome on failure (Q9) applies to Workspace commit operations.
+- **Blocks 09 (Jobs)**: Finalizing state (Q21, 09 Q9) and audit-pending header allow result visibility before Outcome persists. Reconciler must complete orphaned Job Intents.
+
+## Depends on
+- **Depends on 00 (Cross-cutting)**: Absolute fail-closed (Q2/00 Q3) with no exemptions. Inferred outcomes (Q3/00 Q5) only when digest-verifiable. Database time ordering (Q18/00 Q17).
+- **Depends on 01 (Authentication)**: Successes to immudb, failures to ops log (Q20/01 Q23). Redaction rules (Q25) must align with authentication's secret handling.
+- **Depends on 04 (GxP Compliance)**: Legal-retention stance (Q13/00 Q8). Signature record format and size (04 Q8).
+- **Depends on 16 (Operations)**: Availability targets (Q5 alert threshold). Backup and restore as start gate (Q17/04 Q16/16 Q2). immudb pinning and auditor tool (Q11).
+
+## Cross-cutting impacts
+- **01 (Authentication)**: Audit of authentication events (login, logout, refresh, step-up, failure, revocation) with request id and Principal (authentication T7). No tokens/cookies logged; redaction tested (Q25).
+- **02 (Authorization)**: Summarization strategy for routine reads (Q15/02 Q9). Bypass mutations audited individually; listing reads summarized.
+- **04 (GxP Compliance)**: Signature storage (Q8), integrity verification (Q12), held-output retention (Q12/04 Q12), traceability matrix (Q26/04 Q26).
+- **05 (Repositories)**: Rename and transfer audited as dedicated actions (Q7, inherited 00 Q6). Observed base/head plus oxen commit id (Q7).
+- **08 (Workspaces)**: Conflict detail in Postgres with digest in audit event (Q16/08 Q16). Lease renewals per renewal (Q18/08 Q18).
+- **09 (Jobs)**: Finalizing state with audit-pending header (Q21/09 Q9). Job I/O normalized table (Q24/09 Q24); lineage is single edge store.
+- **11 (Lineage)**: Lineage writes fail-closed (inherited). Operation hash in immudb (Q12/11 Q12) adds write per lineage op; covered by latency budget.
+- **12 (Metadata/Search)**: Export audited with filters and row count (Q15). Sparse file capture (Q10/12 Q10) with head-capture exception needs ADR sign-off.
+- **13 (Favorites)**: Favorites audit exemption (Q1/13 Q1) conflicts with absolute fail-closed; must be reconciled in 00/03.
+- **14 (Notifications)**: Notification delivery audited; Postgres projection is authoritative (Q8/14 Q8).
+- **15 (Administration)**: Security events (suspend, revoke) audited with no deferred append (authentication R8). Auditor role (Q23) with separation of duties.
 

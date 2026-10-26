@@ -314,9 +314,52 @@ Challenges: "Single seam ... black-box" vs the required mid-rename failure test.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Rename design superseded
+- **Q2 superseded its own spike answer; Q3, Q4, Q5, Q6 largely moot**: The earlier rename-as-copy text was removed. OVERRODE copy-based rename. Owner proposal (Q25 confirmed): keep oxen physical repository names static (physical key = stable id) and rename only in BFF persistence layer. Commit ids never change; copy-based rename machinery not needed. Questions Q3-Q6 (freeze, state machine, privileged copy, manifest compare) remain only for any future physical move.
+
+## Transfer as metadata operation
+- **Q10 (confirm oxen paths do not embed namespace)**: PENDING with static physical keys by stable id. Transfer is now a BFF namespace re-pointing with no oxen move (Q10, 02 Q6). If oxen paths embed namespace anywhere, transfer breaks. Must verify against pinned oxen.
+- **Original spec said transfer needs destination `write`; 02 Q6 requires destination namespace Owner approval**: Spec now follows 02 Q6. Transfer needs source repo `admin` + destination namespace Owner approval; collaborators dropped by default (Q8).
+
+## CLI and clone URL translation
+- **Q25 needs CLI and clone-URL translation through BFF**: RISK. With static physical names (opaque ids), the 07-cli module MUST implement name translation. Clone URLs and CLI commands reference display names; BFF translates to physical ids. If 07 does not implement this, repositories are unreachable by name.
+
+## Protected branch and force-push risks
+- **Q11 with 04 (merge signer must differ from author)**: Relates to 02 Q1 (at least two eligible mergers per repo). No direct writes on main enforced; approval (signature) via merge always required.
+- **Q12 (no branch repointing, revert commits only everywhere)**: Means only main is protected globally (02 Q17). Force-push or delete of other released branches is unprotected. RISK accepted as chosen. 05 Q12 mitigates with revert-only policy.
+
+## Purge and secrets conflict
+- **Q22 (no purge in product) conflicts with secrets in history**: Mitigated only by operator runbook (dual-controlled, audited) plus pre-commit scanning. RISK: a committed secret stays in history forever. No product API to remove it. Break-glass manual procedure documented but not built.
+
+## Backup and id-to-name mapping
+- **Static names make oxen layer opaque to operators**: The id-to-name mapping in Postgres is a single point of recovery. Needs backup (04 Q16). If Postgres id mapping is lost, oxen physical directories (keyed by id) cannot be resolved to display names.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks 02 (Authorization)**: Stable repository ids (Q1/02 Q4) are foundational. Rename (Q25) keeps ids stable, so grants persist. Transfer (Q6/02 Q6) needs Owner approval.
+- **Blocks 05 (Repositories) internal**: Merge gate (Q11), protected branches (Q13), revert-only (Q12), and merge-head binding (Q14) define how the review gate works.
+- **Blocks 07 (CLI)**: Static physical names (Q25) require CLI to translate names and clone URLs through BFF (Q25/07 Q25). CLI must resolve display names to ids before oxen operations.
+- **Blocks 08 (Workspaces)**: Workspace base commits reference repository ids. Rename-by-metadata (Q25/08 Q9) means Workspaces survive rename. Jobs (09 Q28) also reference repo ids.
+- **Blocks 09 (Jobs)**: Rename refused while Jobs or leases exist (09 Q28). Job Pins reference commit ids; static names (Q25) ensure commit ids never change.
+- **Blocks 11 (Lineage)**: Lineage uses stable repository ids (Q21/11 Q21). Static physical names (Q25) keep commit ids unchanged, so lineage edges remain valid.
+
+## Depends on
+- **Depends on 00 (Cross-cutting)**: No hard delete (Q19/02 Q24); archive only. Rename as metadata change (Q25/00 Q7 superseded).
+- **Depends on 01 (Authentication)**: Merge signer differs from author (Q11). Step-up for signing (01 Q8/04 Q6). Author injection (Q6/01 Q10) applies to all commits.
+- **Depends on 02 (Authorization)**: Two-merger rule (Q11/02 Q1), protected branches (Q17/02 Q17), transfer approval (Q6/02 Q6), unclassified routes denied (Q17/02 Q2).
+- **Depends on 03 (Audit)**: Rename and transfer as dedicated audit actions (Q10). Dataset head before/after (inherited 00 Q6/03 Q7).
+- **Depends on 04 (GxP Compliance)**: Immutable release records (Q23/04 Q23). Signed delete for repositories with signatures (Q19).
+
+## Cross-cutting impacts
+- **00 (Cross-cutting)**: Rename design (Q25) supersedes 00 Q7 (copy-based rename). Static physical names simplify rename, eliminate copy risks (Q2, Q3, Q4, Q5, Q6).
+- **02 (Authorization)**: Grants keyed by stable repo id (Q1/02 Q4). Rename (Q25) and transfer (Q6/Q10) preserve id, so authz unaffected. Access-change diff on transfer (Q8).
+- **03 (Audit)**: Rename and transfer have dedicated audit actions (Q10). No "other" classification. Dataset head (00 Q6/03 Q7) captured where applicable.
+- **04 (GxP Compliance)**: Merge requires signature (Q11/04). SHA-256 manifest (Q23/04 Q23). No purge (Q22/04 Q17) means secrets stay forever unless manual break-glass.
+- **07 (CLI)**: Name translation (Q25) is CLI responsibility. Clone URLs use display names; CLI must resolve via BFF.
+- **08 (Workspaces)**: Workspace base commits reference repo id. Rename (Q25/08 Q9) is metadata-only, Workspaces survive.
+- **09 (Jobs)**: Job Pins reference repo id + commit id. Rename (Q25/09 Q28) refused while Jobs exist. Static names keep commit ids stable.
+- **11 (Lineage)**: Stable ids (Q21/11 Q21). Static physical names (Q25) mean commit ids unchanged; lineage edges valid forever.
+- **12 (Metadata/Search)**: Repository metadata keyed by stable id. Rename (Q25) updates display name only; search index must re-index name field.
+- **16 (Operations)**: Backup (04 Q16) must include Postgres id-to-name mapping. Without it, oxen physical directories cannot be resolved.
 

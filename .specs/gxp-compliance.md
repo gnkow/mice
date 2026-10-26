@@ -324,9 +324,51 @@ Challenges: "CSV templates out of scope"; test decisions.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Recording and compensating controls
+- **Q22 inherited 00 Q22 (recording mandatory for GxP-touching Sessions), but 10-sessions Q4 reversed it: recording never**: The spec follows the global decision (no desktop recording). REGULATORY RISK: no primary capture of desktop work. Compensating controls are single RW session per Workspace and off-box auditd (system-level, not application). Validation strategy must rely on these controls.
+
+## Open escalation and reviewer decisions
+- **Q10 (possible exemption of research repos from always-on strict)**: PENDING. If research repositories are exempt, need a clear flag and enforcement boundary.
+- **Q18 (no auto-escalation, escalation thresholds/recipients/offboarded-reviewer fallback not confirmed by owner)**: BLOCKER for ready-for-agent status. Without defined escalation, no notification fires when a reviewer is unavailable. Relates to 14 (Notifications) Q4 (no auto-escalation, reassignment only).
+
+## Held output and fail-closed interactions
+- **Q12 (held-output retention undefined)**: DEFERRED. When audit is down and a Job finishes, output stays in Workspace in "finalizing" state. How long outputs are retained is not set. Interacts with 08 Q2 (Workspace transient, loss risk stated) and 09 Q9 (finalizing visible state).
+- **Q3/00 Q3 (absolute fail-closed, no protective exemption) combined with Q12 holds**: Documented availability risk. If immudb is down, work stops; if it recovers slowly, held outputs accumulate. Sizing and capacity planning needed.
+
+## Signature record storage and verification
+- **Q8 (full signature record in immudb, Postgres index only)**: Impacts 03 (Audit). The signature manifestation (name, time, meaning, record hash) is stored in immudb, not Postgres. 03 must carry the record size and verification proofs. Postgres signature table becomes a non-authoritative query index.
+
+## Dependency on two-merger rule
+- **Q18 (any eligible maintainer can merge, at least two per repo)**: Relies on 02 Q1 (forbid self-merge everywhere). Small teams with one maintainer cannot merge until a second is assigned. Review gate is unmeetable without two mergers. Impacts all GxP repositories.
+
+## Backup conflicts and overrides
+- **Q16 (backup/restore is a hard start gate) conflicts with earlier "backup deferred" stance**: OVERRODE the deferral. Backup and restore must now be built and tested before the first regulated start. Impacts 16 Q2 (Operations), 08 Q2 (interim Workspace upper backup).
+
+## Lease renewal audit
+- **Q18 (lease renewals audited per renewal, no aggregation)**: RESOLVED in authentication round 6 S1 – lease renewals have Intent/Outcome per renewal, no exemption. CONSEQUENCE: high audit event volume. Capacity-plan immudb for lease renewal load (every few seconds per active Workspace/Job). Interacts with 08 Q18 (same question, same answer).
+
+## Cross-module verification and integrity
+- **Q17 (report-only verification, never auto-deletes or repairs)**: Consistent with 05 Q22 (no purge in product). Scheduled cross-store verification (signatures vs audit vs oxen) raises alerts but does not fix data. Manual intervention required.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks 01 (Authentication)**: Signature requires MFA evidence (Q4, Q6). IdP must assert acr/amr or signing is refused. IdP baseline check (authentication Q45, T6) is a GxP-compliance validation requirement.
+- **Blocks 02 (Authorization)**: Two-merger rule (Q18 via 02 Q1) is a precondition for the review gate. Self-merge is forbidden in GxP namespaces.
+- **Blocks 04 (Audit)**: Signature records stored in immudb (Q8) require audit module to handle larger record sizes and provide verification proofs.
+- **Blocks 05 (Repositories)**: Merge signer must differ from author (inherited from 02 Q1). Immutable release records (Q23 via 05 Q23) support GxP pinning.
+- **Blocks 08 (Workspaces)**: Automated Job commits are never signed (Q7 via 08 Q7); merge to main needs a human signature. Lease renewals are audited per renewal (Q18 resolved).
+- **Blocks 09 (Jobs)**: Jobs never sign (Q7). Auto-merge removed (09 Q6); result stays on safe branch until human merges with signature.
+- **Blocks 16 (Operations)**: Backup/restore as hard start gate (Q16) is now mandatory before regulated use. NTP-synced server clock with 1s drift alert (authentication R5) is an operational requirement.
+
+## Depends on
+- **Depends on 01 (Authentication)**: Step-up (Q4, Q6), fresh authentication per signing action, IdP MFA evidence, and signature evidence storage (authentication S6).
+- **Depends on 03 (Audit)**: Fail-closed audit (Q3), held outputs on audit outage (Q12), integrity verification (Q17), and signature record storage in immudb (Q8).
+- **Depends on 04 (Repositories)**: SHA-256 manifest at signature time (Q23 via 05 Q23) and merge head binding (Q5 via 05 Q14).
+
+## Cross-cutting impacts
+- **00 (Cross-cutting)**: GxP strict is always on (Q10), not a toggle. Research repo exemption is open. Absolute fail-closed (Q3/00 Q3) applies everywhere with lease renewal as the only counted exception (authentication S1 resolved it as strict).
+- **03 (Audit)**: Signature records in immudb (Q8); event volume from lease renewals (Q18); integrity verification (Q17); held-output retention (Q12).
+- **10 (Sessions)**: Recording decision overridden (Q22); compensating controls (single RW session, off-box auditd) must be documented in validation pack.
+- **14 (Notifications)**: Reviewer escalation thresholds and recipients (Q18 PENDING) must be defined in Notifications module.
 

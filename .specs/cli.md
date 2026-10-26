@@ -322,9 +322,58 @@ Challenges: "mice login via device flow".
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Emergency override weakens exact pin
+- **Q1 (emergency override)**: OVERRODE recommendation; owner chose strict exact pin with audited emergency override over N-1 window. Weakens exact-pin guarantee but avoids lockout on every deploy. Emergency override must be audited, require named approver, and be rarely used. RISK: override can become routine if not policed.
+
+## Keychain and credential handling
+- **Q5 (OS keychain from 01 Q5)**: RISK. 01 Q5 only says short-lived credential and no long-lived PATs; does not explicitly mention keychain. Spec follows keychain storage; must confirm in 01 that keychain is the decision. Inherited from authentication decisions (01 Q5, authentication Q73, round 5).
+- **Q16 (environment-only tokens on shared PCs)**: RISK. Remain exposed to process inspection (`ps`, proc filesystem). Better than file, worse than keychain. Short-lived session-scoped credentials mitigate.
+
+## Operation catalog consumption now
+- **Q11 (owner wants operation catalog consumed by CLI now)**: RISK. Larger than recommended contract-tests-only approach. BFF operation catalog must be stable and versioned. If catalog changes without CLI update, CLI behavior drifts. Contract tests (Q19) replay stub vs real BFF to catch drift.
+
+## Local job records unverified
+- **Q12 (local job records unverified)**: Client-asserted image digest, command, environment. Validated views must exclude local Jobs (04 Q26 traceability). Policy: digest pinning + registry allowlist at publish. Marked as unverified in lineage (09 Q12).
+
+## Name translation dependency
+- **Q25 and 05 Q25 (CLI must translate names and clone URLs through BFF)**: BLOCKER. Physical oxen names are static (stable ids). Display names map to ids in Postgres. CLI must resolve every repository name via BFF before oxen operations (clone, push). If 07 does not implement translation, repositories unreachable by name. Depends on 05 Q25.
+
+## Workspace vs Stage naming
+- **Q14 (no `workspace` alias)**: Consistent with 00 Q16 (new project, stage only). "workspace" retired for Oxen Stages; "Workspace" is Mice overlay Workspaces (08). No overlap during migration. Aligns with 08 Q28 (Stages review deferred).
+
+## Automation and service principal removal
+- **Q8 (no automation reasons)**: Consistent with service principals removed (01 Q12, Q13). Jobs use BFF-internal tokens (09 story 13). CLI does not support CI or service principals (Q6 inherited). Automated actions attributed to submitting Principal + Job marker (authentication T2).
+
+## Oxen version pinning
+- **Q4 (handshake returns supported oxen client range)**: Depends on 00 Q27 (oxen pinned by image digest). CLI checks oxen version at login and before push/clone. Protects against silent skew from mismatched oxen binary.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks 05 (Repositories)**: Name translation (Q25/05 Q25) required. CLI resolves display names to stable ids via BFF. Clone URLs use display names; BFF translates.
+- **Blocks 07 (CLI) internal**: Version pinning (Q1), credential binding (Q7), frozen exit codes (Q10), and operation catalog (Q11) define CLI contract.
+- **Blocks 09 (Jobs)**: Local job records (Q12) client-asserted, excluded from validated views. CLI publishes job metadata after local push.
+
+## Depends on
+- **Depends on 00 (Cross-cutting)**: No service principals (Q6/Q8/00 Q19). Oxen pinning (Q4/00 Q27). Static repo names (Q25/05 Q25).
+- **Depends on 01 (Authentication)**: Device-flow login (story 1, Q7). Short-lived credentials (Q5/01 Q5/authentication Q73). Keychain storage (Q5). Step-up for admin/signing (Q17, Q18/01 Q8). Credential bound to remote (Q7). No PATs (Q5).
+- **Depends on 02 (Authorization)**: No PATs (inherited Q19). Credential scoping (02 Q19). No service principals (Q6/02 Q21).
+- **Depends on 03 (Audit)**: Intent_id printed (Q9/03 Q21). Distinguish refused vs outcome unknown (Q9). Client name/version recorded (Q22).
+- **Depends on 04 (GxP Compliance)**: Signed releases before regulated use (Q2, Q24/04 Q26). Local jobs excluded from validated views (Q12/04 Q26).
+- **Depends on 05 (Repositories)**: Name translation (Q25/05 Q25). Static physical names; CLI resolves via BFF.
+- **Depends on 06 (Data Transfer)**: Per-push Intent grouping (Q23/06 Q2/Q25). Large pushes grouped, not per-request audit.
+
+## Cross-cutting impacts
+- **00 (Cross-cutting)**: No service principals (Q6/Q8/00 Q19). Exact-pin with emergency override (Q1). Static names (Q25/05 Q25).
+- **01 (Authentication)**: Device-flow (story 1/01 Q15). Short-lived credentials (Q5/authentication Q73). Keychain (Q5). Step-up (Q17/01 Q8). Credential-per-remote (Q7). Revocation (Q21/01 Q3).
+- **02 (Authorization)**: No PATs (Q6/02 Q21). Credential scoping (02 Q19).
+- **03 (Audit)**: Intent_id (Q9/03 Q21). Client name/version (Q22). Per-push grouping (Q23/06 Q2).
+- **04 (GxP Compliance)**: Signed releases (Q2, Q24/04 Q26). Traceability matrix (04 Q26). Local jobs unverified (Q12).
+- **05 (Repositories)**: Name translation (Q25/05 Q25). Clone URLs via BFF.
+- **06 (Data Transfer)**: Per-push Intent (Q23/06 Q2/Q25).
+- **07 (CLI) internal**: Version handshake (Q1, Q2, Q3, Q4, Q20, Q25). Frozen exit codes (Q10). Operation catalog (Q11). Credential handling (Q5, Q7, Q16, Q17, Q26). Local jobs (Q12).
+- **08 (Workspaces)**: "workspace" name retired for Stages (Q14/08 Q28). Workspace = Mice overlay (08).
+- **09 (Jobs)**: Local job records (Q12/09 Q12). Client-asserted provenance excluded from validated views.
+- **10 (Sessions)**: No impact (CLI does not interact with Desktop Sessions).
+- **16 (Operations)**: HTTP API versioned (Q25). Deprecation headers (Q25).
 

@@ -363,9 +363,54 @@ Challenges: Cross-cutting rename decision; spec silent on Jobs vs rename.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Resubmit visibility risk
+- **Q23 (resubmits are UNLINKED)**: RISK of "testing into compliance" not being visible to reviewers. Failed attempts exist in audit but are not presented in lineage or commit history. Flagged for QA review. Each resubmission is a separate JobRun with no explicit link to prior attempts.
+
+## Tracer privilege and spike dependency
+- **Q1 (in-container tracer needs spike)**: Privileges may conflict with Kubernetes hardening and restricted runner proxy (16 Q8). eBPF or LD_PRELOAD sidecar needs elevated capabilities. Spike must prove feasibility on Kubernetes with security constraints before input tracing is committed.
+
+## Kubernetes runner unsupported pending spike
+- **Q11 (Kubernetes unsupported until overlay spike) versus 16 Q1 (production is Kubernetes)**: PENDING. Production target is Kubernetes (16 Q1), yet Kubernetes runner is unsupported until 08 Q1 (overlay-on-RWX spike) passes. Fallback: interim read-only dataset mount plus small writable output volume (copy at commit). Blocks Kubernetes Jobs in production until spike resolves.
+
+## Stuck detection alignment with Notifications
+- **Q20 (queued-threshold only) versus 14 Q18 (heartbeat-based stuck detection)**: Must align. 09 uses queued-threshold only (no silence detection); 14 may use heartbeat. Reconcile the two approaches. Single DB-leased detector (Q20) emits system events consumed by 14.
+
+## Service principals and CI removed
+- **Q13/Q19 (service principals removed) and 01 (no SPs)**: CI unsupported. Jobs use BFF-internal job tokens tied to submitting human (story 13). 12-14 and 00 Q19 must reflect removal. Automated commits attributed to submitter plus "performed by Job <id>" marker (authentication T2).
+
+## Automated commits never signed, merge needs human
+- **Q6 and 08 Q7 (automated commits never signed)**: Jobs commit to safe branch unsigned. Merge to main needs a human maintainer signature (05 Q11, 04). Review gate (Merge+maintain) is preserved. Lineage shows "unsigned/pending" for Job commits until merged.
+
+## Priority class and Kubernetes queueing deferred
+- **Q21 (priority class, Kubernetes queueing deferred)**: Per-user cap and resource units defined; admin priority class in scope. Full Kubernetes queueing (Kueue) is later. Fairness model incomplete for v1.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks 08 (Workspaces)**: Jobs mount Workspaces (depends on 08 for mount mechanism). Failed-job output (Q5/08 Q3/04 Q12) stays in Workspace. Lease adoption (Q4/08 Q4) and fencing (Q22/08 Q4) must work across instances.
+- **Blocks 09 (Jobs) internal**: Job state (finalizing Q9), stuck detection (Q20), image catalogue (Q8), and JobRun metadata schema (Q24) define Job lifecycle.
+- **Blocks 11 (Lineage)**: Job I/O is the lineage edge store (Q24/11 Q24). Input tracing (Q1) feeds lineage. Failed Job state carries through to lineage (Q5/08 Q3).
+- **Blocks 14 (Notifications)**: Stuck-job detection (Q20/14 Q18) emits system events. Notification recipients defined in 14.
+
+## Depends on
+- **Depends on 00 (Cross-cutting)**: No automatic retries (Q23/00 Q23). Service principals removed (Q13/00 Q19). Absolute fail-closed (Q9/00 Q3). Digest-verifiable inference else unknown (inherited 00 Q5).
+- **Depends on 01 (Authentication)**: Revoke cancels queued/running Jobs and blocks commit (Q19/01 Q20). No service principals (Q13/01 Q12, Q13). BFF-internal job tokens (story 13).
+- **Depends on 02 (Authorization)**: Job submission needs authorization. Credential scoping (inherited 02 Q19). No PATs (Q13/02 Q21).
+- **Depends on 04 (GxP Compliance)**: Automated commits never signed (Q6/04 Q7). Legal-hold and retention (Q17/04 Q15/00 Q8). Approved-image catalogue (Q8/04 Q8) enforced under strict.
+- **Depends on 05 (Repositories)**: Static repo names (Q28/05 Q25); Jobs reference repo ids. Rename refused while Jobs exist (Q28).
+- **Depends on 08 (Workspaces)**: Mount mechanism (Q11/08 Q1 spike). Dirty Workspace refused (Q26/08 Q26). Lease and fencing (Q4/08 Q4, Q22/08 Q22). Workspace operations (commit, merge) drive Job result commit.
+- **Depends on 16 (Operations)**: Kubernetes is production target (Q11/16 Q1). Docker runner dev-only (Q12/16 Q7). Separate runner service (Q12/08 Q22).
+
+## Cross-cutting impacts
+- **00 (Cross-cutting)**: Service principals removed (Q13/00 Q19). No automatic retries (Q23/00 Q23). Jobs use BFF-internal tokens (authentication T2).
+- **01 (Authentication)**: Job tokens checked at commit (authentication Q37). Revoke blocks running Job commit (Q19/01 Q20). Submitter re-checked at commit (authentication Q71, Q82).
+- **02 (Authorization)**: Job submission authorized per user. No PATs or SPs (Q13/02 Q21).
+- **03 (Audit)**: Job submit/start/finish/fail audited (story 7). Finalizing state with audit-pending header (Q9/03 Q21). Intent at submit and at finalize (Q9).
+- **04 (GxP Compliance)**: Automated commits unsigned (Q6/04 Q7/08 Q7). Merge to main needs human signature. Approved-image catalogue (Q8).
+- **05 (Repositories)**: Rename refused while Jobs exist (Q28/05 Q25). Job Pins reference repo id + commit id.
+- **08 (Workspaces)**: Jobs mount Workspaces. Failed output stays in Workspace (Q5/08 Q3). Lease fencing (Q4/08 Q4). Dirty refused (Q26/08 Q26).
+- **11 (Lineage)**: Job I/O is lineage edge store (Q24/11 Q24). Input tracing (Q1) feeds lineage. Normalized job-file table (Q24).
+- **12 (Metadata/Search)**: Job metadata indexed. Stuck jobs flagged (Q20/14 Q18).
+- **14 (Notifications)**: Stuck-job detection (Q20/14 Q18). Job notifications (completion, failure, stuck). Recipients defined in 14.
+- **16 (Operations)**: Kubernetes production (Q11/16 Q1). Docker dev-only (Q12/16 Q7). Runner service (Q12/08 Q22/16 Q8).
 

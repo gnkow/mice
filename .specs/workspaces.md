@@ -345,9 +345,56 @@ Challenges: "stage naming/authz migration".
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Overlay spike unresolved (BLOCKER)
+- **Q1 (spike still UNRESOLVED)**: BLOCKER for Workspaces on Kubernetes (16 Q7) and production readiness. Linux overlayfs does not support NFS/CephFS as upperdir. Spike must decide: reflink/copy on shared storage, node-local upper with sync, or fallback copy/node-local scratch. Without spike resolution, Kubernetes Workspaces cannot be implemented. Fallback: copy or node-local scratch severely degrades multi-instance sharing.
+
+## Lease renewal audit strict decision
+- **Q18 (RESOLVED strict: no aggregation)**: Every renewal has Intent/Outcome. No exception to absolute fail-closed (authentication round 6 S1). CONSEQUENCE: high audit event volume. If immudb is down, lease expires and work stops at expiry. Capacity-plan immudb for renewal load (every few seconds per active Workspace). Size lease TTL and renewal rate accordingly.
+
+## Interim backup dependency
+- **Q2 (interim upper backup depends on backup existing)**: Workspace content is transient with stated loss risk (Q2). Successful Job results auto-committed to branch. Interim upper backup once backup exists. Backup is a hard start gate (04 Q16); the interim state must not run in regulated use until backup is operational.
+
+## Unsigned automated commits and review gate
+- **Q7 (automated commits never signed) and 00 Q19**: Jobs and automated Workspace commits are unsigned. Lineage shows unsigned/pending. Merge to main needs a human maintainer signature (05 Q11, 04). No auto-merge (09 Q6); result stays on safe branch. Automated commits attributed to submitting Principal + "performed by Job <id>" (authentication T2). Named responsible human owner needed on event (Q7/00 Q19).
+
+## Conflict detail storage outside immudb
+- **Q16 (conflict detail in Postgres, outside immudb) versus 03**: Conflict detail (type, three hashes, choice, chooser per path) lives in Postgres. Audit event carries digest + counts only. Retention of Postgres conflict detail not set. Interacts with 03 (Audit) – evidence split across stores. Digest makes detail tamper-evident (Q16).
+
+## Notification tier alignment
+- **Q19 (notification severity tiers) versus 14 Q18**: Must align with heartbeat-based stuck detection in 14. Immediate for stuck/critical; daily digests for low-severity. 14 defines notification recipients and escalation; 08 defines severity tiers.
+
+## Stages review deferred
+- **Q28 (Stages distinct docs/labels reviewed after Workspaces ship)**: DEFERRED. Stages (Oxen workspaces) and Workspaces (Mice overlay) coexist. Distinct docs and labels planned (Q28). Full review and rename strategy deferred until Workspaces are live. Naming collision risk during migration period.
+
+## Soft delete only, no erasure
+- **Q23 and Q24 versus 00 Q8 (no erasure)**: Soft delete only. No hard delete. Workspace residue kept until retention period or legal hold expires. Any erasure out of scope. Aligns with 00 Q8 (no erasure, GDPR subordinate to GxP).
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks 09 (Jobs)**: Jobs mount Workspaces (09 depends on 08 for mount). Failed-job output (Q3/09 Q5) stays in Workspace. Dirty Workspace refused (Q26/09 Q26). Lease fencing (Q4/09 Q4, Q22/09 Q22). Kubernetes runner unsupported until spike (Q1/09 Q11).
+- **Blocks 10 (Sessions)**: Desktop Sessions mount Workspaces read-only or with write lease. Concurrent-create race (10 Q13 accepted). Guest outside-mount data loss (10 Q21 accepted). Single RW session per Workspace (compensating control for no recording, 10 Q4/04 Q22).
+- **Blocks 08 (Workspaces) internal**: Lease (Q4, Q5), fencing (Q4, Q26), quotas (Q12), commit (Q3, Q7, Q8, Q13), conflicts (Q15, Q16), and integrity (Q23) define Workspace lifecycle.
+
+## Depends on
+- **Depends on 00 (Cross-cutting)**: Absolute fail-closed (Q18/00 Q3). No erasure (Q24/00 Q8). Static repo names (Q9/05 Q25). Unsigned automated commits (Q7/00 Q19).
+- **Depends on 01 (Authentication)**: Re-authorize at renewal and commit (Q11/authentication Q71). Revoke terminates lease (Q11/01 Q20). Step-up for signing (01 Q8/04 Q6).
+- **Depends on 02 (Authorization)**: AuthZ re-check at renewal (Q11/02 Q14). Delete by owner/Maintain (Q24). Elevation with reason (Q17/02 Q8).
+- **Depends on 03 (Audit)**: Intent/Outcome per renewal (Q18/03 Q18). Conflict detail digest in audit (Q16/03 Q16). Compensating Outcome (Q8/03 Q9). Lease renewals (Q18/authentication S1).
+- **Depends on 04 (GxP Compliance)**: Automated commits unsigned (Q7/04 Q7). Legal-hold (Q17/04 Q15). Backup as start gate (Q2/04 Q16). Merge needs human signature (Q7/04).
+- **Depends on 05 (Repositories)**: Static repo names (Q9/05 Q25). Rename refused while leases exist (05 Q28/09 Q28). Merge to main (Q6/05 Q11).
+- **Depends on 16 (Operations)**: Kubernetes production target (Q1/16 Q1). Backup (Q2/04 Q16/16 Q2). Separate runner service (Q22/16 Q8).
+
+## Cross-cutting impacts
+- **00 (Cross-cutting)**: Lease renewal exception to Intent-before-mutation (Q18/authentication S1 resolved as strict, no aggregation). Unsigned automated commits (Q7/00 Q19). Static names (Q9/00 Q7 superseded).
+- **01 (Authentication)**: Re-authorize at renewal (Q11/authentication Q71). Revoke terminates lease, blocks commit (Q11/01 Q20). Step-up for signing workspace merge (01 Q8).
+- **02 (Authorization)**: Re-check at renewal (Q11/02 Q14). Delete permission (Q24). Maintain override (Q17/02 Q8).
+- **03 (Audit)**: Lease renewals (Q18/authentication S1, 03 Q18). Conflict detail (Q16/03 Q16). Compensating Outcome (Q8/03 Q9). Postgres operation journal (Q8).
+- **04 (GxP Compliance)**: Automated commits unsigned (Q7/04 Q7/authentication T2). Legal-hold (Q17). Backup (Q2/04 Q16).
+- **05 (Repositories)**: Static names (Q9/05 Q25). Workspace survives rename. Merge to main (Q6/05 Q11).
+- **09 (Jobs)**: Jobs mount Workspaces. Failed output in Workspace (Q3/09 Q5/04 Q12). Dirty refused (Q26/09 Q26). Lease fencing (Q4/09 Q4/Q22). Kubernetes unsupported (Q1/09 Q11).
+- **10 (Sessions)**: Desktop Sessions mount Workspaces. Single RW session (compensating control, 10 Q4). Concurrent-create race (10 Q13). Guest data loss (10 Q21).
+- **11 (Lineage)**: Workspace commits create lineage edges. Failed-job state in commit/lineage (Q3/09 Q5).
+- **14 (Notifications)**: Severity tiers (Q19/14 Q18). Stuck operations (Q19). Lease contention (story 12).
+- **16 (Operations)**: Kubernetes production (Q1/16 Q1). Backup (Q2/16 Q2). Runner service (Q22/16 Q8). Overlay spike (Q1/16 Q7).
 

@@ -400,9 +400,52 @@ Challenges: Cross-cutting testing decision and the plan's test list.
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs (BLOCKER)
+
+1. **Favorites feed notifications (Q2 vs Q3)**: Q2 says favorites feed notifications as planned; Q3 says remove implicit-watch claim and settings hint. UNRESOLVED in 13; must be settled in 14. **Status blocker.**
+
+2. **Audit exemption amendment (Q1)**: Amends 00 Q3 (audit exemption for non-routing toggles). Needs confirmation in 00 and 03 given GxP strict always on.
+
+3. **Favorite never overrides disabled categories (Q3 vs 14)**: Must align with notification category semantics in 14.
+
+## Open Risks and Blockers
+
+4. **Lost-access favorites retention (Q24)**: Keeping favorites for lost-access entities raises GDPR/data-retention questions. Q11 purge-after-period only covers revoked Principals. RISK.
+
+5. **Migration tool removed (Q11)**: Auth Q80 makes IdP migration unsupported; iss+sub never reused (auth Q29, Q80, S8).
+
+6. **Desktop Sessions dropped (Q16/Q25)**: Favorite user story set narrower than original spec.
+
+## Unresolved Design Decisions
+
+7. **Notification coupling**: Whether favorites affect notifications at all (Q2/Q3 contradiction).
+
+8. **Server-side leakage test (Q9)**: Aligns with 02 Q15 (server-side filtering); needs leakage test per endpoint.
+
+9. **Oxen-resident validation (Q8)**: Only validated at read time; dangling favorites possible until sweep.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Dependencies on Other Specs
+
+- **14 (Notifications)**: Q2/Q3 contradiction must be resolved in 14; Q21 persist resolved recipients per event
+- **00/03 (Cross-cutting/Audit)**: Q1 amends 00 Q3 (audit exemption needs confirmation)
+- **01 (Authentication)**: Q11 IdP migration tool removed (auth Q80); iss+sub never reused (auth Q29, S8)
+- **02 (Authorization)**: Q9 aligns with 02 Q15 (server-side filtering of favorites)
+
+## Impacts on Other Specs
+
+- **14 (Notifications)**: If Q2 holds (favorites feed notifications), affects recipient rules and subscription ownership
+- **05 (Repositories)**: Q6 branch favorites keyed by name; purged on branch delete; Q7 rename survival via stable IDs
+- **09 (Jobs)**: Q16/Q25 Jobs ordering with inline favorite flags
+- **10 (Sessions)**: Q16 Desktop Sessions dropped from favoritable entities
+
+## Cross-Cutting Concerns
+
+- **Fail-closed strict mode**: Q1 audit exemption (only if toggle affects notification routing)
+- **Multi-instance coordination**: Q4 composite keyset cursor + favorites version stamp; Q7 leased consumer with durable cursor
+- **Principal identity**: Q11 no IdP migration tool; Q12 service principals removed (reject for internal principals); Q19 Principal-table FK
+- **Purge-on-delete**: Q7 leased consumer, idempotent by stable ID; Q8 FKs for Main-DB entities, read-time validation for oxen-resident; Q26 sync purge Main-DB, async oxen-resident
+- **Repository identity**: Q6 branch favorite by name; Q23 hide-and-restore on access loss
+- **Retention**: Q11 revoked favorites purged after period; Q24 lost-access favorites kept (RISK)
 

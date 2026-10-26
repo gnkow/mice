@@ -334,9 +334,52 @@ Challenges: "no automatic job retries" and "reconciler re-queries oxen to infer 
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Conflicts with Other Specs
+
+1. **Parallel chunks before targets (Q19)**: Owner chose bounded parallel larger chunks first (requires oxen out-of-order chunk support spike). Recommendation was targets first. RISK.
+
+2. **Branch+merge requirement (Q1)**: Inherited from 05 Q11. Bulk import flows need merger other than uploader (02 Q1).
+
+3. **Per-push/clone manifests (Q25)**: Add load; derived data must reconcile via Postgres outbox.
+
+4. **Incomplete transfer retention (Q18)**: TTL expiry with "abandoned" Outcome carves out from retain-forever. Needs confirmation with 03-audit retention. RISK.
+
+5. **Export audit reversal (Q21)**: Reverses old "exports not separately audited" line. Follows 00 Q4 (all reads audited).
+
+## Open Risks and Blockers
+
+6. **URL import entry criteria (Q9)**: Entry criteria for re-enabling URL import not defined. DEFERRED.
+
+7. **BFF signing of manifests (Q4)**: Deferred. Manifests recorded in immudb Outcome events only.
+
+8. **Remaining tests (Q26)**: Assumed per recommendation; owner needs to confirm. PENDING.
+
+## Unresolved Design Decisions
+
+9. **Throughput expectations (Q19)**: No targets set (1 TB per file, resume within 1 chunk). Depends on measurements.
+
+10. **Resume mechanism**: Depends on oxen exposing received-chunk state; otherwise BFF records offsets in PostgreSQL.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Dependencies on Other Specs
+
+- **05 (Repositories)**: Q1 imports land on branch+merge (05 Q11); no direct writes on main
+- **03 (Audit)**: Q2 Intent at create, Outcome at complete/abandon; Q18 incomplete-transfer TTL needs reconciliation
+- **00 (Cross-cutting)**: Q3 SHA-256 inherited (00 Q14); Q5 reads audited (00 Q4); Q15 URL import disabled (00 Q15)
+- **02 (Authorization)**: Q1 bulk imports need merger other than uploader (02 Q1)
+
+## Impacts on Other Specs
+
+- **11 (Lineage)**: Q7 one lineage op per import with manifest reference; same transaction as Outcome projection
+- **06 vs 11**: Q16 no upload origin fields conflicts with 06 Q15 (client-asserted name/mtime). One owner per fact reconciliation needed.
+- **12 (Metadata)**: Q15 client mtime/name captured as client-asserted
+
+## Cross-Cutting Concerns
+
+- **Fail-closed strict mode**: Q2 Intent at create covers chunks; chunk manifest hashes on Outcome
+- **Multi-instance coordination**: Q17 head capture only at complete; chunks take no lock
+- **Retention**: Q18 incomplete transfers expire by TTL (carve-out from retain-forever)
+- **Integrity evidence**: Q4 manifest+per-file digests in Outcome event in immudb
+- **SHA-256 authority**: Q3 inherited; computed in upload stream, verified at complete
 

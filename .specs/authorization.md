@@ -423,9 +423,49 @@ Owners may query audit only within their namespace and instance-wide needs `view
 
 # Known Issues and Conflicts
 
-_To be documented: Known blockers, conflicts with other specs, and unresolved design questions._
+## Caching and staleness conflicts
+- **Q12 (staleness-bounded directory re-check) versus 15 Q21 (no cache, per-request revocation read) and 01 Q4 (about 2 s cache)**: CONFLICT on caching strategy. A single staleness figure must be reconciled across 01 (Authentication), 02 (Authorization) and 15 (Administration). Authentication round 3 Q79 resolves to no revocation cache, but group staleness remains unaligned.
+
+## Cross-module audit and summarization conflicts
+- **Q9 (routine listing reads summarized) versus 00 Q4 (all reads audited)**: Reconciled only if the summary event counts as the audit record. Requires confirmation in 03 (Audit) that summary events satisfy regulatory requirements for read accountability.
+
+## Review gate and role conflicts
+- **Q1 (forbid self-merge, needs two eligible mergers per repository)**: Small repositories cannot merge until a second maintainer exists. Conflicts with 04 Q18 (escalation unconfirmed) – if no second merger exists, escalation has no target.
+- **Q8 (second approver in strict) versus 15 Q6 (second approver for elevation)**: Now consistent since strict is always on (global decision), but requires at least two admins per instance for separation of duties.
+
+## Repository identity and migration conflicts
+- **Q4 (pre-existing repositories need reconciliation report)**: 16 Q24 says the pilot is wiped, so this may be moot. No migration from name-keyed to id-keyed stores is promised.
+- **Q6 and 05 Q10 (transfer is BFF metadata change with no oxen move)**: PENDING confirmation that oxen paths do not embed the namespace. With static physical keys by stable id (05 Q25) this should hold.
+
+## Service principal and credential removal
+- **Q21 and Q19 (PATs and service principals removed)**: 07 (CLI), 09 (Jobs) and 12-14 (other specs) still reference them in places. Need cleanup across:
+  - 07: CLI no longer mints PATs; short-lived credentials only
+  - 09: Jobs use BFF-internal tokens tied to submitting user
+  - 12-14: Remove service principal references from metadata, sessions, notifications
+
+## Training and access review deferrals
+- **Q25 (training gating deferred, no self-attestation built)**: Impacts ability to enforce qualification-based access. See authentication S4 (training spec needed).
+- **Q11 (access reviews and mandatory expiry)**: Revisited in authentication S3 (quarterly access review) and must be implemented for regulatory compliance.
+
+## Classification and route coverage
+- **Q2 and 05 Q17, 11 Q25 (unclassified routes denied)**: Lineage classification failure must create a gap operation rather than allowing bypass. Every new oxen route must be explicitly classified.
 
 # Impact on Other Specs
 
-_To be documented: Dependencies, blocking relationships, and cross-cutting concerns._
+## Blocks or dependencies
+- **Blocks 04 (GxP Compliance)**: The merge signer must differ from the author (Q1); every GxP repository needs at least two eligible mergers. Reviewer escalation (04 Q18) depends on having a second merger available.
+- **Blocks 05 (Repositories)**: Transfer destination approval (Q6) and branch protection (Q17) decisions apply to repository lifecycle operations.
+- **Blocks 09 (Jobs)**: Service principal removal (Q21) means Jobs must use BFF-internal tokens; credential scoping (Q19) defines how job submissions are authorized.
+- **Depends on 01 (Authentication)**: Group staleness (Q12), credential scoping (Q19), and revocation timing (01 Q3/Q4) define authorization check freshness.
+- **Depends on 05 (Repositories)**: Stable repository ids (Q4) must exist before authorization can reference them; rename behavior (05 Q25) affects grant persistence.
+
+## Cross-cutting impacts
+- **01 (Authentication)**: Group re-checking frequency (Q12) must align with authentication staleness bounds (01 Q18, round 3 Q71).
+- **03 (Audit)**: Audit summarization strategy (Q9) for routine reads versus individual events for bypass/sensitive operations defines audit volume and query patterns.
+- **05 (Repositories)**: Repository stable ids (inherited Q1, 02 Q4) are foundational; rename as metadata-only change (05 Q25) keeps grants intact.
+- **08 (Workspaces)**: Authorization re-check on lease renewal (Q14) applies to workspace write leases.
+- **11 (Lineage)**: Unclassified routes (Q2) impact lineage capture; if a route is denied, no lineage edge is created.
+- **12 (Metadata/Search)**: Search filtering (Q15) and favorites filtering (02 Q9 referenced in 13 Q9) must never leak unauthorized repository visibility.
+- **13 (Favorites)**: Server-side filtering (Q15) ensures favorites list shows only accessible repositories.
+- **15 (Administration)**: Instance admin bypass restrictions (Q8), auditor role (Q16), and namespace deletion rules (Q24) define administrative authorization boundaries.
 
