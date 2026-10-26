@@ -1,4 +1,4 @@
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, and } from 'drizzle-orm'
 import type { Hono } from 'hono'
 import { getDb } from '../../db/database.js'
 import { authEvents } from '../../db/schema.js'
@@ -23,7 +23,12 @@ export function registerAuthEventRoutes(app: Hono): void {
         message: authEvents.message,
       })
       .from(authEvents)
-      .where(eq(authEvents.principalId, user.principalId!))
+      .where(
+        and(
+          eq(authEvents.principalSub, user.sub),
+          eq(authEvents.principalIss, user.iss)
+        )
+      )
       .orderBy(desc(authEvents.timestamp))
       .limit(limit)
       .offset(offset)
