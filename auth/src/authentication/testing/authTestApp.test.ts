@@ -157,7 +157,10 @@ const rows: Row[] = [
     name: 'logout deletes the server-side Session so its id stops working',
     async run(t) {
       const login = await t.login('ann')
-      const out = await t.app.request('/auth/logout', { method: 'POST', headers: login.headers })
+      const out = await t.app.request('/auth/logout', {
+        method: 'POST',
+        headers: { ...login.headers, origin: 'http://localhost:3000' },
+      })
       assert.equal(out.status, 200)
       const me = await t.app.request('/auth/me', { headers: login.headers })
       assert.equal(me.status, 401)
@@ -170,6 +173,128 @@ const rows: Row[] = [
       t.advance(48 * 60 * 60_000)
       const me = await t.app.request('/auth/me', { headers: login.headers })
       assert.equal(me.status, 401)
+    },
+  },
+  // Ticket 03: Session lifecycle and CSRF
+  {
+    name: 'idle session expires after 30 minutes of inactivity',
+    async run(t) {
+      const login = await t.login('ann')
+      // Just before expiry - should work
+      t.advance(29 * 60_000)
+      const me1 = await t.app.request('/auth/me', { headers: login.headers })
+      assert.equal(me1.status, 200)
+      // After 31 minutes of idle (from the me1 activity), should fail
+      t.advance(31 * 60_000)
+      const me2 = await t.app.request('/auth/me', { headers: login.headers })
+      assert.equal(me2.status, 401)
+    },
+  },
+  {
+    name: 'session activity resets idle timer',
+    async run(t) {
+      const login = await t.login('ann')
+      // Activity at 20 minutes
+      t.advance(20 * 60_000)
+      const me1 = await t.app.request('/auth/me', { headers: login.headers })
+      assert.equal(me1.status, 200)
+      // Another 25 minutes (45 total, but 25 since last activity)
+      t.advance(25 * 60_000)
+      const me2 = await t.app.request('/auth/me', { headers: login.headers })
+      assert.equal(me2.status, 200)
+    },
+  },
+  {
+    name: 'absolute session lifetime of 8 hours regardless of activity',
+    async run(t) {
+      const login = await t.login('ann')
+      // Keep session active but exceed absolute lifetime
+      // Make requests every 20 minutes (well within the 30min idle timeout)
+      for (let i = 0; i < 25; i++) {
+        t.advance(20 * 60_000) // 20 minutes
+        const me = await t.app.request('/auth/me', { headers: login.headers })
+        const elapsed = (i + 1) * 20
+        if (elapsed < 480) {
+          assert.equal(me.status, 200, `should be valid at ${elapsed} minutes`)
+        } else {
+          // At 480 minutes (8h) or more, session should be dead
+          assert.equal(me.status, 401, `should expire after 8 hours (at ${elapsed} min)`)
+        }
+      }
+    },
+  },
+  {
+    name: 'a user can list their own active sessions',
+    async run(t) {
+      const s1 = await t.login('ann')
+      const s2 = await t.login('ann')
+      const list = await t.app.request('/auth/sessions/web', { headers: s1.headers })
+      assert.equal(list.status, 200)
+      const body = (await list.json()) as { sessions: Array<{ id: string }> }
+      assert.equal(body.sessions.length, 2)
+    },
+  },
+  {
+    name: 'a user can revoke one of their own sessions',
+    async run(t) {
+      const s1 = await t.login('ann')
+      const s2 = await t.login('ann')
+      const s1Cookie = s1.headers.cookie!
+      const s2Cookie = s2.headers.cookie!
+      
+      // Extract the session ID from cookies
+      const extractSessionId = (cookie: string) => {
+        const match = cookie.match(/__Host-mice_session=([^;]+)/)
+        return match ? match[1] : null
+      }
+      const s1Id = extractSessionId(s1Cookie)
+      const s2Id = extractSessionId(s2Cookie)
+      
+      // Get s2's hashed ID by looking up all sessions and finding the one matching s2's cookie
+      const list = await t.app.request('/auth/sessions/web', { headers: s1.headers })
+      const sessions = ((await list.json()) as { sessions: Array<{ id: string }> }).sessions
+      
+      // We need to find which session hash corresponds to s2
+      // Since we can't directly hash in the test, we'll delete by trying each session
+      // and checking if s2 becomes invalid
+      // Actually, simpler: just delete the most recent session (last in list)
+      const targetId = sessions[sessions.length - 1]!.id
+      
+      const revoke = await t.app.request(`/auth/sessions/web/${targetId}`, {
+        method: 'DELETE',
+        headers: { ...s1.headers, origin: 'http://localhost:3000' },
+      })
+      assert.equal(revoke.status, 200)
+      // s2 should now be invalid
+      const me = await t.app.request('/auth/me', { headers: s2.headers })
+      assert.equal(me.status, 401)
+      // s1 should still work
+      const me1 = await t.app.request('/auth/me', { headers: s1.headers })
+      assert.equal(me1.status, 200)
+    },
+  },
+  {
+    name: 'mutations without Origin header or with foreign Origin are rejected',
+    async run(t) {
+      const login = await t.login('ann')
+      // Missing Origin on POST
+      const noOrigin = await t.app.request('/auth/logout', {
+        method: 'POST',
+        headers: login.headers,
+      })
+      assert.equal(noOrigin.status, 403)
+      // Foreign Origin
+      const foreign = await t.app.request('/auth/logout', {
+        method: 'POST',
+        headers: { ...login.headers, origin: 'https://evil.example' },
+      })
+      assert.equal(foreign.status, 403)
+      // Same origin should work
+      const good = await t.app.request('/auth/logout', {
+        method: 'POST',
+        headers: { ...login.headers, origin: 'http://localhost:3000' },
+      })
+      assert.equal(good.status, 200)
     },
   },
 ]
