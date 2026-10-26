@@ -358,3 +358,22 @@ export async function validateBackChannelLogout(
     reason: 'Back-channel logout from IdP',
   })
 }
+
+/**
+ * List all pending suspensions.
+ */
+export async function listPendingSuspensions(): Promise<SuspensionRequest[]> {
+  const now = Date.now()
+  const result: SuspensionRequest[] = []
+  
+  // Clean up expired suspensions and collect active ones
+  for (const [id, suspension] of pendingSuspensions.entries()) {
+    if (suspension.expiresAt.getTime() <= now) {
+      pendingSuspensions.delete(id)
+    } else {
+      result.push(suspension)
+    }
+  }
+  
+  return result
+}

@@ -44,3 +44,7 @@ export { registerWebSessionRoutes } from './session/webSessionRoutes.js'
 // - registerTokenRoutes, createPat, resolvePat
 // - registerServicePrincipalRoutes, createServicePrincipal, serviceUser
 // - startServicePatExpirySchedule
+
+// Service principal stubs (for backward compatibility with audit code)
+export { peekServicePrincipal, getServicePrincipal } from './credentials/servicePrincipals.js'
+export { startServicePatExpirySchedule } from './credentials/servicePrincipalExpiry.js'
