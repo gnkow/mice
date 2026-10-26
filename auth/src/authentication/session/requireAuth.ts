@@ -6,6 +6,7 @@ import { env } from '../../env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
 import { can, isScopedCredential, type Capability } from './principal.js'
 import { resolvePat } from '../credentials/tokens.js'
+import { verifyIdpAccess } from '../access/idpCheck.js'
 
 /** Unattended page polls must not keep an idle Session alive. */
 const BACKGROUND_POLL = /^\/auth\/(notifications|announcements)(\/|$)/
@@ -114,6 +115,8 @@ export type AuthPolicy = {
   originCheck?: boolean
   /** Cookie Sessions on unsafe methods must send application/json. */
   jsonOnly?: boolean
+  /** Force fresh IdP check regardless of 5-minute throttle (for signing/privileged operations). */
+  requiresFreshIdpCheck?: boolean
 }
 
 export type AuthOutcome =
@@ -142,8 +145,15 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
       }
     }
     if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
-    await preparePrincipal(session)
-    return { ok: true, user: session, via: 'session' }
+    
+    // Check IdP status (with 5-minute throttling unless forceFresh is set)
+    const verifiedUser = await verifyIdpAccess(session, policy.requiresFreshIdpCheck)
+    if (!verifiedUser) {
+      return deny(401, 'Access denied - user is disabled or IdP unavailable')
+    }
+    
+    await preparePrincipal(verifiedUser)
+    return { ok: true, user: verifiedUser, via: 'session' }
   }
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 
