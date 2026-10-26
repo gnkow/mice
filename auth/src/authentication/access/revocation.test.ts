@@ -35,15 +35,18 @@ describe('Revocation and Suspension (Ticket 06)', () => {
     })
 
     it('has no revocation cache - checks are always live', async () => {
+      // Use a unique principal for this test to avoid interference from previous tests
+      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `cache-test-${Date.now()}` }
+      
       // First check - not revoked
-      const before = await isRevoked(testPrincipal)
+      const before = await isRevoked(uniquePrincipal)
       assert.strictEqual(before, false)
 
       // Revoke
-      await revokeAll(testPrincipal, { revokedBy: adminUser, reason: 'test' })
+      await revokeAll(uniquePrincipal, { revokedBy: adminUser, reason: 'test' })
 
       // Immediate check - should be revoked (no cache)
-      const after = await isRevoked(testPrincipal)
+      const after = await isRevoked(uniquePrincipal)
       assert.strictEqual(after, true)
     })
   })
@@ -81,9 +84,12 @@ describe('Revocation and Suspension (Ticket 06)', () => {
     })
 
     it('has no deferred append or break-glass mechanism', async () => {
+      // Use a unique principal for this test to avoid interference from previous tests
+      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `break-glass-test-${Date.now()}` }
+      
       // When audit fails, the operation MUST fail - no workarounds
       try {
-        await revokeAll(testPrincipal, {
+        await revokeAll(uniquePrincipal, {
           revokedBy: adminUser,
           reason: 'test',
           auditFailure: true,
@@ -95,7 +101,7 @@ describe('Revocation and Suspension (Ticket 06)', () => {
       }
       
       // Verify the principal is NOT revoked
-      const revoked = await isRevoked(testPrincipal)
+      const revoked = await isRevoked(uniquePrincipal)
       assert.strictEqual(revoked, false)
     })
   })
@@ -128,12 +134,15 @@ describe('Revocation and Suspension (Ticket 06)', () => {
     })
 
     it('unconfirmed suspension lapses after 24 hours', async () => {
+      // Use a unique principal for this test to avoid interference from previous tests
+      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `lapse-test-${Date.now()}` }
+      
       const now = Date.now()
       const originalNow = Date.now
       Date.now = () => now
 
       try {
-        const suspensionId = await suspend(testPrincipal, {
+        const suspensionId = await suspend(uniquePrincipal, {
           suspendedBy: adminUser,
           reason: 'pending review',
         })
@@ -146,7 +155,7 @@ describe('Revocation and Suspension (Ticket 06)', () => {
         assert.ok(!pendingSuspensions.some((s: SuspensionRequest) => s.id === suspensionId))
 
         // Principal should NOT be revoked
-        const revoked = await isRevoked(testPrincipal)
+        const revoked = await isRevoked(uniquePrincipal)
         assert.strictEqual(revoked, false)
       } finally {
         Date.now = originalNow
@@ -180,16 +189,19 @@ describe('Revocation and Suspension (Ticket 06)', () => {
     })
 
     it('self-suspension does not require confirmation', async () => {
-      await selfSuspend(testPrincipal, { reason: 'security precaution' })
+      // Use a unique principal for this test
+      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `self-susp-test-${Date.now()}` }
+      
+      await selfSuspend(uniquePrincipal, { reason: 'security precaution' })
 
       // Should be immediately effective
-      const revoked = await isRevoked(testPrincipal)
+      const revoked = await isRevoked(uniquePrincipal)
       assert.strictEqual(revoked, true)
 
       // Should not appear in pending confirmations
       const pending = await suspend.getPending()
       assert.ok(!pending.some((s: SuspensionRequest) => 
-        principalKey(s.principal) === principalKey(testPrincipal)
+        principalKey(s.principal) === principalKey(uniquePrincipal)
       ))
     })
   })
