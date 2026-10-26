@@ -11,6 +11,7 @@ import { namespacesWithCapability } from '../../authzMembershipStore.js'
 import { userHasAnyGrant } from '../../authzVisibility.js'
 import { ALL_INSTANCE_PERMISSIONS, type InstancePermission, type MemberRoleRef } from '../../authzTypes.js'
 import { rememberNotificationUser } from '../../notifications.js'
+import { listPatsForUser, revokePat } from '../credentials/tokens.js'
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -154,5 +155,26 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
       ok: true,
       trainingCompleted: await hasCompletedTraining(target),
     })
+  }))
+
+  /** List user's device flow tokens (CLI credentials). */
+  app.get('/auth/me/tokens', guarded({}, async ({ c, user: session }) => {
+    const tokens = await listPatsForUser(session)
+    return c.json({ tokens })
+  }))
+
+  /** Revoke a user's device flow token. */
+  app.delete('/auth/me/tokens/:id', guarded({ mutates: true }, async ({ c, user: session }) => {
+    const tokenId = c.req.param('id')
+    const revoked = await revokePat(session, tokenId)
+    if (!revoked) {
+      return c.json({ error: 'Token not found' }, 404)
+    }
+    await auditMutation(c, session, 'session', {
+      action: 'token.revoke',
+      message: `Revoked device token ${tokenId}`,
+      detail: { tokenId },
+    })
+    return c.json({ ok: true })
   }))
 }

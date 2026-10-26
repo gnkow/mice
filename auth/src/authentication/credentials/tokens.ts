@@ -155,6 +155,12 @@ export function createCredentials(deps: CredentialDeps) {
     return [...seen.values()]
   }
 
+  async function listPatsForUser(user: SessionUser): Promise<PatPublic[]> {
+    return (await store.listForOwner(user))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map(toPublic)
+  }
+
   return {
     createPat,
     revokePat,
@@ -162,6 +168,7 @@ export function createCredentials(deps: CredentialDeps) {
     resolvePat,
     findPatByToken,
     listPatOwners,
+    listPatsForUser,
   }
 }
 
@@ -178,3 +185,4 @@ export const revokePatByToken = defaults.revokePatByToken
 export const resolvePat = defaults.resolvePat
 export const findPatByToken = defaults.findPatByToken
 export const listPatOwners = defaults.listPatOwners
+export const listPatsForUser = defaults.listPatsForUser
