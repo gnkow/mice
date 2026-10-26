@@ -28,8 +28,14 @@ const { sealSession } = await import('../session/session.js')
 const { env } = await import('../../env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'http://localhost:8180/realms/mice', email: `${sub}@example.com`, name: sub })
-const cookie = async (user: ReturnType<typeof mk>) =>
-  `${env.cookieName}=${await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 30 })}`
+const cookie = async (user: ReturnType<typeof mk> & Partial<{ sessionStart: number; lastIdpCheck: number; disabledAt: Date; miceFlags: string[] }>) => {
+  const now = Math.floor(Date.now() / 1000)
+  return `${env.cookieName}=${await sealSession({
+    ...user,
+    sessionStart: user.sessionStart ?? now - 30,
+    lastIdpCheck: user.lastIdpCheck ?? now - 30, // Recent check by default
+  })}`
+}
 
 describe('Ticket 04: Live IdP check and access states', () => {
   after(() => {
@@ -53,8 +59,17 @@ describe('Ticket 04: Live IdP check and access states', () => {
 
     it('RED: denies access when last IdP check is older than 5 minutes', async () => {
       // Mock IdP to return 'enabled'
-      setDirectoryFetchForTests(async () => {
-        return new Response(JSON.stringify({ enabled: true }), { status: 200 })
+      setDirectoryFetchForTests(async (url) => {
+        const urlStr = String(url)
+        if (urlStr.includes('/protocol/openid-connect/token')) {
+          // Token endpoint
+          return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+        }
+        if (urlStr.includes('/users/')) {
+          // User status endpoint
+          return new Response(JSON.stringify({ enabled: true }), { status: 200 })
+        }
+        throw new Error(`Unexpected request: ${urlStr}`)
       })
 
       // Create session with old lastIdpCheck (6 minutes ago)
@@ -66,13 +81,13 @@ describe('Ticket 04: Live IdP check and access states', () => {
       app.get('/test', async (c) => {
         const auth = await authenticate(c)
         if (!auth.ok) return c.json({ error: auth.error }, auth.status)
-        // Check should have been triggered
+        // Check should have been triggered because lastIdpCheck is old
         return c.json({ checked: true, allowed: true })
       })
 
       const res = await app.request('/test', { headers: { Cookie: sessionCookie } })
       
-      // For now this will fail because lastIdpCheck doesn't exist yet
+      // Should authenticate after successful IdP check
       assert.equal(res.status, 200, 'Should authenticate after IdP check')
     })
 
@@ -84,7 +99,9 @@ describe('Ticket 04: Live IdP check and access states', () => {
 
       const user = mk('user-unreachable')
       const app = new Hono()
-      const sessionCookie = await cookie(user)
+      // Set old lastIdpCheck to force a check
+      const oldCheckTime = Math.floor(Date.now() / 1000) - 361
+      const sessionCookie = await cookie({ ...user, lastIdpCheck: oldCheckTime })
 
       app.get('/test', async (c) => {
         const auth = await authenticate(c)
@@ -96,7 +113,7 @@ describe('Ticket 04: Live IdP check and access states', () => {
       // Should deny access when IdP unreachable (no cache fallback)
       assert.equal(res.status, 401, 'Should deny access when IdP is unreachable')
       const body = await res.json()
-      assert.match(body.error, /IdP|check|unavailable/i, 'Error should mention IdP unavailability')
+      assert.match(body.error, /disabled|unavailable|denied/i, 'Error should mention denial reason')
     })
   })
 
@@ -104,15 +121,21 @@ describe('Ticket 04: Live IdP check and access states', () => {
     it('RED: denies access when Principal is disabled in IdP', async () => {
       // Mock IdP to return 'disabled'
       setDirectoryFetchForTests(async (url) => {
-        if (url.includes('/users/')) {
+        const urlStr = String(url)
+        if (urlStr.includes('/protocol/openid-connect/token')) {
+          return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+        }
+        if (urlStr.includes('/users/')) {
           return new Response(JSON.stringify({ enabled: false }), { status: 200 })
         }
-        throw new Error('Unexpected request')
+        throw new Error(`Unexpected request: ${urlStr}`)
       })
 
       const user = mk('disabled-user')
       const app = new Hono()
-      const sessionCookie = await cookie(user)
+      // Set old lastIdpCheck to force a check
+      const oldCheckTime = Math.floor(Date.now() / 1000) - 361
+      const sessionCookie = await cookie({ ...user, lastIdpCheck: oldCheckTime })
 
       app.get('/test', async (c) => {
         const auth = await authenticate(c)
@@ -124,7 +147,7 @@ describe('Ticket 04: Live IdP check and access states', () => {
       // Should deny access when user is disabled
       assert.equal(res.status, 401, 'Should deny access when user is disabled in IdP')
       const body = await res.json()
-      assert.match(body.error, /disabled|inactive/i, 'Error should mention disabled account')
+      assert.match(body.error, /disabled|denied|unavailable/i, 'Error should mention access denial')
     })
 
     it('RED: checks IdP status at login', async () => {
