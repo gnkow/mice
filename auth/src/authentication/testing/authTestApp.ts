@@ -1,4 +1,4 @@
-import type { FakeIdp } from './fakeIdp.js'
+import { createFakeIdp, type FakeIdp } from './fakeIdp.js'
 
 export interface AuthTestAppOptions {
   users: Array<{ sub: string; email: string; name: string }>
@@ -9,5 +9,9 @@ export interface AuthTestApp {
 }
 
 export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
-  throw new Error('Not implemented')
+  const idp = createFakeIdp(options.users)
+  
+  return {
+    idp,
+  }
 }
