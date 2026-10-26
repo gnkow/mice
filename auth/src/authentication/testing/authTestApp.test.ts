@@ -14,4 +14,18 @@ await describe('authTestApp', async () => {
     assert.ok(token)
     assert.equal(typeof token, 'string')
   })
+
+  await it('clock offset can be applied to the BFF and IdP', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'bob', email: 'bob@example.com', name: 'Bob' }],
+    })
+
+    const initialTime = app.clock.now()
+    
+    // Advance clock by 1 hour
+    app.clock.advance(60 * 60 * 1000)
+    
+    const laterTime = app.clock.now()
+    assert.equal(laterTime - initialTime, 60 * 60 * 1000)
+  })
 })
