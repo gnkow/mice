@@ -7,7 +7,7 @@ import { useAsync } from '../hooks/useAsync'
 import { loadAppearance, saveAppearance, subscribeAppearance, type Appearance } from '../lib/appearance'
 import { NotificationSettingsPage } from './NotificationSettingsPage'
 import { ProfileFavoritesSection } from '../components/ProfileFavoritesSection'
-import { ProfileTokensSection } from '../components/ProfileTokensSection'
+import { ProfileCliAccessSection } from '../components/ProfileCliAccessSection'
 
 export function ProfilePage() {
   const me = useAsync(() => fetchAuthMe(), [])
@@ -29,13 +29,13 @@ export function ProfilePage() {
       { id: 'notifications', label: 'Notifications', Icon: Bell },
     ] },
     { title: 'Access', items: [
-      { id: 'cli-tokens', label: 'CLI tokens', Icon: KeyRound },
+      { id: 'cli-access', label: 'CLI Access', Icon: KeyRound },
     ] },
   ]
   return <main className="page wide">
     <div className="page-head">
       <div><h1><UserRound size={24} className="button-label-icon" aria-hidden="true" />Profile</h1>
-        <p className="lede">Your account, appearance, CLI tokens, and notification preferences.</p></div>
+        <p className="lede">Your account, appearance, CLI access, and notification preferences.</p></div>
     </div>
     <div className="profile-layout">
     <SectionNav label="Profile sections" groups={groups} />
@@ -67,7 +67,7 @@ export function ProfilePage() {
       </section>
       <ProfileFavoritesSection />
       <NotificationSettingsPage embedded />
-      <ProfileTokensSection />
+      <ProfileCliAccessSection />
     </div>
     </div>
   </main>
