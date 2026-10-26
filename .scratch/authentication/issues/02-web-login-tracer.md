@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 (test IdP harness and clock control)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Login, callback, `/me` work end to end against the test IdP
-- [ ] Login state is single-use; replay, expiry and tampering are rejected
-- [ ] Forged or wrongly signed tokens are rejected; 5-minute clock leeway applies to token validity only
-- [ ] Cookie is `__Host-`, Secure, SameSite=Lax; id is opaque; Session row is server side
-- [ ] Empty name claim refuses login
-- [ ] Principal identity uses canonical iss, internal id and a unique iss+sub key
+- [x] Login, callback, `/me` work end to end against the test IdP
+- [x] Login state is single-use; replay, expiry and tampering are rejected
+- [x] Forged or wrongly signed tokens are rejected; 5-minute clock leeway applies to token validity only
+- [x] Cookie is `__Host-`, Secure, SameSite=Lax; id is opaque; Session row is server side
+- [x] Empty name claim refuses login
+- [x] Principal identity uses canonical iss, internal id and a unique iss+sub key
