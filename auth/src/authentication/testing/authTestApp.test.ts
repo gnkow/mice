@@ -127,8 +127,8 @@ await describe('authTestApp', async () => {
     const state = redirectUrl.searchParams.get('state')!
     const pkceCookie = loginResp.headers.get('set-cookie')!
     
-    // Simulate IdP callback with a valid token
-    const code = 'test-auth-code'
+    // Simulate IdP callback with a valid code
+    const code = app.issueAuthCode('alice', state)
     const callbackResp = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
       headers: { cookie: pkceCookie },
     })
