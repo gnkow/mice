@@ -3,7 +3,7 @@ import { auditReadiness } from './audit.js'
 import { diskReadiness } from './diskStore.js'
 import { postgresReadiness } from './db/database.js'
 import { isStoreOutage } from './db/outage.js'
-import { applyGlobalGuards, authenticateRequest, backChannelLogout, makeDirectorySyncRoute, registerCliDeviceRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerServicePrincipalRoutes, registerStepUp, registerTokenRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
+import { applyGlobalGuards, authenticateRequest, backChannelLogout, makeDirectorySyncRoute, registerCliDeviceRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerServicePrincipalRoutes, registerStepUp, registerTokenRoutes, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
@@ -59,6 +59,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerAuditRoutes(app, { audit })
   registerStepUp(app)
   registerLoginRoutes(app, { audit })
+  registerWebSessionRoutes(app)
 
   app.post('/auth/backchannel-logout', backChannelLogout)
   app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())

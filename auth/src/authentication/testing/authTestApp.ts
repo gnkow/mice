@@ -57,6 +57,7 @@ async function build<I extends IdpAdapter>(options: AuthTestAppOptions<I>) {
     oidcIssuerPublic: idp.issuer,
     oidcClientId: idp.clientId,
     oidcRedirectUri: 'http://localhost/auth/callback',
+    sessionIdleSec: 30 * 60, // 30 minutes for testing
   })
 
   const events: AuditRecord[] = []
