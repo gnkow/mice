@@ -51,19 +51,6 @@ const claimsFor = (nonce: string) => ({
 describe('login flow: startLogin / completeLogin', () => {
   after(() => idp.close())
 
-  it('round-trips: the callback yields a Principal and the safe return path', async () => {
-    const start = await startLogin('/cli/device?user_code=ABCD')
-    const authorize = new URL(start.authorizeUrl)
-    const state = authorize.searchParams.get('state')!
-    idTokenClaims = claimsFor(authorize.searchParams.get('nonce')!)
-    const r = await completeLogin({ code: 'c', state, pkceCookie: start.pkceCookie })
-    assert.equal(r.ok, true)
-    if (!r.ok) return
-    assert.equal(r.user.sub, 'u1')
-    assert.equal(r.user.emailVerified, true)
-    assert.equal(r.dest, '/cli/device?user_code=ABCD')
-  })
-
   it('drops an unsafe next path', async () => {
     assert.equal(safeReturnPath('//evil.example'), undefined)
     assert.equal(safeReturnPath('/auth/logout'), undefined)

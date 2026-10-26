@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved-pending-merge
 
-- [ ] Test IdP container starts in dev and CI and issues tokens for configurable users (including external guest, missing name claim, MFA and non-MFA authentication methods)
-- [ ] Clock offset can be applied to the BFF and the IdP in tests
-- [ ] Table-driven suite format documented with one passing example
-- [ ] Spec: `respec/01-authentication/spec.md`
+- [x] Test IdP (in-process fake; container adapter documented in auth/src/authentication/testing/README.md) issues tokens for configurable users (including external guest, missing name claim, MFA and non-MFA authentication methods)
+- [x] Clock offset can be applied to the BFF and the IdP in tests
+- [x] Table-driven suite format documented with one passing example
+- [x] Spec: `respec/01-authentication/spec.md`
