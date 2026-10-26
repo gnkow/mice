@@ -10,13 +10,27 @@ import {
 import type { AuditDep } from '../../routeDeps.js'
 
 /**
- * TICKET 09: Signing Ceremony Routes
+ * Signing Ceremony Routes - Authentication Domain
  * 
- * Provides HTTP endpoints for Part 11-compliant electronic signatures.
- * - Fresh authentication required (< 60s per spec)
- * - MFA required
+ * Provides HTTP endpoints for the authentication layer of electronic signatures.
+ * These are generic signing primitives, not the full GxP merge-approval workflow.
+ * 
+ * Authentication concerns (this module):
+ * - Fresh authentication enforcement (< 60s)
+ * - MFA validation
  * - Hash-bound signatures
- * - Meaning recorded
+ * - Tamper detection
+ * 
+ * GxP concerns (04-gxp-compliance):
+ * - Merge approval workflow integration
+ * - Signature storage in immudb
+ * - Self-approval prevention
+ * - Signature revocation
+ * - Bulk approval ceremonies
+ * 
+ * Related tickets:
+ * - .scratch/authentication/issues/09-step-up-reauthentication.md
+ * - .scratch/gxp-compliance/issues/01-signing-ceremony.md
  */
 
 const SIGNING_FRESHNESS_SEC = 60 // 60 seconds per spec requirement

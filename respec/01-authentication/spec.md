@@ -20,7 +20,7 @@ SSO login through an external IdP yields a sealed Session cookie; the CLI uses a
 6. As an instance admin, I want to revoke all Sessions and credentials of a Principal by `iss`+`sub`, so that offboarding takes effect within seconds.
 7. As an instance admin, I want a UI action for that revoke, so that I do not need the API.
 8. As an auditor, I want every login, logout, failure, mint and revoke audited, so that identity events are attributable.
-9. As a compliance lead, I want step-up re-authentication for sensitive actions, so that e-signatures rest on fresh proof of identity.
+9. As a compliance lead, I want step-up re-authentication for sensitive actions, so that fresh proof of identity is available to downstream workflows (e.g., GxP signatures).
 10. As a repository collaborator, I want my commits authored with my IdP name and email, so that history is attributable (author injection).
 11. As an instance admin, I want revocation to terminate the Principal's Desktop Sessions and block result commits of running Jobs, so that offboarding is complete.
 12. As an instance admin, I want directory-sync revocation and back-channel logout, so that offboarding does not depend on a manual step.

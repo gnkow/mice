@@ -12,16 +12,18 @@ import {
 } from './signingCeremony.js'
 
 /**
- * TICKET 09: Signing Ceremony
+ * Signing Ceremony Tests - Authentication Domain
  * 
- * Requirements:
- * - Part 11-compliant electronic signature
- * - Fresh authentication required (<5 minutes old)
- * - Requires MFA evidence in session
- * - Display exact record being signed with cryptographic hash
- * - Hash bound to signature (tamper detection)
- * - Meaning recorded (Authored/Reviewed/Approved)
- * - Full name captured at signing time
+ * Tests authentication-layer signature primitives:
+ * - Fresh authentication validation
+ * - MFA requirement enforcement
+ * - Content hash computation
+ * - Tamper detection
+ * 
+ * GxP-specific tests (merge approval, self-approval prevention, immudb storage)
+ * belong in 04-gxp-compliance test suite.
+ * 
+ * Related: .scratch/authentication/issues/09-step-up-reauthentication.md
  */
 
 describe('Signing Ceremony - Part 11 Compliance', () => {

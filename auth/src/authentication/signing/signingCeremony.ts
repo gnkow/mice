@@ -2,14 +2,21 @@ import { createHash } from 'node:crypto'
 import { requireSigningCapability, type PrincipalId } from '../commits/commitIdentity.js'
 
 /**
- * TICKET 09: Signing Ceremony
+ * Signing Ceremony - Authentication Domain
  * 
- * Part 11-compliant electronic signatures:
- * - Fresh authentication (<5 minutes)
- * - MFA required
- * - Cryptographic hash of signed record
+ * Provides the authentication-layer primitives for electronic signatures:
+ * - Fresh authentication validation
+ * - MFA requirement enforcement
+ * - Content hash computation
  * - Tamper detection
- * - Meaning recorded
+ * 
+ * This module contains ONLY authentication concerns. The GxP compliance-specific
+ * signature ceremony (merge approval workflow, signature storage in immudb, 
+ * self-approval prevention) is owned by 04-gxp-compliance.
+ * 
+ * Related specs:
+ * - 01-authentication: Step-up re-authentication (user story #9)
+ * - 04-gxp-compliance: E-signature ceremony for merge approval
  */
 
 const SIGNATURE_FRESHNESS_MS = 5 * 60 * 1000 // 5 minutes
