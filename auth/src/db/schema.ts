@@ -195,6 +195,16 @@ export const sessionRevocations = pgTable('session_revocations', {
   sessionsNotBefore: integer('sessions_not_before'),
 })
 
+/** Login states for OIDC flow: single-use, 10-minute TTL. */
+export const loginStates = pgTable('login_states', {
+  state: text('state').primaryKey(),
+  verifier: text('verifier').notNull(),
+  nonce: text('nonce').notNull(),
+  createdAt: ts('created_at').notNull(),
+  used: boolean('used').notNull().default(false),
+})
+
+
 export const deviceAuthorizations = pgTable(
   'device_authorizations',
   {

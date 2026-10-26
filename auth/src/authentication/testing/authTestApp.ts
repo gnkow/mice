@@ -25,6 +25,7 @@ interface PkceState {
   verifier: string
   state: string
   nonce: string
+  createdAt: number // timestamp in ms
 }
 
 // Test session secret
@@ -65,10 +66,10 @@ export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
     const verifier = `verifier_${Math.random().toString(36).slice(2)}`
     const nonce = `nonce_${Math.random().toString(36).slice(2)}`
     
-    const pkce: PkceState = { verifier, state, nonce }
+    const pkce: PkceState = { verifier, state, nonce, createdAt: clock.now() }
     pkceStates.set(state, pkce)
     
-    const pkceCookie = Buffer.from(JSON.stringify(pkce)).toString('base64url')
+    const pkceCookie = Buffer.from(JSON.stringify({ verifier, state, nonce })).toString('base64url')
     setCookie(c, 'mice_oidc_pkce', pkceCookie, {
       httpOnly: true,
       secure: false,
@@ -104,6 +105,18 @@ export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
     
     if (pkce.state !== state) {
       return c.html('<p>State mismatch</p>', 400)
+    }
+    
+    // Check expiry: 10 minutes
+    const storedState = pkceStates.get(state)
+    if (!storedState) {
+      return c.html('<p>Invalid or expired login state</p>', 400)
+    }
+    
+    const age = clock.now() - storedState.createdAt
+    if (age > 10 * 60 * 1000) {
+      pkceStates.delete(state)
+      return c.html('<p>Login state expired</p>', 400)
     }
     
     // Exchange code for user identity
