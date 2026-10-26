@@ -3,7 +3,7 @@ import { auditReadiness } from './audit.js'
 import { diskReadiness } from './diskStore.js'
 import { postgresReadiness } from './db/database.js'
 import { isStoreOutage } from './db/outage.js'
-import { applyGlobalGuards, authenticateRequest, backChannelLogout, makeDirectorySyncRoute, registerCliDeviceRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerServicePrincipalRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
+import { applyGlobalGuards, authenticateRequest, backChannelLogout, makeDirectorySyncRoute, registerCliDeviceRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
@@ -63,7 +63,8 @@ export function createApp(deps: AppDeps = {}): Hono {
 
   app.post('/auth/backchannel-logout', backChannelLogout)
   app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())
-  registerServicePrincipalRoutes(app)
+  // Service principals removed per spec: "There are no PATs and no service principals"
+  // registerServicePrincipalRoutes(app)
   app.post('/auth/sessions/revoke-all', signOutEverywhere)
   // PAT routes removed per spec: "There are no PATs and no service principals"
   // Use device flow (mice login) for CLI access instead
