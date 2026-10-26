@@ -140,11 +140,14 @@ export function AdminRevocationSection() {
   }
 
   return (
-    <section id="admin-revocation" className="settings-section" aria-labelledby="admin-revocation-heading">
-      <h2 id="admin-revocation-heading">
+    <section id="user-revocation" className="settings-section" aria-labelledby="user-revocation-heading">
+      <h2 id="user-revocation-heading">
         <Shield size={18} className="button-label-icon" aria-hidden="true" />
-        User Access Management
+        User Revocation
       </h2>
+      <p className="muted small">
+        Manage user access revocation and emergency suspensions. All actions are audited.
+      </p>
 
       {message && (
         <div className={`flash ${message.type === 'error' ? 'flash-error' : 'flash-success'}`} role="alert">
@@ -152,107 +155,147 @@ export function AdminRevocationSection() {
         </div>
       )}
 
-      <h3>Revoke User Access</h3>
-      <p className="muted small">
-        Immediately revoke all sessions and credentials for a user. Permanent action.
-      </p>
-      <form className="ns-member-form" onSubmit={handleRevoke}>
-        <div className="ns-member-form-fields">
-          <label>
-            Principal (iss|sub or email)
-            <input
-              value={revokePrincipal}
-              onChange={e => setRevokePrincipal(e.target.value)}
-              placeholder="https://idp.example.com|user123"
-              disabled={busy}
-            />
-          </label>
-          <label>
-            Reason
-            <input
-              value={revokeReason}
-              onChange={e => setRevokeReason(e.target.value)}
-              placeholder="Security incident #2024-042"
-              disabled={busy}
-            />
-          </label>
-          <button className="btn danger" type="submit" disabled={busy || !revokePrincipal.trim() || !revokeReason.trim()}>
-            Revoke All Sessions
-          </button>
-        </div>
-      </form>
+      <div className="ns-settings-subsection">
+        <h3>Revoke User Access</h3>
+        <p className="muted small">
+          Immediately revoke all sessions and credentials for a user. This is permanent and cannot be undone.
+        </p>
+        <form className="ns-member-form" onSubmit={handleRevoke}>
+          <div className="ns-settings-grid">
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Principal (iss|sub or email)</span>
+              <input
+                value={revokePrincipal}
+                onChange={e => setRevokePrincipal(e.target.value)}
+                placeholder="https://idp.example.com|user123 or user@example.com"
+                disabled={busy}
+                required
+              />
+            </label>
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Reason</span>
+              <input
+                value={revokeReason}
+                onChange={e => setRevokeReason(e.target.value)}
+                placeholder="Security incident #2024-042"
+                disabled={busy}
+                required
+              />
+            </label>
+          </div>
+          <div className="ns-member-form-actions">
+            <button 
+              className="btn danger" 
+              type="submit" 
+              disabled={busy || !revokePrincipal.trim() || !revokeReason.trim()}
+            >
+              {busy ? 'Revoking...' : 'Revoke All Sessions'}
+            </button>
+          </div>
+        </form>
+      </div>
 
-      <h3>Emergency Suspension (Security Team)</h3>
-      <p className="muted small">
-        <AlertTriangle size={14} className="inline" aria-hidden="true" />
-        {' '}Requires second admin confirmation within 24 hours. Access immediately revoked pending confirmation.
-      </p>
-      <form className="ns-member-form" onSubmit={handleSuspend}>
-        <div className="ns-member-form-fields">
-          <label>
-            Principal (iss|sub or email)
-            <input
-              value={suspendPrincipal}
-              onChange={e => setSuspendPrincipal(e.target.value)}
-              placeholder="suspicious.user@example.com"
-              disabled={busy}
-            />
-          </label>
-          <label>
-            Reason
-            <input
-              value={suspendReason}
-              onChange={e => setSuspendReason(e.target.value)}
-              placeholder="Suspected account compromise"
-              disabled={busy}
-            />
-          </label>
-          <button className="btn danger" type="submit" disabled={busy || !suspendPrincipal.trim() || !suspendReason.trim()}>
-            Initiate Suspension
-          </button>
-        </div>
-      </form>
+      <div className="ns-settings-subsection">
+        <h3>
+          <AlertTriangle size={16} className="button-label-icon" aria-hidden="true" />
+          Emergency Suspension
+        </h3>
+        <p className="muted small">
+          Initiate a security suspension requiring second-admin confirmation within 24 hours. 
+          Access is revoked immediately, pending confirmation.
+        </p>
+        <form className="ns-member-form" onSubmit={handleSuspend}>
+          <div className="ns-settings-grid">
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Principal (iss|sub or email)</span>
+              <input
+                value={suspendPrincipal}
+                onChange={e => setSuspendPrincipal(e.target.value)}
+                placeholder="suspicious.user@example.com"
+                disabled={busy}
+                required
+              />
+            </label>
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Reason</span>
+              <input
+                value={suspendReason}
+                onChange={e => setSuspendReason(e.target.value)}
+                placeholder="Suspected account compromise"
+                disabled={busy}
+                required
+              />
+            </label>
+          </div>
+          <div className="ns-member-form-actions">
+            <button 
+              className="btn danger" 
+              type="submit" 
+              disabled={busy || !suspendPrincipal.trim() || !suspendReason.trim()}
+            >
+              {busy ? 'Suspending...' : 'Initiate Suspension'}
+            </button>
+          </div>
+        </form>
+      </div>
 
-      <h3>Pending Confirmations ({pending.kind === 'ok' ? pending.data.length : '...'})</h3>
-      {pending.kind === 'loading' && <p role="status">Loading pending suspensions...</p>}
-      {pending.kind === 'error' && <p className="flash flash-error" role="alert">{pending.message}</p>}
-      {pending.kind === 'ok' && pending.data.length === 0 && (
-        <p className="muted small">No pending suspensions.</p>
-      )}
-      {pending.kind === 'ok' && pending.data.length > 0 && (
-        <ul className="ns-member-list">
-          {pending.data.map(s => (
-            <li key={s.id} className="ns-member-row">
-              <div className="ns-member-main">
-                <strong>{s.principal}</strong>
-                <span className="muted small">
-                  Suspended by: {s.suspendedBy} · Reason: {s.reason}
-                  <br />
-                  Expires: {new Date(s.expiresAt).toLocaleString()}
-                </span>
-              </div>
-              <div>
-                <label>
-                  Confirmation reason:
-                  <input
-                    value={confirmReason}
-                    onChange={e => setConfirmReason(e.target.value)}
-                    placeholder="Reviewed and approved"
-                  />
-                </label>
-                <button
-                  className="btn primary small"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void handleConfirm(s.id)}
-                >
-                  Confirm Suspension
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="ns-settings-subsection">
+        <h3>Pending Confirmations</h3>
+        {pending.kind === 'loading' && <p role="status">Loading pending suspensions...</p>}
+        {pending.kind === 'error' && (
+          <div className="flash flash-error" role="alert">
+            {pending.message}
+          </div>
+        )}
+        {pending.kind === 'ok' && pending.data.length === 0 && (
+          <p className="muted small">No pending suspensions.</p>
+        )}
+        {pending.kind === 'ok' && pending.data.length > 0 && (
+          <>
+            <p className="muted small">
+              {pending.data.length} suspension{pending.data.length === 1 ? '' : 's'} awaiting second-admin confirmation.
+            </p>
+            <ul className="ns-member-list">
+              {pending.data.map(s => (
+                <li key={s.id} className="ns-member-row">
+                  <div className="ns-member-main">
+                    <div>
+                      <strong>{s.principal}</strong>
+                      <span className="muted small"> · Request: {s.id.slice(0, 16)}...</span>
+                    </div>
+                    <span className="muted small">
+                      Suspended by: {s.suspendedBy}
+                      <br />
+                      Reason: {s.reason}
+                      <br />
+                      Expires: {new Date(s.expiresAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="ns-settings-field" style={{ maxWidth: '300px' }}>
+                    <label>
+                      <span className="ns-settings-label">Confirmation reason</span>
+                      <input
+                        value={confirmReason}
+                        onChange={e => setConfirmReason(e.target.value)}
+                        placeholder="Reviewed and approved"
+                        required
+                      />
+                    </label>
+                    <button
+                      className="btn primary small"
+                      type="button"
+                      disabled={busy || !confirmReason.trim()}
+                      onClick={() => void handleConfirm(s.id)}
+                    >
+                      Confirm Suspension
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </section>
   )
 }

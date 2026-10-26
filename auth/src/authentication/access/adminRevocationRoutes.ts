@@ -2,7 +2,7 @@ import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
 import { parsePrincipalKey, type PrincipalId } from '../session/principal.js'
 import { revokeAll, suspend, confirmSuspension, listPendingSuspensions } from '../access/revocation.js'
-import { authorizeInstanceAction } from '../../authz.js'
+import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import type { AuditDep } from '../../routeDeps.js'
 
 /**
@@ -12,8 +12,7 @@ import type { AuditDep } from '../../routeDeps.js'
  */
 
 const adminGate = async (u: { principalId?: number; sub: string; iss: string }) => {
-  const result = await authorizeInstanceAction(u, 'admin.manage_users')
-  return result.allow ? null : (result.reason ?? 'Forbidden')
+  return (await isInstanceAdmin(u)) ? null : 'Instance admin required'
 }
 
 export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): void {
