@@ -1,3 +1,4 @@
+import { fakeClock, type FakeClock } from '../../clock.js'
 import { createFakeIdp, type FakeIdp } from './fakeIdp.js'
 
 export interface AuthTestAppOptions {
@@ -6,12 +7,15 @@ export interface AuthTestAppOptions {
 
 export interface AuthTestApp {
   idp: FakeIdp
+  clock: FakeClock
 }
 
 export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
-  const idp = createFakeIdp(options.users)
+  const clock = fakeClock()
+  const idp = createFakeIdp(options.users, clock)
   
   return {
     idp,
+    clock,
   }
 }

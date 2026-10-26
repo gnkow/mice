@@ -1,3 +1,5 @@
+import type { Clock } from '../../clock.js'
+
 export interface FakeIdpUser {
   sub: string
   email: string
@@ -8,7 +10,7 @@ export interface FakeIdp {
   issueToken(sub: string): Promise<string>
 }
 
-export function createFakeIdp(users: FakeIdpUser[]): FakeIdp {
+export function createFakeIdp(users: FakeIdpUser[], clock: Clock): FakeIdp {
   const userMap = new Map(users.map(u => [u.sub, u]))
   
   return {
@@ -18,6 +20,7 @@ export function createFakeIdp(users: FakeIdpUser[]): FakeIdp {
         throw new Error(`User ${sub} not found`)
       }
       // Minimal JWT-like token (just enough to pass the test)
+      // Clock is available for future use in token generation
       return `fake-token-for-${sub}`
     },
   }
