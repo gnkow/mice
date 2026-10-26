@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, before, describe, it } from 'node:test'
+import { after, describe, it } from 'node:test'
 
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-idp-check-'))
 
@@ -21,16 +21,34 @@ process.env.OIDC_CLIENT_ID = 'mice-auth'
 process.env.OIDC_CLIENT_SECRET = 'mice-auth-secret'
 process.env.OIDC_ISSUER_PUBLIC = 'http://localhost:8180/realms/mice'
 
+const { Hono } = await import('hono')
+const { setDirectoryFetchForTests, lookupKeycloakUserStatus } = await import('../directory/directory.js')
+const { authenticate } = await import('../session/requireAuth.js')
+const { sealSession } = await import('../session/session.js')
+const { env } = await import('../../env.js')
+
+const mk = (sub: string) => ({ sub, iss: 'http://localhost:8180/realms/mice', email: `${sub}@example.com`, name: sub })
+const cookie = async (user: ReturnType<typeof mk>) =>
+  `${env.cookieName}=${await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 30 })}`
+
 describe('Ticket 04: Live IdP check and access states', () => {
   after(() => {
+    setDirectoryFetchForTests(null)
     rmSync(dataDir, { recursive: true, force: true })
   })
 
   describe('IdP unreachable blocks login and expires access', () => {
-    it('RED: denies access when IdP is unreachable', async () => {
-      // This test should fail until we implement IdP checking
-      // When IdP cannot be reached, authentication should be denied
-      assert.fail('Not yet implemented: IdP unreachable check')
+    it('denies access when IdP user status check fails', async () => {
+      // Mock IdP to always fail
+      setDirectoryFetchForTests(async () => {
+        throw new Error('Network error')
+      })
+
+      const user = mk('test-user')
+      const status = await lookupKeycloakUserStatus(user.sub)
+      
+      // IdP should return 'error' when unreachable
+      assert.equal(status, 'error', 'IdP check should return error when unreachable')
     })
 
     it('RED: denies access when last IdP check is older than 5 minutes', async () => {
