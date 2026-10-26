@@ -112,4 +112,40 @@ await describe('authTestApp', async () => {
     // Expiration should be in the future relative to issue time
     assert.ok(claims.exp > claims.iat, 'exp must be after iat')
   })
+
+  await it('a configured IdP user signs in and /auth/me returns that identity', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'alice', email: 'alice@example.com', name: 'Alice' }],
+    })
+
+    // Start login flow
+    const loginResp = await app.bff.request('/auth/login')
+    assert.equal(loginResp.status, 302, 'login should redirect to IdP')
+    
+    // Extract state from redirect and PKCE cookie
+    const redirectUrl = new URL(loginResp.headers.get('location')!)
+    const state = redirectUrl.searchParams.get('state')!
+    const pkceCookie = loginResp.headers.get('set-cookie')!
+    
+    // Simulate IdP callback with a valid token
+    const code = 'test-auth-code'
+    const callbackResp = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    assert.equal(callbackResp.status, 302, 'callback should redirect after success')
+    
+    // Extract session cookie
+    const sessionCookie = callbackResp.headers.get('set-cookie')!
+    
+    // Call /auth/me with the session
+    const meResp = await app.bff.request('/auth/me', {
+      headers: { cookie: sessionCookie },
+    })
+    assert.equal(meResp.status, 200)
+    
+    const identity = await meResp.json()
+    assert.equal(identity.sub, 'alice')
+    assert.equal(identity.email, 'alice@example.com')
+    assert.equal(identity.name, 'Alice')
+  })
 })
