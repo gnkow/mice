@@ -426,3 +426,22 @@ export const authEvents = pgTable(
     index('auth_events_timestamp_idx').on(t.timestamp),
   ],
 )
+
+/** IdP baseline validation checks (ticket 14). Stores results of MFA capability checks. */
+export const idpBaselineChecks = pgTable(
+  'idp_baseline_checks',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    /** When the check was performed */
+    checkedAt: ts('checked_at').notNull().defaultNow(),
+    /** Who triggered the check (admin principal key) */
+    checkedBy: text('checked_by').notNull(),
+    /** Whether IdP provides MFA evidence (acr/amr claims) */
+    mfaAvailable: boolean('mfa_available').notNull(),
+    /** Claims found in test id_token (acr, amr values) */
+    claimsFound: jsonb('claims_found').$type<{ acr?: string; amr: string[] }>(),
+    /** Error message if check failed */
+    error: text('error'),
+  },
+  (t) => [index('idp_baseline_checks_checked_at_idx').on(t.checkedAt)],
+)
