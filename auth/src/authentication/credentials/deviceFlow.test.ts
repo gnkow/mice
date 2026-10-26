@@ -20,7 +20,7 @@ describe('CLI Device Login (Ticket 07)', () => {
 
   describe('Device Flow Initiation', () => {
     it('initiates RFC 8628 device flow with user code and device code', async () => {
-      const result = await initiateDeviceFlow({ remote: testRemote })
+      const result = await initiateDeviceFlow({ remote: `${testRemote}/test1` })
 
       assert.ok(result.deviceCode)
       assert.ok(result.userCode)
@@ -30,23 +30,25 @@ describe('CLI Device Login (Ticket 07)', () => {
     })
 
     it('generates user code with sufficient entropy', async () => {
-      const result1 = await initiateDeviceFlow({ remote: testRemote })
-      const result2 = await initiateDeviceFlow({ remote: testRemote })
+      const uniqueRemote = `${testRemote}/test2`
+      const result1 = await initiateDeviceFlow({ remote: uniqueRemote })
+      const result2 = await initiateDeviceFlow({ remote: uniqueRemote })
 
       assert.notStrictEqual(result1.userCode, result2.userCode)
       assert.ok(result1.userCode.length >= 6) // Minimum 6 characters
     })
 
     it('enforces rate limits on device flow initiation', async () => {
+      const uniqueRemote = `${testRemote}/rate-limit-test`
       // Initiate 10 requests rapidly
       const requests = Array.from({ length: 10 }, () =>
-        initiateDeviceFlow({ remote: testRemote })
+        initiateDeviceFlow({ remote: uniqueRemote })
       )
       await Promise.all(requests)
 
       // 11th request should be rate limited
       try {
-        await initiateDeviceFlow({ remote: testRemote })
+        await initiateDeviceFlow({ remote: uniqueRemote })
         assert.fail('Should have been rate limited')
       } catch (err: any) {
         assert.strictEqual(err.status, 429)
@@ -54,25 +56,27 @@ describe('CLI Device Login (Ticket 07)', () => {
     })
 
     it('sets device code to expire after 10 minutes', async () => {
-      const result = await initiateDeviceFlow({ remote: testRemote })
+      const result = await initiateDeviceFlow({ remote: `${testRemote}/test4` })
       assert.strictEqual(result.expiresIn, 600)
     })
   })
 
   describe('Polling for Token', () => {
     it('returns authorization_pending while user has not authorized', async () => {
-      const initiation = await initiateDeviceFlow({ remote: testRemote })
+      const uniqueRemote = `${testRemote}/poll1`
+      const initiation = await initiateDeviceFlow({ remote: uniqueRemote })
 
       const result = await pollForToken({
         deviceCode: initiation.deviceCode,
-        remote: testRemote,
+        remote: uniqueRemote,
       })
 
       assert.strictEqual(result.error, 'authorization_pending')
     })
 
     it('returns access token after user authorizes', async () => {
-      const initiation = await initiateDeviceFlow({ remote: testRemote })
+      const uniqueRemote = `${testRemote}/poll2`
+      const initiation = await initiateDeviceFlow({ remote: uniqueRemote })
 
       // Simulate user authorization
       await simulateUserAuthorization({
@@ -82,7 +86,7 @@ describe('CLI Device Login (Ticket 07)', () => {
 
       const result = await pollForToken({
         deviceCode: initiation.deviceCode,
-        remote: testRemote,
+        remote: uniqueRemote,
       })
 
       assert.ok(result.accessToken)
@@ -93,7 +97,8 @@ describe('CLI Device Login (Ticket 07)', () => {
     })
 
     it('enforces single use of device code', async () => {
-      const initiation = await initiateDeviceFlow({ remote: testRemote })
+      const uniqueRemote = `${testRemote}/poll3`
+      const initiation = await initiateDeviceFlow({ remote: uniqueRemote })
 
       await simulateUserAuthorization({
         userCode: initiation.userCode,
@@ -103,7 +108,7 @@ describe('CLI Device Login (Ticket 07)', () => {
       // First poll succeeds
       const result1 = await pollForToken({
         deviceCode: initiation.deviceCode,
-        remote: testRemote,
+        remote: uniqueRemote,
       })
       assert.ok(result1.accessToken)
 
@@ -111,7 +116,7 @@ describe('CLI Device Login (Ticket 07)', () => {
       try {
         await pollForToken({
           deviceCode: initiation.deviceCode,
-          remote: testRemote,
+          remote: uniqueRemote,
         })
         assert.fail('Should have rejected reused device code')
       } catch (err: any) {
@@ -120,19 +125,20 @@ describe('CLI Device Login (Ticket 07)', () => {
     })
 
     it('returns expired_token error after expiry', async () => {
+      const uniqueRemote = `${testRemote}/poll4`
       const now = Date.now()
       const originalNow = Date.now
       Date.now = () => now
 
       try {
-        const initiation = await initiateDeviceFlow({ remote: testRemote })
+        const initiation = await initiateDeviceFlow({ remote: uniqueRemote })
 
         // Move time forward 11 minutes
         Date.now = () => now + 11 * 60 * 1000
 
         const result = await pollForToken({
           deviceCode: initiation.deviceCode,
-          remote: testRemote,
+          remote: uniqueRemote,
         })
 
         assert.strictEqual(result.error, 'expired_token')
@@ -255,7 +261,16 @@ describe('CLI Device Login (Ticket 07)', () => {
     })
 
     it('detects refresh token reuse and revokes family', async () => {
-      const refreshToken1 = 'refresh-token-123'
+      const refreshToken1 = 'refresh-token-reuse-test'
+
+      // Set up a refresh token family
+      await storeInKeychain({
+        accessToken: 'access-initial',
+        refreshToken: refreshToken1,
+        expiresIn: 28800,
+        principal: testPrincipal,
+        remote: testRemote,
+      })
 
       // First refresh succeeds
       const result1 = await refreshToken({
