@@ -48,7 +48,7 @@ async function build<I extends IdpAdapter>(options: AuthTestAppOptions<I>) {
   } as DateConstructor
 
   const idp = (
-    options.idp && 'signIn' in options.idp ? options.idp : createFakeIdp({ clock, users: options.idp?.users })
+    options.idp && 'signIn' in options.idp ? options.idp : await createFakeIdp({ clock, users: options.idp?.users })
   ) as I
   await idp.start()
 
@@ -57,7 +57,6 @@ async function build<I extends IdpAdapter>(options: AuthTestAppOptions<I>) {
     oidcIssuerPublic: idp.issuer,
     oidcClientId: idp.clientId,
     oidcRedirectUri: 'http://localhost/auth/callback',
-    verifyIdToken: false,
   })
 
   const events: AuditRecord[] = []
@@ -66,21 +65,29 @@ async function build<I extends IdpAdapter>(options: AuthTestAppOptions<I>) {
   })
 
   /** Runs the whole browser login for IdP user `key`; `headers` carries the resulting session cookie. */
-  async function login(key: string, opts: SignInOptions & { next?: string } = {}) {
-    const { next, ...signIn } = opts
+  async function login(key: string, opts: SignInOptions & { next?: string; callbackDelayMs?: number } = {}) {
+    const { next, callbackDelayMs, ...signIn } = opts
     const start = await app.request(next ? `/auth/login?${new URLSearchParams({ next })}` : '/auth/login')
     const authorizeUrl = start.headers.get('location')
     if (start.status !== 302 || !authorizeUrl) throw new Error(`/auth/login answered ${start.status}`)
     const pkce = cookieHeader(start.headers.getSetCookie())
     const idpResult = await idp.signIn(key, authorizeUrl, signIn)
+    if (callbackDelayMs) clock.advance(callbackDelayMs)
     const query = new URLSearchParams(
       idpResult.ok ? { code: idpResult.code, state: idpResult.state } : { error: idpResult.error, state: idpResult.state },
     )
-    const response = await app.request(`/auth/callback?${query}`, { headers: { cookie: pkce } })
+    const callback = (over: { state?: string; cookie?: string } = {}) => {
+      const q = new URLSearchParams(query)
+      if (over.state !== undefined) q.set('state', over.state)
+      return app.request(`/auth/callback?${q}`, { headers: { cookie: over.cookie ?? pkce } })
+    }
+    const response = await callback()
     const session = cookieHeader(response.headers.getSetCookie().filter((c) => c.startsWith(`${env.cookieName}=`)))
     return {
       status: response.status,
       response,
+      /** Plays the same callback again, optionally with a tampered `state` or login cookie. */
+      replay: callback,
       location: response.headers.get('location'),
       headers: session ? { cookie: session } : ({} as Record<string, string>),
     }

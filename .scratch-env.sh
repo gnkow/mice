@@ -1,0 +1,1 @@
+export POSTGRES_PASSWORD_FILE=/Users/gnkow/Code/boxen/.secrets/postgres-password IMMUDB_PASSWORD_FILE=/Users/gnkow/Code/boxen/.secrets/immudb-password NOVU_PASSWORD_FILE=/Users/gnkow/Code/boxen/.secrets/novu-password

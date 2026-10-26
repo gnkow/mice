@@ -8,6 +8,7 @@ import type { MetaRevision } from '../metaStore.js'
 import type { NotificationUser } from '../notificationsStore.js'
 import type { NotificationPreferences } from '../notificationsTypes.js'
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -193,6 +194,49 @@ export const sessionRevocations = pgTable('session_revocations', {
   principalKey: text('principal_key').primaryKey(),
   notBefore: integer('not_before'),
   sessionsNotBefore: integer('sessions_not_before'),
+})
+
+/** Identity of record: canonical issuer + IdP `sub`, with a stable internal id other tables can reference. */
+export const principals = pgTable(
+  'principals',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    iss: text('iss').notNull(),
+    sub: text('sub').notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('principals_iss_sub_key').on(t.iss, t.sub)],
+)
+
+/** Server-side web Session, keyed by the SHA-256 of the opaque id held in the `__Host-` cookie. */
+export const webSessions = pgTable(
+  'web_sessions',
+  {
+    idHash: text('id_hash').primaryKey(),
+    principalId: bigint('principal_id', { mode: 'number' })
+      .notNull()
+      .references(() => principals.id),
+    email: text('email').notNull(),
+    emailVerified: boolean('email_verified').notNull(),
+    name: text('name').notNull(),
+    idToken: text('id_token'),
+    groups: jsonb('groups').$type<string[]>().notNull(),
+    authTime: integer('auth_time'),
+    sessionStart: integer('session_start').notNull(),
+    lastActive: integer('last_active').notNull(),
+  },
+  (t) => [index('web_sessions_principal_idx').on(t.principalId)],
+)
+
+/** Single-use OIDC login state (10 min TTL), keyed by the SHA-256 of the opaque login cookie. */
+export const loginStates = pgTable('login_states', {
+  idHash: text('id_hash').primaryKey(),
+  state: text('state').notNull(),
+  nonce: text('nonce').notNull(),
+  codeVerifier: text('code_verifier').notNull(),
+  returnPath: text('return_path'),
+  reauth: jsonb('reauth').$type<{ maxAge: number; sub: string; iss: string }>(),
+  expiresAt: ts('expires_at').notNull(),
 })
 
 export const deviceAuthorizations = pgTable(

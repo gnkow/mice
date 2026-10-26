@@ -1,7 +1,9 @@
-import { createHash } from 'node:crypto'
-import { EncryptJWT, jwtDecrypt } from 'jose'
+import { createHash, randomBytes } from 'node:crypto'
+import { eq } from 'drizzle-orm'
 import type { Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
+import { getDb } from '../../db/database.js'
+import { principals, webSessions } from '../../db/schema.js'
 import { env } from '../../env.js'
 import { isCredentialRevoked } from '../credentials/credentialRevocation.js'
 
@@ -15,6 +17,8 @@ export type PatScope = {
 export type SessionUser = {
   sub: string
   iss: string
+  /** Internal Principal id, present once the user has a Session or a stored Principal. */
+  principalId?: number
   email: string
   /** True only when the IdP asserted `email_verified`. */
   emailVerified?: boolean
@@ -38,70 +42,76 @@ export type SessionUser = {
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 
-function secretKey() {
-  return createHash('sha256').update(env.sessionSecret).digest()
+const hashId = (id: string) => createHash('sha256').update(id).digest('hex')
+
+/** Issuers are compared and stored without a trailing slash, so `https://idp/` and `https://idp` are one Principal. */
+export function canonicalIssuer(iss: string): string {
+  return iss.trim().replace(/\/+$/, '')
 }
 
+/** The Principal row for an IdP identity, created on first sight. Returns its internal id. */
+export async function ensurePrincipal(identity: { iss: string; sub: string }): Promise<number> {
+  const iss = canonicalIssuer(identity.iss)
+  const [row] = await getDb()
+    .insert(principals)
+    .values({ iss, sub: identity.sub, createdAt: new Date() })
+    .onConflictDoUpdate({ target: [principals.iss, principals.sub], set: { iss } })
+    .returning({ id: principals.id })
+  return row!.id
+}
+
+/** Creates the server-side Session row for a user and returns the opaque id that goes into the cookie. */
 export async function sealSession(user: SessionUser): Promise<string> {
+  const id = randomBytes(32).toString('base64url')
   const start = user.sessionStart ?? nowSec()
-  return new EncryptJWT({
-    ...(user.authTime !== undefined ? { auth_time: user.authTime } : {}),
-    sat: start,
-    act: user.lastActive ?? nowSec(),
-    sub: user.sub,
-    iss: user.iss,
+  await getDb().insert(webSessions).values({
+    idHash: hashId(id),
+    principalId: await ensurePrincipal(user),
     email: user.email,
-    email_verified: user.emailVerified === true,
+    emailVerified: user.emailVerified === true,
     name: user.name,
-    id_token: user.idToken ?? '',
+    idToken: user.idToken ?? null,
     groups: user.groups ?? [],
+    authTime: user.authTime ?? null,
+    sessionStart: start,
+    lastActive: user.lastActive ?? nowSec(),
   })
-    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
-    .setIssuedAt()
-    .setExpirationTime(start + env.sessionTtlSec)
-    .encrypt(secretKey())
+  return id
 }
 
-async function decodeSession(token: string): Promise<SessionUser | null> {
-  try {
-    const { payload } = await jwtDecrypt(token, secretKey())
-    const sub = String(payload.sub ?? '')
-    const iss = String(payload.iss ?? '')
-    const email = String(payload.email ?? '')
-    const name = String(payload.name ?? '')
-    const idToken = String(payload.id_token ?? '')
-    if (!sub || !iss || !email || !name) return null
-    const iat = Number(payload.iat ?? 0)
-    const sessionStart = Number(payload.sat ?? iat)
-    const lastActive = Number(payload.act ?? iat)
-    if (env.sessionIdleSec > 0 && nowSec() - lastActive > env.sessionIdleSec) return null
-    const groupsRaw = payload.groups
-    const groups = Array.isArray(groupsRaw)
-      ? groupsRaw
-          .filter((g): g is string => typeof g === 'string')
-          .map((g) => g.trim().toLowerCase())
-          .filter(Boolean)
-      : undefined
-    return {
-      sub,
-      iss,
-      email,
-      name,
-      idToken: idToken || undefined,
-      ...(payload.email_verified === true ? { emailVerified: true } : {}),
-      ...(typeof payload.auth_time === 'number' ? { authTime: payload.auth_time } : {}),
-      sessionStart,
-      lastActive,
-      ...(groups?.length ? { groups } : {}),
-    }
-  } catch {
+async function loadSession(id: string): Promise<SessionUser | null> {
+  const [row] = await getDb()
+    .select({ s: webSessions, iss: principals.iss, sub: principals.sub })
+    .from(webSessions)
+    .innerJoin(principals, eq(principals.id, webSessions.principalId))
+    .where(eq(webSessions.idHash, hashId(id)))
+  if (!row) return null
+  const { s } = row
+  const now = nowSec()
+  const expired = now >= s.sessionStart + env.sessionTtlSec
+  const idle = env.sessionIdleSec > 0 && now - s.lastActive > env.sessionIdleSec
+  if (expired || idle) {
+    await getDb().delete(webSessions).where(eq(webSessions.idHash, s.idHash))
     return null
+  }
+  return {
+    sub: row.sub,
+    iss: row.iss,
+    principalId: s.principalId,
+    email: s.email,
+    name: s.name,
+    ...(s.idToken ? { idToken: s.idToken } : {}),
+    ...(s.emailVerified ? { emailVerified: true } : {}),
+    ...(s.authTime !== null ? { authTime: s.authTime } : {}),
+    sessionStart: s.sessionStart,
+    lastActive: s.lastActive,
+    ...(s.groups.length ? { groups: s.groups } : {}),
   }
 }
 
 /** A valid, unexpired, unrevoked Session; a revocation lookup that cannot reach its store throws instead of denying. */
 export async function openSession(token: string): Promise<SessionUser | null> {
-  const user = await decodeSession(token)
+  const user = await loadSession(token)
   if (!user) return null
   if (await isCredentialRevoked({ iss: user.iss, sub: user.sub }, user.sessionStart ?? 0, 'session')) return null
   return user
@@ -117,20 +127,20 @@ export async function getSession(c: Context): Promise<SessionUser | null> {
   return openSession(raw)
 }
 
-export async function setSessionCookie(
-  c: Context,
-  user: SessionUser,
-): Promise<void> {
-  const token = await sealSession(user)
-  setCookie(c, env.cookieName, token, {
+/** Issues a new Session for `user` and sets its cookie. */
+export async function setSessionCookie(c: Context, user: SessionUser): Promise<void> {
+  const id = await sealSession(user)
+  writeCookie(c, id, (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec())
+}
+
+function writeCookie(c: Context, id: string, maxAge: number): void {
+  // `__Host-` requires Secure, no Domain and Path=/; the browser refuses the cookie otherwise.
+  setCookie(c, env.cookieName, id, {
     httpOnly: true,
-    secure: env.cookieSecure,
+    secure: true,
     sameSite: 'Lax',
     path: '/',
-    maxAge: Math.max(
-      1,
-      (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec(),
-    ),
+    maxAge: Math.max(1, maxAge),
   })
 }
 
@@ -140,19 +150,24 @@ export async function touchSession(c: Context, user: SessionUser): Promise<void>
   const last = user.lastActive ?? 0
   const throttle = Math.max(1, Math.floor(env.sessionIdleSec / 4))
   if (nowSec() - last < throttle) return
-  await setSessionCookie(c, { ...user, lastActive: nowSec() })
+  const id = readSessionCookie(c)
+  if (!id) return
+  await getDb().update(webSessions).set({ lastActive: nowSec() }).where(eq(webSessions.idHash, hashId(id)))
+  writeCookie(c, id, (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec())
+}
+
+/** Deletes the server-side Session behind the request's cookie. */
+export async function destroySession(c: Context): Promise<void> {
+  const id = readSessionCookie(c)
+  if (id) await getDb().delete(webSessions).where(eq(webSessions.idHash, hashId(id)))
 }
 
 export function clearSessionCookie(c: Context): void {
   // Attributes must match Set-Cookie or browsers keep the session cookie.
-  deleteCookie(c, env.cookieName, {
-    path: '/',
-    secure: env.cookieSecure,
-    sameSite: 'Lax',
-  })
+  deleteCookie(c, env.cookieName, { path: '/', secure: true, sameSite: 'Lax' })
   setCookie(c, env.cookieName, '', {
     httpOnly: true,
-    secure: env.cookieSecure,
+    secure: true,
     sameSite: 'Lax',
     path: '/',
     maxAge: 0,

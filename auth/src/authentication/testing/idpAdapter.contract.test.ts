@@ -11,11 +11,11 @@ import type { IdpAdapter } from './idpAdapter.js'
  * container adapter over auth/keycloak/realm-mice.json to `adapters` to run the same table against Keycloak.
  */
 const clock = fakeClock(Date.UTC(2026, 5, 1))
-const adapters: Array<{ name: string; make: () => IdpAdapter }> = [{ name: 'in-process fake IdP', make: () => createFakeIdp({ clock }) }]
+const adapters: Array<{ name: string; make: () => IdpAdapter | Promise<IdpAdapter> }> = [{ name: 'in-process fake IdP', make: () => createFakeIdp({ clock }) }]
 
 for (const { name, make } of adapters) {
   describe(`IdP adapter contract: ${name}`, async () => {
-    const idp = make()
+    const idp = await make()
     idp.addUser('ann', { email: 'ann@mice.local', name: 'Ann', groups: ['devs'] })
     idp.addUser('mfa', { email: 'mfa@mice.local', mfa: true })
     idp.addUser('guest', { email: 'g@partner.example', guest: true })
@@ -33,8 +33,6 @@ for (const { name, make } of adapters) {
         redirectUri: 'http://localhost/auth/callback',
         postLogoutRedirectUri: 'http://localhost/login',
         groupsClaim: 'groups',
-        verifyIdToken: false,
-        jwksCooldownMs: 0,
       }),
       { nowSec: () => Math.floor(clock.now() / 1000) },
     )

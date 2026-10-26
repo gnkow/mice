@@ -31,9 +31,12 @@ export function decodeJwtPayload(jwt: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))
 }
 
+/** Clock leeway for id_token validity times (`exp`, `nbf`) only; never applied to login state or Sessions. */
+export const ID_TOKEN_LEEWAY_SEC = 5 * 60
+
 /**
  * Claim checks for an id_token received directly from the token endpoint over TLS.
- * The JWS signature is verified separately, only when OIDC_VERIFY_ID_TOKEN is on.
+ * The JWS signature is verified separately, always.
  */
 export function validateIdTokenClaims(
   payload: Record<string, unknown>,
@@ -48,9 +51,10 @@ export function validateIdTokenClaims(
   const auds = Array.isArray(aud) ? aud : [aud]
   if (!auds.includes(expected.audience)) throw new Error('id_token audience mismatch')
   const exp = payload.exp
-  if (typeof exp !== 'number' || exp <= (expected.nowSec ?? Math.floor(Date.now() / 1000))) {
-    throw new Error('id_token expired')
-  }
+  const now = expected.nowSec ?? Math.floor(Date.now() / 1000)
+  if (typeof exp !== 'number' || exp + ID_TOKEN_LEEWAY_SEC <= now) throw new Error('id_token expired')
+  const nbf = payload.nbf
+  if (typeof nbf === 'number' && nbf - ID_TOKEN_LEEWAY_SEC > now) throw new Error('id_token not yet valid')
   if (payload.nonce !== expected.nonce) throw new Error('id_token nonce mismatch')
 }
 
