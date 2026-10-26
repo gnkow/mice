@@ -1,7 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { TransactionRollbackError } from 'drizzle-orm/errors'
-import type { SessionUser } from './authentication/session/session.js'
-import { matchesIdentityEntry } from './authentication/session/principal.js'
+import { matchesIdentityEntry, type SessionUser } from './authentication/index.js'
 import { env } from './env.js'
 import { getDb, inTransaction, type Db, type Tx } from './db/database.js'
 import {

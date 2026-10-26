@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { appendAudit, actorFromUser } from './audit.js'
 import { authorizeInstanceAction, decideInstanceAction } from './authz.js'
 import { env } from './env.js'
-import type { SessionUser } from './authentication/session/session.js'
+import { type SessionUser } from './authentication/index.js'
 import { mintConnectPayload, type ConnectPayload } from './sessionsConnect.js'
 import {
   assignMountPaths,

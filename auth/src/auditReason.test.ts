@@ -12,8 +12,8 @@ const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { fakeClock, useClock } = await import('./clock.js')
 const { overrideEnv } = await import('./env.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
-const { createPat } = await import('./authentication/credentials/tokens.js')
-const { createServicePrincipal, serviceUser } = await import('./authentication/credentials/servicePrincipals.js')
+const { createPat } = await import('./authentication/index.js')
+const { createServicePrincipal, serviceUser } = await import('./authentication/index.js')
 
 const ledger = await openLedger(immudbConfig())
 let since = 0

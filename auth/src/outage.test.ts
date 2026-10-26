@@ -16,7 +16,7 @@ process.env.OXEN_UPSTREAM = 'http://oxen.invalid'
 process.env.PUBLIC_WEB_ORIGIN = 'http://localhost'
 
 const { createApp } = await import('./app.js')
-const { sealSession } = await import('./authentication/session/session.js')
+const { sealSession } = await import('./authentication/index.js')
 const { closeMainDatabase } = await import('./db/database.js')
 const { setUpstreamFetch } = await import('./proxy.js')
 

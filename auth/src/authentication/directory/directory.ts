@@ -79,22 +79,23 @@ export function createDirectoryService(directory: Directory) {
   }
 }
 
-let processDirectory: Directory = createKeycloakDirectory(keycloakConfigFromEnv)
+let lazyDirectory: Directory | null = null
+const directoryNow = (): Directory => (lazyDirectory ??= createKeycloakDirectory(keycloakConfigFromEnv))
 
 /** Test hook: inject fetch (e.g. mock Keycloak); null restores the real one. Resets the token cache. */
 export function setDirectoryFetchForTests(fn: DirectoryFetch | null): void {
-  processDirectory = createKeycloakDirectory(keycloakConfigFromEnv, fn ? { fetch: fn } : {})
+  lazyDirectory = createKeycloakDirectory(keycloakConfigFromEnv, fn ? { fetch: fn } : {})
 }
 
-export const keycloakDirectoryConfigured = (): boolean => processDirectory.configured
-export const directoryIssuer = (): string => processDirectory.issuer
+export const keycloakDirectoryConfigured = (): boolean => directoryNow().configured
+export const directoryIssuer = (): string => directoryNow().issuer
 export const lookupKeycloakUserStatus = (sub: string): Promise<DirectoryUserStatus> =>
-  processDirectory.userStatus(sub)
+  directoryNow().userStatus(sub)
 export const searchDirectory = (input: SearchInput): Promise<DirectorySearchResult> =>
-  createDirectoryService(processDirectory).search(input)
+  createDirectoryService(directoryNow()).search(input)
 
 export const searchStoreDirectory = (q: string, kind: 'user' | 'group', limit: number): Promise<DirectoryHit[]> =>
-  searchProjection(q, kind, limit, processDirectory.issuer)
+  searchProjection(q, kind, limit, directoryNow().issuer)
 export const collectStorePrincipals = (
   opts: { includePatOwners?: boolean } = {},
-): Promise<Map<string, DirectoryUserHit>> => collectProjection({ ...opts, defaultIssuer: processDirectory.issuer })
+): Promise<Map<string, DirectoryUserHit>> => collectProjection({ ...opts, defaultIssuer: directoryNow().issuer })

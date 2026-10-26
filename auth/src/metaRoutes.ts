@@ -31,9 +31,8 @@ import {
   type MetaPatch,
   type MetaRecord,
 } from './metaTypes.js'
-import type { SessionUser } from './authentication/session/session.js'
+import { type GuardArgs, guarded, type SessionUser } from './authentication/index.js'
 import { getSessionRecord } from './sessionsStore.js'
-import { guarded, type GuardArgs } from './authentication/session/routeGuard.js'
 
 export const lookup: MetaAuthzDeps = {
   sessionOwner: async (id) => {

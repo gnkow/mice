@@ -1,5 +1,4 @@
-import type { SessionUser } from './authentication/session/session.js'
-import { can } from './authentication/session/principal.js'
+import { can, type SessionUser } from './authentication/index.js'
 import { env } from './env.js'
 import { ALL_INSTANCE_PERMISSIONS, parseUserKey, userKey, type InstancePermission, type UserKey } from './authzTypes.js'
 import * as repo from './authzRepository.js'

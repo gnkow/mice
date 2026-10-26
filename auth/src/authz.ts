@@ -1,4 +1,4 @@
-import { interpretRequest } from './authentication/session/requestInterpretation.js'
+import { applyGroupBootstrap, interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
 import { hasCompletedTraining, hasInstancePermission, isAuthzEnforce, isInstanceAdmin, maybeBootstrapInstanceAdmin, maybeDevGrantAll } from './authzInstanceStore.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
@@ -13,11 +13,8 @@ import {
   type NamespaceCapability,
   type RepoRole,
 } from './authzTypes.js'
-import type { SessionUser } from './authentication/session/session.js'
-import { isScopedCredential } from './authentication/session/principal.js'
 import type { AuditVia } from './audit.js'
 import { env } from './env.js'
-import { applyGroupBootstrap } from './authentication/directory/groupBootstrap.js'
 import {
   customRepoRoleCoversFine,
   finePermissionForAction,

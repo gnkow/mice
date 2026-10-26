@@ -1,6 +1,6 @@
 import type { Context } from 'hono'
 import type { AuditVia } from './audit.js'
-import type { SessionUser } from './authentication/session/session.js'
+import { type SessionUser } from './authentication/index.js'
 
 export type AuditFields = {
   action: string

@@ -11,7 +11,7 @@ const {
   queryAudit,
   queryAuditForExport,
 } = await import('./audit.js')
-const { classifyPath } = await import('./authentication/session/requestInterpretation.js')
+const { classifyPath } = await import('./authentication/index.js')
 const { auditActionLabel, auditActionInfo, knownAuditActions } = await import(
   './auditLabels.js'
 )

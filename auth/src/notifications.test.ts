@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { after, beforeEach, describe, it } from 'node:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
-import type { SessionUser } from './authentication/session/session.js'
+import { type SessionUser } from './authentication/index.js'
 import type { AuditEvent } from './audit.js'
 
 process.env.SESSION_SECRET = 'notification-test-session-secret'
@@ -24,7 +24,7 @@ const { getNovu, purgeTouchedSubscribers, useNovu } = await import('./novu.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
 const { getDb } = await import('./db/database.js')
 const { notificationCursor, notificationTombstones, notificationUsers } = await import('./db/schema.js')
-const { sealSession } = await import('./authentication/session/session.js')
+const { sealSession } = await import('./authentication/index.js')
 const { setRepoCollaborator, removeRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { preparePrincipal } = await import('./authz.js')

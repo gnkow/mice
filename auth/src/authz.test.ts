@@ -48,9 +48,9 @@ const {
   submitAccessRequest,
   resolveAccessRequest,
 } = await import('./accessRequests.js')
-const { createPat, resolvePat } = await import('./authentication/credentials/tokens.js')
+const { createPat, resolvePat } = await import('./authentication/index.js')
 const { OXEN_PATH_ROLE_MAP, minRoleForAction } = await import('./authzPathMap.js')
-const { classifyPath, interpretRequest } = await import('./authentication/session/requestInterpretation.js')
+const { classifyPath, interpretRequest } = await import('./authentication/index.js')
 const requiredRepoRoleForRequest = (method: string, path: string) => interpretRequest(method, path).minRole
 const { env } = await import('./env.js')
 const {

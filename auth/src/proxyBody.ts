@@ -1,16 +1,10 @@
 import type { Context } from 'hono'
-import {
-  hasAuthorQueryParam,
-  isAuthorFreeBinaryRoute,
-  injectAuthorFormData,
-  injectAuthorJson,
-} from './authentication/author.js'
+import { hasAuthorQueryParam, injectAuthorFormData, injectAuthorJson, isAuthorFreeBinaryRoute, type SessionUser } from './authentication/index.js'
 import {
   extractMessageFromForm,
   extractMessageFromJson,
   extractRepoCreateFromJson,
 } from './audit.js'
-import type { SessionUser } from './authentication/session/session.js'
 
 /** What the proxy learned from the request body, with author fields forced to the Principal. */
 export type InterpretedBody = {

@@ -82,6 +82,22 @@ export async function authenticateUser(c: Context, policy: AuthPolicy = {}): Pro
   return (await authenticateRequest(c, policy))?.user ?? null
 }
 
+export class AuthenticationDenied extends Error {
+  constructor(
+    readonly status: 400 | 401 | 403,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
+/** The authenticated Principal, or throws `AuthenticationDenied` carrying the denial status. */
+export async function requirePrincipal(c: Context, policy: AuthPolicy = {}): Promise<SessionUser> {
+  const r = await authenticateOutcome(c, policy)
+  if (!r.ok) throw new AuthenticationDenied(r.status, r.error)
+  return r.user
+}
+
 /** The audit `via` for a request: `pat` when it authenticated by PAT, else the given fallback. */
 export function callerVia(c: Context, fallback: AuditVia): AuditVia {
   return c.get('authVia' as never) === 'pat' ? 'pat' : fallback

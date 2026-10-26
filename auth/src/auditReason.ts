@@ -1,7 +1,6 @@
 import { env } from './env.js'
-import { peekServicePrincipal } from './authentication/credentials/servicePrincipals.js'
+import { kindOf, peekServicePrincipal, principalKey } from './authentication/index.js'
 import { currentClock } from './clock.js'
-import { kindOf, principalKey } from './authentication/session/principal.js'
 
 /** Carries an explicit reason on any mutating request (JSON, multipart, binary or bodiless). */
 export const REASON_HEADER = 'x-mice-reason'

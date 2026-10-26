@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { and, desc, eq } from 'drizzle-orm'
 import { getDb } from './db/database.js'
 import { accessRequests } from './db/schema.js'
-import type { SessionUser } from './authentication/session/session.js'
+import { type SessionUser } from './authentication/index.js'
 import {
   userKey,
   type InstancePermission,

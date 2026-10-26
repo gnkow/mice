@@ -11,7 +11,7 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 
 const { Hono } = await import('hono')
 const { registerNamespaceRoutes } = await import('./namespaceRoutes.js')
-const { sealSession } = await import('./authentication/session/session.js')
+const { sealSession } = await import('./authentication/index.js')
 const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 

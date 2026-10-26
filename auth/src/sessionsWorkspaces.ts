@@ -1,6 +1,6 @@
 import { appendAudit } from './audit.js'
 import { authorizeRepoAction } from './authz.js'
-import type { SessionUser } from './authentication/session/session.js'
+import { type SessionUser } from './authentication/index.js'
 import { isWorkspaceMount } from './sessionsMounts.js'
 import { getSessionRecord, listSessionsWithStatus, updateSession } from './sessionsStore.js'
 import type { DesktopSession, ResolvedMountInput, SessionMount, SessionMountInput } from './sessionsTypes.js'

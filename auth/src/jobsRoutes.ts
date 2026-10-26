@@ -16,7 +16,7 @@ import {
 } from './jobs.js'
 import { getJob } from './jobsStore.js'
 import { favoriteUserKey, listFavorites } from './favoritesStore.js'
-import { guarded } from './authentication/session/routeGuard.js'
+import { guarded } from './authentication/index.js'
 
 export function registerJobRoutes(app: Hono) {
   app.post('/auth/jobs', guarded({ allowScoped: true, body: 'json', invalidBody: 'Invalid JSON' }, async ({ c, user, via, body, deny }) => {

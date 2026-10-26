@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { declareReason } from './auditReason.js'
-import { guarded } from './authentication/session/routeGuard.js'
+import { guarded } from './authentication/index.js'
 
 /** Lets a client that cannot send X-Mice-Reason (the oxen binary) state a reason for its next mutations. */
 export function registerReasonRoutes(app: Hono): void {

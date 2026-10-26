@@ -1,7 +1,6 @@
 import { actorFromUser, appendOutcomeFor, type AuditVia } from './audit.js'
-import { callerVia } from './authentication/session/requireAuth.js'
+import { callerVia, type SessionUser } from './authentication/index.js'
 import type { AuditFn } from './routeDeps.js'
-import type { SessionUser } from './authentication/session/session.js'
 
 /** Appends an audit event for a BFF-native (non-proxied) mutation. Never pass secrets in `detail`. */
 export const auditMutation: AuditFn = async (c, user, via: AuditVia, fields) => {

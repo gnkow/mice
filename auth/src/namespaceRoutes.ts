@@ -26,7 +26,7 @@ import type {
   RepoFinePermission,
 } from './authzTypes.js'
 import type { AuditDep } from './routeDeps.js'
-import { guarded } from './authentication/session/routeGuard.js'
+import { guarded } from './authentication/index.js'
 
 function memberTarget(body: {
   kind?: 'user' | 'group'

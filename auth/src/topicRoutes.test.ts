@@ -10,11 +10,11 @@ process.env.SESSION_SECRET = 'test-session-secret-for-topic'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 
 const { Hono } = await import('hono')
-const { registerTokenRoutes } = await import('./authentication/credentials/tokenRoutes.js')
+const { registerTokenRoutes } = await import('./authentication/index.js')
 const { registerInstanceRoutes } = await import('./instanceRoutes.js')
-const { registerRevocationRoutes } = await import('./authentication/credentials/revocationRoutes.js')
-const { sealSession } = await import('./authentication/session/session.js')
-const { createPat, resolvePat } = await import('./authentication/credentials/tokens.js')
+const { registerRevocationRoutes } = await import('./authentication/index.js')
+const { sealSession } = await import('./authentication/index.js')
+const { createPat, resolvePat } = await import('./authentication/index.js')
 const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env } = await import('./env.js')
 

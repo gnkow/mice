@@ -14,8 +14,7 @@ import { getJob } from './jobsStore.js'
 import { canReadEntity } from './metaAuthz.js'
 import { lookup, resolveRef } from './metaRoutes.js'
 import { MetaError, type EntityRef } from './metaTypes.js'
-import type { SessionUser } from './authentication/session/session.js'
-import { guarded } from './authentication/session/routeGuard.js'
+import { guarded, type SessionUser } from './authentication/index.js'
 
 const MAX_LOOKUP = 500
 
