@@ -4,13 +4,13 @@ import {
   isAuthorFreeBinaryRoute,
   injectAuthorFormData,
   injectAuthorJson,
-} from './author.js'
+} from './authentication/author.js'
 import {
   extractMessageFromForm,
   extractMessageFromJson,
   extractRepoCreateFromJson,
 } from './audit.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 /** What the proxy learned from the request body, with author fields forced to the Principal. */
 export type InterpretedBody = {

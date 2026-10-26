@@ -8,7 +8,7 @@ import {
   type FileEntrySnapshot,
   type LineageKind,
 } from './lineage.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 export type LineageCapture = {
   /** Snapshot the prior file entry; call before forwarding the write upstream. */

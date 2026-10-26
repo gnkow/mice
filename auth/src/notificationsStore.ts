@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { getDb } from './db/database.js'
 import { notificationCursor, notificationTombstones, notificationUsers } from './db/schema.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 import type { NotificationPreferences } from './notificationsTypes.js'
 
 export type NotificationUser = {

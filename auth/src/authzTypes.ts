@@ -1,4 +1,4 @@
-import { principalKey, parsePrincipalKey } from './principal.js'
+import { principalKey, parsePrincipalKey } from './authentication/session/principal.js'
 import {
   INSTANCE_PERMISSIONS,
   type InstancePermission,

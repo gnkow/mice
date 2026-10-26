@@ -5,9 +5,9 @@ import { auditActionLabel, knownAuditActions } from './auditLabels.js'
 import { authorizeAuditQuery, authorizeLineageQuery, authorizeLineageRebuild } from './authz.js'
 import { env } from './env.js'
 import { deriveOpsFromPathHistory, queryLineage, type LineageKind, type PathVersionHint } from './lineage.js'
-import { guarded } from './routeGuard.js'
+import { guarded } from './authentication/session/routeGuard.js'
 import type { AuditDep } from './routeDeps.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 /** The caller's audit scope + filters; returns a Response on denial. */
 async function resolveAuditQuery(c: Context, session: SessionUser): Promise<{ error: Response } | { query: AuditQuery }> {

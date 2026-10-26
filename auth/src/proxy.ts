@@ -1,6 +1,6 @@
 import type { Context } from 'hono'
 import { env } from './env.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 import {
   actorFromUser,
   appendAudit,
@@ -13,7 +13,7 @@ import {
 import { isDatasetMutation, REASON_HEADER, resolveReason, type ReasonRejection, type ResolvedReason } from './auditReason.js'
 import { createDatasetCapture, createLineageCapture, type DatasetVersions } from './proxyLineage.js'
 import { authorizeApiRequest } from './authz.js'
-import { interpretRequest } from './requestInterpretation.js'
+import { interpretRequest } from './authentication/session/requestInterpretation.js'
 import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
 import { filterNamespaceCatalog, recordSiteAdminBypass, seedRepoCreate } from './proxyEffects.js'

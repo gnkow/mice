@@ -6,8 +6,8 @@ import {
   authorizeStoreAdmin,
   authorizeRepoAction,
 } from '../authz.js'
-import { authenticateRequest } from '../requireAuth.js'
-import type { SessionUser } from '../session.js'
+import { authenticateRequest } from '../authentication/session/requireAuth.js'
+import type { SessionUser } from '../authentication/session/session.js'
 import { getCapabilities, logCapabilities } from './capabilities.js'
 import {
   CheckoutStore,

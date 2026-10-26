@@ -56,7 +56,7 @@ export function isolatedAuth(extraEnv: Record<string, string> = {}) {
     person,
     admin,
     async sessionHeaders(user: TestPerson): Promise<Record<string, string>> {
-      const { sealSession } = await import('./session.js')
+      const { sealSession } = await import('./authentication/session/session.js')
       const { env } = await import('./env.js')
       const token = await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 30 })
       return { cookie: `${env.cookieName}=${token}` }

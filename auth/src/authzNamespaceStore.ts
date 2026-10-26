@@ -1,4 +1,4 @@
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 import { userKey, type BasePermission, type NamespaceRole, type UserKey } from './authzTypes.js'
 import { isInstanceAdmin } from './authzInstanceStore.js'
 import { namespaceRolesFor } from './authzMembershipStore.js'

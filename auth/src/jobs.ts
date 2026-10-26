@@ -41,7 +41,7 @@ import {
   resolveSource,
 } from './jobsSource.js'
 import type { JobRun, JobStatus, JobSubmitBody } from './jobsTypes.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 const activeCancels = new Map<string, () => Promise<void>>()
 let running = 0

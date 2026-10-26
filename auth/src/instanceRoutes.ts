@@ -2,7 +2,7 @@ import type { Hono } from 'hono'
 import { addInstanceAdmin, isAuthzEnforce, listInstanceAdmins, listInstancePermissionGrants, removeInstanceAdmin, setAuthzEnforce, setInstancePermissions } from './authzInstanceStore.js'
 import type { InstancePermission } from './authzTypes.js'
 import { instanceGate } from './decisionHttp.js'
-import { guarded } from './routeGuard.js'
+import { guarded } from './authentication/session/routeGuard.js'
 import type { AuditDep } from './routeDeps.js'
 
 const adminOnly = instanceGate('instance.admin')

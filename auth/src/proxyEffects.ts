@@ -4,7 +4,7 @@ import { decideInstanceAction } from './authz.js'
 import { isAuthzEnforce } from './authzInstanceStore.js'
 import { ensureNamespaceForCreate, getNamespace } from './authzNamespaceStore.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 /**
  * Under enforce, narrow `GET /api/namespaces` to the caller's visible namespaces.

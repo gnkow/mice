@@ -1,4 +1,4 @@
-import type { SessionUser } from '../session.js'
+import type { SessionUser } from '../authentication/session/session.js'
 import { authorizeRepoAction } from '../authz.js'
 import { env } from '../env.js'
 import { hostVolumePaths, run } from './capabilities.js'

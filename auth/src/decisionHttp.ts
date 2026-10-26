@@ -1,6 +1,6 @@
 import type { Context } from 'hono'
 import { decideInstanceAction, type Decision, type InstanceAction } from './authz.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 /** The denial response for a Decision, or null when it allows. Routes translate; they never decide. */
 export function denialResponse(c: Context, d: Partial<Decision> & { allow: boolean }): Response | null {

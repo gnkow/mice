@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono'
 import { decideInstanceAction } from './authz.js'
 import { instanceGate } from './decisionHttp.js'
-import { guarded } from './routeGuard.js'
+import { guarded } from './authentication/session/routeGuard.js'
 import type { AuditDep } from './routeDeps.js'
 import { AnnouncementError, createAnnouncement, deleteAnnouncement, listAnnouncements, updateAnnouncement } from './announcementsStore.js'
 

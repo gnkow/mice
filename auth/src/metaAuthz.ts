@@ -2,7 +2,7 @@ import { decideInstanceAction, decideNamespaceAction, hasRepoPermission, isUnsco
 import { isAuthzEnforce } from './authzInstanceStore.js'
 import { userCanSeeNamespace } from './authzVisibility.js'
 import type { EntityRef } from './metaTypes.js'
-import type { SessionUser } from './session.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 export type MetaAuthzDeps = {
   sessionOwner?: (id: string) => string | null | Promise<string | null>

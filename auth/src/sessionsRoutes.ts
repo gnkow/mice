@@ -15,7 +15,7 @@ import {
 import { peekConnectTicket } from './sessionsConnect.js'
 import { getSessionRecord } from './sessionsStore.js'
 import { listSessionTemplates } from './sessionsTemplates.js'
-import { guarded } from './routeGuard.js'
+import { guarded } from './authentication/session/routeGuard.js'
 
 export function registerSessionRoutes(app: Hono) {
   app.get('/auth/sessions/templates', guarded({ allowScoped: true }, async ({ c }) => {

@@ -15,7 +15,7 @@ describe('testSupport', () => {
 
   it('seals a session cookie that authenticates through the real interface', async () => {
     const { Hono } = await import('hono')
-    const { authenticateUser } = await import('./requireAuth.js')
+    const { authenticateUser } = await import('./authentication/session/requireAuth.js')
     const app = new Hono()
     app.get('/me', async (c) => {
       const u = await authenticateUser(c, { credential: 'session' })

@@ -3,9 +3,9 @@ import { currentClock, systemClock, type Clock } from './clock.js'
 import { env } from './env.js'
 import { auditActionLabel } from './auditLabels.js'
 import { immudbConfig, openLedger, type Ledger, type LedgerVerification } from './auditLedger.js'
-import { kindOf } from './principal.js'
-import { getServicePrincipal } from './servicePrincipals.js'
-import type { SessionUser } from './session.js'
+import { kindOf } from './authentication/session/principal.js'
+import { getServicePrincipal } from './authentication/credentials/servicePrincipals.js'
+import type { SessionUser } from './authentication/session/session.js'
 
 export type AuditVia = 'session' | 'pat'
 

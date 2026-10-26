@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import type { PatScope } from '../session.js'
+import type { PatScope } from '../authentication/session/session.js'
 import type { JobRun } from '../jobsTypes.js'
 import type { LineageOp } from '../lineage.js'
 import type { DesktopSession } from '../sessionsTypes.js'
