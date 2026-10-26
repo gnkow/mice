@@ -113,7 +113,7 @@ export function DeviceSessionsList() {
   }
 
   return (
-    <div>
+    <div className="ns-settings-subsection">
       <div className="ns-settings-section-head">
         <h3>
           <Laptop size={16} className="button-label-icon" aria-hidden="true" />

@@ -93,7 +93,7 @@ export function AuthEventLog() {
   const events = data?.events || []
 
   return (
-    <section id="security-activity" className="settings-section" aria-labelledby="security-activity-heading">
+    <div className="ns-settings-subsection">
       <div className="ns-settings-section-head">
         <h3 id="security-activity-heading">
           <Shield size={16} className="button-label-icon" aria-hidden="true" />
@@ -124,6 +124,6 @@ export function AuthEventLog() {
           ))}
         </ul>
       )}
-    </section>
+    </div>
   )
 }

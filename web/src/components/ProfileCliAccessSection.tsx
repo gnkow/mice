@@ -57,7 +57,7 @@ export function ProfileCliAccessSection() {
 
       <AuthEventLog />
 
-      <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color, #e5e7eb)' }}>
+      <div className="ns-settings-subsection">
         <h3>
           <LogOut size={16} className="button-label-icon" aria-hidden="true" />
           Sign Out Everywhere

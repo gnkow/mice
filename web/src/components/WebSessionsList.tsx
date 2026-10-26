@@ -97,11 +97,11 @@ export function WebSessionsList({ currentSessionId }: { currentSessionId?: strin
   const otherSessions = sessions.filter(s => s.id !== currentSessionId)
 
   return (
-    <div>
+    <div className="ns-settings-subsection">
       <div className="ns-settings-section-head">
         <h3>
           <Monitor size={16} className="button-label-icon" aria-hidden="true" />
-          Browser Sessions ({sessions.length} active)
+          Web Sessions ({sessions.length} active)
         </h3>
         <p className="muted small">
           Active browser sessions on your account. You can revoke individual sessions.
