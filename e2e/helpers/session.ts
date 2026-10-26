@@ -20,7 +20,7 @@ function secretKey() {
   return createHash('sha256').update(SESSION_SECRET).digest()
 }
 
-/** Seal a BFF session cookie (same format as auth/src/session.ts). */
+/** Seal a BFF session cookie (same format as auth/src/authentication/session/session.ts). */
 export async function sealTestSession(user: TestIdentity): Promise<string> {
   return new EncryptJWT({
     sub: user.sub,
