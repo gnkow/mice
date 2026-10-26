@@ -3,6 +3,17 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createAuthTestApp } from './authTestApp.js'
 
+/**
+ * Table-driven authentication test suite.
+ * 
+ * This suite demonstrates the standard pattern for auth testing:
+ * 1. Define test users with their attributes
+ * 2. Create an app with a fake IdP and controllable clock
+ * 3. Run table-driven scenarios against the IdP
+ * 
+ * The fake IdP issues real JWT tokens that can be decoded and verified.
+ * The clock can be advanced to test time-based scenarios like expiration.
+ */
 await describe('authTestApp', async () => {
   await it('IdP issues a token for a configured user', async () => {
     const app = createAuthTestApp({
@@ -77,5 +88,28 @@ await describe('authTestApp', async () => {
     assert.equal(bobClaims.sub, 'bob')
     assert.equal(bobClaims.email, 'bob@guest.com')
     assert.equal(bobClaims.name, 'Bob Guest')
+  })
+
+  await it('contract: tokens include standard OIDC claims', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'charlie', email: 'charlie@example.com', name: 'Charlie' }],
+    })
+
+    const token = await app.idp.issueToken('charlie')
+    const claims = await app.idp.decodeToken(token)
+    
+    // Standard OIDC claims
+    assert.ok(claims.sub, 'token must include sub')
+    assert.ok(claims.iss, 'token must include iss')
+    assert.ok(claims.aud, 'token must include aud')
+    assert.ok(claims.iat, 'token must include iat')
+    assert.ok(claims.exp, 'token must include exp')
+    
+    // User profile claims
+    assert.ok(claims.email, 'token must include email')
+    assert.ok(claims.name, 'token must include name')
+    
+    // Expiration should be in the future relative to issue time
+    assert.ok(claims.exp > claims.iat, 'exp must be after iat')
   })
 })
