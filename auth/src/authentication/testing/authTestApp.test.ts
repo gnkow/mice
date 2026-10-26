@@ -173,4 +173,31 @@ await describe('authTestApp', async () => {
     const html = await callbackResp.text()
     assert.ok(html.includes('expired') || html.includes('Invalid'), 'error message should mention expiration')
   })
+
+  await it('a callback replayed after a successful login is rejected', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'charlie', email: 'charlie@example.com', name: 'Charlie' }],
+    })
+
+    // Complete a successful login
+    const loginResp = await app.bff.request('/auth/login')
+    const redirectUrl = new URL(loginResp.headers.get('location')!)
+    const state = redirectUrl.searchParams.get('state')!
+    const pkceCookie = loginResp.headers.get('set-cookie')!
+    const code = app.issueAuthCode('charlie', state)
+    
+    const callbackResp1 = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    assert.equal(callbackResp1.status, 302, 'first callback should succeed')
+    
+    // Replay the same callback
+    const callbackResp2 = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    assert.equal(callbackResp2.status, 400, 'replayed callback should be rejected')
+    
+    const html = await callbackResp2.text()
+    assert.ok(html.includes('Invalid') || html.includes('expired') || html.includes('used'), 'error should indicate replay')
+  })
 })
