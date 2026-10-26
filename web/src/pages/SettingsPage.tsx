@@ -1,6 +1,7 @@
-import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
+import { AdminRevocationSection } from '../components/AdminRevocationSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
@@ -70,6 +71,7 @@ export function SettingsPage() {
       { id: 'authorization-policy', label: 'Authorization policy', Icon: ShieldCheck },
       { id: 'instance-administrators', label: 'Instance administrators', Icon: ShieldUser },
       { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
+      { id: 'user-revocation', label: 'User revocation', Icon: UserX },
       { id: 'announcements', label: 'Announcements', Icon: Megaphone },
     ] }] : []),
   ]
@@ -119,6 +121,7 @@ export function SettingsPage() {
         {me.kind === 'ok' && me.data && <>
           <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
           {isInstanceAdmin && <InstanceAdminSection />}
+          {isInstanceAdmin && <AdminRevocationSection />}
           {isInstanceAdmin && <AnnouncementsSection />}
         </>}
       </div>
