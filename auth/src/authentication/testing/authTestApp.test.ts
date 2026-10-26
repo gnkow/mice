@@ -148,4 +148,29 @@ await describe('authTestApp', async () => {
     assert.equal(identity.email, 'alice@example.com')
     assert.equal(identity.name, 'Alice')
   })
+
+  await it('login state expires after 10 minutes', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'bob', email: 'bob@example.com', name: 'Bob' }],
+    })
+
+    // Start login flow
+    const loginResp = await app.bff.request('/auth/login')
+    const redirectUrl = new URL(loginResp.headers.get('location')!)
+    const state = redirectUrl.searchParams.get('state')!
+    const pkceCookie = loginResp.headers.get('set-cookie')!
+    
+    // Advance clock by 11 minutes
+    app.clock.advance(11 * 60 * 1000)
+    
+    // Attempt callback - should fail due to expired state
+    const code = app.issueAuthCode('bob', state)
+    const callbackResp = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
+      headers: { cookie: pkceCookie },
+    })
+    
+    assert.equal(callbackResp.status, 400, 'callback should reject expired login state')
+    const html = await callbackResp.text()
+    assert.ok(html.includes('expired') || html.includes('Invalid'), 'error message should mention expiration')
+  })
 })
