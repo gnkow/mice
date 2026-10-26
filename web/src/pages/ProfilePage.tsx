@@ -29,7 +29,7 @@ export function ProfilePage() {
       { id: 'notifications', label: 'Notifications', Icon: Bell },
     ] },
     { title: 'Access', items: [
-      { id: 'access-management', label: 'Access', Icon: KeyRound },
+      { id: 'access-management', label: 'Sessions', Icon: KeyRound },
     ] },
   ]
   return <main className="page wide">
