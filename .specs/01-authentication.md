@@ -30,15 +30,19 @@ SSO login through an external IdP yields a sealed Session cookie; the CLI uses a
 ## Implementation Decisions
 
 - Principal identity is `iss`+`sub` (ADR 0001); no cross-IdP merging.
-- Sessions are sealed cookies, idle timeout 15 minutes and absolute 8 hours; strict never allows 0.
-- CLI credentials are short-lived and scoped to stable repository ids and action-level scopes, intersected with live permissions. There are no PATs and no service principals.
-- Revocation uses a database-time cut-off plus a monotonic revocation generation per Principal; it is effective on all instances within 1 s of commit, with a short-TTL cache (about 2 s) as the stated guarantee.
-- Groups are fetched server-side from the directory and re-checked with a stated maximum staleness; overage claims fail login loudly.
-- Offboarding combines directory-sync revocation, a live IdP/directory check with a short cache, back-channel logout (Sessions only) and manual admin revoke. If the IdP is unreachable, last-known status is kept for a bounded time and an alert is raised.
-- Step-up: fresh IdP login (prompt=login, same `iss`+`sub`, MFA evidence where exposed), anchored on BFF callback receipt time with a 5-15 minute hard cap; the CLI uses a device flow.
+- Sessions are sealed cookies with server-side state, idle timeout 15 minutes and absolute 8 hours; 5 concurrent sessions per Principal with oldest-session eviction; strict never allows 0 idle timeout.
+- CLI credentials are short-lived (8-24h, refreshable, 30-day family cap) and scoped to stable repository ids and action-level scopes, intersected with live permissions. There are no PATs and no service principals.
+- Revocation uses database-time cut-off plus monotonic revocation generation per Principal; effective on all instances within 1 s of commit.
+- Groups are fetched server-side from the directory at login, refresh and privileged operations (sign/merge/admin); overage triggers directory API fetch; ordinary reads use session-cached groups (bounded by 8h session lifetime).
+- Offboarding combines directory-sync revocation, live IdP/directory check (NO cache, NO grace period), back-channel logout (Sessions only) and manual admin revoke. IdP unreachable = all operations fail (503).
+- Step-up: fresh IdP login (prompt=login, same `iss`+`sub`, MFA evidence required), anchored on BFF callback receipt time with 5-15 min hard cap for signing; the CLI uses device flow.
+- IdP MFA capability validated at deployment (baseline check); signing refused if MFA evidence (acr/amr) unavailable.
 - The id_token signature is always verified and an https issuer is required.
 - Production requires an external IdP; Keycloak is development-only.
 - All state in PostgreSQL; multiple BFF instances share revocation state.
+- Hashed source IPs (SHA-256 with daily salt) logged for anomaly detection.
+- Rate limiters fail-closed; unavailable rate-limit store = 503.
+- Seal key rotation: 30-day schedule (7-day overlap); emergency rotation invalidates immediately (8h grace max).
 
 ## Testing Decisions
 
@@ -91,16 +95,16 @@ Audit, limits and bootstrap
 
 ## Conflicts and open risks
 
-- Q10 versus Q28: oxen holds `iss`+`sub` through a commit trailer for humans only; automation has no trailer, so Job commits are attributed through audit `via` alone. Resolved by the global decision; the 09 and 08 specs must state it.
-- Q4 (short-TTL cache of about 2 s) versus 15 Q18 and Q21 (no cache, per-request revocation read): CONFLICT on the cache; reconcile in implementation, the stricter reading is no cache.
-- Q18 (staleness bound) versus 15 Q21 (no cache) and 02 Q12 (max staleness): the same staleness figure must be shared across 01, 02 and 15; open.
-- Q1: a live check on credential use is kept only for the short-lived CLI credential, since PATs do not exist; the IdP-unreachable bounded grace is a RISK that revoked users stay active during an outage.
-- Q21: absolute fail-closed means no logins or revokes while immudb is down; accepted RISK, and 15 Q7 notes the incident-response gap (break-glass declined).
-- Q16: a secret leak logs everyone out; accepted RISK, no rotation tooling.
-- Q6 and 04 Q4: if the IdP exposes no acr/amr, step-up is refused for signing; the IdP must be validated.
-- Q26: PENDING confirmation that no live credentials, cookies or cut-offs exist.
-- Q20: running Jobs finish but their commit is blocked; their held output follows 04 Q12 and 08 Q11.
-- Q12, Q13 and 00 Q19 are superseded by service-principal removal; stories 11-12 of 02 and 12-14 specs still reference them.
+- Q10 versus Q28: RESOLVED by U6. Human commits have iss+sub trailer; Job commits have attribution trailer "Job: J-1234, Submitted-by: iss|sub, Token: hash". The 09 and 08 specs must state it.
+- Q4 (2s cache): RESOLVED by U3. No cache tolerance at all; live IdP check on every operation.
+- Q18 (staleness): RESOLVED by U3. Groups checked at login + refresh + privileged operations; ordinary reads use session-cached groups (8h max staleness = session absolute lifetime). Same staleness figure applies to 01, 02 and 15.
+- Q1 (IdP grace): RESOLVED by U3. NO grace period. IdP unreachable = all operations fail (503).
+- Q21: CONFIRMED by U10. Absolute fail-closed: immudb down = no operations (503). No break-glass. Accepted RISK; 15 Q7 incident-response gap remains.
+- Q16: RESOLVED by U7. Emergency rotation available (compromised key invalidated immediately, 8h grace). Normal rotation (30-day schedule) prevents "log everyone out" scenario.
+- Q6 and 04 Q4: RESOLVED by U1. IdP MFA capability is deployment prerequisite. Signing refused if acr/amr unavailable (not "where exposed" - REQUIRED).
+- Q26: RESOLVED by U21. Greenfield deployment; no migration.
+- Q20: CONFIRMED by U13. Running Jobs finish but their commit is blocked.
+- Q12, Q13 and 00 Q19: service-principal removal confirmed; stories 11-12 of 02 and 12-14 specs need updating to remove service principal references.
 
 ## Round 2 decisions (Q29–Q68, see questions-round2.md)
 
@@ -156,7 +160,7 @@ Basis: 21 CFR Part 11, EU Annex 11, ALCOA+. Supersedes earlier rounds on conflic
 - R8: NO deferred audit append: suspend fails with 503 when immudb is down (reverses Q77; consistent with 15 Q7 and 15 Q21). The suspend-exception ADR is not needed; the lease-renewal exception stays pending.
 - R9: no cap on concurrent sessions (Q70 answered). RISKS: Part 11 11.300 is satisfied only because shared credentials are forbidden (Q82); unlimited sessions enlarge the stolen-cookie surface. Idle timeout was not answered: OPEN, recommended 30 min for web with no signing from an idle session.
 
-Status: needs-info on R9 idle timeout, legal confirmation of R2/R3 retention basis, lease-renewal exception.
+Status: needs-info on legal confirmation of R2/R3 retention basis (pending).
 
 ## Round 5 decisions (owner clarifications)
 
@@ -189,11 +193,62 @@ Status: needs-info on R9 idle timeout, legal confirmation of R2/R3 retention bas
 - T7: all authentication events (login, refresh, logout, step-up, failure, revocation) audited with request id and Principal; tokens, cookies and codes never logged; redaction is a tested rule.
 - T8: signature shows the name as of signing (Q40 snapshots); the name comes from the IdP; login is refused if the name claim is empty.
 
+## Round 8 decisions (GxP regulation consistency review)
+
+Basis: 21 CFR Part 11 §11.50, §11.100, §11.200, §11.300; EU Annex 11; ALCOA+. Final grilling round with owner focusing on authentication/GxP regulation alignment. Supersedes earlier rounds on conflict.
+
+- U1: IdP MFA capability is a deployment prerequisite. If acr/amr claims unavailable, platform refuses signing operations (not just warnings). IdP baseline check validates MFA claim availability at deploy and daily; results stored in validation pack. (Refines Q6, Q43, R6.)
+- U2: Idle timeout is 15 minutes (NOT 30 min). "Idle" defined as "no authenticated HTTP requests within 15-minute window." Checked at signing: refuse if last authenticated request > 15 min ago. Reverses R9's 30-min value. (Refines Q19, R9.)
+- U3: All operations require live IdP check (no grace period, no stale cache tolerance). IdP unreachable = no operations whatsoever (503 for all requests, including reads). Supersedes Q71's "5 min cache for ordinary requests." Groups checked at login + refresh + privileged operations (sign/merge/admin); ordinary reads use session-cached groups bounded by 8h absolute session lifetime. (Refines Q3, Q71, Q18.)
+- U4: Concurrent session cap: 5 sessions per Principal. Oldest session evicted when cap exceeded. "My sessions" UI (already implemented) allows manual revocation. (Refines Q70, R9 "no cap.")
+- U5: CLI token lifetime remains 8-24h refreshable (Q5 stance preserved). Offline CLI use is impossible in GxP context (every operation requires server round-trip for audit). Revocation window not a concern if no server requests occur.
+- U6: Job commits carry attribution trailer (not signature): "Job: J-1234, Submitted-by: iss|sub, Token: hash". Ensures repository-level attribution even if audit separated. Satisfies Part 11 §11.50 attribution. (Refines Q28, T2.)
+- U7: Session seal key rotation: 30-day schedule with 7-day overlap (normal rotation). Emergency rotation (compromised key): invalidate immediately, new key issued, old key valid 8h grace max (session absolute lifetime). Admin command: `mice admin rotate-seal-key --emergency`. (Refines Q16, Q50.)
+- U8: Source IPs logged as hashed values (SHA-256(IP + daily_salt)) in audit for anomaly detection. Satisfies Part 11 §11.300(d) device checks. Sufficient for same-day pattern detection, insufficient for long-term tracking (salt rotates daily). GDPR minimization compliant. (Refines Q23, Q81, R3, Round 5.)
+- U9: Auto-provision creates Principal records with zero rights for any IdP user who logs in. Admins grant access explicitly. Accepted design. (Refines R1, Q31.)
+- U10: No break-glass procedure for ImmuDB outage. ImmuDB down = all operations stop (503). No post-incident reconciliation, no emergency bypass. Accepted operational risk. (Refines Q21, R7, R8.)
+- U11: Name change history tracked per Principal. Signatures display both current name and name-at-signing: "Signed by: Dr. Jane Smith (2021-03-15)" with option to show "(currently: Dr. Jane Jones)." Auditors see complete name timeline. (Refines Q40, T8.)
+- U12: NO bulk approval. One signature per action only. R4 (50-item cap) removed entirely from spec. May be revisited in future capability.
+- U13: Job token lifetime determined by job maximum duration (per-job-type or per-submission configuration). Job tokens re-checked against IdP at commit. Revoked user's running Jobs complete but commit blocked (Q20 preserved). (Refines T1, Q20.)
+- U14: Shared OS accounts forbidden (policy, not technically enforced). Device fingerprinting impractical (VMs, containers, spoofing). Documented as SOP requirement with training. Accepted residual risk in validation pack. (Refines Q82, Q35.)
+- U15: Device flow phishing mitigation: Show hashed IP last 4 chars + device name + require typing confirmation ("APPROVE" or device code). No step-up for device approval itself (too heavy for routine CLI login). Alert security after 5 device approvals in 10 min per Principal. (Refines Q15, Q58.)
+- U16: Emergency seal key rotation is event-driven (compromise detected → rotate immediately). Normal rotation remains time-driven (30-day schedule). (Refines U7.)
+- U17: Group overage handling implemented now (not deferred). On overage indicator, BFF fetches groups via directory API (Microsoft Graph for Entra, equivalent for other IdPs). Fail login only if directory fetch also fails. Per-IdP overage handling documented in deployment guide. (Refines Q17.)
+- U18: Mid-session privilege escalation (new group added): Denied until user performs session refresh or logout/login. New groups not automatically detected for ordinary reads. Privilege revocation detected via privileged-operation group check (sign/merge/admin re-check groups live per U3). (Refines Q18, U3.)
+- U19: Signature records store both extracted claims (acr, amr, auth_time) AND verification metadata (JWKS key ID used, token signature verified timestamp, IdP issuer). Proves Mice validated IdP's assertion, not just copied claims. Satisfies Part 11 §11.200 evidence. (Refines S6, Q43.)
+- U20: IdP baseline drift detection. Baseline includes: MFA claims available, required OIDC scopes, token signature algorithm (RS256 vs HS256), group claim format. Daily automated check (T5). On critical drift (MFA claims missing, signature algorithm changed): block signing (not all auth). On non-critical drift (group format changed): alert only. Operator reviews and updates baseline if intentional change. (Refines R6, T5, Q45.)
+- U21: Greenfield deployment (no migration). Q26 migration concerns removed from spec. All users and credentials created fresh.
+- U22: Strict mode is ALWAYS ON (not a switch). Rate limiters fail-closed always. Rate-limit counter store (Redis/Postgres) unreachable = 503 for authentication endpoints (login, device flow, token refresh). Consistent with U10 (no break-glass). (Refines Q24, Q21, GXP_STRICT decision.)
+
+### New conflicts and risks (Round 8)
+
+- U3 vs line 35: Line 35 says "short-TTL cache (about 2 s) as the stated guarantee" but U3 eliminates all caches (IdP unreachable = 503). RESOLVED: U3 wins; remove 2s cache references. Revocation uses monotonic generation only (Q3 db-time + generation preserved).
+- U4 vs R9: R9 said "no cap on concurrent sessions" but U4 caps at 5. RESOLVED: U4 wins; R9 overridden.
+- U2 vs R9: R9 said "30 min for web" but U2 sets 15 min. RESOLVED: U2 wins; revert to original Q19 value.
+- U12 vs R4: R4 described 50-item bulk approval but U12 removes it. RESOLVED: U12 wins; R4 deleted.
+- U13: Job completion after revocation (commit blocked) wastes compute for hours. ACCEPTED: Jobs complete, commit blocked. Alternative (immediate termination) rejected to preserve work-in-progress data.
+- U14: Shared OS account detection not technically enforced. RISK: Labs may violate policy unknowingly. Mitigation: deployment checklist, training requirement, SOP template in validation pack.
+- U10 + U22: Dual single-points-of-failure (ImmuDB AND IdP both must be available for any operation). RISK: Higher unavailability surface. ACCEPTED: GxP correctness over availability; documented in business continuity plan.
+
 ## Consolidated final position (supersession map)
 
-Effective rules where answers conflicted: Q4/Q59 cache dropped (Q79); Q16 superseded; Q38 reversed by Q70/R9 (no cap, 30 min idle, no signing from idle); Q41/Q81/R3 IPs: none stored; Q48/Q76 pseudonym dropped (R2); Q77 dropped (R8); Q75 manifest replaced by per-item records (R4); Q69 limited to read-only baseline (R1); S9 amended by T3.
+Effective rules where answers conflicted (includes Round 8 updates):
+- Q4/Q59 2s cache: dropped by Q79, then U3 (no cache at all; live IdP check always)
+- Q16: superseded by U7 (emergency key rotation)
+- Q38 (single session): reversed by Q70/R9 (no cap), then capped by U4 (5 sessions max)
+- R9 idle timeout (30 min): reversed by U2 (15 min)
+- R9 (no session cap): reversed by U4 (5 sessions max)
+- Q41/Q81/R3 IPs: R3 stored IPs, Round 5 removed IPs, U8 restored as hashed IPs
+- Q48/Q76 pseudonym: dropped by R2 (raw iss+sub always)
+- Q77 deferred append: dropped by R8 (fail-closed always)
+- Q75/R4 bulk approval: dropped by U12 (no bulk approval at all)
+- Q69 bootstrap: limited to read-only baseline by R1
+- S9 support access: amended by T3 (no support access)
+- Q26 migration: removed by U21 (greenfield only)
+- Line 35 "2s cache": removed by U3 (no cache tolerance)
+- Line 37 "bounded time" grace: removed by U3 (no grace, fail immediately)
 
-Remaining open items: (1) legal confirmation of R2 no-erasure and GxP-over-GDPR precedence; (2) abuse detection without IPs relies on S2 only, to be confirmed acceptable to QA; (3) propagate to 00, 08, 13, 14, 15, 16 specs and ADR drafts (lease exception draft withdrawn, IdP-migration items moot, IP items dropped); (4) separate training spec (S4); (5) **Auditor mode (Q33/Q78/T3) utility functions implemented but not integrated**: no database schema, no session user flag, no route exposure, no middleware enforcement - requires ~6-7 hours to complete integration (admin routes, SessionUser extension, read-only middleware, audit logging, UI).
+Remaining open items: (1) legal confirmation of R2 no-erasure and GxP-over-GDPR precedence; (2) abuse detection now uses hashed IPs (U8), pattern detection plus S2 Principal-based rate limits; (3) propagate Round 8 (U1-U22) to 00, 08, 13, 14, 15, 16 specs and ADR drafts (lease exception draft withdrawn, IdP-migration items moot per U21, cache references removed per U3, session cap added per U4, idle timeout corrected per U2); (4) separate training spec (S4); (5) **Auditor mode (Q33/Q78/T3) utility functions implemented but not integrated**: no database schema, no session user flag, no route exposure, no middleware enforcement - requires ~6-7 hours to complete integration (admin routes, SessionUser extension, read-only middleware, audit logging, UI).
 
 ---
 

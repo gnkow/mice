@@ -10,6 +10,8 @@ import {
   prepareForSigning,
   type SessionInfo,
 } from './signingCeremony.js'
+import { extractMfaEvidence } from './mfaEvidence.js'
+import { decodeJwtPayload } from '../oidc/oidcClaims.js'
 
 /**
  * Signing Ceremony Tests - Authentication Domain
@@ -168,5 +170,80 @@ describe('Signing Ceremony - Identity Capture', () => {
     }
     const sig = createSignature('Content', 'Approved', session, now)
     assert.equal(sig.signedAt, now)
+  })
+})
+
+describe('Signing Ceremony - MFA Evidence Integration', () => {
+  // Helper to create minimal JWT for testing
+  function createTestIdToken(claims: Record<string, unknown>): string {
+    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
+    return `${header}.${payload}.`
+  }
+
+  it('extracts MFA evidence from id_token for signing validation', () => {
+    const idToken = createTestIdToken({
+      sub: 'alice',
+      iss: 'https://idp.example.com',
+      acr: 'mfa',
+      amr: ['pwd', 'otp'],
+      auth_time: 1234567890,
+    })
+
+    const payload = decodeJwtPayload(idToken)
+    const evidence = extractMfaEvidence(payload)
+
+    assert.equal(evidence.hasMfa, true)
+    assert.equal(evidence.acr, 'mfa')
+    assert.deepEqual(evidence.amr, ['pwd', 'otp'])
+
+    // Verify signing would succeed with this evidence
+    const session: SessionInfo = {
+      authenticatedAt: Date.now(),
+      mfaVerified: evidence.hasMfa,
+      principal: { iss: 'https://idp.example.com', sub: 'alice', name: 'Alice' },
+    }
+
+    assert.doesNotThrow(() => validateSigningSession(session))
+  })
+
+  it('detects lack of MFA from id_token (password-only)', () => {
+    const idToken = createTestIdToken({
+      sub: 'bob',
+      iss: 'https://idp.example.com',
+      acr: 'password',
+      amr: ['pwd'], // Single method
+      auth_time: 1234567890,
+    })
+
+    const payload = decodeJwtPayload(idToken)
+    const evidence = extractMfaEvidence(payload)
+
+    assert.equal(evidence.hasMfa, false)
+
+    // Verify signing would fail without MFA
+    const session: SessionInfo = {
+      authenticatedAt: Date.now(),
+      mfaVerified: evidence.hasMfa,
+      principal: { iss: 'https://idp.example.com', sub: 'bob', name: 'Bob' },
+    }
+
+    assert.throws(() => validateSigningSession(session), /MFA required/)
+  })
+
+  it('handles missing MFA claims in id_token', () => {
+    const idToken = createTestIdToken({
+      sub: 'charlie',
+      iss: 'https://idp.example.com',
+      auth_time: 1234567890,
+      // NO acr/amr claims
+    })
+
+    const payload = decodeJwtPayload(idToken)
+    const evidence = extractMfaEvidence(payload)
+
+    assert.equal(evidence.hasMfa, false)
+    assert.equal(evidence.acr, undefined)
+    assert.deepEqual(evidence.amr, [])
   })
 })

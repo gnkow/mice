@@ -7,6 +7,8 @@ import {
   type SignatureMeaning,
   type SessionInfo,
 } from './signingCeremony.js'
+import { extractMfaEvidence } from './mfaEvidence.js'
+import { decodeJwtPayload } from '../oidc/oidcClaims.js'
 import type { AuditDep } from '../../routeDeps.js'
 
 /**
@@ -102,9 +104,36 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     }
 
     try {
+      // Extract MFA evidence from id_token
+      let mfaVerified = false
+      if (stepUp.user.idToken) {
+        try {
+          const payload = decodeJwtPayload(stepUp.user.idToken)
+          const mfaEvidence = extractMfaEvidence(payload)
+          mfaVerified = mfaEvidence.hasMfa
+        } catch (err) {
+          // If we can't decode or extract MFA, treat as no MFA
+          console.warn('[signing] Failed to extract MFA evidence from id_token:', err)
+        }
+      }
+
+      // Refuse signing without MFA evidence (Part 11 §11.200 requirement)
+      if (!mfaVerified) {
+        await audit.append({
+          actor: { iss: user.iss, sub: user.sub },
+          via: 'session',
+          method: c.req.method,
+          path: c.req.path,
+          status: 403,
+          action: 'signature.mfa_required',
+          message: 'Electronic signature requires MFA evidence',
+        })
+        return c.json({ error: 'MFA required for electronic signature' }, 403)
+      }
+
       const session: SessionInfo = {
         authenticatedAt: (stepUp.user.authTime ?? 0) * 1000, // Convert to ms
-        mfaVerified: true, // TODO: Check acr/amr claims from IdP
+        mfaVerified,
         principal: {
           iss: user.iss,
           sub: user.sub,
