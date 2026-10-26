@@ -22,6 +22,13 @@
       "when": 1793009823050,
       "tag": "0002_principals_web_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793027641298,
+      "tag": "0003_daffy_leech",
+      "breakpoints": true
     }
   ]
 }
