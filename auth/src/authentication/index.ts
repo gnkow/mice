@@ -7,8 +7,12 @@ export { hasAuthorQueryParam, injectAuthorFormData, injectAuthorJson, isAuthorFr
 // CLI device flow (RFC 8628) - replaces PATs
 export { registerCliDeviceRoutes } from './credentials/cliDeviceRoutes.js'
 
+// Authentication event log
+export { registerAuthEventRoutes } from './audit/authEventRoutes.js'
+
 // Revocation
 export { registerRevocationRoutes } from './credentials/revocationRoutes.js'
+export { registerAdminRevocationRoutes } from './access/adminRevocationRoutes.js'
 export { signOutEverywhere } from './credentials/selfRevocation.js'
 
 // Directory sync

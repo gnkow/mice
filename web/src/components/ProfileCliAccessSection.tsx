@@ -1,5 +1,7 @@
 import { KeyRound, Terminal } from 'lucide-react'
 import { useState } from 'react'
+import { WebSessionsList } from './WebSessionsList'
+import { AuthEventLog } from './AuthEventLog'
 
 /**
  * CLI Access section - Device Flow only (no PATs)
@@ -74,6 +76,10 @@ mice logout`}</pre>
           </p>
         </div>
       </details>
+
+      <WebSessionsList />
+
+      <AuthEventLog />
 
       <h3>Sign out everywhere</h3>
       <p className="muted small">
