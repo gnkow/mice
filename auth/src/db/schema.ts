@@ -462,3 +462,22 @@ export const ipHashSalt = pgTable(
     createdAt: ts('created_at').notNull().defaultNow(),
   },
 )
+
+/** Device approval tracking for rate limiting (ticket 25, U15). Tracks approvals per Principal. */
+export const deviceApprovals = pgTable(
+  'device_approvals',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    /** Principal who approved (iss|sub) */
+    principalKey: text('principal_key').notNull(),
+    /** When the approval occurred */
+    approvedAt: ts('approved_at').notNull().defaultNow(),
+    /** User code that was approved */
+    userCode: text('user_code').notNull(),
+    /** Hashed IP of the approver (for audit) */
+    approverHashedIp: text('approver_hashed_ip'),
+  },
+  (t) => [
+    index('device_approvals_principal_time_idx').on(t.principalKey, t.approvedAt),
+  ],
+)

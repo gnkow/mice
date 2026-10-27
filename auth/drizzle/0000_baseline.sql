@@ -60,6 +60,14 @@ CREATE TABLE "desktop_sessions" (
 	"body" jsonb NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "device_approvals" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "device_approvals_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"principal_key" text NOT NULL,
+	"approved_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"user_code" text NOT NULL,
+	"approver_hashed_ip" text
+);
+--> statement-breakpoint
 CREATE TABLE "device_authorizations" (
 	"device_code_hash" text PRIMARY KEY NOT NULL,
 	"user_code" text NOT NULL,
@@ -320,6 +328,7 @@ CREATE UNIQUE INDEX "custom_namespace_roles_name" ON "custom_namespace_roles" US
 CREATE UNIQUE INDEX "custom_repo_roles_name" ON "custom_repo_roles" USING btree ("namespace",lower("name"));--> statement-breakpoint
 CREATE INDEX "desktop_sessions_status" ON "desktop_sessions" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "desktop_sessions_owner" ON "desktop_sessions" USING btree ("owner_iss","owner_sub");--> statement-breakpoint
+CREATE INDEX "device_approvals_principal_time_idx" ON "device_approvals" USING btree ("principal_key","approved_at");--> statement-breakpoint
 CREATE INDEX "device_authorizations_user_code" ON "device_authorizations" USING btree ("user_code");--> statement-breakpoint
 CREATE INDEX "favorites_target" ON "favorites" USING btree ("type","id");--> statement-breakpoint
 CREATE INDEX "idp_baseline_checks_checked_at_idx" ON "idp_baseline_checks" USING btree ("checked_at");--> statement-breakpoint

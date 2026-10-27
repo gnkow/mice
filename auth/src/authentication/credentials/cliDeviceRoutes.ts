@@ -11,6 +11,7 @@ import { findPatByToken, revokePatByToken } from './tokens.js'
 import { bearerToken, resolveBearer } from '../session/requireAuth.js'
 import type { SessionUser } from '../session/session.js'
 import { extractClientIp, hashIp, getDisplaySuffix } from '../../ipHash.js'
+import { checkDeviceApprovalRateLimit, recordDeviceApproval, getRecentApprovals } from './deviceApprovalRateLimit.js'
 
 /** Public CLI remote hint and the device-login pairing flow (no IdP device grant required). */
 export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -86,16 +87,51 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.post('/auth/cli/device/approve', guarded({ ...deviceBody, mutates: true }, async ({ c, user: session, body }) => {
     const userCode = String(body.user_code)
     if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
+    
+    // Ticket 25: Rate limiting (5 approvals per 10 minutes)
+    const rateLimit = await checkDeviceApprovalRateLimit(session)
+    if (!rateLimit.allowed) {
+      return c.json({
+        error: `Too many device approvals. Limit: 5 per ${rateLimit.windowMinutes} minutes. Current: ${rateLimit.count}`,
+        count: rateLimit.count,
+        limit: 5,
+      }, 429)
+    }
+    
     const result = await approveDevice(userCode, session)
     if (!result.ok) {
       const status = result.status === 404 ? 404 : 400
       return c.json({ error: result.error }, status)
     }
+    
+    // Ticket 25: Record approval and check for alert trigger
+    const approverIp = extractClientIp(c.req.raw.headers)
+    const approverHashedIp = await hashIp(approverIp)
+    const { shouldAlert, count } = await recordDeviceApproval(session, result.userCode, approverHashedIp)
+    
+    // Ticket 25: Security alert on 5th approval in window
+    if (shouldAlert) {
+      const recent = await getRecentApprovals(session, 10)
+      const timestamps = recent.map(a => a.approvedAt.toISOString()).join(', ')
+      console.warn(
+        `[SECURITY ALERT] Principal ${session.sub} (${session.email}) approved 5+ devices in 10 minutes. ` +
+        `Recent approvals: ${timestamps}. Investigation recommended.`
+      )
+      // TODO: Send email/Slack alert to security admins
+    }
+    
+    // Ticket 25: Enhanced audit event with hashed IP
     await auditMutation(c, session, 'session', {
       action: 'device.approve',
       message: `Approved device login: ${result.userCode}`,
-      detail: { userCode: result.userCode },
+      detail: {
+        userCode: result.userCode,
+        approvalCount: count,
+        alertTriggered: shouldAlert,
+      },
+      hashed_ip: approverHashedIp ?? undefined,
     })
+    
     return c.json({ ok: true, user_code: result.userCode })
   }))
 
