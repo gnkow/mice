@@ -24,6 +24,7 @@ const idp: Server = createServer((req, res) => {
     const claims = {
       iss: base, aud: 'mice-web', exp: Math.floor(Date.now() / 1000) + 300, nonce: lastNonce,
       sub: idTokenSub, email: `${idTokenSub}@x.io`, email_verified: true,
+      groups: ['users'], // Include groups to avoid overage logic
       ...(authTime ? { auth_time: authTime } : {}),
     }
     res.end(JSON.stringify({ id_token: `${b64({ alg: 'none' })}.${b64(claims)}.sig` }))
@@ -53,10 +54,15 @@ applyGlobalGuards(app)
 registerStepUp(app)
 app.get('/auth/callback', async (c) => {
   const pkce = c.req.header('x-pkce')!
-  const result = await completeLogin({
-    code: 'c', state: c.req.query('state'), error: c.req.query('error'), pkceCookie: pkce,
-  })
-  return handleReauthCallback(c, result)
+  try {
+    const result = await completeLogin({
+      code: 'c', state: c.req.query('state'), error: c.req.query('error'), pkceCookie: pkce,
+    })
+    return handleReauthCallback(c, result)
+  } catch (error) {
+    console.error('[test] completeLogin error:', error)
+    return c.text('Internal error', 500)
+  }
 })
 
 const mk = (sub: string) => ({ sub, iss: issuer, email: `${sub}@x.io`, name: sub })
@@ -79,7 +85,7 @@ async function reauth(sub: string, authAge: number, returnedAuthTime: number, wh
   lastNonce = authorize.searchParams.get('nonce')!
   idTokenSub = who
   authTime = returnedAuthTime
-  const cb = await app.request(`/auth/callback?state=${authorize.searchParams.get('state')}`, {
+  const cb = await app.request(`/auth/callback?code=test_code&state=${authorize.searchParams.get('state')}`, {
     headers: { cookie: await cookie(sub, authAge), 'x-pkce': decodeURIComponent(pkce) },
   })
   return { cb, authorize }
