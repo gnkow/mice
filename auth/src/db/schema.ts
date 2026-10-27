@@ -505,3 +505,20 @@ export const deviceApprovals = pgTable(
     index('device_approvals_principal_time_idx').on(t.principalKey, t.approvedAt),
   ],
 )
+
+/** General rate limit tracking (ticket 24, U22). Tracks requests per key (IP or Principal) per endpoint. */
+export const rateLimits = pgTable(
+  'rate_limits',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    /** Rate limit key: "ip:<hashed_ip>" or "principal:<iss|sub>" */
+    limitKey: text('limit_key').notNull(),
+    /** Endpoint being rate-limited (e.g., "login", "device_flow", "refresh", "token_mint") */
+    endpoint: text('endpoint').notNull(),
+    /** When this request occurred */
+    requestedAt: ts('requested_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('rate_limits_key_endpoint_time_idx').on(t.limitKey, t.endpoint, t.requestedAt),
+  ],
+)

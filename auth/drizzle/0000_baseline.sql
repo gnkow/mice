@@ -268,6 +268,13 @@ CREATE TABLE "principals" (
 	"name" text
 );
 --> statement-breakpoint
+CREATE TABLE "rate_limits" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "rate_limits_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"limit_key" text NOT NULL,
+	"endpoint" text NOT NULL,
+	"requested_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "repo_collaborators" (
 	"namespace" text NOT NULL,
 	"repo" text NOT NULL,
@@ -352,6 +359,7 @@ CREATE INDEX "namespace_members_user" ON "namespace_members" USING btree ("user_
 CREATE INDEX "pats_owner" ON "pats" USING btree ("iss","sub");--> statement-breakpoint
 CREATE INDEX "principal_name_history_principal_idx" ON "principal_name_history" USING btree ("principal_id","valid_from");--> statement-breakpoint
 CREATE UNIQUE INDEX "principals_iss_sub_key" ON "principals" USING btree ("iss","sub");--> statement-breakpoint
+CREATE INDEX "rate_limits_key_endpoint_time_idx" ON "rate_limits" USING btree ("limit_key","endpoint","requested_at");--> statement-breakpoint
 CREATE INDEX "repo_collaborators_user" ON "repo_collaborators" USING btree ("user_key");--> statement-breakpoint
 CREATE INDEX "repo_group_collaborators_group" ON "repo_group_collaborators" USING btree ("group_key");--> statement-breakpoint
 CREATE INDEX "service_principals_owner" ON "service_principals" USING btree ("owner_iss","owner_sub");--> statement-breakpoint
