@@ -115,15 +115,13 @@ export type AuthPolicy = {
   originCheck?: boolean
   /** Cookie Sessions on unsafe methods must send application/json. */
   jsonOnly?: boolean
-  /** Force fresh IdP check regardless of 5-minute throttle (for signing/privileged operations). */
-  requiresFreshIdpCheck?: boolean
 }
 
 export type AuthOutcome =
   | { ok: true; user: SessionUser; via: 'session' | 'pat' }
-  | { ok: false; status: 400 | 401 | 403; error: string }
+  | { ok: false; status: 400 | 401 | 403 | 503; error: string }
 
-const deny = (status: 400 | 401 | 403, error: string): AuthOutcome => ({ ok: false, status, error })
+const deny = (status: 400 | 401 | 403 | 503, error: string): AuthOutcome => ({ ok: false, status, error })
 
 /**
  * Authenticates a request against a policy: cookie Session first, then a PAT, with the
@@ -146,14 +144,14 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
     }
     if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
     
-    // Check IdP status (with 5-minute throttling unless forceFresh is set)
-    const verifiedUser = await verifyIdpAccess(session, policy.requiresFreshIdpCheck)
-    if (!verifiedUser) {
-      return deny(401, 'Access denied - user is disabled or IdP unavailable')
+    // Ticket #19 (U3): Check IdP status on every request (no throttling)
+    const idpEnabled = await verifyIdpAccess(session)
+    if (!idpEnabled) {
+      return deny(503, 'Service Unavailable - IdP check failed')
     }
     
-    await preparePrincipal(verifiedUser)
-    return { ok: true, user: verifiedUser, via: 'session' }
+    await preparePrincipal(session)
+    return { ok: true, user: session, via: 'session' }
   }
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 

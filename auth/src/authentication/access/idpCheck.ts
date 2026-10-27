@@ -1,36 +1,20 @@
 /**
  * Live IdP status checking for access control.
  * 
+ * Ticket #19 (U3): Removed all cache tolerance for IdP availability.
+ * Every authenticated operation requires a live IdP check.
+ * IdP unreachable = 503 for all requests (including reads).
+ * 
  * Rules:
- * - IdP is checked at login, refresh, signing, privileged mutations
- * - For ordinary requests, check at most every 5 minutes
- * - If IdP is unreachable, deny access (no cache fallback)
+ * - IdP is checked on every authenticated request (login, refresh, all API calls)
+ * - If IdP is unreachable, deny access with 503 (no cache fallback, no grace period)
  * - If user is disabled in IdP, deny access immediately
+ * - Groups checked at: login, refresh, privileged operations
+ * - Ordinary reads use session-cached groups (bounded by 8h session lifetime)
  */
 
 import type { SessionUser } from '../session/session.js'
 import { lookupKeycloakUserStatus, type DirectoryUserStatus } from '../directory/directory.js'
-
-const FIVE_MINUTES = 5 * 60 // seconds
-
-/**
- * Determines if we need to check IdP status for this user.
- * 
- * @param user - The session user
- * @param forceFresh - Always check (for signing/privileged operations)
- * @returns true if IdP check is needed
- */
-export function shouldCheckIdp(user: SessionUser, forceFresh = false): boolean {
-  if (forceFresh) return true
-  
-  const lastCheck = user.lastIdpCheck
-  if (!lastCheck) return true // Never checked
-  
-  const now = Math.floor(Date.now() / 1000)
-  const elapsed = now - lastCheck
-  
-  return elapsed >= FIVE_MINUTES
-}
 
 /**
  * Checks the user's status with the IdP.
@@ -51,45 +35,20 @@ export async function checkUserIdpStatus(user: SessionUser): Promise<DirectoryUs
 }
 
 /**
- * Verifies that a user is enabled in the IdP and updates lastIdpCheck.
+ * Verifies that a user is enabled in the IdP.
+ * Always performs a live check (no throttling).
  * 
  * @param user - The session user
- * @param forceFresh - Always check (for signing/privileged operations)
- * @returns Updated user with new lastIdpCheck, or null if disabled/error
+ * @returns true if user is enabled, false if disabled/missing/unreachable
  */
-export async function verifyIdpAccess(
-  user: SessionUser,
-  forceFresh = false
-): Promise<SessionUser | null> {
-  // Check if we need to perform IdP check
-  if (!shouldCheckIdp(user, forceFresh)) {
-    return user // Access OK, no check needed
-  }
-  
+export async function verifyIdpAccess(user: SessionUser): Promise<boolean> {
   try {
     const status = await checkUserIdpStatus(user)
     
-    // Update lastIdpCheck timestamp
-    const now = Math.floor(Date.now() / 1000)
-    const updatedUser: SessionUser = {
-      ...user,
-      lastIdpCheck: now,
-    }
-    
-    // Check if user is disabled
-    if (status === 'disabled') {
-      return null // Access denied
-    }
-    
-    // Check if user is missing (should not happen for existing session)
-    if (status === 'missing') {
-      return null // Access denied
-    }
-    
-    // User is enabled
-    return updatedUser
+    // User must be enabled
+    return status === 'enabled'
   } catch (error) {
     // IdP unreachable - deny access (no cache fallback)
-    return null
+    return false
   }
 }

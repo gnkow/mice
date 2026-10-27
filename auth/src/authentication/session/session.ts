@@ -40,8 +40,6 @@ export type SessionUser = {
   sessionStart?: number
   /** Epoch seconds of the last activity re-seal (idle timeout anchor). */
   lastActive?: number
-  /** Epoch seconds of the last IdP status check (for 5-minute throttling). */
-  lastIdpCheck?: number
 }
 
 const nowSec = () => Math.floor(Date.now() / 1000)
@@ -143,7 +141,6 @@ export async function sealSession(user: SessionUser): Promise<string> {
     authTime: user.authTime ?? null,
     sessionStart: start,
     lastActive: user.lastActive ?? nowSec(),
-    lastIdpCheck: user.lastIdpCheck ?? null,
   })
   return id
 }
@@ -174,7 +171,6 @@ async function loadSession(id: string): Promise<SessionUser | null> {
     ...(s.authTime !== null ? { authTime: s.authTime } : {}),
     sessionStart: s.sessionStart,
     lastActive: s.lastActive,
-    ...(s.lastIdpCheck !== null ? { lastIdpCheck: s.lastIdpCheck } : {}),
     ...(s.groups.length ? { groups: s.groups } : {}),
   }
 }
