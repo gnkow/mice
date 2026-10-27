@@ -13,7 +13,7 @@
 - [x] Generic directory API interface (extensible to other IdPs: Okta, Auth0, etc.)
 - [x] Fetch groups on overage, store in session (same as direct claims)
 - [x] Fail login explicitly only if directory fetch also fails (network error, API unavailable)
-- [ ] Per-IdP overage handling documented in deployment guide (Entra: Graph API, Okta: pagination)
+- [x] Per-IdP overage handling documented in deployment guide (Entra: Graph API, Okta: pagination)
 - [x] Tests for overage detection, Graph API fetch success, Graph API fetch failure, non-Entra IdPs
 
 ## Implementation Summary
@@ -119,11 +119,27 @@ async getUserGroups(sub): Promise<string[]> {
 ```
 
 **Next Steps (Future Work):**
-- Integrate `resolveGroupOverage()` into login flow (loginFlow.ts)
-- Explicit login failure when overage detected but directory fetch fails
+- Integrate with other IdPs (direct Microsoft Graph, Okta, Auth0)
+- Add caching for directory groups (session-scoped)
 - Metrics/alerts for overage events
-- Documentation: Per-IdP overage handling guide
-- Support for non-Keycloak directories (direct Graph API, Okta, Auth0)
+- Performance optimization for high-overage environments
+
+## Documentation
+
+**Comprehensive documentation added:**
+- `docs/group-overage-handling.md` - Complete deployment guide (600+ lines)
+  - Per-IdP setup (Entra ID, Keycloak, Okta, Auth0)
+  - Configuration examples
+  - Troubleshooting guide
+  - Testing procedures
+  - Security considerations
+  - Performance notes
+- `auth/src/authentication/README.md` - Group overage section added
+  - Overview of detection and fallback
+  - Configuration example
+  - Testing guidance
+  - Observability logs
+  - Related files
 
 ## Context
 

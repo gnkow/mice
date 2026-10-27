@@ -119,6 +119,63 @@ auth/src/authentication/
   - ≤30 days: Automatic restore
   - >30 days: Admin re-confirmation required
 
+### Group Overage Handling
+Some IdPs (Microsoft Entra ID, Okta) omit the groups claim when a user belongs to many groups (typically >200). Instead, they return an **overage indicator** that requires a separate directory API call to fetch the full group list.
+
+**Overage Detection:**
+- Microsoft Entra ID: `_claim_names.groups` present in id_token
+- Okta: `_claim_sources` present (future support)
+- Automatically detected during login
+
+**Directory API Fallback:**
+- When overage detected, Mice calls the directory API to fetch groups
+- Microsoft Entra ID: `GET /users/{id}/memberOf` (Microsoft Graph API)
+- Keycloak: `GET /admin/realms/{realm}/users/{id}/groups` (Keycloak Admin API)
+- Groups normalized and stored in session (same as direct claims)
+
+**Fail-Closed Behavior:**
+- If IdP returns overage AND directory API fails → login fails with 500
+- Error: "Group membership could not be determined. Please contact your administrator."
+- Prevents users from logging in with incomplete group data
+- Both IdP and directory must succeed for login
+
+**Configuration:**
+```env
+# Keycloak directory (for overage fallback)
+DIRECTORY_PROVIDER=keycloak
+KEYCLOAK_ADMIN_URL=http://keycloak:8080
+KEYCLOAK_REALM=mice
+
+# OIDC (uses same credentials for directory API)
+OIDC_ISSUER=http://keycloak:8080/realms/mice
+OIDC_CLIENT_ID=mice-web
+OIDC_CLIENT_SECRET=your-secret
+```
+
+**Microsoft Entra ID Setup:**
+1. Register app in Azure Portal
+2. Grant API permissions: `User.Read.All`, `GroupMember.Read.All`
+3. Configure `KEYCLOAK_ADMIN_URL` to point to Microsoft Graph proxy
+4. Mice detects `_claim_names.groups` and fetches via Graph API
+
+**Testing:**
+- Overage simulation: Set `groupsOverage: true` in fake OIDC provider
+- Directory mock: `createFakeDirectory({ userGroups: { sub: [...] } })`
+- Tests: `auth/src/authentication/oidc/groupOverage.test.ts` (12 tests)
+
+**Observability:**
+```
+[mice-auth] Fetched 237 groups from directory for user alice@example.com (overage recovery)
+[mice-auth] Group overage detected but directory not configured. Login will fail.
+[mice-auth] Group overage for user bob@example.com but directory returned no groups.
+```
+
+**Related Files:**
+- `auth/src/authentication/oidc/groupOverage.ts` - Detection and fetching
+- `auth/src/authentication/oidc/loginFlow.ts` - Integration into login
+- `auth/src/authentication/directory/directoryKeycloak.ts` - Keycloak Admin API
+- Ticket: `.scratch/authentication/issues/18-group-overage-handling.md`
+
 ### Revocation
 - **Scope:** All sessions + CLI credentials
 - **Triggers:**
