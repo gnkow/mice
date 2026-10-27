@@ -251,11 +251,21 @@ CREATE TABLE "pats" (
 	CONSTRAINT "pats_id_unique" UNIQUE("id")
 );
 --> statement-breakpoint
+CREATE TABLE "principal_name_history" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "principal_name_history_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"principal_id" bigint NOT NULL,
+	"name" text NOT NULL,
+	"valid_from" timestamp with time zone NOT NULL,
+	"valid_to" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "principals" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "principals_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"iss" text NOT NULL,
 	"sub" text NOT NULL,
-	"created_at" timestamp with time zone NOT NULL
+	"created_at" timestamp with time zone NOT NULL,
+	"name" text
 );
 --> statement-breakpoint
 CREATE TABLE "repo_collaborators" (
@@ -317,6 +327,7 @@ ALTER TABLE "custom_namespace_roles" ADD CONSTRAINT "custom_namespace_roles_name
 ALTER TABLE "custom_repo_roles" ADD CONSTRAINT "custom_repo_roles_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_group_members" ADD CONSTRAINT "namespace_group_members_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_members" ADD CONSTRAINT "namespace_members_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "principal_name_history" ADD CONSTRAINT "principal_name_history_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "principals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo_collaborators" ADD CONSTRAINT "repo_collaborators_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo_group_collaborators" ADD CONSTRAINT "repo_group_collaborators_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "web_sessions" ADD CONSTRAINT "web_sessions_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -339,6 +350,7 @@ CREATE INDEX "lineage_ops_repo_ts" ON "lineage_ops" USING btree ("namespace","re
 CREATE INDEX "namespace_group_members_group" ON "namespace_group_members" USING btree ("group_key");--> statement-breakpoint
 CREATE INDEX "namespace_members_user" ON "namespace_members" USING btree ("user_key");--> statement-breakpoint
 CREATE INDEX "pats_owner" ON "pats" USING btree ("iss","sub");--> statement-breakpoint
+CREATE INDEX "principal_name_history_principal_idx" ON "principal_name_history" USING btree ("principal_id","valid_from");--> statement-breakpoint
 CREATE UNIQUE INDEX "principals_iss_sub_key" ON "principals" USING btree ("iss","sub");--> statement-breakpoint
 CREATE INDEX "repo_collaborators_user" ON "repo_collaborators" USING btree ("user_key");--> statement-breakpoint
 CREATE INDEX "repo_group_collaborators_group" ON "repo_group_collaborators" USING btree ("group_key");--> statement-breakpoint

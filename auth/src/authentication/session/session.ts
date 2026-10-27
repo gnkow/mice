@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, and } from 'drizzle-orm'
 import type { Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { getDb } from '../../db/database.js'
@@ -7,6 +7,7 @@ import { principals, webSessions } from '../../db/schema.js'
 import { env } from '../../env.js'
 import { isCredentialRevoked } from '../credentials/credentialRevocation.js'
 import { appendAudit } from '../../audit.js'
+import { trackNameChange } from './nameChangeHistory.js'
 
 export type PatScope = {
   namespace: string
@@ -53,14 +54,36 @@ export function canonicalIssuer(iss: string): string {
 }
 
 /** The Principal row for an IdP identity, created on first sight. Returns its internal id. */
-export async function ensurePrincipal(identity: { iss: string; sub: string }): Promise<number> {
+export async function ensurePrincipal(identity: { iss: string; sub: string; name?: string }): Promise<number> {
   const iss = canonicalIssuer(identity.iss)
-  const [row] = await getDb()
-    .insert(principals)
-    .values({ iss, sub: identity.sub, createdAt: new Date() })
-    .onConflictDoUpdate({ target: [principals.iss, principals.sub], set: { iss } })
-    .returning({ id: principals.id })
-  return row!.id
+  
+  // First try to find existing principal
+  const existing = await getDb()
+    .select({ id: principals.id })
+    .from(principals)
+    .where(and(eq(principals.iss, iss), eq(principals.sub, identity.sub)))
+    .limit(1)
+  
+  let principalId: number
+  
+  if (existing.length > 0) {
+    // Principal exists, just return id
+    principalId = existing[0].id
+  } else {
+    // New principal, insert
+    const [row] = await getDb()
+      .insert(principals)
+      .values({ iss, sub: identity.sub, name: identity.name ?? null, createdAt: new Date() })
+      .returning({ id: principals.id })
+    principalId = row!.id
+  }
+  
+  // Ticket 22: Track name changes on login (works for both new and existing principals)
+  if (identity.name) {
+    await trackNameChange(principalId, identity.name)
+  }
+  
+  return principalId
 }
 
 /**

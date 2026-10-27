@@ -204,8 +204,32 @@ export const principals = pgTable(
     iss: text('iss').notNull(),
     sub: text('sub').notNull(),
     createdAt: ts('created_at').notNull(),
+    /** Current name from IdP (updated on each login) - Ticket 22 */
+    name: text('name'),
   },
   (t) => [uniqueIndex('principals_iss_sub_key').on(t.iss, t.sub)],
+)
+
+/** Name change history for Principals (Ticket 22, U11). Tracks name over time for audit trail. */
+export const principalNameHistory = pgTable(
+  'principal_name_history',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    principalId: bigint('principal_id', { mode: 'number' })
+      .notNull()
+      .references(() => principals.id, { onDelete: 'cascade' }),
+    /** Name value during this period */
+    name: text('name').notNull(),
+    /** When this name became valid (inclusive) */
+    validFrom: ts('valid_from').notNull(),
+    /** When this name stopped being valid (exclusive), NULL = current */
+    validTo: ts('valid_to'),
+    /** When this history record was created */
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('principal_name_history_principal_idx').on(t.principalId, t.validFrom),
+  ],
 )
 
 /** Server-side web Session, keyed by the SHA-256 of the opaque id held in the `__Host-` cookie. */
