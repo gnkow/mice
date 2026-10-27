@@ -11,6 +11,8 @@ type DeviceStatus = {
   expiresAt: string
   expired: boolean
   scopes?: PatScope[]
+  deviceName?: string
+  requestHashedIp?: string
 }
 
 async function fetchDeviceStatus(
@@ -58,6 +60,7 @@ export function CliDevicePage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [done, setDone] = useState<'approved' | 'denied' | null>(null)
   const [busy, setBusy] = useState(false)
+  const [confirmInput, setConfirmInput] = useState('')
   const authz = useAsync((signal) => fetchAuthzMe(signal), [])
   const canApprove =
     authz.kind === 'ok' &&
@@ -82,6 +85,7 @@ export function CliDevicePage() {
     e.preventDefault()
     setActionError(null)
     setDone(null)
+    setConfirmInput('')
     setActiveCode(normalizeCode(codeInput))
   }
 
@@ -122,6 +126,10 @@ export function CliDevicePage() {
     !lookup.expired &&
     lookup.status === 'pending' &&
     done === null
+  
+  // Ticket 25: Require typing "APPROVE" or the full device code
+  const confirmValid = confirmInput.trim().toUpperCase() === 'APPROVE' || confirmInput.trim().toUpperCase() === lookup?.userCode
+  const canSubmitApprove = canAct && confirmValid
 
   return (
     <div className="login-shell">
@@ -178,25 +186,57 @@ export function CliDevicePage() {
                 ? `Requested access limited to: ${lookup.scopes.map(formatScope).join(', ')}`
                 : 'Requested access: your full account permissions.'}
             </p>
-            {canAct && (
-              <div className="btn-row">
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={busy}
-                  onClick={() => void onApprove()}
-                >
-                  <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Approve
-                </button>
-                <button
-                  type="button"
-                  className="btn ghost"
-                  disabled={busy}
-                  onClick={() => void onDeny()}
-                >
-                  <ActionX size={14} aria-hidden="true" className="button-label-icon" />Deny
-                </button>
+            
+            {/* Ticket 25: Show hashed IP (last 4 chars) and device name */}
+            {canAct && (lookup.requestHashedIp || lookup.deviceName) && (
+              <div className="cli-device-info">
+                {lookup.requestHashedIp && (
+                  <p className="muted small">
+                    <strong>Request from:</strong> ...{lookup.requestHashedIp.slice(-4)}
+                  </p>
+                )}
+                {lookup.deviceName && (
+                  <p className="muted small">
+                    <strong>Device:</strong> {lookup.deviceName}
+                  </p>
+                )}
               </div>
+            )}
+            
+            {/* Ticket 25: Require typing confirmation */}
+            {canAct && (
+              <>
+                <label className="cli-confirm-label">
+                  <span>Type <strong>APPROVE</strong> or <strong>{lookup.userCode}</strong> to confirm:</span>
+                  <input
+                    className="mono"
+                    value={confirmInput}
+                    onChange={(e) => setConfirmInput(e.target.value)}
+                    placeholder="APPROVE"
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="btn-row">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={!canSubmitApprove || busy}
+                    onClick={() => void onApprove()}
+                  >
+                    <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    disabled={busy}
+                    onClick={() => void onDeny()}
+                  >
+                    <ActionX size={14} aria-hidden="true" className="button-label-icon" />Deny
+                  </button>
+                </div>
+              </>
             )}
             {done === 'approved' && (
               <div className="flash" role="status">

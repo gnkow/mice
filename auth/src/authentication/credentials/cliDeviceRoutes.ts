@@ -10,6 +10,7 @@ import { approveDevice, denyDevice, lookupDeviceByUserCode, pollDevice, startDev
 import { findPatByToken, revokePatByToken } from './tokens.js'
 import { bearerToken, resolveBearer } from '../session/requireAuth.js'
 import type { SessionUser } from '../session/session.js'
+import { extractClientIp, hashIp, getDisplaySuffix } from '../../ipHash.js'
 
 /** Public CLI remote hint and the device-login pairing flow (no IdP device grant required). */
 export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -38,14 +39,25 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
 
   app.post('/auth/cli/device/start', async (c) => {
     let raw: unknown
+    let deviceName: string | undefined
     try {
-      raw = ((await c.req.json()) as { scopes?: unknown }).scopes
+      const body = (await c.req.json()) as { scopes?: unknown; device_name?: unknown }
+      raw = body.scopes
+      deviceName = typeof body.device_name === 'string' ? body.device_name : undefined
     } catch {
       /* empty body ok */
     }
     const parsed = parsePatScopes(raw)
     if (!parsed.ok) return c.json({ error: parsed.error }, 400)
-    const started = await startDeviceAuth(parsed.scopes)
+    
+    // Extract and hash client IP (Ticket 25)
+    const clientIp = extractClientIp(c.req.raw.headers)
+    const requestHashedIp = await hashIp(clientIp)
+    
+    const started = await startDeviceAuth(parsed.scopes, {
+      deviceName,
+      requestHashedIp: requestHashedIp ?? undefined,
+    })
     return c.json(started)
   })
 

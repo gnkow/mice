@@ -27,6 +27,10 @@ export type DeviceRecord = {
   token?: string
   patId?: string
   user?: Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>
+  /** Device name/identifier from CLI (e.g., "mice-cli v1.2.3") - Ticket 25 */
+  deviceName?: string
+  /** Hashed IP of requesting device (SHA-256(IP + daily_salt)) - Ticket 25 */
+  requestHashedIp?: string
 }
 
 /** Where device authorization records live. Every state change is one conditional, atomic write. */
@@ -64,6 +68,8 @@ function toRecord(r: Row): DeviceRecord {
     ...(r.userSub && r.userIss && r.userEmail && r.userName
       ? { user: { sub: r.userSub, iss: r.userIss, email: r.userEmail, name: r.userName } }
       : {}),
+    ...(r.deviceName ? { deviceName: r.deviceName } : {}),
+    ...(r.requestHashedIp ? { requestHashedIp: r.requestHashedIp } : {}),
   }
 }
 
@@ -83,6 +89,8 @@ export function createPostgresDeviceRepository(): DeviceRepository {
         createdAt: new Date(r.createdAt),
         expiresAt: new Date(r.expiresAt),
         scopes: r.scopes ?? null,
+        deviceName: r.deviceName ?? null,
+        requestHashedIp: r.requestHashedIp ?? null,
       })
     },
     async findByHash(hash) {
@@ -218,6 +226,10 @@ export type DeviceLookup = {
   expiresAt: string
   expired: boolean
   scopes?: PatScope[]
+  /** Device name/identifier from CLI - Ticket 25 */
+  deviceName?: string
+  /** Hashed IP of requesting device (last 4 hex chars for display) - Ticket 25 */
+  requestHashedIp?: string
 }
 
 export type ApproveResult =
@@ -266,7 +278,7 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
   const nowIso = () => new Date(clock.now()).toISOString()
 
   /** Create a pending device authorization request. */
-  async function start(scopes?: PatScope[]): Promise<DeviceStartResult> {
+  async function start(scopes?: PatScope[], opts?: { deviceName?: string; requestHashedIp?: string }): Promise<DeviceStartResult> {
     const now = clock.now()
     await repo.purgeExpired(new Date(now - PURGE_AFTER_MS).toISOString())
     const deviceCode = randomBytes(32).toString('base64url')
@@ -284,6 +296,8 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(now + DEVICE_TTL_MS).toISOString(),
       ...(scopes?.length ? { scopes } : {}),
+      ...(opts?.deviceName ? { deviceName: opts.deviceName } : {}),
+      ...(opts?.requestHashedIp ? { requestHashedIp: opts.requestHashedIp } : {}),
     })
 
     const verificationUri = `${config().webOrigin}/cli/device`
@@ -306,6 +320,8 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
       expiresAt: rec.expiresAt,
       expired: false,
       ...(rec.scopes?.length ? { scopes: rec.scopes } : {}),
+      ...(rec.deviceName ? { deviceName: rec.deviceName } : {}),
+      ...(rec.requestHashedIp ? { requestHashedIp: rec.requestHashedIp } : {}),
     }
   }
 

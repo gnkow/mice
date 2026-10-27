@@ -1,5 +1,5 @@
 {
-  "id": "34e720b0-9e08-4b8c-ba50-3249f6bd1317",
+  "id": "465b400e-2432-45f0-bee6-ed3f9c30be9b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -615,6 +615,18 @@
         },
         "user_name": {
           "name": "user_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "device_name": {
+          "name": "device_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_hashed_ip": {
+          "name": "request_hashed_ip",
           "type": "text",
           "primaryKey": false,
           "notNull": false

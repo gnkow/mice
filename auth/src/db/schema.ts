@@ -256,6 +256,10 @@ export const deviceAuthorizations = pgTable(
     userIss: text('user_iss'),
     userEmail: text('user_email'),
     userName: text('user_name'),
+    /** Device name/identifier from CLI (e.g., "mice-cli v1.2.3") - Ticket 25 */
+    deviceName: text('device_name'),
+    /** Hashed IP of requesting device (SHA-256(IP + daily_salt)) - Ticket 25 */
+    requestHashedIp: text('request_hashed_ip'),
   },
   (t) => [index('device_authorizations_user_code').on(t.userCode)],
 )

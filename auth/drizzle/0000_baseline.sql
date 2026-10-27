@@ -72,7 +72,9 @@ CREATE TABLE "device_authorizations" (
 	"user_sub" text,
 	"user_iss" text,
 	"user_email" text,
-	"user_name" text
+	"user_name" text,
+	"device_name" text,
+	"request_hashed_ip" text
 );
 --> statement-breakpoint
 CREATE TABLE "directory_sync_revoked" (
