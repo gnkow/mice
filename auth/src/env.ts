@@ -37,8 +37,8 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     ),
     /** Cookie max age (seconds). */
     sessionTtlSec: Number(src.SESSION_TTL_SEC ?? 60 * 60 * 8),
-    /** Idle timeout (seconds); 0 disables. Value owned by PLAT-GXP. */
-    sessionIdleSec: Number(src.SESSION_IDLE_SEC ?? 0),
+    /** Idle timeout (seconds); 900 = 15 min (Round 8 U2, Part 11 GxP requirement). */
+    sessionIdleSec: Number(src.SESSION_IDLE_SEC ?? 900),
     /** Directory-sync interval (seconds); 0 disables the schedule. */
     directorySyncIntervalSec: Number(src.DIRECTORY_SYNC_INTERVAL_SEC ?? 900),
     /** Audit ledger re-verification interval (seconds). */

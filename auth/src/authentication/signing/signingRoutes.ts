@@ -10,6 +10,7 @@ import {
 import { extractMfaEvidence } from './mfaEvidence.js'
 import { decodeJwtPayload } from '../oidc/oidcClaims.js'
 import type { AuditDep } from '../../routeDeps.js'
+import { env } from '../../env.js'
 
 /**
  * Signing Ceremony Routes - Authentication Domain
@@ -37,12 +38,43 @@ import type { AuditDep } from '../../routeDeps.js'
 
 const SIGNING_FRESHNESS_SEC = 60 // 60 seconds per spec requirement
 
+const nowSec = () => Math.floor(Date.now() / 1000)
+
+/**
+ * Check if session has been idle too long for signing (Round 8 U2).
+ * Idle timeout = 15 minutes (900 seconds) since last HTTP request.
+ * Returns error response if idle, null if OK.
+ */
+function checkIdleTimeout(user: SessionInfo): Response | null {
+  if (env.sessionIdleSec <= 0) return null // Idle check disabled
+  if (!user.lastActive) return null // No lastActive tracking
+  
+  const idleSec = nowSec() - user.lastActive
+  if (idleSec > env.sessionIdleSec) {
+    const idleMin = Math.floor(idleSec / 60)
+    return Response.json(
+      {
+        error: 'session_idle',
+        message: `Session idle for ${idleMin}+ minutes, re-authenticate required`,
+        idleMinutes: idleMin,
+        maxIdleMinutes: Math.floor(env.sessionIdleSec / 60),
+      },
+      401
+    )
+  }
+  return null
+}
+
 export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
   // Prepare content for signing (shows hash, requires step-up)
   app.post('/auth/sign/prepare', guarded({ mutates: false }, async ({ c, user }) => {
     // Check for fresh authentication
     const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
     if (!stepUp.ok) return stepUp.response
+
+    // Check idle timeout (Round 8 U2: 15 minutes)
+    const idleError = checkIdleTimeout(user)
+    if (idleError) return idleError
 
     const body = await c.req.json()
     const content = String(body.content ?? '')
@@ -73,6 +105,10 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     // Verify fresh authentication again
     const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
     if (!stepUp.ok) return stepUp.response
+
+    // Check idle timeout (Round 8 U2: 15 minutes)
+    const idleError = checkIdleTimeout(user)
+    if (idleError) return idleError
 
     const content = String(body.content)
     const meaning = String(body.meaning) as SignatureMeaning
