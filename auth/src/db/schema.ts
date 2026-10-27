@@ -520,3 +520,26 @@ export const rateLimits = pgTable(
     index('rate_limits_key_endpoint_time_idx').on(t.limitKey, t.endpoint, t.requestedAt),
   ],
 )
+
+/** Ticket 17: Session seal key ring for emergency rotation (U7, U16) */
+export const sealKeys = pgTable(
+  'seal_keys',
+  {
+    id: text('id').primaryKey(),
+    /** Base64-encoded key material (32 bytes for AES-256-GCM) */
+    keyMaterial: text('key_material').notNull(),
+    /** Epoch seconds when this key becomes valid */
+    validFrom: integer('valid_from').notNull(),
+    /** Epoch seconds when this key expires (null = current primary key) */
+    validUntil: integer('valid_until'),
+    /** Epoch seconds when key was revoked (emergency rotation) */
+    revokedAt: integer('revoked_at'),
+    /** Type of rotation: 'normal' (30-day schedule) or 'emergency' (compromised key) */
+    rotationType: text('rotation_type').notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [
+    index('seal_keys_valid_from_idx').on(t.validFrom),
+    index('seal_keys_valid_until_idx').on(t.validUntil),
+  ],
+)

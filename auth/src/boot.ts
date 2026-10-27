@@ -26,6 +26,10 @@ export async function boot(): Promise<void> {
 
   // PostgreSQL: applies the baseline on a blank database and refuses an unexpected schema version.
   await openMainDatabase()
+  
+  // Ticket 17: Initialize seal key ring with bootstrap key if none exists
+  const { ensureBootstrapKey } = await import('./authentication/session/sealKeys.js')
+  await ensureBootstrapKey()
 
   // Connects to immudb (creating the audit database on first use) and verifies the trail.
   const verification = await initAudit()

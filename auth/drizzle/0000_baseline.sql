@@ -291,6 +291,16 @@ CREATE TABLE "repo_group_collaborators" (
 	CONSTRAINT "repo_group_collaborators_namespace_repo_group_key_pk" PRIMARY KEY("namespace","repo","group_key")
 );
 --> statement-breakpoint
+CREATE TABLE "seal_keys" (
+	"id" text PRIMARY KEY NOT NULL,
+	"key_material" text NOT NULL,
+	"valid_from" integer NOT NULL,
+	"valid_until" integer,
+	"revoked_at" integer,
+	"rotation_type" text NOT NULL,
+	"created_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "service_pat_expiry_notices" (
 	"pat_id" text PRIMARY KEY NOT NULL,
 	"notified_at" timestamp with time zone NOT NULL
@@ -326,8 +336,7 @@ CREATE TABLE "web_sessions" (
 	"groups" jsonb NOT NULL,
 	"auth_time" integer,
 	"session_start" integer NOT NULL,
-	"last_active" integer NOT NULL,
-	"last_idp_check" integer
+	"last_active" integer NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "custom_namespace_roles" ADD CONSTRAINT "custom_namespace_roles_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -362,5 +371,7 @@ CREATE UNIQUE INDEX "principals_iss_sub_key" ON "principals" USING btree ("iss",
 CREATE INDEX "rate_limits_key_endpoint_time_idx" ON "rate_limits" USING btree ("limit_key","endpoint","requested_at");--> statement-breakpoint
 CREATE INDEX "repo_collaborators_user" ON "repo_collaborators" USING btree ("user_key");--> statement-breakpoint
 CREATE INDEX "repo_group_collaborators_group" ON "repo_group_collaborators" USING btree ("group_key");--> statement-breakpoint
+CREATE INDEX "seal_keys_valid_from_idx" ON "seal_keys" USING btree ("valid_from");--> statement-breakpoint
+CREATE INDEX "seal_keys_valid_until_idx" ON "seal_keys" USING btree ("valid_until");--> statement-breakpoint
 CREATE INDEX "service_principals_owner" ON "service_principals" USING btree ("owner_iss","owner_sub");--> statement-breakpoint
 CREATE INDEX "web_sessions_principal_idx" ON "web_sessions" USING btree ("principal_id");
