@@ -4,6 +4,36 @@
 
 **Blocked by:** None (can start immediately)
 
+**Status:** completed
+
+## Acceptance Criteria
+
+- [x] Database query: count active sessions per Principal (by iss+sub or principalId)
+- [x] Session creation checks cap before issuing new session
+- [x] Oldest-session eviction: SELECT session with MIN(sessionStart), DELETE, audit event
+- [x] Audit event for automatic session eviction (include evicted session ID, reason: "cap exceeded")
+- [x] Error message when manual session creation fails due to cap (user sees count and cap)
+- [x] Tests for cap enforcement (6th session evicts oldest), eviction audit, manual revocation via UI
+
+## Implementation Summary
+
+**Completed in 1 commit:**
+- `ccf2348` - Session cap enforcement + audit event + tests
+
+**Files created:**
+- `auth/src/authentication/session/sessionCap.test.ts` - 4 comprehensive tests
+
+**Files modified:**
+- `auth/src/authentication/session/session.ts` - sealSession() enforces 5-session cap
+- `auth/src/auditLabels.ts` - Added 'session.evict' audit action
+
+**Test coverage:**
+- 4 tests (all passing)
+  1. Allows up to 5 sessions per Principal
+  2. Evicts oldest when creating 6th session
+  3. Principal isolation (Alice/Bob sessions independent)
+  4. Eviction based on sessionStart timestamp (oldest first)
+
 **Status:** ready-for-agent
 
 ## Acceptance Criteria
