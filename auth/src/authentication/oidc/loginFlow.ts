@@ -5,6 +5,9 @@ import { loginStates } from '../../db/schema.js'
 import type { SessionUser } from '../session/session.js'
 import { currentClock, type Clock } from '../../clock.js'
 import { defaultOidcProvider, pkceChallenge, randomString, type OidcProvider } from './oidc.js'
+import { resolveGroupOverage } from './groupOverage.js'
+import type { Directory } from '../directory/directoryTypes.js'
+import { directoryNow } from '../directory/directory.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -104,12 +107,17 @@ async function consumeLoginState(clock: Clock, cookie: string | undefined): Prom
 }
 
 /** Finish the login: validate state, exchange the code, and build the Session user. */
-async function finishLogin(provider: OidcProvider, clock: Clock, input: {
-  code?: string
-  state?: string
-  error?: string
-  pkceCookie?: string
-}): Promise<LoginResult> {
+async function finishLogin(
+  provider: OidcProvider,
+  directory: Directory,
+  clock: Clock,
+  input: {
+    code?: string
+    state?: string
+    error?: string
+    pkceCookie?: string
+  }
+): Promise<LoginResult> {
   const pkce = await consumeLoginState(clock, input.pkceCookie)
   if (input.error) return fail(400, `Login failed: ${input.error}`, !!pkce?.reauth)
   if (!input.code || !input.state || !input.pkceCookie) return fail(400, 'Missing OIDC state.')
@@ -122,6 +130,20 @@ async function finishLogin(provider: OidcProvider, clock: Clock, input: {
       codeVerifier: pkce.verifier,
       nonce: pkce.nonce,
     })
+    
+    // Ticket 18: Resolve group overage by fetching from directory if needed
+    if (user.groupsOverage) {
+      const resolved = await resolveGroupOverage(user, directory)
+      if (!resolved) {
+        // Overage detected but directory fetch failed - explicit login failure
+        return fail(
+          500,
+          'Group membership could not be determined. Please contact your administrator.',
+          isReauth
+        )
+      }
+    }
+    
     if (pkce.reauth) {
       if (user.sub !== pkce.reauth.sub || user.iss !== pkce.reauth.iss) {
         return fail(400, 'Re-authentication was completed by a different account.', true)
@@ -152,22 +174,31 @@ async function finishLogin(provider: OidcProvider, clock: Clock, input: {
 }
 
 /** Login flow over an OIDC provider and clock. */
-export function createLoginFlow(deps: { provider: OidcProvider; clock?: Clock }) {
+export function createLoginFlow(deps: { provider: OidcProvider; directory: Directory; clock?: Clock }) {
   const clock = deps.clock ?? currentClock
   return {
     startLogin: (next?: string | null, reauth?: { maxAge: number; sub: string; iss: string }) =>
       beginLogin(deps.provider, clock, next, reauth),
-    completeLogin: (input: Parameters<typeof finishLogin>[2]) => finishLogin(deps.provider, clock, input),
+    completeLogin: (input: Parameters<typeof finishLogin>[3]) => 
+      finishLogin(deps.provider, deps.directory, clock, input),
   }
 }
 
-/** Process-wide flow: the environment-configured provider, resolved per call. */
+/** Process-wide flow: the environment-configured provider and directory, resolved per call. */
 const lazyProvider: OidcProvider = {
   beginLogin: (r) => defaultOidcProvider().beginLogin(r),
   completeLogin: (r) => defaultOidcProvider().completeLogin(r),
   logoutUrl: (o) => defaultOidcProvider().logoutUrl(o),
   verifyJwt: (t) => defaultOidcProvider().verifyJwt(t),
 }
-const defaults = createLoginFlow({ provider: lazyProvider })
+const lazyDirectory: Directory = {
+  get configured() { return directoryNow().configured },
+  get issuer() { return directoryNow().issuer },
+  searchUsers: (q, l) => directoryNow().searchUsers(q, l),
+  searchGroups: (q, l) => directoryNow().searchGroups(q, l),
+  userStatus: (s) => directoryNow().userStatus(s),
+  getUserGroups: (s) => directoryNow().getUserGroups(s),
+}
+const defaults = createLoginFlow({ provider: lazyProvider, directory: lazyDirectory })
 export const startLogin = defaults.startLogin
 export const completeLogin = defaults.completeLogin

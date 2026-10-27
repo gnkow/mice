@@ -80,7 +80,7 @@ export function createDirectoryService(directory: Directory) {
 }
 
 let lazyDirectory: Directory | null = null
-const directoryNow = (): Directory => (lazyDirectory ??= createKeycloakDirectory(keycloakConfigFromEnv))
+export const directoryNow = (): Directory => (lazyDirectory ??= createKeycloakDirectory(keycloakConfigFromEnv))
 
 /** Test hook: inject fetch (e.g. mock Keycloak); null restores the real one. Resets the token cache. */
 export function setDirectoryFetchForTests(fn: DirectoryFetch | null): void {

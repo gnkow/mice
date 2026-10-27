@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import { fakeClock } from '../../clock.js'
 import { createLoginFlow } from './loginFlow.js'
 import { createFakeOidcProvider } from './oidcFake.js'
+import { createFakeDirectory } from '../directory/directoryFake.js'
 
 const identity = {
   sub: 'u1',
@@ -15,13 +16,17 @@ const identity = {
   emailVerified: true,
 }
 
-function setup(claims: Partial<typeof identity> & { authTime?: number } = {}) {
+function setup(claims: Partial<typeof identity> & { authTime?: number; groupsOverage?: boolean } = {}) {
   const clock = fakeClock(Date.UTC(2026, 5, 1))
   const provider = createFakeOidcProvider({ claims: { ...identity, ...claims } })
-  return { clock, provider, flow: createLoginFlow({ provider, clock }) }
+  const directory = createFakeDirectory({ 
+    issuer: 'https://idp.test',
+    userGroups: { u1: ['devs', 'admins'] }
+  })
+  return { clock, provider, directory, flow: createLoginFlow({ provider, directory, clock }) }
 }
 
-const stateOf = (cookie: string) => JSON.parse(Buffer.from(cookie, 'base64url').toString()) as { state: string }
+const stateOf = (authorizeUrl: string) => new URL(authorizeUrl).searchParams.get('state')!
 
 describe('login flow over a fake OIDC provider', () => {
   it('begins login through the provider and completes with the claims it returns', async () => {
@@ -31,7 +36,7 @@ describe('login flow over a fake OIDC provider', () => {
     assert.ok(started.authorizeUrl.startsWith('https://idp.test/authorize'))
     const done = await flow.completeLogin({
       code: 'c',
-      state: stateOf(started.pkceCookie).state,
+      state: stateOf(started.authorizeUrl),
       pkceCookie: started.pkceCookie,
     })
     assert.equal(done.ok, true)
@@ -54,7 +59,7 @@ describe('login flow over a fake OIDC provider', () => {
     const clockStart = Date.UTC(2026, 5, 1)
     const { clock, flow } = setup({ authTime: Math.floor(clockStart / 1000) - 10 })
     const started = await flow.startLogin('/auth/step-up/x', reauth)
-    const input = { code: 'c', state: stateOf(started.pkceCookie).state, pkceCookie: started.pkceCookie }
+    const input = { code: 'c', state: stateOf(started.authorizeUrl), pkceCookie: started.pkceCookie }
     assert.equal((await flow.completeLogin(input)).ok, true)
     clock.advance(120_000)
     const late = await flow.completeLogin(input)
@@ -67,10 +72,54 @@ describe('login flow over a fake OIDC provider', () => {
     const started = await flow.startLogin()
     const res = await flow.completeLogin({
       code: 'c',
-      state: stateOf(started.pkceCookie).state,
+      state: stateOf(started.authorizeUrl),
       pkceCookie: started.pkceCookie,
     })
     assert.equal(res.ok, false)
     if (!res.ok) assert.equal(res.status, 500)
+  })
+
+  it('fetches groups from directory when overage detected', async () => {
+    const { flow } = setup({ groupsOverage: true, groups: [] })
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, true)
+    if (!res.ok) return
+    // Should have fetched groups from directory (devs, admins) instead of using empty array from IdP
+    assert.deepEqual(res.user.groups, ['devs', 'admins'])
+  })
+
+  it('fails login when overage detected but directory fetch returns empty', async () => {
+    const { flow, provider, directory } = setup({ groupsOverage: true, groups: [] })
+    // Override directory to return empty groups (simulating fetch failure or no groups)
+    directory.getUserGroups = async () => []
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, false)
+    if (res.ok) return
+    assert.equal(res.status, 500)
+    assert.match(res.html, /Group membership could not be determined/)
+  })
+
+  it('completes login normally when no overage', async () => {
+    const { flow } = setup({ groupsOverage: false, groups: ['devs'] })
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, true)
+    if (!res.ok) return
+    // Should use groups from IdP (not directory)
+    assert.deepEqual(res.user.groups, ['devs'])
   })
 })
