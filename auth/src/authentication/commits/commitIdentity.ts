@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { kindOf, type PrincipalId } from '../session/principal.js'
 
 /**
@@ -10,7 +11,7 @@ import { kindOf, type PrincipalId } from '../session/principal.js'
  * - Electronic signatures restricted to humans only
  */
 
-const IDENTITY_TRAILER_KEYS = ['Performed-by', 'Submitted-by', 'Signed-by']
+const IDENTITY_TRAILER_KEYS = ['Performed-by', 'Submitted-by', 'Signed-by', 'Job']
 
 /**
  * Strip any identity trailers from client-supplied commit message.
@@ -99,18 +100,52 @@ export function isJobToken(token: unknown): token is JobToken {
 }
 
 /**
- * Create commit message with job attribution.
- * Shows both the submitter and the job that performed the action.
+ * Hash a job token for inclusion in commit trailers.
+ * Returns sha256 hash (first 16 hex characters for brevity).
+ */
+export function hashJobToken(token: JobToken): string {
+  // Hash the essential token fields to create a unique identifier
+  const tokenString = JSON.stringify({
+    kind: token.kind,
+    jobId: token.jobId,
+    submittedBy: token.submittedBy,
+    issuedAt: token.issuedAt,
+  })
+  const hash = createHash('sha256').update(tokenString).digest('hex')
+  return hash.slice(0, 16) // First 16 chars for brevity
+}
+
+/**
+ * Create commit message with job attribution trailer (Ticket 21, U6).
+ * 
+ * Format: Job: J-1234, Submitted-by: iss|sub (Name), Token: sha256:abc123...
+ * 
+ * This ensures repository-level attribution even if audit logs are separated
+ * from the repository. Part 11 §11.50(a) requires signed records contain
+ * "the name of the signer." For Jobs, attribution must persist with repository history.
  */
 export function appendJobAttribution(
   message: string,
   jobId: string,
   submittedBy: PrincipalId & { name: string },
+  tokenHash?: string,
 ): string {
-  let result = stripIdentityTrailers(message)
-  result += `\n\nSubmitted-by: ${formatIdentityTrailer(submittedBy)}`
-  result += `\nPerformed-by: Job ${jobId}`
-  return result
+  const cleaned = stripIdentityTrailers(message)
+  const identity = formatIdentityTrailer(submittedBy)
+  const tokenPart = tokenHash ? `, Token: sha256:${tokenHash}` : ''
+  return `${cleaned}\n\nJob: ${jobId}, Submitted-by: ${identity}${tokenPart}`
+}
+
+/**
+ * Create commit message with job attribution from a JobToken (Ticket 21, U6).
+ * Convenience wrapper that extracts info from the token and includes token hash.
+ */
+export function appendJobAttributionFromToken(
+  message: string,
+  token: JobToken,
+): string {
+  const tokenHash = hashJobToken(token)
+  return appendJobAttribution(message, token.jobId, token.submittedBy, tokenHash)
 }
 
 /**

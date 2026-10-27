@@ -7,19 +7,22 @@ import {
   createJobToken,
   isJobToken,
   appendJobAttribution,
+  appendJobAttributionFromToken,
+  hashJobToken,
   canElectronicallySign,
   requireSigningCapability,
 } from './commitIdentity.js'
 import { SERVICE_ISSUER } from '../session/principal.js'
 
 /**
- * TICKET 08: Commit Identity and Job Tokens
+ * TICKET 08 & 21: Commit Identity and Job Tokens
  * 
  * Requirements:
  * - Strip client-supplied identity trailers from commits
  * - BFF appends iss+sub + name snapshot to every commit
  * - Jobs get BFF-internal tokens (not user credentials)
- * - Actions attributed to submitter with "performed by Job" marker
+ * - Job commits carry attribution trailer: Job ID + Submitted-by + Token hash
+ * - Human commits have iss|sub trailer only (no Job marker)
  * - Only humans can electronically sign
  */
 
@@ -94,19 +97,78 @@ describe('Job Tokens - BFF Internal Credentials', () => {
   })
 })
 
-describe('Job Actions - Attribution with Marker', () => {
-  it('attributes action to submitter with "performed by Job" marker', () => {
-    const message = 'Fix bug'
+describe('Job Actions - Attribution with Trailer (Ticket 21, U6)', () => {
+  it('includes job ID, submitter, and token hash in single trailer', () => {
+    const message = 'Add data processing results'
     const submittedBy = { iss: 'https://idp.example.com', sub: 'alice123', name: 'Alice Smith' }
-    const result = appendJobAttribution(message, 'job-123', submittedBy)
+    const token = createJobToken('J-1234', submittedBy)
+    const tokenHash = hashJobToken(token)
+    const result = appendJobAttribution(message, 'J-1234', submittedBy, tokenHash)
+    
+    assert.ok(result.includes('Job: J-1234'))
     assert.ok(result.includes('Submitted-by: https://idp.example.com|alice123 (Alice Smith)'))
-    assert.ok(result.includes('Performed-by: Job job-123'))
+    assert.ok(result.includes(`Token: sha256:${tokenHash}`))
   })
 
-  it('includes job ID in performed-by marker', () => {
+  it('formats job trailer on single line', () => {
     const submittedBy = { iss: 'https://idp.example.com', sub: 'alice123', name: 'Alice Smith' }
-    const result = appendJobAttribution('Task', 'job-456', submittedBy)
-    assert.ok(result.includes('Job job-456'))
+    const result = appendJobAttribution('Task', 'J-456', submittedBy, 'abc123def456')
+    
+    // Check that Job, Submitted-by, and Token are on the same line
+    const lines = result.split('\n')
+    const trailerLine = lines.find(line => line.startsWith('Job:'))
+    assert.ok(trailerLine)
+    assert.ok(trailerLine.includes('Job: J-456'))
+    assert.ok(trailerLine.includes('Submitted-by:'))
+    assert.ok(trailerLine.includes('Token: sha256:abc123def456'))
+  })
+
+  it('works without token hash (backward compatibility)', () => {
+    const submittedBy = { iss: 'https://idp.example.com', sub: 'alice123', name: 'Alice Smith' }
+    const result = appendJobAttribution('Task', 'J-789', submittedBy)
+    
+    assert.ok(result.includes('Job: J-789'))
+    assert.ok(result.includes('Submitted-by: https://idp.example.com|alice123 (Alice Smith)'))
+    assert.ok(!result.includes('Token:'))
+  })
+
+  it('convenience wrapper extracts from JobToken', () => {
+    const submittedBy = { iss: 'https://idp.example.com', sub: 'alice123', name: 'Alice Smith' }
+    const token = createJobToken('J-999', submittedBy)
+    const result = appendJobAttributionFromToken('Process data', token)
+    
+    assert.ok(result.includes('Job: J-999'))
+    assert.ok(result.includes('Submitted-by: https://idp.example.com|alice123 (Alice Smith)'))
+    assert.ok(result.includes('Token: sha256:'))
+  })
+
+  it('hash is deterministic for same token', () => {
+    const submittedBy = { iss: 'https://idp.example.com', sub: 'alice123', name: 'Alice Smith' }
+    const token = createJobToken('J-100', submittedBy)
+    const hash1 = hashJobToken(token)
+    const hash2 = hashJobToken(token)
+    assert.equal(hash1, hash2)
+  })
+
+  it('hash is different for different tokens', () => {
+    const submittedBy = { iss: 'https://idp.example.com', sub: 'alice123', name: 'Alice Smith' }
+    const token1 = createJobToken('J-100', submittedBy)
+    const token2 = createJobToken('J-200', submittedBy)
+    const hash1 = hashJobToken(token1)
+    const hash2 = hashJobToken(token2)
+    assert.notEqual(hash1, hash2)
+  })
+
+  it('strips client-supplied job trailers before adding authoritative one', () => {
+    const message = 'Fix\n\nJob: J-evil, Submitted-by: attacker, Token: fake'
+    const submittedBy = { iss: 'https://idp.example.com', sub: 'alice123', name: 'Alice Smith' }
+    const result = appendJobAttribution(message, 'J-real', submittedBy, 'realhash')
+    
+    // Should contain only the authoritative trailer
+    const jobMatches = result.match(/Job: J-/g)
+    assert.equal(jobMatches?.length, 1, 'Should have exactly one Job trailer')
+    assert.ok(result.includes('Job: J-real'))
+    assert.ok(!result.includes('J-evil'))
   })
 })
 
