@@ -72,6 +72,7 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['announcement.delete', 'Announcement deleted', 'Instance'],
   ['token.create', 'Access token created', 'Tokens & CLI'],
   ['session.revoke', 'Sessions revoked', 'Access'],
+  ['session.evict', 'Session evicted (cap exceeded)', 'Access'],
   ['service-principal.create', 'Service principal created', 'Access'],
   ['service-principal.suspend', 'Service principal suspended', 'Access'],
   ['service-principal.reassign', 'Service principal reassigned', 'Access'],
