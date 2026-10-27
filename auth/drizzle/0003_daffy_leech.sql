@@ -1,1 +1,0 @@
-ALTER TABLE "web_sessions" ADD COLUMN "last_idp_check" integer;

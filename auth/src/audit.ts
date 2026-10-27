@@ -43,6 +43,8 @@ export type AuditEvent = {
   /** Set when the actor is a service principal; `owner` is its accountable human. */
   actorKind?: 'service'
   owner?: AuditActor
+  /** Hashed IP (SHA-256(IP + daily_salt)) for anomaly detection while preserving privacy (U8). */
+  hashed_ip?: string
 }
 
 export type AuditQuery = {
@@ -294,6 +296,7 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
     ...(partial.detail && Object.keys(partial.detail).length
       ? { detail: partial.detail }
       : {}),
+    ...(partial.hashed_ip ? { hashed_ip: partial.hashed_ip } : {}),
     ...extra,
   }
 }

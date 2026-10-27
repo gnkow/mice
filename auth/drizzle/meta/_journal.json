@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1792954567033,
+      "when": 1793087969660,
       "tag": "0000_baseline",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1793009755704,
-      "tag": "0001_login_states",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1793009823050,
-      "tag": "0002_principals_web_sessions",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1793027641298,
-      "tag": "0003_daffy_leech",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1793028451380,
-      "tag": "0004_curly_human_cannonball",
       "breakpoints": true
     }
   ]

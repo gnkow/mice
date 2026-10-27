@@ -445,3 +445,16 @@ export const idpBaselineChecks = pgTable(
   },
   (t) => [index('idp_baseline_checks_checked_at_idx').on(t.checkedAt)],
 )
+
+/** Daily salt for hashed IP logging (ticket 16, U8). Rotates at midnight UTC for privacy. */
+export const ipHashSalt = pgTable(
+  'ip_hash_salt',
+  {
+    /** Date in YYYY-MM-DD format (UTC) */
+    date: text('date').primaryKey(),
+    /** Random 64-character hex salt for this date */
+    salt: text('salt').notNull(),
+    /** When this salt was first generated */
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+)
