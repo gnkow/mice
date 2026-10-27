@@ -1,4 +1,4 @@
-import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
@@ -68,6 +68,7 @@ export function SettingsPage() {
     { title: 'General', items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
     { title: 'Access', items: [{ id: 'access-requests', label: 'Access requests', Icon: Inbox }] },
     ...(isInstanceAdmin ? [{ title: 'Administration', items: [
+      { id: 'idp-baseline', label: 'IdP MFA baseline', Icon: ShieldAlert },
       { id: 'authorization-policy', label: 'Authorization policy', Icon: ShieldCheck },
       { id: 'instance-administrators', label: 'Instance administrators', Icon: ShieldUser },
       { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
@@ -120,6 +121,7 @@ export function SettingsPage() {
 
         {me.kind === 'ok' && me.data && <>
           <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
+          {isInstanceAdmin && <IdpBaselineSection />}
           {isInstanceAdmin && <InstanceAdminSection />}
           {isInstanceAdmin && <AdminRevocationSection />}
           {isInstanceAdmin && <AnnouncementsSection />}
@@ -667,5 +669,142 @@ function InstanceAdminSection() {
         </>
       )}
     </>
+  )
+}
+
+function IdpBaselineSection() {
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  
+  const status = useAsync(async (signal) => {
+    try {
+      const res = await fetch('/auth/admin/idp-baseline/status', { signal })
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return await res.json() as {
+        lastCheck: {
+          id: number
+          checkedAt: string
+          checkedBy: string
+          mfaAvailable: boolean
+          claimsFound: { acr?: string; amr: string[] } | null
+          error: string | null
+        } | null
+      }
+    } catch (err) {
+      console.error('Failed to fetch IdP baseline status:', err)
+      return null
+    }
+  }, [])
+
+  async function triggerCheck() {
+    setChecking(true)
+    setError(null)
+    setSuccess(null)
+    
+    try {
+      const res = await fetch('/auth/admin/idp-baseline/check', { method: 'POST' })
+      const data = await res.json()
+      
+      if (!res.ok) {
+        setError(data.error || 'Check failed')
+      } else {
+        setSuccess('Baseline check completed')
+        // Refresh status
+        status.reload()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <section id="idp-baseline" className="settings-section" aria-labelledby="idp-baseline-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="idp-baseline-heading">
+            <ShieldAlert size={18} className="button-label-icon" aria-hidden="true" />
+            IdP MFA Baseline
+          </h2>
+          <p className="muted small">
+            Verify that the configured identity provider (IdP) provides MFA evidence (acr/amr claims).
+            Part 11 §11.200 requires two distinct identification components for electronic signatures.
+          </p>
+        </div>
+      </div>
+
+      {status.kind === 'ok' && status.data && (
+        <div className="ns-settings-grid">
+          {status.data.lastCheck ? (
+            <>
+              <div className="ns-settings-field">
+                <span className="ns-settings-label">Last Check</span>
+                <p className="muted small">
+                  {new Date(status.data.lastCheck.checkedAt).toLocaleString()}
+                  {' by '}
+                  <code className="inline-code">{status.data.lastCheck.checkedBy}</code>
+                </p>
+              </div>
+              
+              <div className="ns-settings-field">
+                <span className="ns-settings-label">MFA Available</span>
+                <p className={status.data.lastCheck.mfaAvailable ? 'flash flash-success' : 'flash flash-warning'}>
+                  {status.data.lastCheck.mfaAvailable ? (
+                    <>
+                      <ActionCheck size={14} aria-hidden="true" /> Yes
+                    </>
+                  ) : (
+                    <>
+                      <ActionX size={14} aria-hidden="true" /> No
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {status.data.lastCheck.claimsFound && (
+                <div className="ns-settings-field">
+                  <span className="ns-settings-label">Claims Found</span>
+                  <p className="muted small">
+                    <strong>acr:</strong> {status.data.lastCheck.claimsFound.acr || '(none)'}
+                    <br />
+                    <strong>amr:</strong> {status.data.lastCheck.claimsFound.amr.length > 0 
+                      ? status.data.lastCheck.claimsFound.amr.join(', ')
+                      : '(none)'}
+                  </p>
+                </div>
+              )}
+
+              {status.data.lastCheck.error && (
+                <div className="ns-settings-field">
+                  <span className="ns-settings-label">Error</span>
+                  <p className="flash flash-warning">{status.data.lastCheck.error}</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="ns-settings-field">
+              <p className="muted">No baseline checks have been performed yet.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="btn-row ns-settings-actions">
+        <button 
+          className="btn primary" 
+          type="button" 
+          onClick={triggerCheck}
+          disabled={checking}
+        >
+          <ShieldAlert size={14} aria-hidden="true" className="button-label-icon" />
+          {checking ? 'Checking...' : 'Check Now'}
+        </button>
+      </div>
+
+      {error && <p className="flash flash-error" role="alert">{error}</p>}
+      {success && <p className="flash flash-success" role="status">{success}</p>}
+    </section>
   )
 }
