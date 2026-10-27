@@ -1,5 +1,5 @@
 {
-  "id": "ad51e19c-7861-4ffa-a133-19ea2929d13c",
+  "id": "055f6799-3f6a-4809-82d3-66e31d90f376",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -875,6 +875,86 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.idp_baseline": {
+      "name": "idp_baseline",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "idp_baseline_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "established_at": {
+          "name": "established_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "established_by": {
+          "name": "established_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mfa_claims_available": {
+          "name": "mfa_claims_available",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "required_scopes": {
+          "name": "required_scopes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signature_algorithm": {
+          "name": "signature_algorithm",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_claim_format": {
+          "name": "group_claim_format",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuer": {
+          "name": "issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_current": {
+          "name": "is_current",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.idp_baseline_checks": {
       "name": "idp_baseline_checks",
       "schema": "",
@@ -946,6 +1026,130 @@
         }
       },
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.idp_drift_reports": {
+      "name": "idp_drift_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "idp_drift_reports_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "baseline_id": {
+          "name": "baseline_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "has_critical_drift": {
+          "name": "has_critical_drift",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "has_non_critical_drift": {
+          "name": "has_non_critical_drift",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "critical_drifts": {
+          "name": "critical_drifts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "non_critical_drifts": {
+          "name": "non_critical_drifts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_config": {
+          "name": "current_config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idp_drift_reports_checked_at_idx": {
+          "name": "idp_drift_reports_checked_at_idx",
+          "columns": [
+            {
+              "expression": "checked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idp_drift_reports_critical_idx": {
+          "name": "idp_drift_reports_critical_idx",
+          "columns": [
+            {
+              "expression": "has_critical_drift",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "idp_drift_reports_baseline_id_idp_baseline_id_fk": {
+          "name": "idp_drift_reports_baseline_id_idp_baseline_id_fk",
+          "tableFrom": "idp_drift_reports",
+          "tableTo": "idp_baseline",
+          "columnsFrom": [
+            "baseline_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

@@ -472,6 +472,63 @@ export const idpBaselineChecks = pgTable(
   (t) => [index('idp_baseline_checks_checked_at_idx').on(t.checkedAt)],
 )
 
+/** IdP baseline configuration (ticket 23, U20). Stores validated baseline for drift detection. */
+export const idpBaseline = pgTable('idp_baseline', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  /** When this baseline was established */
+  establishedAt: ts('established_at').notNull().defaultNow(),
+  /** Admin who established the baseline */
+  establishedBy: text('established_by').notNull(),
+  /** MFA claims available in tokens */
+  mfaClaimsAvailable: jsonb('mfa_claims_available').$type<{ acr?: string; amr: string[] }>().notNull(),
+  /** Required OIDC scopes */
+  requiredScopes: jsonb('required_scopes').$type<string[]>().notNull(),
+  /** Token signature algorithm (e.g., RS256) */
+  signatureAlgorithm: text('signature_algorithm').notNull(),
+  /** Group claim format (e.g., "array", "overage") */
+  groupClaimFormat: text('group_claim_format').notNull(),
+  /** OIDC issuer URL */
+  issuer: text('issuer').notNull(),
+  /** Whether this is the current active baseline */
+  isCurrent: boolean('is_current').notNull().default(true),
+})
+
+/** IdP drift reports (ticket 23, U20). Daily checks comparing current IdP vs baseline. */
+export const idpDriftReports = pgTable(
+  'idp_drift_reports',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    /** When the drift check was performed */
+    checkedAt: ts('checked_at').notNull().defaultNow(),
+    /** Baseline ID that was compared against */
+    baselineId: bigint('baseline_id', { mode: 'number' })
+      .notNull()
+      .references(() => idpBaseline.id),
+    /** Whether critical drift was detected */
+    hasCriticalDrift: boolean('has_critical_drift').notNull(),
+    /** Whether non-critical drift was detected */
+    hasNonCriticalDrift: boolean('has_non_critical_drift').notNull(),
+    /** Critical drifts detected (MFA missing, algorithm changed, issuer changed) */
+    criticalDrifts: jsonb('critical_drifts').$type<string[]>(),
+    /** Non-critical drifts detected (group format changed, scopes expanded) */
+    nonCriticalDrifts: jsonb('non_critical_drifts').$type<string[]>(),
+    /** Current IdP configuration at time of check */
+    currentConfig: jsonb('current_config').$type<{
+      mfaClaimsAvailable?: { acr?: string; amr: string[] }
+      requiredScopes: string[]
+      signatureAlgorithm: string
+      groupClaimFormat: string
+      issuer: string
+    }>().notNull(),
+    /** Error message if check failed */
+    error: text('error'),
+  },
+  (t) => [
+    index('idp_drift_reports_checked_at_idx').on(t.checkedAt),
+    index('idp_drift_reports_critical_idx').on(t.hasCriticalDrift),
+  ],
+)
+
 /** Daily salt for hashed IP logging (ticket 16, U8). Rotates at midnight UTC for privacy. */
 export const ipHashSalt = pgTable(
   'ip_hash_salt',

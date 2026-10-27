@@ -15,6 +15,8 @@ export { registerRevocationRoutes } from './credentials/revocationRoutes.js'
 export { registerAdminRevocationRoutes } from './access/adminRevocationRoutes.js'
 export { registerSigningRoutes } from './signing/signingRoutes.js'
 export { registerIdpBaselineRoutes } from './admin/idpBaselineRoutes.js'
+export { registerIdpDriftRoutes } from './compliance/idpDriftRoutes.js'
+export { startIdpDriftSchedule } from './compliance/idpDriftSchedule.js'
 export { signOutEverywhere } from './credentials/selfRevocation.js'
 
 // Directory sync

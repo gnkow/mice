@@ -10,6 +10,7 @@ import {
 import { extractMfaEvidence } from './mfaEvidence.js'
 import { decodeJwtPayload } from '../oidc/oidcClaims.js'
 import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.js'
+import { isSigningBlockedByDrift } from '../compliance/idpDriftDetection.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { env } from '../../env.js'
 
@@ -103,6 +104,26 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     mutates: true,
     body: { required: ['content', 'meaning', 'expectedHash'] }
   }, async ({ c, user, body }) => {
+    // Ticket 23: Check for critical IdP drift before signing
+    const driftCheck = await isSigningBlockedByDrift()
+    if (driftCheck.blocked) {
+      await audit.append({
+        actor: { iss: user.iss, sub: user.sub },
+        via: 'session',
+        method: c.req.method,
+        path: c.req.path,
+        status: 503,
+        action: 'signature.blocked_by_drift',
+        message: 'Signature blocked: critical IdP drift detected',
+        detail: { reason: driftCheck.reason, reportId: driftCheck.reportId },
+      })
+      return c.json({
+        error: 'Signing blocked due to critical IdP configuration drift',
+        detail: driftCheck.reason,
+        reportId: driftCheck.reportId,
+      }, 503)
+    }
+
     // Verify fresh authentication again
     const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
     if (!stepUp.ok) return stepUp.response

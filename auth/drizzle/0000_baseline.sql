@@ -107,12 +107,36 @@ CREATE TABLE "favorites" (
 	CONSTRAINT "favorites_user_key_type_id_pk" PRIMARY KEY("user_key","type","id")
 );
 --> statement-breakpoint
+CREATE TABLE "idp_baseline" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "idp_baseline_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"established_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"established_by" text NOT NULL,
+	"mfa_claims_available" jsonb NOT NULL,
+	"required_scopes" jsonb NOT NULL,
+	"signature_algorithm" text NOT NULL,
+	"group_claim_format" text NOT NULL,
+	"issuer" text NOT NULL,
+	"is_current" boolean DEFAULT true NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "idp_baseline_checks" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "idp_baseline_checks_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"checked_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"checked_by" text NOT NULL,
 	"mfa_available" boolean NOT NULL,
 	"claims_found" jsonb,
+	"error" text
+);
+--> statement-breakpoint
+CREATE TABLE "idp_drift_reports" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "idp_drift_reports_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"checked_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"baseline_id" bigint NOT NULL,
+	"has_critical_drift" boolean NOT NULL,
+	"has_non_critical_drift" boolean NOT NULL,
+	"critical_drifts" jsonb,
+	"non_critical_drifts" jsonb,
+	"current_config" jsonb NOT NULL,
 	"error" text
 );
 --> statement-breakpoint
@@ -341,6 +365,7 @@ CREATE TABLE "web_sessions" (
 --> statement-breakpoint
 ALTER TABLE "custom_namespace_roles" ADD CONSTRAINT "custom_namespace_roles_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "custom_repo_roles" ADD CONSTRAINT "custom_repo_roles_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "idp_drift_reports" ADD CONSTRAINT "idp_drift_reports_baseline_id_idp_baseline_id_fk" FOREIGN KEY ("baseline_id") REFERENCES "idp_baseline"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_group_members" ADD CONSTRAINT "namespace_group_members_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_members" ADD CONSTRAINT "namespace_members_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "principal_name_history" ADD CONSTRAINT "principal_name_history_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "principals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -359,6 +384,8 @@ CREATE INDEX "device_approvals_principal_time_idx" ON "device_approvals" USING b
 CREATE INDEX "device_authorizations_user_code" ON "device_authorizations" USING btree ("user_code");--> statement-breakpoint
 CREATE INDEX "favorites_target" ON "favorites" USING btree ("type","id");--> statement-breakpoint
 CREATE INDEX "idp_baseline_checks_checked_at_idx" ON "idp_baseline_checks" USING btree ("checked_at");--> statement-breakpoint
+CREATE INDEX "idp_drift_reports_checked_at_idx" ON "idp_drift_reports" USING btree ("checked_at");--> statement-breakpoint
+CREATE INDEX "idp_drift_reports_critical_idx" ON "idp_drift_reports" USING btree ("has_critical_drift");--> statement-breakpoint
 CREATE INDEX "jobs_repo_created" ON "jobs" USING btree ("namespace","repo","created_at");--> statement-breakpoint
 CREATE INDEX "jobs_status_created" ON "jobs" USING btree ("status","created_at");--> statement-breakpoint
 CREATE INDEX "jobs_pin_commit" ON "jobs" USING btree ("pin_commit");--> statement-breakpoint
