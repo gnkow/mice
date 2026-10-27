@@ -23,6 +23,36 @@ const SIGNATURE_FRESHNESS_MS = 5 * 60 * 1000 // 5 minutes
 
 export type SignatureMeaning = 'Authored' | 'Reviewed' | 'Approved'
 
+/**
+ * MFA Evidence from IdP (Ticket 26, U19)
+ * 
+ * Extracted from id_token at signing ceremony. Stored to prove
+ * MFA was used and that Mice verified the IdP's assertion.
+ */
+export interface MfaEvidence {
+  /** Authentication Context Class Reference (e.g., "mfa", "urn:mace:incommon:iap:silver") */
+  acr?: string
+  /** Authentication Methods References (e.g., ["pwd", "otp"]) */
+  amr: string[]
+  /** Epoch seconds when user authenticated at IdP */
+  auth_time?: number
+}
+
+/**
+ * Token Verification Metadata (Ticket 26, U19)
+ * 
+ * Proves Mice performed cryptographic verification of IdP assertion,
+ * not just copying claims blindly (Part 11 §11.200 evidence).
+ */
+export interface VerificationMetadata {
+  /** JWKS key ID used to verify id_token signature */
+  jwks_key_id: string
+  /** When Mice verified the token */
+  token_verified_at: number
+  /** IdP issuer (iss claim) */
+  idp_issuer: string
+}
+
 export interface SignatureRecord {
   /** Cryptographic hash of the signed content */
   hash: string
@@ -34,6 +64,10 @@ export interface SignatureRecord {
   meaning: SignatureMeaning
   /** The exact content that was signed */
   content: string
+  /** MFA evidence from IdP (Ticket 26) */
+  mfaEvidence?: MfaEvidence
+  /** Token verification metadata (Ticket 26) */
+  verificationMetadata?: VerificationMetadata
 }
 
 export interface SessionInfo {
@@ -43,6 +77,10 @@ export interface SessionInfo {
   mfaVerified: boolean
   /** Principal information */
   principal: PrincipalId & { name: string }
+  /** MFA evidence from IdP (Ticket 26) */
+  mfaEvidence?: MfaEvidence
+  /** Token verification metadata (Ticket 26) */
+  verificationMetadata?: VerificationMetadata
 }
 
 /**
@@ -93,6 +131,8 @@ export function createSignature(
     signedAt: now,
     meaning,
     content,
+    ...(session.mfaEvidence ? { mfaEvidence: session.mfaEvidence } : {}),
+    ...(session.verificationMetadata ? { verificationMetadata: session.verificationMetadata } : {}),
   }
 }
 

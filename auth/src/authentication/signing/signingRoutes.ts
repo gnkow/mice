@@ -9,6 +9,7 @@ import {
 } from './signingCeremony.js'
 import { extractMfaEvidence } from './mfaEvidence.js'
 import { decodeJwtPayload } from '../oidc/oidcClaims.js'
+import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { env } from '../../env.js'
 
@@ -140,13 +141,28 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     }
 
     try {
-      // Extract MFA evidence from id_token
+      // Ticket 26: Extract MFA evidence AND verification metadata from id_token
       let mfaVerified = false
+      let mfaEvidenceData = undefined
+      let verificationMetadataData = undefined
+      
       if (stepUp.user.idToken) {
         try {
           const payload = decodeJwtPayload(stepUp.user.idToken)
           const mfaEvidence = extractMfaEvidence(payload)
           mfaVerified = mfaEvidence.hasMfa
+          
+          // Store MFA evidence for signature record (Ticket 26)
+          if (mfaEvidence.hasMfa) {
+            mfaEvidenceData = {
+              acr: mfaEvidence.acr,
+              amr: mfaEvidence.amr,
+              auth_time: stepUp.user.authTime,
+            }
+          }
+          
+          // Extract verification metadata (Ticket 26, U19)
+          verificationMetadataData = extractVerificationMetadata(stepUp.user.idToken)
         } catch (err) {
           // If we can't decode or extract MFA, treat as no MFA
           console.warn('[signing] Failed to extract MFA evidence from id_token:', err)
@@ -175,6 +191,9 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           sub: user.sub,
           name: user.name ?? `${user.iss}|${user.sub}`,
         },
+        // Ticket 26: Include MFA evidence and verification metadata
+        ...(mfaEvidenceData ? { mfaEvidence: mfaEvidenceData } : {}),
+        ...(verificationMetadataData ? { verificationMetadata: verificationMetadataData } : {}),
       }
 
       const signature = createSignature(content, meaning, session)
@@ -191,6 +210,9 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           meaning,
           hash: signature.hash,
           signedAt: signature.signedAt,
+          // Ticket 26: Include evidence in audit detail
+          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
+          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
         },
       })
 
@@ -200,6 +222,9 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           meaning: signature.meaning,
           signedAt: signature.signedAt,
           principal: signature.principal,
+          // Ticket 26: Return evidence in response for display/storage
+          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
+          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
         },
       })
     } catch (err) {
