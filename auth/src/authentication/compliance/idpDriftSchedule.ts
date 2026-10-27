@@ -1,14 +1,16 @@
 /**
  * Scheduled job for daily IdP drift detection (Ticket 23)
+ * and Principal access monitoring (Ticket 11)
  */
 
 import { performDriftCheck } from './idpDriftDetection.js'
+import { runDisabledPrincipalCheck } from './principalAccessMonitoring.js'
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 
 /**
  * Start the daily IdP drift detection schedule.
- * Runs once per day to check for configuration drift.
+ * Runs once per day to check for configuration drift and access issues.
  */
 export function startIdpDriftSchedule(
   opts: { intervalMs?: number; poll?: boolean } = {}
@@ -21,6 +23,7 @@ export function startIdpDriftSchedule(
     last = Date.now()
 
     try {
+      // Ticket 23: Check IdP configuration drift
       const report = await performDriftCheck()
 
       if (report.hasCriticalDrift) {
@@ -38,10 +41,19 @@ export function startIdpDriftSchedule(
         console.log('[mice-auth] IdP drift check: no drift detected')
       }
 
+      // Ticket 11: Check for disabled Principals with signing rights
+      const accessCheck = await runDisabledPrincipalCheck()
+      if (accessCheck.alarmsFound > 0) {
+        console.error(
+          `[mice-auth] CRITICAL ACCESS ALARM: ${accessCheck.alarmsFound} disabled Principal(s) with signing rights`
+        )
+        // In production, this would trigger immediate alerts
+      }
+
       return true
     } catch (err) {
       console.error(
-        '[mice-auth] IdP drift check failed:',
+        '[mice-auth] IdP drift/access check failed:',
         err instanceof Error ? err.message : 'unknown error'
       )
       return false
