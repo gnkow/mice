@@ -157,6 +157,31 @@ export function createKeycloakDirectory(
         return 'error'
       }
     },
+
+    async getUserGroups(sub): Promise<string[]> {
+      const tok = await token()
+      if (!tok) return []
+      try {
+        const res = await doFetch(`${adminBase()}/users/${encodeURIComponent(sub)}/groups`, {
+          headers: { Authorization: `Bearer ${tok}` },
+        })
+        if (!res.ok) {
+          console.error('[mice-auth] Keycloak user groups fetch failed', res.status)
+          return []
+        }
+        const rows = (await res.json()) as Array<{ name?: string; path?: string }>
+        const groups: string[] = []
+        for (const g of rows) {
+          const raw = g.name || g.path || ''
+          const name = normalizeGroup(raw.replace(/^\//, '').split('/').pop() ?? raw)
+          if (name) groups.push(name)
+        }
+        return groups
+      } catch (err) {
+        console.error('[mice-auth] Keycloak user groups fetch error', err)
+        return []
+      }
+    },
   }
 }
 

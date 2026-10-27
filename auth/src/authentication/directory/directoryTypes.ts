@@ -31,4 +31,6 @@ export interface Directory {
   searchGroups(q: string, limit: number): Promise<DirectoryGroupHit[]>
   /** `error` means the directory could not answer. */
   userStatus(sub: string): Promise<DirectoryUserStatus>
+  /** Fetch all groups for a user by sub (for group overage handling). Returns empty on error. */
+  getUserGroups(sub: string): Promise<string[]>
 }

@@ -7,6 +7,7 @@ export function createFakeDirectory(opts: {
   users?: DirectoryUserHit[]
   groups?: DirectoryGroupHit[]
   statuses?: Record<string, DirectoryUserStatus>
+  userGroups?: Record<string, string[]>
 } = {}): Directory {
   const has = (q: string, ...fields: string[]) =>
     fields.some((f) => f.toLowerCase().includes(q.trim().toLowerCase()))
@@ -21,6 +22,9 @@ export function createFakeDirectory(opts: {
     },
     async userStatus(sub) {
       return opts.statuses?.[sub] ?? 'error'
+    },
+    async getUserGroups(sub) {
+      return opts.userGroups?.[sub] ?? []
     },
   }
 }
