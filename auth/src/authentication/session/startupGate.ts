@@ -31,8 +31,8 @@ export function productionStartupProblems(
   e: Record<string, string | undefined>,
 ): string[] {
   const problems: string[] = []
-  if (e.GXP_STRICT === 'true' && !(Number(e.SESSION_IDLE_SEC ?? 0) > 0)) {
-    problems.push('SESSION_IDLE_SEC must be greater than 0 when GXP_STRICT=true (idle timeout is off)')
+  if (!(Number(e.SESSION_IDLE_SEC ?? 0) > 0)) {
+    problems.push('SESSION_IDLE_SEC must be greater than 0 (idle timeout is off)')
   }
   if ((e.OIDC_ISSUER ?? '').trim().replace(/\/$/, '') === SERVICE_ISSUER) {
     problems.push(`OIDC_ISSUER must not be the reserved service issuer "${SERVICE_ISSUER}"`)
@@ -50,18 +50,12 @@ export function productionStartupProblems(
   if (!/^https:\/\//i.test(e.OIDC_ISSUER ?? '')) {
     problems.push('OIDC_ISSUER must be an https:// URL')
   }
-  if ((e.AUTHZ_ENFORCE ?? '').toLowerCase() === 'false') {
-    problems.push('AUTHZ_ENFORCE=false is not allowed in production (AuthZ is always enforced)')
-  }
   const bootstrapAdmins = (e.AUTHZ_BOOTSTRAP_ADMINS ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
   if (bootstrapAdmins.length === 0) {
     problems.push('AUTHZ_BOOTSTRAP_ADMINS must list at least one instance admin')
-  }
-  if (e.AUTHZ_DEV_GRANT_ALL === 'true') {
-    problems.push('AUTHZ_DEV_GRANT_ALL must not be set in production')
   }
   if (e.AUTH_DEV_MODE === 'true') {
     problems.push('AUTH_DEV_MODE must not be set in production')

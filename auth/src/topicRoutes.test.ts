@@ -58,13 +58,11 @@ await describe('token routes', async () => {
 })
 
 await describe('instance routes', async () => {
-  await it('refuses non-admins and lets an admin read and toggle enforcement', async () => {
+  await it('refuses non-admins and reports enforcement as on', async () => {
     assert.equal((await app.request('/auth/instance', { headers: await cookie('nobody') })).status, 403)
     const h = await cookie('root')
-    assert.equal((await app.request('/auth/instance', { headers: h })).status, 200)
-    const r = await app.request('/auth/instance', { method: 'PATCH', headers: { ...h, ...json }, body: JSON.stringify({ enforce: false }) })
-    assert.deepEqual(await r.json(), { enforce: false })
-    assert.ok(audited.includes('instance.settings.update'))
+    const body = (await (await app.request('/auth/instance', { headers: h })).json()) as { enforce: boolean }
+    assert.equal(body.enforce, true)
   })
 
   await it('validates and audits the admin list changes', async () => {

@@ -177,11 +177,8 @@ services:
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
       PUBLIC_WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-mice-session-secret}
-      # PLAT-AUTHO: unset = store flag (off until bootstrap).
-      AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}
-      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice@example.com}
-      AUTHZ_DEV_GRANT_ALL: ${AUTHZ_DEV_GRANT_ALL:-true}
-      AUTHZ_GROUP_BOOTSTRAP: ${AUTHZ_GROUP_BOOTSTRAP:-}
+      SESSION_IDLE_SEC: ${SESSION_IDLE_SEC:-900}
+      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice_admin@mice.com}
       AUTHZ_REQUIRE_TRAINING: ${AUTHZ_REQUIRE_TRAINING:-false}
       # Server-side discovery inside Compose (override all OIDC_* for another IdP)
       OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/mice}

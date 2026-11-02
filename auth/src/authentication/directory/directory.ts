@@ -16,6 +16,7 @@ export type {
   DirectoryHit,
   DirectorySearchResult,
   DirectoryUserHit,
+  DirectoryUserState,
   DirectoryUserStatus,
 } from './directoryTypes.js'
 export { canSearchDirectory } from './directoryPolicy.js'
@@ -89,8 +90,8 @@ export function setDirectoryFetchForTests(fn: DirectoryFetch | null): void {
 
 export const keycloakDirectoryConfigured = (): boolean => directoryNow().configured
 export const directoryIssuer = (): string => directoryNow().issuer
-export const lookupKeycloakUserStatus = (sub: string): Promise<DirectoryUserStatus> =>
-  directoryNow().userStatus(sub)
+export const lookupKeycloakUserStatus = async (sub: string): Promise<DirectoryUserStatus> =>
+  (await directoryNow().userStatus(sub)).status
 export const searchDirectory = (input: SearchInput): Promise<DirectorySearchResult> =>
   createDirectoryService(directoryNow()).search(input)
 

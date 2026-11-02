@@ -15,9 +15,6 @@ process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 process.env.SESSIONS_CONNECT_BACKEND = 'guacamole_lite'
 process.env.SESSIONS_ENABLED = 'true'
 process.env.SESSIONS_MAX_MOUNTS = '8'
-process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTHZ_DEV_GRANT_ALL = 'false'
-
 const {
   authorizeSessionAccess,
   authorizeSessionCreate,
@@ -26,7 +23,7 @@ const {
   publicSession,
   sessionsAuditRetentionPolicy,
 } = await import('./sessions.js')
-const { setAuthzEnforce, writeInstancePermissions } = await import('./authzInstanceStore.js')
+const { writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { encryptGuacamoleLiteToken, mintConnectPayload } = await import(
   './sessionsConnect.js'
 )
@@ -216,7 +213,6 @@ describe('sessions', () => {
       email: 'sess@example.com',
       name: 'Sess',
     }
-    await setAuthzEnforce(true)
     await writeInstancePermissions(user, [])
     assert.equal((await authorizeSessionCreate(user)).allow, false)
 

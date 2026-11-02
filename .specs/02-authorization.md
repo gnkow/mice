@@ -8,7 +8,7 @@ Every request to oxen-server and to Mice features must be allowed or denied by a
 
 ## Solution
 
-The BFF classifies every route to an action, resolves the Principal's roles through namespace and repository membership, groups, instance permissions and custom roles, and denies anything unclassified (ADR 0002). Resources are keyed by stable entity IDs (repositories, namespaces). Instance admins manage the platform but have no data access. Managers with `create_namespace` permission create namespaces and grant access directly.
+The BFF implements role-based access control (RBAC) with 5 formal roles (External User, User, Manager, Auditor, Admin), each with a defined permission bundle. Users request roles or custom permissions through a structured workflow. Managers and admins approve requests up to their authority level. All permission changes are versioned in PostgreSQL and audited in immudb. Resources are keyed by stable entity IDs. Instance admins manage the platform but have NO data access. Auditors have universal read access (bypass ACLs) but cannot write.
 
 ## User Stories
 
@@ -25,8 +25,10 @@ The BFF classifies every route to an action, resolves the Principal's roles thro
 11. As a developer, I want `stage.*` action names from day one, so that no legacy names or aliases exist.
 12. As a user of a renamed repository, I want my access unchanged, so that renames are not a permissions event.
 13. As an instance admin, I want to see why an access decision was made, so that I can debug.
-14. As a manager with create_namespace permission, I want to create namespaces and grant access to users directly.
-15. As a user with no grants, I want to see an empty list (0 namespaces, 0 repos) rather than a pending page.
+14. **As a new user with no access, I want to request a role, so that I can gain appropriate access.**
+15. **As a manager, I want to review and approve access requests up to my permission level, so that I can onboard team members.**
+16. **As an auditor, I want to read all data bypassing repository ACLs, so that I can perform compliance reviews.**
+17. **As an admin, I want to manage the system but NOT access data/audits, so that separation of duties is enforced.**
 
 ## Implementation Decisions
 
@@ -34,10 +36,12 @@ The BFF classifies every route to an action, resolves the Principal's roles thro
 
 - **Default-deny**: Every unclassified route is denied. ADR 0002 updated. Parity test fails on any new route.
 - **Stable entity IDs**: All entities (repositories, namespaces) referenced by UUIDs. Grants, audit, favorites, metadata key by ID not name. Greenfield implementation (no migration).
-- **Authorization always enforced**: `AUTHZ_ENFORCE` flag removed. Authorization is always on in production.
-- **Manager-driven access**: Users with `create_namespace` permission create namespaces and grant access. No access request workflow. No pending user page.
-- **Instance admin separation**: Instance admins manage platform (settings, users, audit) but have NO data access. Cannot be namespace members. Cannot grant themselves namespace roles.
-- **Bootstrap process**: First admin grants `create_namespace` to managers. Managers create namespaces. If zero non-admin users exist, namespace creation blocked.
+- **Authorization always enforced**: `AUTHZ_ENFORCE` flag removed. Authorization is always on.
+- **Role-based access control**: 5 formal roles with defined permission bundles (External User, User, Manager, Auditor, Admin).
+- **Request/approval workflow**: Users request roles or permissions. Managers/admins approve up to their authority level.
+- **Instance admin separation**: Instance admins manage platform (settings, users) but have NO data/audit access. Cannot be namespace members.
+- **Auditor bypass**: Auditors have `repo:bypass_acl` permission for universal read access (compliance reviews).
+- **Manager approval authority**: Managers can approve requests up to Manager level. Cannot approve what they don't have.
 
 ### Identity and Groups
 
@@ -54,13 +58,80 @@ The BFF classifies every route to an action, resolves the Principal's roles thro
 
 ### Roles and Permissions
 
+#### Instance Roles (RBAC)
+
+- **5 formal roles**: External User, User, Manager, Auditor, Admin
+- **Role-based permissions**: Each role has a defined permission bundle (150+ granular permissions)
+- **Permission extensibility**: Permissions stored as TEXT[] (no schema changes for new permissions)
+- **Custom permissions**: Users can have role + additional custom permissions beyond role defaults
+- **Permission naming**: `<resource>:<sub-resource>:<operation>` (e.g., `repo:files:read`, `workspace:lease:acquire`)
+- **Maximum granularity**: Split permissions to finest-grained operations (read vs write vs delete, acquire vs renew vs release)
+
+**Role Definitions:**
+
+| Role | Permission Count | Key Capabilities |
+|------|-----------------|------------------|
+| **External User** | 31 | Read-only: repos, sessions, jobs, metadata |
+| **User** | 51 | Read/write: files, branches, commits, workspaces, jobs |
+| **Manager** | 79 | User + create namespaces + manage members + approve requests |
+| **Auditor** | 38 | Universal read (bypass ACLs) + audit/lineage access |
+| **Admin** | 34 | System management + user management (NO data/audit access) |
+
+**Separation of Duties:**
+- Admin manages system but CANNOT access data, repos, audit logs, lineage
+- Auditor reads everything (bypass repo ACLs) but CANNOT write or manage
+- Manager approves requests up to Manager level (cannot grant more than they have)
+
+**Permission Catalog:** See `docs/specs/authorization-system.md` for complete 150+ permission list across 16 categories.
+
+#### Repository Roles
+
+- **Repository roles**: read < triage < write < maintain < admin (5 predefined roles).
 - **Merge requires write**: Minimum role for merge is `write` (not `maintain`).
 - **Self-merge forbidden**: Merge blocked when signer === commit author. Enforced in repositories module (05), not authorization.
-- **Repository roles**: read < triage < write < maintain < admin (5 predefined roles).
+
+#### Namespace Roles
+
 - **Namespace roles**: owner, member (2 base roles) + custom roles.
 - **Custom roles**: Additive composition, highest role wins. Fine-grained permissions are union of all held roles.
-- **Instance permissions**: 8 total (documented in catalog below).
-- **Namespace capabilities**: 8 total (documented in catalog below).
+
+### Access Request & Approval Workflow
+
+- **Request-based access**: Users without access submit role or permission requests
+- **No-access UI**: Users with no role see ONLY "Request Access" screen (no navigation)
+- **Role or custom**: Requests can target a role (External/User/Manager) OR custom permission set
+- **One pending request**: Only one pending request per user at a time (prevent spam)
+- **Manager approval authority**: Managers approve up to Manager level (External, User, Manager)
+- **Admin approval authority**: Admins approve all roles (including Auditor, Admin)
+- **Permission validation**: Reviewers can only approve permissions they themselves have
+- **Modification before approval**: Reviewers can modify requested role/permissions before granting
+- **Direct grant**: Admins/Managers can grant roles/permissions directly (bypass request)
+- **Approval reason**: Optional but encouraged for compliance
+- **Additional permissions**: Existing users can request role upgrades or additional permissions from profile
+
+**Request Flow:**
+1. User submits request (role or permissions + justification)
+2. Request stored in `access_requests` table with status='pending'
+3. Manager/Admin sees request in Settings → Access Requests
+4. Reviewer validates: has authority for role? has all requested permissions?
+5. Reviewer can modify requested grants before approval
+6. Approve: grants recorded in `principal_roles` and/or `principal_permissions`, audit trail created
+7. Deny: reason recorded, user notified
+
+**Authority Validation:**
+```
+Manager tries to approve Admin request → BLOCKED
+Manager tries to approve permissions they lack → BLOCKED with error message
+Manager approves Manager request → ALLOWED (same level)
+Admin approves any request → ALLOWED
+```
+
+### Auditor Bypass ACL
+
+- **`repo:bypass_acl` permission**: Auditors have special permission to bypass repository ACLs
+- **Universal read**: Auditors can read all repos, workspaces, jobs, sessions regardless of collaborator status
+- **Read-only**: Bypass only applies to read operations, cannot write
+- **Compliance use case**: Enables inspectors/regulators to review all data for audit purposes
 
 ### Guards and Safety
 
@@ -100,14 +171,36 @@ The BFF classifies every route to an action, resolves the Principal's roles thro
 ## Out of Scope
 
 - Breakglass and "internal" visibility.
-- Long-lived PATs and service principals.
-- Access request workflow and pending user page.
+- Long-lived PATs and service principals (removed).
 - Transfer (needs separate design).
 - Training implementation (separate spec).
 
 ## Implementation Gaps (from New Grilling Session)
 
 The following gaps were identified between the spec decisions and current implementation:
+
+### 0. Role-Based Access Control with Request/Approval Workflow (NEW - HIGHEST PRIORITY) ⏱️ 5 weeks
+
+**Status**: New requirement. Complete redesign of authorization system.
+
+**Scope**:
+- Implement 5 formal roles (External User, User, Manager, Auditor, Admin) with 150+ granular permissions
+- Database schema: `principal_roles`, `principal_role_history`, `principal_permissions`, `principal_permission_history`, `access_requests`, `permission_snapshots`
+- Access request workflow: users request roles/permissions, managers/admins approve up to their authority level
+- Direct grant: admins/managers grant roles/permissions without request
+- Request Access UI for no-access users (full-screen, no navigation)
+- Profile → Permissions tab with permission grid and "Request Additional Permissions"
+- Settings → Access Requests review interface with approval/denial
+- Settings → Users direct grant interface
+- Authorization logic: role + custom permission merging, authority validation
+- Auditor bypass ACL implementation (`repo:bypass_acl` permission)
+- Admin data access restriction (admins CANNOT access repos/audit/lineage)
+- Complete audit trail in PostgreSQL history tables + immudb
+- Versioning of all permission changes
+
+**Details**: See `.scratch/authorization/issues/16-role-based-access-control.md` and `docs/specs/authorization-system.md`
+
+**Blocks**: User onboarding, team collaboration, compliance requirements
 
 ### 1. Stable Entity IDs (HIGHEST PRIORITY - BLOCKING) ⏱️ 3 weeks
 
@@ -236,7 +329,7 @@ The following gaps were identified between the spec decisions and current implem
 
 ### 9. Remove AUTHZ_ENFORCE Flag (TRIVIAL) ⏱️ 1 hour
 
-**Status**: Flag still exists in code.
+**Status**: Removed. Authorization is always on.
 
 **Scope**:
 - Remove `AUTHZ_ENFORCE` environment variable
@@ -249,7 +342,7 @@ The following gaps were identified between the spec decisions and current implem
 
 ### 10. Remove AUTHZ_GROUP_BOOTSTRAP Flag (TRIVIAL) ⏱️ 1 hour
 
-**Status**: Flag still exists in code.
+**Status**: Removed. Login does not grant access from an IdP group.
 
 **Scope**:
 - Remove `AUTHZ_GROUP_BOOTSTRAP` environment variable

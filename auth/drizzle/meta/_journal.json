@@ -8,6 +8,55 @@
       "when": 1793123447550,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793560000000,
+      "tag": "0001_cli_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793560001000,
+      "tag": "0002_device_refresh_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793560002000,
+      "tag": "0003_principal_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793560003000,
+      "tag": "0004_principal_last_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793560004000,
+      "tag": "0005_access_review_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793560005000,
+      "tag": "0006_principal_flags",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793560006000,
+      "tag": "0007_principal_flag_history",
+      "breakpoints": true
     }
   ]
 }

@@ -157,7 +157,7 @@ Output is JSON. Most commands accept --remote / --token.
                        [--since t] [--until t] [--kind k] [--job-id id]
                        [--commit c] [--limit n] [--cursor c]
   mice lineage rebuild --namespace ns --repo r --path p [--branch b]
-  mice instance show | enforce on|off
+  mice instance show
   mice instance admin add|remove --sub s --iss i
   mice instance permissions set --sub s --iss i --permissions a,b,…
   mice namespace list | show <ns>

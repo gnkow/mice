@@ -13,6 +13,7 @@ import { formatBytes } from '../lib/oxen/client'
 import { lastBranch } from '../lib/lastBranch'
 import { OxenApiError } from '../lib/oxen/types'
 import { AuthorAvatar } from './AuthorAvatar'
+import { CommitEmail, useCurrentEmails } from './CommitEmail'
 import { DataTypeIcon } from './icons'
 import { useState } from 'react'
 
@@ -59,17 +60,16 @@ export function RepoAside() {
   const workspaceCount =
     workspaces.kind === 'ok' ? workspaces.data.workspaces.length : null
 
-  const contributors =
-    commits.kind === 'ok'
-      ? [
-          ...new Map(
-            commits.data.commits
-              .map((c) => (c.author || '').trim())
-              .filter(Boolean)
-              .map((name) => [name.toLowerCase(), name]),
-          ).values(),
-        ]
-      : []
+  const commitRows = commits.kind === 'ok' ? commits.data.commits : []
+  const contributors = [
+    ...new Map(
+      commitRows
+        .map((c) => (c.author || '').trim())
+        .filter(Boolean)
+        .map((name) => [name.toLowerCase(), name]),
+    ).values(),
+  ]
+  const emails = useCurrentEmails(contributors)
 
   function onRefreshAbout() {
     const branch = lastBranch(namespace, repo, 'main')
@@ -237,6 +237,11 @@ export function RepoAside() {
               <li key={name}>
                 <AuthorAvatar name={name} />
                 <span>@{name}</span>
+                <CommitEmail
+                  author={name}
+                  stored={commitRows.find((c) => c.author.trim() === name)?.email}
+                  emails={emails}
+                />
               </li>
             ))}
           </ul>

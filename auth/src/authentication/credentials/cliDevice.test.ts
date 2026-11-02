@@ -19,9 +19,8 @@ const {
   pollDevice,
   startDeviceAuth,
 } = await import('./cliDevice.js')
-const { findPatByToken, resolvePat, revokePatByToken } = await import(
-  './tokens.js'
-)
+const { findPatByToken } = await import('./tokens.js')
+const { logoutCliCredential, resolveCliCredential } = await import('./cliCredentials.js')
 
 const alice = {
   sub: 'alice',
@@ -53,7 +52,7 @@ await describe('CLI device auth', async () => {
     assert.equal(started.interval, 5)
   })
 
-  await it('start → approve → poll returns one-time cli-login PAT', async () => {
+  await it('start → approve → poll returns an 8-hour access token and a refresh token', async () => {
     clearPollThrottle()
     const started = await startDeviceAuth()
 
@@ -67,18 +66,14 @@ await describe('CLI device auth', async () => {
     const polled = await pollDevice(started.device_code)
     assert.equal(polled.status, 'approved')
     if (polled.status !== 'approved') return
-    assert.match(polled.token, /^mice_pat_/)
+    assert.equal(polled.token.startsWith('mice_pat_'), false)
+    assert.equal(polled.expiresIn, 8 * 60 * 60)
+    assert.notEqual(polled.refreshToken, polled.token)
     assert.equal(polled.user.email, alice.email)
     assert.equal(polled.authHost, 'localhost:8080')
     assert.equal(polled.remote, 'http://localhost:8080')
-
-    const meta = await findPatByToken(polled.token)
-    assert.equal(meta?.source, 'cli-login')
-    assert.equal(meta?.label, 'cli-login')
-
-    const user = await resolvePat(polled.token)
-    assert.ok(user)
-    assert.equal(user?.email, alice.email)
+    assert.equal(await findPatByToken(polled.token), null)
+    assert.equal((await resolveCliCredential(polled.token))?.email, alice.email)
 
     clearPollThrottle()
     const again = await pollDevice(started.device_code)
@@ -138,7 +133,7 @@ await describe('CLI device auth', async () => {
     assert.equal(second.status, 'slow_down')
   })
 
-  await it('revokePatByToken invalidates CLI token', async () => {
+  await it('logout invalidates the CLI credential from device login', async () => {
     clearPollThrottle()
     const started = await startDeviceAuth()
     await approveDevice(started.user_code, alice)
@@ -146,11 +141,11 @@ await describe('CLI device auth', async () => {
     const polled = await pollDevice(started.device_code)
     assert.equal(polled.status, 'approved')
     if (polled.status !== 'approved') return
-    assert.equal(await revokePatByToken(polled.token), true)
-    assert.equal(await resolvePat(polled.token), null)
+    assert.equal(await logoutCliCredential(polled.token), true)
+    assert.equal(await resolveCliCredential(polled.token), null)
   })
 
-  await it('mints a scoped PAT when the CLI asked for scopes and shows them to the approver', async () => {
+  await it('keeps the scopes the CLI asked for on the access token', async () => {
     clearPollThrottle()
     const scopes = [{ namespace: 'lab', repo: 'data', maxRole: 'read' as const }]
     const started = await startDeviceAuth(scopes)
@@ -160,6 +155,6 @@ await describe('CLI device auth', async () => {
     const polled = await pollDevice(started.device_code)
     assert.equal(polled.status, 'approved')
     if (polled.status !== 'approved') return
-    assert.deepEqual((await resolvePat(polled.token))?.patScopes, scopes)
+    assert.deepEqual((await resolveCliCredential(polled.token))?.patScopes, scopes)
   })
 })

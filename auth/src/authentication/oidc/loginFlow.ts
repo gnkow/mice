@@ -8,6 +8,10 @@ import { defaultOidcProvider, pkceChallenge, randomString, type OidcProvider } f
 import { resolveGroupOverage } from './groupOverage.js'
 import type { Directory } from '../directory/directoryTypes.js'
 import { directoryNow } from '../directory/directory.js'
+import { isSuspended } from '../access/miceSuspension.js'
+import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
+import { actorFromUser, appendAudit } from '../../audit.js'
+import { canonicalIssuer } from '../session/principal.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -82,10 +86,10 @@ async function beginLogin(provider: OidcProvider, clock: Clock,
 
 export type LoginResult =
   | { ok: true; user: SessionUser; dest: string; reauth?: { maxAge: number; sub: string; iss: string } }
-  | { ok: false; status: 400 | 500; html: string; reauth?: boolean; reason?: string }
+  | { ok: false; status: 400 | 403 | 500; html: string; reauth?: boolean; reason?: string }
 
 const retry = '<a href="/auth/login">Retry</a>'
-const fail = (status: 400 | 500, msg: string, reauth = false): LoginResult => ({
+const fail = (status: 400 | 403 | 500, msg: string, reauth = false): LoginResult => ({
   ok: false,
   status,
   html: `<p>${msg}</p><p>${retry}</p>`,
@@ -131,6 +135,74 @@ async function finishLogin(
       nonce: pkce.nonce,
     })
     
+    // Issue #04: Check IdP status before allowing login
+    const account = await directory.userStatus(user.sub)
+    const idpStatus = account.status
+    if (idpStatus === 'error') {
+      return fail(
+        500,
+        'IdP is unreachable. Login cannot be verified at this time.',
+        isReauth
+      )
+    }
+    if (idpStatus === 'disabled') {
+      await recordIdpDisabled(user)
+      return fail(
+        403,
+        'Your account has been disabled by the administrator.',
+        isReauth
+      )
+    }
+    if (idpStatus === 'missing') {
+      return fail(
+        403,
+        'Your account was not found in the directory.',
+        isReauth
+      )
+    }
+    if (!account.name.trim()) {
+      const iss = canonicalIssuer(user.iss)
+      await appendAudit({
+        actor: { sub: user.sub, iss, email: user.email, name: '' },
+        via: 'session',
+        method: 'GET',
+        path: '/auth/callback',
+        status: 403,
+        action: 'auth.login.failed',
+        message: `Refused login ${iss}|${user.sub}`,
+      })
+      return fail(403, 'Your account has no name in the identity provider.', isReauth)
+    }
+    const reenable = await considerReenable(user, async (event) => {
+      const stored = await appendAudit({
+        actor: actorFromUser(user),
+        via: 'session',
+        method: 'GET',
+        path: '/auth/callback',
+        status: 200,
+        action: 'auth.reenable.automatic',
+        message: event.message,
+        detail: event.detail,
+      })
+      return stored?.id ?? null
+    })
+    if (reenable === 'awaiting-confirmation') {
+      return fail(403, 'Re-enable confirmation required', isReauth)
+    }
+    if (await isSuspended({ iss: user.iss, sub: user.sub })) {
+      const iss = canonicalIssuer(user.iss)
+      await appendAudit({
+        actor: { sub: user.sub, iss, email: user.email, name: user.name },
+        via: 'session',
+        method: 'GET',
+        path: '/auth/callback',
+        status: 403,
+        action: 'auth.suspended',
+        message: `Refused login ${iss}|${user.sub}`,
+      })
+      return fail(403, 'Suspended', isReauth)
+    }
+    
     // Ticket 18: Resolve group overage by fetching from directory if needed
     if (user.groupsOverage) {
       const resolved = await resolveGroupOverage(user, directory)
@@ -153,6 +225,7 @@ async function finishLogin(
         return fail(400, 'Re-authentication was not recent enough.', true)
       }
     }
+    const groups = await sessionGroups(user, directory)
     return {
       ok: true,
       ...(pkce.reauth ? { reauth: pkce.reauth } : {}),
@@ -162,14 +235,27 @@ async function finishLogin(
         iss: user.iss,
         email: user.email,
         ...(user.emailVerified ? { emailVerified: true } : {}),
-        name: user.name,
+        name: account.name,
         idToken: user.idToken,
         ...(user.authTime !== undefined ? { authTime: user.authTime } : {}),
-        ...(user.groups.length ? { groups: user.groups } : {}),
+        ...(groups.length ? { groups } : {}),
       },
     }
   } catch (e) {
     return fail(500, e instanceof Error ? e.message : 'login failed', isReauth)
+  }
+}
+
+/** Token group names plus the directory object ids, so a renamed group still matches a grant. */
+async function sessionGroups(user: { sub: string; groups: string[] }, directory: Directory): Promise<string[]> {
+  if (!directory.configured) return user.groups
+  try {
+    const listed = await directory.getUserGroups(user.sub)
+    const ids = listed.map((group) => group.id).filter((id) => id.length > 0)
+    return [...new Set([...user.groups, ...ids])]
+  } catch (err) {
+    console.error('[mice-auth] directory group id lookup failed', err)
+    return user.groups
   }
 }
 
@@ -198,6 +284,7 @@ const lazyDirectory: Directory = {
   searchGroups: (q, l) => directoryNow().searchGroups(q, l),
   userStatus: (s) => directoryNow().userStatus(s),
   getUserGroups: (s) => directoryNow().getUserGroups(s),
+  getGroup: (id) => directoryNow().getGroup(id),
 }
 const defaults = createLoginFlow({ provider: lazyProvider, directory: lazyDirectory })
 export const startLogin = defaults.startLogin

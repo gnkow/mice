@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from 'react'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
 
 export type SectionNavItem = {
   id: string
@@ -10,6 +10,7 @@ export type SectionNavGroup = { title: string; items: SectionNavItem[] }
 
 /** Grouped in-page navigation; highlights the section currently in view. */
 export function SectionNav({ label, groups }: { label: string; groups: SectionNavGroup[] }) {
+  const navRef = useRef<HTMLElement>(null)
   const ids = groups.flatMap((g) => g.items.map((i) => i.id))
   const key = ids.join('|')
   const [active, setActive] = useState(ids[0] ?? '')
@@ -29,8 +30,18 @@ export function SectionNav({ label, groups }: { label: string; groups: SectionNa
     return () => window.removeEventListener('scroll', onScroll)
   }, [key])
 
+  useEffect(() => {
+    const nav = navRef.current
+    const link = nav?.querySelector<HTMLAnchorElement>(`a[href="#${CSS.escape(active)}"]`)
+    if (!nav || !link) return
+    const navRect = nav.getBoundingClientRect()
+    const linkRect = link.getBoundingClientRect()
+    if (linkRect.top < navRect.top) nav.scrollTop -= navRect.top - linkRect.top + 8
+    else if (linkRect.bottom > navRect.bottom) nav.scrollTop += linkRect.bottom - navRect.bottom + 8
+  }, [active])
+
   return (
-    <nav className="profile-nav" aria-label={label}>
+    <nav className="profile-nav" aria-label={label} ref={navRef}>
       {groups.map((group) => (
         <div key={group.title} className="profile-nav-group">
           <p className="profile-nav-title" id={`${key}-${group.title}`}>{group.title}</p>

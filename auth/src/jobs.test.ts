@@ -11,8 +11,6 @@ process.env.AUTH_DATA_DIR = dataDir
 process.env.JOBS_DATA_DIR = join(dataDir, 'jobs')
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
-process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 
 const {
@@ -36,7 +34,6 @@ const { validateArity, appendLineage, queryLineage } = await import(
 )
 const { authorizeRepoAction, preparePrincipal } = await import('./authz.js')
 const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
-const { setAuthzEnforce } = await import('./authzInstanceStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { createCustomRepoRole } = await import('./customRoles.js')
 
@@ -49,7 +46,6 @@ const admin = {
 }
 
 before(async () => {
-  await setAuthzEnforce(true)
   await preparePrincipal(admin)
 })
 
@@ -281,7 +277,6 @@ await describe('job authz', async () => {
     assert.equal(role.ok, true)
     if (!role.ok) return
     await setRepoCollaborator(ns, 'r1', user, role.role.id)
-    await setAuthzEnforce(true)
     assert.equal((await authorizeRepoAction(user, ns, 'r1', 'job.complete')).allow, true)
     assert.equal((await authorizeRepoAction(user, ns, 'r1', 'job.submit')).allow, false)
   })

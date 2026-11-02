@@ -34,17 +34,26 @@ process.env.OXEN_UPSTREAM = `http://127.0.0.1:${(upstream.address() as AddressIn
 const { Hono } = await import('hono')
 const { proxyToOxen } = await import('./proxy.js')
 const { queryAudit } = await import('./audit.js')
-const { setAuthzEnforce } = await import('./authzInstanceStore.js')
+const { addAdminKey } = await import('./authzRepository.js')
+const { userKey } = await import('./authzTypes.js')
 
 const alice = {
   sub: 'alice',
-  iss: 'test',
+  iss: 'https://idp.example/',
   email: 'alice@example.com',
   name: 'Alice',
 }
+const stranger = {
+  sub: 'stranger',
+  iss: 'https://idp.example/',
+  email: 'stranger@example.com',
+  name: 'Stranger',
+}
+let actor = alice
+await addAdminKey(userKey(alice))
 
 const app = new Hono()
-app.all('/api/*', (c) => proxyToOxen(c, { user: alice, via: 'session' }))
+app.all('/api/*', (c) => proxyToOxen(c, { user: actor, via: 'session' }))
 
 function send(
   path: string,
@@ -66,15 +75,18 @@ describe('proxy author injection fails closed', () => {
     rmSync(dataDir, { recursive: true, force: true })
   })
 
-  it('injects the Principal as author on a valid JSON write', async () => {
+  it('writes canonical iss|sub as the author and the email at commit time', async () => {
+    const message = 'add the assay table\n\nSubmitted-by: forged|person'
     const res = await send('/api/repos/a/b/branches', {
       contentType: 'application/json',
-      body: JSON.stringify({ name: 'forged', email: 'forged@x.io', message: 'm' }),
+      body: JSON.stringify({ name: 'forged', email: 'forged@x.io', author: 'forged', message }),
     })
     assert.equal(res.status, 200)
     const sent = JSON.parse(received[0]!.body) as Record<string, string>
     assert.equal(sent.email, 'alice@example.com')
-    assert.equal(sent.name, 'Alice')
+    assert.equal(sent.name, 'https://idp.example|alice')
+    assert.equal(sent.author, 'https://idp.example|alice')
+    assert.equal(sent.message, message)
   })
 
   it('injects the Principal as author on a multipart write', async () => {
@@ -91,6 +103,7 @@ describe('proxy author injection fails closed', () => {
     // The proxy first GETs the prior file entry for lineage; the PUT is the write.
     const put = received.find((r) => r.method === 'PUT')!
     assert.match(put.body, /alice@example\.com/)
+    assert.match(put.body, /https:\/\/idp\.example\|alice/)
     assert.doesNotMatch(put.body, /forged@x\.io/)
   })
 
@@ -256,12 +269,12 @@ describe('proxy author injection fails closed', () => {
     })
     const sent = JSON.parse(received[0]!.body)
     assert.deepEqual(sent.commit, {
-      author: 'Alice',
+      author: 'https://idp.example|alice',
       email: 'alice@example.com',
-      name: 'Alice',
+      name: 'https://idp.example|alice',
     })
     assert.deepEqual(sent.extra, [
-      { user_name: 'Alice', user_email: 'alice@example.com' },
+      { user_name: 'https://idp.example|alice', user_email: 'alice@example.com' },
     ])
     assert.doesNotMatch(received[0]!.body, /forged/)
   })
@@ -272,7 +285,7 @@ describe('proxy author injection fails closed', () => {
       body: JSON.stringify({ committer: 'forged', committer_email: 'forged@x.io' }),
     })
     const sent = JSON.parse(received[0]!.body)
-    assert.equal(sent.committer, 'Alice')
+    assert.equal(sent.committer, 'https://idp.example|alice')
     assert.equal(sent.committer_email, 'alice@example.com')
   })
 
@@ -293,8 +306,26 @@ describe('proxy author injection fails closed', () => {
     assert.deepEqual(JSON.parse(received[0]!.body), { namespace: 'acme', name: 'data' })
   })
 
+  it('records the same iss, sub, and email on the audit actor', async () => {
+    const message = 'record the assay batch'
+    const res = await send('/api/repos/a/b/branches', {
+      contentType: 'application/json',
+      body: JSON.stringify({ name: 'forged', email: 'forged@x.io', message }),
+    })
+    assert.equal(res.status, 200)
+    const sent = JSON.parse(received[0]!.body) as Record<string, string>
+    const events = (await queryAudit({ action: 'branch.create', limit: 100 })).events
+    const event = events.find((e) => e.message === message)
+    assert.ok(event)
+    assert.equal(event.actor.iss, 'https://idp.example')
+    assert.equal(event.actor.sub, 'alice')
+    assert.equal(event.actor.email, 'alice@example.com')
+    assert.equal(sent.author, 'https://idp.example|alice')
+    assert.equal(sent.email, 'alice@example.com')
+  })
+
   it('answers 403, not 400, and writes no rejection row for an unauthorized Principal', async () => {
-    await setAuthzEnforce(true)
+    actor = stranger
     try {
       const before = (await queryAudit({ action: 'request.rejected', limit: 100 })).events.length
       const res = await send('/api/repos/a/b/branches', {
@@ -308,7 +339,7 @@ describe('proxy author injection fails closed', () => {
         before,
       )
     } finally {
-      await setAuthzEnforce(false)
+      actor = alice
     }
   })
 

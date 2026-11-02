@@ -1,12 +1,21 @@
+Status: done
+
 # 01: Test IdP harness and clock control
 
-**What to build:** A containerised test IdP, a controllable clock offset and a table-driven authentication test suite, so every later auth ticket can be verified end to end (spec Q68). Demo: the suite runs green against a fake login.
+**Spec:** `.specs/01-authentication.md` (Q68)
 
-**Blocked by:** None (can start immediately)
+## Outcome
 
-**Status:** resolved-pending-merge
+Authentication tests run against an in-process fake IdP. The harness issues tokens for configurable users, including an external guest, a missing name claim, and MFA and non-MFA methods. Tests can move the BFF clock and the IdP clock. A table-driven suite format is documented, with a passing example.
 
-- [x] Test IdP (in-process fake; container adapter documented in auth/src/authentication/testing/README.md) issues tokens for configurable users (including external guest, missing name claim, MFA and non-MFA authentication methods)
-- [x] Clock offset can be applied to the BFF and the IdP in tests
-- [x] Table-driven suite format documented with one passing example
-- [x] Spec: `respec/01-authentication/spec.md`
+## Acceptance
+
+- [x] The fake IdP issues tokens for configurable users, including guest, missing name, MFA, and non-MFA
+- [x] Tests can apply a clock offset to the BFF and the IdP
+- [x] The suite format is documented with one passing example
+
+## Code
+
+- `auth/src/authentication/testing/fakeIdp.ts`
+- `auth/src/authentication/testing/idpAdapter.ts`
+- `auth/src/authentication/testing/README.md`

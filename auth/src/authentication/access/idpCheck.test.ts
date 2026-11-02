@@ -8,8 +8,6 @@ import { after, describe, it } from 'node:test'
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-idp-check-'))
 
 process.env.AUTH_DATA_DIR = dataDir
-process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'
@@ -25,15 +23,19 @@ const { Hono } = await import('hono')
 const { setDirectoryFetchForTests, lookupKeycloakUserStatus } = await import('../directory/directory.js')
 const { authenticate } = await import('../session/requireAuth.js')
 const { sealSession } = await import('../session/session.js')
+const { sealSessionCookie } = await import('../session/cookieSeal.js')
+const { ensureBootstrapKey } = await import('../session/sealKeys.js')
 const { env } = await import('../../env.js')
 
 const mk = (sub: string) => ({ sub, iss: 'http://localhost:8180/realms/mice', email: `${sub}@example.com`, name: sub })
 const cookie = async (user: ReturnType<typeof mk> & Partial<{ sessionStart: number; disabledAt: Date; miceFlags: string[] }>) => {
   const now = Math.floor(Date.now() / 1000)
-  return `${env.cookieName}=${await sealSession({
+  const sessionId = await sealSession({
     ...user,
     sessionStart: user.sessionStart ?? now - 30,
-  })}`
+  })
+  const sealed = await sealSessionCookie(sessionId)
+  return `${env.cookieName}=${sealed}`
 }
 
 describe('Ticket 19: Live IdP Check Always (U3)', () => {
@@ -44,6 +46,8 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
 
   describe('IdP check on every request (no throttling)', () => {
     it('checks IdP on every request', async () => {
+      await ensureBootstrapKey()
+      
       // Mock IdP to track calls
       let checkCount = 0
       setDirectoryFetchForTests(async (url) => {
@@ -53,7 +57,7 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
         }
         if (urlStr.includes('/users/')) {
           checkCount++
-          return new Response(JSON.stringify({ enabled: true }), { status: 200 })
+          return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
         }
         throw new Error(`Unexpected request: ${urlStr}`)
       })
@@ -79,6 +83,8 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
     })
 
     it('returns 503 when IdP is unreachable', async () => {
+      await ensureBootstrapKey()
+      
       // Mock IdP to fail
       setDirectoryFetchForTests(async () => {
         throw new Error('Network error')
@@ -102,6 +108,8 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
     })
 
     it('denies access when user is disabled in IdP', async () => {
+      await ensureBootstrapKey()
+      
       // Mock IdP to return 'disabled'
       setDirectoryFetchForTests(async (url) => {
         const urlStr = String(url)
@@ -132,6 +140,8 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
     })
 
     it('allows access when user is enabled in IdP', async () => {
+      await ensureBootstrapKey()
+      
       // Mock IdP to return 'enabled'
       setDirectoryFetchForTests(async (url) => {
         const urlStr = String(url)
@@ -139,7 +149,7 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
           return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
         }
         if (urlStr.includes('/users/')) {
-          return new Response(JSON.stringify({ enabled: true }), { status: 200 })
+          return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
         }
         throw new Error(`Unexpected request: ${urlStr}`)
       })
@@ -164,6 +174,8 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
 
   describe('Groups cached in session (8h max)', () => {
     it('uses session-cached groups for ordinary requests', async () => {
+      await ensureBootstrapKey()
+      
       // Mock IdP to allow access
       setDirectoryFetchForTests(async (url) => {
         const urlStr = String(url)
@@ -172,7 +184,7 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
         }
         if (urlStr.includes('/admin/realms/') && urlStr.includes('/users/')) {
           // User status check
-          return new Response(JSON.stringify({ enabled: true }), { status: 200 })
+          return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
         }
         throw new Error(`Unexpected request: ${urlStr}`)
       })
@@ -193,5 +205,28 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
       const body = await res.json()
       assert.deepEqual(body.groups, ['devs', 'admins'], 'Should return session-cached groups')
     })
+  })
+
+  it('refuses an enabled IdP user who has no name', async () => {
+    await ensureBootstrapKey()
+    setDirectoryFetchForTests(async (url) => {
+      const urlStr = String(url)
+      if (urlStr.includes('/protocol/openid-connect/token')) {
+        return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+      }
+      if (urlStr.includes('/users/')) {
+        return new Response(JSON.stringify({ enabled: true, username: 'noname' }), { status: 200 })
+      }
+      throw new Error(`Unexpected request: ${urlStr}`)
+    })
+
+    const app = new Hono()
+    app.get('/test', async (c) => {
+      const auth = await authenticate(c)
+      return auth.ok ? c.json({ allowed: true }) : c.json({ error: auth.error }, auth.status)
+    })
+    const res = await app.request('/test', { headers: { Cookie: await cookie(mk('noname')) } })
+    assert.equal(res.status, 403)
+    assert.deepEqual(await res.json(), { error: 'Your account has no name in the identity provider.' })
   })
 })

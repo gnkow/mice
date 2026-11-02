@@ -1,17 +1,20 @@
-import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert, FileText, Shield as ActionShield, Ban } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
+import { SealKeyRotationSection } from '../components/SealKeyRotationSection'
+import { MiceSuspensionSection } from '../components/MiceSuspensionSection'
+import { AccessReviewSection } from '../components/AccessReviewSection'
+import { RecoveryTokenSection } from '../components/RecoveryTokenSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthMe, fetchAuthzMe } from '../lib/auth'
 import {
   addInstanceAdmin,
   fetchInstance,
   listAccessRequests,
   listAuthzNamespaces,
-  patchInstanceEnforce,
   removeInstanceAdmin,
   revokeUserSessions,
   resolveAccessRequest,
@@ -40,6 +43,8 @@ const INSTANCE_PERMS: InstancePermission[] = [
 
 export function SettingsPage() {
   const me = useAsync((signal) => fetchAuthzMe(signal), [])
+  const session = useAsync((signal) => fetchAuthMe(signal), [])
+  const signedInIss = session.kind === 'ok' && session.data.authenticated ? session.data.user.iss : ''
   const [form, setForm] = useState<OxenSettings>(loadSettings)
   const [saved, setSaved] = useState(false)
   const [probe, setProbe] = useState<string | null>(null)
@@ -66,15 +71,40 @@ export function SettingsPage() {
 
   const groups = [
     { title: 'General', items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
-    { title: 'Access', items: [{ id: 'access-requests', label: 'Access requests', Icon: Inbox }] },
-    ...(isInstanceAdmin ? [{ title: 'Administration', items: [
-      { id: 'idp-baseline', label: 'IdP MFA baseline', Icon: ShieldAlert },
-      { id: 'authorization-policy', label: 'Authorization policy', Icon: ShieldCheck },
-      { id: 'instance-administrators', label: 'Instance administrators', Icon: ShieldUser },
-      { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
-      { id: 'user-revocation', label: 'User revocation', Icon: UserX },
-      { id: 'announcements', label: 'Announcements', Icon: Megaphone },
-    ] }] : []),
+    { 
+      title: 'Access & Permissions', 
+      items: [
+        { id: 'access-requests', label: 'Requests', Icon: Inbox },
+        ...(isInstanceAdmin ? [
+          { id: 'user-revocation', label: 'Revocations', Icon: UserX },
+          { id: 'delegated-permissions', label: 'Permissions', Icon: ListChecks },
+        ] : []),
+      ] 
+    },
+    ...(isInstanceAdmin ? [
+      { 
+        title: 'Compliance', 
+        items: [
+          { id: 'access-review', label: 'Access Review', Icon: FileText },
+          { id: 'recovery-token', label: 'Recovery', Icon: ActionShield },
+        ] 
+      },
+      { 
+        title: 'Security', 
+        items: [
+          { id: 'idp-baseline', label: 'Baseline', Icon: ShieldAlert },
+          { id: 'mice-suspension', label: 'Suspension', Icon: Ban },
+          { id: 'seal-key-rotation', label: 'Keys', Icon: ShieldCheck },
+        ] 
+      },
+      {
+        title: 'Administration',
+        items: [
+          { id: 'instance-administrators', label: 'Administrators', Icon: ShieldUser },
+          { id: 'announcements', label: 'Announcements', Icon: Megaphone },
+        ]
+      }
+    ] : []),
   ]
 
   return (
@@ -121,10 +151,17 @@ export function SettingsPage() {
 
         {me.kind === 'ok' && me.data && <>
           <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
-          {isInstanceAdmin && <IdpBaselineSection />}
-          {isInstanceAdmin && <InstanceAdminSection />}
-          {isInstanceAdmin && <AdminRevocationSection />}
-          {isInstanceAdmin && <AnnouncementsSection />}
+          {isInstanceAdmin && <>
+            <AdminRevocationSection />
+            <DelegatedPermissionsSection signedInIss={signedInIss} />
+            <AccessReviewSection />
+            <RecoveryTokenSection />
+            <IdpBaselineSection />
+            <MiceSuspensionSection signedInIss={signedInIss} />
+            <SealKeyRotationSection />
+            <InstanceAdminSection signedInIss={signedInIss} />
+            <AnnouncementsSection />
+          </>}
         </>}
       </div>
       </div>
@@ -364,20 +401,15 @@ function AccessRequestsSection({
   )
 }
 
-function InstanceAdminSection() {
+function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   const state = useAsync((signal) => fetchInstance(signal), [])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [adminSub, setAdminSub] = useState('')
-  const [adminIss, setAdminIss] = useState('mice-dev')
+  const [adminIss, setAdminIss] = useState(signedInIss)
   const [revokeSub, setRevokeSub] = useState('')
-  const [revokeIss, setRevokeIss] = useState('mice-dev')
+  const [revokeIss, setRevokeIss] = useState(signedInIss)
   const [notice, setNotice] = useState<string | null>(null)
-  const [permSub, setPermSub] = useState('')
-  const [permIss, setPermIss] = useState('mice-dev')
-  const [permChecks, setPermChecks] = useState<InstancePermission[]>([
-    'create_namespace',
-  ])
 
   if (state.kind === 'error') {
     return (
@@ -392,14 +424,15 @@ function InstanceAdminSection() {
 
   async function onAddAdmin(e: FormEvent) {
     e.preventDefault()
-    if (!adminSub.trim() || !adminIss.trim()) {
+    const issuer = adminIss.trim() || signedInIss.trim()
+    if (!adminSub.trim() || !issuer) {
       setError('Choose a user from search or enter sub/iss manually')
       return
     }
     setBusy(true)
     setError(null)
     try {
-      await addInstanceAdmin({ sub: adminSub.trim(), iss: adminIss.trim() })
+      await addInstanceAdmin({ sub: adminSub.trim(), iss: issuer })
       setAdminSub('')
       state.reload()
     } catch (err) {
@@ -411,7 +444,8 @@ function InstanceAdminSection() {
 
   async function onRevokeSessions(e: FormEvent) {
     e.preventDefault()
-    if (!revokeSub.trim() || !revokeIss.trim()) {
+    const issuer = revokeIss.trim() || signedInIss.trim()
+    if (!revokeSub.trim() || !issuer) {
       setError('Choose a user from search or enter sub/iss manually')
       return
     }
@@ -419,7 +453,7 @@ function InstanceAdminSection() {
     setError(null)
     setNotice(null)
     try {
-      await revokeUserSessions({ sub: revokeSub.trim(), iss: revokeIss.trim() })
+      await revokeUserSessions({ sub: revokeSub.trim(), iss: issuer })
       setNotice(`Revoked all sessions of ${revokeSub.trim()}`)
       setRevokeSub('')
     } catch (err) {
@@ -442,87 +476,38 @@ function InstanceAdminSection() {
     }
   }
 
-  async function onSetPerms(e: FormEvent) {
-    e.preventDefault()
-    if (!permSub.trim() || !permIss.trim()) {
-      setError('Choose a user from search or enter sub/iss manually')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      await setInstancePermissions(
-        { sub: permSub.trim(), iss: permIss.trim() },
-        permChecks,
-      )
-      setPermSub('')
-      state.reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Update failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onToggleEnforce() {
-    if (!data) return
-    setBusy(true)
-    setError(null)
-    try {
-      await patchInstanceEnforce(!data.enforce)
-      state.reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Toggle failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <>
       {error && <p className="flash flash-error" role="status">{error}</p>}
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {data && (
         <>
-          <section id="authorization-policy" className="settings-section" aria-labelledby="authorization-policy-heading">
-          <h2 id="authorization-policy-heading"><ShieldCheck size={18} className="button-label-icon" aria-hidden="true" />Authorization policy</h2>
-          <p className="muted small">Control whether namespace, repository, and instance permissions are enforced.</p>
-          <label className="ns-settings-toggle">
-            <input
-              type="checkbox"
-              checked={data.enforce}
-              disabled={busy}
-              onChange={() => void onToggleEnforce()}
-            />
-            <span>
-              <span className="ns-settings-label">AuthZ enforce</span>
-              <span className="muted small">
-                Currently {data.enforce ? 'on' : 'off'}. Env{' '}
-                <code>AUTHZ_ENFORCE</code> overrides this store flag when set.
-              </span>
-            </span>
-          </label>
-          </section>
-
           <section id="instance-administrators" className="settings-section" aria-labelledby="instance-administrators-heading">
           <div className="ns-settings-section-head ns-settings-section-head-tight">
             <div>
               <h2 id="instance-administrators-heading"><ShieldUser size={18} className="button-label-icon" aria-hidden="true" />Instance administrators</h2>
               <p className="muted small">
                 Full instance catalog and site-admin bypass.
+                A Bootstrap mark means this Principal is on AUTHZ_BOOTSTRAP_ADMINS and receives admin again on the next login.
               </p>
             </div>
             <p className="muted small ns-settings-count">
-              {data.admins.length} admin{data.admins.length === 1 ? '' : 's'}
+              {data.admins.length === 1 ? '1 admin' : `${data.admins.length} admins`}
             </p>
           </div>
           <ul className="ns-member-list">
             {data.admins.map((a) => (
               <li key={`${a.iss}\0${a.sub}`} className="ns-member-row">
                 <div className="ns-member-main">
-                  <code className="ns-member-sub">{a.sub}</code>
-                  <span className="muted small">{a.iss}</span>
+                  <code className="ns-member-sub">{a.name || a.email || a.sub}</code>
+                  <span className="muted small">
+                    {a.email ? `${a.email} · ` : ''}
+                    {a.sub}
+                    {' · '}
+                    {a.iss}
+                  </span>
                 </div>
+                {a.bootstrap && <span className="ns-tag">bootstrap</span>}
                 <span className="ns-tag ns-tag-accent">admin</span>
                 <button
                   type="button"
@@ -541,8 +526,8 @@ function InstanceAdminSection() {
               <DirectoryPicker
                 kind="user"
                 sub={adminSub}
-                iss={adminIss}
-                defaultIss="mice-dev"
+                iss={adminIss || signedInIss}
+                defaultIss={signedInIss}
                 disabled={busy}
                 onChange={({ sub, iss }) => {
                   setAdminSub(sub)
@@ -563,8 +548,8 @@ function InstanceAdminSection() {
               <DirectoryPicker
                 kind="user"
                 sub={revokeSub}
-                iss={revokeIss}
-                defaultIss="mice-dev"
+                iss={revokeIss || signedInIss}
+                defaultIss={signedInIss}
                 disabled={busy}
                 onChange={({ sub, iss }) => {
                   setRevokeSub(sub)
@@ -578,18 +563,74 @@ function InstanceAdminSection() {
             {notice ? <p className="muted small" role="status">{notice}</p> : null}
           </form>
           </section>
+        </>
+      )}
+    </>
+  )
+}
 
-          <section id="delegated-permissions" className="settings-section" aria-labelledby="delegated-permissions-heading">
-          <div className="ns-settings-section-head ns-settings-section-head-spaced">
+function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
+  const state = useAsync((signal) => fetchInstance(signal), [])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [permSub, setPermSub] = useState('')
+  const [permIss, setPermIss] = useState(signedInIss)
+  const [permChecks, setPermChecks] = useState<InstancePermission[]>([
+    'create_namespace',
+  ])
+
+  if (state.kind === 'error') {
+    return (
+      <section className="settings-section">
+        <h2>Delegated permissions</h2>
+        <p className="flash flash-error" role="status">{state.message}</p>
+      </section>
+    )
+  }
+
+  const data = state.kind === 'ok' ? state.data : null
+
+  async function onSetPerms(e: FormEvent) {
+    e.preventDefault()
+    const issuer = permIss.trim() || signedInIss.trim()
+    if (!permSub.trim() || !issuer) {
+      setError('Choose a user from search or enter sub/iss manually')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await setInstancePermissions(
+        { sub: permSub.trim(), iss: issuer },
+        permChecks,
+      )
+      setPermSub('')
+      state.reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {error && <p className="flash flash-error" role="status">{error}</p>}
+      {state.kind === 'loading' && <p className="muted">Loading…</p>}
+      {data && (
+        <section id="delegated-permissions" className="settings-section" aria-labelledby="delegated-permissions-heading">
+          <div className="ns-settings-section-head">
             <div>
-              <h2 id="delegated-permissions-heading"><ListChecks size={18} className="button-label-icon" aria-hidden="true" />Delegated permissions</h2>
+              <h2 id="delegated-permissions-heading">
+                <ListChecks size={18} className="button-label-icon" aria-hidden="true" />
+                Delegated permissions
+              </h2>
               <p className="muted small">
                 Delegate individual instance permissions to non-admins.
               </p>
             </div>
             <p className="muted small ns-settings-count">
-              {data.permissions.length} grant
-              {data.permissions.length === 1 ? '' : 's'}
+              {data.permissions.length === 1 ? '1 grant' : `${data.permissions.length} grants`}
             </p>
           </div>
           {data.permissions.length === 0 ? (
@@ -629,8 +670,8 @@ function InstanceAdminSection() {
               <DirectoryPicker
                 kind="user"
                 sub={permSub}
-                iss={permIss}
-                defaultIss="mice-dev"
+                iss={permIss || signedInIss}
+                defaultIss={signedInIss}
                 disabled={busy}
                 onChange={({ sub, iss }) => {
                   setPermSub(sub)
@@ -665,8 +706,7 @@ function InstanceAdminSection() {
               </button>
             </div>
           </form>
-          </section>
-        </>
+        </section>
       )}
     </>
   )

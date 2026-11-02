@@ -56,11 +56,11 @@ export type RepoFinePermission =
 
 export type MemberPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: MemberRoleRef }
-  | { kind: 'group'; group: string; role: MemberRoleRef }
+  | { kind: 'group'; group: string; role: MemberRoleRef; name?: string }
 
 export type CollaboratorPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: CollaboratorRoleRef }
-  | { kind: 'group'; group: string; role: CollaboratorRoleRef }
+  | { kind: 'group'; group: string; role: CollaboratorRoleRef; name?: string }
 
 export type CustomNamespaceRole = {
   id: string
@@ -83,10 +83,12 @@ function normalizeMember(m: {
   sub?: string
   iss?: string
   group?: string
+  name?: string
   role: MemberRoleRef
 }): MemberPrincipal {
   if (m.kind === 'group' || (m.group && !m.sub)) {
-    return { kind: 'group', group: String(m.group ?? ''), role: m.role }
+    const name = m.name?.trim()
+    return { kind: 'group', group: String(m.group ?? ''), role: m.role, ...(name ? { name } : {}) }
   }
   return {
     kind: 'user',
@@ -101,10 +103,12 @@ function normalizeCollaborator(c: {
   sub?: string
   iss?: string
   group?: string
+  name?: string
   role: CollaboratorRoleRef
 }): CollaboratorPrincipal {
   if (c.kind === 'group' || (c.group && !c.sub)) {
-    return { kind: 'group', group: String(c.group ?? ''), role: c.role }
+    const name = c.name?.trim()
+    return { kind: 'group', group: String(c.group ?? ''), role: c.role, ...(name ? { name } : {}) }
   }
   return {
     kind: 'user',
@@ -191,10 +195,12 @@ export async function fetchNamespaceAuthz(ns: string, signal?: AbortSignal) {
     members: Array<
       MemberPrincipal | { sub: string; iss: string; role: MemberRoleRef }
     >
+    unresolvedGroups?: string[]
   }>(`/auth/namespaces/${encodeURIComponent(ns)}`, { signal })
   return {
     ...data,
     members: data.members.map(normalizeMember),
+    unresolvedGroups: data.unresolvedGroups ?? [],
   }
 }
 
@@ -215,13 +221,18 @@ export function putNamespaceMember(
   ns: string,
   member:
     | { kind?: 'user'; sub: string; iss: string; role: MemberRoleRef }
-    | { kind: 'group'; group: string; role: MemberRoleRef },
+    | { kind: 'group'; group: string; name?: string; role: MemberRoleRef },
 ) {
   return authzFetch(`/auth/namespaces/${encodeURIComponent(ns)}/members`, {
     method: 'PUT',
     body: JSON.stringify(
       member.kind === 'group'
-        ? { kind: 'group', group: member.group, role: member.role }
+        ? {
+            kind: 'group',
+            group: member.group,
+            role: member.role,
+            ...(member.name ? { name: member.name } : {}),
+          }
         : {
             kind: 'user',
             sub: member.sub,
@@ -326,7 +337,7 @@ export function putRepoCollaborator(
   repo: string,
   collab:
     | { kind?: 'user'; sub: string; iss: string; role: CollaboratorRoleRef }
-    | { kind: 'group'; group: string; role: CollaboratorRoleRef },
+    | { kind: 'group'; group: string; name?: string; role: CollaboratorRoleRef },
 ) {
   return authzFetch(
     `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators`,
@@ -334,7 +345,12 @@ export function putRepoCollaborator(
       method: 'PUT',
       body: JSON.stringify(
         collab.kind === 'group'
-          ? { kind: 'group', group: collab.group, role: collab.role }
+          ? {
+              kind: 'group',
+              group: collab.group,
+              role: collab.role,
+              ...(collab.name ? { name: collab.name } : {}),
+            }
           : {
               kind: 'user',
               sub: (collab as { sub: string }).sub,
@@ -410,7 +426,14 @@ export function resolveAccessRequest(
   })
 }
 
-export type InstanceAdmin = { sub: string; iss: string }
+export type InstanceAdmin = {
+  sub: string
+  iss: string
+  email?: string | null
+  name?: string | null
+  /** True when this Principal matches `AUTHZ_BOOTSTRAP_ADMINS`. */
+  bootstrap?: boolean
+}
 
 export function fetchInstance(signal?: AbortSignal) {
   return authzFetch<{
@@ -422,13 +445,6 @@ export function fetchInstance(signal?: AbortSignal) {
       permissions: InstancePermission[]
     }>
   }>('/auth/instance', { signal })
-}
-
-export function patchInstanceEnforce(enforce: boolean) {
-  return authzFetch<{ enforce: boolean }>('/auth/instance', {
-    method: 'PATCH',
-    body: JSON.stringify({ enforce }),
-  })
 }
 
 export function addInstanceAdmin(target: { sub: string; iss: string }) {
@@ -449,6 +465,38 @@ export function removeInstanceAdmin(target: { sub: string; iss: string }) {
   return authzFetch('/auth/instance/admins', {
     method: 'DELETE',
     body: JSON.stringify(target),
+  })
+}
+
+export type SuspensionHistoryEntry = {
+  flag: string
+  action: 'set' | 'lift'
+  reason: string
+  actor: string
+  at: string
+}
+
+export function fetchMiceSuspension(principal: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ principal })
+  return authzFetch<{ history: SuspensionHistoryEntry[] }>(
+    `/auth/admin/mice-suspension?${params.toString()}`,
+    { signal },
+  )
+}
+
+export function setMiceSuspension(principal: string, reason: string) {
+  return authzFetch('/auth/admin/mice-suspension', {
+    method: 'POST',
+    headers: { 'X-Mice-Reason': reason },
+    body: JSON.stringify({ principal, reason }),
+  })
+}
+
+export function liftMiceSuspension(principal: string, reason: string) {
+  return authzFetch('/auth/admin/mice-suspension/lift', {
+    method: 'POST',
+    headers: { 'X-Mice-Reason': reason },
+    body: JSON.stringify({ principal, reason }),
   })
 }
 

@@ -28,44 +28,49 @@ export function PendingAccessPage() {
   }
 
   return (
-    <div className="auth-boot pending-access">
-      <h1>Access pending</h1>
-      <p className="muted">
-        You are signed in, but you do not have access to any namespace yet.
-        Ask a namespace Owner or instance admin to grant you membership, or
-        submit a request below.
-      </p>
-      <form className="form" onSubmit={onRequest}>
-        <label>
-          Message (optional)
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            rows={3}
-            placeholder="Why you need access"
-          />
-        </label>
-        <button className="btn primary" type="submit" disabled={busy}>
-          <ActionKeyRound size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Submitting…' : 'Request access'}
-        </button>
-      </form>
-      {status && <p className="muted">{status}</p>}
-      <p><Link className="btn" to="/notifications"><Bell size={14} aria-hidden="true" />Notifications</Link>{' '}<Link to="/profile">Profile</Link></p>
-      <p>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => {
-            void logout().then((r) => {
-              if (r.idpLogoutUrl) window.location.href = r.idpLogoutUrl
-              else window.location.href = '/login'
-            })
-          }}
-        >
-          <ActionLogOut size={14} aria-hidden="true" className="button-label-icon" />Sign out
-        </button>{' '}
-        <Link to="/login">Back to login</Link>
-      </p>
+    <div className="login-shell">
+      <main className="login-page pending-access">
+        <p className="login-brand">MICE</p>
+        <h1>Access pending</h1>
+        <p className="lede">
+          You are signed in, but you do not have access to any namespace yet.
+          Ask a namespace Owner or instance admin to grant you membership, or
+          submit a request below.
+        </p>
+        <form className="form" onSubmit={onRequest}>
+          <label>
+            Message (optional)
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="Why you need access"
+            />
+          </label>
+          <button className="btn primary" type="submit" disabled={busy}>
+            <ActionKeyRound size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Submitting…' : 'Request access'}
+          </button>
+        </form>
+        {status && <p className="flash flash-success" role="status">{status}</p>}
+        <div className="btn-row">
+          <Link className="btn" to="/notifications"><Bell size={14} aria-hidden="true" />Notifications</Link>
+          <Link className="btn" to="/profile">Profile</Link>
+        </div>
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              void logout().then((r) => {
+                if (r.idpLogoutUrl) window.location.href = r.idpLogoutUrl
+                else window.location.href = '/login'
+              })
+            }}
+          >
+            <ActionLogOut size={14} aria-hidden="true" className="button-label-icon" />Sign out
+          </button>
+        </div>
+      </main>
     </div>
   )
 }

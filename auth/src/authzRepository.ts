@@ -2,11 +2,10 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { TransactionRollbackError } from 'drizzle-orm/errors'
 import { matchesIdentityEntry, type SessionUser } from './authentication/index.js'
 import { env } from './env.js'
-import { getDb, inTransaction, type Db, type Tx } from './db/database.js'
+import { getDb, inTransaction } from './db/database.js'
 import {
   instanceAdmins,
   instancePermissions,
-  instanceSettings,
   instanceTraining,
   namespaceGroupMembers,
   namespaceMembers,
@@ -21,8 +20,6 @@ import {
   type InstancePermission,
   type MemberRoleRef,
 } from './authzTypes.js'
-
-type Exec = Db | Tx
 
 export type NamespaceSettings = {
   basePermission: BasePermission
@@ -54,18 +51,6 @@ export function matchesBootstrap(user: SessionUser): boolean {
 
 // ── Instance ────────────────────────────────────────────────────────────────
 
-export async function storedEnforce(): Promise<boolean> {
-  const rows = await getDb().select().from(instanceSettings).limit(1)
-  return rows[0]?.enforce ?? false
-}
-
-export async function writeEnforce(enforce: boolean, db: Exec = getDb()): Promise<void> {
-  await db
-    .insert(instanceSettings)
-    .values({ id: 1, enforce })
-    .onConflictDoUpdate({ target: instanceSettings.id, set: { enforce } })
-}
-
 export async function listAdminKeys(): Promise<string[]> {
   return (await getDb().select().from(instanceAdmins)).map((r) => r.userKey)
 }
@@ -91,13 +76,12 @@ export async function removeAdminKey(key: string): Promise<boolean> {
 }
 
 /** Makes `key` the first admin only when none exists yet (race-safe). Returns true when it did. */
-export async function bootstrapFirstAdmin(key: string, enableEnforce: boolean): Promise<boolean> {
+export async function bootstrapFirstAdmin(key: string): Promise<boolean> {
   return inTransaction(async (tx) => {
     await tx.execute(sql`lock table instance_admins in share row exclusive mode`)
     const existing = await tx.select().from(instanceAdmins).limit(1)
     if (existing.length > 0) return false
     await tx.insert(instanceAdmins).values({ userKey: key })
-    if (enableEnforce) await writeEnforce(true, tx)
     return true
   })
 }
@@ -436,6 +420,16 @@ export async function listCollaboratorRows(ns: string, repo: string): Promise<{
     users: users.map((r) => ({ key: r.userKey, role: r.role })),
     groups: groups.map((r) => ({ group: r.groupKey, role: r.role })),
   }
+}
+
+export async function listNamespaceGroupCollaboratorRows(ns: string): Promise<
+  Array<{ repo: string; group: string; role: CollaboratorRoleRef }>
+> {
+  const rows = await getDb()
+    .select()
+    .from(repoGroupCollaborators)
+    .where(eq(repoGroupCollaborators.namespace, ns))
+  return rows.map((row) => ({ repo: row.repo, group: row.groupKey, role: row.role }))
 }
 
 export async function listAllCollaboratorRows(): Promise<{

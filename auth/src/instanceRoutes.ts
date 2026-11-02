@@ -1,9 +1,39 @@
+import { and, eq } from 'drizzle-orm'
 import type { Hono } from 'hono'
-import { addInstanceAdmin, isAuthzEnforce, listInstanceAdmins, listInstancePermissionGrants, removeInstanceAdmin, setAuthzEnforce, setInstancePermissions } from './authzInstanceStore.js'
+import { addInstanceAdmin, listInstanceAdmins, listInstancePermissionGrants, removeInstanceAdmin, setInstancePermissions } from './authzInstanceStore.js'
+import { matchesBootstrap } from './authzRepository.js'
 import type { InstancePermission } from './authzTypes.js'
+import { canonicalIssuer } from './authentication/session/principal.js'
 import { instanceGate } from './decisionHttp.js'
 import { guarded } from './authentication/index.js'
+import { getDb } from './db/database.js'
+import { principals } from './db/schema.js'
 import type { AuditDep } from './routeDeps.js'
+
+async function adminViews() {
+  const admins = await listInstanceAdmins()
+  return Promise.all(admins.map(async (admin) => {
+    const [row] = await getDb()
+      .select({ email: principals.email, name: principals.name })
+      .from(principals)
+      .where(and(eq(principals.iss, canonicalIssuer(admin.iss)), eq(principals.sub, admin.sub)))
+      .limit(1)
+    const email = row?.email ?? ''
+    return {
+      sub: admin.sub,
+      iss: admin.iss,
+      email: email || null,
+      name: row?.name ?? null,
+      bootstrap: matchesBootstrap({
+        sub: admin.sub,
+        iss: admin.iss,
+        email,
+        emailVerified: email.length > 0,
+        name: row?.name ?? '',
+      }),
+    }
+  }))
+}
 
 const adminOnly = instanceGate('instance.admin')
 const target = (b: Record<string, unknown>) => ({ sub: b.sub as string, iss: b.iss as string })
@@ -14,27 +44,11 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
     '/auth/instance',
     guarded({ gate: adminOnly }, async ({ c }) =>
       c.json({
-        enforce: await isAuthzEnforce(),
-        admins: await listInstanceAdmins(),
+        enforce: true,
+        admins: await adminViews(),
         permissions: await listInstancePermissionGrants(),
       }),
     ),
-  )
-
-  app.patch(
-    '/auth/instance',
-    guarded({ gate: adminOnly, mutates: true, reason: true, body: { required: [] } }, async ({ c, user, body }) => {
-      if (typeof body.enforce === 'boolean') {
-        const oldValue = await isAuthzEnforce()
-        await setAuthzEnforce(body.enforce)
-        await audit(c, user, 'session', {
-          action: 'instance.settings.update',
-          message: `Updated instance enforce: ${oldValue} → ${body.enforce}`,
-          detail: { enforce: body.enforce, previousEnforce: oldValue },
-        })
-      }
-      return c.json({ enforce: await isAuthzEnforce() })
-    }),
   )
 
   app.post(

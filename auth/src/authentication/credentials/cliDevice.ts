@@ -5,7 +5,7 @@ import { env } from '../../env.js'
 import { getDb } from '../../db/database.js'
 import { deviceAuthorizations } from '../../db/schema.js'
 import type { PatScope, SessionUser } from '../session/session.js'
-import { createPat, revokePat } from './tokens.js'
+import { CLI_ACCESS_TTL_SEC, issueCliCredential, revokeCliCredential } from './cliCredentials.js'
 
 const DEVICE_TTL_MS = 10 * 60 * 1000
 const DEFAULT_INTERVAL_SEC = 5
@@ -25,6 +25,7 @@ export type DeviceRecord = {
   scopes?: PatScope[]
   /** Present only while `approved`; removed when the CLI consumes it. */
   token?: string
+  refreshToken?: string
   patId?: string
   user?: Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>
   /** Device name/identifier from CLI (e.g., "mice-cli v1.2.3") - Ticket 25 */
@@ -43,7 +44,7 @@ export interface DeviceRepository {
   approve(
     userCode: string,
     nowIso: string,
-    grant: { token: string; patId: string; user: NonNullable<DeviceRecord['user']> },
+    grant: { token: string; refreshToken: string; user: NonNullable<DeviceRecord['user']> },
   ): Promise<boolean>
   /** pending and unexpired → denied. */
   deny(userCode: string, nowIso: string): Promise<boolean>
@@ -64,6 +65,7 @@ function toRecord(r: Row): DeviceRecord {
     expiresAt: r.expiresAt.toISOString(),
     ...(r.scopes?.length ? { scopes: r.scopes } : {}),
     ...(r.token ? { token: r.token } : {}),
+    ...(r.refreshToken ? { refreshToken: r.refreshToken } : {}),
     ...(r.patId ? { patId: r.patId } : {}),
     ...(r.userSub && r.userIss && r.userEmail && r.userName
       ? { user: { sub: r.userSub, iss: r.userIss, email: r.userEmail, name: r.userName } }
@@ -112,7 +114,7 @@ export function createPostgresDeviceRepository(): DeviceRepository {
         .set({
           status: 'approved',
           token: grant.token,
-          patId: grant.patId,
+          refreshToken: grant.refreshToken,
           userSub: grant.user.sub,
           userIss: grant.user.iss,
           userEmail: grant.user.email,
@@ -144,7 +146,7 @@ export function createPostgresDeviceRepository(): DeviceRepository {
         if (!row) return undefined
         await tx
           .update(deviceAuthorizations)
-          .set({ status: 'consumed', token: null })
+          .set({ status: 'consumed', token: null, refreshToken: null })
           .where(eq(deviceAuthorizations.deviceCodeHash, hash))
         return toRecord(row)
       })
@@ -183,9 +185,12 @@ export type DeviceDeps = {
   clock: Clock
   config: DeviceConfig | (() => DeviceConfig)
   /** Mints the cli-login credential at approval. */
-  mint: (user: SessionUser, scopes?: PatScope[]) => Promise<{ token: string; patId: string }>
-  /** Revokes a minted credential whose approval lost a race. */
-  discard: (user: SessionUser, patId: string) => Promise<unknown>
+  mint: (
+    user: SessionUser,
+    scopes?: PatScope[],
+  ) => Promise<{ token: string; refreshToken: string; expiresIn: number }>
+  /** Revokes a minted credential whose approval lost a race. Does not end web sessions. */
+  discard: (user: SessionUser, accessToken: string) => Promise<unknown>
   throttle?: PollThrottle
 }
 
@@ -257,7 +262,8 @@ export type PollResult =
   | {
       status: 'approved'
       token: string
-      patId: string
+      refreshToken: string
+      expiresIn: number
       remote: string
       authHost: string
       user: Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>
@@ -338,20 +344,20 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
     return { rec }
   }
 
-  /** Session user approves a pending device; mints a cli-login PAT. */
+  /** Session user approves a pending device and mints a short-lived CLI credential. */
   async function approve(userCode: string, user: SessionUser): Promise<ApproveResult> {
     const code = normalize(userCode)
     const found = await pendingFor(code)
     if ('error' in found) return found.error
     const { rec } = found
-    const { token, patId } = await deps.mint(user, rec.scopes)
+    const minted = await deps.mint(user, rec.scopes)
     const won = await repo.approve(code, nowIso(), {
-      token,
-      patId,
+      token: minted.token,
+      refreshToken: minted.refreshToken,
       user: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
     })
     if (!won) {
-      await deps.discard(user, patId)
+      await deps.discard(user, minted.token)
       return { ok: false, error: 'Device already approved or denied', status: 400 }
     }
     return { ok: true, userCode: rec.userCode }
@@ -381,10 +387,18 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
     if (rec.status === 'approved') {
       const taken = await repo.consume(hash, nowIso())
       if (!taken) return { status: 'error', error: 'already_consumed' }
-      if (!taken.token || !taken.patId || !taken.user) return { status: 'error', error: 'invalid_state' }
+      if (!taken.token || !taken.refreshToken || !taken.user) return { status: 'error', error: 'invalid_state' }
       throttle.forget(hash)
       const { remote, authHost } = config()
-      return { status: 'approved', token: taken.token, patId: taken.patId, remote, authHost, user: taken.user }
+      return {
+        status: 'approved',
+        token: taken.token,
+        refreshToken: taken.refreshToken,
+        expiresIn: CLI_ACCESS_TTL_SEC,
+        remote,
+        authHost,
+        user: taken.user,
+      }
     }
     return { status: 'error', error: 'invalid_state' }
   }
@@ -403,10 +417,10 @@ const defaults = createDeviceAuthorizations({
     authHost: hostOf(env.publicOxenRemote),
   }),
   async mint(user, scopes) {
-    const { token, pat } = await createPat(user, 'cli-login', { source: 'cli-login', scopes })
-    return { token, patId: pat.id }
+    const issued = await issueCliCredential(user, scopes)
+    return { token: issued.accessToken, refreshToken: issued.refreshToken, expiresIn: issued.expiresIn }
   },
-  discard: (user, patId) => revokePat(user, patId),
+  discard: (_user, accessToken) => revokeCliCredential(accessToken),
   throttle: defaultThrottle,
 })
 

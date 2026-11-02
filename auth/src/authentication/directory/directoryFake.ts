@@ -21,10 +21,16 @@ export function createFakeDirectory(opts: {
       return (opts.groups ?? []).filter((g) => has(q, g.group)).slice(0, limit)
     },
     async userStatus(sub) {
-      return opts.statuses?.[sub] ?? 'error'
+      const status = opts.statuses?.[sub] ?? 'error'
+      const name = (opts.users ?? []).find((user) => user.sub === sub)?.name ?? ''
+      return { status, name }
+    },
+    async getGroup(id) {
+      const found = (opts.groups ?? []).find((group) => group.group === id)
+      return found ? { id: found.group, name: found.name } : null
     },
     async getUserGroups(sub) {
-      return opts.userGroups?.[sub] ?? []
+      return (opts.userGroups?.[sub] ?? []).map((group) => ({ id: group, name: group }))
     },
   }
 }

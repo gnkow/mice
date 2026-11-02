@@ -1,0 +1,24 @@
+Status: ready-for-agent
+
+# 45: Clock-drift alert
+
+**Spec:** `.specs/01-authentication.md` (R5)
+
+**Blocked by:** none
+
+Split from issue 13. The validation pack document stays there.
+
+## What to build
+
+The BFF compares its clock with an NTP reference. Drift above 1 second raises an alert. Client timestamps are never used as the time of an authentication or signature event.
+
+## In code today
+
+`checkClockDrift` and `generateClockDriftAlert` compare two timestamps the caller passes in. Nothing queries NTP, and nothing starts a schedule. `boot.ts` does not call them.
+
+## Acceptance
+
+- [ ] A scheduled check compares the server clock with an NTP reference
+- [ ] Drift greater than 1 second raises an alert that includes the measured drift
+- [ ] Drift of 1 second or less does not alert
+- [ ] Authentication and signature event times come from the server clock

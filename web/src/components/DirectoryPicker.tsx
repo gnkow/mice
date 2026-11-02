@@ -18,7 +18,9 @@ type UserProps = {
 type GroupProps = {
   kind: 'group'
   group: string
-  onChange: (next: { group: string }) => void
+  /** Current display name, when it differs from the stored object id. */
+  label?: string
+  onChange: (next: { group: string; name: string }) => void
   disabled?: boolean
 }
 
@@ -93,7 +95,7 @@ export function DirectoryPicker(props: Props) {
       ? props.sub
         ? `${props.sub}${props.iss ? ` · ${props.iss}` : ''}`
         : ''
-      : props.group
+      : props.label || props.group
 
   return (
     <div className="directory-picker" ref={wrapRef}>
@@ -162,7 +164,7 @@ export function DirectoryPicker(props: Props) {
                 type="button"
                 className="directory-picker-option"
                 onClick={() => {
-                  props.onChange({ group: g.group })
+                  props.onChange({ group: g.group, name: g.name })
                   setQuery(g.name || g.group)
                   setOpen(false)
                 }}
@@ -232,7 +234,7 @@ export function DirectoryPicker(props: Props) {
               required
               value={props.group}
               disabled={props.disabled}
-              onChange={(e) => props.onChange({ group: e.target.value })}
+              onChange={(e) => props.onChange({ group: e.target.value, name: e.target.value })}
               placeholder="engineering"
               autoComplete="off"
             />

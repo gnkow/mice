@@ -7,7 +7,7 @@ Mice is a platform around a self-hosted oxen-server: identity, authorization, au
 ### Identity
 
 **Principal**:
-The authenticated identity behind a request, keyed by IdP `iss`+`sub`. Arrives as a Session or a PAT.
+The authenticated identity behind a request, keyed by IdP `iss`+`sub`. The IdP guarantees that key is one unique human. Arrives as a Session or a PAT.
 _Avoid_: Account, caller
 
 **User**:
@@ -27,7 +27,7 @@ The `auth/` service in front of oxen-server that authenticates, authorizes, audi
 _Avoid_: Gateway, auth server
 
 **Author injection**:
-The BFF overwriting commit author name and email from the Principal's IdP claims.
+The BFF writing the Principal's `iss`+`sub` as a commit's author and the Principal's email at that moment as the commit's email.
 _Avoid_: Author override
 
 ### Audit

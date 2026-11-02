@@ -4,11 +4,11 @@ Status: ready-for-agent
 
 ## Problem Statement
 
-Admins need one place to manage users, roles, announcements, group bootstrap rules and instance state, and users need in-app documentation.
+Admins need one place to manage users, roles, announcements, access requests and instance state, and users need in-app documentation.
 
 ## Solution
 
-A settings-based admin console with an overview, announcements targeted to audiences, group-bootstrap rules seeded from environment and editable in the UI, and a docs page.
+A settings-based admin console with an overview, announcements targeted to audiences, access requests an administrator resolves, and a docs page.
 
 ## User Stories
 
@@ -16,7 +16,7 @@ A settings-based admin console with an overview, announcements targeted to audie
 2. As an instance admin, I want to publish announcements to a namespace or group, so that messages reach the right people.
 3. As a user, I want to dismiss announcements and, when flagged requires-ack, acknowledge them with a receipt (content digest plus version).
 4. As an admin, I want an optional "also notify" toggle for announcements, notifying on publish only after a recipient-count confirmation.
-5. As an admin, I want group-bootstrap rules seeded from env (absent keys only) and editable in the UI with audit.
+5. As an admin, I want to approve or deny an access request, granting only what I record.
 6. As an admin, I want to revoke a Principal's Sessions from the UI, singly or in bulk by directory group.
 7. As an admin, I want to see a Principal's effective permissions with a why-trace.
 8. As a user, I want a Docs page with Mice-authored content.
@@ -27,7 +27,7 @@ A settings-based admin console with an overview, announcements targeted to audie
 
 - The admin overview stays under `/settings`.
 - Announcements are audience-targeted only and immutable; a change is a new announcement plus retiring the old one.
-- Bootstrap rules: env seeds absent keys only; UI-owned keys are never overwritten; both audited. Rule-derived grants are tagged with their source and revoked at next login.
+- Access is granted by an administrator. An IdP group does not create a grant on login. A group grant exists only after an administrator adds that group to a namespace or repository.
 - Read receipts server-side for every requires-ack announcement; acknowledgement is not comprehension; no blocking behaviour now.
 - Fail closed on IdP disablement with no break-glass path.
 - Docs: English only with message-catalog readiness; versioned with the release; SOPs live outside; plain-text announcements with link allowlist and step-up.
@@ -364,7 +364,7 @@ Challenges: "tests at BFF HTTP boundary against real containers" applied to a UI
 
 9. **IdP migration tooling (Q16)**: Moot (auth Q80). Keep only directory adapter for single IdP.
 
-10. **Bootstrap rules (Q9/Q10)**: Grant read-only baseline only (auth R1). Write/sign/approve need recorded admin grant. Rules apply to everyone including externals.
+10. **Bootstrap rules (Q9/Q10)**: Removed. `AUTHZ_GROUP_BOOTSTRAP` does not grant access. An administrator records grants. A group grants access only after an administrator adds that group to a namespace or repository.
 
 11. **No revocation cache (Q21)**: Confirmed (auth Q79).
 
@@ -398,7 +398,7 @@ Challenges: "tests at BFF HTTP boundary against real containers" applied to a UI
 - **Multi-instance coordination**: Q18 no cache on announcements; Q19 unique (principal, revision) idempotent receipts
 - **Announcements**: Q1 receipt=digest+version; Q3 immutable (change=new+retire); Q4 live audience; Q22 plain text, link allowlist, step-up
 - **Access administration**: Q6 notify admins+QA on access changes; Q8 bulk revoke by directory group; Q9 rule-derived grants tagged
-- **Bootstrap rules**: Q10 seed absent keys only; UI-owned never overwritten; Q9 revoked at next login
+- **Bootstrap rules**: Removed with `AUTHZ_GROUP_BOOTSTRAP`. Q9 and Q10 do not apply.
 - **Directory integration**: Q16 adapter interface + chosen-IdP adapter; Q17 min length, caps, audit
 - **Docs and testing**: Q23 docs versioned with release; Q24 error codes + client translation; Q28 table-driven HTTP suite on 2 instances
 

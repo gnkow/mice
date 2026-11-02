@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import type { Commit } from '../lib/oxen/types'
 import { MetaPills } from './MetaPills'
 import { AuthorAvatar } from './AuthorAvatar'
+import { CommitEmail, useCurrentEmails } from './CommitEmail'
 import { dayKey, formatDayHeading, formatRelativeTime } from '../lib/time'
 
 type Props = {
@@ -21,6 +22,7 @@ export function CommitList({
   linkSearch = '',
 }: Props) {
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
+  const emails = useCurrentEmails(commits.map((c) => c.author))
 
   const groups: { key: string; heading: string; items: Commit[] }[] = []
   for (const c of commits) {
@@ -59,6 +61,7 @@ export function CommitList({
                       <span className="commit-msg">{c.message}</span>
                       <span className="commit-meta">
                         {c.author}
+                        <CommitEmail author={c.author} stored={c.email} emails={emails} separator />
                         {' · '}
                         <time
                           dateTime={c.timestamp}

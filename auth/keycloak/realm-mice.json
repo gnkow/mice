@@ -60,6 +60,81 @@
       ]
     },
     {
+      "username": "mice_admin",
+      "enabled": true,
+      "email": "mice_admin@mice.com",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "mice_manage",
+      "enabled": true,
+      "email": "mice_manage@mice.com",
+      "emailVerified": true,
+      "firstName": "Manager",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "manage123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "mice_auditor",
+      "enabled": true,
+      "email": "mice_auditor@mice.com",
+      "emailVerified": true,
+      "firstName": "Auditor",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "auditor123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "mice_user",
+      "enabled": true,
+      "email": "mice_user@mice.com",
+      "emailVerified": true,
+      "firstName": "Regular",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "mice_user_no_access",
+      "enabled": true,
+      "email": "mice_user_no_access@mice.com",
+      "emailVerified": true,
+      "firstName": "No Access",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "noaccess123",
+          "temporary": false
+        }
+      ]
+    },
+    {
       "username": "service-account-mice-auth",
       "enabled": true,
       "serviceAccountClientId": "mice-auth",

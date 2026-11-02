@@ -4,6 +4,7 @@ import { env } from './env.js'
 import { auditActionLabel } from './auditLabels.js'
 import { immudbConfig, openLedger, type Ledger, type LedgerVerification } from './auditLedger.js'
 import { getServicePrincipal, kindOf, type SessionUser } from './authentication/index.js'
+import { canonicalIssuer } from './authentication/session/principal.js'
 
 export type AuditVia = 'session' | 'pat'
 
@@ -230,7 +231,7 @@ export function startAuditVerifySchedule(
 export function actorFromUser(user: SessionUser): AuditActor {
   return {
     sub: user.sub,
-    iss: user.iss,
+    iss: canonicalIssuer(user.iss),
     email: user.email,
     name: user.name,
   }

@@ -10,6 +10,7 @@ import {
   type UserKey,
 } from './authzTypes.js'
 import { getCustomNamespaceRole, isValidMemberRole } from './customRoles.js'
+import { directoryNow } from './authentication/directory/directory.js'
 import { isInstanceAdmin } from './authzInstanceStore.js'
 import * as repo from './authzRepository.js'
 
@@ -93,11 +94,66 @@ export async function isCustomNamespaceRoleAssigned(ns: string, roleId: string):
   return repo.isMemberRoleAssigned(ns, roleId)
 }
 
+const OBJECT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+async function objectIdForStoredName(name: string): Promise<string | null | undefined> {
+  const directory = directoryNow()
+  if (!directory.configured || OBJECT_ID.test(name)) return undefined
+  const hits = await directory.searchGroups(name, 20)
+  const match = hits.filter((hit) => hit.name.trim().toLowerCase() === name && OBJECT_ID.test(hit.group))
+  if (match.length === 1) return match[0].group
+  if (match.length === 0) return null
+  return undefined
+}
+
+/** Rewrite name-based group grants to the IdP object id. Names the directory no longer has are returned. */
+export async function reconcileNamespaceGroupIds(ns: string): Promise<string[]> {
+  const directory = directoryNow()
+  if (!directory.configured) return []
+  const missing: string[] = []
+  const { groups } = await repo.listMemberRows(ns)
+  for (const row of groups) {
+    const id = await objectIdForStoredName(row.group)
+    if (id === undefined) continue
+    if (id === null) {
+      missing.push(row.group)
+      continue
+    }
+    await repo.setGroupMember(ns, id, row.role)
+    await repo.removeGroupMember(ns, row.group)
+  }
+  const collaborators = await repo.listNamespaceGroupCollaboratorRows(ns)
+  for (const row of collaborators) {
+    const id = await objectIdForStoredName(row.group)
+    if (id === undefined) continue
+    if (id === null) {
+      if (!missing.includes(row.group)) missing.push(row.group)
+      continue
+    }
+    await repo.setGroupCollaborator(ns, row.repo, id, row.role)
+    await repo.removeGroupCollaborator(ns, row.repo, row.group)
+  }
+  return missing
+}
+
+async function currentGroupName(id: string): Promise<string | undefined> {
+  const directory = directoryNow()
+  if (!directory.configured) return undefined
+  const group = await directory.getGroup(id)
+  return group?.name
+}
+
 export async function listNamespaceMembers(ns: string): Promise<MemberPrincipal[]> {
   const { users, groups } = await repo.listMemberRows(ns)
+  const named = await Promise.all(groups.map(async (row) => ({
+    kind: 'group' as const,
+    group: row.group,
+    role: row.role,
+    name: await currentGroupName(row.group),
+  })))
   return [
     ...users.map((r) => ({ kind: 'user' as const, ...parseUserKey(r.key), role: r.role })),
-    ...groups.map((r) => ({ kind: 'group' as const, group: r.group, role: r.role })),
+    ...named,
   ]
 }
 

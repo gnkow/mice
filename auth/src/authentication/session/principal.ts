@@ -4,6 +4,11 @@
  */
 export type PrincipalId = { sub: string; iss: string }
 
+/** Issuers are compared and stored without a trailing slash, so `https://idp/` and `https://idp` are one Principal. */
+export function canonicalIssuer(iss: string): string {
+  return iss.trim().replace(/\/+$/, '')
+}
+
 /** Reserved issuer of service principals (`urn:mice:service|<uuid>`); never a valid OIDC issuer. */
 export const SERVICE_ISSUER = 'urn:mice:service'
 

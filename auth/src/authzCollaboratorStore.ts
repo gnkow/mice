@@ -1,3 +1,4 @@
+import { directoryNow } from './authentication/directory/directory.js'
 import {
   isPredefinedRepoRole,
   maxRepoRole,
@@ -59,11 +60,24 @@ export async function customRepoRoleIdsForUser(
   return ids
 }
 
+async function currentGroupName(id: string): Promise<string | undefined> {
+  const directory = directoryNow()
+  if (!directory.configured) return undefined
+  const group = await directory.getGroup(id)
+  return group?.name
+}
+
 export async function listRepoCollaborators(ns: string, repo: string): Promise<CollaboratorPrincipal[]> {
   const { users, groups } = await authzRepo.listCollaboratorRows(ns, repo)
+  const named = await Promise.all(groups.map(async (row) => ({
+    kind: 'group' as const,
+    group: row.group,
+    role: row.role,
+    name: await currentGroupName(row.group),
+  })))
   return [
     ...users.map((r) => ({ kind: 'user' as const, ...parseUserKey(r.key), role: r.role })),
-    ...groups.map((r) => ({ kind: 'group' as const, group: r.group, role: r.role })),
+    ...named,
   ]
 }
 

@@ -4,6 +4,7 @@ import { MetaModal } from '../components/MetaModal'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AuthorAvatar } from '../components/AuthorAvatar'
+import { CommitEmail, useCurrentEmails } from '../components/CommitEmail'
 import { BranchSwitcher } from '../components/BranchSwitcher'
 import { FileIcon } from '../components/FileIcon'
 import { DataTypeIcon, RestoreIcon } from '../components/icons'
@@ -313,6 +314,8 @@ export function TreePage() {
     return best ?? null
   }, [listing])
 
+  const emails = useCurrentEmails(latestCommit?.author ? [latestCommit.author] : [])
+
   const commitCount =
     commits.kind === 'ok'
       ? (commits.data.total_entries ?? commits.data.commits.length)
@@ -611,6 +614,7 @@ export function TreePage() {
                 <AuthorAvatar name={latestCommit.author || 'unknown'} />
                 <span className="latest-commit-author">
                   {latestCommit.author || 'unknown'}
+                  <CommitEmail author={latestCommit.author} stored={latestCommit.email} emails={emails} />
                 </span>
                 <Link
                   className="latest-commit-msg"

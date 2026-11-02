@@ -8,6 +8,10 @@ import { env } from '../../env.js'
 import { isCredentialRevoked } from '../credentials/credentialRevocation.js'
 import { appendAudit } from '../../audit.js'
 import { trackNameChange } from './nameChangeHistory.js'
+import { sealSessionCookie, unsealSessionCookie } from './cookieSeal.js'
+import { canonicalIssuer } from './principal.js'
+
+export { canonicalIssuer }
 
 export type PatScope = {
   namespace: string
@@ -27,7 +31,7 @@ export type SessionUser = {
   name: string
   /** OIDC id_token for RP-initiated logout (optional). */
   idToken?: string
-  /** IdP groups / roles claims (optional; used by AUTHZ_GROUP_BOOTSTRAP). */
+  /** IdP groups, matched against namespace and repository group grants an administrator has recorded. */
   groups?: string[]
   /**
    * Fine-grained PAT resource scopes (Phase 2). Empty/undefined = full user
@@ -46,18 +50,13 @@ const nowSec = () => Math.floor(Date.now() / 1000)
 
 const hashId = (id: string) => createHash('sha256').update(id).digest('hex')
 
-/** Issuers are compared and stored without a trailing slash, so `https://idp/` and `https://idp` are one Principal. */
-export function canonicalIssuer(iss: string): string {
-  return iss.trim().replace(/\/+$/, '')
-}
-
 /** The Principal row for an IdP identity, created on first sight. Returns its internal id. */
-export async function ensurePrincipal(identity: { iss: string; sub: string; name?: string }): Promise<number> {
+export async function ensurePrincipal(identity: { iss: string; sub: string; name?: string; email?: string }): Promise<number> {
   const iss = canonicalIssuer(identity.iss)
   
   // First try to find existing principal
   const existing = await getDb()
-    .select({ id: principals.id })
+    .select({ id: principals.id, email: principals.email })
     .from(principals)
     .where(and(eq(principals.iss, iss), eq(principals.sub, identity.sub)))
     .limit(1)
@@ -65,13 +64,14 @@ export async function ensurePrincipal(identity: { iss: string; sub: string; name
   let principalId: number
   
   if (existing.length > 0) {
-    // Principal exists, just return id
     principalId = existing[0].id
+    if (identity.email && existing[0].email !== identity.email) {
+      await getDb().update(principals).set({ email: identity.email }).where(eq(principals.id, principalId))
+    }
   } else {
-    // New principal, insert
     const [row] = await getDb()
       .insert(principals)
-      .values({ iss, sub: identity.sub, name: identity.name ?? null, createdAt: new Date() })
+      .values({ iss, sub: identity.sub, name: identity.name ?? null, email: identity.email ?? null, createdAt: new Date() })
       .returning({ id: principals.id })
     principalId = row!.id
   }
@@ -84,6 +84,29 @@ export async function ensurePrincipal(identity: { iss: string; sub: string; name
   return principalId
 }
 
+/** The Principal's current email, or null when this identity has none stored. */
+export async function getCurrentEmail(identity: { iss: string; sub: string }): Promise<string | null> {
+  const iss = canonicalIssuer(identity.iss)
+  const [row] = await getDb()
+    .select({ email: principals.email })
+    .from(principals)
+    .where(and(eq(principals.iss, iss), eq(principals.sub, identity.sub)))
+    .limit(1)
+  return row?.email ?? null
+}
+
+/** Current emails for commit authors (`iss|sub`). Unknown authors are omitted. */
+export async function currentEmailsByAuthor(authors: string[]): Promise<Record<string, string>> {
+  const emails: Record<string, string> = {}
+  for (const author of authors) {
+    const bar = author.indexOf('|')
+    if (bar <= 0 || bar === author.length - 1) continue
+    const email = await getCurrentEmail({ iss: author.slice(0, bar), sub: author.slice(bar + 1) })
+    if (email) emails[author] = email
+  }
+  return emails
+}
+
 /**
  * Creates the server-side Session row for a user and returns the opaque id that goes into the cookie.
  * 
@@ -94,6 +117,10 @@ export async function sealSession(user: SessionUser): Promise<string> {
   const id = randomBytes(32).toString('base64url')
   const start = user.sessionStart ?? nowSec()
   const principalId = await ensurePrincipal(user)
+  await getDb()
+    .update(principals)
+    .set({ lastLoginAt: new Date(start * 1000) })
+    .where(eq(principals.id, principalId))
 
   // Enforce 5-session cap: count existing sessions for this Principal
   const existingSessions = await getDb()
@@ -183,12 +210,17 @@ export async function openSession(token: string): Promise<SessionUser | null> {
   return user
 }
 
-export function readSessionCookie(c: Context): string | undefined {
-  return getCookie(c, env.cookieName)
+export async function readSessionCookie(c: Context): Promise<string | undefined> {
+  const sealed = getCookie(c, env.cookieName)
+  if (!sealed) return undefined
+  
+  // Unseal the cookie with any valid key in the ring
+  const sessionId = await unsealSessionCookie(sealed)
+  return sessionId ?? undefined
 }
 
 export async function getSession(c: Context): Promise<SessionUser | null> {
-  const raw = readSessionCookie(c)
+  const raw = await readSessionCookie(c)
   if (!raw) return null
   return openSession(raw)
 }
@@ -196,7 +228,8 @@ export async function getSession(c: Context): Promise<SessionUser | null> {
 /** Issues a new Session for `user` and sets its cookie. */
 export async function setSessionCookie(c: Context, user: SessionUser): Promise<void> {
   const id = await sealSession(user)
-  writeCookie(c, id, (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec())
+  const sealed = await sealSessionCookie(id)
+  writeCookie(c, sealed, (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec())
 }
 
 function writeCookie(c: Context, id: string, maxAge: number): void {
@@ -216,15 +249,16 @@ export async function touchSession(c: Context, user: SessionUser): Promise<void>
   const last = user.lastActive ?? 0
   const throttle = Math.max(1, Math.floor(env.sessionIdleSec / 4))
   if (nowSec() - last < throttle) return
-  const id = readSessionCookie(c)
+  const id = await readSessionCookie(c)
   if (!id) return
   await getDb().update(webSessions).set({ lastActive: nowSec() }).where(eq(webSessions.idHash, hashId(id)))
-  writeCookie(c, id, (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec())
+  const sealed = await sealSessionCookie(id)
+  writeCookie(c, sealed, (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec())
 }
 
 /** Deletes the server-side Session behind the request's cookie. */
 export async function destroySession(c: Context): Promise<void> {
-  const id = readSessionCookie(c)
+  const id = await readSessionCookie(c)
   if (id) await getDb().delete(webSessions).where(eq(webSessions.idHash, hashId(id)))
 }
 

@@ -1208,38 +1208,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.instance_settings": {
-      "name": "instance_settings",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "smallint",
-          "primaryKey": true,
-          "notNull": true,
-          "default": 1
-        },
-        "enforce": {
-          "name": "enforce",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "instance_settings_singleton": {
-          "name": "instance_settings_singleton",
-          "value": "\"instance_settings\".\"id\" = 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.instance_training": {
       "name": "instance_training",
       "schema": "",

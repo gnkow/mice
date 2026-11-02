@@ -164,12 +164,12 @@ await describe('mandatory reason on admin and permission changes', async () => {
   })
 
   await it('applies to instance admin changes and access-request decisions', async () => {
-    const patch = await app.request('/auth/instance', {
-      method: 'PATCH',
+    const add = await app.request('/auth/instance/admins', {
+      method: 'POST',
       headers: await adminHeaders(),
-      body: JSON.stringify({ enforce: true }),
+      body: JSON.stringify({ sub: 'x', iss: 'idp' }),
     })
-    assert.equal(patch.status, 400)
+    assert.equal(add.status, 400)
     const decide = await app.request('/auth/access-requests/nope', {
       method: 'POST',
       headers: await adminHeaders(),

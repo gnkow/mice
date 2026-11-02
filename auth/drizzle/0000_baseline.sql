@@ -150,12 +150,6 @@ CREATE TABLE "instance_permissions" (
 	CONSTRAINT "instance_permissions_user_key_permission_pk" PRIMARY KEY("user_key","permission")
 );
 --> statement-breakpoint
-CREATE TABLE "instance_settings" (
-	"id" smallint PRIMARY KEY DEFAULT 1 NOT NULL,
-	"enforce" boolean DEFAULT false NOT NULL,
-	CONSTRAINT "instance_settings_singleton" CHECK ("instance_settings"."id" = 1)
-);
---> statement-breakpoint
 CREATE TABLE "instance_training" (
 	"user_key" text PRIMARY KEY NOT NULL
 );
@@ -275,6 +269,17 @@ CREATE TABLE "pats" (
 	CONSTRAINT "pats_id_unique" UNIQUE("id")
 );
 --> statement-breakpoint
+CREATE TABLE "principal_disabled_periods" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "principal_disabled_periods_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"principal_id" bigint NOT NULL,
+	"disabled_at" timestamp with time zone NOT NULL,
+	"re_enabled_at" timestamp with time zone,
+	"restoration_type" text,
+	"confirmed_by" text,
+	"audit_event_id" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "principal_name_history" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "principal_name_history_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"principal_id" bigint NOT NULL,
@@ -368,6 +373,7 @@ ALTER TABLE "custom_repo_roles" ADD CONSTRAINT "custom_repo_roles_namespace_name
 ALTER TABLE "idp_drift_reports" ADD CONSTRAINT "idp_drift_reports_baseline_id_idp_baseline_id_fk" FOREIGN KEY ("baseline_id") REFERENCES "idp_baseline"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_group_members" ADD CONSTRAINT "namespace_group_members_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_members" ADD CONSTRAINT "namespace_members_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "principal_disabled_periods" ADD CONSTRAINT "principal_disabled_periods_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "principals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "principal_name_history" ADD CONSTRAINT "principal_name_history_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "principals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo_collaborators" ADD CONSTRAINT "repo_collaborators_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo_group_collaborators" ADD CONSTRAINT "repo_group_collaborators_namespace_namespaces_name_fk" FOREIGN KEY ("namespace") REFERENCES "namespaces"("name") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -393,6 +399,8 @@ CREATE INDEX "lineage_ops_repo_ts" ON "lineage_ops" USING btree ("namespace","re
 CREATE INDEX "namespace_group_members_group" ON "namespace_group_members" USING btree ("group_key");--> statement-breakpoint
 CREATE INDEX "namespace_members_user" ON "namespace_members" USING btree ("user_key");--> statement-breakpoint
 CREATE INDEX "pats_owner" ON "pats" USING btree ("iss","sub");--> statement-breakpoint
+CREATE INDEX "principal_disabled_periods_principal_idx" ON "principal_disabled_periods" USING btree ("principal_id");--> statement-breakpoint
+CREATE INDEX "principal_disabled_periods_pending_idx" ON "principal_disabled_periods" USING btree ("restoration_type") WHERE "principal_disabled_periods"."restoration_type" = 'pending';--> statement-breakpoint
 CREATE INDEX "principal_name_history_principal_idx" ON "principal_name_history" USING btree ("principal_id","valid_from");--> statement-breakpoint
 CREATE UNIQUE INDEX "principals_iss_sub_key" ON "principals" USING btree ("iss","sub");--> statement-breakpoint
 CREATE INDEX "rate_limits_key_endpoint_time_idx" ON "rate_limits" USING btree ("limit_key","endpoint","requested_at");--> statement-breakpoint

@@ -39,8 +39,6 @@ describe('buildRequest', () => {
   })
 
   it('instance admin and permissions', () => {
-    assert.deepEqual(buildRequest('instance', ['enforce', 'on']).body, { enforce: true })
-    assert.throws(() => buildRequest('instance', ['enforce', 'maybe']))
     assert.deepEqual(buildRequest('instance', ['admin', 'remove', '--sub', 's', '--iss', 'i']), {
       method: 'DELETE',
       path: '/auth/instance/admins',

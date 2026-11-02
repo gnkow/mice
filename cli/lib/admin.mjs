@@ -248,11 +248,6 @@ export function buildRequest(group, argv, ctx = () => ({})) {
 
     case 'instance': {
       if (!sub || sub === 'show') return { method: 'GET', path: '/auth/instance' }
-      if (sub === 'enforce') {
-        const v = bool(args[0] === 'on' || args[0] === 'off' ? args[0] : undefined, 'enforce')
-        if (v === undefined) throw new UsageError('Usage: mice instance enforce on|off')
-        return { method: 'PATCH', path: '/auth/instance', body: { enforce: v } }
-      }
       if (sub === 'admin') {
         const act = args[0]
         if (act === 'add') {

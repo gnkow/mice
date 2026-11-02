@@ -47,10 +47,9 @@ With `NODE_ENV=production` the BFF refuses to start unless `SESSION_SECRET` is s
 value, `OIDC_CLIENT_SECRET` is not the shipped `mice-auth-secret`, and `COOKIE_SECURE=true`.
 
 In production the BFF also refuses to start unless `AUTHZ_BOOTSTRAP_ADMINS` names at least one
-instance admin, `AUTHZ_ENFORCE` is not `false`, `AUTHZ_DEV_GRANT_ALL` and `AUTH_DEV_MODE` are unset,
-`AUTH_DATA_DIR` is writable, and `OXEN_UPSTREAM` is an internal address (single-label service name,
-loopback, private range, or `.internal`/`.local`/`.svc` suffix). AuthZ enforcement is always on in
-production; the store flag cannot turn it off.
+instance admin, `AUTH_DEV_MODE` is unset, `AUTH_DATA_DIR` is writable, and `OXEN_UPSTREAM`
+is an internal address (single-label service name, loopback, private range, or
+`.internal`/`.local`/`.svc` suffix). Authorization is always enforced.
 
 Oxen has no auth of its own, so it must only be reachable from the BFF. `compose.yaml` publishes no
 oxen port; the dev-only `compose.override.yaml` (auto-loaded by `docker compose up`) publishes `3001`
@@ -213,7 +212,7 @@ Compose ships Keycloak for local SSO. The BFF speaks standard OIDC Authorization
    | `OIDC_GROUPS_CLAIM` | Id token claim for groups (default `groups`) |
 
 3. Directory search is Keycloak-specific today. For Entra / Okta / etc., set `DIRECTORY_PROVIDER=none` (pickers still find principals already stored in AuthZ). Optional: leave the `keycloak` service stopped (`docker compose up --build --scale keycloak=0` or remove it from your override).
-4. Bootstrap the first instance admin with `AUTHZ_BOOTSTRAP_ADMINS=<email>` (matches only when the IdP asserts `email_verified`) or `<iss>|<sub>` (exact IdP identity). A bare `sub` or the `@users.local` fallback never matches. Existing stores with bare-`sub` keys are migrated once to `iss`+`sub` under `AUTH_LEGACY_ISSUER` (default `OIDC_ISSUER`). Keep `AUTHZ_DEV_GRANT_ALL` off outside local/e2e.
+4. Bootstrap the first instance admin with `AUTHZ_BOOTSTRAP_ADMINS=<email>` (matches only when the IdP asserts `email_verified`) or `<iss>|<sub>` (exact IdP identity). A bare `sub` or the `@users.local` fallback never matches. Existing stores with bare-`sub` keys are migrated once to `iss`+`sub` under `AUTH_LEGACY_ISSUER` (default `OIDC_ISSUER`).
 
 Example `.env` fragment (Entra-style issuer; adjust tenant/app values):
 
@@ -227,7 +226,6 @@ OIDC_POST_LOGOUT_REDIRECT_URI=https://mice.example.com/login
 OIDC_GROUPS_CLAIM=groups
 DIRECTORY_PROVIDER=none
 AUTHZ_BOOTSTRAP_ADMINS=admin@example.com
-AUTHZ_DEV_GRANT_ALL=false
 ```
 
 ## Tests

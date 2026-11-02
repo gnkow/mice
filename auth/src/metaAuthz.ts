@@ -1,5 +1,4 @@
 import { decideInstanceAction, decideNamespaceAction, hasRepoPermission, isUnscopedInstanceAdmin } from './authz.js'
-import { isAuthzEnforce } from './authzInstanceStore.js'
 import { userCanSeeNamespace } from './authzVisibility.js'
 import type { EntityRef } from './metaTypes.js'
 import { type SessionUser } from './authentication/index.js'
@@ -23,7 +22,6 @@ export async function canReadEntity(
   ref: EntityRef,
   deps: MetaAuthzDeps = {},
 ): Promise<boolean> {
-  if (!await isAuthzEnforce()) return true
   if (await isUnscopedInstanceAdmin(user)) return true
   switch (ref.type) {
     case 'namespace':
@@ -53,7 +51,6 @@ export async function canEditEntity(
   ref: EntityRef,
   deps: MetaAuthzDeps = {},
 ): Promise<boolean> {
-  if (!await isAuthzEnforce()) return true
   if (await isUnscopedInstanceAdmin(user)) return true
   switch (ref.type) {
     case 'namespace':

@@ -3,7 +3,7 @@ import { env } from './env.js'
 import { decideInstanceAction, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
 import { denialResponse } from './decisionHttp.js'
 import { isCustomRepoRoleAssigned, listRepoCollaborators, removeRepoCollaborator, removeRepoGroupCollaborator, setRepoCollaborator, setRepoGroupCollaborator } from './authzCollaboratorStore.js'
-import { isCustomNamespaceRoleAssigned, listNamespaceMembers, removeNamespaceGroupMember, removeNamespaceMember, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
+import { isCustomNamespaceRoleAssigned, listNamespaceMembers, reconcileNamespaceGroupIds, removeNamespaceGroupMember, removeNamespaceMember, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
 import { createNamespaceAuthz, deleteNamespaceAuthz, getNamespace, listNamespacesForUser, updateNamespaceSettings } from './authzNamespaceStore.js'
 import {
   ALL_NAMESPACE_CAPABILITIES,
@@ -33,10 +33,12 @@ function memberTarget(body: {
   sub?: string
   iss?: string
   group?: string
+  name?: string
 }): Record<string, unknown> {
   const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
+  const name = body.name?.trim()
   return kind === 'group'
-    ? { kind, group: body.group }
+    ? { kind, group: body.group, ...(name ? { name } : {}) }
     : { kind, sub: body.sub, iss: body.iss }
 }
 
@@ -92,10 +94,12 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (!settings) return c.json({ error: 'Not found' }, 404)
     const denied = denialResponse(c, await decideNamespaceAction(session, ns, 'namespace.view'))
     if (denied) return denied
+    const unresolvedGroups = await reconcileNamespaceGroupIds(ns)
     return c.json({
       name: ns,
       ...settings,
       members: await listNamespaceMembers(ns),
+      unresolvedGroups,
     })
   }))
 
@@ -240,6 +244,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       sub?: string
       iss?: string
       group?: string
+      name?: string
       role?: MemberRoleRef
     }
     try {
@@ -327,6 +332,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       sub?: string
       iss?: string
       group?: string
+      name?: string
       role?: CollaboratorRoleRef
     }
     try {

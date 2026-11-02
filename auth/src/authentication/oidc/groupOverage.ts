@@ -43,7 +43,7 @@ export async function fetchGroupsOnOverage(
 
   // Fetch groups from directory API
   try {
-    const groups = await directory.getUserGroups(claims.sub)
+    const groups = (await directory.getUserGroups(claims.sub)).map((group) => group.id)
     
     if (groups.length === 0) {
       console.warn(

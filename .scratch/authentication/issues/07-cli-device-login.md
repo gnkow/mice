@@ -1,32 +1,28 @@
-# 07: CLI device login
+Status: done
 
-**What to build:** `mice login` obtains a short-lived credential through the RFC 8628 device flow and stores it in the OS keychain per Principal, bound to the issuing remote. No PATs.
+# 07: Short-lived CLI credential
 
-**Blocked by:** 04 (live IdP check and access states), 05 (authentication event audit and failure alerts)
+**Spec:** `.specs/01-authentication.md` (stories 3 and 4, Q5, Q56, Q73, U5)
 
-**Status:** completed
+OS keychain storage is issue 35. Removing every other PAT mint path is issue 48.
 
-- [x] 8 h access token; rotating refresh with reuse detection and 30-day family cap; IdP re-checked on each refresh
-- [x] Device-flow hardening: user-code entropy, rate limits, expiry, single use
-- [x] Keychain entry keyed by Principal; acting-as banner and write confirmation shown when several exist
-- [x] A second Principal logging in on the same OS user is refused (shared credentials forbidden)
-- [x] Logout ends CLI and web credentials and suspends Desktop Sessions, which resume after login within their lifetime
-- [x] Credential never outlives the Principal's IdP status
+## Outcome
 
-## Implementation Summary
+Device approval issues an 8-hour access token and a rotating refresh token. It does not mint a personal access token. Refresh replaces both tokens. Presenting a refresh token again revokes that family. A family older than 30 days cannot be refreshed. Refresh asks the IdP first and leaves the refresh token unused when the user is disabled or the IdP cannot be reached. Logout revokes the CLI family and ends that Principal's web sessions.
 
-Implemented in `auth/src/authentication/credentials/deviceFlow.ts` with comprehensive test coverage.
+`POST /auth/cli/device/poll` returns `access_token`, `refresh_token`, and `expires_in`. `POST /auth/cli/refresh` rotates the pair. `POST /auth/cli/logout` revokes a CLI access token.
 
-**Test Coverage:** 19 tests (all passing)
-- Device flow initiation (user code generation, verification URI)
-- Approval flow (user approval, status tracking)
-- Polling for token (pending, slow_down, expired_token errors)
-- Keychain storage (Principal-keyed, remote-bound, single-Principal enforcement)
-- Token refresh (rotating tokens, reuse detection, 30-day family cap, IdP recheck)
-- Logout (CLI/web credential revocation, Desktop Session suspend)
-- Credential lifetime (tied to IdP status)
+## Acceptance
 
-**Files:**
-- `auth/src/authentication/credentials/deviceFlow.ts` - Implementation
-- `auth/src/authentication/credentials/deviceFlow.test.ts` - Tests
-- `auth/src/authentication/credentials/deviceApprovalRateLimit.ts` - Rate limiting
+- [x] Device approval issues an 8-hour access token and a rotating refresh token, and does not call `createPat`
+- [x] Reuse of a refresh token revokes that token family
+- [x] A family older than 30 days cannot be refreshed
+- [x] Refresh re-checks the IdP and fails when the user is disabled or the IdP is unreachable
+- [x] Logout revokes the CLI credential and the web session
+- [x] The live device-login tests cover issuance, and the credential tests cover rotation, reuse, the family cap, and the IdP re-check
+
+## Code
+
+- `auth/src/authentication/credentials/cliCredentials.ts`
+- `auth/src/authentication/credentials/cliDevice.ts`
+- `auth/src/authentication/credentials/cliDeviceRoutes.ts`

@@ -4,7 +4,6 @@ import { chmodSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { isAuthzEnforce } from '../../authzInstanceStore.js'
 import { assertProductionStartup, productionStartupProblems } from './startupGate.js'
 
 const good = {
@@ -15,6 +14,7 @@ const good = {
   OIDC_ISSUER: 'https://idp.example.com/realms/mice',
   AUTHZ_BOOTSTRAP_ADMINS: 'admin@example.com',
   AUTH_DATA_DIR: mkdtempSync(join(tmpdir(), 'mice-gate-')),
+  SESSION_IDLE_SEC: '900',
 }
 
 describe('production startup gate', () => {
@@ -45,34 +45,21 @@ describe('production startup gate', () => {
     assert.equal(p.length, 1)
     assert.match(p[0], /OIDC_ISSUER/)
     assert.deepEqual(
-      productionStartupProblems({ NODE_ENV: 'development', OIDC_ISSUER: 'http://keycloak:8080' }),
+      productionStartupProblems({ NODE_ENV: 'development', OIDC_ISSUER: 'http://keycloak:8080', SESSION_IDLE_SEC: '900' }),
       [],
     )
   })
 
-  it('refuses GXP_STRICT with the idle timeout off', () => {
-    for (const SESSION_IDLE_SEC of [undefined, '0']) {
-      const p = productionStartupProblems({ GXP_STRICT: 'true', SESSION_IDLE_SEC })
-      assert.equal(p.length, 1)
+  it('refuses to start when the idle timeout is unset, zero, or negative', () => {
+    for (const SESSION_IDLE_SEC of [undefined, '0', '-1']) {
+      const p = productionStartupProblems({ SESSION_IDLE_SEC })
+      assert.equal(p.length, 1, String(SESSION_IDLE_SEC))
       assert.match(p[0], /SESSION_IDLE_SEC/)
     }
   })
 
-  it('starts GXP_STRICT with a positive idle timeout, and non-strict with none', () => {
-    assert.deepEqual(productionStartupProblems({ GXP_STRICT: 'true', SESSION_IDLE_SEC: '900' }), [])
-    assert.deepEqual(productionStartupProblems({ SESSION_IDLE_SEC: '0' }), [])
-  })
-
-  it('rejects production with AuthZ enforcement forced off', () => {
-    const p = productionStartupProblems({ ...good, AUTHZ_ENFORCE: 'false' })
-    assert.equal(p.length, 1)
-    assert.match(p[0], /AUTHZ_ENFORCE/)
-  })
-
-  it('accepts AuthZ enforcement unset or true in production', () => {
-    for (const AUTHZ_ENFORCE of [undefined, '', 'true']) {
-      assert.deepEqual(productionStartupProblems({ ...good, AUTHZ_ENFORCE }), [])
-    }
+  it('starts when the idle timeout is positive', () => {
+    assert.deepEqual(productionStartupProblems({ SESSION_IDLE_SEC: '900' }), [])
   })
 
   it('rejects production without a bootstrap admin', () => {
@@ -83,15 +70,12 @@ describe('production startup gate', () => {
     }
   })
 
-  it('rejects dev grant-all and dev mode in production only', () => {
-    const grant = productionStartupProblems({ ...good, AUTHZ_DEV_GRANT_ALL: 'true' })
-    assert.equal(grant.length, 1)
-    assert.match(grant[0], /AUTHZ_DEV_GRANT_ALL/)
+  it('rejects dev mode in production only', () => {
     const dev = productionStartupProblems({ ...good, AUTH_DEV_MODE: 'true' })
     assert.equal(dev.length, 1)
     assert.match(dev[0], /AUTH_DEV_MODE/)
     assert.deepEqual(
-      productionStartupProblems({ NODE_ENV: 'development', AUTHZ_DEV_GRANT_ALL: 'true' }),
+      productionStartupProblems({ NODE_ENV: 'development', AUTH_DEV_MODE: 'true', SESSION_IDLE_SEC: '900' }),
       [],
     )
   })
@@ -131,7 +115,11 @@ describe('production startup gate', () => {
       assert.match(p[0], /OXEN_UPSTREAM/)
     }
     assert.deepEqual(
-      productionStartupProblems({ NODE_ENV: 'development', OXEN_UPSTREAM: 'http://oxen.example.com' }),
+      productionStartupProblems({
+        NODE_ENV: 'development',
+        OXEN_UPSTREAM: 'http://oxen.example.com',
+        SESSION_IDLE_SEC: '900',
+      }),
       [],
     )
   })
@@ -143,19 +131,10 @@ describe('production startup gate', () => {
     )
   })
 
-  it('does nothing outside production', () => {
-    assert.doesNotThrow(() => assertProductionStartup({}))
-    assert.doesNotThrow(() => assertProductionStartup({ NODE_ENV: 'development' }))
-  })
-
-  it('keeps AuthZ enforcement on in production regardless of env or store', async () => {
-    const prev = process.env.NODE_ENV
-    process.env.NODE_ENV = 'production'
-    try {
-      assert.equal(await isAuthzEnforce(), true)
-    } finally {
-      if (prev === undefined) delete process.env.NODE_ENV
-      else process.env.NODE_ENV = prev
-    }
+  it('does nothing outside production when the idle timeout is positive', () => {
+    assert.doesNotThrow(() => assertProductionStartup({ SESSION_IDLE_SEC: '900' }))
+    assert.doesNotThrow(() =>
+      assertProductionStartup({ NODE_ENV: 'development', SESSION_IDLE_SEC: '900' }),
+    )
   })
 })

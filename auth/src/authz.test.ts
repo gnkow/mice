@@ -9,18 +9,8 @@ import './db/testSchema.js'
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-authz-'))
 
 process.env.AUTH_DATA_DIR = dataDir
-process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
-process.env.AUTHZ_GROUP_BOOTSTRAP = JSON.stringify({
-  'alice@example.com': {
-    namespace: 'from-group',
-    role: 'member',
-    createNamespace: true,
-    basePermission: 'read',
-  },
-})
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
@@ -40,7 +30,7 @@ const {
   preparePrincipal,
 } = await import('./authz.js')
 const { isCustomRepoRoleAssigned, removeRepoCollaborator, setRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
-const { addInstanceAdmin, hasInstancePermission, isAuthzEnforce, isInstanceAdmin, setAuthzEnforce, setInstancePermissions, removeInstanceAdmin, listInstanceAdmins, setTrainingCompletedSelf, hasCompletedTraining, writeInstancePermissions } = await import('./authzInstanceStore.js')
+const { addInstanceAdmin, hasInstancePermission, isInstanceAdmin, setInstancePermissions, removeInstanceAdmin, listInstanceAdmins, setTrainingCompletedSelf, hasCompletedTraining, writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { hasNamespaceCapability, isCustomNamespaceRoleAssigned, setNamespaceMember, setNamespaceGroupMember, removeNamespaceMember, removeNamespaceGroupMember, listNamespaceMembers } = await import('./authzMembershipStore.js')
 const { createNamespaceAuthz, deleteNamespaceAuthz, updateNamespaceSettings, getNamespace } = await import('./authzNamespaceStore.js')
 const {
@@ -95,7 +85,6 @@ const bob = {
 }
 
 before(async () => {
-  await setAuthzEnforce(true)
   await preparePrincipal(admin)
 })
 
@@ -270,10 +259,16 @@ await describe('Phase 2–3 extras', async () => {
     assert.equal(resolved.ok, true)
   })
 
-  await it('group bootstrap creates namespace membership', async () => {
-    await preparePrincipal(alice)
-    // alice email maps to from-group
-    assert.equal(await isPendingUser(alice), false)
+  await it('a first login grants nothing from an IdP group', async () => {
+    const stranger = {
+      sub: 'no-bootstrap',
+      iss: 'test',
+      email: 'no-bootstrap@example.com',
+      name: 'No Bootstrap',
+      groups: ['devs'],
+    }
+    await preparePrincipal(stranger)
+    assert.equal(await isPendingUser(stranger), true)
   })
 
   await it('IdP group member gets base permission', async () => {
@@ -580,26 +575,25 @@ await describe('Phase 2–3 extras', async () => {
 })
 
 await describe('enforcement gates', async () => {
-  await it('enforce off allows all /api decisions', async () => {
-    const stranger = mkUser('enforce-off-user')
-    const prev = env.authzEnforce
-    env.authzEnforce = 'false'
-    try {
-      assert.equal(await isAuthzEnforce(), false)
-      assert.equal(await isPendingUser(stranger), false)
-      const d = await authorizeApiRequest({
-        user: stranger,
-        via: 'session',
-        method: 'PUT',
-        pathname: '/api/repos/ns/repo/file/main/a.txt',
-      })
-      assert.equal(d.allow, true)
-      const audit = await authorizeAuditQuery(stranger, undefined)
-      assert.equal(audit.allow, true)
-    } finally {
-      env.authzEnforce = prev
-      await setAuthzEnforce(true)
-    }
+  await it('denies a Principal with no grant', async () => {
+    const stranger = mkUser('no-grant')
+    assert.equal(await isPendingUser(stranger), true)
+    const d = await authorizeApiRequest({
+      user: stranger,
+      via: 'session',
+      method: 'PUT',
+      pathname: '/api/repos/ns/repo/file/main/a.txt',
+    })
+    assert.equal(d.allow, false)
+    const audit = await authorizeAuditQuery(stranger, undefined)
+    assert.equal(audit.allow, false)
+    const version = await authorizeApiRequest({
+      user: stranger,
+      via: 'session',
+      method: 'GET',
+      pathname: '/api/version',
+    })
+    assert.equal(version.allow, true)
   })
 
   await it('create_namespace instance permission skips pending gate', async () => {
@@ -885,7 +879,6 @@ await describe('atomic instance + job gates', async () => {
   await it('manage_own_tokens and cli_device_approve deny without grant under enforce', async () => {
     const u = mkUser('token-cli-user')
     await writeInstancePermissions(u, [])
-    await setAuthzEnforce(true)
     assert.equal((await authorizeManageOwnTokens(u)).allow, false)
     assert.equal((await authorizeCliDeviceApprove(u)).allow, false)
     await writeInstancePermissions(u, ['manage_own_tokens', 'cli_device_approve'])
@@ -910,7 +903,6 @@ await describe('atomic instance + job gates', async () => {
     if (!role.ok) return
     await setRepoCollaborator(ns, repo, cancelOnly, role.role.id)
 
-    await setAuthzEnforce(true)
     assert.equal((await authorizeRepoAction(writer, ns, repo, 'job.cancel')).allow, true)
     assert.equal((await authorizeRepoAction(writer, ns, repo, 'job.complete')).allow, true)
     assert.equal((await authorizeRepoAction(writer, ns, repo, 'job.submit')).allow, true)
@@ -933,26 +925,18 @@ await describe('atomic instance + job gates', async () => {
     assert.equal(role.ok, true)
     if (!role.ok) return
     await setNamespaceMember(ns, viewer, role.role.id)
-    await setAuthzEnforce(true)
     assert.equal((await authorizeLineageQuery(viewer, ns, repo)).allow, true)
   })
 })
 
 await describe('lineage ACL', async () => {
-  await it('authorizeLineageQuery: enforce off → allow; outsider denied; reader allowed', async () => {
+  await it('authorizeLineageQuery: outsider denied; reader allowed', async () => {
     const ns = 'tc-lineage-acl'
     const repo = 'r1'
     await createNamespaceAuthz(admin, ns, 'none', true)
     await setRepoCollaborator(ns, repo, alice, 'read')
 
-    const prev = env.authzEnforce
-    env.authzEnforce = 'false'
-    try {
-      assert.equal((await authorizeLineageQuery(mkUser('anyone'), ns, repo)).allow, true)
-    } finally {
-      env.authzEnforce = prev
-      await setAuthzEnforce(true)
-    }
+    assert.equal((await authorizeLineageQuery(mkUser('anyone'), ns, repo)).allow, false)
 
     const outsider = mkUser('lin-outsider')
     await writeInstancePermissions(outsider, [])
@@ -975,25 +959,13 @@ await describe('lineage ACL', async () => {
     await setNamespaceMember(ns, alice, 'owner')
     await setRepoCollaborator(ns, repo, bob, 'write')
 
-    await setAuthzEnforce(true)
     assert.equal((await authorizeLineageRebuild(bob, ns, repo)).allow, false)
     assert.equal((await authorizeLineageRebuild(alice, ns, repo)).allow, true)
     assert.equal((await authorizeLineageRebuild(admin, ns, repo)).allow, true)
 
     await setRepoCollaborator(ns, repo, bob, 'admin')
     assert.equal((await authorizeLineageRebuild(bob, ns, repo)).allow, true)
-
-    const prev = env.authzEnforce
-    env.authzEnforce = 'false'
-    try {
-      assert.equal(
-        (await authorizeLineageRebuild(mkUser('stranger'), ns, repo)).allow,
-        true,
-      )
-    } finally {
-      env.authzEnforce = prev
-      await setAuthzEnforce(true)
-    }
+    assert.equal((await authorizeLineageRebuild(mkUser('stranger'), ns, repo)).allow, false)
   })
 })
 

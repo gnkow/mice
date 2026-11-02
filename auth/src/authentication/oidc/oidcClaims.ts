@@ -117,8 +117,7 @@ export function claimsFromPayload(
   const sub = typeof payload.sub === 'string' ? payload.sub : ''
   const iss = typeof payload.iss === 'string' ? payload.iss : opts.fallbackIssuer
   const email = typeof payload.email === 'string' ? payload.email : `${sub}@users.local`
-  const preferred = typeof payload.preferred_username === 'string' ? payload.preferred_username : ''
-  const name = (typeof payload.name === 'string' ? payload.name : '') || preferred || email.split('@')[0] || sub
+  const name = typeof payload.name === 'string' ? payload.name.trim() : ''
   if (!sub) throw new Error('id_token missing sub')
   
   const groupsOverage = hasGroupOverage(payload, opts.groupsClaim)

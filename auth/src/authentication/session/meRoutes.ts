@@ -6,12 +6,13 @@ import { authenticateUser } from './requireAuth.js'
 import { canReviewAccessRequests, listAccessRequests, resolveAccessRequest, submitAccessRequest } from '../../accessRequests.js'
 import { decideInstanceAction, isPendingUser } from '../../authz.js'
 import { canSearchDirectory, searchDirectory } from '../directory/directory.js'
-import { hasInstancePermission, isAuthzEnforce, isInstanceAdmin, setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from '../../authzInstanceStore.js'
+import { hasInstancePermission, isInstanceAdmin, setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from '../../authzInstanceStore.js'
 import { namespacesWithCapability } from '../../authzMembershipStore.js'
 import { userHasAnyGrant } from '../../authzVisibility.js'
 import { ALL_INSTANCE_PERMISSIONS, type InstancePermission, type MemberRoleRef } from '../../authzTypes.js'
 import { rememberNotificationUser } from '../../notifications.js'
 import { listPatsForUser, revokePat } from '../credentials/tokens.js'
+import { currentEmailsByAuthor } from './session.js'
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -34,7 +35,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
   app.get('/auth/me/authz', guarded({}, async ({ c, user: session }) => {
     const pending = await isPendingUser(session)
     return c.json({
-      enforce: await isAuthzEnforce(),
+      enforce: true,
       pending,
       instanceAdmin: await isInstanceAdmin(session),
       permissions: Object.fromEntries(
@@ -176,5 +177,12 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
       detail: { tokenId },
     })
     return c.json({ ok: true })
+  }))
+
+  /** Current emails for commit authors. The oxen commit is left unchanged. */
+  app.post('/auth/principals/emails', guarded({ body: 'json' }, async ({ c, body }) => {
+    const raw = body && typeof body === 'object' ? body.authors : undefined
+    const authors = Array.isArray(raw) ? raw.filter((a): a is string => typeof a === 'string') : []
+    return c.json({ emails: await currentEmailsByAuthor(authors.slice(0, 500)) })
   }))
 }

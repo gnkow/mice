@@ -143,20 +143,8 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     sessionsAuditRetentionDays: Number(
       src.SESSIONS_AUDIT_RETENTION_DAYS ?? 365,
     ),
-    /**
-     * AuthZ enforcement override: 'true' | 'false' | '' (use store flag).
-     * Default empty → store `enforce` (starts false until bootstrap).
-     */
-    authzEnforce: (src.AUTHZ_ENFORCE ?? '').toLowerCase(),
     /** Comma-separated emails or subject IDs for first instance admin. */
     authzBootstrapAdmins: src.AUTHZ_BOOTSTRAP_ADMINS ?? '',
-    /**
-     * When true, grant instance admin to every authenticated user.
-     * Useful for local Compose / e2e; keep off in shared environments.
-     */
-    authzDevGrantAll: src.AUTHZ_DEV_GRANT_ALL === 'true',
-    /** JSON map for IdP group / email → namespace or instance grants. */
-    authzGroupBootstrap: src.AUTHZ_GROUP_BOOTSTRAP ?? '',
     /** Phase 3: require training completion before product /api. */
     authzRequireTraining: src.AUTHZ_REQUIRE_TRAINING === 'true',
     /** Public base URL clients use for oxen CLI (scheme+host+port, no path). */

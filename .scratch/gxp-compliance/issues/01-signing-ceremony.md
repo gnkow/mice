@@ -31,7 +31,7 @@
 **Integration points:**
 - Merge endpoint requires signature in strict mode
 - Signature UI integrated into merge/PR review page
-- Author identity checked against signer identity
+- Author identity checked against signer identity. Commit `author` is the canonical `iss|sub` from `.scratch/authentication/issues/08-human-commit-author.md`
 - MFA evidence extracted from IdP claims (acr/amr)
 
 **Storage:**

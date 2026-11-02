@@ -1,6 +1,6 @@
-import { applyGroupBootstrap, interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
+import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
-import { hasCompletedTraining, hasInstancePermission, isAuthzEnforce, isInstanceAdmin, maybeBootstrapInstanceAdmin, maybeDevGrantAll } from './authzInstanceStore.js'
+import { hasCompletedTraining, hasInstancePermission, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
 import { ownedNamespaces, userCanSeeNamespace, userHasAnyGrant } from './authzVisibility.js'
@@ -59,13 +59,11 @@ function deny(reason: string, extra?: Partial<AuthzDecision>): AuthzDecision {
 }
 
 /**
- * Prepare principal: bootstrap / dev grant / group bootstrap. Writes state, so it runs
+ * Prepare principal: grant instance admin to an allowlisted identity. Writes state, so it runs
  * once at authentication and login; authorization decisions are read-only.
  */
 export async function preparePrincipal(user: SessionUser): Promise<void> {
   await maybeBootstrapInstanceAdmin(user)
-  await maybeDevGrantAll(user)
-  await applyGroupBootstrap(user)
 }
 
 export async function canSkipPendingGate(user: SessionUser): Promise<boolean> {
@@ -73,7 +71,6 @@ export async function canSkipPendingGate(user: SessionUser): Promise<boolean> {
 }
 
 export async function isPendingUser(user: SessionUser): Promise<boolean> {
-  if (!await isAuthzEnforce()) return false
   if (await canSkipPendingGate(user)) return false
   return !await userHasAnyGrant(user)
 }
@@ -224,13 +221,12 @@ export type AuthorizeInput = {
   createRepo?: string
 }
 
-/**
- * Authorize a proxied oxen API request. When AuthZ is not enforcing, always allow.
- */
+/** Authorize a proxied oxen API request. */
 export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzDecision> {
   const { user, via, method, pathname } = input
+  const interpreted = interpretRequest(method, pathname)
 
-  if (!await isAuthzEnforce()) return allow()
+  if (interpreted.kind === 'public') return allow()
 
   if (await isPendingUser(user)) {
     return deny('Access pending: no namespace membership or grants')
@@ -244,7 +240,6 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
     return deny('Training / GxP onboarding required')
   }
 
-  const interpreted = interpretRequest(method, pathname)
   const ns = interpreted.namespace ?? input.createNamespace
   const repo = interpreted.repo ?? input.createRepo
   const action = interpreted.authzAction
@@ -328,9 +323,6 @@ export async function authorizeAuditQuery(
   ownedOnly?: string[]
   reason?: string
 }> {
-  if (!await isAuthzEnforce()) {
-    return { allow: true }
-  }
   if ((await authorizeInstanceAction(user, 'audit.view')).allow) return { allow: true }
   const scoped = [
     ...new Set([
@@ -365,9 +357,6 @@ export async function authorizeLineageQuery(
   namespace?: string,
   repo?: string,
 ): Promise<{ allow: boolean; reason?: string }> {
-  if (!await isAuthzEnforce()) {
-    return { allow: true }
-  }
   if (!namespace || !repo) {
     if ((await authorizeInstanceAction(user, 'lineage.view')).allow) return { allow: true }
     return {
@@ -392,9 +381,6 @@ export async function authorizeLineageRebuild(
   namespace: string,
   repo: string,
 ): Promise<{ allow: boolean; reason?: string }> {
-  if (!await isAuthzEnforce()) {
-    return { allow: true }
-  }
   if (await isInstanceAdmin(user)) return { allow: true }
   const check = await hasRepoPermission(user, namespace, repo, 'admin', {
     method: 'POST',
@@ -435,7 +421,6 @@ export async function authorizeRepoAction(
   repo: string,
   action: RepoAction,
 ): Promise<{ allow: boolean; reason?: string }> {
-  if (!await isAuthzEnforce()) return { allow: true }
   const policy = REPO_ACTION_POLICY[action]
   const check = await hasRepoPermission(user, namespace, repo, policy.need, {
     method: policy.method,
@@ -464,34 +449,31 @@ type InstancePolicy = {
   permissions?: InstancePermission[]
   /** 'unscoped': scoped credentials never pass as admin. */
   admin: 'any' | 'unscoped'
-  /** When false the action is decided even while AuthZ enforcement is off. */
-  enforced: boolean
   reason: string
 }
 
 /**
  * Instance-wide actions: allowed for an instance admin or a holder of a named
- * permission. Each action records its denial reason and whether enforce-off allows it.
+ * permission. Each action records its denial reason.
  */
 const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
-  'tokens.manage': { permissions: ['manage_own_tokens'], admin: 'any', enforced: true, reason: 'Missing permission manage_own_tokens' },
-  'cli.device.approve': { permissions: ['cli_device_approve'], admin: 'any', enforced: true, reason: 'Missing permission cli_device_approve' },
-  'audit.view': { permissions: ['view_audit'], admin: 'any', enforced: true, reason: 'Missing permission view_audit' },
-  'lineage.view': { permissions: ['view_lineage'], admin: 'any', enforced: true, reason: 'Missing permission view_lineage' },
-  'store.admin': { admin: 'unscoped', enforced: true, reason: 'Requires instance admin' },
-  'instance.admin': { admin: 'any', enforced: false, reason: 'Forbidden' },
-  'serviceprincipal.admin': { admin: 'any', enforced: false, reason: 'Instance admin required' },
-  'directory.sync': { admin: 'any', enforced: false, reason: 'Instance admin required' },
-  'namespace.create': { permissions: ['create_namespace'], admin: 'any', enforced: false, reason: 'Missing permission create_namespace' },
-  'access.review.all': { permissions: ['create_namespace'], admin: 'any', enforced: false, reason: 'Forbidden' },
-  'session.admin': { permissions: ['session_admin'], admin: 'any', enforced: false, reason: 'Missing permission session_admin' },
-  'session.create': { permissions: ['session_admin', 'session_create'], admin: 'any', enforced: true, reason: 'Missing permission session_create' },
-  'session.connect': { permissions: ['session_connect'], admin: 'any', enforced: true, reason: 'Missing permission session_connect' },
+  'tokens.manage': { permissions: ['manage_own_tokens'], admin: 'any', reason: 'Missing permission manage_own_tokens' },
+  'cli.device.approve': { permissions: ['cli_device_approve'], admin: 'any', reason: 'Missing permission cli_device_approve' },
+  'audit.view': { permissions: ['view_audit'], admin: 'any', reason: 'Missing permission view_audit' },
+  'lineage.view': { permissions: ['view_lineage'], admin: 'any', reason: 'Missing permission view_lineage' },
+  'store.admin': { admin: 'unscoped', reason: 'Requires instance admin' },
+  'instance.admin': { admin: 'any', reason: 'Forbidden' },
+  'serviceprincipal.admin': { admin: 'any', reason: 'Instance admin required' },
+  'directory.sync': { admin: 'any', reason: 'Instance admin required' },
+  'namespace.create': { permissions: ['create_namespace'], admin: 'any', reason: 'Missing permission create_namespace' },
+  'access.review.all': { permissions: ['create_namespace'], admin: 'any', reason: 'Forbidden' },
+  'session.admin': { permissions: ['session_admin'], admin: 'any', reason: 'Missing permission session_admin' },
+  'session.create': { permissions: ['session_admin', 'session_create'], admin: 'any', reason: 'Missing permission session_create' },
+  'session.connect': { permissions: ['session_connect'], admin: 'any', reason: 'Missing permission session_connect' },
 }
 
 export async function decideInstanceAction(user: SessionUser, action: InstanceAction): Promise<Decision> {
   const policy = INSTANCE_ACTION_POLICY[action]
-  if (policy.enforced && !await isAuthzEnforce()) return ALLOWED
   const admin = policy.admin === 'unscoped' ? await isUnscopedInstanceAdmin(user) : await isInstanceAdmin(user)
   if (admin) return ALLOWED
   for (const p of policy.permissions ?? []) if (await hasInstancePermission(user, p)) return ALLOWED

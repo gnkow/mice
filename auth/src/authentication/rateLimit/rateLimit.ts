@@ -103,19 +103,21 @@ export async function checkRateLimit(
  * Record a request for rate limiting.
  * Fails silently if storage is unavailable (check happens before record).
  */
+/** Writes one hit. Returns false when the counter store cannot be written. */
 export async function recordRateLimitRequest(
   limitKey: string,
   endpoint: string
-): Promise<void> {
+): Promise<boolean> {
   try {
     await getDb().insert(rateLimits).values({
       limitKey,
       endpoint,
       requestedAt: new Date(),
     })
+    return true
   } catch (error) {
-    // Log but don't throw - the check already happened
     console.error('Failed to record rate limit request:', error)
+    return false
   }
 }
 

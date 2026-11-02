@@ -14,7 +14,7 @@
  */
 
 import type { SessionUser } from '../session/session.js'
-import { lookupKeycloakUserStatus, type DirectoryUserStatus } from '../directory/directory.js'
+import { directoryNow, type DirectoryUserState } from '../directory/directory.js'
 
 /**
  * Checks the user's status with the IdP.
@@ -23,15 +23,15 @@ import { lookupKeycloakUserStatus, type DirectoryUserStatus } from '../directory
  * @returns The IdP status
  * @throws Error if IdP is unreachable (error status)
  */
-export async function checkUserIdpStatus(user: SessionUser): Promise<DirectoryUserStatus> {
-  const status = await lookupKeycloakUserStatus(user.sub)
-  
+export async function checkUserIdpStatus(user: SessionUser): Promise<DirectoryUserState> {
+  const account = await directoryNow().userStatus(user.sub)
+
   // If IdP returned 'error', it means the directory is unreachable
-  if (status === 'error') {
+  if (account.status === 'error') {
     throw new Error('IdP is unreachable - cannot verify user status')
   }
-  
-  return status
+
+  return account
 }
 
 /**
@@ -43,10 +43,9 @@ export async function checkUserIdpStatus(user: SessionUser): Promise<DirectoryUs
  */
 export async function verifyIdpAccess(user: SessionUser): Promise<boolean> {
   try {
-    const status = await checkUserIdpStatus(user)
-    
-    // User must be enabled
-    return status === 'enabled'
+    const account = await checkUserIdpStatus(user)
+
+    return account.status === 'enabled' && account.name.trim().length > 0
   } catch (error) {
     // IdP unreachable - deny access (no cache fallback)
     return false

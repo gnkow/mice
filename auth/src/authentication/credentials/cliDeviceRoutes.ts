@@ -4,14 +4,17 @@ import { parsePatScopes } from './patScopes.js'
 import { guarded, type GuardPolicy } from '../session/routeGuard.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { authorizeCliDeviceApprove, isPendingUser, preparePrincipal } from '../../authz.js'
-import { isAuthzEnforce, isInstanceAdmin } from '../../authzInstanceStore.js'
+import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { userHasAnyGrant } from '../../authzVisibility.js'
 import { approveDevice, denyDevice, lookupDeviceByUserCode, pollDevice, startDeviceAuth } from './cliDevice.js'
 import { findPatByToken, revokePatByToken } from './tokens.js'
+import { logoutCliCredential, refreshCliCredential } from './cliCredentials.js'
 import { bearerToken, resolveBearer } from '../session/requireAuth.js'
 import type { SessionUser } from '../session/session.js'
 import { extractClientIp, hashIp, getDisplaySuffix } from '../../ipHash.js'
 import { checkDeviceApprovalRateLimit, recordDeviceApproval, getRecentApprovals } from './deviceApprovalRateLimit.js'
+import { enforceIpRateLimit } from '../rateLimit/rateLimitMiddleware.js'
+import { RATE_LIMIT_CONFIG } from '../rateLimit/rateLimit.js'
 
 /** Public CLI remote hint and the device-login pairing flow (no IdP device grant required). */
 export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -39,6 +42,8 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   // --- CLI device login (Mice-native pairing; no IdP device grant required) ---
 
   app.post('/auth/cli/device/start', async (c) => {
+    const limited = await enforceIpRateLimit(c, RATE_LIMIT_CONFIG.deviceFlow)
+    if (limited) return limited
     let raw: unknown
     let deviceName: string | undefined
     try {
@@ -182,16 +187,40 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     await auditMutation(c, result.user, 'pat', {
       action: 'device.redeem',
       message: 'CLI device login completed; token issued',
-      detail: { patId: result.patId },
+      detail: { expiresIn: result.expiresIn },
     })
     return c.json({
       status: 'approved',
       access_token: result.token,
       token: result.token,
-      pat_id: result.patId,
+      refresh_token: result.refreshToken,
+      expires_in: result.expiresIn,
       remote: result.remote,
       auth_host: result.authHost,
       user: result.user,
+    })
+  })
+
+  app.post('/auth/cli/refresh', async (c) => {
+    const limited = await enforceIpRateLimit(c, RATE_LIMIT_CONFIG.refresh)
+    if (limited) return limited
+    let refreshToken = ''
+    try {
+      const body = (await c.req.json()) as { refresh_token?: string }
+      refreshToken = body.refresh_token ?? ''
+    } catch {
+      return c.json({ error: 'Invalid body' }, 400)
+    }
+    if (!refreshToken.trim()) return c.json({ error: 'refresh_token required' }, 400)
+    const next = await refreshCliCredential(refreshToken)
+    if ('error' in next) {
+      const status = next.error === 'idp_unreachable' ? 503 : 401
+      return c.json({ error: next.error }, status)
+    }
+    return c.json({
+      access_token: next.accessToken,
+      refresh_token: next.refreshToken,
+      expires_in: next.expiresIn,
     })
   })
 
@@ -199,7 +228,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     const bearer = bearerToken(c)
     if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
     const user = await resolveBearer(c)
-    const ok = await revokePatByToken(bearer)
+    const ok = (await logoutCliCredential(bearer)) || (await revokePatByToken(bearer))
     if (!ok) return c.json({ error: 'Token not found' }, 404)
     if (user) {
       await auditMutation(c, user, 'pat', {
@@ -230,7 +259,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
         ? { id: pat.id, label: pat.label, source: pat.source ?? 'manual' }
         : null,
       authz: {
-        enforce: await isAuthzEnforce(),
+        enforce: true,
         pending,
         instanceAdmin: await isInstanceAdmin(user),
         hasAnyGrant: await userHasAnyGrant(user),

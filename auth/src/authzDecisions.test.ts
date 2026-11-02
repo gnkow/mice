@@ -3,12 +3,11 @@ import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { isolatedAuth } from './testSupport.js'
 
-// AUTHZ_ENFORCE unset so the stored flag drives enforcement and tests can flip it.
-const t = isolatedAuth({ AUTHZ_ENFORCE: '' })
+const t = isolatedAuth()
 after(() => t.restore())
 
 const authz = await import('./authz.js')
-const { setAuthzEnforce, setInstancePermissions } = await import('./authzInstanceStore.js')
+const { setInstancePermissions } = await import('./authzInstanceStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { setNamespaceMember } = await import('./authzMembershipStore.js')
 const { createCustomNamespaceRole } = await import('./customRoles.js')
@@ -17,7 +16,6 @@ const { decideInstanceAction, decideNamespaceAction, decideAccessReview, decideS
 const admin = t.admin
 await preparePrincipal(admin)
 const scoped = <T extends object>(u: T) => ({ ...u, patScopes: [{ namespace: 'x', maxRole: 'read' as const }] })
-const enforce = (on: boolean) => setAuthzEnforce(on)
 
 const ALLOW = { allow: true, status: 200, reason: 'ok' }
 const deny = (reason: string) => ({ allow: false, status: 403, reason })
@@ -26,8 +24,6 @@ type InstanceCase = {
   action: Parameters<typeof decideInstanceAction>[1]
   permission?: Parameters<typeof setInstancePermissions>[2][number]
   reason: string
-  /** Decided even when enforcement is off. */
-  alwaysDecided?: boolean
   /** A scoped admin is rejected. */
   adminUnscopedOnly?: boolean
 }
@@ -38,12 +34,12 @@ const INSTANCE_CASES: InstanceCase[] = [
   { action: 'audit.view', permission: 'view_audit', reason: 'Missing permission view_audit' },
   { action: 'lineage.view', permission: 'view_lineage', reason: 'Missing permission view_lineage' },
   { action: 'store.admin', reason: 'Requires instance admin', adminUnscopedOnly: true },
-  { action: 'instance.admin', reason: 'Forbidden', alwaysDecided: true },
-  { action: 'serviceprincipal.admin', reason: 'Instance admin required', alwaysDecided: true },
-  { action: 'directory.sync', reason: 'Instance admin required', alwaysDecided: true },
-  { action: 'namespace.create', permission: 'create_namespace', reason: 'Missing permission create_namespace', alwaysDecided: true },
-  { action: 'access.review.all', permission: 'create_namespace', reason: 'Forbidden', alwaysDecided: true },
-  { action: 'session.admin', permission: 'session_admin', reason: 'Missing permission session_admin', alwaysDecided: true },
+  { action: 'instance.admin', reason: 'Forbidden' },
+  { action: 'serviceprincipal.admin', reason: 'Instance admin required' },
+  { action: 'directory.sync', reason: 'Instance admin required' },
+  { action: 'namespace.create', permission: 'create_namespace', reason: 'Missing permission create_namespace' },
+  { action: 'access.review.all', permission: 'create_namespace', reason: 'Forbidden' },
+  { action: 'session.admin', permission: 'session_admin', reason: 'Missing permission session_admin' },
   { action: 'session.create', permission: 'session_create', reason: 'Missing permission session_create' },
   { action: 'session.connect', permission: 'session_connect', reason: 'Missing permission session_connect' },
 ]
@@ -57,34 +53,23 @@ describe('decideInstanceAction matrix', () => {
       await preparePrincipal(none)
       if (c.permission) await setInstancePermissions(admin, holder, [c.permission])
 
-      it('enforce off', async () => {
-        await enforce(false)
-        const expected = c.alwaysDecided ? deny(c.reason) : ALLOW
-        assert.deepEqual(await decideInstanceAction(none, c.action), expected)
-        assert.deepEqual(await decideInstanceAction(admin, c.action), ALLOW)
-      })
-
       it('admin allows', async () => {
-        await enforce(true)
         assert.deepEqual(await decideInstanceAction(admin, c.action), ALLOW)
       })
 
       if (c.permission) {
         it('named permission allows', async () => {
-          await enforce(true)
           assert.deepEqual(await decideInstanceAction(holder, c.action), ALLOW)
         })
       }
 
       it('scoped credential', async () => {
-        await enforce(true)
         const expectedAdmin = c.adminUnscopedOnly ? deny(c.reason) : ALLOW
         assert.deepEqual(await decideInstanceAction(scoped(admin) as never, c.action), expectedAdmin)
         if (c.permission) assert.deepEqual(await decideInstanceAction(scoped(holder) as never, c.action), ALLOW)
       })
 
       it('none denies with the recorded reason', async () => {
-        await enforce(true)
         assert.deepEqual(await decideInstanceAction(none, c.action), deny(c.reason))
       })
     })
@@ -116,34 +101,29 @@ describe('decideNamespaceAction matrix', async () => {
 
   for (const c of CASES) {
     describe(c.action, () => {
-      it('is not gated by the enforce flag', async () => {
-        await enforce(false)
+      it('denies a non-member and allows the owner', async () => {
         assert.deepEqual(await decideNamespaceAction(none, 'ns1', c.action), deny(c.reason))
         assert.deepEqual(await decideNamespaceAction(owner, 'ns1', c.action), ALLOW)
       })
 
       it('admin and owner allow', async () => {
-        await enforce(true)
         assert.deepEqual(await decideNamespaceAction(owner, 'ns1', c.action), ALLOW)
         assert.deepEqual(await decideNamespaceAction(admin, 'ns1', c.action), ALLOW)
       })
 
       if (c.named) {
         it('named capability or membership allows', async () => {
-          await enforce(true)
           assert.deepEqual(await decideNamespaceAction(c.named, 'ns1', c.action), ALLOW)
         })
       }
 
       it('scoped credential', async () => {
-        await enforce(true)
         const scopedReviewer = scoped(reviewer) as never
         const expected = 'unscopedOnly' in c ? deny(c.reason) : c.named ? ALLOW : deny(c.reason)
         assert.deepEqual(await decideNamespaceAction(scopedReviewer, 'ns1', c.action), expected)
       })
 
       it('none denies with the recorded reason', async () => {
-        await enforce(true)
         assert.deepEqual(await decideNamespaceAction(none, 'ns1', c.action), deny(c.reason))
         assert.deepEqual(await decideNamespaceAction(member, 'ns1', c.action), c.named === member ? ALLOW : deny(c.reason))
       })
@@ -157,29 +137,24 @@ describe('composite decisions', async () => {
   const reviewer = t.person('comp-reviewer')
   for (const u of [none, creator, reviewer]) await preparePrincipal(u)
 
-  it('access review: admin, create_namespace or a review capability; others deny; enforce irrelevant', async () => {
+  it('access review: admin, create_namespace or a review capability; others deny', async () => {
     await createNamespaceAuthz(creator, 'ns2', 'none')
     const role = await createCustomNamespaceRole('ns2', { name: 'R', permissions: ['review_access_requests'] })
     if (role.ok) await setNamespaceMember('ns2', reviewer, role.role.id)
     await setInstancePermissions(admin, creator, ['create_namespace'])
-    for (const on of [true, false]) {
-      await enforce(on)
-      assert.deepEqual(await decideAccessReview(admin), ALLOW)
-      assert.deepEqual(await decideAccessReview(creator), ALLOW)
-      assert.deepEqual(await decideAccessReview(reviewer), ALLOW)
-      assert.deepEqual(await decideAccessReview(none), deny('Forbidden'))
-    }
+    assert.deepEqual(await decideAccessReview(admin), ALLOW)
+    assert.deepEqual(await decideAccessReview(creator), ALLOW)
+    assert.deepEqual(await decideAccessReview(reviewer), ALLOW)
+    assert.deepEqual(await decideAccessReview(none), deny('Forbidden'))
   })
 
   it('service principal management: admin or owner', async () => {
-    await enforce(true)
     assert.deepEqual(await decideServicePrincipalManage(admin, false), ALLOW)
     assert.deepEqual(await decideServicePrincipalManage(none, true), ALLOW)
     assert.deepEqual(await decideServicePrincipalManage(none, false), deny('Forbidden'))
   })
 
   it('repo collaborator management carries status and reason', async () => {
-    await enforce(true)
     assert.deepEqual(await authz.decideManageRepoCollaborators(admin, 'ns2', 'r'), ALLOW)
     assert.deepEqual(await authz.decideManageRepoCollaborators(none, 'ns2', 'r'), deny('Forbidden'))
   })

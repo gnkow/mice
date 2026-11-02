@@ -34,6 +34,7 @@ export function RepoSettingsPage() {
   const [collabSub, setCollabSub] = useState('')
   const [collabIss, setCollabIss] = useState('mice-dev')
   const [collabGroup, setCollabGroup] = useState('')
+  const [collabGroupName, setCollabGroupName] = useState('')
   const [collabRole, setCollabRole] = useState<CollaboratorRoleRef>('read')
   const [customRepoRoles, setCustomRepoRoles] = useState<
     Array<{ id: string; name: string }>
@@ -226,8 +227,10 @@ export function RepoSettingsPage() {
                     <div className="ns-member-main">
                       {c.kind === 'group' ? (
                         <>
-                          <code className="ns-member-sub">{c.group}</code>
-                          <span className="muted small">Group</span>
+                          <code className="ns-member-sub">{c.name || c.group}</code>
+                          <span className="muted small">
+                            {c.name && c.name !== c.group ? c.group : 'Group'}
+                          </span>
                         </>
                       ) : (
                         <>
@@ -287,9 +290,11 @@ export function RepoSettingsPage() {
                   await putRepoCollaborator(namespace, repo, {
                     kind: 'group',
                     group: collabGroup.trim(),
+                    name: collabGroupName.trim() || collabGroup.trim(),
                     role: collabRole,
                   })
                   setCollabGroup('')
+                  setCollabGroupName('')
                 } else {
                   await putRepoCollaborator(namespace, repo, {
                     kind: 'user',
@@ -324,8 +329,12 @@ export function RepoSettingsPage() {
                 <DirectoryPicker
                   kind="group"
                   group={collabGroup}
+                  label={collabGroupName}
                   disabled={busy}
-                  onChange={({ group }) => setCollabGroup(group)}
+                  onChange={({ group, name }) => {
+                    setCollabGroup(group)
+                    setCollabGroupName(name)
+                  }}
                 />
               ) : (
                 <DirectoryPicker

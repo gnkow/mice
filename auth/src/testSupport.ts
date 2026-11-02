@@ -5,8 +5,6 @@ import { resolve } from 'node:path'
 const BASE_ENV: Record<string, string> = {
   SESSION_SECRET: 'test-session-secret',
   OXEN_UPSTREAM: 'http://127.0.0.1:3001',
-  AUTHZ_ENFORCE: 'true',
-  AUTHZ_DEV_GRANT_ALL: 'false',
   AUTHZ_REQUIRE_TRAINING: 'false',
   AUTHZ_BOOTSTRAP_ADMINS: 'admin@mice.local',
 }

@@ -39,12 +39,10 @@ export async function rateLimitByIp(
 ): Promise<RateLimitResult> {
   const limitKey = await ipRateLimitKey(ip)
   const result = await checkRateLimit(limitKey, config)
-  
-  // Record the request if allowed (for next time)
-  if (result.allowed) {
-    await recordRateLimitRequest(limitKey, config.endpoint)
-  }
-  
+  if ('error' in result || !result.allowed) return result
+
+  const recorded = await recordRateLimitRequest(limitKey, config.endpoint)
+  if (!recorded) return { error: true, message: 'Rate limit storage unavailable' }
   return result
 }
 
@@ -59,12 +57,10 @@ export async function rateLimitByPrincipal(
   const key = principalKey(user)
   const limitKey = principalRateLimitKey(key)
   const result = await checkRateLimit(limitKey, config)
-  
-  // Record the request if allowed (for next time)
-  if (result.allowed) {
-    await recordRateLimitRequest(limitKey, config.endpoint)
-  }
-  
+  if ('error' in result || !result.allowed) return result
+
+  const recorded = await recordRateLimitRequest(limitKey, config.endpoint)
+  if (!recorded) return { error: true, message: 'Rate limit storage unavailable' }
   return result
 }
 
@@ -107,10 +103,13 @@ export function handleRateLimitError(c: Context, result: RateLimitResult): Respo
   throw new Error('handleRateLimitError called with allowed result')
 }
 
-/**
- * Extract client IP from request headers.
- * Supports X-Forwarded-For (standard proxy header) and CF-Connecting-IP (Cloudflare).
- */
+/** The 429 or 503 response, or null when the request may proceed. */
+export async function enforceIpRateLimit(c: Context, config: RateLimitConfig): Promise<Response | null> {
+  const result = await rateLimitByIp(getClientIp(c), config)
+  if ('error' in result || !result.allowed) return handleRateLimitError(c, result)
+  return null
+}
+
 export function getClientIp(c: Context): string {
   // Try X-Forwarded-For first (standard)
   const forwarded = c.req.header('x-forwarded-for')

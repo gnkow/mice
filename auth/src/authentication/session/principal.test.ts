@@ -5,8 +5,6 @@ import { describe, it } from 'node:test'
 process.env.SESSION_SECRET = 'test-session-secret-for-identity'
 process.env.AUTHZ_BOOTSTRAP_ADMINS =
   'boss@example.com,https://idp-a.example/realms/mice|admin-sub,ghost@users.local'
-process.env.AUTHZ_GROUP_BOOTSTRAP = '{}'
-
 const { maybeBootstrapInstanceAdmin, isInstanceAdmin } = await import('../../authzInstanceStore.js')
 const { matchesIdentityEntry, isScopedCredential } = await import('./principal.js')
 
@@ -45,6 +43,24 @@ describe('bootstrap identity matching', () => {
     await reset()
     assert.equal(await maybeBootstrapInstanceAdmin(u), true)
     assert.equal(await isInstanceAdmin(u), true)
+  })
+
+  it('grants every allowlisted identity after an admin already exists', async () => {
+    await reset()
+    const first = { sub: 's1', iss: 'i', email: 'boss@example.com', emailVerified: true, name: 'B' }
+    assert.equal(await maybeBootstrapInstanceAdmin(first), true)
+    const second = {
+      sub: 'admin-sub',
+      iss: 'https://idp-a.example/realms/mice',
+      email: 'other@example.com',
+      emailVerified: true,
+      name: 'A',
+    }
+    assert.equal(await maybeBootstrapInstanceAdmin(second), true)
+    assert.equal(await isInstanceAdmin(second), true)
+    const outsider = { sub: 'x', iss: 'i', email: 'x@example.com', emailVerified: true, name: 'X' }
+    assert.equal(await maybeBootstrapInstanceAdmin(outsider), false)
+    assert.equal(await isInstanceAdmin(outsider), false)
   })
 
   it('never matches a bare sub or the @users.local fallback', () => {

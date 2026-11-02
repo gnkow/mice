@@ -18,8 +18,6 @@ process.env.SESSIONS_ENABLED = 'true'
 process.env.SESSIONS_PROVISIONER = 'mock'
 process.env.SESSIONS_MAX_PER_USER = '50'
 process.env.SESSIONS_MAX_MOUNTS = '8'
-process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 
@@ -29,7 +27,7 @@ const { WorkspaceService, setWorkspaceService } = await import('./workspaces/wor
 const { LeaseError } = await import('./workspaces/leases.js')
 const { resetHostVolumePathsForTest } = await import('./workspaces/capabilities.js')
 const { FakeOxen } = await import('./workspaces/fakeOxen.js')
-const { setAuthzEnforce, writeInstancePermissions } = await import('./authzInstanceStore.js')
+const { writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { setNamespaceMember } = await import('./authzMembershipStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { preparePrincipal } = await import('./authz.js')
@@ -42,7 +40,6 @@ resetHostVolumePathsForTest({ store: '/host/store', ws: '/host/ws' })
 const C1 = 'c1111111111111111111111111111111'
 const admin: { sub: string; iss: string; email: string; emailVerified?: boolean; name: string } = { sub: 'admin', iss: 'test', email: 'admin@mice.local', emailVerified: true, name: 'Admin' }
 const reader = { sub: 'reader', iss: 'test', email: 'reader@example.com', name: 'Reader' }
-await setAuthzEnforce(true)
 await preparePrincipal(admin)
 await preparePrincipal(reader)
 await createNamespaceAuthz(admin, 'rns', 'read', true)

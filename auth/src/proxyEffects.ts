@@ -1,13 +1,12 @@
 import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
 import { setRepoCollaborator } from './authzCollaboratorStore.js'
 import { decideInstanceAction } from './authz.js'
-import { isAuthzEnforce } from './authzInstanceStore.js'
 import { ensureNamespaceForCreate, getNamespace } from './authzNamespaceStore.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
 import { type SessionUser } from './authentication/index.js'
 
 /**
- * Under enforce, narrow `GET /api/namespaces` to the caller's visible namespaces.
+ * Narrow `GET /api/namespaces` to the caller's visible namespaces.
  * Returns the rewritten body, or null when the response is left untouched.
  * The upstream body is consumed whenever a JSON catalog is read.
  */
@@ -18,7 +17,6 @@ export async function filterNamespaceCatalog(
   upstream: Response,
 ): Promise<string | null> {
   if (
-    !await isAuthzEnforce() ||
     method !== 'GET' ||
     (pathname.replace(/\/+$/, '') || '/') !== '/api/namespaces' ||
     !upstream.ok

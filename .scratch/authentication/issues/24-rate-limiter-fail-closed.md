@@ -1,23 +1,27 @@
-# 24: Rate Limiter Fail-Closed (U22)
+Status: done
 
-**What to build:** Shared rate limiters (across BFF instances) for authentication endpoints. Rate-limit counter store (Redis or Postgres) unreachable = 503 (fail-closed, not fail-open). Per-IP and per-Principal limits.
+# 24: Rate limits on authentication endpoints
 
-**Blocked by:** None (can start immediately)
+**Spec:** `.specs/01-authentication.md` (U22, Q24)
 
-**Status:** ready-for-agent
+**Blocked by:** none
 
-## Acceptance Criteria
+Device-approval limiting is issue 25 and stays on its own counter.
 
-- [ ] Rate limit counter storage shared across BFF instances (Redis preferred, Postgres fallback)
-- [ ] Per-IP limits: login callback (10/min), device flow initiation (5/min), token refresh (20/min)
-- [ ] Per-Principal limits: device approval (5/10min per U15), token minting (10/hour)
-- [ ] Fail-closed: if counter store unreachable, return 503 "Service Unavailable" (not allow unlimited)
-- [ ] Alert on rate limit store outage (logging + metrics)
-- [ ] Rate limit exceeded returns 429 "Too Many Requests" with Retry-After header
-- [ ] Tests for rate limiting (per-IP, per-Principal), fail-closed behavior (store down = 503), cross-instance enforcement
+## What to build
 
-## Context
+Login callback, device-flow start, and token refresh use the shared Postgres rate-limit counters so every BFF instance sees the same counts. Limits: login callback 10/minute per IP, device-flow start 5/minute per IP, token refresh 20/minute per IP, token mint 10/hour per Principal. Over the limit, respond 429 with `Retry-After`. If the counter store cannot be read or written, respond 503 and log the outage.
 
-Round 8 decision U22 clarifies that strict mode is ALWAYS ON (not a switch), so rate limiters must fail-closed always. Part 11 §11.10 requires "authority checks." Allowing unlimited requests when the rate limiter is down enables credential stuffing attacks that bypass account lockout.
+## Outcome
 
-Consistent with U10 (no break-glass) - correctness over availability.
+`GET /auth/callback`, `POST /auth/cli/device/start`, and `POST /auth/cli/refresh` check the shared `rate_limits` counter before they do their work. The limits are 10 login callbacks per minute per IP, 5 device-flow starts per minute per IP, and 20 refreshes per minute per IP. Over the limit the response is 429 with `Retry-After: 60`. A failed read or a failed write of the counter returns 503 and is logged. Two apps in one process share the counter because both use the same Postgres table. Device approval keeps the issue 25 counter.
+
+There is no live token-mint route. PAT mint is unregistered, and device approval is not this counter, so the configured 10-per-hour Principal mint limit is not attached to a request.
+
+## Acceptance
+
+- [x] Login callback, device-flow start, and token refresh call the shared limiter before doing work
+- [x] The login, device-start, and refresh thresholds above are the ones enforced
+- [x] A store error returns 503 and is logged
+- [x] A count over the limit returns 429 with `Retry-After`
+- [x] Two BFF instances share one counter for the same key

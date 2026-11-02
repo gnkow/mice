@@ -5,7 +5,7 @@ import type {
   Directory,
   DirectoryGroupHit,
   DirectoryUserHit,
-  DirectoryUserStatus,
+  DirectoryUserState,
 } from './directoryTypes.js'
 
 export type KeycloakDirectoryConfig = {
@@ -16,6 +16,17 @@ export type KeycloakDirectoryConfig = {
   clientSecret: string
   /** Issuer stamped on user hits. */
   issuer: string
+}
+
+/** Object id is the grant key. Without an id, the normalized leaf name stays the key. */
+function groupHit(g: { id?: string; name?: string; path?: string }): DirectoryGroupHit | null {
+  const leaf = (g.name || g.path || '').replace(/^\//, '').split('/').pop() ?? ''
+  const display = (g.name || leaf).trim()
+  const id = g.id?.trim()
+  if (id) return { kind: 'group', group: id, name: display || id }
+  const name = normalizeGroup(leaf)
+  if (!name) return null
+  return { kind: 'group', group: name, name }
 }
 
 /** Keycloak Admin API adapter. Owns the HTTP calls and its own token cache. */
@@ -126,13 +137,12 @@ export function createKeycloakDirectory(
           console.error('[mice-auth] Keycloak group search failed', res.status)
           return []
         }
-        const rows = (await res.json()) as Array<{ name?: string; path?: string }>
+        const rows = (await res.json()) as Array<{ id?: string; name?: string; path?: string }>
         const out: DirectoryGroupHit[] = []
         for (const g of rows) {
-          const raw = g.name || g.path || ''
-          const name = normalizeGroup(raw.replace(/^\//, '').split('/').pop() ?? raw)
-          if (!name) continue
-          out.push({ kind: 'group', group: name, name })
+          const hit = groupHit(g)
+          if (!hit) continue
+          out.push(hit)
           if (out.length >= limit) break
         }
         return out
@@ -142,23 +152,41 @@ export function createKeycloakDirectory(
       }
     },
 
-    async userStatus(sub): Promise<DirectoryUserStatus> {
+    async userStatus(sub): Promise<DirectoryUserState> {
       const tok = await token()
-      if (!tok) return 'error'
+      if (!tok) return { status: 'error', name: '' }
       try {
         const res = await doFetch(`${adminBase()}/users/${encodeURIComponent(sub)}`, {
           headers: { Authorization: `Bearer ${tok}` },
         })
-        if (res.status === 404) return 'missing'
-        if (!res.ok) return 'error'
-        const user = (await res.json()) as { enabled?: boolean }
-        return user.enabled === false ? 'disabled' : 'enabled'
+        if (res.status === 404) return { status: 'missing', name: '' }
+        if (!res.ok) return { status: 'error', name: '' }
+        const user = (await res.json()) as { enabled?: boolean; firstName?: string; lastName?: string }
+        const name = [user.firstName, user.lastName].map((part) => part?.trim() ?? '').filter(Boolean).join(' ')
+        return { status: user.enabled === false ? 'disabled' : 'enabled', name }
       } catch {
-        return 'error'
+        return { status: 'error', name: '' }
       }
     },
 
-    async getUserGroups(sub): Promise<string[]> {
+    async getGroup(id): Promise<{ id: string; name: string } | null> {
+      const tok = await token()
+      if (!tok || !id.trim()) return null
+      try {
+        const res = await doFetch(`${adminBase()}/groups/${encodeURIComponent(id)}`, {
+          headers: { Authorization: `Bearer ${tok}` },
+        })
+        if (!res.ok) return null
+        const row = (await res.json()) as { id?: string; name?: string; path?: string }
+        const hit = groupHit({ ...row, id: row.id || id })
+        return hit ? { id: hit.group, name: hit.name } : null
+      } catch (err) {
+        console.error('[mice-auth] Keycloak group fetch error', err)
+        return null
+      }
+    },
+
+    async getUserGroups(sub): Promise<Array<{ id: string; name: string }>> {
       const tok = await token()
       if (!tok) return []
       try {
@@ -169,12 +197,11 @@ export function createKeycloakDirectory(
           console.error('[mice-auth] Keycloak user groups fetch failed', res.status)
           return []
         }
-        const rows = (await res.json()) as Array<{ name?: string; path?: string }>
-        const groups: string[] = []
+        const rows = (await res.json()) as Array<{ id?: string; name?: string; path?: string }>
+        const groups: Array<{ id: string; name: string }> = []
         for (const g of rows) {
-          const raw = g.name || g.path || ''
-          const name = normalizeGroup(raw.replace(/^\//, '').split('/').pop() ?? raw)
-          if (name) groups.push(name)
+          const hit = groupHit(g)
+          if (hit) groups.push({ id: hit.group, name: hit.name })
         }
         return groups
       } catch (err) {

@@ -15,7 +15,11 @@ function setup() {
     repo,
     clock,
     config: { webOrigin: 'http://web', remote: 'http://oxen:8080', authHost: 'oxen:8080' },
-    mint: async () => ({ token: `mice_pat_raw${++minted}`, patId: `pat${minted}` }),
+    mint: async () => ({
+      token: `mice_pat_raw${++minted}`,
+      refreshToken: `refresh${minted}`,
+      expiresIn: 8 * 60 * 60,
+    }),
     discard: async () => {},
   })
   return { clock, repo, devices }

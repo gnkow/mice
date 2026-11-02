@@ -1,13 +1,23 @@
+Status: done
+
 # 05: Authentication event audit and failure alerts
 
-**What to build:** Every authentication event is attributable. Login, refresh, logout, step-up, failure and revocation are audited with request id and Principal, never with IPs, tokens, cookies or codes. Errors are uniform and constant-time. Five failures in 10 minutes alert security admins.
+**Spec:** `.specs/01-authentication.md` (T7, S2)
 
-**Blocked by:** 03 (session lifecycle and CSRF), 04 (live IdP check and access states)
+Hashed IPs on these events are issue 44. U8 supersedes the earlier "store no IP" rule.
 
-**Status:** resolved
+## Outcome
 
-- [x] Each listed event type produces an audit entry; an inspector query by Principal and month returns all logins
-- [x] A redaction test fails if any token, cookie or code reaches logs or audit
-- [x] No IP address is stored in any field
-- [x] Failed attempts yield identical external responses and timing
-- [x] Alert fires after 5 failed or refused attempts for one Principal in 10 minutes
+Login, refresh, logout, step-up, failure, and revocation append an audit entry with request id and Principal. Tokens, cookies, and codes are redacted. Five failed or refused attempts for one Principal inside 10 minutes raise an in-process security alert.
+
+## Acceptance
+
+- [x] Each listed event type produces an audit entry that can be queried by Principal
+- [x] A redaction test fails if a token, cookie, or code reaches logs or audit
+- [x] Failed attempts yield the same external error shape
+- [x] An alert fires after 5 failed or refused attempts for one Principal in 10 minutes
+
+## Code
+
+- `auth/src/authentication/audit/authEvents.ts`
+- `auth/src/authentication/audit/authEvents.test.ts`

@@ -54,6 +54,7 @@ export function NamespaceSettingsPage() {
   const [sub, setSub] = useState('')
   const [iss, setIss] = useState('mice-dev')
   const [group, setGroup] = useState('')
+  const [groupName, setGroupName] = useState('')
   const [role, setRole] = useState<MemberRoleRef>('member')
 
   async function saveSettings(patch: {
@@ -90,9 +91,11 @@ export function NamespaceSettingsPage() {
         await putNamespaceMember(namespace, {
           kind: 'group',
           group: group.trim(),
+          name: groupName.trim() || group.trim(),
           role,
         })
         setGroup('')
+        setGroupName('')
       } else {
         await putNamespaceMember(namespace, {
           kind: 'user',
@@ -262,6 +265,12 @@ export function NamespaceSettingsPage() {
                     Owners manage this namespace. Members inherit the base
                     permission above.
                   </p>
+                  {state.data.unresolvedGroups.length > 0 && (
+                    <p className="flash flash-error" role="status">
+                      These groups are no longer in the identity provider:{' '}
+                      {state.data.unresolvedGroups.join(', ')}
+                    </p>
+                  )}
                 </div>
                 <p className="muted small ns-settings-count">
                   {state.data.members.length} member
@@ -285,8 +294,10 @@ export function NamespaceSettingsPage() {
                       <div className="ns-member-main">
                         {m.kind === 'group' ? (
                           <>
-                            <code className="ns-member-sub">{m.group}</code>
-                            <span className="muted small">Group</span>
+                            <code className="ns-member-sub">{m.name || m.group}</code>
+                            <span className="muted small">
+                              {m.name && m.name !== m.group ? m.group : 'Group'}
+                            </span>
                           </>
                         ) : (
                           <>
@@ -337,8 +348,12 @@ export function NamespaceSettingsPage() {
                     <DirectoryPicker
                       kind="group"
                       group={group}
+                      label={groupName}
                       disabled={busy}
-                      onChange={({ group: g }) => setGroup(g)}
+                      onChange={({ group: g, name }) => {
+                        setGroup(g)
+                        setGroupName(name)
+                      }}
                     />
                   ) : (
                     <DirectoryPicker

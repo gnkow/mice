@@ -172,8 +172,8 @@ Recommendation: (a), and record the migration and rollback rule in an ADR.
 Challenges: "Database maintenance and migrations are the database containers' operations".
 
 ## Q10 [Impl] The production start gate relies on a variable that the stack does not even set
-The gate refuses dev defaults only when the production mode variable is set, and the shipped Compose does not set it. An operator who forgets it starts a "production" system with the dev secrets, a permissive grant-all mode and disabled TLS verification, with no error. The plan wanted rejection of several more settings and of unpinned images, but the spec only restates a generic story.
-Example: Compose goes live with the default secret and grant-all left on, a scientist logs in, and everyone is an admin.
+The gate refuses dev defaults only when the production mode variable is set, and the shipped Compose does not set it. An operator who forgets it starts a "production" system with the dev secrets and disabled TLS verification, with no error. The plan wanted rejection of several more settings and of unpinned images, but the spec only restates a generic story.
+Example: Compose goes live with the default session secret left in place, and the process starts with no error.
 Options: (a) invert the default so the gate applies unless an explicit development flag is set; (b) require production mode and fail fast in the packaged images; (c) keep as is.
 Recommendation: (a), with the gate's rejection list in the spec and in a start-gate test per rule.
 Challenges: "As an operator, I want the BFF to refuse to start with dev defaults"; the production gate coverage.

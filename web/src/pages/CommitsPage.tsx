@@ -8,6 +8,7 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { AuthorAvatar } from '../components/AuthorAvatar'
+import { CommitEmail } from '../components/CommitEmail'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { CommitList } from '../components/CommitList'
 import { StateBlock } from '../components/StateBlock'
@@ -298,9 +299,7 @@ export function CommitsPage() {
                     <AuthorAvatar name={commit.author} />
                     <p className="history-detail-byline muted small">
                       <span>{commit.author}</span>
-                      {commit.email ? (
-                        <span className="mono">&lt;{commit.email}&gt;</span>
-                      ) : null}
+                      <CommitEmail author={commit.author} stored={commit.email} />
                       <time
                         dateTime={commit.timestamp}
                         title={new Date(commit.timestamp).toLocaleString()}

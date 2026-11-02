@@ -1,6 +1,7 @@
 import { ChevronUp as ActionChevronUp, FolderGit2 as ActionFolderGit2, Plus as ActionPlus, Trash2 as ActionTrash2, X as ActionX } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { DirectoryPicker } from '../components/DirectoryPicker'
 import {
   NamespaceCreateSettings,
   type NamespaceCreateSettingsValue,
@@ -29,7 +30,7 @@ const NEW_NS = '__new__'
 
 type PendingCollaborator =
   | { kind: 'user'; sub: string; iss: string; role: RepoRole }
-  | { kind: 'group'; group: string; role: RepoRole }
+  | { kind: 'group'; group: string; name?: string; role: RepoRole }
 
 function readmeContents(name: string, description: string) {
   const desc = description.trim()
@@ -65,6 +66,7 @@ export function NewRepoPage() {
   const [collabSub, setCollabSub] = useState('')
   const [collabIss, setCollabIss] = useState('mice-dev')
   const [collabGroup, setCollabGroup] = useState('')
+  const [collabGroupName, setCollabGroupName] = useState('')
   const [collabRole, setCollabRole] = useState<RepoRole>('read')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -117,9 +119,18 @@ export function NewRepoPage() {
         const without = prev.filter(
           (c) => !(c.kind === 'group' && c.group === group),
         )
-        return [...without, { kind: 'group', group, role: collabRole }]
+        return [
+          ...without,
+          {
+            kind: 'group',
+            group,
+            name: collabGroupName.trim() || group,
+            role: collabRole,
+          },
+        ]
       })
       setCollabGroup('')
+      setCollabGroupName('')
       return
     }
     const sub = collabSub.trim()
@@ -313,8 +324,12 @@ export function NewRepoPage() {
                       >
                         {c.kind === 'group' ? (
                           <>
-                            <code>{c.group}</code>
-                            <span className="muted small">· IdP group</span>
+                            <code>{c.name || c.group}</code>
+                            <span className="muted small">
+                              {c.name && c.name !== c.group
+                                ? `· ${c.group}`
+                                : '· IdP group'}
+                            </span>
                           </>
                         ) : (
                           <>
@@ -365,16 +380,16 @@ export function NewRepoPage() {
                     </select>
                   </label>
                   {collabKind === 'group' ? (
-                    <label>
-                      Group
-                      <input
-                        value={collabGroup}
-                        onChange={(e) => setCollabGroup(e.target.value)}
-                        placeholder="engineering"
-                        autoComplete="off"
-                        disabled={busy}
-                      />
-                    </label>
+                    <DirectoryPicker
+                      kind="group"
+                      group={collabGroup}
+                      label={collabGroupName}
+                      disabled={busy}
+                      onChange={({ group, name }) => {
+                        setCollabGroup(group)
+                        setCollabGroupName(name)
+                      }}
+                    />
                   ) : (
                     <>
                       <label>

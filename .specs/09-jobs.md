@@ -71,6 +71,8 @@ Images, inputs and secrets
 - Jobs are refused on a dirty Workspace, always (Q26).
 
 Results, audit and lineage
+- A result commit stores the submitting Principal as `author` (canonical `iss|sub`) and that Principal's email at submission as `email`. The message ends with one attribution line, `Job: <job id>, Token: sha256:<hash>`. A client-supplied `Job:` line is removed first. A human commit does not get the line. The line is not a signature, and a Job cannot sign. Moved from authentication issue 21 (U6, T2); the `Submitted-by` trailer is not used.
+- A job token lasts only for that job's maximum runtime. At commit the BFF re-checks the submitting Principal with the IdP. A disabled or revoked submitter blocks the result commit. An unreachable IdP leaves that commit in finalizing until the IdP returns or the retention window ends, and it is never auto-approved. The job may finish running; only the result commit is blocked. Moved from authentication issue 36 (U13, Q20, Q83, T1). This replaces Q19's recommendation to cancel the running job.
 - Hold the result and retry the Intent in a visible "finalizing" state; Intent at submit and at finalize (Q9).
 - Execution status and delivery status are split; the Outcome carries both (Q27).
 - Log SHA-256 plus head/tail in the Outcome; full log durable; `log_truncated` marker (Q16).
@@ -251,7 +253,7 @@ Challenges: Plan §4 "Job ↔ commit link (locked)" vs existing local Docker beh
 Admin revoke by `iss`+`sub` is the decided group-revocation path and invalidates Sessions and earlier PATs. A queued or running Job is already authorized, and its eventual commit is authored as the revoked Principal. Manual offboarding means there may be a gap of days.
 Example: a departing scientist is revoked at 09:00; a 12-hour Job submitted at 08:30 finishes at 20:30 and merges a commit authored by the revoked person into `main`.
 Options: (a) revocation cancels the Principal's queued and running Jobs and blocks commit on revocation; (b) completes the Job but holds the result on the safe branch pending review; (c) leave running Jobs alone.
-Recommendation: (a), recorded as a system cancel with reason "principal revoked", plus a repo-admin override to adopt the result as a new Job.
+Recommendation: (a), recorded as a system cancel with reason "principal revoked", plus a repo-admin override to adopt the result as a new Job. Superseded: the running job finishes, and a disabled or revoked submitter blocks the result commit. An unreachable IdP holds that commit in finalizing. See Results, audit and lineage.
 Challenges: Cross-cutting "admin revoke per iss+sub is the group-revocation path".
 
 ## Q20 [Impl] Stuck-job detection has no owner and a circular dependency with 14
@@ -376,7 +378,7 @@ Challenges: Cross-cutting rename decision; spec silent on Jobs vs rename.
 - **Q20 (queued-threshold only) versus 14 Q18 (heartbeat-based stuck detection)**: Must align. 09 uses queued-threshold only (no silence detection); 14 may use heartbeat. Reconcile the two approaches. Single DB-leased detector (Q20) emits system events consumed by 14.
 
 ## Service principals and CI removed
-- **Q13/Q19 (service principals removed) and 01 (no SPs)**: CI unsupported. Jobs use BFF-internal job tokens tied to submitting human (story 13). 12-14 and 00 Q19 must reflect removal. Automated commits attributed to submitter plus "performed by Job <id>" marker (authentication T2).
+- **Q13/Q19 (service principals removed) and 01 (no SPs)**: CI unsupported. Jobs use BFF-internal job tokens tied to submitting human (story 13). 12-14 and 00 Q19 must reflect removal. A result commit is attributed to the submitter in `author` and `email`, with the `Job:` / `Token:` line from Results, audit and lineage.
 
 ## Automated commits never signed, merge needs human
 - **Q6 and 08 Q7 (automated commits never signed)**: Jobs commit to safe branch unsigned. Merge to main needs a human maintainer signature (05 Q11, 04). Review gate (Merge+maintain) is preserved. Lineage shows "unsigned/pending" for Job commits until merged.
@@ -394,7 +396,7 @@ Challenges: Cross-cutting rename decision; spec silent on Jobs vs rename.
 
 ## Depends on
 - **Depends on 00 (Cross-cutting)**: No automatic retries (Q23/00 Q23). Service principals removed (Q13/00 Q19). Absolute fail-closed (Q9/00 Q3). Digest-verifiable inference else unknown (inherited 00 Q5).
-- **Depends on 01 (Authentication)**: Revoke cancels queued/running Jobs and blocks commit (Q19/01 Q20). No service principals (Q13/01 Q12, Q13). BFF-internal job tokens (story 13).
+- **Depends on 01 (Authentication)**: The live IdP check and Principal revocation are authentication. Job token lifetime and the result-commit hold are in this spec. No service principals (Q13/01 Q12, Q13). BFF-internal job tokens (story 13).
 - **Depends on 02 (Authorization)**: Job submission needs authorization. Credential scoping (inherited 02 Q19). No PATs (Q13/02 Q21).
 - **Depends on 04 (GxP Compliance)**: Automated commits never signed (Q6/04 Q7). Legal-hold and retention (Q17/04 Q15/00 Q8). Approved-image catalogue (Q8/04 Q8) enforced under strict.
 - **Depends on 05 (Repositories)**: Static repo names (Q28/05 Q25); Jobs reference repo ids. Rename refused while Jobs exist (Q28).
@@ -403,7 +405,7 @@ Challenges: Cross-cutting rename decision; spec silent on Jobs vs rename.
 
 ## Cross-cutting impacts
 - **00 (Cross-cutting)**: Service principals removed (Q13/00 Q19). No automatic retries (Q23/00 Q23). Jobs use BFF-internal tokens (authentication T2).
-- **01 (Authentication)**: Job tokens checked at commit (authentication Q37). Revoke blocks running Job commit (Q19/01 Q20). Submitter re-checked at commit (authentication Q71, Q82).
+- **01 (Authentication)**: The IdP user-status check used at result commit is authentication. Job token lifetime, the commit hold, and the attribution line are in this spec.
 - **02 (Authorization)**: Job submission authorized per user. No PATs or SPs (Q13/02 Q21).
 - **03 (Audit)**: Job submit/start/finish/fail audited (story 7). Finalizing state with audit-pending header (Q9/03 Q21). Intent at submit and at finalize (Q9).
 - **04 (GxP Compliance)**: Automated commits unsigned (Q6/04 Q7/08 Q7). Merge to main needs human signature. Approved-image catalogue (Q8).

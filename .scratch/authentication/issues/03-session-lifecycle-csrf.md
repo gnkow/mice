@@ -1,13 +1,27 @@
+Status: done
+
 # 03: Session lifecycle and CSRF
 
-**What to build:** Sessions end correctly and cannot be forged cross-site. Absolute 8 h and 30 min idle limits, unlimited concurrent Sessions per Principal with a "my sessions" list and revoke-one, logout, cookie key-ring rotation, Origin and mutation-header checks, and a server-side relative return target.
+**Spec:** `.specs/01-authentication.md` (U2, U4, Q51)
 
-**Blocked by:** 02 (web login tracer)
+Idle timeout of zero is issue 33. The 30-day seal-key schedule is issue 34. The cap of five sessions is issue 15.
 
-**Status:** resolved
+## Outcome
 
-- [x] Idle Sessions expire at 30 min; no signing from an idle Session; absolute lifetime 8 h
-- [x] A user sees and can revoke any of their own Sessions
-- [x] Logout ends the Session; open redirects through the return target are rejected
-- [ ] Cookie key ring rotates without logging users out (deferred - requires key rotation mechanism)
-- [x] Mutations without the required header or with a foreign Origin are rejected
+Sessions expire after 15 minutes idle (`SESSION_IDLE_SEC` default 900) and 8 hours absolute (`SESSION_TTL_SEC` default 28800). Activity updates `lastActive`. The user can list and revoke one of their own sessions. Logout destroys the server-side row and clears the cookie. Return targets are relative paths. Mutations from a cookie session require an Origin that matches the public web origin. Session cookies are sealed with the key ring from issue 17, so a rotation keeps existing sessions readable while an old key is still valid.
+
+## Acceptance
+
+- [x] Idle sessions expire at 15 minutes; absolute lifetime is 8 hours
+- [x] A user can list and revoke any of their own sessions
+- [x] Logout ends the session; a non-relative return target is rejected
+- [x] The cookie key ring can unseal with any still-valid key
+- [x] Cookie-session mutations without the required header or with a foreign Origin are rejected
+
+## Code
+
+- `auth/src/authentication/session/session.ts`
+- `auth/src/authentication/session/cookieSeal.ts`
+- `auth/src/authentication/session/csrf.ts`
+- `auth/src/authentication/session/webSessionRoutes.ts`
+- `web/src/components/WebSessionsList.tsx`

@@ -8,6 +8,8 @@ import { rememberNotificationUser } from '../../notifications.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { clearSessionCookie, destroySession, getSession, setSessionCookie } from '../session/session.js'
 import { handleReauthCallback } from './stepUp.js'
+import { enforceIpRateLimit } from '../rateLimit/rateLimitMiddleware.js'
+import { RATE_LIMIT_CONFIG } from '../rateLimit/rateLimit.js'
 
 /** After Mice logout, next /auth/login must show IdP credentials (no silent SSO). */
 const PROMPT_LOGIN_COOKIE = 'mice_prompt_login'
@@ -31,6 +33,8 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
   })
 
   app.get('/auth/callback', async (c) => {
+    const limited = await enforceIpRateLimit(c, RATE_LIMIT_CONFIG.login)
+    if (limited) return limited
     if (!oidcConfigured()) return c.json({ error: 'OIDC is not configured' }, 503)
     const pkceCookie = getCookie(c, PKCE_COOKIE)
     deleteCookie(c, PKCE_COOKIE, {

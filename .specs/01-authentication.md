@@ -150,7 +150,7 @@ Status: needs-info on Q70 details (cap, listing) and legal confirmation of Q48/Q
 
 Basis: 21 CFR Part 11, EU Annex 11, ALCOA+. Supersedes earlier rounds on conflict.
 
-- R1: auto-provision gives zero rights. Bootstrap rules (Q69) may grant read-only baseline only; write, sign and approve always need a recorded admin grant. IdP re-enable restores access automatically if disabled 30 days or less; longer needs admin re-confirmation. Every restore is audited. (Refines Q31, Q32, Q69.)
+- R1: auto-provision gives zero rights. `AUTHZ_GROUP_BOOTSTRAP` is removed (authorization issue 11); write, sign and approve always need a recorded admin grant. IdP re-enable restores access automatically if disabled 30 days or less; longer needs admin re-confirmation. Every restore is audited. (Refines Q31, Q32, Q69.)
 - R2: NO identity data is erasable. Mapping is retained for the full retention period (reverses Q48 and Q76 pseudonymised/erasable mapping). Raw iss+sub in audit and trailers is acceptable. Legal basis (GDPR Art. 17(3)) must be documented. Consequence: 13 Q24 "keep and ignore" and all erasure items are consistent; the pseudonym/HMAC design is dropped.
 - R3: all security events including source IPs go to immudb with full retention (reverses Q41 90-day log and Q81). RISK: IPs are personal data under GDPR; minimisation and documented legal basis needed; 16 Q19 applies to audit.
 - R4: bulk approval is one authentication ceremony with one signature record per item (own name, time, meaning, record hash, shared ceremony id); cap 50 items (replaces the single signed manifest in Q75).
@@ -179,7 +179,7 @@ Status: needs-info on legal confirmation of R2/R3 retention basis (pending).
 - S5: hard segregation of duties: nobody approves or signs off their own submission or Job; enforced in the BFF per record; refusals audited; no admin override.
 - S6: each signature record stores IdP authentication evidence (auth time, method and strength claims, IdP session id, token id) with meaning, time and record hash.
 - S7: any change to a Principal's roles or grants ends their Sessions and CLI credentials; fresh login required.
-- S8: iss+sub is never reused and is permanently bound to one person record; reissue to another person refuses login and raises an incident; rehire gets the same Principal if the sub matches, else a new Principal linked by an admin-signed note.
+- S8: iss+sub is never reused and is permanently bound to one person. The IdP validates uniqueness and the link to a human (ADR 0006). Mice does not detect reissue, raise an identity-reuse incident, or require an admin-signed rehire link.
 - S9: admins cannot edit or delete audit, signature or Principal-history records by any route; support access is read-only and audited; DB superuser access is break-glass outside Mice under an SOP.
 
 ## Round 7 decisions (regulatory gaps)
@@ -218,7 +218,7 @@ Basis: 21 CFR Part 11 §11.50, §11.100, §11.200, §11.300; EU Annex 11; ALCOA+
 - U19: Signature records store both extracted claims (acr, amr, auth_time) AND verification metadata (JWKS key ID used, token signature verified timestamp, IdP issuer). Proves Mice validated IdP's assertion, not just copied claims. Satisfies Part 11 §11.200 evidence. (Refines S6, Q43.)
 - U20: IdP baseline drift detection. Baseline includes: MFA claims available, required OIDC scopes, token signature algorithm (RS256 vs HS256), group claim format. Daily automated check (T5). On critical drift (MFA claims missing, signature algorithm changed): block signing (not all auth). On non-critical drift (group format changed): alert only. Operator reviews and updates baseline if intentional change. (Refines R6, T5, Q45.)
 - U21: Greenfield deployment (no migration). Q26 migration concerns removed from spec. All users and credentials created fresh.
-- U22: Strict mode is ALWAYS ON (not a switch). Rate limiters fail-closed always. Rate-limit counter store (Redis/Postgres) unreachable = 503 for authentication endpoints (login, device flow, token refresh). Consistent with U10 (no break-glass). (Refines Q24, Q21, GXP_STRICT decision.)
+- U22: Strict mode is ALWAYS ON. There is no `GXP_STRICT` switch. `SESSION_IDLE_SEC` must be greater than zero on every start. Rate limiters fail-closed always. Rate-limit counter store (Redis/Postgres) unreachable = 503 for authentication endpoints (login, device flow, token refresh). Consistent with U10 (no break-glass). (Refines Q24, Q21.)
 
 ### New conflicts and risks (Round 8)
 
@@ -242,7 +242,7 @@ Effective rules where answers conflicted (includes Round 8 updates):
 - Q48/Q76 pseudonym: dropped by R2 (raw iss+sub always)
 - Q77 deferred append: dropped by R8 (fail-closed always)
 - Q75/R4 bulk approval: dropped by U12 (no bulk approval at all)
-- Q69 bootstrap: limited to read-only baseline by R1
+- Q69 bootstrap: removed with `AUTHZ_GROUP_BOOTSTRAP` (R1, authorization issue 11)
 - S9 support access: amended by T3 (no support access)
 - Q26 migration: removed by U21 (greenfield only)
 - Line 35 "2s cache": removed by U3 (no cache tolerance)

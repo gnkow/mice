@@ -4,7 +4,6 @@ import { readAuditAfter, type AuditEvent } from './audit.js'
 import { authorizeRepoAction, decideInstanceAction, hasRepoPermission } from './authz.js'
 import { denialResponse } from './decisionHttp.js'
 import { authenticate, isScopedCredential, type SessionUser } from './authentication/index.js'
-import { isAuthzEnforce } from './authzInstanceStore.js'
 import { userCanSeeNamespace } from './authzVisibility.js'
 import { canReviewAccessRequests } from './accessRequests.js'
 import { getJob } from './jobsStore.js'
@@ -72,9 +71,9 @@ async function authorized(user: SessionUser, event: NotificationEvent, personal:
   if (r?.namespace && r.repo) {
     return event.category === 'jobs' || r.type === 'job'
       ? (await authorizeRepoAction(user, r.namespace, r.repo, 'job.read')).allow
-      : !await isAuthzEnforce() || (await hasRepoPermission(user, r.namespace, r.repo, 'read')).ok
+      : (await hasRepoPermission(user, r.namespace, r.repo, 'read')).ok
   }
-  if (r?.namespace) return !await isAuthzEnforce() || await userCanSeeNamespace(user, r.namespace)
+  if (r?.namespace) return userCanSeeNamespace(user, r.namespace)
   return personal
 }
 

@@ -25,11 +25,11 @@ export type UserKey = { sub: string; iss: string }
 
 export type MemberPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: MemberRoleRef }
-  | { kind: 'group'; group: string; role: MemberRoleRef }
+  | { kind: 'group'; group: string; role: MemberRoleRef; name?: string }
 
 export type CollaboratorPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: CollaboratorRoleRef }
-  | { kind: 'group'; group: string; role: CollaboratorRoleRef }
+  | { kind: 'group'; group: string; role: CollaboratorRoleRef; name?: string }
 
 export const userKey = principalKey
 export const parseUserKey = parsePrincipalKey

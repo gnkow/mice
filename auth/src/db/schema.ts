@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { type PatScope } from '../authentication/index.js'
+import type { AccessReviewReport } from '../authentication/compliance/accessReview.js'
 import type { JobRun } from '../jobsTypes.js'
 import type { LineageOp } from '../lineage.js'
 import type { DesktopSession } from '../sessionsTypes.js'
@@ -24,16 +25,6 @@ import {
 
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' })
-
-/** Singleton row holding instance-wide switches. */
-export const instanceSettings = pgTable(
-  'instance_settings',
-  {
-    id: smallint('id').primaryKey().default(1),
-    enforce: boolean('enforce').notNull().default(false),
-  },
-  (t) => [check('instance_settings_singleton', sql`${t.id} = 1`)],
-)
 
 export const instanceAdmins = pgTable('instance_admins', {
   userKey: text('user_key').primaryKey(),
@@ -149,6 +140,30 @@ export const accessRequests = pgTable(
   ],
 )
 
+/** A CLI login family: rotating refresh tokens share one 30-day expiry and one revocation. */
+export const cliCredentialFamilies = pgTable('cli_credential_families', {
+  id: text('id').primaryKey(),
+  iss: text('iss').notNull(),
+  sub: text('sub').notNull(),
+  email: text('email').notNull(),
+  name: text('name').notNull(),
+  scopes: jsonb('scopes').$type<PatScope[]>(),
+  createdAt: ts('created_at').notNull(),
+  expiresAt: ts('expires_at').notNull(),
+  revokedAt: ts('revoked_at'),
+})
+
+/** Hashed CLI access or refresh token. The raw value is returned once and never stored. */
+export const cliCredentialTokens = pgTable('cli_credential_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  familyId: text('family_id')
+    .notNull()
+    .references(() => cliCredentialFamilies.id),
+  kind: text('kind').notNull(),
+  expiresAt: ts('expires_at').notNull(),
+  usedAt: ts('used_at'),
+})
+
 /** One row per PAT, keyed by the SHA-256 of the token so a raw token is never stored. */
 export const pats = pgTable(
   'pats',
@@ -206,9 +221,36 @@ export const principals = pgTable(
     createdAt: ts('created_at').notNull(),
     /** Current name from IdP (updated on each login) - Ticket 22 */
     name: text('name'),
+    /** Current email from IdP (updated on each login). */
+    email: text('email'),
+    /** Latest web Session start. */
+    lastLoginAt: ts('last_login_at'),
+    /** Mice flags such as `suspended`. Independent of IdP status. */
+    flags: text('flags').array().notNull().default(sql`'{}'::text[]`),
   },
   (t) => [uniqueIndex('principals_iss_sub_key').on(t.iss, t.sub)],
 )
+
+/** Set and lift of a Mice flag, with the reason, the actor, and the time. */
+export const principalFlagHistory = pgTable('principal_flag_history', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  principalId: bigint('principal_id', { mode: 'number' })
+    .notNull()
+    .references(() => principals.id, { onDelete: 'cascade' }),
+  flag: text('flag').notNull(),
+  action: text('action').notNull(),
+  reason: text('reason').notNull(),
+  actorIss: text('actor_iss').notNull(),
+  actorSub: text('actor_sub').notNull(),
+  at: ts('at').notNull(),
+})
+
+/** One stored quarterly access review. A later generate for the same quarter returns this row. */
+export const accessReviewReports = pgTable('access_review_reports', {
+  quarter: text('quarter').primaryKey(),
+  report: jsonb('report').$type<AccessReviewReport>().notNull(),
+  createdAt: ts('created_at').notNull(),
+})
 
 /** Name change history for Principals (Ticket 22, U11). Tracks name over time for audit trail. */
 export const principalNameHistory = pgTable(
@@ -229,6 +271,37 @@ export const principalNameHistory = pgTable(
   },
   (t) => [
     index('principal_name_history_principal_idx').on(t.principalId, t.validFrom),
+  ],
+)
+
+/**
+ * Ticket 05: Principal disabled periods tracking
+ * 
+ * Tracks when principals are disabled in the IdP and when they're re-enabled.
+ * Used to determine automatic vs manual restoration of access.
+ */
+export const principalDisabledPeriods = pgTable(
+  'principal_disabled_periods',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    principalId: bigint('principal_id', { mode: 'number' })
+      .notNull()
+      .references(() => principals.id, { onDelete: 'cascade' }),
+    /** When the principal was first detected as disabled in IdP */
+    disabledAt: ts('disabled_at').notNull(),
+    /** When the principal was detected as re-enabled in IdP (null = still disabled) */
+    reEnabledAt: ts('re_enabled_at'),
+    /** Type of restoration: 'automatic' | 'admin-confirmed' | 'denied' | 'pending' */
+    restorationType: text('restoration_type'),
+    /** Principal key of admin who confirmed restoration (for admin-confirmed type) */
+    confirmedBy: text('confirmed_by'),
+    /** Reference to audit event for this restoration */
+    auditEventId: text('audit_event_id'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('principal_disabled_periods_principal_idx').on(t.principalId),
+    index('principal_disabled_periods_pending_idx').on(t.restorationType).where(sql`${t.restorationType} = 'pending'`),
   ],
 )
 
@@ -274,6 +347,8 @@ export const deviceAuthorizations = pgTable(
     scopes: jsonb('scopes').$type<PatScope[]>(),
     token: text('token'),
     patId: text('pat_id'),
+    /** Raw refresh token, present only while the device approval is unconsumed. */
+    refreshToken: text('refresh_token'),
     userSub: text('user_sub'),
     userIss: text('user_iss'),
     userEmail: text('user_email'),

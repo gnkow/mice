@@ -2,13 +2,8 @@ import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
-process.env.AUTHZ_GROUP_BOOTSTRAP = JSON.stringify({
-  'ra-fresh@example.com': { instancePermissions: ['view_audit'] },
-})
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 

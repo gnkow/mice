@@ -1,12 +1,15 @@
 import type { Context, Hono, MiddlewareHandler } from 'hono'
-import type { AuditVia } from '../../audit.js'
+import { actorFromUser, appendAudit, type AuditVia } from '../../audit.js'
 import { sameOriginGuard } from './csrf.js'
 import { preparePrincipal } from '../../authz.js'
 import { env } from '../../env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
-import { can, isScopedCredential, type Capability } from './principal.js'
+import { can, canonicalIssuer, isScopedCredential, type Capability } from './principal.js'
+import { resolveCliCredential } from '../credentials/cliCredentials.js'
 import { resolvePat } from '../credentials/tokens.js'
-import { verifyIdpAccess } from '../access/idpCheck.js'
+import { checkUserIdpStatus } from '../access/idpCheck.js'
+import { isSuspended } from '../access/miceSuspension.js'
+import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
 
 /** Unattended page polls must not keep an idle Session alive. */
 const BACKGROUND_POLL = /^\/auth\/(notifications|announcements)(\/|$)/
@@ -36,7 +39,8 @@ export function bearerToken(c: Context): string {
 /** The PAT's owner for a bearer token, or null when it is expired, revoked or unknown. */
 export async function resolveBearer(c: Context): Promise<SessionUser | null> {
   const token = bearerToken(c)
-  return token ? resolvePat(token) : null
+  if (!token) return null
+  return (await resolvePat(token)) ?? (await resolveCliCredential(token))
 }
 
 export type AuthenticationObserver = (user: SessionUser) => void
@@ -123,6 +127,19 @@ export type AuthOutcome =
 
 const deny = (status: 400 | 401 | 403 | 503, error: string): AuthOutcome => ({ ok: false, status, error })
 
+async function refuseSuspended(c: Context, user: SessionUser, via: 'session' | 'pat'): Promise<AuthOutcome> {
+  await appendAudit({
+    actor: actorFromUser(user),
+    via,
+    method: c.req.method,
+    path: c.req.path,
+    status: 403,
+    action: 'auth.suspended',
+    message: `Refused ${canonicalIssuer(user.iss)}|${user.sub}`,
+  })
+  return deny(403, 'Suspended')
+}
+
 /**
  * Authenticates a request against a policy: cookie Session first, then a PAT, with the
  * scoped-credential and service-principal rules decided here rather than per route.
@@ -143,13 +160,37 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
       }
     }
     if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
-    
-    // Ticket #19 (U3): Check IdP status on every request (no throttling)
-    const idpEnabled = await verifyIdpAccess(session)
-    if (!idpEnabled) {
+
+    let account: Awaited<ReturnType<typeof checkUserIdpStatus>>
+    try {
+      account = await checkUserIdpStatus(session)
+    } catch {
       return deny(503, 'Service Unavailable - IdP check failed')
     }
-    
+    const idpStatus = account.status
+    if (idpStatus === 'disabled') await recordIdpDisabled(session)
+    if (idpStatus !== 'enabled') {
+      return deny(503, 'Service Unavailable - IdP check failed')
+    }
+    if (!account.name.trim()) {
+      return deny(403, 'Your account has no name in the identity provider.')
+    }
+    const reenable = await considerReenable(session, async (event) => {
+      const stored = await appendAudit({
+        actor: actorFromUser(session),
+        via: 'session',
+        method: c.req.method,
+        path: c.req.path,
+        status: 200,
+        action: 'auth.reenable.automatic',
+        message: event.message,
+        detail: event.detail,
+      })
+      return stored?.id ?? null
+    })
+    if (reenable === 'awaiting-confirmation') return deny(403, 'Re-enable confirmation required')
+    if (await isSuspended(session)) return refuseSuspended(c, session, 'session')
+
     await preparePrincipal(session)
     return { ok: true, user: session, via: 'session' }
   }
@@ -158,6 +199,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   const pat = await resolveBearer(c)
   if (!pat || (!policy.allowScoped && isScopedCredential(pat))) return deny(401, 'Authentication required')
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
+  if (await isSuspended(pat)) return refuseSuspended(c, pat, 'pat')
   await preparePrincipal(pat)
   return { ok: true, user: pat, via: 'pat' }
 }

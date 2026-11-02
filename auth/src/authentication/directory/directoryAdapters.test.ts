@@ -47,6 +47,40 @@ describe('Keycloak directory adapter', () => {
     return { clock, calls, directory: createKeycloakDirectory(config, { fetch: fetchFn, clock }) }
   }
 
+  it('returns a user group object id and the current display name', async () => {
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input)
+      if (url.endsWith('/token')) return json({ access_token: 'tok', expires_in: 60 })
+      if (url.includes('/users/scientist/groups')) {
+        return json([
+          { id: '22222222-2222-4222-8222-222222222222', name: 'Quality Assurance', path: '/Quality Assurance' },
+        ])
+      }
+      return json({}, 404)
+    }
+    const directory = createKeycloakDirectory(config, { fetch: fetchFn })
+    assert.deepEqual(await directory.getUserGroups('scientist'), [
+      { id: '22222222-2222-4222-8222-222222222222', name: 'Quality Assurance' },
+    ])
+  })
+
+  it('returns a group object id and the current display name', async () => {
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input)
+      if (url.endsWith('/token')) return json({ access_token: 'tok', expires_in: 60 })
+      if (url.includes('/groups?')) {
+        return json([
+          { id: '11111111-1111-4111-8111-111111111111', name: 'Quality Assurance', path: '/org/Quality Assurance' },
+        ])
+      }
+      return json({}, 404)
+    }
+    const directory = createKeycloakDirectory(config, { fetch: fetchFn })
+    assert.deepEqual(await directory.searchGroups('q', 10), [
+      { kind: 'group', group: '11111111-1111-4111-8111-111111111111', name: 'Quality Assurance' },
+    ])
+  })
+
   it('searches enabled users and maps groups to their leaf name', async () => {
     const { directory } = setup()
     assert.deepEqual(await directory.searchUsers('a', 10), [
@@ -60,9 +94,9 @@ describe('Keycloak directory adapter', () => {
 
   it('reports user status', async () => {
     const { directory } = setup()
-    assert.equal(await directory.userStatus('on'), 'enabled')
-    assert.equal(await directory.userStatus('off'), 'disabled')
-    assert.equal(await directory.userStatus('missing'), 'missing')
+    assert.deepEqual(await directory.userStatus('on'), { status: 'enabled', name: '' })
+    assert.deepEqual(await directory.userStatus('off'), { status: 'disabled', name: '' })
+    assert.deepEqual(await directory.userStatus('missing'), { status: 'missing', name: '' })
   })
 
   it('caches its token per instance until shortly before expiry', async () => {
@@ -79,7 +113,7 @@ describe('Keycloak directory adapter', () => {
     const directory = createKeycloakDirectory({ ...config, adminUrl: '' })
     assert.equal(directory.configured, false)
     assert.deepEqual(await directory.searchUsers('a', 10), [])
-    assert.equal(await directory.userStatus('x'), 'error')
+    assert.deepEqual(await directory.userStatus('x'), { status: 'error', name: '' })
   })
 })
 

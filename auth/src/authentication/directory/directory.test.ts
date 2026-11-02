@@ -8,8 +8,6 @@ import { after, before, describe, it } from 'node:test'
 const dataDir = mkdtempSync(join(tmpdir(), 'mice-directory-'))
 
 process.env.AUTH_DATA_DIR = dataDir
-process.env.AUTHZ_ENFORCE = 'true'
-process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'

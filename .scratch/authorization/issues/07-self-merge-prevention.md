@@ -1,6 +1,6 @@
 # 07: Self-Merge Prevention
 
-**What to build:** Merge operation blocked when the person performing the merge is the same as any commit author in the merge. Authorization enforces write role minimum (already done). Repositories module compares merge signer identity to commit author(s) extracted from the commits being merged. If any match, merge is denied with audit trail. This enforces the 4-eyes principle (independent review) required by GxP.
+**What to build:** Merge operation blocked when the person performing the merge is the same as any commit author in the merge. Authorization enforces write role minimum (already done). Repositories module compares the merge signer's `iss|sub` to each commit's `author`. That field is the canonical `iss|sub` written by `.scratch/authentication/issues/08-human-commit-author.md`. If any match, merge is denied with audit trail. This enforces the 4-eyes principle (independent review) required by GxP.
 
 **Blocked by:** None (can start immediately)
 
