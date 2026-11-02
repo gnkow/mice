@@ -33,6 +33,7 @@ export { registerStepUp } from './oidc/stepUp.js'
 // Session management
 export { registerMeRoutes } from './session/meRoutes.js'
 export { registerSealKeyRoutes } from './session/sealKeyRoutes.js'
+export { startSealKeyRotationSchedule } from './session/sealKeyRotationSchedule.js'
 export { can, isScopedCredential, kindOf, matchesIdentityEntry, parsePrincipalKey, principalKey } from './session/principal.js'
 export { classifyPath, interpretRequest } from './session/requestInterpretation.js'
 export { AuthenticationDenied, applyGlobalGuards, authenticate, authenticateRequest, authenticateUser, callerVia, requirePrincipal, setAuthenticationObserver } from './session/requireAuth.js'

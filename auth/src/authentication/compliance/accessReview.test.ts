@@ -4,21 +4,13 @@ import {
   generateAccessReviewReport,
   signAccessReviewReport,
   validateReportSignature,
-  createRecoveryToken,
-  validateRecoveryToken,
-  isRecoveryTokenValid,
   type PrincipalAccessRecord,
   type SignatureRecord,
 } from './accessReview.js'
 
 /**
- * TICKET 12: Quarterly Access Review and Two-Person Recovery
- * 
- * Requirements:
- * - Quarterly access report listing every Principal, role, grant, last login
- * - Named reviewer signs report electronically
- * - Two-admin recovery: both admins together can issue 1-hour recovery token
- * - No shared credentials ever
+ * Quarterly access review report.
+ * A named reviewer signs the report.
  */
 
 describe('Quarterly Access Review', () => {
@@ -93,32 +85,5 @@ describe('Quarterly Access Review', () => {
     }
     const signedReport = signAccessReviewReport(report, signature)
     assert.deepEqual(signedReport.reviewerSignature, signature)
-  })
-})
-
-describe('Two-Person Recovery', () => {
-  it('requires two admins for recovery token', () => {
-    const admin1 = { iss: 'https://idp.example.com', sub: 'admin1', name: 'Admin One' }
-    const admin2 = { iss: 'https://idp.example.com', sub: 'admin2', name: 'Admin Two' }
-    const token = createRecoveryToken(admin1, admin2, 'Emergency recovery')
-    assert.equal(token.issuedBy.length, 2)
-    validateRecoveryToken(token) // Should not throw
-  })
-
-  it('generates 1-hour recovery token', () => {
-    const admin1 = { iss: 'https://idp.example.com', sub: 'admin1', name: 'Admin One' }
-    const admin2 = { iss: 'https://idp.example.com', sub: 'admin2', name: 'Admin Two' }
-    const token = createRecoveryToken(admin1, admin2, 'Recovery', 3600000)
-    const duration = token.expiresAt - token.issuedAt
-    assert.equal(duration, 3600000) // 1 hour
-    assert.ok(isRecoveryTokenValid(token, token.issuedAt))
-  })
-
-  it('rejects recovery with only one admin', () => {
-    const admin1 = { iss: 'https://idp.example.com', sub: 'admin1', name: 'Admin' }
-    assert.throws(
-      () => createRecoveryToken(admin1, admin1, 'Recovery'),
-      /two different admins/
-    )
   })
 })

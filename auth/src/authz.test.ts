@@ -173,6 +173,34 @@ await describe('TC-AUTHO matrix', async () => {
     assert.equal(r.ok, false)
   })
 
+  await it('cannot remove an instance admin while only two remain', async () => {
+    const second = mkUser('floor-two')
+    const third = mkUser('floor-three')
+    assert.equal((await addInstanceAdmin(admin, second)).ok, true)
+    assert.equal((await addInstanceAdmin(admin, third)).ok, true)
+    for (const a of await listInstanceAdmins()) {
+      if (a.sub !== admin.sub && a.sub !== second.sub) await removeInstanceAdmin(admin, a)
+    }
+    assert.equal((await listInstanceAdmins()).length, 2)
+    const refused = await removeInstanceAdmin(admin, second)
+    assert.equal(refused.ok, false)
+    if (refused.ok) return
+    assert.equal(refused.error, 'At least two instance admins must remain')
+    assert.equal((await listInstanceAdmins()).length, 2)
+  })
+
+  await it('removes an instance admin while three remain', async () => {
+    const second = mkUser('floor-two')
+    const third = mkUser('floor-three')
+    assert.equal((await addInstanceAdmin(admin, second)).ok, true)
+    assert.equal((await addInstanceAdmin(admin, third)).ok, true)
+    const removed = await removeInstanceAdmin(admin, third)
+    assert.equal(removed.ok, true)
+    const left = await listInstanceAdmins()
+    assert.equal(left.some((a) => a.sub === 'floor-three'), false)
+    assert.ok(left.length >= 2)
+  })
+
   await it('TC-AUTHO-10: cannot remove last instance admin', async () => {
     const admins = await listInstanceAdmins()
     assert.ok(admins.length >= 1)

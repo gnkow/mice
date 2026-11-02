@@ -9,6 +9,7 @@ import {
   saveCredentials,
 } from './config.mjs'
 import { openBrowser } from './open.mjs'
+import { keychain } from './keychain.mjs'
 import { findOxen, oxenConfigAuth, oxenConfigUser } from './oxen.mjs'
 
 function sleep(ms) {
@@ -16,13 +17,30 @@ function sleep(ms) {
 }
 
 /**
- * @param {{ remote?: string, open?: boolean, scopes?: object[] }} [opts]
+ * @param {{
+ *   remote?: string
+ *   open?: boolean
+ *   scopes?: object[]
+ *   fetch?: typeof bffFetch
+ *   sleep?: (ms: number) => Promise<void>
+ *   findOxen?: () => boolean
+ *   configureOxen?: (authHost: string, token: string, user: { name?: string, email?: string }) => void
+ *   openBrowser?: (url: string) => boolean
+ * }} [opts]
  */
 export async function cmdLogin(opts = {}) {
   const remote = resolveRemote({ remote: opts.remote })
   const open = opts.open !== false
+  const fetchImpl = opts.fetch ?? bffFetch
+  const sleepImpl = opts.sleep ?? sleep
+  const oxenPresent = opts.findOxen ?? findOxen
+  const configureOxen = opts.configureOxen ?? ((authHost, token, user) => {
+    oxenConfigAuth(authHost, token)
+    if (user.name || user.email) oxenConfigUser(user.name ?? '', user.email ?? '')
+  })
+  const openUrl = opts.openBrowser ?? openBrowser
 
-  if (!findOxen()) {
+  if (!oxenPresent()) {
     console.error(
       'mice: oxen CLI not found on PATH. Install Oxen first, then retry login.',
     )
@@ -30,7 +48,7 @@ export async function cmdLogin(opts = {}) {
     return
   }
 
-  const started = await bffFetch(remote, '/auth/cli/device/start', {
+  const started = await fetchImpl(remote, '/auth/cli/device/start', {
     method: 'POST',
     body: opts.scopes?.length ? { scopes: opts.scopes } : {},
   })
@@ -59,7 +77,7 @@ export async function cmdLogin(opts = {}) {
   console.log('')
 
   if (open) {
-    const opened = openBrowser(verifyUrl)
+    const opened = openUrl(verifyUrl)
     if (!opened) {
       console.log('(Could not open a browser — open the URL manually.)')
     }
@@ -69,8 +87,8 @@ export async function cmdLogin(opts = {}) {
   let waitSec = Number(interval) || 5
 
   while (Date.now() < deadline) {
-    await sleep(waitSec * 1000)
-    const polled = await bffFetch(remote, '/auth/cli/device/poll', {
+    await sleepImpl(waitSec * 1000)
+    const polled = await fetchImpl(remote, '/auth/cli/device/poll', {
       method: 'POST',
       body: { device_code: deviceCode },
     })
@@ -80,25 +98,37 @@ export async function cmdLogin(opts = {}) {
     if (status === 'approved' && (body.token || body.access_token)) {
       const token = body.token || body.access_token
       const authHost = body.auth_host || authHostFromRemote(remote)
-      const patId = body.pat_id
       const user = body.user ?? {}
-
-      oxenConfigAuth(authHost, token)
-      if (user.name || user.email) {
-        oxenConfigUser(user.name ?? '', user.email ?? '')
+      const principal = user.iss && user.sub ? `${user.iss}|${user.sub}` : ''
+      if (!principal) {
+        console.error('mice login: identity provider did not return a Principal.')
+        process.exitCode = 1
+        return
       }
 
-      saveCredentials({
-        token,
-        remote,
-        authHost,
-        patId,
-      })
+      try {
+        keychain().put({
+          principal,
+          remote,
+          token,
+          refreshToken: body.refresh_token ?? '',
+          email: user.email ?? '',
+          name: user.name ?? '',
+          authHost,
+        })
+      } catch (err) {
+        console.error(`mice login: ${err instanceof Error ? err.message : err}`)
+        process.exitCode = 1
+        return
+      }
+
+      configureOxen(authHost, token, user)
+      saveCredentials({ remote, authHost })
       saveConfig({
         ...loadConfig(),
         remote,
         authHost,
-        patId,
+        principal,
         loggedInAt: new Date().toISOString(),
       })
 
@@ -140,9 +170,10 @@ export async function cmdLogin(opts = {}) {
  */
 export async function cmdLogout(opts = {}) {
   const remote = resolveRemote({ remote: opts.remote })
+  const fetchImpl = opts.fetch ?? bffFetch
   const token = resolveToken()
   if (token) {
-    const res = await bffFetch(remote, '/auth/cli/logout', {
+    const res = await fetchImpl(remote, '/auth/cli/logout', {
       method: 'POST',
       token,
       body: {},
@@ -154,7 +185,7 @@ export async function cmdLogout(opts = {}) {
       )
     }
   }
-  clearLoginState()
+  clearLoginState(remote)
   console.log('Logged out.')
 }
 

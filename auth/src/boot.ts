@@ -3,7 +3,7 @@ import { createApp } from './app.js'
 import { closeMainDatabase, openMainDatabase } from './db/database.js'
 import { initAudit, setAuditObserver, startAuditVerifySchedule } from './audit.js'
 import { acquireDataDirLock } from './dataDirLock.js'
-import { assertProductionStartup, setAuthenticationObserver, startDirectorySyncSchedule, startIdpDriftSchedule, startServicePatExpirySchedule } from './authentication/index.js'
+import { assertProductionStartup, setAuthenticationObserver, startDirectorySyncSchedule, startIdpDriftSchedule, startSealKeyRotationSchedule, startServicePatExpirySchedule } from './authentication/index.js'
 import { env, oidcConfigured } from './env.js'
 import { purgeFavoritesForAudit } from './favoritesStore.js'
 import { resumeQueuedJobs } from './jobs.js'
@@ -30,6 +30,7 @@ export async function boot(): Promise<void> {
   // Ticket 17: Initialize seal key ring with bootstrap key if none exists
   const { ensureBootstrapKey } = await import('./authentication/session/sealKeys.js')
   await ensureBootstrapKey()
+  startSealKeyRotationSchedule()
 
   // Connects to immudb (creating the audit database on first use) and verifies the trail.
   const verification = await initAudit()

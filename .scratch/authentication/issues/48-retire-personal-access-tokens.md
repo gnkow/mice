@@ -12,7 +12,7 @@ No route mints a personal access token. Bearer authentication does not accept a 
 
 ## In code today
 
-`createPat` in `tokens.ts` is the mint path. `cliDevice.ts` calls it for device approval. `resolvePat` accepts a bearer PAT on authenticated routes. Profile UI still talks about tokens through `/auth/sessions/revoke-all`.
+Device approval no longer calls `createPat`. `createPat` in `tokens.ts` still mints `mice_pat_` tokens, and `resolvePat` still accepts a bearer PAT. Issue 35 stores the device credential in the OS keychain and no longer writes `pat_id`. `resolveToken` still prefers `MICE_PAT` over that keychain entry. Profile UI still talks about tokens through `/auth/sessions/revoke-all`.
 
 ## Acceptance
 

@@ -32,8 +32,14 @@ export function AccessReviewSection() {
     return `${now.getFullYear()}-Q${q}`
   })
   const [report, setReport] = useState<AccessReviewReport | null>(null)
+  const [contentHash, setContentHash] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function showReport(data: { report: AccessReviewReport; contentHash?: string }) {
+    setReport(data.report)
+    setContentHash(data.contentHash ?? null)
+  }
 
   async function openReport() {
     setLoading(true)
@@ -44,7 +50,7 @@ export function AccessReviewSection() {
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to open report')
-      setReport(body.report)
+      showReport(body)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open report')
     } finally {
@@ -69,9 +75,35 @@ export function AccessReviewSection() {
       }
       
       const data = await res.json()
-      setReport(data.report)
+      showReport(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate report')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function signReport() {
+    if (!report || !contentHash) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/auth/admin/access-review/sign', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quarter, expectedHash: contentHash }),
+      })
+      const body = await res.json()
+      if (!res.ok) {
+        if (body.error === 'reauthentication_required') {
+          throw new Error('Sign in again. A signature needs authentication from the last minute.')
+        }
+        throw new Error(body.error || 'Failed to sign report')
+      }
+      showReport(body)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign report')
     } finally {
       setLoading(false)
     }
@@ -151,11 +183,22 @@ export function AccessReviewSection() {
               </p>
             )}
             {!report.reviewerSignature && (
-              <p className="warning">⚠ Awaiting reviewer signature</p>
+              <p className="warning">Awaiting an instance admin signature</p>
             )}
           </div>
 
           <div style={{ marginTop: '1rem' }}>
+            {!report.reviewerSignature && (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void signReport()}
+                disabled={loading || !contentHash}
+              >
+                <Shield size={14} aria-hidden="true" className="button-label-icon" />
+                Sign report
+              </button>
+            )}
             <button
               type="button"
               className="btn"

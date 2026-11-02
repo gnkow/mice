@@ -42,7 +42,7 @@ describe('IdP access check: login', () => {
     // ASSERT
     assert.equal(result.ok, false)
     if (result.ok) return
-    assert.equal(result.status, 500)
+    assert.equal(result.status, 503)
     assert.match(result.html, /IdP.*unreachable|could not verify|directory.*unavailable/i)
   })
 

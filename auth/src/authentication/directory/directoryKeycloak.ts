@@ -187,15 +187,15 @@ export function createKeycloakDirectory(
     },
 
     async getUserGroups(sub): Promise<Array<{ id: string; name: string }>> {
+      if (!isConfigured()) return []
       const tok = await token()
-      if (!tok) return []
+      if (!tok) throw new Error('directory group lookup failed')
       try {
         const res = await doFetch(`${adminBase()}/users/${encodeURIComponent(sub)}/groups`, {
           headers: { Authorization: `Bearer ${tok}` },
         })
         if (!res.ok) {
-          console.error('[mice-auth] Keycloak user groups fetch failed', res.status)
-          return []
+          throw new Error(`directory group lookup failed (${res.status})`)
         }
         const rows = (await res.json()) as Array<{ id?: string; name?: string; path?: string }>
         const groups: Array<{ id: string; name: string }> = []
@@ -206,7 +206,7 @@ export function createKeycloakDirectory(
         return groups
       } catch (err) {
         console.error('[mice-auth] Keycloak user groups fetch error', err)
-        return []
+        throw err instanceof Error ? err : new Error('directory group lookup failed')
       }
     },
   }

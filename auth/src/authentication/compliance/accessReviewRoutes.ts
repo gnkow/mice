@@ -3,27 +3,25 @@ import { guarded } from '../session/routeGuard.js'
 import { getDb } from '../../db/database.js'
 import { accessReviewReports, principals } from '../../db/schema.js'
 import { eq } from 'drizzle-orm'
-import { generateAccessReviewReport, createRecoveryToken, isRecoveryTokenValid } from './accessReview.js'
+import { displayedAccessReview, generateAccessReviewReport, signAccessReviewReport } from './accessReview.js'
+import { reauthenticate } from '../oidc/stepUp.js'
+import { createSignature, prepareForSigning, type SessionInfo } from '../signing/signingCeremony.js'
+import { extractMfaEvidence } from '../signing/mfaEvidence.js'
+import { decodeJwtPayload } from '../oidc/oidcClaims.js'
+import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.js'
+import { isSigningBlockedByDrift } from './idpDriftDetection.js'
+import { confirmPrivilegedGroups } from '../../authz.js'
+import { env } from '../../env.js'
 import { instancePermissions, isInstanceAdmin } from '../../authzInstanceStore.js'
 import { namespaceRolesFor } from '../../authzMembershipStore.js'
 import type { AuditDep } from '../../routeDeps.js'
 import type { SessionUser } from '../session/session.js'
 
 /**
- * TICKET 12: Quarterly Access Review and Two-Person Recovery Routes
- * 
- * Admin endpoints for generating access review reports and recovery tokens.
+ * Admin endpoints for quarterly access review reports.
  */
 
 const adminGate = async (u: SessionUser) => (await isInstanceAdmin(u) ? null : 'Admin required')
-
-// In-memory storage for pending recovery token approvals
-// In production, this should be persisted (Redis, DB, etc.)
-const pendingRecoveryTokens = new Map<string, {
-  firstAdmin: { iss: string; sub: string; name: string }
-  purpose: string
-  requestedAt: number
-}>()
 
 export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void {
   // Generate quarterly access review report
@@ -86,7 +84,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
       detail: { reportId: report.reportId, principalCount: principalRecords.length },
     })
 
-    return c.json({ report })
+    return c.json({ report, contentHash: prepareForSigning(displayedAccessReview(report)).hash })
   }))
 
   app.get('/auth/admin/access-review/:quarter', guarded({
@@ -104,104 +102,85 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
       message: `Opened access review report for ${quarter}`,
       detail: { reportId: stored.report.reportId, quarter },
     })
-    return c.json({ report: stored.report })
+    return c.json({
+      report: stored.report,
+      contentHash: prepareForSigning(displayedAccessReview(stored.report)).hash,
+    })
   }))
 
-  // Request recovery token (first admin)
-  app.post('/auth/admin/recovery-token/request', guarded({
+  app.post('/auth/admin/access-review/sign', guarded({
     gate: adminGate,
     mutates: true,
-    body: { required: ['purpose'] },
-  }, async ({ c, user, body }) => {
-    const purpose = body.purpose as string
-    const requestId = `recovery-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    
-    pendingRecoveryTokens.set(requestId, {
-      firstAdmin: { iss: user.iss, sub: user.sub, name: user.name },
-      purpose,
-      requestedAt: Date.now(),
-    })
-    
-    // Clean up old requests (older than 1 hour)
-    const oneHourAgo = Date.now() - 3600000
-    for (const [id, req] of pendingRecoveryTokens.entries()) {
-      if (req.requestedAt < oneHourAgo) {
-        pendingRecoveryTokens.delete(id)
+    body: { required: ['quarter', 'expectedHash'] },
+  }, async ({ c, user, body, audit }) => {
+    try {
+      await confirmPrivilegedGroups(user)
+    } catch (err) {
+      if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+        return c.json({ error: 'Directory unavailable' }, 503)
+      }
+      throw err
+    }
+    const drift = await isSigningBlockedByDrift()
+    if (drift.blocked) return c.json({ error: 'Signing blocked due to critical IdP configuration drift' }, 503)
+    const stepUp = await reauthenticate(c, 60)
+    if (!stepUp.ok) return stepUp.response
+    const now = Math.floor(Date.now() / 1000)
+    if (env.sessionIdleSec > 0 && user.lastActive !== undefined && now - user.lastActive > env.sessionIdleSec) {
+      return c.json({ error: 'session_idle' }, 401)
+    }
+
+    const quarter = body.quarter as string
+    const expectedHash = body.expectedHash as string
+    const [stored] = await getDb()
+      .select()
+      .from(accessReviewReports)
+      .where(eq(accessReviewReports.quarter, quarter))
+      .limit(1)
+    if (!stored) return c.json({ error: 'Access review report not found' }, 404)
+
+    const content = displayedAccessReview(stored.report)
+    const prepared = prepareForSigning(content)
+    if (prepared.hash !== expectedHash) {
+      return c.json({ error: 'Content changed after display; signature invalidated' }, 400)
+    }
+
+    let mfaVerified = false
+    let mfaEvidenceData: SessionInfo['mfaEvidence']
+    let verificationMetadataData: SessionInfo['verificationMetadata']
+    if (stepUp.user.idToken) {
+      try {
+        const payload = decodeJwtPayload(stepUp.user.idToken)
+        const mfaEvidence = extractMfaEvidence(payload)
+        mfaVerified = mfaEvidence.hasMfa
+        if (mfaEvidence.hasMfa) {
+          mfaEvidenceData = { acr: mfaEvidence.acr, amr: mfaEvidence.amr, auth_time: stepUp.user.authTime }
+        }
+        verificationMetadataData = extractVerificationMetadata(stepUp.user.idToken)
+      } catch {
+        mfaVerified = false
       }
     }
-    
-    await audit({
-      action: 'recovery-token.request',
-      message: `Admin ${user.name} requested recovery token`,
-      detail: { requestId, purpose },
-    })
-    
-    return c.json({ requestId, message: 'Recovery token request created. Requires second admin approval.' })
-  }))
+    if (!mfaVerified) return c.json({ error: 'MFA required for electronic signature' }, 403)
 
-  // Approve recovery token (second admin)
-  app.post('/auth/admin/recovery-token/approve', guarded({
-    gate: adminGate,
-    mutates: true,
-    body: { required: ['requestId'] },
-  }, async ({ c, user, body }) => {
-    const requestId = body.requestId as string
-    const pending = pendingRecoveryTokens.get(requestId)
-    
-    if (!pending) {
-      return c.json({ error: 'Recovery token request not found or expired' }, 404)
+    const session: SessionInfo = {
+      authenticatedAt: (stepUp.user.authTime ?? 0) * 1000,
+      mfaVerified,
+      principal: { iss: user.iss, sub: user.sub, name: user.name },
+      ...(mfaEvidenceData ? { mfaEvidence: mfaEvidenceData } : {}),
+      ...(verificationMetadataData ? { verificationMetadata: verificationMetadataData } : {}),
     }
-    
-    // Ensure second admin is different from first
-    if (pending.firstAdmin.iss === user.iss && pending.firstAdmin.sub === user.sub) {
-      return c.json({ error: 'Recovery token requires approval from a different admin' }, 400)
-    }
-    
-    // Create the token
-    const token = createRecoveryToken(
-      pending.firstAdmin,
-      { iss: user.iss, sub: user.sub, name: user.name },
-      pending.purpose
-    )
-    
-    // Remove from pending
-    pendingRecoveryTokens.delete(requestId)
-    
+    const signature = createSignature(content, 'Reviewed', session)
+    const signed = signAccessReviewReport(stored.report, signature)
+    await getDb()
+      .update(accessReviewReports)
+      .set({ report: signed })
+      .where(eq(accessReviewReports.quarter, quarter))
     await audit({
-      action: 'recovery-token.create',
-      message: `Recovery token created by ${pending.firstAdmin.name} and ${user.name}`,
-      detail: { tokenId: token.tokenId, purpose: token.purpose },
+      action: 'access-review.sign',
+      message: `Signed access review ${signed.reportId}`,
+      detail: { reportId: signed.reportId, reviewer: `${user.iss}|${user.sub}` },
     })
-    
-    return c.json({ token })
-  }))
-
-  // Validate recovery token
-  app.post('/auth/admin/recovery-token/validate', guarded({
-    body: { required: ['tokenId'] },
-  }, async ({ c, body }) => {
-    const tokenId = body.tokenId as string
-    
-    // In production, retrieve token from storage
-    // For now, this is a placeholder that shows the validation pattern
-    
-    return c.json({ 
-      error: 'Token storage not yet implemented. Tokens must be persisted to validate them.' 
-    }, 501)
-  }))
-
-  // List pending recovery token requests
-  app.get('/auth/admin/recovery-token/pending', guarded({
-    gate: adminGate,
-  }, async ({ c, user }) => {
-    const pending = Array.from(pendingRecoveryTokens.entries()).map(([id, req]) => ({
-      requestId: id,
-      firstAdmin: req.firstAdmin,
-      purpose: req.purpose,
-      requestedAt: req.requestedAt,
-      canApprove: !(req.firstAdmin.iss === user.iss && req.firstAdmin.sub === user.sub),
-    }))
-    
-    return c.json({ pending })
+    return c.json({ report: signed, contentHash: prepared.hash })
   }))
 }

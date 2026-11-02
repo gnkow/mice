@@ -48,7 +48,7 @@ export async function addInstanceAdmin(actor: UserKey, target: UserKey): Promise
 export async function removeInstanceAdmin(actor: UserKey, target: UserKey): Promise<Result> {
   if (!(await isInstanceAdmin(actor))) return { ok: false, error: 'Forbidden' }
   const key = userKey(target)
-  if (!(await repo.removeAdminKey(key))) return { ok: false, error: 'Cannot remove the last instance admin' }
+  if (!(await repo.removeAdminKey(key))) return { ok: false, error: 'At least two instance admins must remain' }
   return { ok: true }
 }
 

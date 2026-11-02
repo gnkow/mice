@@ -68,6 +68,7 @@ import {
   runOxenPassthrough,
 } from './lib/oxen.mjs'
 import { confirmOrExit } from './lib/confirm.mjs'
+import { actingAsMessage } from './lib/keychain.mjs'
 import { declareReason, extractReason } from './lib/reason.mjs'
 import {
   commitsEqual,
@@ -231,6 +232,15 @@ function jobSummary(job, extra = {}) {
   }
 }
 
+async function confirmWrite(flags = {}) {
+  if (flags.token || process.env.MICE_PAT?.trim()) return
+  const remote = resolveRemote({
+    remote: flags.remote ? String(flags.remote) : undefined,
+  })
+  const message = actingAsMessage({ remote, write: true })
+  if (message) await confirmOrExit(message, flags)
+}
+
 function resolveAuth(flags) {
   const remote = resolveRemote({
     remote: flags.remote ? String(flags.remote) : undefined,
@@ -319,6 +329,7 @@ async function cmdRun(flags, command) {
   let remote = ''
   let token = ''
   if (wantPush) {
+    await confirmWrite(flags)
     ;({ remote, token } = resolveAuth(flags))
   }
 
@@ -578,6 +589,7 @@ async function cmdReset(flags) {
   const remote = resolveRemote({
     remote: flags.remote ? String(flags.remote) : undefined,
   })
+  await confirmWrite(flags)
   const token = String(flags.token || resolveToken() || '')
 
   const purge = !!flags.purge
@@ -906,6 +918,7 @@ async function cmdJob(jobArgv) {
         return
       }
     }
+    await confirmWrite(flags)
     const { remote, token } = resolveAuth(flags)
     const data = await api(
       remote,
@@ -963,7 +976,10 @@ async function main() {
 
   if (ADMIN_GROUPS.includes(cmd)) {
     await runAdmin(cmd, argv.slice(1), {
-      auth: resolveAuth,
+      auth: async (flags) => {
+        await confirmWrite(flags)
+        return resolveAuth(flags)
+      },
       usage,
       ctx: (flags) => {
         const root = findOxenRoot(process.cwd())
@@ -979,7 +995,10 @@ async function main() {
 
   if (cmd === 'meta') {
     await cmdMeta(argv.slice(1), {
-      auth: resolveAuth,
+      auth: async (flags) => {
+        await confirmWrite(flags)
+        return resolveAuth(flags)
+      },
       usage,
       ctx: (flags) => {
         const root = findOxenRoot(process.cwd())
@@ -1009,6 +1028,7 @@ async function main() {
     return
   }
   const remote = resolveRemote()
+  await confirmWrite({})
   if (looksLikeDirectOxenServer(remote)) {
     console.error(
       `mice: MICE_REMOTE / configured remote looks like raw oxen-server (${remote}).\nUse the auth BFF remote (e.g. http://localhost:8080), not :3001.`,

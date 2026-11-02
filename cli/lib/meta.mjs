@@ -210,7 +210,7 @@ export async function cmdMeta(argv, deps) {
   }
   if (sub === 'search') {
     try {
-      const { remote, token } = deps.auth(p.flags)
+      const { remote, token } = await deps.auth(p.flags)
       console.log(JSON.stringify(await api(remote, token, buildSearchQuery(p)), null, 2))
     } catch (err) {
       console.error(`mice: ${err instanceof Error ? err.message : err}`)
@@ -232,7 +232,7 @@ export async function cmdMeta(argv, deps) {
     process.exitCode = 1
     return
   }
-  const { remote, token } = deps.auth(p.flags)
+  const { remote, token } = await deps.auth(p.flags)
 
   try {
     const pathEntity = type === 'file' || type === 'directory'

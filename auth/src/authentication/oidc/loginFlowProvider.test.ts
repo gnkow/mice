@@ -67,8 +67,17 @@ describe('login flow over a fake OIDC provider', () => {
     })
     assert.equal(res.ok, false)
     if (res.ok) return
-    assert.equal(res.status, 500)
+    assert.equal(res.status, 503)
     assert.match(res.html, /unreachable/)
+    const { getDb } = await import('../../db/database.js')
+    const { principals, webSessions } = await import('../../db/schema.js')
+    const { eq } = await import('drizzle-orm')
+    const sessions = await getDb()
+      .select({ id: webSessions.idHash })
+      .from(webSessions)
+      .innerJoin(principals, eq(principals.id, webSessions.principalId))
+      .where(eq(principals.sub, 'u1'))
+    assert.equal(sessions.length, 0)
   })
 
   it('refuses login when the Principal is disabled in the IdP', async () => {
@@ -84,6 +93,21 @@ describe('login flow over a fake OIDC provider', () => {
     if (res.ok) return
     assert.equal(res.status, 403)
     assert.match(res.html, /disabled by the administrator/)
+  })
+
+  it('refuses login when the Principal is missing from the directory', async () => {
+    const { flow, directory } = setup()
+    directory.userStatus = async () => ({ status: 'missing', name: '' })
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, false)
+    if (res.ok) return
+    assert.equal(res.status, 403)
+    assert.match(res.html, /not found in the directory/)
   })
 
   it('step-up requires a recent authentication judged by the injected clock', async () => {

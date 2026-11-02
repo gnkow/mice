@@ -1,5 +1,6 @@
 import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,7 +23,8 @@ const { sealSessionCookie } = await import('../session/cookieSeal.js')
 const { ensureBootstrapKey } = await import('../session/sealKeys.js')
 const { env } = await import('../../env.js')
 const { getDb } = await import('../../db/database.js')
-const { principals } = await import('../../db/schema.js')
+const { accessReviewReports, principals } = await import('../../db/schema.js')
+const { eq } = await import('drizzle-orm')
 const { maybeBootstrapInstanceAdmin } = await import('../../authzInstanceStore.js')
 const { setDirectoryFetchForTests } = await import('../directory/directory.js')
 const { queryAudit } = await import('../../audit.js')
@@ -32,6 +34,9 @@ setDirectoryFetchForTests(async (url) => {
   const urlStr = String(url)
   if (urlStr.includes('/protocol/openid-connect/token')) {
     return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+  }
+  if (urlStr.includes('/groups')) {
+    return new Response(JSON.stringify([]), { status: 200 })
   }
   if (urlStr.includes('/users/')) {
     return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
@@ -58,6 +63,42 @@ const cookie = async (user: ReturnType<typeof mk>) => {
   })
   const sealed = await sealSessionCookie(sessionId)
   return `${env.cookieName}=${sealed}`
+}
+
+const idToken = () => {
+  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${part({ alg: 'none', kid: 'test-key' })}.${part({ acr: 'mfa', amr: ['pwd', 'otp'], iss: 'idp' })}.sig`
+}
+
+const freshCookie = async (user: ReturnType<typeof mk>) => {
+  const now = Math.floor(Date.now() / 1000)
+  const sessionId = await sealSession({
+    ...user,
+    sessionStart: now - 30,
+    authTime: now,
+    lastActive: now,
+    idToken: idToken(),
+  })
+  const sealed = await sealSessionCookie(sessionId)
+  return `${env.cookieName}=${sealed}`
+}
+
+function sorted(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sorted)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => [key, sorted((value as Record<string, unknown>)[key])]),
+    )
+  }
+  return value
+}
+
+function displayedHash(report: { reviewerSignature?: unknown }) {
+  const displayed = { ...report }
+  delete displayed.reviewerSignature
+  return createHash('sha256').update(JSON.stringify(sorted(displayed))).digest('hex')
 }
 const json = { 'content-type': 'application/json' }
 
@@ -151,42 +192,133 @@ describe('Access Review Routes (Issue #12)', () => {
     })
   })
 
-  describe('POST /auth/admin/recovery-token/request', () => {
-    it('registers the route', async () => {
-      const app = new Hono()
-      registerAccessReviewRoutes(app, { audit: async () => {} })
-      
-      const res = await app.request('/auth/admin/recovery-token/request', {
+  it('an instance admin signs the stored report they were shown', async () => {
+    await ensureBootstrapKey()
+    const app = new Hono()
+    registerAccessReviewRoutes(app, { audit: async () => {} })
+    const headers = { cookie: await freshCookie(admin), ...json }
+    const createdText = await (
+      await app.request('/auth/admin/access-review/generate', {
         method: 'POST',
+        headers,
+        body: JSON.stringify({ quarter: '2026-Q4' }),
       })
-      
-      assert.equal(res.status, 401)
+    ).text()
+    const created = JSON.parse(createdText) as { report: { reportId: string; reviewerSignature?: { hash: string } } }
+    const expectedHash = displayedHash(created.report)
+    const signedRes = await app.request('/auth/admin/access-review/sign', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ quarter: '2026-Q4', expectedHash }),
     })
+    const signedText = await signedRes.text()
+    assert.equal(signedRes.status, 200, signedText)
+    const openedRes = await app.request('/auth/admin/access-review/2026-Q4', { headers: { cookie: headers.cookie } })
+    const opened = JSON.parse(await openedRes.text()) as {
+      report: { reviewerSignature?: { hash: string; meaning: string; principal: { sub: string } } }
+    }
+    assert.equal(opened.report.reviewerSignature?.principal.sub, 'admin1')
+    assert.equal(opened.report.reviewerSignature?.meaning, 'Reviewed')
+    assert.equal(opened.report.reviewerSignature?.hash, expectedHash)
   })
 
-  describe('POST /auth/admin/recovery-token/approve', () => {
-    it('registers the route', async () => {
-      const app = new Hono()
-      registerAccessReviewRoutes(app, { audit: async () => {} })
-      
-      const res = await app.request('/auth/admin/recovery-token/approve', {
+  it('refuses a reviewer who is not an instance admin', async () => {
+    await ensureBootstrapKey()
+    const app = new Hono()
+    registerAccessReviewRoutes(app, { audit: async () => {} })
+    const createdText = await (
+      await app.request('/auth/admin/access-review/generate', {
         method: 'POST',
+        headers: { cookie: await cookie(admin), ...json },
+        body: JSON.stringify({ quarter: '2026-Q5' }),
       })
-      
-      assert.equal(res.status, 401)
+    ).text()
+    const created = JSON.parse(createdText) as { report: { reviewerSignature?: unknown } }
+    const reader = mk('reader')
+    const res = await app.request('/auth/admin/access-review/sign', {
+      method: 'POST',
+      headers: { cookie: await freshCookie(reader), ...json },
+      body: JSON.stringify({ quarter: '2026-Q5', expectedHash: displayedHash(created.report) }),
     })
+    const text = await res.text()
+    assert.equal(res.status, 403, text)
+    assert.match(text, /Admin required/)
+    const opened = JSON.parse(await (await app.request('/auth/admin/access-review/2026-Q5', {
+      headers: { cookie: await cookie(admin) },
+    })).text()) as { report: { reviewerSignature?: unknown } }
+    assert.equal(opened.report.reviewerSignature, undefined)
   })
 
-  describe('GET /auth/admin/recovery-token/pending', () => {
-    it('registers the route', async () => {
-      const app = new Hono()
-      registerAccessReviewRoutes(app, { audit: async () => {} })
-      
-      const res = await app.request('/auth/admin/recovery-token/pending', {
-        method: 'GET',
+  it('refuses a signature when the stored report changed after it was shown', async () => {
+    await ensureBootstrapKey()
+    const app = new Hono()
+    registerAccessReviewRoutes(app, { audit: async () => {} })
+    const headers = { cookie: await freshCookie(admin), ...json }
+    const createdText = await (
+      await app.request('/auth/admin/access-review/generate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ quarter: '2027-Q1' }),
       })
-      
-      assert.equal(res.status, 401)
+    ).text()
+    const created = JSON.parse(createdText) as { report: { principals: unknown[] } }
+    const shown = displayedHash(created.report)
+    await getDb()
+      .update(accessReviewReports)
+      .set({ report: { ...created.report, principals: [] } })
+      .where(eq(accessReviewReports.quarter, '2027-Q1'))
+    const res = await app.request('/auth/admin/access-review/sign', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ quarter: '2027-Q1', expectedHash: shown }),
     })
+    const text = await res.text()
+    assert.equal(res.status, 400, text)
+    assert.match(text, /changed after display/)
+    const opened = JSON.parse(await (await app.request('/auth/admin/access-review/2027-Q1', {
+      headers: { cookie: headers.cookie },
+    })).text()) as { report: { reviewerSignature?: unknown } }
+    assert.equal(opened.report.reviewerSignature, undefined)
+  })
+
+  it('audits the reviewer and the report id', async () => {
+    await ensureBootstrapKey()
+    const app = new Hono()
+    registerAccessReviewRoutes(app, { audit: async () => {} })
+    const headers = { cookie: await freshCookie(admin), ...json }
+    const createdText = await (
+      await app.request('/auth/admin/access-review/generate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ quarter: '2027-Q2' }),
+      })
+    ).text()
+    const created = JSON.parse(createdText) as { report: { reportId: string } }
+    const res = await app.request('/auth/admin/access-review/sign', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ quarter: '2027-Q2', expectedHash: displayedHash(created.report) }),
+    })
+    assert.equal(res.status, 200, await res.text())
+    const events = (await queryAudit({ action: 'access-review.sign', limit: 20 })).events
+    const event = events.find((e) => e.message === `Signed access review ${created.report.reportId}`)
+    assert.ok(event)
+    assert.equal(event.actor.iss, 'idp')
+    assert.equal(event.actor.sub, 'admin1')
+    assert.equal(event.detail?.reportId, created.report.reportId)
+  })
+
+  it('recovery-token routes are gone', async () => {
+    const app = new Hono()
+    registerAccessReviewRoutes(app, { audit: async () => {} })
+    for (const [method, path] of [
+      ['POST', '/auth/admin/recovery-token/request'],
+      ['POST', '/auth/admin/recovery-token/approve'],
+      ['POST', '/auth/admin/recovery-token/validate'],
+      ['GET', '/auth/admin/recovery-token/pending'],
+    ] as const) {
+      const res = await app.request(path, { method })
+      assert.equal(res.status, 404, `${method} ${path}`)
+    }
   })
 })

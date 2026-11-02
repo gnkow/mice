@@ -89,7 +89,7 @@ Audit, limits and bootstrap
 - Absolute fail-closed: revoke and login return 503 if immudb is down; accepted risk (Q21). No break-glass login; a paper fallback with late-entry procedure and audited reason applies (Q22).
 - Successful authentication and admin/security events go to immudb; failures go to the operational log with rate-limited summaries; no IP in the immutable store (Q23).
 - Shared database-backed limits on token, device-code and mint endpoints, per-IP and per-Principal, fail closed, alert on spikes (Q24).
-- First-admin creation is atomic via a unique constraint, matched on `iss`+`sub`; audited recovery when no admin remains (Q25).
+- First-admin creation is atomic via a unique constraint, matched on `iss`+`sub`. Deletion cannot leave fewer than two instance admins (Q25, ADR 0007).
 - New project: no migration; confirm that no live credentials, cookies or cut-offs exist (Q26).
 - Automation is audit-only via `via`; no automation commit trailer (Q28).
 
@@ -113,7 +113,7 @@ Audit, limits and bootstrap
 - Credentials: rotating refresh with reuse detection, 30-day cap (Q56); keychain keyed by Principal with acting-as banner (Q35); device binding planned (Q57); RFC 8628 hardening (Q58).
 - Revocation and groups: 2 s cache with NOTIFY (Q59); conditional last-used updates (Q60); group-id matching (Q62); login blocked if directory down (Q61); ACCESS_REVOKED code (Q39); Job token checks submitter at commit (Q37); suspend capability and self-suspend (Q42).
 - Signing assurance: refuse without MFA evidence (Q43); signing declaration (Q44); IdP baseline check (Q45); no impersonation (Q46).
-- Protocol: JWKS fetched on every request (Q54); 5 min leeway (Q55); full back-channel logout validation (Q65); uniform errors (Q66); trailer strip-and-append (Q64); two-person recovery token (Q67); security log with retention (Q41); test IdP suite (Q68).
+- Protocol: JWKS fetched on every request (Q54); 5 min leeway (Q55); full back-channel logout validation (Q65); uniform errors (Q66); trailer strip-and-append (Q64); at least two instance admins, no recovery token (Q67, ADR 0007); security log with retention (Q41); test IdP suite (Q68).
 - Inspectors: escort-only, no accounts (Q33).
 
 ### New conflicts and risks
@@ -973,6 +973,8 @@ Options:
 - Environment variable at start with audit event, removed afterwards — simple, secret in manifests.
 - Database edit by DBA — bypasses audit (16 Q11 forbids).
 Recommendation: Two-person recovery token, audited, time-boxed.
+
+Superseded by ADR 0007. Deletion cannot leave fewer than two instance admins, so the token is not built.
 Challenges: Q25, 16 Q11.
 
 ## Q68 [Impl] Test strategy for authentication through the HTTP boundary
@@ -1027,7 +1029,7 @@ Challenges: 16 Q28; 15 Q28.
 | Q64 | Strip+append trailer; verify vs audit | answered |
 | Q65 | Full back-channel logout validation + jti replay cache | answered |
 | Q66 | Uniform errors; constant-time checks | answered |
-| Q67 | Two-person recovery token 1 h | answered |
+| Q67 | At least two instance admins; no recovery token (ADR 0007) | answered |
 | Q68 | Test IdP container + clock offset; table-driven suite | answered |
 
 ## Round 3 decisions

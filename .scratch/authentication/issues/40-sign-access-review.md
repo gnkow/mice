@@ -1,22 +1,19 @@
-Status: ready-for-agent
+Status: done
 
 # 40: Sign the quarterly access review
 
 **Spec:** `.specs/01-authentication.md` (S3)
 
-**Blocked by:** 12 (the stored report that gets signed)
+**Blocked by:** none. Issue 12 stored the report.
 
-## What to build
+## Outcome
 
-A named reviewer signs the stored quarterly access review with the signing ceremony from issue 09. The signature record is attached to that report. One signature covers that report only.
-
-## In code today
-
-`AccessReviewReport` has an optional `reviewerSignature` field. No route calls the signing ceremony, and the report is not stored yet (issue 12).
+`POST /auth/admin/access-review/sign` is instance-admin only. It runs the signing ceremony: a fresh authentication, MFA evidence, and the hash of the canonical stored report. The signature meaning is Reviewed, and it is written onto that report. A hash that does not match the report now stored is refused and leaves the report unsigned. The audit event `access-review.sign` records the reviewer Principal and the report id. Settings shows Sign report for an unsigned review.
 
 ## Acceptance
 
-- [ ] `POST /auth/admin/access-review/sign` runs the signing ceremony against the stored report hash
-- [ ] The stored report keeps the reviewer's signature record
-- [ ] A report that changes after it was displayed cannot be signed
-- [ ] The signature is audited with the reviewer Principal and the report id
+- [x] `POST /auth/admin/access-review/sign` runs the signing ceremony against the stored report hash
+- [x] The stored report keeps the reviewer's signature record
+- [x] A report that changes after it was displayed cannot be signed
+- [x] The signature is audited with the reviewer Principal and the report id
+- [x] The reviewer is an instance admin

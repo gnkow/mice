@@ -46,7 +46,7 @@ export interface Directory {
   searchGroups(q: string, limit: number): Promise<DirectoryGroupHit[]>
   /** `error` means the directory could not answer. `name` is the IdP display name. */
   userStatus(sub: string): Promise<DirectoryUserState>
-  /** Fetch all groups for a user by sub (for group overage handling). Returns empty on error. */
+  /** Fetch all groups for a user by sub. Throws when a configured directory cannot answer. */
   getUserGroups(sub: string): Promise<DirectoryGroup[]>
   /** Current display name for one group id. Null when the directory has no such group. */
   getGroup(id: string): Promise<DirectoryGroup | null>

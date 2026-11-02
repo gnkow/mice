@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 38: Login returns 503 when the IdP is unreachable
 
@@ -12,12 +12,12 @@ Split from issue 04. Disabled and missing users stay 403, as issue 04 specifies.
 
 When `directory.userStatus` returns `error` during login, the response is 503. The body says the IdP could not be reached. No session is created.
 
-## In code today
+## Outcome
 
-`finishLogin` returns 500 for directory status `error`.
+`finishLogin` returns 503 when `directory.userStatus` is `error`, with the unreachable message. The callback writes a Session only after a successful login, and the unreachable path leaves `web_sessions` empty. Disabled and missing stay 403. Provider failures stay 500. Authenticated-request 503 is unchanged (issue 19).
 
 ## Acceptance
 
-- [ ] Directory status `error` on login returns 503
-- [ ] No session row is created
-- [ ] Directory status `disabled` and `missing` still return 403
+- [x] Directory status `error` on login returns 503
+- [x] No session row is created
+- [x] Directory status `disabled` and `missing` still return 403

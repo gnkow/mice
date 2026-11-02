@@ -74,7 +74,7 @@ export async function resolveWorkspaceInputs(
     if (!gate.allow) {
       throw new SessionWorkspaceError(
         `${gate.reason ?? 'Forbidden'} (workspace ${ws.id} in ${ws.namespace}/${ws.repo})`,
-        403,
+        gate.status ?? 403,
       )
     }
     return { ...i, namespace: ws.namespace, repo: ws.repo }
@@ -85,7 +85,7 @@ export async function resolveWorkspaceInputs(
 export async function authorizeWorkspaceMounts(
   user: SessionUser,
   mounts: SessionMount[],
-): Promise<{ allow: boolean; reason?: string }> {
+): Promise<{ allow: boolean; reason?: string; status?: number }> {
   for (const m of workspaceMountsOf({ mounts })) {
     const mode = m.effective_mode ?? m.mount_mode
     const gate =
@@ -93,7 +93,11 @@ export async function authorizeWorkspaceMounts(
         ? await authorizeRepoAction(user, m.namespace, m.repo, 'workspace.read')
         : await authorizeRepoAction(user, m.namespace, m.repo, 'workspace.write')
     if (!gate.allow) {
-      return { allow: false, reason: gate.reason ?? `mount ${m.namespace}/${m.repo} requires repository access` }
+      return {
+        allow: false,
+        reason: gate.reason ?? `mount ${m.namespace}/${m.repo} requires repository access`,
+        status: gate.status,
+      }
     }
   }
   return { allow: true }

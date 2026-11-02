@@ -12,6 +12,8 @@ import { decodeJwtPayload } from '../oidc/oidcClaims.js'
 import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.js'
 import { isSigningBlockedByDrift } from '../compliance/idpDriftDetection.js'
 import type { AuditDep } from '../../routeDeps.js'
+import { confirmPrivilegedGroups } from '../../authz.js'
+import type { SessionUser } from '../session/session.js'
 import { env } from '../../env.js'
 
 /**
@@ -67,9 +69,23 @@ function checkIdleTimeout(user: SessionInfo): Response | null {
   return null
 }
 
+async function directoryFailure(user: SessionUser): Promise<Response | null> {
+  try {
+    await confirmPrivilegedGroups(user)
+    return null
+  } catch (err) {
+    if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+      return Response.json({ error: 'Directory unavailable' }, { status: 503 })
+    }
+    throw err
+  }
+}
+
 export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
   // Prepare content for signing (shows hash, requires step-up)
   app.post('/auth/sign/prepare', guarded({ mutates: false }, async ({ c, user }) => {
+    const unavailable = await directoryFailure(user)
+    if (unavailable) return unavailable
     // Check for fresh authentication
     const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
     if (!stepUp.ok) return stepUp.response
@@ -104,6 +120,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     mutates: true,
     body: { required: ['content', 'meaning', 'expectedHash'] }
   }, async ({ c, user, body }) => {
+    const unavailable = await directoryFailure(user)
+    if (unavailable) return unavailable
     // Ticket 23: Check for critical IdP drift before signing
     const driftCheck = await isSigningBlockedByDrift()
     if (driftCheck.blocked) {

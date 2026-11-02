@@ -1,11 +1,10 @@
-import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert, FileText, Shield as ActionShield, Ban } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert, FileText, Ban } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
 import { SealKeyRotationSection } from '../components/SealKeyRotationSection'
 import { MiceSuspensionSection } from '../components/MiceSuspensionSection'
 import { AccessReviewSection } from '../components/AccessReviewSection'
-import { RecoveryTokenSection } from '../components/RecoveryTokenSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
@@ -86,7 +85,6 @@ export function SettingsPage() {
         title: 'Compliance', 
         items: [
           { id: 'access-review', label: 'Access Review', Icon: FileText },
-          { id: 'recovery-token', label: 'Recovery', Icon: ActionShield },
         ] 
       },
       { 
@@ -155,7 +153,6 @@ export function SettingsPage() {
             <AdminRevocationSection />
             <DelegatedPermissionsSection signedInIss={signedInIss} />
             <AccessReviewSection />
-            <RecoveryTokenSection />
             <IdpBaselineSection />
             <MiceSuspensionSection signedInIss={signedInIss} />
             <SealKeyRotationSection />
@@ -488,6 +485,7 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
               <h2 id="instance-administrators-heading"><ShieldUser size={18} className="button-label-icon" aria-hidden="true" />Instance administrators</h2>
               <p className="muted small">
                 Full instance catalog and site-admin bypass.
+                At least two instance admins remain, so removal that would leave fewer is refused.
                 A Bootstrap mark means this Principal is on AUTHZ_BOOTSTRAP_ADMINS and receives admin again on the next login.
               </p>
             </div>
@@ -512,7 +510,8 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
                 <button
                   type="button"
                   className="btn ghost small"
-                  disabled={busy}
+                  disabled={busy || data.admins.length <= 2}
+                  title={data.admins.length <= 2 ? 'At least two instance admins must remain' : undefined}
                   onClick={() => void onRemoveAdmin(a.sub, a.iss)}
                 >
                   <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove

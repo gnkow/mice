@@ -182,7 +182,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const repo = typeof body.repo === 'string' ? body.repo : ''
     if (!namespace || !repo) return c.json({ error: 'namespace and repo are required' }, 400)
     const z = await authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
-    if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
+    if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, z.status ?? 403)
     const src = (body.source ?? {}) as { branch?: unknown; commit?: unknown }
     let source: { branch: string } | { commit: string }
     if (typeof src.branch === 'string' && src.branch) source = { branch: src.branch }
@@ -231,7 +231,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const st = validWorkspaceId(id) ? svc.getState(id) : undefined
     if (!st) return { res: c.json({ error: 'Workspace not found' }, 404) }
     const z = await authorizeRepoAction(a.user, st.namespace, st.repo, write ? 'workspace.write' : 'workspace.read')
-    if (!z.allow) return { res: c.json({ error: z.reason ?? 'Forbidden' }, 403) }
+    if (!z.allow) return { res: c.json({ error: z.reason ?? 'Forbidden' }, z.status ?? 403) }
     return { a, svc, st }
   }
 
@@ -279,7 +279,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (mode !== 'read' && mode !== 'write') return c.json({ error: "mode must be 'read' or 'write'" }, 400)
     if (mode === 'write') {
       const z = await authorizeRepoAction(w.a.user, w.st.namespace, w.st.repo, 'workspace.write')
-      if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
+      if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, z.status ?? 403)
     }
     const kind = (typeof body.holder_kind === 'string' ? body.holder_kind : 'user') as HolderKind
     if (!HOLDER_KINDS.includes(kind)) return c.json({ error: 'invalid holder_kind' }, 400)
@@ -463,7 +463,7 @@ export function registerWorkspaceRoutes(app: Hono) {
     const ref = typeof body.ref === 'string' ? body.ref : ''
     if (!namespace || !repo || !ref) return c.json({ error: 'namespace, repo and ref are required' }, 400)
     const z = await authorizeRepoAction(a.user, namespace, repo, 'workspace.write')
-    if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
+    if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, z.status ?? 403)
     try {
       const { store } = await ctx(c)
       const { commit, done } = await store.startCheckout(namespace, repo, ref)

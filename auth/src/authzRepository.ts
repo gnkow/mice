@@ -69,7 +69,7 @@ export async function removeAdminKey(key: string): Promise<boolean> {
   return inTransaction(async (tx) => {
     await tx.execute(sql`lock table instance_admins in share row exclusive mode`)
     const all = await tx.select().from(instanceAdmins)
-    if (all.length <= 1 && all.some((r) => r.userKey === key)) return false
+    if (all.length <= 2 && all.some((r) => r.userKey === key)) return false
     await tx.delete(instanceAdmins).where(eq(instanceAdmins.userKey, key))
     return true
   })

@@ -1,3 +1,4 @@
+import { directoryNow } from './authentication/directory/directory.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
 import { hasCompletedTraining, hasInstancePermission, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
@@ -6,6 +7,7 @@ import { getNamespace } from './authzNamespaceStore.js'
 import { ownedNamespaces, userCanSeeNamespace, userHasAnyGrant } from './authzVisibility.js'
 import {
   maxRepoRole,
+  normalizeGroup,
   REPO_ROLE_RANK,
   roleAtLeast,
   type BasePermission,
@@ -42,7 +44,7 @@ export async function isUnscopedInstanceAdmin(user: SessionUser): Promise<boolea
 
 export type AuthzDecision = {
   allow: boolean
-  status: 403 | 401
+  status: 403 | 401 | 503
   reason: string
   /** Instance admin used site_admin_bypass for this check. */
   siteAdminBypass?: boolean
@@ -151,7 +153,8 @@ export async function hasRepoPermission(
   need: RepoRole,
   opts?: { method?: string; action?: string },
 ): Promise<{ ok: boolean; effective: BasePermission; bypass: boolean }> {
-  let effective = await effectiveRepoRole(user, ns, repo)
+  const subject = need === 'admin' ? await withDirectoryGroups(user) : user
+  let effective = await effectiveRepoRole(subject, ns, repo)
   effective = capByPatScopes(user, ns, repo, effective)
   if (roleAtLeast(effective, need)) {
     return { ok: true, effective, bypass: false }
@@ -160,7 +163,7 @@ export async function hasRepoPermission(
     opts?.method &&
     opts?.action &&
     !isScopedCredential(user) &&
-    await hasFineRepoPermission(user, ns, repo, opts.method, opts.action)
+    await hasFineRepoPermission(subject, ns, repo, opts.method, opts.action)
   ) {
     return { ok: true, effective, bypass: false }
   }
@@ -189,7 +192,14 @@ export async function decideManageRepoCollaborators(
   ns: string,
   repo: string,
 ): Promise<Decision> {
-  return await manageRepoCollaborators(user, ns, repo) ? ALLOWED : denied('Forbidden')
+  try {
+    return await manageRepoCollaborators(user, ns, repo) ? ALLOWED : denied('Forbidden')
+  } catch (err) {
+    if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+      return denied('Directory unavailable', 503)
+    }
+    throw err
+  }
 }
 
 async function manageRepoCollaborators(
@@ -221,6 +231,31 @@ export type AuthorizeInput = {
   createRepo?: string
 }
 
+/** Loads the directory groups for a sign, merge, or admin action. Throws status 503 when the directory cannot answer. */
+export async function confirmPrivilegedGroups(user: SessionUser): Promise<SessionUser> {
+  return withDirectoryGroups(user)
+}
+
+/** Session groups that the directory still lists. A group added since login stays off. */
+async function withDirectoryGroups(user: SessionUser): Promise<SessionUser> {
+  let listed
+  try {
+    listed = await directoryNow().getUserGroups(user.sub)
+  } catch {
+    throw Object.assign(new Error('Directory unavailable'), { status: 503 })
+  }
+  const live = new Set<string>()
+  for (const group of listed) {
+    live.add(group.id)
+    live.add(normalizeGroup(group.id))
+    live.add(normalizeGroup(group.name))
+  }
+  return {
+    ...user,
+    groups: (user.groups ?? []).filter((group) => live.has(group) || live.has(normalizeGroup(group))),
+  }
+}
+
 /** Authorize a proxied oxen API request. */
 export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzDecision> {
   const { user, via, method, pathname } = input
@@ -244,6 +279,20 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
   const repo = interpreted.repo ?? input.createRepo
   const action = interpreted.authzAction
   const bypass: AuthzDecision = { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
+  let mutationUser = user
+  if (
+    !['GET', 'HEAD'].includes(method) &&
+    (interpreted.kind === 'repo' || interpreted.kind === 'repo.create')
+  ) {
+    try {
+      mutationUser = await withDirectoryGroups(user)
+    } catch (err) {
+      if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+        return { allow: false, status: 503, reason: 'Directory unavailable' }
+      }
+      throw err
+    }
+  }
 
   switch (interpreted.kind) {
     case 'public':
@@ -272,8 +321,8 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
         if (await isInstanceAdmin(user)) return bypass
         return deny('Namespace not found in AuthZ; create it first')
       }
-      if (await hasNamespaceCapability(ns, user, 'create_repos')) return allow()
-      const nsRole = await resolveNamespaceRole(ns, user)
+      if (await hasNamespaceCapability(ns, mutationUser, 'create_repos')) return allow()
+      const nsRole = await resolveNamespaceRole(ns, mutationUser)
       if (nsRole === 'owner') return allow()
       if (nsRole === 'member' && settings.membersCanCreateRepos) return allow()
       if (await isInstanceAdmin(user)) return bypass
@@ -296,8 +345,9 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
   }
 
   const need = interpreted.minRole
+  const actor = mutationUser
 
-  const check = await hasRepoPermission(user, ns, repo, need, { method, action })
+  const check = await hasRepoPermission(actor, ns, repo, need, { method, action })
   if (check.ok) {
     return {
       allow: true,
@@ -420,13 +470,26 @@ export async function authorizeRepoAction(
   namespace: string,
   repo: string,
   action: RepoAction,
-): Promise<{ allow: boolean; reason?: string }> {
+): Promise<{ allow: boolean; reason?: string; status?: 403 | 503 }> {
   const policy = REPO_ACTION_POLICY[action]
-  const check = await hasRepoPermission(user, namespace, repo, policy.need, {
+  let actor = user
+  if (policy.method !== 'GET') {
+    try {
+      actor = await withDirectoryGroups(user)
+    } catch (err) {
+      if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+        return { allow: false, reason: 'Directory unavailable', status: 503 }
+      }
+      throw err
+    }
+  }
+  const check = await hasRepoPermission(actor, namespace, repo, policy.need, {
     method: policy.method,
     action,
   })
-  return check.ok ? { allow: true } : { allow: false, reason: policy.reason }
+  return check.ok
+    ? { allow: true }
+    : { allow: false, reason: policy.reason, status: 403 }
 }
 
 export type InstanceAction =
@@ -520,8 +583,19 @@ const NAMESPACE_ACTION_POLICY: Record<NamespaceAction, NamespacePolicy> = {
 export async function decideNamespaceAction(user: SessionUser, ns: string, action: NamespaceAction): Promise<Decision> {
   const policy = NAMESPACE_ACTION_POLICY[action]
   if (policy.unscopedOnly && isScopedCredential(user)) return denied(policy.reason)
-  if (policy.member && (await isInstanceAdmin(user) || await resolveNamespaceRole(ns, user))) return ALLOWED
-  if (policy.capability && await hasNamespaceCapability(ns, user, policy.capability)) return ALLOWED
+  let actor = user
+  if (action !== 'namespace.view') {
+    try {
+      actor = await withDirectoryGroups(user)
+    } catch (err) {
+      if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+        return denied('Directory unavailable', 503)
+      }
+      throw err
+    }
+  }
+  if (policy.member && (await isInstanceAdmin(actor) || await resolveNamespaceRole(ns, actor))) return ALLOWED
+  if (policy.capability && await hasNamespaceCapability(ns, actor, policy.capability)) return ALLOWED
   return denied(policy.reason)
 }
 

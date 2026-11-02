@@ -4,7 +4,7 @@ Status: ready-for-agent
 
 **Spec:** `.specs/01-authentication.md` (S3)
 
-**Blocked by:** 12 (stored reports) and 40 (the signature that clears the alert)
+**Blocked by:** none. Issues 12 and 40 are done.
 
 ## What to build
 

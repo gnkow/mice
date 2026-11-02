@@ -10,6 +10,10 @@ Mice is a platform around a self-hosted oxen-server: identity, authorization, au
 The authenticated identity behind a request, keyed by IdP `iss`+`sub`. The IdP guarantees that key is one unique human. Arrives as a Session or a PAT.
 _Avoid_: Account, caller
 
+**Instance admin**:
+A Principal appointed to administer the Mice instance. At least two remain; deletion cannot go below that.
+_Avoid_: Owner, superuser, bootstrap admin
+
 **User**:
 A human with a profile in Mice. A User is one kind of Principal holder; use Principal when the authentication mechanism matters.
 _Avoid_: Member (that is a namespace role)

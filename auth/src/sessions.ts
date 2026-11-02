@@ -515,7 +515,7 @@ export async function connectDesktopSession(
         mountGate.reason ||
           'Mount access revoked; stop or destroy this session, or restore repository access',
       ),
-      { status: 403 },
+      { status: mountGate.status ?? 403 },
     )
   }
   const connect = await mintConnectPayload(session)

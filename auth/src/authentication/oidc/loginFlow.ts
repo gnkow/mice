@@ -86,10 +86,10 @@ async function beginLogin(provider: OidcProvider, clock: Clock,
 
 export type LoginResult =
   | { ok: true; user: SessionUser; dest: string; reauth?: { maxAge: number; sub: string; iss: string } }
-  | { ok: false; status: 400 | 403 | 500; html: string; reauth?: boolean; reason?: string }
+  | { ok: false; status: 400 | 403 | 500 | 503; html: string; reauth?: boolean; reason?: string }
 
 const retry = '<a href="/auth/login">Retry</a>'
-const fail = (status: 400 | 403 | 500, msg: string, reauth = false): LoginResult => ({
+const fail = (status: 400 | 403 | 500 | 503, msg: string, reauth = false): LoginResult => ({
   ok: false,
   status,
   html: `<p>${msg}</p><p>${retry}</p>`,
@@ -138,7 +138,7 @@ async function finishLogin(
     const idpStatus = account.status
     if (idpStatus === 'error') {
       return fail(
-        500,
+        503,
         'IdP is unreachable. Login cannot be verified at this time.',
         isReauth
       )

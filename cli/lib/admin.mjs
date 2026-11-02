@@ -632,7 +632,7 @@ export async function runAdmin(group, argv, deps) {
     process.exitCode = 1
     return
   }
-  const { remote, token } = deps.auth({ remote: str(flags.remote), token: str(flags.token) })
+  const { remote, token } = await deps.auth({ remote: str(flags.remote), token: str(flags.token) })
   try {
     if (req.confirm) await confirmOrExit(req.confirm, flags)
     if (req.mountsEdit) {

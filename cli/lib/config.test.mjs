@@ -9,6 +9,10 @@ process.env.MICE_CONFIG_DIR = configDir
 delete process.env.MICE_REMOTE
 delete process.env.MICE_PAT
 
+const { memoryKeychain, useKeychain } = await import('./keychain.mjs')
+const keychain = memoryKeychain()
+useKeychain(keychain)
+
 const {
   authHostFromRemote,
   clearLoginState,
@@ -59,12 +63,19 @@ describe('mice CLI config', () => {
     )
   })
 
-  it('resolveToken prefers MICE_PAT over credentials file', () => {
+  it('resolveToken prefers MICE_PAT over the keychain', () => {
+    saveConfig({ remote: 'http://localhost:8080' })
     saveCredentials({ token: 'mice_pat_stored' })
-    assert.equal(resolveToken(), 'mice_pat_stored')
+    keychain.put({
+      principal: 'http://idp|ada',
+      remote: 'http://localhost:8080',
+      token: 'mice_cli_stored',
+    })
+    assert.equal(resolveToken(), 'mice_cli_stored')
     process.env.MICE_PAT = 'mice_pat_env'
     assert.equal(resolveToken(), 'mice_pat_env')
     delete process.env.MICE_PAT
+    keychain.remove({ remote: 'http://localhost:8080' })
   })
 
   it('clearLoginState removes pat metadata and credentials', () => {

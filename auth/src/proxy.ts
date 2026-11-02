@@ -183,11 +183,11 @@ export async function proxyToOxen(
     return new Response(
       JSON.stringify({
         status: 'error',
-        status_message: 'forbidden',
+        status_message: decision.status === 503 ? 'unavailable' : 'forbidden',
         error: { detail: decision.reason },
       }),
       {
-        status: 403,
+        status: decision.status,
         headers: { 'content-type': 'application/json' },
       },
     )

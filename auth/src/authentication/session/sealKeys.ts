@@ -132,8 +132,7 @@ export async function getSealKeyById(keyId: string): Promise<SealKey | null> {
 /**
  * Normal rotation: Create a new key, mark old key to expire in 7 days (overlap period).
  */
-export async function normalRotation(): Promise<SealKey> {
-  const now = nowSec()
+export async function normalRotation(at = nowSec()): Promise<SealKey> {
   const keyId = `seal_${randomBytes(8).toString('hex')}`
   const keyMaterial = generateKeyMaterial()
   
@@ -144,7 +143,7 @@ export async function normalRotation(): Promise<SealKey> {
   if (currentKey && !currentKey.validUntil) {
     await getDb()
       .update(sealKeys)
-      .set({ validUntil: now + SEVEN_DAYS_SEC })
+      .set({ validUntil: at + SEVEN_DAYS_SEC })
       .where(eq(sealKeys.id, currentKey.id))
   }
   
@@ -154,7 +153,7 @@ export async function normalRotation(): Promise<SealKey> {
     .values({
       id: keyId,
       keyMaterial,
-      validFrom: now,
+      validFrom: at,
       validUntil: null, // Current primary key
       revokedAt: null,
       rotationType: 'normal',
