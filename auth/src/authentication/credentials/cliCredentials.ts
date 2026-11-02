@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { currentClock, type Clock } from '../../clock.js'
 import { getDb } from '../../db/database.js'
 import { cliCredentialFamilies, cliCredentialTokens, principals, webSessions } from '../../db/schema.js'
@@ -183,7 +183,65 @@ export function createCliCredentials(deps: CliCredentialDeps) {
     return true
   }
 
-  return { issue, resolve, refresh, revoke, logout }
+  async function listForUser(user: Pick<Holder, 'iss' | 'sub'>) {
+    const rows = await getDb()
+      .select({
+        id: cliCredentialFamilies.id,
+        createdAt: cliCredentialFamilies.createdAt,
+        expiresAt: cliCredentialFamilies.expiresAt,
+      })
+      .from(cliCredentialFamilies)
+      .where(and(
+        eq(cliCredentialFamilies.iss, user.iss),
+        eq(cliCredentialFamilies.sub, user.sub),
+        isNull(cliCredentialFamilies.revokedAt),
+      ))
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+    }))
+  }
+
+  async function revokeFamily(user: Pick<Holder, 'iss' | 'sub'>, familyId: string): Promise<boolean> {
+    const [row] = await getDb()
+      .update(cliCredentialFamilies)
+      .set({ revokedAt: new Date(clock.now()) })
+      .where(and(
+        eq(cliCredentialFamilies.id, familyId),
+        eq(cliCredentialFamilies.iss, user.iss),
+        eq(cliCredentialFamilies.sub, user.sub),
+        isNull(cliCredentialFamilies.revokedAt),
+      ))
+      .returning({ id: cliCredentialFamilies.id })
+    return !!row
+  }
+
+  async function revokeAllFor(user: Pick<Holder, 'iss' | 'sub'>): Promise<void> {
+    await getDb()
+      .update(cliCredentialFamilies)
+      .set({ revokedAt: new Date(clock.now()) })
+      .where(and(
+        eq(cliCredentialFamilies.iss, user.iss),
+        eq(cliCredentialFamilies.sub, user.sub),
+        isNull(cliCredentialFamilies.revokedAt),
+      ))
+  }
+
+  async function listHolders() {
+    const rows = await getDb()
+      .select({
+        sub: cliCredentialFamilies.sub,
+        iss: cliCredentialFamilies.iss,
+        email: cliCredentialFamilies.email,
+        name: cliCredentialFamilies.name,
+      })
+      .from(cliCredentialFamilies)
+      .where(isNull(cliCredentialFamilies.revokedAt))
+    return rows
+  }
+
+  return { issue, resolve, refresh, revoke, logout, listForUser, revokeFamily, revokeAllFor, listHolders }
 }
 
 async function endWebSessions(user: Pick<SessionUser, 'sub' | 'iss'>): Promise<void> {
@@ -211,3 +269,7 @@ export const resolveCliCredential = live.resolve
 export const refreshCliCredential = live.refresh
 export const revokeCliCredential = live.revoke
 export const logoutCliCredential = live.logout
+export const listCliCredentials = live.listForUser
+export const revokeCliCredentialFamily = live.revokeFamily
+export const revokeAllCliCredentials = live.revokeAllFor
+export const listCliCredentialHolders = live.listHolders

@@ -9,30 +9,22 @@ export function canonicalIssuer(iss: string): string {
   return iss.trim().replace(/\/+$/, '')
 }
 
-/** Reserved issuer of service principals (`urn:mice:service|<uuid>`); never a valid OIDC issuer. */
-export const SERVICE_ISSUER = 'urn:mice:service'
-
-export type PrincipalKind = 'human' | 'service'
+export type PrincipalKind = 'human'
 
 /** What a Principal may do, decided by kind in one place. */
-export type Capability = 'canBeAdmin' | 'hasFavorites' | 'canOwnServicePrincipals'
+export type Capability = 'canBeAdmin' | 'hasFavorites'
 
 const CAPABILITIES: Record<PrincipalKind, Record<Capability, boolean>> = {
-  human: { canBeAdmin: true, hasFavorites: true, canOwnServicePrincipals: true },
-  service: { canBeAdmin: false, hasFavorites: false, canOwnServicePrincipals: false },
+  human: { canBeAdmin: true, hasFavorites: true },
 }
 
-export function kindOf(p: { iss: string }): PrincipalKind {
-  return p.iss === SERVICE_ISSUER ? 'service' : 'human'
+/** A Principal is a person. Mice does not classify a service kind. */
+export function kindOf(_p: { iss: string }): PrincipalKind {
+  return 'human'
 }
 
 export function can(p: { iss: string }, capability: Capability): boolean {
   return CAPABILITIES[kindOf(p)][capability]
-}
-
-/** The identity a service principal authenticates as. */
-export function serviceIdentity(id: string): PrincipalId {
-  return { sub: id, iss: SERVICE_ISSUER }
 }
 
 /** True for a PAT minted with scopes: it never gets admin bypass, fine-grained grants or per-user routes. */

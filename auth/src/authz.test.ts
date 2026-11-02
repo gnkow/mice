@@ -38,7 +38,7 @@ const {
   submitAccessRequest,
   resolveAccessRequest,
 } = await import('./accessRequests.js')
-const { createPat, resolvePat } = await import('./authentication/index.js')
+const { issueCliCredential, resolveCliCredential } = await import('./authentication/credentials/cliCredentials.js')
 const { OXEN_PATH_ROLE_MAP, minRoleForAction } = await import('./authzPathMap.js')
 const { classifyPath, interpretRequest } = await import('./authentication/index.js')
 const requiredRepoRoleForRequest = (method: string, path: string) => interpretRequest(method, path).minRole
@@ -251,10 +251,10 @@ await describe('TC-AUTHO matrix', async () => {
     const ns = 'tc13'
     await createNamespaceAuthz(admin, ns, 'write', true)
     await setNamespaceMember(ns, alice, 'member')
-    const { token } = await createPat(alice, 'scoped', [
+    const { accessToken } = await issueCliCredential(alice, [
       { namespace: ns, repo: 'r1', maxRole: 'read' },
     ])
-    const patUser = await resolvePat(token)
+    const patUser = await resolveCliCredential(accessToken)
     assert.ok(patUser)
     assert.equal((await hasRepoPermission(patUser!, ns, 'r1', 'read')).ok, true)
     assert.equal((await hasRepoPermission(patUser!, ns, 'r1', 'write')).ok, false)
@@ -367,24 +367,6 @@ await describe('Phase 2–3 extras', async () => {
     assert.equal(r2.ok, false)
     const listed = await listNamespaceMembers(ns)
     assert.ok(listed.some((m) => m.kind === 'group' && m.group === 'owners'))
-  })
-
-  await it('PAT snapshots groups at mint', async () => {
-    const ns = 'tc-pat-groups'
-    await createNamespaceAuthz(admin, ns, 'read', true)
-    await setNamespaceGroupMember(ns, 'pat-team', 'member')
-    const frank = {
-      sub: 'frank',
-      iss: 'test',
-      email: 'frank@example.com',
-      name: 'Frank',
-      groups: ['pat-team'],
-    }
-    const { token } = await createPat(frank, 'with-groups')
-    const patUser = await resolvePat(token)
-    assert.ok(patUser)
-    assert.deepEqual(patUser!.groups, ['pat-team'])
-    assert.equal((await hasRepoPermission(patUser!, ns, 'r', 'read')).ok, true)
   })
 
   await it('training gate blocks until completed', async () => {
@@ -1157,10 +1139,10 @@ await describe('repo / namespace API decisions', async () => {
   await it('PAT scopes on instance admin do not widen beyond maxRole', async () => {
     const ns = 'tc-pat-admin'
     await createNamespaceAuthz(admin, ns, 'none', true)
-    const { token } = await createPat(admin, 'capped', [
+    const { accessToken } = await issueCliCredential(admin, [
       { namespace: ns, repo: 'r1', maxRole: 'read' },
     ])
-    const patUser = await resolvePat(token)
+    const patUser = await resolveCliCredential(accessToken)
     assert.ok(patUser)
     assert.equal((await hasRepoPermission(patUser!, ns, 'r1', 'read')).ok, true)
     assert.equal((await hasRepoPermission(patUser!, ns, 'r1', 'write')).ok, false)
@@ -1171,8 +1153,8 @@ await describe('repo / namespace API decisions', async () => {
     await createNamespaceAuthz(admin, ns, 'none', true)
     const u = mkUser('pat-shrink-user')
     await setRepoCollaborator(ns, 'r', u, 'write')
-    const { token } = await createPat(u, 'shrink', [{ namespace: ns, repo: 'r', maxRole: 'write' }])
-    const pat = await resolvePat(token)
+    const { accessToken } = await issueCliCredential(u, [{ namespace: ns, repo: 'r', maxRole: 'write' }])
+    const pat = await resolveCliCredential(accessToken)
     assert.ok(pat)
     assert.equal((await hasRepoPermission(pat!, ns, 'r', 'write')).ok, true)
 
@@ -1181,7 +1163,7 @@ await describe('repo / namespace API decisions', async () => {
     assert.equal((await hasRepoPermission(pat!, ns, 'r', 'read')).ok, true)
 
     await removeRepoCollaborator(ns, 'r', u)
-    const again = await resolvePat(token)
+    const again = await resolveCliCredential(accessToken)
     assert.ok(again)
     assert.equal((await hasRepoPermission(again!, ns, 'r', 'read')).ok, false)
   })
@@ -1191,9 +1173,9 @@ await describe('repo / namespace API decisions', async () => {
     await createNamespaceAuthz(admin, ns, 'none', true)
     const u = mkUser('pat-no-grow-user')
     await setRepoCollaborator(ns, 'r', u, 'read')
-    const { token } = await createPat(u, 'no-grow', [{ namespace: ns, repo: 'r', maxRole: 'read' }])
+    const { accessToken } = await issueCliCredential(u, [{ namespace: ns, repo: 'r', maxRole: 'read' }])
     await setRepoCollaborator(ns, 'r', u, 'admin')
-    const pat = await resolvePat(token)
+    const pat = await resolveCliCredential(accessToken)
     assert.ok(pat)
     assert.equal((await hasRepoPermission(pat!, ns, 'r', 'write')).ok, false)
   })

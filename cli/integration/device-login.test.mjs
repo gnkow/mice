@@ -64,7 +64,7 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
         'Content-Type': 'application/json',
         Cookie: cookie,
       },
-      body: JSON.stringify({ user_code: started.user_code }),
+      body: JSON.stringify({ user_code: started.user_code, confirmation: 'APPROVE' }),
     })
     const approveText = await approve.text()
     assert.equal(approve.status, 200, approveText)
@@ -82,7 +82,7 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
     const body = JSON.parse(pollText)
     assert.equal(body.status, 'approved')
     const token = body.token || body.access_token
-    assert.match(token, /^mice_pat_/)
+    assert.match(token, /^mice_cli_/)
 
     const who = await fetch(`${AUTH_URL}/auth/cli/whoami`, {
       headers: { Authorization: `Bearer ${token}` },

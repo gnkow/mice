@@ -6,28 +6,10 @@ import { INSTANCE_PERMISSIONS } from '../../auth/src/authzContract'
 const noPermissions = Object.fromEntries(INSTANCE_PERMISSIONS.map((p) => [p, false]))
 import { mintSession } from '../helpers/session'
 
-test('token events reach the real inbox and profile preferences persist', async ({ page }) => {
+test('notification preferences persist', async ({ page }) => {
   await mintSession(page, { sub: `notification-${Date.now()}` })
   await page.goto('/notifications')
   await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible()
-  const started = Date.now()
-  const tokenStatus = await page.evaluate(async () => {
-    const response = await fetch('/auth/tokens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: 'notification-integration' }),
-    })
-    return response.status
-  })
-  expect(tokenStatus).toBe(200)
-  await page.reload()
-  await expect(page.getByRole('main').getByText('Token settings changed', { exact: true })).toBeVisible()
-  expect(Date.now() - started).toBeLessThan(30_000)
-  await page.getByRole('button', { name: 'Mark all read' }).click()
-  await expect.poll(async () => {
-    const response = await page.request.get('/auth/notifications/unread-count')
-    return (await response.json()).unreadCount
-  }).toBe(0)
   await page.goto('/profile/notifications')
   await page.getByLabel('Enable notifications', { exact: true }).uncheck()
   await page.getByRole('button', { name: 'Save preferences' }).click()
@@ -153,18 +135,12 @@ test('notification inbox and profile settings stay available without resource gr
   await page.locator('.profile-menu-panel').getByRole('link', { name: 'Settings', exact: true }).click()
   await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
   await expect(page.locator('main h2').first()).toHaveText('Connection')
-  await expect(page.getByRole('heading', { name: 'CLI tokens', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Access', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Access requests', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Authorization policy', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Instance administrators', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Delegated permissions', exact: true })).toBeVisible()
   await page.goto('/profile')
-  await expect(page.getByRole('heading', { name: 'CLI tokens', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Create token', exact: true })).toBeVisible()
-  await page.getByLabel('Token label', { exact: true }).fill('Profile automation')
-  await page.getByRole('button', { name: 'Create token', exact: true }).click()
-  await expect(page.getByText('Copy this token now — it will not be shown again.')).toBeVisible()
-  await expect(page.locator('#cli-tokens')).toContainText('Profile automation')
-  await page.getByRole('button', { name: 'Revoke', exact: true }).click()
-  await expect(page.getByText('No CLI tokens yet.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Access', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Device Sessions', exact: false })).toBeVisible()
 })

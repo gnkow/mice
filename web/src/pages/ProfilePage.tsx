@@ -25,7 +25,7 @@ const PERMISSION_INFO: Record<InstancePermission, { label: string; description: 
   },
   manage_own_tokens: {
     label: 'Manage own tokens',
-    description: 'Create and manage personal access tokens',
+    description: 'Approve CLI device logins and revoke those credentials',
   },
   cli_device_approve: {
     label: 'Approve CLI devices',

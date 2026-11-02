@@ -126,7 +126,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
 
     const approve = await page.request.post(
       `${AUTH_URL}/auth/cli/device/approve`,
-      { data: { user_code: started.user_code } },
+      { data: { user_code: started.user_code, confirmation: 'APPROVE' } },
     )
     expect(approve.ok()).toBeTruthy()
 
@@ -137,7 +137,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     expect(poll.ok()).toBeTruthy()
     const body = await poll.json()
     expect(body.status).toBe('approved')
-    expect(body.token).toMatch(/^mice_pat_/)
+    expect(body.token).toMatch(/^mice_cli_/)
     expect(body.user.email).toBe('api-approve@mice.local')
   })
 

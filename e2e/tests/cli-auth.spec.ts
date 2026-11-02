@@ -21,132 +21,7 @@ async function sessionLogin(
   })
 }
 
-test.describe('CLI auth via BFF PATs (PLAT-AUTH)', () => {
-  test('TC-CLI-01: PAT can call /api on BFF without session cookie', async ({
-    page,
-  }) => {
-    await sessionLogin(page)
-    const created = await page.request.post(`${BASE_URL}/auth/tokens`, {
-      data: { label: 'e2e-cli' },
-    })
-    expect(created.ok()).toBeTruthy()
-    const body = await created.json()
-    const pat = body.token as string
-    expect(pat).toMatch(/^mice_pat_/)
-
-    // Drop cookie session — CLI only sends Bearer
-    await page.context().clearCookies()
-
-    const denied = await page.request.get(`${AUTH_URL}/api/version`)
-    expect(denied.status()).toBe(401)
-
-    const ok = await page.request.get(`${AUTH_URL}/api/version`, {
-      headers: { Authorization: `Bearer ${pat}` },
-    })
-    expect(ok.ok()).toBeTruthy()
-    const version = await ok.json()
-    expect(version.oxen_version || version.status).toBeTruthy()
-  })
-
-  test('TC-CLI-02: PAT author is injected on write (create via BFF)', async ({
-    page,
-  }) => {
-    const authorName = 'CLI Pat Author'
-    const authorEmail = 'cli-pat@author.test'
-    await sessionLogin(page, {
-      name: authorName,
-      email: authorEmail,
-      sub: 'cli-pat-author',
-    })
-    const created = await page.request.post(`${BASE_URL}/auth/tokens`, {
-      data: { label: 'write-cli' },
-    })
-    const { token: pat } = await created.json()
-    await page.context().clearCookies()
-
-    const ns = uniqueId('cli-ns')
-    const repo = 'repo'
-    const create = await page.request.post(`${AUTH_URL}/api/repos`, {
-      headers: {
-        Authorization: `Bearer ${pat}`,
-        'Content-Type': 'application/json',
-      },
-      data: { namespace: ns, name: repo },
-    })
-    expect(create.ok()).toBeTruthy()
-
-    // Upload a file through BFF with forged author fields — BFF must overwrite
-    const form = new FormData()
-    form.append(
-      'file',
-      new Blob(['hello cli\n'], { type: 'text/plain' }),
-      'readme.txt',
-    )
-    form.append('message', 'cli pat commit')
-    form.append('name', 'Forged Name')
-    form.append('email', 'forged@evil.test')
-
-    const put = await page.request.put(
-      `${AUTH_URL}/api/repos/${encodeURIComponent(ns)}/${encodeURIComponent(repo)}/file/main/readme.txt`,
-      {
-        headers: { Authorization: `Bearer ${pat}` },
-        multipart: {
-          file: {
-            name: 'readme.txt',
-            mimeType: 'text/plain',
-            buffer: Buffer.from('hello cli\n'),
-          },
-          message: 'cli pat commit',
-          name: 'Forged Name',
-          email: 'forged@evil.test',
-        },
-      },
-    )
-    expect(put.ok()).toBeTruthy()
-    const putBody = await put.json()
-    expect(putBody.commit?.author || putBody.commit?.email).toBeTruthy()
-    expect(putBody.commit.author).toBe(authorName)
-    expect(putBody.commit.email).toBe(authorEmail)
-
-    await deleteRepo(ns, repo)
-  })
-
-  test('TC-CLI-03: revoked PAT is rejected', async ({ page }) => {
-    await sessionLogin(page)
-    const created = await page.request.post(`${BASE_URL}/auth/tokens`, {
-      data: { label: 'revoke-me' },
-    })
-    const { token: pat, pat: meta } = await created.json()
-
-    const rev = await page.request.delete(
-      `${BASE_URL}/auth/tokens/${meta.id}`,
-    )
-    expect(rev.ok()).toBeTruthy()
-
-    await page.context().clearCookies()
-    const res = await page.request.get(`${AUTH_URL}/api/version`, {
-      headers: { Authorization: `Bearer ${pat}` },
-    })
-    expect(res.status()).toBe(401)
-  })
-
-  test('TC-CLI-04: Profile UI can create a CLI token', async ({ page }) => {
-    await sessionLogin(page)
-    await page.goto('/profile')
-    await expect(
-      page.getByRole('heading', { name: 'CLI tokens' }),
-    ).toBeVisible()
-    const label = uniqueId('ui-cli')
-    await page.getByLabel('Token label').fill(label)
-    await page.getByRole('button', { name: 'Create token' }).click()
-    await expect(page.getByText(/Copy this token now/i)).toBeVisible()
-    const shown = page.locator('.flash-warn pre.settings-code')
-    await expect(shown).toContainText('mice_pat_')
-    await expect(
-      page.getByRole('listitem').filter({ hasText: label }),
-    ).toBeVisible()
-  })
-
+test.describe('CLI auth via device login (PLAT-AUTH)', () => {
   test('TC-CLI-05: Clone box points at BFF remote, not :3001', async ({
     page,
   }) => {
@@ -212,30 +87,30 @@ test.describe('CLI auth via BFF PATs (PLAT-AUTH)', () => {
     expect(poll.ok()).toBeTruthy()
     const body = await poll.json()
     expect(body.status).toBe('approved')
-    const pat = (body.token || body.access_token) as string
-    expect(pat).toMatch(/^mice_pat_/)
+    const accessToken = (body.token || body.access_token) as string
+    expect(accessToken).toMatch(/^mice_cli_/)
 
     await page.context().clearCookies()
     const api = await page.request.get(`${AUTH_URL}/api/version`, {
-      headers: { Authorization: `Bearer ${pat}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     })
     expect(api.ok()).toBeTruthy()
 
     const who = await page.request.get(`${AUTH_URL}/auth/cli/whoami`, {
-      headers: { Authorization: `Bearer ${pat}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     })
     expect(who.ok()).toBeTruthy()
     const me = await who.json()
     expect(me.user.email).toBe('device-login@mice.local')
 
     const logout = await page.request.post(`${AUTH_URL}/auth/cli/logout`, {
-      headers: { Authorization: `Bearer ${pat}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
       data: {},
     })
     expect(logout.ok()).toBeTruthy()
 
     const denied = await page.request.get(`${AUTH_URL}/api/version`, {
-      headers: { Authorization: `Bearer ${pat}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     })
     expect(denied.status()).toBe(401)
   })

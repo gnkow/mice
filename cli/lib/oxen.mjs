@@ -563,7 +563,7 @@ export function ensureOxenAuth(remote) {
   const token = resolveToken()
   if (!token) {
     throw new Error(
-      `Not logged in for ${host}. Run: mice login\n(Or set MICE_PAT for automation.)`,
+      `Not logged in for ${host}. Run: mice login`,
     )
   }
   oxenConfigAuth(host, token)

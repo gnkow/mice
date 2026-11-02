@@ -45,11 +45,9 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     auditVerifyIntervalSec: Number(src.AUDIT_VERIFY_INTERVAL_SEC ?? 3600),
     /** Minimum length of a mutation reason (and of a commit message used as one). */
     auditReasonMinLength: Number(src.AUDIT_REASON_MIN_LENGTH ?? 10),
-    /** Days before a service principal PAT expires that its owner is notified; 0 disables. */
-    servicePatExpiryLeadDays: Number(src.SERVICE_PAT_EXPIRY_LEAD_DAYS ?? 14),
     cookieName: src.SESSION_COOKIE_NAME ?? '__Host-mice_session',
     cookieSecure: src.COOKIE_SECURE === 'true',
-    /** Directory for PAT store (pats.json). */
+    /** Directory for auth data. */
     dataDir: (src.AUTH_DATA_DIR ?? './data').replace(/\/$/, ''),
     /** Job records + work/logs (defaults under AUTH_DATA_DIR/jobs). */
     jobsDataDir: (

@@ -7,7 +7,7 @@ Mice is a platform around a self-hosted oxen-server: identity, authorization, au
 ### Identity
 
 **Principal**:
-The authenticated identity behind a request, keyed by IdP `iss`+`sub`. The IdP guarantees that key is one unique human. Arrives as a Session or a PAT.
+The authenticated identity behind a request, keyed by IdP `iss`+`sub`. The IdP guarantees that key is one unique human. Arrives as a Session or a CLI credential.
 _Avoid_: Account, caller
 
 **Instance admin**:
@@ -22,9 +22,9 @@ _Avoid_: Member (that is a namespace role)
 The sealed browser cookie issued after SSO login.
 _Avoid_: Login token, desktop session (see Desktop Session)
 
-**PAT**:
-A `mice_pat_*` personal access token used by CLI, Python and automation, with optional scopes.
-_Avoid_: API key, bearer token
+**CLI credential**:
+A short-lived `mice_cli_*` access token from `mice login`, stored in the OS keychain and refreshed for up to 30 days.
+_Avoid_: PAT, personal access token, API key
 
 **BFF**:
 The `auth/` service in front of oxen-server that authenticates, authorizes, audits and proxies every request.

@@ -18,6 +18,10 @@ process.env.OIDC_ISSUER_PUBLIC = 'http://localhost:8180/realms/mice'
 
 const { Hono } = await import('hono')
 const { registerAccessReviewRoutes } = await import('./accessReviewRoutes.js')
+const { startAccessReviewAlertSchedule } = await import('./accessReviewAlert.js')
+const { useNovu } = await import('../../novu.js')
+const { subscriberId } = await import('../../notifications.js')
+const { notificationUserKey } = await import('../../notificationsStore.js')
 const { sealSession } = await import('../session/session.js')
 const { sealSessionCookie } = await import('../session/cookieSeal.js')
 const { ensureBootstrapKey } = await import('../session/sealKeys.js')
@@ -306,6 +310,111 @@ describe('Access Review Routes (Issue #12)', () => {
     assert.equal(event.actor.iss, 'idp')
     assert.equal(event.actor.sub, 'admin1')
     assert.equal(event.detail?.reportId, created.report.reportId)
+  })
+
+  it('lists an unsigned access review older than 14 days', async () => {
+    await ensureBootstrapKey()
+    const app = new Hono()
+    registerAccessReviewRoutes(app, { audit: async () => {} })
+    await getDb().insert(accessReviewReports).values({
+      quarter: '2020-Q1',
+      report: {
+        reportId: 'access-review-2020-Q1',
+        quarter: '2020-Q1',
+        generatedAt: Date.UTC(2020, 0, 1),
+        principals: [],
+      },
+      createdAt: new Date('2020-01-01T00:00:00.000Z'),
+    })
+    const headers = { cookie: await cookie(admin), ...json }
+    const fresh = await app.request('/auth/admin/access-review/generate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ quarter: '2098-Q1' }),
+    })
+    assert.equal(fresh.status, 200, await fresh.text())
+    const res = await app.request('/auth/admin/access-review/overdue', { headers: { cookie: headers.cookie } })
+    const text = await res.text()
+    assert.equal(res.status, 200, text)
+    const body = JSON.parse(text) as { overdue: Array<{ quarter: string; reportId: string }> }
+    assert.deepEqual(body.overdue, [{ quarter: '2020-Q1', reportId: 'access-review-2020-Q1' }])
+  })
+
+  it('does not list a signed access review', async () => {
+    await ensureBootstrapKey()
+    const app = new Hono()
+    registerAccessReviewRoutes(app, { audit: async () => {} })
+    await getDb().insert(accessReviewReports).values({
+      quarter: '2019-Q4',
+      report: {
+        reportId: 'access-review-2019-Q4',
+        quarter: '2019-Q4',
+        generatedAt: Date.UTC(2019, 9, 1),
+        principals: [],
+        reviewerSignature: {
+          hash: 'signed',
+          principal: { iss: 'idp', sub: 'admin1', name: 'admin1' },
+          signedAt: Date.UTC(2019, 9, 2),
+          meaning: 'Reviewed',
+          content: '{}',
+        },
+      },
+      createdAt: new Date('2019-10-01T00:00:00.000Z'),
+    })
+    const res = await app.request('/auth/admin/access-review/overdue', { headers: { cookie: await cookie(admin) } })
+    const body = JSON.parse(await res.text()) as { overdue: Array<{ quarter: string }> }
+    assert.equal(body.overdue.some((row) => row.quarter === '2019-Q4'), false)
+  })
+
+  it('notifies instance admins when an access review is unsigned for 14 days', async () => {
+    const triggered: Array<{ subscriberId: string; payload: { summary?: string; title?: string; category?: string } }> = []
+    useNovu({
+      async trigger(subscriberId, _eventId, payload) {
+        triggered.push({ subscriberId, payload: payload as { summary?: string; title?: string; category?: string } })
+      },
+      async feed() { return [] },
+      async mark() {},
+      async deleteSubscriber() {},
+      async health() { return { ok: true } },
+    })
+    await getDb().insert(accessReviewReports).values({
+      quarter: '2018-Q4',
+      report: {
+        reportId: 'access-review-2018-Q4',
+        quarter: '2018-Q4',
+        generatedAt: Date.UTC(2018, 9, 1),
+        principals: [],
+      },
+      createdAt: new Date('2018-10-01T00:00:00.000Z'),
+    })
+    await getDb().insert(accessReviewReports).values({
+      quarter: '2017-Q1',
+      report: {
+        reportId: 'access-review-2017-Q1',
+        quarter: '2017-Q1',
+        generatedAt: Date.UTC(2017, 0, 1),
+        principals: [],
+        reviewerSignature: {
+          hash: 'signed',
+          principal: { iss: 'idp', sub: 'admin1', name: 'admin1' },
+          signedAt: Date.UTC(2017, 0, 2),
+          meaning: 'Reviewed',
+          content: '{}',
+        },
+      },
+      createdAt: new Date('2017-01-01T00:00:00.000Z'),
+    })
+    const schedule = startAccessReviewAlertSchedule({ poll: false })
+    const sent = await schedule.tick()
+    assert.equal(sent, true)
+    const adminId = subscriberId(notificationUserKey({ iss: 'idp', sub: 'admin1' }))
+    const note = triggered.find((row) => row.subscriberId === adminId && (row.payload.summary ?? '').includes('access-review-2018-Q4'))
+    assert.ok(note)
+    assert.equal(note.payload.category, 'security')
+    assert.equal(note.payload.title, 'Access review unsigned')
+    assert.match(note.payload.summary ?? '', /2018-Q4/)
+    assert.match(note.payload.summary ?? '', /access-review-2018-Q4/)
+    assert.equal(triggered.some((row) => (row.payload.summary ?? '').includes('2017-Q1')), false)
   })
 
   it('recovery-token routes are gone', async () => {

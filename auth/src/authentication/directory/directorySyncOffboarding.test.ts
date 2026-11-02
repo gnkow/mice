@@ -8,7 +8,7 @@ const ctx = isolatedAuth({ OIDC_ISSUER_PUBLIC: 'idp' })
 after(() => ctx.restore())
 
 const { runDirectorySync } = await import('./directorySync.js')
-const { createPat } = await import('../credentials/tokens.js')
+const { issueCliCredential } = await import('../credentials/cliCredentials.js')
 const { isCredentialRevoked } = await import('../credentials/credentialRevocation.js')
 const { queryAudit } = await import('../../audit.js')
 
@@ -17,7 +17,7 @@ const lookup = async () => 'missing' as const
 
 describe('directory sync acts on the offboarding result', () => {
   it('reports an incomplete offboarding, audits it, and retries it on the next run', async () => {
-    await createPat(gone, 'cli')
+    await issueCliCredential(gone)
     const restore = await breakTable('session_revocations')
     let first
     try {

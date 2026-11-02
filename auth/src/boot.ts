@@ -3,7 +3,7 @@ import { createApp } from './app.js'
 import { closeMainDatabase, openMainDatabase } from './db/database.js'
 import { initAudit, setAuditObserver, startAuditVerifySchedule } from './audit.js'
 import { acquireDataDirLock } from './dataDirLock.js'
-import { assertProductionStartup, setAuthenticationObserver, startDirectorySyncSchedule, startIdpDriftSchedule, startSealKeyRotationSchedule, startServicePatExpirySchedule } from './authentication/index.js'
+import { assertProductionStartup, setAuthenticationObserver, startAccessReviewAlertSchedule, startClockDriftSchedule, startDirectorySyncSchedule, startIdpDriftSchedule, startSealKeyRotationSchedule } from './authentication/index.js'
 import { env, oidcConfigured } from './env.js'
 import { purgeFavoritesForAudit } from './favoritesStore.js'
 import { resumeQueuedJobs } from './jobs.js'
@@ -43,8 +43,9 @@ export async function boot(): Promise<void> {
   }
 
   startDirectorySyncSchedule()
-  await startServicePatExpirySchedule()
   startIdpDriftSchedule() // Ticket 23: Daily IdP drift detection
+  startAccessReviewAlertSchedule()
+  startClockDriftSchedule()
 
   setAuditObserver((event) => {
     purgeFavoritesForAudit(event).catch((err) => console.error('[mice-auth] favorites purge failed', err))

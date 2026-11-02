@@ -88,15 +88,12 @@ Raw API/PAT callers send the `X-Mice-Reason` header (any mutation) or call `POST
 
 #### Management commands
 
-Everything the UI can do through `/auth/*` is also available from the CLI (JSON output; run `mice --help` for all flags): `authz`, `directory`, `access-request`, `training`, `audit` (`list|facets|export`), `lineage` (`query|rebuild`), `instance`, `namespace` (incl. `member`), `collaborator`, `role` (custom roles), `session`, `notifications`, `favorite` (`list|add|remove`), `meta history|search`, and `job list --published`. These use an **unscoped** PAT (what `mice login` mints) acting as its owner; repo-scoped PATs are rejected, and AuthZ is still enforced server-side. Minting/revoking tokens and approving device logins remain browser-only.
+Everything the UI can do through `/auth/*` is also available from the CLI (JSON output; run `mice --help` for all flags): `authz`, `directory`, `access-request`, `training`, `audit` (`list|facets|export`), `lineage` (`query|rebuild`), `instance`, `namespace` (incl. `member`), `collaborator`, `role` (custom roles), `session`, `notifications`, `favorite` (`list|add|remove`), `meta history|search`, and `job list --published`. These use the CLI credential from `mice login` (stored in the OS keychain). AuthZ is still enforced server-side. Approving device logins stays browser-only.
 
-#### Automation / CI (PAT)
+#### Automation / CI
 
 ```bash
-# Profile → CLI tokens → Create token, then:
-export MICE_PAT=mice_pat_…
-# or:
-oxen config --auth localhost:8080 mice_pat_…
+mice login
 oxen clone http://localhost:8080/<namespace>/<repo>
 ```
 
@@ -107,7 +104,7 @@ Local jobs run Docker on your machine. Metadata is cached under `~/.mice/jobs/` 
 ```bash
 # From the repo root (links the `mice` binary), or: npm link
 npm install
-mice login   # or: export MICE_PAT=… MICE_REMOTE=http://localhost:8080
+mice login
 
 # From inside an oxen clone (ns/repo/source autodected):
 mice clone http://localhost:8080/<ns>/<repo>

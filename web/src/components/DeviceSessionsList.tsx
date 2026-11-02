@@ -2,20 +2,14 @@ import { Laptop, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 /**
- * Device Sessions (CLI Credentials) Management
- * 
- * Lists active CLI device flow tokens created via `mice login`.
- * Backend: GET /auth/me/tokens (filtered by source: 'cli-login')
+ * Lists the signed-in Principal's CLI credentials from `mice login`.
+ * Backend: GET /auth/me/tokens, DELETE /auth/me/tokens/:id
  */
 
 export type DeviceSession = {
   id: string
-  label: string
-  prefix: string
   createdAt: string
-  lastUsedAt?: string
-  expiresAt?: string
-  source?: string
+  expiresAt: string
 }
 
 type TokensResponse = {
@@ -29,8 +23,7 @@ async function fetchDeviceSessions(signal?: AbortSignal): Promise<DeviceSession[
   })
   if (!res.ok) throw new Error('Failed to load device sessions')
   const data = (await res.json()) as TokensResponse
-  // Filter to only show device flow tokens (cli-login source)
-  return data.tokens.filter(t => t.source === 'cli-login' || t.source === 'device-flow')
+  return data.tokens
 }
 
 async function revokeDeviceSession(tokenId: string): Promise<void> {
@@ -136,12 +129,10 @@ export function DeviceSessionsList() {
             <li key={session.id} className="ns-member-row">
               <div className="ns-member-main">
                 <div>
-                  <strong>{session.label || 'CLI Device'}</strong>
-                  <span className="mono muted small"> · {session.prefix}...</span>
+                  <strong>CLI</strong>
                 </div>
                 <span className="muted small">
                   Created {formatTimeAgo(session.createdAt)}
-                  {session.lastUsedAt && ` · Last used ${formatTimeAgo(session.lastUsedAt)}`}
                   {' · '}
                   {formatExpiry(session.expiresAt)}
                 </span>

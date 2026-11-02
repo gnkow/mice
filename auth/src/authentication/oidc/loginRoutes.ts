@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Context, Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { preparePrincipal } from '../../authz.js'
@@ -47,6 +48,7 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
       state: c.req.query('state'),
       error: c.req.query('error'),
       pkceCookie,
+      requestId: c.req.header('x-request-id') ?? randomUUID(),
     })
     if (result.reauth) {
       return handleReauthCallback(c, result)

@@ -15,18 +15,6 @@ async function sessionUser(page: import('@playwright/test').Page, label: string)
   return sub
 }
 
-async function mintPat(
-  page: import('@playwright/test').Page,
-  scopes?: Array<{ namespace: string; repo?: string; maxRole: string }>,
-) {
-  const res = await page.request.post(`${AUTH_URL}/auth/tokens`, {
-    data: { label: 'deny-path', ...(scopes ? { scopes } : {}) },
-  })
-  expect(res.ok()).toBeTruthy()
-  const body = (await res.json()) as { token: string; pat: { id: string } }
-  return { token: body.token, id: body.pat.id }
-}
-
 test.describe('deny paths (fail closed)', () => {
   test('TC-DENY-01: a cross-origin mutating request with a session cookie is rejected and has no effect', async ({
     page,
@@ -99,30 +87,6 @@ test.describe('deny paths (fail closed)', () => {
         expect(body.status).toBe('error')
         expect(body.status_message).toBe('unauthorized')
       }
-    } finally {
-      await bare.close()
-    }
-  })
-
-  test('TC-DENY-05: authorization is decided before the upstream is contacted', async ({ page }) => {
-    await sessionUser(page, 'deny-order')
-    // The repo does not exist, so the upstream would answer 404; a 403 proves the decision came first.
-    const { token } = await mintPat(page, [{ namespace: 'scope-only-ns', maxRole: 'read' }])
-
-    const bare = await page.context().browser()!.newContext()
-    try {
-      const outOfScope = await bare.request.get(`${AUTH_URL}/api/repos/other-ns/no-such-repo/branches`, {
-        headers: bearer(token),
-      })
-      expect(outOfScope.status()).toBe(403)
-      const body = (await outOfScope.json()) as { status_message?: string }
-      expect(body.status_message).toBe('forbidden')
-
-      const writeAboveRole = await bare.request.post(`${AUTH_URL}/api/repos/scope-only-ns/no-such-repo/branches`, {
-        headers: bearer(token),
-        data: { new_name: 'x', from_name: 'main' },
-      })
-      expect(writeAboveRole.status()).toBe(403)
     } finally {
       await bare.close()
     }

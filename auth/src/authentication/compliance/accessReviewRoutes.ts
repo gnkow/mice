@@ -4,6 +4,7 @@ import { getDb } from '../../db/database.js'
 import { accessReviewReports, principals } from '../../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { displayedAccessReview, generateAccessReviewReport, signAccessReviewReport } from './accessReview.js'
+import { listOverdueAccessReviews } from './accessReviewAlert.js'
 import { reauthenticate } from '../oidc/stepUp.js'
 import { createSignature, prepareForSigning, type SessionInfo } from '../signing/signingCeremony.js'
 import { extractMfaEvidence } from '../signing/mfaEvidence.js'
@@ -85,6 +86,12 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
     })
 
     return c.json({ report, contentHash: prepareForSigning(displayedAccessReview(report)).hash })
+  }))
+
+  app.get('/auth/admin/access-review/overdue', guarded({
+    gate: adminGate,
+  }, async ({ c }) => {
+    return c.json({ overdue: await listOverdueAccessReviews() })
   }))
 
   app.get('/auth/admin/access-review/:quarter', guarded({

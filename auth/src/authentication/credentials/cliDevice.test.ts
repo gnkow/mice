@@ -19,7 +19,6 @@ const {
   pollDevice,
   startDeviceAuth,
 } = await import('./cliDevice.js')
-const { findPatByToken } = await import('./tokens.js')
 const { logoutCliCredential, resolveCliCredential } = await import('./cliCredentials.js')
 
 const alice = {
@@ -72,7 +71,6 @@ await describe('CLI device auth', async () => {
     assert.equal(polled.user.email, alice.email)
     assert.equal(polled.authHost, 'localhost:8080')
     assert.equal(polled.remote, 'http://localhost:8080')
-    assert.equal(await findPatByToken(polled.token), null)
     assert.equal((await resolveCliCredential(polled.token))?.email, alice.email)
 
     clearPollThrottle()

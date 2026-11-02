@@ -97,6 +97,5 @@ export const searchDirectory = (input: SearchInput): Promise<DirectorySearchResu
 
 export const searchStoreDirectory = (q: string, kind: 'user' | 'group', limit: number): Promise<DirectoryHit[]> =>
   searchProjection(q, kind, limit, directoryNow().issuer)
-export const collectStorePrincipals = (
-  opts: { includePatOwners?: boolean } = {},
-): Promise<Map<string, DirectoryUserHit>> => collectProjection({ ...opts, defaultIssuer: directoryNow().issuer })
+export const collectStorePrincipals = (): Promise<Map<string, DirectoryUserHit>> =>
+  collectProjection({ defaultIssuer: directoryNow().issuer })

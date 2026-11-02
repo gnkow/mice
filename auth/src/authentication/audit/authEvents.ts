@@ -1,6 +1,7 @@
 import { and, gte, lte, desc, sql } from 'drizzle-orm'
 import { getDb } from '../../db/database.js'
 import { authEvents } from '../../db/schema.js'
+import { hashIp } from '../../ipHash.js'
 import { principalKey, type PrincipalId } from '../session/principal.js'
 
 export type AuthEventType = 'login' | 'logout' | 'refresh' | 'step-up' | 'revocation' | 'access'
@@ -12,6 +13,7 @@ export type AuthEvent = {
   requestId: string
   outcome: 'success' | 'failure'
   reason?: string
+  hashedIp?: string
   timestamp?: Date
 }
 
@@ -21,6 +23,8 @@ type AuthEventInput = {
   requestId: string
   outcome: 'success' | 'failure'
   reason?: string
+  /** Client address. Stored only as today's hash. */
+  clientIp?: string
   // These fields should be stripped if present
   token?: unknown
   accessToken?: unknown
@@ -28,7 +32,6 @@ type AuthEventInput = {
   code?: unknown
   authorizationCode?: unknown
   ipAddress?: unknown
-  clientIp?: unknown
 }
 
 /**
@@ -37,12 +40,14 @@ type AuthEventInput = {
  */
 export async function recordAuthEvent(input: AuthEventInput): Promise<void> {
   // Strip all sensitive fields - only record type, principal, requestId, outcome, reason
+  const hashedIp = await hashIp(input.clientIp)
   const safeEvent = {
     type: input.type,
     principalKey: principalKey(input.principal),
     requestId: input.requestId,
     outcome: input.outcome,
     reason: input.reason,
+    hashedIp,
     timestamp: new Date(Date.now()), // Use Date.now() to allow test mocking
   }
 
@@ -83,6 +88,7 @@ export async function queryAuthEventsByPrincipal(
     requestId: row.requestId,
     outcome: row.outcome as 'success' | 'failure',
     reason: row.reason ?? undefined,
+    ...(row.hashedIp ? { hashedIp: row.hashedIp } : {}),
     timestamp: row.timestamp,
   }))
 }

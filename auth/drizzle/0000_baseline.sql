@@ -30,7 +30,17 @@ CREATE TABLE "auth_events" (
 	"request_id" text NOT NULL,
 	"outcome" text NOT NULL,
 	"reason" text,
+	"hashed_ip" text,
 	"timestamp" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "idp_outages" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "idp_outages_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"started_at" timestamp with time zone NOT NULL,
+	"ended_at" timestamp with time zone,
+	"check" text NOT NULL,
+	"request_id" text NOT NULL,
+	"paper_procedure" text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "backchannel_logout_jtis" (
@@ -82,7 +92,6 @@ CREATE TABLE "device_authorizations" (
 	"expires_at" timestamp with time zone NOT NULL,
 	"scopes" jsonb,
 	"token" text,
-	"pat_id" text,
 	"user_sub" text,
 	"user_iss" text,
 	"user_email" text,
@@ -257,24 +266,6 @@ CREATE TABLE "notification_users" (
 	"preferences" jsonb
 );
 --> statement-breakpoint
-CREATE TABLE "pats" (
-	"token_hash" text PRIMARY KEY NOT NULL,
-	"id" text NOT NULL,
-	"label" text NOT NULL,
-	"prefix" text NOT NULL,
-	"sub" text NOT NULL,
-	"iss" text NOT NULL,
-	"email" text NOT NULL,
-	"name" text NOT NULL,
-	"created_at" timestamp with time zone NOT NULL,
-	"last_used_at" timestamp with time zone,
-	"expires_at" timestamp with time zone,
-	"scopes" jsonb,
-	"source" text,
-	"groups" jsonb,
-	CONSTRAINT "pats_id_unique" UNIQUE("id")
-);
---> statement-breakpoint
 CREATE TABLE "principal_disabled_periods" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "principal_disabled_periods_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"principal_id" bigint NOT NULL,
@@ -346,11 +337,6 @@ CREATE TABLE "seal_keys" (
 	"revoked_at" integer,
 	"rotation_type" text NOT NULL,
 	"created_at" timestamp with time zone NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "service_pat_expiry_notices" (
-	"pat_id" text PRIMARY KEY NOT NULL,
-	"notified_at" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "service_principals" (
@@ -429,7 +415,6 @@ CREATE INDEX "jobs_pin_commit" ON "jobs" USING btree ("pin_commit");--> statemen
 CREATE INDEX "lineage_ops_repo_ts" ON "lineage_ops" USING btree ("namespace","repo","ts");--> statement-breakpoint
 CREATE INDEX "namespace_group_members_group" ON "namespace_group_members" USING btree ("group_key");--> statement-breakpoint
 CREATE INDEX "namespace_members_user" ON "namespace_members" USING btree ("user_key");--> statement-breakpoint
-CREATE INDEX "pats_owner" ON "pats" USING btree ("iss","sub");--> statement-breakpoint
 CREATE INDEX "principal_disabled_periods_principal_idx" ON "principal_disabled_periods" USING btree ("principal_id");--> statement-breakpoint
 CREATE INDEX "principal_disabled_periods_pending_idx" ON "principal_disabled_periods" USING btree ("restoration_type") WHERE "principal_disabled_periods"."restoration_type" = 'pending';--> statement-breakpoint
 CREATE INDEX "principal_access_flags_principal_idx" ON "principal_access_flags" USING btree ("principal_key");--> statement-breakpoint

@@ -1,5 +1,6 @@
 import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert, FileText, Ban } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
 import { SealKeyRotationSection } from '../components/SealKeyRotationSection'
@@ -497,7 +498,11 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
             {data.admins.map((a) => (
               <li key={`${a.iss}\0${a.sub}`} className="ns-member-row">
                 <div className="ns-member-main">
-                  <code className="ns-member-sub">{a.name || a.email || a.sub}</code>
+                  <code className="ns-member-sub">
+                    <Link to={`/settings/principal?iss=${encodeURIComponent(a.iss)}&sub=${encodeURIComponent(a.sub)}`}>
+                      {a.name || a.email || a.sub}
+                    </Link>
+                  </code>
                   <span className="muted small">
                     {a.email ? `${a.email} · ` : ''}
                     {a.sub}

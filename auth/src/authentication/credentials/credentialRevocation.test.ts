@@ -14,7 +14,7 @@ const { sealSession, openSession } = await import('../session/session.js')
 const { offboard } = await import('./offboarding.js')
 const { revokeSessionsFor, revokeSessionsOnlyFor, isCredentialRevoked } =
   await import('./credentialRevocation.js')
-const { createPat, resolvePat } = await import('./tokens.js')
+const { issueCliCredential, resolveCliCredential } = await import('./cliCredentials.js')
 const authz = await import('../../authzInstanceStore.js')
 
 const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string; sub: string }) =>
@@ -49,18 +49,18 @@ await describe('session revocation', async () => {
     assert.ok(await openSession(fresh))
   })
 
-  await it('also cuts off PATs minted before the revocation, not later ones', async () => {
+  await it('also cuts off CLI credentials issued before the revocation, not later ones', async () => {
     const victim = mk('pat-victim')
-    const { token: old } = await createPat(victim, 'old')
-    assert.ok(await resolvePat(old))
+    const { accessToken: old } = await issueCliCredential(victim)
+    assert.ok(await resolveCliCredential(old))
     const clock = fakeClock(Date.now())
     const restore = useClock(clock)
     try {
       await adminRevoke(admin, victim)
-      assert.equal(await resolvePat(old), null)
+      assert.equal(await resolveCliCredential(old), null)
       clock.advance(2000)
-      const { token: fresh } = await createPat(victim, 'fresh')
-      assert.ok(await resolvePat(fresh))
+      const { accessToken: fresh } = await issueCliCredential(victim)
+      assert.ok(await resolveCliCredential(fresh))
     } finally {
       restore()
     }
@@ -68,22 +68,22 @@ await describe('session revocation', async () => {
 })
 
 await describe('two cut-offs', async () => {
-  await it('a sessions-only cut-off ends Sessions but leaves PATs valid', async () => {
+  await it('a sessions-only cut-off ends Sessions but leaves CLI credentials valid', async () => {
     const who = mk('sessions-only')
     const old = await sealSession({ ...who, sessionStart: nowSec() - 60 })
-    const { token } = await createPat(who, 'keep')
+    const { accessToken } = await issueCliCredential(who)
     await revokeSessionsOnlyFor(who)
     assert.equal(await openSession(old), null)
-    assert.ok(await resolvePat(token))
+    assert.ok(await resolveCliCredential(accessToken))
   })
 
-  await it('a full cut-off ends Sessions and older PATs', async () => {
+  await it('a full cut-off ends Sessions; CLI credentials stay until offboarding revokes them', async () => {
     const who = mk('full')
     const old = await sealSession({ ...who, sessionStart: nowSec() - 60 })
-    const { token } = await createPat(who, 'gone')
+    const { accessToken } = await issueCliCredential(who)
     await revokeSessionsFor(who)
     assert.equal(await openSession(old), null)
-    assert.equal(await resolvePat(token), null)
+    assert.ok(await resolveCliCredential(accessToken))
   })
 
   await it('never lowers an existing cut-off', async () => {

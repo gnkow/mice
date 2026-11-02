@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 41: Alert when an access review is unsigned for 14 days
 
@@ -12,10 +12,10 @@ A scheduled check finds a quarterly access review that is still unsigned 14 days
 
 ## In code today
 
-Reports are returned from the generate route and not stored. Nothing scans report age.
+`GET /auth/admin/access-review/overdue` lists unsigned reports whose `generatedAt` is at least 14 days ago. Settings shows that list in the Access Review section. `startAccessReviewAlertSchedule` runs at boot and once a day, and sends each instance admin a security notification naming the quarter and the report id. A signed report is left out of both.
 
 ## Acceptance
 
-- [ ] A stored report with no signature, older than 14 days, alerts security admins with the quarter and the report id
-- [ ] A signed report does not alert
-- [ ] The check runs on a daily schedule
+- [x] A stored report with no signature, older than 14 days, alerts security admins with the quarter and the report id
+- [x] A signed report does not alert
+- [x] The check runs on a daily schedule

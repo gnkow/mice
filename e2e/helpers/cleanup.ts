@@ -37,7 +37,7 @@ async function json(ctx: APIRequestContext, path: string): Promise<Record<string
 export async function snapshot(ctx: APIRequestContext): Promise<Snapshot> {
   const ns = (await json(ctx, '/auth/namespaces')).namespaces as { name: string }[] | undefined
   const inst = (await json(ctx, '/auth/instance')).admins as { sub: string; iss: string }[] | undefined
-  const tokens = (await json(ctx, '/auth/tokens')).tokens as { id: string }[] | undefined
+  const tokens = (await json(ctx, '/auth/me/tokens')).tokens as { id: string }[] | undefined
   return {
     namespaces: new Set((ns ?? []).map((n) => n.name)),
     admins: new Map((inst ?? []).map((a) => [`${a.iss}\u0000${a.sub}`, { sub: a.sub, iss: a.iss }])),
@@ -64,10 +64,10 @@ export async function revokeTokensSince(cookies: string[], since: number): Promi
       extraHTTPHeaders: { cookie: `${COOKIE_NAME}=${value}`, origin: BASE_URL, 'x-mice-reason': REASON },
     })
     try {
-      const tokens = (await json(ctx, '/auth/tokens')).tokens as { id: string; createdAt: string }[] | undefined
+      const tokens = (await json(ctx, '/auth/me/tokens')).tokens as { id: string; createdAt: string }[] | undefined
       for (const t of tokens ?? []) {
         if (Date.parse(t.createdAt) < since) continue
-        await ctx.delete(`/auth/tokens/${encodeURIComponent(t.id)}`).catch(() => undefined)
+        await ctx.delete(`/auth/me/tokens/${encodeURIComponent(t.id)}`).catch(() => undefined)
       }
     } finally {
       await ctx.dispose()
@@ -84,7 +84,7 @@ export async function cleanupSince(ctx: APIRequestContext, before: Snapshot): Pr
   }
   for (const id of after.tokens) {
     if (before.tokens.has(id)) continue
-    await ctx.delete(`/auth/tokens/${encodeURIComponent(id)}`).catch(() => undefined)
+    await ctx.delete(`/auth/me/tokens/${encodeURIComponent(id)}`).catch(() => undefined)
   }
   for (const name of after.namespaces) {
     if (before.namespaces.has(name)) continue

@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 44: Hashed IP on authentication audit events
 
@@ -14,11 +14,11 @@ Every authentication audit event (login, refresh, logout, step-up, failure, revo
 
 ## In code today
 
-`AuditEvent` has an optional `hashed_ip`. Device approval sets it. The authentication event writer in `authEvents.ts` does not.
+`recordAuthEvent` stores `hashed_ip` from `hashIp` when `clientIp` is present. The queried event returns that hash and not the raw address. A missing address leaves the field unset. Device approval still uses the same hash.
 
 ## Acceptance
 
-- [ ] Login, refresh, logout, step-up, failure, and revocation events store `hashed_ip` when a client IP is present
-- [ ] The stored value matches `hashIp` for that IP on that UTC day
-- [ ] The raw IP is absent from the audit record and from operational logs of these events
-- [ ] A missing client IP leaves `hashed_ip` unset
+- [x] Login, refresh, logout, step-up, failure, and revocation events store `hashed_ip` when a client IP is present
+- [x] The stored value matches `hashIp` for that IP on that UTC day
+- [x] The raw IP is absent from the audit record and from operational logs of these events
+- [x] A missing client IP leaves `hashed_ip` unset

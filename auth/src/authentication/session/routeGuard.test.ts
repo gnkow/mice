@@ -12,14 +12,38 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 const { Hono } = await import('hono')
 const { guarded } = await import('./routeGuard.js')
 const { sealSession } = await import('./session.js')
-const { createPat } = await import('../credentials/tokens.js')
+const { sealSessionCookie } = await import('./cookieSeal.js')
+const { ensureBootstrapKey } = await import('./sealKeys.js')
+const { issueCliCredential } = await import('../credentials/cliCredentials.js')
 const { maybeBootstrapInstanceAdmin, isInstanceAdmin } = await import('../../authzInstanceStore.js')
-const { env } = await import('../../env.js')
+const { env, overrideEnv } = await import('../../env.js')
+overrideEnv({
+  directoryProvider: 'keycloak',
+  keycloakAdminUrl: 'http://localhost:8180',
+  keycloakRealm: 'mice',
+  oidcClientId: 'mice-auth',
+  oidcClientSecret: 'mice-auth-secret',
+  oidcIssuerPublic: 'http://localhost:8180/realms/mice',
+})
+const { setDirectoryFetchForTests } = await import('../directory/directory.js')
+setDirectoryFetchForTests(async (url) => {
+  const urlStr = String(url)
+  if (urlStr.includes('/protocol/openid-connect/token')) {
+    return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+  }
+  if (urlStr.includes('/users/')) {
+    return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+  }
+  return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+})
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
 await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
-const cookie = async (sub: string) =>
-  ({ cookie: `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })}` })
+await ensureBootstrapKey()
+const cookie = async (sub: string) => {
+  const sessionId = await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })
+  return { cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}` }
+}
 const json = { 'content-type': 'application/json' }
 
 const app = new Hono()
@@ -39,8 +63,8 @@ await describe('route guard', async () => {
   })
 
   await it('honours the credential policy', async () => {
-    const { token } = await createPat(mk('p'), 'p')
-    assert.equal((await app.request('/me', { headers: { authorization: `Bearer ${token}` } })).status, 401)
+    const { accessToken } = await issueCliCredential(mk('p'))
+    assert.equal((await app.request('/me', { headers: { authorization: `Bearer ${accessToken}` } })).status, 401)
     assert.equal((await app.request('/me', { headers: await cookie('p') })).status, 200)
   })
 

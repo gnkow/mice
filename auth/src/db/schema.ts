@@ -164,28 +164,6 @@ export const cliCredentialTokens = pgTable('cli_credential_tokens', {
   usedAt: ts('used_at'),
 })
 
-/** One row per PAT, keyed by the SHA-256 of the token so a raw token is never stored. */
-export const pats = pgTable(
-  'pats',
-  {
-    tokenHash: text('token_hash').primaryKey(),
-    id: text('id').notNull().unique(),
-    label: text('label').notNull(),
-    prefix: text('prefix').notNull(),
-    sub: text('sub').notNull(),
-    iss: text('iss').notNull(),
-    email: text('email').notNull(),
-    name: text('name').notNull(),
-    createdAt: ts('created_at').notNull(),
-    lastUsedAt: ts('last_used_at'),
-    expiresAt: ts('expires_at'),
-    scopes: jsonb('scopes').$type<PatScope[]>(),
-    source: text('source'),
-    groups: jsonb('groups').$type<string[]>(),
-  },
-  (t) => [index('pats_owner').on(t.iss, t.sub)],
-)
-
 export const servicePrincipals = pgTable(
   'service_principals',
   {
@@ -205,8 +183,8 @@ export const servicePrincipals = pgTable(
 )
 
 /**
- * Cut-offs per principal: `notBefore` ends Sessions and PATs, `sessionsNotBefore` Sessions only
- * (epoch s). `revokedAt` marks a permanent revocation that also blocks a fresh login.
+ * Cut-offs per principal: `notBefore` ends Sessions, `sessionsNotBefore` ends Sessions issued at or before
+ * the cut-off (epoch s). `revokedAt` marks a permanent revocation that also blocks a fresh login.
  */
 export const sessionRevocations = pgTable('session_revocations', {
   principalKey: text('principal_key').primaryKey(),
@@ -394,7 +372,6 @@ export const deviceAuthorizations = pgTable(
     expiresAt: ts('expires_at').notNull(),
     scopes: jsonb('scopes').$type<PatScope[]>(),
     token: text('token'),
-    patId: text('pat_id'),
     /** Raw refresh token, present only while the device approval is unconsumed. */
     refreshToken: text('refresh_token'),
     userSub: text('user_sub'),
@@ -408,13 +385,6 @@ export const deviceAuthorizations = pgTable(
   },
   (t) => [index('device_authorizations_user_code').on(t.userCode)],
 )
-
-export const servicePatExpiryNotices = pgTable('service_pat_expiry_notices', {
-  patId: text('pat_id').primaryKey(),
-  notifiedAt: ts('notified_at').notNull(),
-})
-
-/** Job runs: key and filter fields are columns; the rest of the run is the `body` document. */
 export const jobs = pgTable(
   'jobs',
   {
@@ -568,6 +538,7 @@ export const authEvents = pgTable(
     requestId: text('request_id').notNull(),
     outcome: text('outcome').notNull(),
     reason: text('reason'),
+    hashedIp: text('hashed_ip'),
     timestamp: ts('timestamp').notNull().defaultNow(),
   },
   (t) => [
@@ -575,6 +546,16 @@ export const authEvents = pgTable(
     index('auth_events_timestamp_idx').on(t.timestamp),
   ],
 )
+
+/** One row per IdP outage. An open incident has no ended_at. */
+export const idpOutages = pgTable('idp_outages', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  startedAt: ts('started_at').notNull(),
+  endedAt: ts('ended_at'),
+  check: text('check').notNull(),
+  requestId: text('request_id').notNull(),
+  paperProcedure: text('paper_procedure').notNull(),
+})
 
 /** IdP baseline validation checks (ticket 14). Stores results of MFA capability checks. */
 export const idpBaselineChecks = pgTable(

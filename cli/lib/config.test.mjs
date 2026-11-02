@@ -63,9 +63,8 @@ describe('mice CLI config', () => {
     )
   })
 
-  it('resolveToken prefers MICE_PAT over the keychain', () => {
+  it('resolveToken reads the keychain entry for the remote', () => {
     saveConfig({ remote: 'http://localhost:8080' })
-    saveCredentials({ token: 'mice_pat_stored' })
     keychain.put({
       principal: 'http://idp|ada',
       remote: 'http://localhost:8080',
@@ -73,22 +72,20 @@ describe('mice CLI config', () => {
     })
     assert.equal(resolveToken(), 'mice_cli_stored')
     process.env.MICE_PAT = 'mice_pat_env'
-    assert.equal(resolveToken(), 'mice_pat_env')
+    assert.equal(resolveToken(), 'mice_cli_stored')
     delete process.env.MICE_PAT
     keychain.remove({ remote: 'http://localhost:8080' })
   })
 
-  it('clearLoginState removes pat metadata and credentials', () => {
+  it('clearLoginState removes login metadata and credentials', () => {
     saveConfig({
       remote: 'http://localhost:8080',
       authHost: 'localhost:8080',
-      patId: 'abc',
       loggedInAt: new Date().toISOString(),
     })
-    saveCredentials({ token: 'mice_pat_x', patId: 'abc' })
+    saveCredentials({ token: 'mice_cli_x' })
     clearLoginState()
     const cfg = loadConfig()
-    assert.equal(cfg.patId, undefined)
     assert.equal(cfg.loggedInAt, undefined)
     assert.equal(cfg.remote, 'http://localhost:8080')
     assert.deepEqual(loadCredentials(), {})

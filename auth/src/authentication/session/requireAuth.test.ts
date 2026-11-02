@@ -12,10 +12,31 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 const { Hono } = await import('hono')
 const { applyGlobalGuards, authenticateRequest, setAuthenticationObserver } = await import('./requireAuth.js')
 const { sealSession } = await import('./session.js')
-const { createPat } = await import('../credentials/tokens.js')
+const { sealSessionCookie } = await import('./cookieSeal.js')
+const { ensureBootstrapKey } = await import('./sealKeys.js')
+const { issueCliCredential } = await import('../credentials/cliCredentials.js')
 const { offboard } = await import('../credentials/offboarding.js')
 const { maybeBootstrapInstanceAdmin } = await import('../../authzInstanceStore.js')
-const { env } = await import('../../env.js')
+const { env, overrideEnv } = await import('../../env.js')
+overrideEnv({
+  directoryProvider: 'keycloak',
+  keycloakAdminUrl: 'http://localhost:8180',
+  keycloakRealm: 'mice',
+  oidcClientId: 'mice-auth',
+  oidcClientSecret: 'mice-auth-secret',
+  oidcIssuerPublic: 'http://localhost:8180/realms/mice',
+})
+const { setDirectoryFetchForTests } = await import('../directory/directory.js')
+setDirectoryFetchForTests(async (url) => {
+  const urlStr = String(url)
+  if (urlStr.includes('/protocol/openid-connect/token')) {
+    return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+  }
+  if (urlStr.includes('/users/')) {
+    return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+  }
+  return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+})
 
 const adminRevoke = (actor: { iss: string; sub: string }, target: { iss: string; sub: string }) =>
   offboard(target, { scope: 'all', cause: 'admin-revocation', actor: { ...actor, email: '', name: '' } })
@@ -30,29 +51,32 @@ app.all('/whoami', async (c) => {
   return authed ? c.json({ sub: authed.user.sub, via: authed.via }) : c.json({}, 401)
 })
 
-const cookie = async (sub: string) =>
-  `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })}`
+await ensureBootstrapKey()
+const cookie = async (sub: string) => {
+  const sessionId = await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })
+  return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
+}
 
 await describe('auth wiring (middleware order + requireAuth)', async () => {
-  await it('prefers the session over a PAT when both are sent', async () => {
-    const { token } = await createPat(mk('bob'), 'b')
+  await it('prefers the session over a CLI credential when both are sent', async () => {
+    const { accessToken } = await issueCliCredential(mk('bob'))
     const res = await app.request('/whoami', {
-      headers: { cookie: await cookie('alice'), authorization: `Bearer ${token}` },
+      headers: { cookie: await cookie('alice'), authorization: `Bearer ${accessToken}` },
     })
     assert.deepEqual(await res.json(), { sub: 'alice', via: 'session' })
   })
 
-  await it('falls back to the PAT when the session is revoked', async () => {
-    const { token } = await createPat(mk('carol'), 'c')
+  await it('falls back to the CLI credential when the session is revoked', async () => {
+    const { accessToken } = await issueCliCredential(mk('carol'))
     const stale = await cookie('dave')
     await adminRevoke(root, mk('dave'))
     const res = await app.request('/whoami', {
-      headers: { cookie: stale, authorization: `Bearer ${token}` },
+      headers: { cookie: stale, authorization: `Bearer ${accessToken}` },
     })
     assert.deepEqual(await res.json(), { sub: 'carol', via: 'pat' })
   })
 
-  await it('is 401 with a revoked session and no PAT', async () => {
+  await it('is 401 with a revoked session and no CLI credential', async () => {
     const stale = await cookie('erin')
     await adminRevoke(root, mk('erin'))
     assert.equal((await app.request('/whoami', { headers: { cookie: stale } })).status, 401)
@@ -66,11 +90,11 @@ await describe('auth wiring (middleware order + requireAuth)', async () => {
     assert.equal(res.status, 403)
   })
 
-  await it('lets a cross-site write through when authenticated by PAT', async () => {
-    const { token } = await createPat(mk('frank'), 'f')
+  await it('lets a cross-site write through when authenticated by a CLI credential', async () => {
+    const { accessToken } = await issueCliCredential(mk('frank'))
     const res = await app.request('/whoami', {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'sec-fetch-site': 'cross-site' },
+      headers: { authorization: `Bearer ${accessToken}`, 'sec-fetch-site': 'cross-site' },
     })
     assert.equal(res.status, 200)
   })

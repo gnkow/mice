@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 46: IdP outage incident record
 
@@ -14,12 +14,12 @@ When the IdP or directory is unreachable, Mice records an incident that points a
 
 ## In code today
 
-Login returns 500 for directory status `error` (issue 38 changes that to 503). Authenticated requests return 503 from `verifyIdpAccess`. Those failures are logged. No incident row is written, and the paper procedure is not in the repo.
+An unreachable directory on login or on an authenticated request opens one `idp_outages` row. The row stores the start time, the failing check, the request id, and `validation-pack:idp-outage`. A later 503 in that outage keeps the first row. The next directory answer closes it. A disabled account is an answer, so it does not open an incident. No route creates a local account. The paper procedure document stays in issue 13.
 
 ## Acceptance
 
-- [ ] The first 503 caused by an unreachable IdP opens one incident for that outage
-- [ ] The incident references the paper procedure
-- [ ] Further 503s in the same outage do not open a second incident
-- [ ] The next successful IdP check closes the incident
-- [ ] No route creates a local account because the IdP is down
+- [x] The first 503 caused by an unreachable IdP opens one incident for that outage
+- [x] The incident references the paper procedure
+- [x] Further 503s in the same outage do not open a second incident
+- [x] The next successful IdP check closes the incident
+- [x] No route creates a local account because the IdP is down

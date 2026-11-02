@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 45: Clock-drift alert
 
@@ -14,11 +14,11 @@ The BFF compares its clock with an NTP reference. Drift above 1 second raises an
 
 ## In code today
 
-`checkClockDrift` and `generateClockDriftAlert` compare two timestamps the caller passes in. Nothing queries NTP, and nothing starts a schedule. `boot.ts` does not call them.
+`startClockDriftSchedule` queries NTP (or an injected reference) and alerts instance admins when `checkClockDrift` is outside 1 second. The alert summary includes the measured drift. Boot starts the schedule. Authentication events and signatures already stamp `Date.now()`; request bodies do not set those times.
 
 ## Acceptance
 
-- [ ] A scheduled check compares the server clock with an NTP reference
-- [ ] Drift greater than 1 second raises an alert that includes the measured drift
-- [ ] Drift of 1 second or less does not alert
-- [ ] Authentication and signature event times come from the server clock
+- [x] A scheduled check compares the server clock with an NTP reference
+- [x] Drift greater than 1 second raises an alert that includes the measured drift
+- [x] Drift of 1 second or less does not alert
+- [x] Authentication and signature event times come from the server clock

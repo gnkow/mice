@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { kindOf, type PrincipalId } from '../session/principal.js'
+import { type PrincipalId } from '../session/principal.js'
 
 /**
  * TICKET 08: Commit Identity and Job Tokens
@@ -153,7 +153,7 @@ export function appendJobAttributionFromToken(
  * Only humans can sign; service principals and jobs cannot.
  */
 export function canElectronicallySign(principal: { iss: string }): boolean {
-  return kindOf(principal) === 'human'
+  return principal.iss.replace(/\/+$/, '') !== 'urn:mice:service'
 }
 
 /**

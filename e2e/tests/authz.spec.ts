@@ -363,24 +363,6 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     await expect(card).toHaveCount(0)
   })
 
-  test('TC-AUTHO-pat-scopes: mint scoped PAT', async ({ page }) => {
-    await sessionLogin(page, {
-      name: 'Pat User',
-      email: `pat-${uniqueId('e')}@mice.local`,
-      sub: uniqueId('pat'),
-    })
-    const res = await page.request.post(`${AUTH_URL}/auth/tokens`, {
-      data: {
-        label: 'scoped',
-        scopes: [{ namespace: 'demo', maxRole: 'read' }],
-      },
-    })
-    expect(res.ok()).toBeTruthy()
-    const body = await res.json()
-    expect(body.token).toMatch(/^mice_pat_/)
-    expect(body.pat?.scopes?.[0]?.namespace).toBe('demo')
-  })
-
   test('TC-AUTHO-access-deny: admin denies request', async ({ page }) => {
     const adminSub = uniqueId('deny-admin')
     await sessionLogin(page, {

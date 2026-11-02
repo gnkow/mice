@@ -7,7 +7,6 @@ import { authorizeCliDeviceApprove, isPendingUser, preparePrincipal } from '../.
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { userHasAnyGrant } from '../../authzVisibility.js'
 import { approveDevice, denyDevice, lookupDeviceByUserCode, pollDevice, startDeviceAuth } from './cliDevice.js'
-import { findPatByToken, revokePatByToken } from './tokens.js'
 import { logoutCliCredential, refreshCliCredential } from './cliCredentials.js'
 import { bearerToken, resolveBearer } from '../session/requireAuth.js'
 import type { SessionUser } from '../session/session.js'
@@ -92,7 +91,11 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.post('/auth/cli/device/approve', guarded({ ...deviceBody, mutates: true }, async ({ c, user: session, body }) => {
     const userCode = String(body.user_code)
     if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
-    
+    const confirmation = typeof body.confirmation === 'string' ? body.confirmation.trim().toUpperCase() : ''
+    if (confirmation !== 'APPROVE' && confirmation !== userCode.trim().toUpperCase()) {
+      return c.json({ error: 'Type APPROVE or the full user code' }, 400)
+    }
+
     // Ticket 25: Rate limiting (5 approvals per 10 minutes)
     const rateLimit = await checkDeviceApprovalRateLimit(session)
     if (!rateLimit.allowed) {
@@ -228,7 +231,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     const bearer = bearerToken(c)
     if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
     const user = await resolveBearer(c)
-    const ok = (await logoutCliCredential(bearer)) || (await revokePatByToken(bearer))
+    const ok = await logoutCliCredential(bearer)
     if (!ok) return c.json({ error: 'Token not found' }, 404)
     if (user) {
       await auditMutation(c, user, 'pat', {
@@ -245,7 +248,6 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     const user = await resolveBearer(c)
     if (!user) return c.json({ error: 'Invalid token' }, 401)
     await preparePrincipal(user)
-    const pat = await findPatByToken(bearer)
     const pending = await isPendingUser(user)
     return c.json({
       authenticated: true,
@@ -255,9 +257,6 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
         email: user.email,
         name: user.name,
       },
-      pat: pat
-        ? { id: pat.id, label: pat.label, source: pat.source ?? 'manual' }
-        : null,
       authz: {
         enforce: true,
         pending,

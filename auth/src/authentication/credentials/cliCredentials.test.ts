@@ -2,7 +2,6 @@ import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { fakeClock } from '../../clock.js'
-import { findPatByToken } from './tokens.js'
 import { createCliCredentials, type IdpAccess } from './cliCredentials.js'
 
 const alice = {
@@ -29,7 +28,6 @@ await describe('CLI credential', async () => {
     assert.equal(issued.expiresIn, 8 * 60 * 60)
     assert.equal(issued.accessToken.startsWith('mice_pat_'), false)
     assert.notEqual(issued.refreshToken, issued.accessToken)
-    assert.equal(await findPatByToken(issued.accessToken), null)
 
     const user = await creds.resolve(issued.accessToken)
     assert.equal(user?.email, 'alice@example.com')

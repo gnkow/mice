@@ -1,13 +1,13 @@
 import { appendAudit, appendIntent, appendOutcome, actorFromUser, type AuditActor, type AuditVia } from '../../audit.js'
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
+import { revokeAllCliCredentials } from './cliCredentials.js'
 import { revokeSessionsFor, revokeSessionsOnlyFor } from './credentialRevocation.js'
-import { suspendOwnedBy } from './servicePrincipals.js'
 import type { SessionUser } from '../session/session.js'
 
 export type OffboardCause = 'admin-revocation' | 'directory-sync' | 'self-service' | 'back-channel-logout'
 
 export type OffboardRequest = {
-  /** `sessions` ends Sessions only; `all` also ends PATs. */
+  /** `sessions` ends Sessions only; `all` also ends CLI credentials. */
   scope: 'sessions' | 'all'
   cause: OffboardCause
   /** Who acted. Required for `admin-revocation` (must be an instance admin); defaults to the Principal. */
@@ -23,7 +23,7 @@ export type OffboardRequest = {
   strictAudit?: boolean
 }
 
-export type OffboardStep = 'revoke-credentials' | 'audit-revocation' | 'suspend-service-principals' | 'audit-suspensions'
+export type OffboardStep = 'revoke-credentials' | 'audit-revocation'
 
 /**
  * `ok: true` means every step ran. A step that throws does not stop the others: the result lists
@@ -42,15 +42,9 @@ export type OffboardResult =
       failed: Array<{ step: OffboardStep; error: string }>
     }
 
-const SYSTEM_ACTOR: AuditActor = { sub: 'directory-sync', iss: 'urn:mice:system', email: '', name: 'Directory sync' }
-
-/** Causes where the Principal leaves the organisation, so service principals they own are suspended. */
-const SUSPENDS_OWNED: ReadonlySet<OffboardCause> = new Set(['admin-revocation', 'directory-sync'])
-
 /**
- * Ends a Principal's access: the cut-off for `scope`, the suspension of service principals it
- * owns when it is being offboarded (not merely signing out), and the audit events with their
- * cause. Every path that revokes credentials goes through here.
+ * Ends a Principal's Sessions and, when `scope` is `all`, their other credentials.
+ * Every path that revokes credentials goes through here.
  */
 export async function offboard(
   principal: { iss: string; sub: string; email?: string; name?: string },
@@ -110,33 +104,18 @@ export async function offboard(
     }
   }
 
-  const cutoff = await attempt('revoke-credentials', () => req.scope === 'all'
-    ? revokeSessionsFor(principal)
-    : revokeSessionsOnlyFor(principal, req.at))
+  const cutoff = await attempt('revoke-credentials', async () => {
+    if (req.scope !== 'all') return revokeSessionsOnlyFor(principal, req.at)
+    const cutoff = await revokeSessionsFor(principal)
+    await revokeAllCliCredentials(principal)
+    return cutoff
+  })
   if (cutoff === undefined) failed.push({ step: 'audit-revocation', error: 'skipped: revoke-credentials failed' })
   else if (strictIntent) {
     await attempt('audit-revocation', () => appendOutcome(strictIntent!.id, auditEvent))
   } else await attempt('audit-revocation', async () => await appendAudit(auditEvent))
 
-  const suspendedPrincipals = req.scope === 'all' && SUSPENDS_OWNED.has(req.cause)
-    ? (await attempt('suspend-service-principals', () => suspendOwnedBy(principal, req.cause))) ?? []
-    : []
-  if (suspendedPrincipals.length) {
-    await attempt('audit-suspensions', async () => {
-      for (const p of suspendedPrincipals) {
-        const event = await appendAudit({
-          actor: req.cause === 'admin-revocation' ? actor : SYSTEM_ACTOR,
-          ...audit, status: 200, action: 'service-principal.suspend',
-          message: `Suspended service principal ${p.name}: owner offboarded`,
-          detail: { id: p.id, name: p.name, cause: req.cause, owner: { iss: principal.iss, sub: principal.sub } },
-        })
-        if (!event) throw new Error(`audit append failed for ${p.id}`)
-      }
-      return true
-    })
-  }
-
-  const suspended = suspendedPrincipals.map((p) => p.id)
+  const suspended: string[] = []
   if (failed.length) {
     return { ok: false, error: 'Offboarding incomplete', cutoff: cutoff ?? null, suspended, completed, failed }
   }

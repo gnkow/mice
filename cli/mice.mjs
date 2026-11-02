@@ -10,7 +10,7 @@
  * Jobs appear on the remote/UI when their result commit is pushed via mice.
  *
  * Autodetects namespace, repo, cwd, and source branch:commit from the clone.
- * Auth (mice login / MICE_PAT) is required to push / talk to the BFF.
+ * Auth (mice login) is required to push / talk to the BFF.
  */
 
 import { randomBytes } from 'node:crypto'
@@ -198,9 +198,9 @@ Output is JSON. Most commands accept --remote / --token.
   mice announcement enable|disable|delete <id>                                                                    (instance admin)
   mice notifications announce --title t --summary s     (instance admin)
 
-  API token create/revoke and CLI device approval stay browser-only.
+  CLI device approval stays browser-only.
 
-Env: MICE_REMOTE, MICE_PAT, MICE_HOME (default ~/.mice), MICE_YES
+Env: MICE_REMOTE, MICE_HOME (default ~/.mice), MICE_YES
 
 Inside an oxen clone, namespace/repo/source are detected automatically.
 Job metadata is cached under ~/.mice/jobs/ (not in the repo).
@@ -233,7 +233,7 @@ function jobSummary(job, extra = {}) {
 }
 
 async function confirmWrite(flags = {}) {
-  if (flags.token || process.env.MICE_PAT?.trim()) return
+  if (flags.token) return
   const remote = resolveRemote({
     remote: flags.remote ? String(flags.remote) : undefined,
   })
@@ -249,7 +249,7 @@ function resolveAuth(flags) {
     flags.token || resolveToken() || '',
   )
   if (!token) {
-    console.error('Not logged in. Run: mice login (or set --token / MICE_PAT)')
+    console.error('Not logged in. Run: mice login (or pass --token)')
     usage(1)
   }
   return { remote, token }

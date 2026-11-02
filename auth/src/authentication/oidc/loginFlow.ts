@@ -12,6 +12,7 @@ import { isSuspended } from '../access/miceSuspension.js'
 import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
 import { actorFromUser, appendAudit } from '../../audit.js'
 import { canonicalIssuer } from '../session/principal.js'
+import { closeIdpOutage, noteIdpOutage } from '../compliance/idpOutage.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -120,6 +121,7 @@ async function finishLogin(
     state?: string
     error?: string
     pkceCookie?: string
+    requestId?: string
   }
 ): Promise<LoginResult> {
   const pkce = await consumeLoginState(clock, input.pkceCookie)
@@ -137,12 +139,18 @@ async function finishLogin(
     const account = await directory.userStatus(user.sub)
     const idpStatus = account.status
     if (idpStatus === 'error') {
+      await noteIdpOutage({
+        at: clock.now(),
+        check: 'login',
+        requestId: input.requestId ?? 'login',
+      })
       return fail(
         503,
         'IdP is unreachable. Login cannot be verified at this time.',
         isReauth
       )
     }
+    await closeIdpOutage(clock.now())
     if (idpStatus === 'disabled') {
       await recordIdpDisabled(user)
       return fail(

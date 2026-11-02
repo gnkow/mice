@@ -58,21 +58,9 @@ Mice authentication follows a **device-flow-only** approach per the authenticati
 - Jobs (BFF-internal tokens)
 - No external CI support
 
-## Migration Guide
+## CLI login
 
-### For Users with Existing PATs
-
-**Old workflow:**
 ```bash
-# Created PAT via UI
-export TOKEN="mice_pat_..."
-oxen config --auth localhost:8080 $TOKEN
-oxen clone http://localhost:8080/ns/repo
-```
-
-**New workflow:**
-```bash
-# Use device flow
 mice login
 mice clone http://localhost:8080/ns/repo
 mice push

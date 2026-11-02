@@ -1,5 +1,5 @@
 import { env } from './env.js'
-import { kindOf, peekServicePrincipal, principalKey } from './authentication/index.js'
+import { principalKey } from './authentication/index.js'
 import { currentClock } from './clock.js'
 
 /** Carries an explicit reason on any mutating request (JSON, multipart, binary or bodiless). */
@@ -91,10 +91,7 @@ export function resolveReason(input: {
   const explicit = clean(input.explicit) || clean(declaredReason(input.actor))
   let picked: ResolvedReason | undefined
   if (explicit) picked = { reason: explicit, reason_source: 'explicit' }
-  else if (kindOf(input.actor) === 'service') {
-    const registered = clean(peekServicePrincipal(input.actor.sub)?.reason)
-    if (registered) picked = { reason: registered, reason_source: 'registered' }
-  } else {
+  else {
     const message = clean(input.message)
     if (message) picked = { reason: message, reason_source: 'commit-message' }
   }

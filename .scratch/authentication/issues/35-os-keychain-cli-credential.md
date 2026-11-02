@@ -6,7 +6,7 @@ Status: done
 
 ## Outcome
 
-`mice login` stores the device-flow credential (access token, refresh token, Principal `iss|sub`, and remote) in the OS keychain. On macOS that is one `security` item, service `mice`, account `cli-credentials`. A later command reads the entry for the resolved remote. The same Principal may have several remotes; a write then asks `Acting as <name> <email> at <remote>` (`--yes` or `MICE_YES=1` skips the prompt). A second Principal on the same OS user is refused. Logout removes that remote's entry and leaves the others. The secret is not written to `credentials.json` or `config.json`. `oxen config --auth` still receives the access token so oxen can authenticate. `MICE_PAT` still overrides the keychain; retiring that and the server PAT mint is issue 48.
+`mice login` stores the device-flow credential (access token, refresh token, Principal `iss|sub`, and remote) in the OS keychain. On macOS that is one `security` item, service `mice`, account `cli-credentials`. A later command reads the entry for the resolved remote. The same Principal may have several remotes; a write then asks `Acting as <name> <email> at <remote>` (`--yes` or `MICE_YES=1` skips the prompt). A second Principal on the same OS user is refused. Logout removes that remote's entry and leaves the others. The secret is not written to `credentials.json` or `config.json`. `oxen config --auth` still receives the access token so oxen can authenticate. `MICE_PAT` no longer overrides the keychain (issue 48).
 
 ## Acceptance
 

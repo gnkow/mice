@@ -26,7 +26,6 @@ export type DeviceRecord = {
   /** Present only while `approved`; removed when the CLI consumes it. */
   token?: string
   refreshToken?: string
-  patId?: string
   user?: Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>
   /** Device name/identifier from CLI (e.g., "mice-cli v1.2.3") - Ticket 25 */
   deviceName?: string
@@ -66,7 +65,6 @@ function toRecord(r: Row): DeviceRecord {
     ...(r.scopes?.length ? { scopes: r.scopes } : {}),
     ...(r.token ? { token: r.token } : {}),
     ...(r.refreshToken ? { refreshToken: r.refreshToken } : {}),
-    ...(r.patId ? { patId: r.patId } : {}),
     ...(r.userSub && r.userIss && r.userEmail && r.userName
       ? { user: { sub: r.userSub, iss: r.userIss, email: r.userEmail, name: r.userName } }
       : {}),

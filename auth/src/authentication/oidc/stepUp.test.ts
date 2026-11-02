@@ -6,17 +6,29 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
+import { SignJWT, exportJWK, generateKeyPair } from 'jose'
 
 let idTokenSub = 'u1'
 let authTime = 0
-const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
 let lastNonce = ''
+
+const { publicKey, privateKey } = await generateKeyPair('RS256')
+const stepUpJwk = { ...(await exportJWK(publicKey)), kid: 'step-up', alg: 'RS256', use: 'sig' }
 
 const idp: Server = createServer((req, res) => {
   const base = `http://127.0.0.1:${(idp.address() as AddressInfo).port}`
   res.setHeader('content-type', 'application/json')
   if (req.url?.endsWith('/.well-known/openid-configuration')) {
-    res.end(JSON.stringify({ issuer: base, authorization_endpoint: `${base}/auth`, token_endpoint: `${base}/token` }))
+    res.end(JSON.stringify({
+      issuer: base,
+      authorization_endpoint: `${base}/auth`,
+      token_endpoint: `${base}/token`,
+      jwks_uri: `${base}/jwks`,
+    }))
+    return
+  }
+  if (req.url?.endsWith('/jwks')) {
+    res.end(JSON.stringify({ keys: [stepUpJwk] }))
     return
   }
   req.resume()
@@ -24,10 +36,13 @@ const idp: Server = createServer((req, res) => {
     const claims = {
       iss: base, aud: 'mice-web', exp: Math.floor(Date.now() / 1000) + 300, nonce: lastNonce,
       sub: idTokenSub, email: `${idTokenSub}@x.io`, email_verified: true,
-      groups: ['users'], // Include groups to avoid overage logic
+      groups: ['users'],
       ...(authTime ? { auth_time: authTime } : {}),
     }
-    res.end(JSON.stringify({ id_token: `${b64({ alg: 'none' })}.${b64(claims)}.sig` }))
+    void new SignJWT(claims)
+      .setProtectedHeader({ alg: 'RS256', kid: 'step-up' })
+      .sign(privateKey)
+      .then((idToken) => res.end(JSON.stringify({ id_token: idToken })))
   })
 })
 await new Promise<void>((r) => idp.listen(0, '127.0.0.1', r))
@@ -44,9 +59,30 @@ const { applyGlobalGuards } = await import('../session/requireAuth.js')
 const { completeLogin } = await import('./loginFlow.js')
 const { registerStepUp, handleReauthCallback } = await import('./stepUp.js')
 const { sealSession, getSession } = await import('../session/session.js')
-const { createPat } = await import('../credentials/tokens.js')
+const { sealSessionCookie } = await import('../session/cookieSeal.js')
+const { ensureBootstrapKey } = await import('../session/sealKeys.js')
+const { issueCliCredential } = await import('../credentials/cliCredentials.js')
 const { queryAudit } = await import('../../audit.js')
-const { env } = await import('../../env.js')
+const { env, overrideEnv } = await import('../../env.js')
+overrideEnv({
+  directoryProvider: 'keycloak',
+  keycloakAdminUrl: 'http://localhost:8180',
+  keycloakRealm: 'mice',
+  oidcClientId: env.oidcClientId || 'mice-web',
+  oidcClientSecret: env.oidcClientSecret || 'mice-auth-secret',
+})
+const { setDirectoryFetchForTests } = await import('../directory/directory.js')
+setDirectoryFetchForTests(async (url) => {
+  const urlStr = String(url)
+  if (urlStr.includes('/protocol/openid-connect/token')) {
+    return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+  }
+  if (urlStr.includes('/users/')) {
+    return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+  }
+  return new Response(JSON.stringify([]), { status: 200 })
+})
+await ensureBootstrapKey()
 
 const now = () => Math.floor(Date.now() / 1000)
 const app = new Hono()
@@ -66,8 +102,10 @@ app.get('/auth/callback', async (c) => {
 })
 
 const mk = (sub: string) => ({ sub, iss: issuer, email: `${sub}@x.io`, name: sub })
-const cookie = async (sub: string, authAge: number) =>
-  `${env.cookieName}=${await sealSession({ ...mk(sub), authTime: now() - authAge, sessionStart: now() - 100 })}`
+const cookie = async (sub: string, authAge: number) => {
+  const sessionId = await sealSession({ ...mk(sub), authTime: now() - authAge, sessionStart: now() - 100 })
+  return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
+}
 
 async function reauth(sub: string, authAge: number, returnedAuthTime: number, who = sub) {
   const start = await app.request('/auth/step-up/demo', {
@@ -105,7 +143,7 @@ await describe('step-up re-authentication', async () => {
     assert.equal(cb.headers.get('location'), '/auth/step-up/demo')
     const newCookie = /mice_session=([^;]+)/.exec(cb.headers.get('set-cookie') ?? '')?.[1]
     assert.ok(newCookie, 'session cookie refreshed')
-    const again = await app.request('/auth/step-up/demo', { headers: { cookie: `mice_session=${newCookie}` } })
+    const again = await app.request('/auth/step-up/demo', { headers: { cookie: `${env.cookieName}=${newCookie}` } })
     assert.equal(again.status, 200)
   })
 
@@ -129,9 +167,9 @@ await describe('step-up re-authentication', async () => {
     assert.ok((await queryAudit({ actor: 'u4', action: 'auth.reauth.failed' })).events.length >= 1)
   })
 
-  await it('refuses PAT callers', async () => {
-    const { token } = await createPat(mk('u5'), 'cli')
-    const res = await app.request('/auth/step-up/demo', { headers: { authorization: `Bearer ${token}` } })
+  await it('refuses CLI credential callers', async () => {
+    const { accessToken } = await issueCliCredential(mk('u5'))
+    const res = await app.request('/auth/step-up/demo', { headers: { authorization: `Bearer ${accessToken}` } })
     assert.equal(res.status, 403)
   })
 

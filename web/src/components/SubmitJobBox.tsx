@@ -111,15 +111,13 @@ export function SubmitJobBox({
 
   const clusterSections = useMemo((): CmdSection[] => {
     const setup = [
-      '# Profile → CLI tokens → Create token',
-      'export MICE_PAT=mice_pat_…',
+      'mice login',
       `export MICE_REMOTE=${remoteBase}`,
-      '# optional: mice login  (for status/logs without exporting PAT)',
     ].join('\n')
 
     const submit = [
       'curl -sS -X POST "$MICE_REMOTE/auth/jobs" \\',
-      '  -H "Authorization: Bearer $MICE_PAT" \\',
+      '  -H "Authorization: Bearer $TOKEN" \\',
       '  -H "Content-Type: application/json" \\',
       "  -d '{",
       `    "namespace": "${ns}",`,
@@ -143,7 +141,7 @@ export function SubmitJobBox({
         key: 'cluster-setup',
         title: 'Auth',
         cmd: setup,
-        hint: 'Cluster jobs run on the auth BFF (Docker or Kubernetes via JOBS_RUNNER). Mint a PAT under Profile → CLI tokens for the submit call.',
+        hint: 'Cluster jobs run on the auth BFF (Docker or Kubernetes via JOBS_RUNNER). mice login stores the access token; pass it as TOKEN on the submit call.',
       },
       {
         key: 'cluster-submit',
@@ -155,7 +153,7 @@ export function SubmitJobBox({
         key: 'cluster-follow',
         title: 'Status & logs',
         cmd: follow,
-        hint: 'Use the job id from the JSON response. Status/logs work after mice login or with MICE_PAT set.',
+        hint: 'Use the job id from the JSON response. Status and logs use the credential from mice login.',
       },
     ]
   }, [remoteBase, ns, r])

@@ -17,10 +17,31 @@ const { rememberNotificationUser } = await import('../../notifications.js')
 const { novuInbox } = await import('../../testSupport.js')
 const { purgeTouchedSubscribers } = await import('../../novu.js')
 const { sealSession } = await import('../session/session.js')
-const { createPat } = await import('../credentials/tokens.js')
+const { sealSessionCookie } = await import('../session/cookieSeal.js')
+const { ensureBootstrapKey } = await import('../session/sealKeys.js')
+const { issueCliCredential } = await import('../credentials/cliCredentials.js')
 const { queryAudit } = await import('../../audit.js')
 const { maybeBootstrapInstanceAdmin } = await import('../../authzInstanceStore.js')
-const { env } = await import('../../env.js')
+const { env, overrideEnv } = await import('../../env.js')
+overrideEnv({
+  directoryProvider: 'keycloak',
+  keycloakAdminUrl: 'http://localhost:8180',
+  keycloakRealm: 'mice',
+  oidcClientId: 'mice-auth',
+  oidcClientSecret: 'mice-auth-secret',
+  oidcIssuerPublic: 'idp',
+})
+const { setDirectoryFetchForTests } = await import('./directory.js')
+setDirectoryFetchForTests(async (url) => {
+  const urlStr = String(url)
+  if (urlStr.includes('/protocol/openid-connect/token')) {
+    return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+  }
+  if (urlStr.includes('/users/')) {
+    return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+  }
+  return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+})
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
 await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
@@ -36,15 +57,18 @@ const realNow = Date.now
 afterEach(() => { Date.now = realNow })
 const at = (ms: number) => { Date.now = () => ms }
 const t0 = Math.floor(realNow() / 1000) * 1000
-const cookie = async (sub: string, startSec: number) =>
-  `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: startSec })}`
+await ensureBootstrapKey()
+const cookie = async (sub: string, startSec: number) => {
+  const sessionId = await sealSession({ ...mk(sub), sessionStart: startSec })
+  return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
+}
 
 await describe('directory sync', async () => {
-  await it('revokes disabled and removed Principals (Sessions and PATs), leaves enabled ones', async () => {
+  await it('revokes disabled and removed Principals (Sessions and CLI credentials), leaves enabled ones', async () => {
     at(t0)
     const sec = t0 / 1000
     const users = ['dis', 'gone', 'ok'] as const
-    const pats = Object.fromEntries(await Promise.all(users.map(async (u) => [u, (await createPat(mk(u), 'cli')).token])))
+    const creds = Object.fromEntries(await Promise.all(users.map(async (u) => [u, (await issueCliCredential(mk(u))).accessToken])))
     const sessions = Object.fromEntries(await Promise.all(users.map(async (u) => [u, await cookie(u, sec - 5)])))
     at(t0 + 60_000)
     const status = { dis: 'disabled', gone: 'missing', ok: 'enabled' } as const
@@ -52,21 +76,21 @@ await describe('directory sync', async () => {
     assert.equal(result.ok, true)
     for (const u of ['dis', 'gone'] as const) {
       assert.equal((await app.request('/whoami', { headers: { cookie: sessions[u] } })).status, 401, `${u} session`)
-      assert.equal((await app.request('/whoami', { headers: { authorization: `Bearer ${pats[u]}` } })).status, 401, `${u} pat`)
+      assert.equal((await app.request('/whoami', { headers: { authorization: `Bearer ${creds[u]}` } })).status, 401, `${u} credential`)
     }
     assert.equal((await app.request('/whoami', { headers: { cookie: sessions.ok } })).status, 200)
-    assert.equal((await app.request('/whoami', { headers: { authorization: `Bearer ${pats.ok}` } })).status, 200)
+    assert.equal((await app.request('/whoami', { headers: { authorization: `Bearer ${creds.ok}` } })).status, 200)
     const ev = (await queryAudit({ actor: 'dis', action: 'session.revoke' })).events[0]
     assert.equal(ev?.detail?.source, 'directory-sync')
   })
 
   await it('revokes nobody and audits when the directory is unreachable', async () => {
     at(t0)
-    const { token } = await createPat(mk('out'), 'cli')
+    const { accessToken } = await issueCliCredential(mk('out'))
     at(t0 + 60_000)
     const result = await runDirectorySync({ lookup: async () => 'error' })
     assert.equal(result.ok, false)
-    assert.equal((await app.request('/whoami', { headers: { authorization: `Bearer ${token}` } })).status, 200)
+    assert.equal((await app.request('/whoami', { headers: { authorization: `Bearer ${accessToken}` } })).status, 200)
     assert.ok((await queryAudit({ action: 'directory.sync.failed' })).events.length >= 1)
   })
 

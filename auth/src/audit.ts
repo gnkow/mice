@@ -3,7 +3,7 @@ import { currentClock, systemClock, type Clock } from './clock.js'
 import { env } from './env.js'
 import { auditActionLabel } from './auditLabels.js'
 import { immudbConfig, openLedger, type Ledger, type LedgerVerification } from './auditLedger.js'
-import { getServicePrincipal, kindOf, type SessionUser } from './authentication/index.js'
+import { type SessionUser } from './authentication/index.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 
 export type AuditVia = 'session' | 'pat'
@@ -265,12 +265,6 @@ export function extractRepoCreateFromJson(
   return { namespace, repo }
 }
 
-async function serviceActorFields(actor: AuditActor): Promise<Pick<AuditEvent, 'actorKind' | 'owner'>> {
-  if (kindOf(actor) !== 'service') return {}
-  const o = (await getServicePrincipal(actor.sub))?.owner
-  return { actorKind: 'service', ...(o ? { owner: { sub: o.sub, iss: o.iss, email: o.email, name: o.name } } : {}) }
-}
-
 export type AuditInput = Omit<AuditEvent, 'id' | 'ts' | 'phase' | 'intent_id' | 'via'> & {
   id?: string
   ts?: string
@@ -287,7 +281,6 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
     path: partial.path,
     status: partial.status,
     action: partial.action,
-    ...(await serviceActorFields(partial.actor)),
     ...(partial.namespace ? { namespace: partial.namespace } : {}),
     ...(partial.repo ? { repo: partial.repo } : {}),
     ...(partial.message ? { message: partial.message } : {}),

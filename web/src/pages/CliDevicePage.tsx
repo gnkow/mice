@@ -33,12 +33,13 @@ async function fetchDeviceStatus(
 async function postDeviceAction(
   action: 'approve' | 'deny',
   userCode: string,
+  confirmation?: string,
 ): Promise<void> {
   const res = await fetch(`/auth/cli/device/${action}`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_code: userCode }),
+    body: JSON.stringify(action === 'approve' ? { user_code: userCode, confirmation } : { user_code: userCode }),
   })
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null
@@ -94,7 +95,7 @@ export function CliDevicePage() {
     setBusy(true)
     setActionError(null)
     try {
-      await postDeviceAction('approve', activeCode)
+      await postDeviceAction('approve', activeCode, confirmInput)
       setDone('approved')
       status.reload()
     } catch (err) {

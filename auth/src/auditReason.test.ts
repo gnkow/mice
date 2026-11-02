@@ -12,8 +12,6 @@ const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { fakeClock, useClock } = await import('./clock.js')
 const { overrideEnv } = await import('./env.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
-const { createPat } = await import('./authentication/index.js')
-const { createServicePrincipal, serviceUser } = await import('./authentication/index.js')
 
 const ledger = await openLedger(immudbConfig())
 let since = 0
@@ -188,59 +186,14 @@ await describe('mandatory reason on admin and permission changes', async () => {
   })
 })
 
-await describe('service principal registered reason', async () => {
-  await it('is stored at create and update, and used when a mutation carries no explicit reason', async () => {
-    const created = await app.request('/auth/instance/service-principals', {
-      method: 'POST',
-      headers: await adminHeaders('Register the nightly ingest job'),
-      body: JSON.stringify({ name: 'ingest', owner: writer, reason: 'x' }),
-    })
-    assert.equal(created.status, 400)
-    const ok = await app.request('/auth/instance/service-principals', {
+await describe('service principals', async () => {
+  await it('has no route that creates one', async () => {
+    const res = await app.request('/auth/instance/service-principals', {
       method: 'POST',
       headers: await adminHeaders('Register the nightly ingest job'),
       body: JSON.stringify({ name: 'ingest', owner: writer, reason: 'Nightly instrument ingest' }),
     })
-    assert.equal(ok.status, 201)
-    const { servicePrincipal } = (await ok.json()) as { servicePrincipal: { id: string; reason: string } }
-    assert.equal(servicePrincipal.reason, 'Nightly instrument ingest')
-    await setRepoCollaborator('rs', 'r', serviceUser(servicePrincipal as never), 'write')
-    const { token } = await createPat(serviceUser(servicePrincipal as never), 'ci')
-    const call = (extra: Record<string, string> = {}) =>
-      app.request('/api/repos/rs/r/file/main/b.csv', {
-        method: 'PUT',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...extra },
-        body: '{"message":"x"}',
-      })
-    assert.equal((await call()).status, 200)
-    const o = (await outcomes()).at(-1)!
-    assert.deepEqual([o.reason, o.reason_source], ['Nightly instrument ingest', 'registered'])
-    await call({ 'x-mice-reason': 'One-off backfill after outage' })
-    assert.equal((await outcomes()).at(-1)!.reason_source, 'explicit')
-
-    const patched = await app.request(`/auth/instance/service-principals/${servicePrincipal.id}`, {
-      method: 'PATCH',
-      headers: await adminHeaders('Job renamed after the migration'),
-      body: JSON.stringify({ reason: 'Nightly ingest, new instrument' }),
-    })
-    assert.equal(patched.status, 200)
-    await call()
-    assert.equal((await outcomes()).at(-1)!.reason, 'Nightly ingest, new instrument')
-  })
-
-  await it('is refused when the principal has no registered reason and sends none', async () => {
-    const r = await createServicePrincipal({ name: 'bare', owner: writer })
-    assert.equal(r.ok, true)
-    if (!r.ok) return
-    await setRepoCollaborator('rs', 'r', serviceUser(r.principal), 'write')
-    const { token } = await createPat(serviceUser(r.principal), 'ci')
-    const res = await app.request('/api/repos/rs/r/file/main/c.csv', {
-      method: 'PUT',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: '{"message":"a long enough commit message"}',
-    })
-    assert.equal(res.status, 400)
-    assert.equal(upstream.length, 0)
+    assert.equal(res.status, 404)
   })
 })
 

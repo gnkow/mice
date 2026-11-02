@@ -102,7 +102,7 @@ export async function runDirectorySync(
   state.lastAttemptAt = now
 
   const idp = norm(directoryIssuer())
-  const principals = [...(await collectStorePrincipals({ includePatOwners: true })).values()].filter(
+  const principals = [...(await collectStorePrincipals()).values()].filter(
     (p) => norm(p.iss) === idp,
   )
   const gone: typeof principals = []

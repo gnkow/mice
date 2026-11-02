@@ -20,6 +20,9 @@ export { registerIdpBaselineRoutes } from './admin/idpBaselineRoutes.js'
 export { registerIdpDriftRoutes } from './compliance/idpDriftRoutes.js'
 export { startIdpDriftSchedule } from './compliance/idpDriftSchedule.js'
 export { registerAccessReviewRoutes } from './compliance/accessReviewRoutes.js'
+export { registerNameHistoryRoutes } from './compliance/nameHistoryRoutes.js'
+export { startAccessReviewAlertSchedule } from './compliance/accessReviewAlert.js'
+export { startClockDriftSchedule } from './compliance/clockDriftAlert.js'
 export { signOutEverywhere } from './credentials/selfRevocation.js'
 
 // Directory sync
@@ -49,10 +52,7 @@ export { registerWebSessionRoutes } from './session/webSessionRoutes.js'
 // REMOVED (per spec):
 // - PATs (Personal Access Tokens) - use device flow (mice login) instead
 // - Service Principals - Jobs use BFF-internal tokens
-// - registerTokenRoutes, createPat, resolvePat
+// Token mint routes are not part of the BFF. CLI access is the device-flow credential.
 // - registerServicePrincipalRoutes, createServicePrincipal, serviceUser
 // - startServicePatExpirySchedule
 
-// Service principal stubs (for backward compatibility with audit code)
-export { peekServicePrincipal, getServicePrincipal } from './credentials/servicePrincipals.js'
-export { startServicePatExpirySchedule } from './credentials/servicePrincipalExpiry.js'

@@ -23,7 +23,6 @@ function paths() {
  * @typedef {{
  *   remote?: string
  *   authHost?: string
- *   patId?: string
  *   loggedInAt?: string
  * }} MiceConfig
  */
@@ -33,7 +32,6 @@ function paths() {
  *   token?: string
  *   remote?: string
  *   authHost?: string
- *   patId?: string
  * }} MiceCredentials
  */
 
@@ -90,7 +88,6 @@ export function clearLoginState(remote) {
   const cfg = loadConfig()
   const drop = remote || cfg.remote
   if (drop) keychain().remove({ remote: drop })
-  delete cfg.patId
   delete cfg.loggedInAt
   delete cfg.principal
   saveConfig(cfg)
@@ -118,9 +115,8 @@ export function authHostFromRemote(remote) {
   }
 }
 
-/** Token for API calls: MICE_PAT env, else the keychain entry for the remote. */
+/** Token for API calls: the keychain entry for the remote. */
 export function resolveToken() {
-  if (process.env.MICE_PAT?.trim()) return process.env.MICE_PAT.trim()
   const stored = credentialFor({ remote: resolveRemote() })
   return stored?.token?.trim() || null
 }

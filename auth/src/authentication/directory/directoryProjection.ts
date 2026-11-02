@@ -6,7 +6,7 @@ import { listNamespacesAuthz } from '../../authzNamespaceStore.js'
 import { normalizeGroup } from '../../authzTypes.js'
 import type { DirectoryGroupHit, DirectoryHit, DirectoryUserHit } from './directoryTypes.js'
 import { principalKey } from '../session/principal.js'
-import { listPatOwners } from '../credentials/tokens.js'
+import { listCliCredentialHolders } from '../credentials/cliCredentials.js'
 
 function matchesQuery(q: string, ...fields: string[]): boolean {
   const needle = q.trim().toLowerCase()
@@ -61,8 +61,8 @@ export async function searchStoreDirectory(
   return out
 }
 
-/** Every user Principal known to the AuthZ / access-request / PAT stores. */
-export async function collectStorePrincipals(opts: { includePatOwners?: boolean; defaultIssuer: string }): Promise<Map<string, DirectoryUserHit>> {
+/** Every user Principal known to the AuthZ / access-request / CLI credential stores. */
+export async function collectStorePrincipals(opts: { defaultIssuer: string }): Promise<Map<string, DirectoryUserHit>> {
   const users = new Map<string, DirectoryUserHit>()
   const issDefault = opts.defaultIssuer
 
@@ -105,7 +105,7 @@ export async function collectStorePrincipals(opts: { includePatOwners?: boolean;
   for (const p of await listAllCollaboratorPrincipals()) {
     if (p.kind === 'user') addUser({ sub: p.sub, iss: p.iss })
   }
-  if (opts.includePatOwners) for (const p of await listPatOwners()) addUser(p)
+  for (const p of await listCliCredentialHolders()) addUser(p)
   return users
 }
 

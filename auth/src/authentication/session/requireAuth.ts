@@ -6,8 +6,8 @@ import { env } from '../../env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
 import { can, canonicalIssuer, isScopedCredential, type Capability } from './principal.js'
 import { resolveCliCredential } from '../credentials/cliCredentials.js'
-import { resolvePat } from '../credentials/tokens.js'
 import { checkUserIdpStatus } from '../access/idpCheck.js'
+import { closeIdpOutage, noteIdpOutage } from '../compliance/idpOutage.js'
 import { isSuspended } from '../access/miceSuspension.js'
 import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
 
@@ -36,11 +36,11 @@ export function bearerToken(c: Context): string {
   return auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
 }
 
-/** The PAT's owner for a bearer token, or null when it is expired, revoked or unknown. */
+/** The CLI credential's owner for a bearer token, or null when it is expired, revoked or unknown. */
 export async function resolveBearer(c: Context): Promise<SessionUser | null> {
   const token = bearerToken(c)
   if (!token) return null
-  return (await resolvePat(token)) ?? (await resolveCliCredential(token))
+  return resolveCliCredential(token)
 }
 
 export type AuthenticationObserver = (user: SessionUser) => void
@@ -142,11 +142,12 @@ async function refuseSuspended(c: Context, user: SessionUser, via: 'session' | '
 
 /**
  * Authenticates a request against a policy: cookie Session first, then a PAT, with the
- * scoped-credential and service-principal rules decided here rather than per route.
+ * scoped-credential rules decided here rather than per route. `urn:mice:service` is not a caller.
  */
 export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise<AuthOutcome> {
   const session = policy.credential === 'pat' ? null : await getSession(c)
   if (session) {
+    if (canonicalIssuer(session.iss) === 'urn:mice:service') return deny(401, 'Authentication required')
     if (!['GET', 'HEAD'].includes(c.req.method)) {
       if (policy.originCheck) {
         const origin = c.req.header('origin')
@@ -164,8 +165,14 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
     try {
       account = await checkUserIdpStatus(session)
     } catch {
+      await noteIdpOutage({
+        at: Date.now(),
+        check: 'authenticated-request',
+        requestId: c.req.header('x-request-id') ?? 'authenticated-request',
+      })
       return deny(503, 'Service Unavailable - IdP check failed')
     }
+    await closeIdpOutage(Date.now())
     const idpStatus = account.status
     if (idpStatus === 'disabled') await recordIdpDisabled(session)
     if (idpStatus !== 'enabled') {
@@ -196,7 +203,9 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 
   const pat = await resolveBearer(c)
-  if (!pat || (!policy.allowScoped && isScopedCredential(pat))) return deny(401, 'Authentication required')
+  if (!pat || canonicalIssuer(pat.iss) === 'urn:mice:service' || (!policy.allowScoped && isScopedCredential(pat))) {
+    return deny(401, 'Authentication required')
+  }
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
   if (await isSuspended(pat)) return refuseSuspended(c, pat, 'pat')
   await preparePrincipal(pat)

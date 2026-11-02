@@ -23,7 +23,7 @@ export function ProfileCliAccessSection() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ includePats: true }),
+        body: JSON.stringify({}),
       })
       if (res.ok) {
         setSignedOut(true)

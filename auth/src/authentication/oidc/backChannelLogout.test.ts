@@ -37,9 +37,30 @@ const { Hono } = await import('hono')
 const { applyGlobalGuards, authenticateRequest } = await import('../session/requireAuth.js')
 const { backChannelLogout } = await import('./backChannelLogout.js')
 const { sealSession } = await import('../session/session.js')
-const { createPat } = await import('../credentials/tokens.js')
+const { sealSessionCookie } = await import('../session/cookieSeal.js')
+const { ensureBootstrapKey } = await import('../session/sealKeys.js')
+const { issueCliCredential } = await import('../credentials/cliCredentials.js')
 const { queryAudit } = await import('../../audit.js')
-const { env } = await import('../../env.js')
+const { env, overrideEnv } = await import('../../env.js')
+overrideEnv({
+  directoryProvider: 'keycloak',
+  keycloakAdminUrl: 'http://localhost:8180',
+  keycloakRealm: 'mice',
+  oidcClientId: env.oidcClientId || 'mice-web',
+  oidcClientSecret: env.oidcClientSecret || 'mice-auth-secret',
+})
+const { setDirectoryFetchForTests } = await import('../directory/directory.js')
+setDirectoryFetchForTests(async (url) => {
+  const urlStr = String(url)
+  if (urlStr.includes('/protocol/openid-connect/token')) {
+    return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 3600 }), { status: 200 })
+  }
+  if (urlStr.includes('/users/')) {
+    return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+  }
+  return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+})
+await ensureBootstrapKey()
 
 const app = new Hono()
 applyGlobalGuards(app)
@@ -71,22 +92,24 @@ const post = (token: string) =>
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ logout_token: token }),
   })
-const cookie = async (sub: string, age = 30) =>
-  `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: now() - age })}`
+const cookie = async (sub: string, age = 30) => {
+  const sessionId = await sealSession({ ...mk(sub), sessionStart: now() - age })
+  return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
+}
 const alive = async (headers: Record<string, string>) =>
   (await app.request('/whoami', { headers })).status === 200
 
 await describe('back-channel logout', async () => {
   after(() => idp.close())
 
-  await it('ends Sessions of the Principal and leaves PATs valid', async () => {
+  await it('ends Sessions of the Principal and leaves CLI credentials valid', async () => {
     const stale = await cookie('u1')
-    const { token } = await createPat(mk('u1'), 'cli')
+    const { accessToken } = await issueCliCredential(mk('u1'))
     assert.equal(await alive({ cookie: stale }), true)
     const res = await post(await logoutToken())
     assert.equal(res.status, 200)
     assert.equal(await alive({ cookie: stale }), false)
-    assert.equal(await alive({ authorization: `Bearer ${token}` }), true)
+    assert.equal(await alive({ authorization: `Bearer ${accessToken}` }), true)
   })
 
   await it('rejects forged, expired, wrong-audience, wrong-issuer and non-logout tokens with no effect', async () => {

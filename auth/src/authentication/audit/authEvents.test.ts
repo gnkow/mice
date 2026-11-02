@@ -3,6 +3,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert'
 import { recordAuthEvent, queryAuthEventsByPrincipal, checkFailureRate, type AuthEventType } from './authEvents.js'
 import { principalKey } from '../session/principal.js'
+import { hashIp } from '../../ipHash.js'
 
 describe('Authentication Event Audit (Ticket 05)', () => {
   const testPrincipal = { iss: 'https://idp.example.com', sub: `user-${Date.now()}` }
@@ -37,6 +38,70 @@ describe('Authentication Event Audit (Ticket 05)', () => {
       assert.strictEqual(loginEvent.principalKey, principalKey(testPrincipal))
       assert.strictEqual(loginEvent.requestId, requestId)
       assert.strictEqual(loginEvent.outcome, 'success')
+    })
+
+    it('stores hashed_ip for a login and leaves the raw address out', async () => {
+      const ip = '203.0.113.10'
+      const logged: string[] = []
+      const write = (chunk: unknown) => { logged.push(String(chunk)); return true }
+      const stdout = process.stdout.write
+      const stderr = process.stderr.write
+      process.stdout.write = write as typeof process.stdout.write
+      process.stderr.write = write as typeof process.stderr.write
+      try {
+        await recordAuthEvent({
+          type: 'login',
+          principal: testPrincipal,
+          requestId: 'req-hashed-ip',
+          outcome: 'success',
+          clientIp: ip,
+        })
+      } finally {
+        process.stdout.write = stdout
+        process.stderr.write = stderr
+      }
+
+      const events = await queryAuthEventsByPrincipal(testPrincipal, { month: '2026-10' })
+      const event = events.find((e) => e.requestId === 'req-hashed-ip')
+      assert.ok(event)
+      assert.strictEqual(event.hashedIp, await hashIp(ip))
+      assert.ok(!JSON.stringify(event).includes(ip))
+      assert.ok(!logged.join('').includes(ip))
+    })
+
+    it('leaves hashed_ip unset when the client address is missing', async () => {
+      await recordAuthEvent({
+        type: 'logout',
+        principal: testPrincipal,
+        requestId: 'req-no-ip',
+        outcome: 'success',
+      })
+      const events = await queryAuthEventsByPrincipal(testPrincipal, { month: '2026-10' })
+      const event = events.find((e) => e.requestId === 'req-no-ip')
+      assert.ok(event)
+      assert.strictEqual(event.hashedIp, undefined)
+    })
+
+    it('stores the same hash on logout, refresh, step-up, revocation, and a failed login', async () => {
+      const ip = '198.51.100.20'
+      const expected = await hashIp(ip)
+      const rows: Array<{ type: AuthEventType; outcome: 'success' | 'failure'; requestId: string }> = [
+        { type: 'logout', outcome: 'success', requestId: 'req-logout-ip' },
+        { type: 'refresh', outcome: 'success', requestId: 'req-refresh-ip' },
+        { type: 'step-up', outcome: 'success', requestId: 'req-step-ip' },
+        { type: 'revocation', outcome: 'success', requestId: 'req-revoke-ip' },
+        { type: 'login', outcome: 'failure', requestId: 'req-fail-ip' },
+      ]
+      for (const row of rows) {
+        await recordAuthEvent({ ...row, principal: testPrincipal, clientIp: ip })
+      }
+      const events = await queryAuthEventsByPrincipal(testPrincipal, { month: '2026-10' })
+      for (const row of rows) {
+        const event = events.find((e) => e.requestId === row.requestId)
+        assert.ok(event)
+        assert.strictEqual(event.hashedIp, expected)
+        assert.ok(!JSON.stringify(event).includes(ip))
+      }
     })
 
     it('records logout events', async () => {

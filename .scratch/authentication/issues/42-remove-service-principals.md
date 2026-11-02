@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 42: Remove service principals
 
@@ -14,11 +14,11 @@ Mice has no service-principal issuer, no service-principal records, and no route
 
 ## In code today
 
-`SERVICE_ISSUER` is `urn:mice:service`. `principal.ts` treats that issuer as kind `service`. `servicePrincipals.ts` can suspend principals owned by a revoked human. Startup rejects an OIDC issuer equal to `SERVICE_ISSUER`, which keeps the reserved issuer in the product.
+A Session or bearer credential whose issuer is `urn:mice:service` is not a caller. `kindOf` returns `human` only. Revoking a person ends that person's credentials and does not look for owned service principals. There is no create route. The `service_principals` table is still in the schema; removing it is authorization issue 05.
 
 ## Acceptance
 
-- [ ] No route creates a service principal or accepts `urn:mice:service` as a caller
-- [ ] Owner-revoke no longer cascades to service principals, because none exist
-- [ ] Tests that authenticated as a service principal use a human session instead
-- [ ] `kindOf` no longer has a service kind
+- [x] No route creates a service principal or accepts `urn:mice:service` as a caller
+- [x] Owner-revoke no longer cascades to service principals, because none exist
+- [x] Tests that authenticated as a service principal use a human session instead
+- [x] `kindOf` no longer has a service kind

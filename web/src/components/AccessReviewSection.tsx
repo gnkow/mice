@@ -1,5 +1,7 @@
 import { FileText, Download, Shield } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { shownSignature } from '../lib/signatureName'
 
 type AccessReviewReport = {
   reportId: string
@@ -33,12 +35,33 @@ export function AccessReviewSection() {
   })
   const [report, setReport] = useState<AccessReviewReport | null>(null)
   const [contentHash, setContentHash] = useState<string | null>(null)
+  const [overdue, setOverdue] = useState<Array<{ quarter: string; reportId: string }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentName, setCurrentName] = useState<string | null>(null)
+
+  async function loadOverdue() {
+    const res = await fetch('/auth/admin/access-review/overdue', { credentials: 'same-origin' })
+    if (!res.ok) return
+    const body = await res.json() as { overdue?: Array<{ quarter: string; reportId: string }> }
+    setOverdue(body.overdue ?? [])
+  }
+
+  useEffect(() => { void loadOverdue() }, [])
 
   function showReport(data: { report: AccessReviewReport; contentHash?: string }) {
     setReport(data.report)
     setContentHash(data.contentHash ?? null)
+    const signer = data.report.reviewerSignature?.principal
+    if (!signer) {
+      setCurrentName(null)
+      return
+    }
+    const params = new URLSearchParams({ iss: signer.iss, sub: signer.sub })
+    void fetch(`/auth/admin/principals/names?${params}`, { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { currentName?: string | null } | null) => setCurrentName(body?.currentName ?? null))
+      .catch(() => setCurrentName(null))
   }
 
   async function openReport() {
@@ -102,6 +125,7 @@ export function AccessReviewSection() {
         throw new Error(body.error || 'Failed to sign report')
       }
       showReport(body)
+      await loadOverdue()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign report')
     } finally {
@@ -123,15 +147,30 @@ export function AccessReviewSection() {
   }
 
   return (
-    <div className="section">
-      <h2>
-        <FileText size={20} aria-hidden="true" />
-        Quarterly Access Review
-      </h2>
-      <p className="muted">
-        Generate a quarterly report of every Principal, their roles, grants, and last login.
-        Generating a quarter again opens the stored report. Open stored report reads that document without writing a new one.
-      </p>
+    <section id="access-review" className="settings-section" aria-labelledby="access-review-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="access-review-heading">
+            <FileText size={18} className="button-label-icon" aria-hidden="true" />
+            Quarterly Access Review
+          </h2>
+          <p className="muted small">
+            Generate a quarterly report of every Principal, their roles, grants, and last login.
+            Generating a quarter again opens the stored report. Open stored report reads that document without writing a new one.
+          </p>
+        </div>
+      </div>
+
+      {overdue.length > 0 && (
+        <div className="flash flash-warn" role="status">
+          <p>These quarterly access reviews are unsigned after 14 days.</p>
+          <ul>
+            {overdue.map((row) => (
+              <li key={row.reportId}>{row.quarter} ({row.reportId})</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="form">
         <label>
@@ -178,8 +217,14 @@ export function AccessReviewSection() {
             <p><strong>Principals:</strong> {report.principals.length}</p>
             {report.reviewerSignature && (
               <p className="muted">
-                ✓ Signed by {report.reviewerSignature.principal.name} on{' '}
-                {new Date(report.reviewerSignature.signedAt).toLocaleString()}
+                {shownSignature(
+                  { name: report.reviewerSignature.principal.name, signedAt: report.reviewerSignature.signedAt },
+                  currentName ?? undefined,
+                )}
+                {' '}
+                <Link to={`/settings/principal?iss=${encodeURIComponent(report.reviewerSignature.principal.iss)}&sub=${encodeURIComponent(report.reviewerSignature.principal.sub)}`}>
+                  Name history
+                </Link>
               </p>
             )}
             {!report.reviewerSignature && (
@@ -259,6 +304,6 @@ export function AccessReviewSection() {
           </details>
         </div>
       )}
-    </div>
+    </section>
   )
 }

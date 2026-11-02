@@ -12,7 +12,6 @@ import {
   canElectronicallySign,
   requireSigningCapability,
 } from './commitIdentity.js'
-import { SERVICE_ISSUER } from '../session/principal.js'
 
 /**
  * TICKET 08 & 21: Commit Identity and Job Tokens
@@ -180,7 +179,7 @@ describe('Electronic Signatures - Human Only', () => {
   })
 
   it('rejects electronic signature from service principal', () => {
-    const servicePrincipal = { iss: SERVICE_ISSUER, sub: 'sp-123' }
+    const servicePrincipal = { iss: 'urn:mice:service', sub: 'sp-123' }
     assert.equal(canElectronicallySign(servicePrincipal), false)
     assert.throws(
       () => requireSigningCapability(servicePrincipal),
@@ -189,7 +188,7 @@ describe('Electronic Signatures - Human Only', () => {
   })
 
   it('rejects electronic signature from job', () => {
-    const job = { iss: SERVICE_ISSUER, sub: 'job-123' }
+    const job = { iss: 'urn:mice:service', sub: 'job-123' }
     assert.equal(canElectronicallySign(job), false)
     assert.throws(
       () => requireSigningCapability(job),

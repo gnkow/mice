@@ -13,7 +13,9 @@ const { Hono } = await import('hono')
 const { applyGlobalGuards, authenticateRequest } = await import('../session/requireAuth.js')
 const { signOutEverywhere } = await import('./selfRevocation.js')
 const { sealSession } = await import('../session/session.js')
-const { createPat } = await import('./tokens.js')
+const { sealSessionCookie } = await import('../session/cookieSeal.js')
+const { ensureBootstrapKey } = await import('../session/sealKeys.js')
+const { issueCliCredential } = await import('./cliCredentials.js')
 const { queryAudit } = await import('../../audit.js')
 const { env } = await import('../../env.js')
 
@@ -26,8 +28,11 @@ app.get('/whoami', async (c) => {
   return a ? c.json({ via: a.via }) : c.json({}, 401)
 })
 
-const cookie = async (sub: string, ageSec = 30) =>
-  `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - ageSec })}`
+await ensureBootstrapKey()
+const cookie = async (sub: string, ageSec = 30) => {
+  const sessionId = await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - ageSec })
+  return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
+}
 const post = (headers: Record<string, string>, body: unknown = {}) =>
   app.request('/auth/sessions/revoke-all', {
     method: 'POST',
@@ -40,26 +45,18 @@ const restoreClock = useClock(clock)
 after(restoreClock)
 
 await describe('sign out everywhere', async () => {
-  await it('ends other Sessions but keeps PATs by default', async () => {
-    const { token } = await createPat(mk('al'), 'cli')
+  await it('ends other Sessions and CLI credentials', async () => {
+    const { accessToken } = await issueCliCredential(mk('al'))
     const other = await cookie('al', 60)
     assert.equal((await post({ cookie: await cookie('al') })).status, 200)
     assert.equal((await app.request('/whoami', { headers: { cookie: other } })).status, 401)
-    const viaPat = await app.request('/whoami', { headers: { authorization: `Bearer ${token}` } })
-    assert.equal(viaPat.status, 200)
+    const viaCli = await app.request('/whoami', { headers: { authorization: `Bearer ${accessToken}` } })
+    assert.equal(viaCli.status, 401)
   })
 
-  await it('also revokes PATs when asked', async () => {
-    clock.advance(1100)
-    const { token } = await createPat(mk('bo'), 'cli')
-    assert.equal((await post({ cookie: await cookie('bo') }, { includePats: true })).status, 200)
-    const viaPat = await app.request('/whoami', { headers: { authorization: `Bearer ${token}` } })
-    assert.equal(viaPat.status, 401)
-  })
-
-  await it('rejects PAT callers', async () => {
-    const { token } = await createPat(mk('cy'), 'cli')
-    const res = await post({ authorization: `Bearer ${token}` })
+  await it('rejects CLI credential callers', async () => {
+    const { accessToken } = await issueCliCredential(mk('cy'))
+    const res = await post({ authorization: `Bearer ${accessToken}` })
     assert.equal(res.status, 401)
   })
 

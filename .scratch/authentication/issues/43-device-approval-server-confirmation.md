@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 43: Server-side device-approval confirmation
 
@@ -14,11 +14,11 @@ Split from issue 25. The approval page already requires the phrase. This issue i
 
 ## In code today
 
-The route requires `user_code` and then calls `approveDevice`. It does not read a confirmation field. The approval page disables its button until the text matches, then posts `{ user_code }` only.
+`POST /auth/cli/device/approve` approves a pending device only when `confirmation` is `APPROVE` or the user code, ignoring case and surrounding space. Any other value is 400 and the device stays pending. The approval page posts the text the person typed.
 
 ## Acceptance
 
-- [ ] Approve with confirmation `APPROVE` succeeds for a pending code
-- [ ] Approve with the exact user code succeeds
-- [ ] Approve with any other confirmation returns 400 and leaves the device pending
-- [ ] The approval page sends the confirmation the route checks
+- [x] Approve with confirmation `APPROVE` succeeds for a pending code
+- [x] Approve with the exact user code succeeds
+- [x] Approve with any other confirmation returns 400 and leaves the device pending
+- [x] The approval page sends the confirmation the route checks
