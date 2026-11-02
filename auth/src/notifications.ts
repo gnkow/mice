@@ -340,7 +340,7 @@ export function notificationAvailability() {
 }
 
 class RequestError extends Error {
-  constructor(message: string, readonly status: 400 | 401 | 403 | 404 | 413) { super(message) }
+  constructor(message: string, readonly status: 400 | 401 | 403 | 404 | 413 | 503) { super(message) }
 }
 
 async function requireBrowser(c: Context): Promise<SessionUser> {

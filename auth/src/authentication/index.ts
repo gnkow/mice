@@ -13,6 +13,7 @@ export { registerAuthEventRoutes } from './audit/authEventRoutes.js'
 // Revocation
 export { registerRevocationRoutes } from './credentials/revocationRoutes.js'
 export { registerAdminRevocationRoutes } from './access/adminRevocationRoutes.js'
+export { registerAccessStateRoutes } from './access/accessStateRoutes.js'
 export { registerSigningRoutes } from './signing/signingRoutes.js'
 export { registerIdpBaselineRoutes } from './admin/idpBaselineRoutes.js'
 export { registerIdpDriftRoutes } from './compliance/idpDriftRoutes.js'
@@ -21,7 +22,6 @@ export { signOutEverywhere } from './credentials/selfRevocation.js'
 
 // Directory sync
 export { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directory/directorySync.js'
-export { applyGroupBootstrap } from './directory/groupBootstrap.js'
 
 // OIDC and login
 export { backChannelLogout } from './oidc/backChannelLogout.js'

@@ -1,0 +1,15 @@
+Truly open tickets
+- #04 live IdP/access states — partial. Per-request IdP check exists (session/requireAuth.ts:147), but the access-state rules are missing: 30-day re-enable window, Mice flags independent of IdP, iss+sub reuse/incident handling, privileged-operation group re-checks, and object-id group matching (groups are name-normalized and only snapshotted at login).
+- #06 revocation/suspension — partial. revokeAll works, but ACCESS_REVOKED does not exist anywhere. Pending suspensions and JTI replay state are in-memory maps (access/revocation.ts:65,68), not DB. The live back-channel endpoint (oidc/backChannelLogout.ts:12) does not validate audience or reject JTI replay; the separate validator that does is unused. revokeOnRoleChange() is never called from grant/role mutations.
+- #08 / #21 commit identity and Job tokens — not wired. Utilities exist in commits/commitIdentity.ts (strip trailers, append iss+sub, job token, job trailer), but nothing calls them. The proxy only injects author name/email (proxyBody.ts), and the job runner has no job token, submitter re-check, or finalizing hold.
+- #10 auditor access — not integrated. auditor/auditorAccess.ts is pure functions only: no schema, session flag, route guard, read auditing, expiry enforcement, or UI.
+- #12 access review/recovery — not integrated. compliance/accessReview.ts is pure functions only: no routes, no report persistence, no signing-ceremony hook, no 14-day alert, no single-use recovery-token storage.
+- #13 validation pack/clock alert — not integrated. compliance/validation.ts is pure functions only: no traceability data, validation-pack artifact, scheduled clock check, or IdP supplier documentation.
+- #24 rate limiter — infrastructure only. rateLimit.ts/rateLimitMiddleware.ts exist, but no auth route calls them (login, device start, token mint, refresh). Only device approval has its own limiter.
+- #11 — only the IdP-outage incident procedure remains; recordIdpOutage() exists but is unused.
+Marked complete but source contradicts the spec
+- #07 CLI login: the active flow uses cliDevice.ts:406, which mints a 90-day PAT (tokens.ts:23), not an 8h access token with rotating refresh. The compliant 8h/refresh implementation (deviceFlow.ts) is unused, and there is no /auth/refresh route.
+- #19 live IdP check: session requests are checked, but the bearer/PAT path skips the IdP check (requireAuth.ts:158), so CLI credentials outlive IdP disablement until expiry. Groups are also not re-checked at signing/merge/admin as required.
+- #17 seal-key rotation: key ring, CLI and admin routes exist, but session.ts uses opaque DB-backed tokens and never calls the seal-key functions. Rotation therefore has no effect on session validity; #03’s key-ring criterion is also still unchecked.
+- #09 step-up: uses IdP auth_time against local clock with a 24h cap (stepUp.ts:9,13); the spec requires BFF callback receipt time as the anchor and a 5–15 min hard cap.
+- ~~#22 — only optional name-history UI remains (marked FUTURE, not required for compliance).~~

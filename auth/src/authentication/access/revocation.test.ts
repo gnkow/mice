@@ -1,365 +1,133 @@
 import '../../db/testSchema.js'
-import { describe, it, beforeEach } from 'node:test'
-import assert from 'node:assert'
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
 import {
-  revokeAll,
-  suspend,
   confirmSuspension,
-  selfSuspend,
-  revokeOnRoleChange,
-  validateBackChannelLogout,
+  consumeBackChannelJti,
+  isPrincipalAccessRevoked,
   isRevoked,
-  type SuspensionRequest,
-  type BackChannelLogoutToken,
+  listPendingSuspensions,
+  revokeAll,
+  revokeOnRoleChange,
+  selfSuspend,
+  suspend,
 } from './revocation.js'
-import { principalKey } from '../session/principal.js'
+
+const unique = (prefix: string) => ({
+  iss: 'https://idp.example.com',
+  sub: `${prefix}-${Math.random().toString(36).slice(2)}`,
+})
+
+const admin = unique('admin')
+const admin2 = unique('admin2')
 
 describe('Revocation and Suspension (Ticket 06)', () => {
-  const testPrincipal = { iss: 'https://idp.example.com', sub: `revoke-user-${Date.now()}` }
-  const adminUser = { iss: 'https://idp.example.com', sub: `admin-${Date.now()}` }
-  const admin2User = { iss: 'https://idp.example.com', sub: `admin2-${Date.now()}` }
+  it('revokes every credential and blocks a fresh login immediately', async () => {
+    const target = unique('revoke')
+    await revokeAll(target, { revokedBy: admin, reason: 'security incident' })
 
-  describe('Revoke All', () => {
-    it('revokes all Sessions and credentials for a Principal immediately', async () => {
-      await revokeAll(testPrincipal, { revokedBy: adminUser, reason: 'security incident' })
-
-      const revoked = await isRevoked(testPrincipal)
-      assert.strictEqual(revoked, true)
-    })
-
-    it('returns ACCESS_REVOKED on next request after revocation', async () => {
-      await revokeAll(testPrincipal, { revokedBy: adminUser, reason: 'policy violation' })
-
-      const revoked = await isRevoked(testPrincipal)
-      assert.strictEqual(revoked, true)
-    })
-
-    it('has no revocation cache - checks are always live', async () => {
-      // Use a unique principal for this test to avoid interference from previous tests
-      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `cache-test-${Date.now()}` }
-      
-      // First check - not revoked
-      const before = await isRevoked(uniquePrincipal)
-      assert.strictEqual(before, false)
-
-      // Revoke
-      await revokeAll(uniquePrincipal, { revokedBy: adminUser, reason: 'test' })
-
-      // Immediate check - should be revoked (no cache)
-      const after = await isRevoked(uniquePrincipal)
-      assert.strictEqual(after, true)
-    })
+    assert.equal(await isRevoked(target), true)
+    assert.equal(await isPrincipalAccessRevoked(target), true)
   })
 
-  describe('Audit Intent Failures', () => {
-    it('returns 503 when audit Intent cannot be appended on revocation', async () => {
-      // This test simulates an audit system failure
-      // In a real scenario, we'd mock the audit system to fail
-      // For now, we'll test that the function signature supports error handling
-      
-      try {
-        await revokeAll(testPrincipal, {
-          revokedBy: adminUser,
-          reason: 'test',
-          auditFailure: true, // Simulate audit failure
-        })
-        assert.fail('Should have thrown 503 error')
-      } catch (err: any) {
-        assert.strictEqual(err.status, 503)
-        assert.ok(err.message.includes('audit'))
-      }
-    })
-
-    it('returns 503 when audit Intent cannot be appended on suspension', async () => {
-      try {
-        await suspend(testPrincipal, {
-          suspendedBy: adminUser,
-          reason: 'suspected compromise',
-          auditFailure: true,
-        })
-        assert.fail('Should have thrown 503 error')
-      } catch (err: any) {
-        assert.strictEqual(err.status, 503)
-      }
-    })
-
-    it('has no deferred append or break-glass mechanism', async () => {
-      // Use a unique principal for this test to avoid interference from previous tests
-      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `break-glass-test-${Date.now()}` }
-      
-      // When audit fails, the operation MUST fail - no workarounds
-      try {
-        await revokeAll(uniquePrincipal, {
-          revokedBy: adminUser,
-          reason: 'test',
-          auditFailure: true,
-        })
-        assert.fail('Should have thrown error')
-      } catch (err: any) {
-        // The revocation should NOT have been applied
-        assert.strictEqual(err.status, 503)
-      }
-      
-      // Verify the principal is NOT revoked
-      const revoked = await isRevoked(uniquePrincipal)
-      assert.strictEqual(revoked, false)
-    })
+  it('checks live with no cache', async () => {
+    const target = unique('cache')
+    assert.equal(await isRevoked(target), false)
+    await revokeAll(target, { revokedBy: admin, reason: 'test' })
+    assert.equal(await isRevoked(target), true)
   })
 
-  describe('Two-Admin Suspension', () => {
-    it('requires a second admin to confirm suspension within 24 hours', async () => {
-      const suspensionId = await suspend(testPrincipal, {
-        suspendedBy: adminUser,
-        reason: 'suspected security issue',
-      })
-
-      // Should be pending, not yet effective
-      const pendingSuspensions = await suspend.getPending()
-      assert.ok(pendingSuspensions.some((s: SuspensionRequest) => s.id === suspensionId))
-    })
-
-    it('suspension becomes effective after second admin confirms', async () => {
-      const suspensionId = await suspend(testPrincipal, {
-        suspendedBy: adminUser,
-        reason: 'security review',
-      })
-
-      await confirmSuspension(suspensionId, {
-        confirmedBy: admin2User,
-        reason: 'confirmed after review',
-      })
-
-      const revoked = await isRevoked(testPrincipal)
-      assert.strictEqual(revoked, true)
-    })
-
-    it('unconfirmed suspension lapses after 24 hours', async () => {
-      // Use a unique principal for this test to avoid interference from previous tests
-      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `lapse-test-${Date.now()}` }
-      
-      const now = Date.now()
-      const originalNow = Date.now
-      Date.now = () => now
-
-      try {
-        const suspensionId = await suspend(uniquePrincipal, {
-          suspendedBy: adminUser,
-          reason: 'pending review',
-        })
-
-        // Move time forward 25 hours
-        Date.now = () => now + 25 * 60 * 60 * 1000
-
-        // Suspension should have lapsed
-        const pendingSuspensions = await suspend.getPending()
-        assert.ok(!pendingSuspensions.some((s: SuspensionRequest) => s.id === suspensionId))
-
-        // Principal should NOT be revoked
-        const revoked = await isRevoked(uniquePrincipal)
-        assert.strictEqual(revoked, false)
-      } finally {
-        Date.now = originalNow
-      }
-    })
-
-    it('rejects second admin confirmation if it is the same admin', async () => {
-      const suspensionId = await suspend(testPrincipal, {
-        suspendedBy: adminUser,
-        reason: 'requires independent review',
-      })
-
-      try {
-        await confirmSuspension(suspensionId, {
-          confirmedBy: adminUser, // Same admin!
-          reason: 'trying to self-confirm',
-        })
-        assert.fail('Should have rejected same-admin confirmation')
-      } catch (err: any) {
-        assert.ok(err.message.includes('different admin'))
-      }
-    })
+  it('does not revoke when the audit Intent cannot be appended', async () => {
+    const target = unique('audit-revoke')
+    await assert.rejects(
+      revokeAll(target, { revokedBy: admin, reason: 'test', auditFailure: true }),
+      (err: unknown) => (err as { status?: number }).status === 503,
+    )
+    assert.equal(await isRevoked(target), false)
   })
 
-  describe('Self-Suspension', () => {
-    it('allows a Principal to suspend their own account immediately', async () => {
-      await selfSuspend(testPrincipal, { reason: 'device lost' })
-
-      const revoked = await isRevoked(testPrincipal)
-      assert.strictEqual(revoked, true)
-    })
-
-    it('self-suspension does not require confirmation', async () => {
-      // Use a unique principal for this test
-      const uniquePrincipal = { iss: 'https://idp.example.com', sub: `self-susp-test-${Date.now()}` }
-      
-      await selfSuspend(uniquePrincipal, { reason: 'security precaution' })
-
-      // Should be immediately effective
-      const revoked = await isRevoked(uniquePrincipal)
-      assert.strictEqual(revoked, true)
-
-      // Should not appear in pending confirmations
-      const pending = await suspend.getPending()
-      assert.ok(!pending.some((s: SuspensionRequest) => 
-        principalKey(s.principal) === principalKey(uniquePrincipal)
-      ))
-    })
+  it('does not request a suspension when the audit Intent cannot be appended', async () => {
+    const target = unique('audit-suspend')
+    await assert.rejects(
+      suspend(target, { suspendedBy: admin, reason: 'test', auditFailure: true }),
+      (err: unknown) => (err as { status?: number }).status === 503,
+    )
+    assert.equal((await listPendingSuspensions()).some((s) => s.principal.sub === target.sub), false)
   })
 
-  describe('Role and Grant Changes', () => {
-    it('forces fresh login when role changes', async () => {
-      const sessionStart = Math.floor(Date.now() / 1000)
-      
-      await revokeOnRoleChange(testPrincipal, {
-        changedBy: adminUser,
-        reason: 'role modified',
-      })
+  it('keeps a suspension pending until a second admin confirms it', async () => {
+    const target = unique('suspend')
+    const requestId = await suspend(target, { suspendedBy: admin, reason: 'suspected compromise' })
 
-      // Any session started before this should be revoked
-      const revokedForSession = await isRevoked(testPrincipal, { sessionStart })
-      assert.strictEqual(revokedForSession, true)
-    })
+    assert.equal(await isPrincipalAccessRevoked(target), false)
+    assert.ok((await listPendingSuspensions()).some((s) => s.id === requestId))
 
-    it('forces fresh login when grants change', async () => {
-      const sessionStart = Math.floor(Date.now() / 1000)
-      
-      await revokeOnRoleChange(testPrincipal, {
-        changedBy: adminUser,
-        reason: 'permissions updated',
-      })
+    await confirmSuspension(requestId, { confirmedBy: admin2, reason: 'confirmed' })
 
-      const revokedForSession = await isRevoked(testPrincipal, { sessionStart })
-      assert.strictEqual(revokedForSession, true)
-    })
+    assert.equal(await isPrincipalAccessRevoked(target), true)
+    assert.equal(await isRevoked(target), false)
+    assert.equal((await listPendingSuspensions()).some((s) => s.id === requestId), false)
   })
 
-  describe('Back-Channel Logout', () => {
-    it('validates signature on back-channel logout token', async () => {
-      const invalidToken: BackChannelLogoutToken = {
-        iss: 'https://idp.example.com',
-        aud: 'mice-client-id',
-        sub: testPrincipal.sub,
-        events: {
-          'http://schemas.openid.net/event/backchannel-logout': {},
-        },
-        jti: `jti-${Date.now()}`,
-        iat: Math.floor(Date.now() / 1000),
-        signature: 'invalid-signature',
-      }
+  it('rejects confirmation by the admin who initiated the suspension', async () => {
+    const target = unique('same-admin')
+    const requestId = await suspend(target, { suspendedBy: admin, reason: 'test' })
+    await assert.rejects(
+      confirmSuspension(requestId, { confirmedBy: admin, reason: 'test' }),
+      /different admin/,
+    )
+    assert.equal(await isPrincipalAccessRevoked(target), false)
+    await confirmSuspension(requestId, { confirmedBy: admin2, reason: 'cleanup' })
+  })
 
-      try {
-        await validateBackChannelLogout(invalidToken)
-        assert.fail('Should have rejected invalid signature')
-      } catch (err: any) {
-        assert.ok(err.message.includes('signature'))
-      }
-    })
+  it('drops an unconfirmed suspension after 24 hours', async () => {
+    const target = unique('expired')
+    const requestId = await suspend(target, { suspendedBy: admin, reason: 'test' })
+    const realNow = Date.now
+    try {
+      Date.now = () => realNow() + 25 * 60 * 60 * 1000
+      assert.equal((await listPendingSuspensions()).some((s) => s.id === requestId), false)
+      await assert.rejects(
+        confirmSuspension(requestId, { confirmedBy: admin2, reason: 'too late' }),
+        /not found or expired/,
+      )
+    } finally {
+      Date.now = realNow
+    }
+    assert.equal(await isPrincipalAccessRevoked(target), false)
+  })
 
-    it('validates issuer matches expected IdP', async () => {
-      const wrongIssuer: BackChannelLogoutToken = {
-        iss: 'https://wrong-idp.com', // Wrong issuer
-        aud: 'mice-client-id',
-        sub: testPrincipal.sub,
-        events: {
-          'http://schemas.openid.net/event/backchannel-logout': {},
-        },
-        jti: `jti-${Date.now()}`,
-        iat: Math.floor(Date.now() / 1000),
-        signature: 'valid-signature',
-      }
+  it('suspends the caller immediately without confirmation', async () => {
+    const target = unique('self')
+    await selfSuspend(target, { reason: 'panic' })
+    assert.equal(await isPrincipalAccessRevoked(target), true)
+    assert.equal(await isRevoked(target), false)
+  })
 
-      try {
-        await validateBackChannelLogout(wrongIssuer)
-        assert.fail('Should have rejected wrong issuer')
-      } catch (err: any) {
-        assert.ok(err.message.includes('issuer'))
-      }
-    })
+  it('ends Sessions on a role change but leaves PATs and fresh logins alone', async () => {
+    const target = unique('role')
+    const sessionStart = Math.floor(Date.now() / 1000) - 10
+    await revokeOnRoleChange(target, { changedBy: admin, reason: 'role changed' })
 
-    it('validates audience matches client ID', async () => {
-      const wrongAudience: BackChannelLogoutToken = {
-        iss: 'https://idp.example.com',
-        aud: 'wrong-client-id', // Wrong audience
-        sub: testPrincipal.sub,
-        events: {
-          'http://schemas.openid.net/event/backchannel-logout': {},
-        },
-        jti: `jti-${Date.now()}`,
-        iat: Math.floor(Date.now() / 1000),
-        signature: 'valid-signature',
-      }
+    assert.equal(await isRevoked(target, { sessionStart }), true)
+    assert.equal(await isRevoked(target), false)
+    assert.equal(await isPrincipalAccessRevoked(target), false)
+    assert.equal(await isRevoked(target, { sessionStart: sessionStart + 60 }), false)
+  })
 
-      try {
-        await validateBackChannelLogout(wrongAudience)
-        assert.fail('Should have rejected wrong audience')
-      } catch (err: any) {
-        assert.ok(err.message.includes('audience'))
-      }
-    })
+  it('ends Sessions for every affected Principal when a role definition changes', async () => {
+    const a = unique('role-a')
+    const b = unique('role-b')
+    const start = Math.floor(Date.now() / 1000) - 10
+    await revokeOnRoleChange([a, b], { changedBy: admin, reason: 'role definition edited' })
+    assert.equal(await isRevoked(a, { sessionStart: start }), true)
+    assert.equal(await isRevoked(b, { sessionStart: start }), true)
+  })
 
-    it('validates required logout event is present', async () => {
-      const noEvent: BackChannelLogoutToken = {
-        iss: 'https://idp.example.com',
-        aud: 'mice-client-id',
-        sub: testPrincipal.sub,
-        events: {}, // Missing required event
-        jti: `jti-${Date.now()}`,
-        iat: Math.floor(Date.now() / 1000),
-        signature: 'valid-signature',
-      }
-
-      try {
-        await validateBackChannelLogout(noEvent)
-        assert.fail('Should have rejected missing logout event')
-      } catch (err: any) {
-        assert.ok(err.message.includes('event'))
-      }
-    })
-
-    it('validates nonce and rejects jti replay', async () => {
-      const token: BackChannelLogoutToken = {
-        iss: 'https://idp.example.com',
-        aud: 'mice-client-id',
-        sub: testPrincipal.sub,
-        events: {
-          'http://schemas.openid.net/event/backchannel-logout': {},
-        },
-        jti: `jti-${Date.now()}`,
-        iat: Math.floor(Date.now() / 1000),
-        signature: 'valid-signature',
-      }
-
-      // First validation should succeed (with valid signature)
-      await validateBackChannelLogout(token, { skipSignatureValidation: true })
-
-      // Second validation with same jti should be rejected
-      try {
-        await validateBackChannelLogout(token, { skipSignatureValidation: true })
-        assert.fail('Should have rejected jti replay')
-      } catch (err: any) {
-        assert.ok(err.message.includes('replay') || err.message.includes('jti'))
-      }
-    })
-
-    it('fully validates all fields before accepting back-channel logout', async () => {
-      const validToken: BackChannelLogoutToken = {
-        iss: 'https://idp.example.com',
-        aud: 'mice-client-id',
-        sub: testPrincipal.sub,
-        events: {
-          'http://schemas.openid.net/event/backchannel-logout': {},
-        },
-        jti: `jti-valid-${Date.now()}`,
-        iat: Math.floor(Date.now() / 1000),
-        signature: 'valid-signature',
-      }
-
-      // Should validate without throwing
-      await validateBackChannelLogout(validToken, { skipSignatureValidation: true })
-
-      // Principal should be logged out
-      const revoked = await isRevoked(testPrincipal)
-      assert.strictEqual(revoked, true)
-    })
+  it('consumes a back-channel logout jti once and rejects the replay', async () => {
+    const jti = `jti-${Math.random().toString(36).slice(2)}`
+    const expiresAt = Math.floor(Date.now() / 1000) + 300
+    assert.equal(await consumeBackChannelJti(jti, expiresAt), true)
+    assert.equal(await consumeBackChannelJti(jti, expiresAt), false)
   })
 })

@@ -525,3 +525,48 @@ export function deleteCustomRepoRole(ns: string, roleId: string) {
 }
 
 export type { AuthUser }
+
+export type AdminAccessFlag = {
+  id: number
+  flag: string
+  reason: string
+  createdBy: string
+  createdAt: string
+}
+
+export type AdminAccessState = {
+  principal: string
+  idpDisabledAt: string | null
+  restoreDeadline: string | null
+  restoreRequiresApproval: boolean
+  canAutoRestore: boolean
+  flags: AdminAccessFlag[]
+}
+
+export function fetchAccessState(principal: string, signal?: AbortSignal) {
+  return authzFetch<AdminAccessState>(
+    `/auth/admin/access/${encodeURIComponent(principal)}`,
+    { signal },
+  )
+}
+
+export function setAccessFlag(principal: string, flag: string, reason: string) {
+  return authzFetch<{ ok: true; id: number }>(
+    `/auth/admin/access/${encodeURIComponent(principal)}/flags`,
+    { method: 'POST', body: JSON.stringify({ flag, reason }) },
+  )
+}
+
+export function liftAccessFlag(principal: string, id: number, reason: string) {
+  return authzFetch<{ ok: true }>(
+    `/auth/admin/access/${encodeURIComponent(principal)}/flags/${id}/lift`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  )
+}
+
+export function confirmAccessRestore(principal: string, reason: string) {
+  return authzFetch<{ ok: true }>(
+    `/auth/admin/access/${encodeURIComponent(principal)}/restore`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  )
+}

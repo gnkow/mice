@@ -5,7 +5,6 @@ import { describe, it } from 'node:test'
 process.env.SESSION_SECRET = 'test-session-secret-for-identity'
 process.env.AUTHZ_BOOTSTRAP_ADMINS =
   'boss@example.com,https://idp-a.example/realms/mice|admin-sub,ghost@users.local'
-process.env.AUTHZ_GROUP_BOOTSTRAP = '{}'
 
 const { maybeBootstrapInstanceAdmin, isInstanceAdmin } = await import('../../authzInstanceStore.js')
 const { matchesIdentityEntry, isScopedCredential } = await import('./principal.js')

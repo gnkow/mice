@@ -99,6 +99,7 @@ await describe('back-channel logout', async () => {
       ['no event', await logoutToken({ sub: 'u2', events: {} })],
       ['nonce', await logoutToken({ sub: 'u2', nonce: 'n' })],
       ['no sub', await logoutToken({ sub: undefined })],
+      ['no jti', await logoutToken({ sub: 'u2', jti: undefined })],
     ]
     const live = await cookie('u2')
     for (const [name, token] of cases) {
@@ -107,11 +108,11 @@ await describe('back-channel logout', async () => {
     assert.equal(await alive({ cookie: live }), true)
   })
 
-  await it('is harmless to replay: a later Session survives', async () => {
+  await it('rejects jti replay: a later Session survives', async () => {
     const t = await logoutToken({ sub: 'u3', iat: now() - 5 })
     assert.equal((await post(t)).status, 200)
     const fresh = await cookie('u3', 0)
-    assert.equal((await post(t)).status, 200)
+    assert.equal((await post(t)).status, 400)
     assert.equal(await alive({ cookie: fresh }), true)
   })
 

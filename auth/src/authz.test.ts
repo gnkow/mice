@@ -13,14 +13,6 @@ process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
 process.env.AUTHZ_REQUIRE_TRAINING = 'false'
-process.env.AUTHZ_GROUP_BOOTSTRAP = JSON.stringify({
-  'alice@example.com': {
-    namespace: 'from-group',
-    role: 'member',
-    createNamespace: true,
-    basePermission: 'read',
-  },
-})
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
@@ -268,12 +260,6 @@ await describe('Phase 2–3 extras', async () => {
       permission: 'create_namespace',
     })
     assert.equal(resolved.ok, true)
-  })
-
-  await it('group bootstrap creates namespace membership', async () => {
-    await preparePrincipal(alice)
-    // alice email maps to from-group
-    assert.equal(await isPendingUser(alice), false)
   })
 
   await it('IdP group member gets base permission', async () => {

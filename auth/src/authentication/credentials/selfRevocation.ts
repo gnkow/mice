@@ -16,14 +16,18 @@ export async function signOutEverywhere(c: Context): Promise<Response> {
   } catch {
     // empty body means defaults
   }
-  await offboard(session, {
+  const result = await offboard(session, {
     scope: includePats ? 'all' : 'sessions',
     cause: 'self-service',
+    strictAudit: true,
     method: c.req.method,
     path: c.req.path,
     message: includePats ? 'Signed out everywhere and revoked PATs' : 'Signed out everywhere',
     detail: { includePats },
   })
+  if (!result.ok) {
+    return c.json({ error: 'Audit system unavailable - revocation blocked' }, 503)
+  }
   clearSessionCookie(c)
   return c.json({ ok: true })
 }

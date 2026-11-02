@@ -21,7 +21,8 @@ function setup(claims: Partial<typeof identity> & { authTime?: number; groupsOve
   const provider = createFakeOidcProvider({ claims: { ...identity, ...claims } })
   const directory = createFakeDirectory({ 
     issuer: 'https://idp.test',
-    userGroups: { u1: ['devs', 'admins'] }
+    userGroups: { u1: ['devs', 'admins'] },
+    statuses: { u1: 'enabled' },
   })
   return { clock, provider, directory, flow: createLoginFlow({ provider, directory, clock }) }
 }
@@ -52,6 +53,36 @@ describe('login flow over a fake OIDC provider', () => {
       groups: ['devs'],
     })
     assert.equal(provider.lastComplete?.code, 'c')
+  })
+
+  it('refuses login when the IdP is unreachable', async () => {
+    const { flow, directory } = setup()
+    directory.userStatus = async () => 'error'
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, false)
+    if (res.ok) return
+    assert.equal(res.status, 503)
+    assert.match(res.html, /Service Unavailable/)
+  })
+
+  it('refuses login when the Principal is disabled in the IdP', async () => {
+    const { flow, directory } = setup()
+    directory.userStatus = async () => 'disabled'
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, false)
+    if (res.ok) return
+    assert.equal(res.status, 403)
+    assert.match(res.html, /ACCESS_SUSPENDED/)
   })
 
   it('step-up requires a recent authentication judged by the injected clock', async () => {

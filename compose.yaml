@@ -181,7 +181,6 @@ services:
       AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-}
       AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice@example.com}
       AUTHZ_DEV_GRANT_ALL: ${AUTHZ_DEV_GRANT_ALL:-true}
-      AUTHZ_GROUP_BOOTSTRAP: ${AUTHZ_GROUP_BOOTSTRAP:-}
       AUTHZ_REQUIRE_TRAINING: ${AUTHZ_REQUIRE_TRAINING:-false}
       # Server-side discovery inside Compose (override all OIDC_* for another IdP)
       OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/mice}

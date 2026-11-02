@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
 import { offboard } from '../credentials/offboarding.js'
+import { consumeBackChannelJti } from '../access/revocation.js'
 import { verifyIdpJwt } from './oidc.js'
 
 const LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout'
@@ -31,19 +32,36 @@ export async function backChannelLogout(c: Context): Promise<Response> {
   if ('nonce' in payload) return reject('logout_token must not carry a nonce')
   const sub = payload.sub
   const iss = payload.iss
-  if (typeof sub !== 'string' || !sub || typeof iss !== 'string' || typeof payload.iat !== 'number') {
-    return reject('sub, iss and iat required')
+  const jti = payload.jti
+  if (
+    typeof sub !== 'string' || !sub ||
+    typeof iss !== 'string' || !iss ||
+    typeof payload.iat !== 'number' ||
+    typeof jti !== 'string' || !jti
+  ) {
+    return reject('sub, iss, iat and jti required')
   }
 
   const principal = { sub, iss }
-  await offboard(principal, {
+  const result = await offboard(principal, {
     scope: 'sessions',
     cause: 'back-channel-logout',
     at: Math.min(payload.iat, Math.floor(Date.now() / 1000)),
     method: c.req.method,
     path: c.req.path,
     message: `IdP back-channel logout for ${sub}`,
+    strictAudit: true,
   })
+  if (!result.ok) {
+    return c.json({ error: 'server_error', error_description: 'audit unavailable' }, 503)
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  const expiresAt = typeof payload.exp === 'number' ? payload.exp : now + 300
+  if (!(await consumeBackChannelJti(jti, expiresAt))) {
+    return reject('logout_token replay')
+  }
+
   c.header('Cache-Control', 'no-store')
   return c.body(null, 200)
 }

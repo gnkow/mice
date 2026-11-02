@@ -125,10 +125,10 @@ describe('Ticket 19: Live IdP Check Always (U3)', () => {
 
       const res = await app.request('/test', { headers: { Cookie: sessionCookie } })
       
-      // Should deny access when user is disabled (503 because IdP responded, but user not enabled)
-      assert.equal(res.status, 503, 'Should return 503 when user is disabled in IdP')
+      // A known disabled state is an access denial; only an unreachable IdP is 503.
+      assert.equal(res.status, 403, 'Should return 403 when user is disabled in IdP')
       const body = await res.json()
-      assert.match(body.error, /Service Unavailable|IdP/i, 'Error should mention service unavailability')
+      assert.match(body.error, /ACCESS_SUSPENDED|disabled/i, 'Error should mention the suspension')
     })
 
     it('allows access when user is enabled in IdP', async () => {

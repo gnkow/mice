@@ -1,4 +1,4 @@
-import { applyGroupBootstrap, interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
+import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
 import { hasCompletedTraining, hasInstancePermission, isAuthzEnforce, isInstanceAdmin, maybeBootstrapInstanceAdmin, maybeDevGrantAll } from './authzInstanceStore.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
@@ -59,13 +59,12 @@ function deny(reason: string, extra?: Partial<AuthzDecision>): AuthzDecision {
 }
 
 /**
- * Prepare principal: bootstrap / dev grant / group bootstrap. Writes state, so it runs
+ * Prepare principal: bootstrap / dev grant. Writes state, so it runs
  * once at authentication and login; authorization decisions are read-only.
  */
 export async function preparePrincipal(user: SessionUser): Promise<void> {
   await maybeBootstrapInstanceAdmin(user)
   await maybeDevGrantAll(user)
-  await applyGroupBootstrap(user)
 }
 
 export async function canSkipPendingGate(user: SessionUser): Promise<boolean> {

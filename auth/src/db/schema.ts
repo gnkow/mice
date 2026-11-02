@@ -189,12 +189,71 @@ export const servicePrincipals = pgTable(
   (t) => [index('service_principals_owner').on(t.ownerIss, t.ownerSub)],
 )
 
-/** Cut-offs per principal: `notBefore` ends Sessions and PATs, `sessionsNotBefore` Sessions only (epoch s). */
+/**
+ * Cut-offs per principal: `notBefore` ends Sessions and PATs, `sessionsNotBefore` Sessions only
+ * (epoch s). `revokedAt` marks a permanent revocation that also blocks a fresh login.
+ */
 export const sessionRevocations = pgTable('session_revocations', {
   principalKey: text('principal_key').primaryKey(),
   notBefore: integer('not_before'),
   sessionsNotBefore: integer('sessions_not_before'),
+  revokedAt: ts('revoked_at'),
 })
+
+/** A security suspension awaiting a second instance admin (24h window). */
+export const suspensionRequests = pgTable(
+  'suspension_requests',
+  {
+    id: text('id').primaryKey(),
+    principalKey: text('principal_key').notNull(),
+    suspendedBy: text('suspended_by').notNull(),
+    reason: text('reason').notNull(),
+    createdAt: ts('created_at').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+    confirmedBy: text('confirmed_by'),
+    confirmedAt: ts('confirmed_at'),
+  },
+  (t) => [index('suspension_requests_principal_idx').on(t.principalKey)],
+)
+
+/** Consumed back-channel logout `jti` values; replays are rejected until the token expiry. */
+export const backChannelLogoutJtis = pgTable(
+  'backchannel_logout_jtis',
+  {
+    jti: text('jti').primaryKey(),
+    consumedAt: ts('consumed_at').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+  },
+  (t) => [index('backchannel_logout_jtis_expiry_idx').on(t.expiresAt)],
+)
+
+/** Per-Principal IdP disable state and restore gate (ticket 04). */
+export const principalAccessStates = pgTable('principal_access_states', {
+  principalKey: text('principal_key').primaryKey(),
+  /** First time a live check found the Principal disabled or missing in the IdP. */
+  idpDisabledAt: ts('idp_disabled_at'),
+  /** True once re-enable is too old to restore automatically; an admin must confirm. */
+  restoreRequiresApproval: boolean('restore_requires_approval').notNull().default(false),
+  createdAt: ts('created_at').notNull(),
+  updatedAt: ts('updated_at').notNull(),
+})
+
+/** Mice flags that suspend a Principal's access without deleting their grants (ticket 04). */
+export const principalAccessFlags = pgTable(
+  'principal_access_flags',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    principalKey: text('principal_key').notNull(),
+    flag: text('flag').notNull(),
+    reason: text('reason').notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: ts('created_at').notNull(),
+    liftedBy: text('lifted_by'),
+    liftedAt: ts('lifted_at'),
+    liftReason: text('lift_reason'),
+  },
+  (t) => [index('principal_access_flags_principal_idx').on(t.principalKey)],
+)
 
 /** Identity of record: canonical issuer + IdP `sub`, with a stable internal id other tables can reference. */
 export const principals = pgTable(

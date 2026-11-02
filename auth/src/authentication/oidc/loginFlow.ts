@@ -8,6 +8,7 @@ import { defaultOidcProvider, pkceChallenge, randomString, type OidcProvider } f
 import { resolveGroupOverage } from './groupOverage.js'
 import type { Directory } from '../directory/directoryTypes.js'
 import { directoryNow } from '../directory/directory.js'
+import { evaluateAccess } from '../access/accessState.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -82,10 +83,10 @@ async function beginLogin(provider: OidcProvider, clock: Clock,
 
 export type LoginResult =
   | { ok: true; user: SessionUser; dest: string; reauth?: { maxAge: number; sub: string; iss: string } }
-  | { ok: false; status: 400 | 500; html: string; reauth?: boolean; reason?: string }
+  | { ok: false; status: 400 | 403 | 500 | 503; html: string; reauth?: boolean; reason?: string }
 
 const retry = '<a href="/auth/login">Retry</a>'
-const fail = (status: 400 | 500, msg: string, reauth = false): LoginResult => ({
+const fail = (status: 400 | 403 | 500 | 503, msg: string, reauth = false): LoginResult => ({
   ok: false,
   status,
   html: `<p>${msg}</p><p>${retry}</p>`,
@@ -130,7 +131,14 @@ async function finishLogin(
       codeVerifier: pkce.verifier,
       nonce: pkce.nonce,
     })
-    
+
+    // Ticket 04: login is one of the checks. No cache and no bypass for a disabled Principal.
+    if (directory.configured) {
+      const status = await directory.userStatus(user.sub)
+      const access = await evaluateAccess(user, { status })
+      if (!access.allowed) return fail(access.status, access.error, isReauth)
+    }
+
     // Ticket 18: Resolve group overage by fetching from directory if needed
     if (user.groupsOverage) {
       const resolved = await resolveGroupOverage(user, directory)

@@ -1,6 +1,7 @@
 import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
+import { AdminAccessStateSection } from '../components/AdminAccessStateSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
@@ -73,6 +74,7 @@ export function SettingsPage() {
       { id: 'instance-administrators', label: 'Instance administrators', Icon: ShieldUser },
       { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
       { id: 'user-revocation', label: 'User revocation', Icon: UserX },
+      { id: 'access-state', label: 'Access state', Icon: ShieldAlert },
       { id: 'announcements', label: 'Announcements', Icon: Megaphone },
     ] }] : []),
   ]
@@ -124,6 +126,7 @@ export function SettingsPage() {
           {isInstanceAdmin && <IdpBaselineSection />}
           {isInstanceAdmin && <InstanceAdminSection />}
           {isInstanceAdmin && <AdminRevocationSection />}
+          {isInstanceAdmin && <AdminAccessStateSection />}
           {isInstanceAdmin && <AnnouncementsSection />}
         </>}
       </div>

@@ -155,8 +155,6 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
      * Useful for local Compose / e2e; keep off in shared environments.
      */
     authzDevGrantAll: src.AUTHZ_DEV_GRANT_ALL === 'true',
-    /** JSON map for IdP group / email → namespace or instance grants. */
-    authzGroupBootstrap: src.AUTHZ_GROUP_BOOTSTRAP ?? '',
     /** Phase 3: require training completion before product /api. */
     authzRequireTraining: src.AUTHZ_REQUIRE_TRAINING === 'true',
     /** Public base URL clients use for oxen CLI (scheme+host+port, no path). */

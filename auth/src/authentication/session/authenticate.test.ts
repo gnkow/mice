@@ -8,10 +8,6 @@ import { describe, it } from 'node:test'
 process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-authn-'))
 process.env.SESSION_SECRET = 'test-session-secret-for-authn'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
-process.env.AUTHZ_GROUP_BOOTSTRAP = JSON.stringify({
-  'idp|viacookie': { instancePermissions: ['create_namespace'] },
-  'idp|viapat': { instancePermissions: ['create_namespace'] },
-})
 
 const { Hono } = await import('hono')
 const { authenticate, authenticateUser, authenticateRequest, setAuthenticationObserver } = await import('./requireAuth.js')
@@ -107,7 +103,7 @@ await describe('authenticate', async () => {
     assert.equal(await sub('/any'), null)
   })
 
-  await it('hands handlers a prepared Principal: bootstrap grants apply on first contact', async () => {
+  await it('hands handlers a prepared Principal with no implicit grants', async () => {
     const app = new Hono()
     app.get('/perm', async (c) =>
       c.json({ can: await hasInstancePermission((await authenticateRequest(c, {}))!.user, 'create_namespace') }),
@@ -115,9 +111,7 @@ await describe('authenticate', async () => {
     const can = async (headers: Record<string, string>) =>
       ((await (await app.request('/perm', { headers })).json()) as { can: boolean }).can
 
-    assert.equal(await hasInstancePermission(mk('viacookie'), 'create_namespace'), false)
-    assert.equal(await can({ cookie: await cookie('viacookie') }), true)
-    assert.equal(await hasInstancePermission(mk('viapat'), 'create_namespace'), false)
-    assert.equal(await can(bearer((await createPat(mk('viapat'), 'p')).token)), true)
+    assert.equal(await can({ cookie: await cookie('viacookie') }), false)
+    assert.equal(await can(bearer((await createPat(mk('viapat'), 'p')).token)), false)
   })
 })

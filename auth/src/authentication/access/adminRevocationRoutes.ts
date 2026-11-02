@@ -1,7 +1,7 @@
 import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
 import { parsePrincipalKey, type PrincipalId } from '../session/principal.js'
-import { revokeAll, suspend, confirmSuspension, listPendingSuspensions } from '../access/revocation.js'
+import { revokeAll, suspend, confirmSuspension, listPendingSuspensions, selfSuspend } from '../access/revocation.js'
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import type { AuditDep } from '../../routeDeps.js'
 
@@ -69,10 +69,18 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
       return c.json({ error: 'Invalid principal format (use iss|sub or email)' }, 400)
     }
 
-    const requestId = await suspend(principal, {
-      suspendedBy: { iss: user.iss, sub: user.sub },
-      reason,
-    })
+    let requestId: string
+    try {
+      requestId = await suspend(principal, {
+        suspendedBy: { iss: user.iss, sub: user.sub },
+        reason,
+      })
+    } catch (err) {
+      if (err instanceof Error && 'status' in err && err.status === 503) {
+        return c.json({ error: 'Audit system unavailable - suspension blocked' }, 503)
+      }
+      throw err
+    }
 
     await audit(c, user, 'session', {
       action: 'admin.suspend_initiated',
@@ -107,6 +115,9 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
       return c.json({ ok: true })
     } catch (err) {
       if (err instanceof Error) {
+        if ('status' in err && err.status === 503) {
+          return c.json({ error: 'Audit system unavailable - suspension blocked' }, 503)
+        }
         if (err.message.includes('not found')) {
           return c.json({ error: 'Suspension request not found or expired' }, 404)
         }
@@ -116,6 +127,22 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
       }
       throw err
     }
+  }))
+
+  // Panic: a Principal suspends their own account immediately.
+  app.post('/auth/me/suspend', guarded({
+    mutates: true,
+    body: { required: ['reason'] }
+  }, async ({ c, user, body }) => {
+    try {
+      await selfSuspend({ iss: user.iss, sub: user.sub }, { reason: String(body.reason) })
+    } catch (err) {
+      if (err instanceof Error && 'status' in err && err.status === 503) {
+        return c.json({ error: 'Audit system unavailable - suspension blocked' }, 503)
+      }
+      throw err
+    }
+    return c.json({ ok: true })
   }))
 
   // List pending suspensions

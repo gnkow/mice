@@ -1,4 +1,4 @@
-import { appendAudit, actorFromUser, type AuditActor, type AuditVia } from '../../audit.js'
+import { appendAudit, appendIntent, appendOutcome, actorFromUser, type AuditActor, type AuditVia } from '../../audit.js'
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { revokeSessionsFor, revokeSessionsOnlyFor } from './credentialRevocation.js'
 import { suspendOwnedBy } from './servicePrincipals.js'
@@ -19,6 +19,8 @@ export type OffboardRequest = {
   at?: number
   message?: string
   detail?: Record<string, unknown>
+  /** Write the audit Intent before revoking; when it cannot be stored, nothing is revoked. */
+  strictAudit?: boolean
 }
 
 export type OffboardStep = 'revoke-credentials' | 'audit-revocation' | 'suspend-service-principals' | 'audit-suspensions'
@@ -85,15 +87,36 @@ export async function offboard(
     }
   }
 
+  const auditEvent = {
+    actor, ...audit, status: 200, action: 'session.revoke',
+    message: req.message ?? `Revoked ${req.scope === 'all' ? 'all credentials' : 'Sessions'} of ${principal.sub}`,
+    detail: { ...req.detail, source: req.cause },
+  }
+
+  let strictIntent: Awaited<ReturnType<typeof appendIntent>> | undefined
+  if (req.strictAudit) {
+    try {
+      strictIntent = await appendIntent({ ...auditEvent, status: 0, reason: req.message })
+    } catch {
+      failed.push({ step: 'audit-revocation', error: 'audit Intent could not be stored' })
+      return {
+        ok: false,
+        error: 'Offboarding incomplete',
+        cutoff: null,
+        suspended: [],
+        completed,
+        failed,
+      }
+    }
+  }
+
   const cutoff = await attempt('revoke-credentials', () => req.scope === 'all'
     ? revokeSessionsFor(principal)
     : revokeSessionsOnlyFor(principal, req.at))
   if (cutoff === undefined) failed.push({ step: 'audit-revocation', error: 'skipped: revoke-credentials failed' })
-  else await attempt('audit-revocation', async () => await appendAudit({
-    actor, ...audit, status: 200, action: 'session.revoke',
-    message: req.message ?? `Revoked ${req.scope === 'all' ? 'all credentials' : 'Sessions'} of ${principal.sub}`,
-    detail: { ...req.detail, source: req.cause },
-  }))
+  else if (strictIntent) {
+    await attempt('audit-revocation', () => appendOutcome(strictIntent!.id, auditEvent))
+  } else await attempt('audit-revocation', async () => await appendAudit(auditEvent))
 
   const suspendedPrincipals = req.scope === 'all' && SUSPENDS_OWNED.has(req.cause)
     ? (await attempt('suspend-service-principals', () => suspendOwnedBy(principal, req.cause))) ?? []

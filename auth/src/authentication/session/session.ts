@@ -27,7 +27,7 @@ export type SessionUser = {
   name: string
   /** OIDC id_token for RP-initiated logout (optional). */
   idToken?: string
-  /** IdP groups / roles claims (optional; used by AUTHZ_GROUP_BOOTSTRAP). */
+  /** IdP groups / roles claims (optional; used by group-based authorization). */
   groups?: string[]
   /**
    * Fine-grained PAT resource scopes (Phase 2). Empty/undefined = full user

@@ -6,7 +6,7 @@ import { env } from '../../env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
 import { can, isScopedCredential, type Capability } from './principal.js'
 import { resolvePat } from '../credentials/tokens.js'
-import { verifyIdpAccess } from '../access/idpCheck.js'
+import { evaluateAccess } from '../access/accessState.js'
 
 /** Unattended page polls must not keep an idle Session alive. */
 const BACKGROUND_POLL = /^\/auth\/(notifications|announcements)(\/|$)/
@@ -85,7 +85,7 @@ export async function authenticateUser(c: Context, policy: AuthPolicy = {}): Pro
 
 export class AuthenticationDenied extends Error {
   constructor(
-    readonly status: 400 | 401 | 403,
+    readonly status: 400 | 401 | 403 | 503,
     message: string,
   ) {
     super(message)
@@ -144,11 +144,9 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
     }
     if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
     
-    // Ticket #19 (U3): Check IdP status on every request (no throttling)
-    const idpEnabled = await verifyIdpAccess(session)
-    if (!idpEnabled) {
-      return deny(503, 'Service Unavailable - IdP check failed')
-    }
+    // Tickets #04/#19: live IdP status, restore window and Mice flags on every request.
+    const access = await evaluateAccess(session)
+    if (!access.allowed) return deny(access.status, access.error)
     
     await preparePrincipal(session)
     return { ok: true, user: session, via: 'session' }
@@ -158,6 +156,8 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   const pat = await resolveBearer(c)
   if (!pat || (!policy.allowScoped && isScopedCredential(pat))) return deny(401, 'Authentication required')
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
+  const patAccess = await evaluateAccess(pat)
+  if (!patAccess.allowed) return deny(patAccess.status, patAccess.error)
   await preparePrincipal(pat)
   return { ok: true, user: pat, via: 'pat' }
 }

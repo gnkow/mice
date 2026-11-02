@@ -11,7 +11,6 @@ process.env.SESSION_SECRET = 'notification-test-session-secret'
 process.env.AUTHZ_ENFORCE = 'true'
 process.env.AUTHZ_DEV_GRANT_ALL = 'false'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@notifications.test'
-process.env.AUTHZ_GROUP_BOOTSTRAP = '{}'
 process.env.PUBLIC_WEB_ORIGIN = 'http://localhost'
 
 const {
