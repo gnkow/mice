@@ -8,7 +8,7 @@ Mice-only suspension flags that keep grants are issue 28. Job commit blocking af
 
 ## Outcome
 
-An admin can revoke all sessions and credentials for a Principal. Security-role suspend needs a second, different admin within 24 hours; an unconfirmed suspend lapses. A Principal can self-suspend. A role or grant change sets a session cutoff so the next request requires a fresh login. Revoke and suspend return 503 when the audit record cannot be written. `openSession` checks revocation on every open, with no revocation cache. Back-channel logout validates signature, issuer, audience, events, and nonce, and rejects `jti` replay. The admin UI exposes revoke and suspend.
+An admin can revoke all sessions and credentials for a Principal. Security-role suspend needs a second, different admin within 24 hours; an unconfirmed suspend lapses. Pending suspension requests and consumed back-channel `jti` values are stored in Postgres. A Principal can self-suspend. A role or grant change sets a session cutoff so the next request requires a fresh login. Revoke and suspend return 503 when the audit record cannot be written. `openSession` checks revocation on every open, with no revocation cache. Back-channel logout validates the logout token and rejects `jti` replay. The admin UI exposes revoke and suspend.
 
 ## Acceptance
 

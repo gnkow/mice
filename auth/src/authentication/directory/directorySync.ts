@@ -135,6 +135,7 @@ export async function runDirectorySync(
     const result = await offboard(p, {
       scope: 'all',
       cause: 'directory-sync',
+      strictAudit: true,
       message: `Directory sync revoked ${p.sub}: disabled or removed in the IdP`,
       path: 'directory-sync',
     })

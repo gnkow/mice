@@ -13,6 +13,7 @@ export function registerRevocationRoutes(app: Hono): void {
       const result = await offboard(target, {
         scope: 'all',
         cause: 'admin-revocation',
+        strictAudit: true,
         actor: actorFromUser(user),
         via: callerVia(c, 'session'),
         method: c.req.method,
@@ -22,6 +23,9 @@ export function registerRevocationRoutes(app: Hono): void {
       })
       if (!result.ok) {
         if (result.error === 'Forbidden') return c.json({ error: result.error }, 403)
+        if (result.failed.some((f) => f.step === 'audit-revocation')) {
+          return c.json({ error: 'Audit system unavailable - revocation blocked' }, 503)
+        }
         return c.json({ error: result.error, failed: result.failed }, 500)
       }
       return c.json({ ok: true })

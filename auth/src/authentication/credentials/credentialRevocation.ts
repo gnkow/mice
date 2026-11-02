@@ -52,6 +52,7 @@ export async function isCredentialRevoked(
     .from(sessionRevocations)
     .where(eq(sessionRevocations.principalKey, principalKey(principal)))
   if (!row) return false
+  if (row.revokedAt) return true
   const sessionsOnly = kind === 'session' ? row.sessionsNotBefore : null
   const cutoff = Math.max(row.notBefore ?? -1, sessionsOnly ?? -1)
   return cutoff >= 0 && issuedAt <= cutoff

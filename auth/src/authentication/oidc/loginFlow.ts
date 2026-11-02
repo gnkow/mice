@@ -134,8 +134,6 @@ async function finishLogin(
       codeVerifier: pkce.verifier,
       nonce: pkce.nonce,
     })
-    
-    // Issue #04: Check IdP status before allowing login
     const account = await directory.userStatus(user.sub)
     const idpStatus = account.status
     if (idpStatus === 'error') {
@@ -202,7 +200,7 @@ async function finishLogin(
       })
       return fail(403, 'Suspended', isReauth)
     }
-    
+
     // Ticket 18: Resolve group overage by fetching from directory if needed
     if (user.groupsOverage) {
       const resolved = await resolveGroupOverage(user, directory)

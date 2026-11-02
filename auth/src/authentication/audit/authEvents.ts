@@ -3,7 +3,7 @@ import { getDb } from '../../db/database.js'
 import { authEvents } from '../../db/schema.js'
 import { principalKey, type PrincipalId } from '../session/principal.js'
 
-export type AuthEventType = 'login' | 'logout' | 'refresh' | 'step-up' | 'revocation'
+export type AuthEventType = 'login' | 'logout' | 'refresh' | 'step-up' | 'revocation' | 'access'
 
 export type AuthEvent = {
   id?: number

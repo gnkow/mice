@@ -10,7 +10,7 @@ Previously filed as `08-identity-reuse-detection.md`. Name changes for the same 
 
 ## Outcome
 
-The IdP already validates that each user is unique and linked to a human. Mice trusts `iss`+`sub` as that binding. It does not compare a second person attribute, refuse a reissued `sub`, open an identity-reuse incident, or require an admin-signed link. A known `iss`+`sub` stays the same Principal. A new `sub` is a new Principal.
+The IdP already validates that each user is unique and linked to a human. Mice trusts `iss`+`sub` as that binding. It does not compare a second person attribute, refuse a reissued `sub`, open an identity-reuse incident, or require an admin-signed link. A known `iss`+`sub` stays the same Principal. A new `sub` is a new Principal. The same question was filed again on `to_merge` as an investigation ticket; that investigation is closed by this decision.
 
 ## Acceptance
 

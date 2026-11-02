@@ -21,7 +21,9 @@ function setup(claims: Partial<typeof identity> & { authTime?: number; groupsOve
   const provider = createFakeOidcProvider({ claims: { ...identity, ...claims } })
   const directory = createFakeDirectory({ 
     issuer: 'https://idp.test',
-    userGroups: { u1: ['devs', 'admins'] }
+    users: [{ kind: 'user', sub: 'u1', iss: 'https://idp.test', email: 'u1@example.com', name: 'U One' }],
+    userGroups: { u1: ['devs', 'admins'] },
+    statuses: { u1: 'enabled' },
   })
   return { clock, provider, directory, flow: createLoginFlow({ provider, directory, clock }) }
 }
@@ -49,9 +51,39 @@ describe('login flow over a fake OIDC provider', () => {
       emailVerified: true,
       name: 'U One',
       idToken: 'id.token.jwt',
-      groups: ['devs'],
+      groups: ['devs', 'admins'],
     })
     assert.equal(provider.lastComplete?.code, 'c')
+  })
+
+  it('refuses login when the IdP is unreachable', async () => {
+    const { flow, directory } = setup()
+    directory.userStatus = async () => ({ status: 'error', name: '' })
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, false)
+    if (res.ok) return
+    assert.equal(res.status, 500)
+    assert.match(res.html, /unreachable/)
+  })
+
+  it('refuses login when the Principal is disabled in the IdP', async () => {
+    const { flow, directory } = setup()
+    directory.userStatus = async () => ({ status: 'disabled', name: 'U One' })
+    const started = await flow.startLogin()
+    const res = await flow.completeLogin({
+      code: 'c',
+      state: stateOf(started.authorizeUrl),
+      pkceCookie: started.pkceCookie,
+    })
+    assert.equal(res.ok, false)
+    if (res.ok) return
+    assert.equal(res.status, 403)
+    assert.match(res.html, /disabled by the administrator/)
   })
 
   it('step-up requires a recent authentication judged by the injected clock', async () => {
@@ -119,7 +151,6 @@ describe('login flow over a fake OIDC provider', () => {
     })
     assert.equal(res.ok, true)
     if (!res.ok) return
-    // Should use groups from IdP (not directory)
-    assert.deepEqual(res.user.groups, ['devs'])
+    assert.deepEqual(res.user.groups, ['devs', 'admins'])
   })
 })

@@ -89,7 +89,7 @@ export async function authenticateUser(c: Context, policy: AuthPolicy = {}): Pro
 
 export class AuthenticationDenied extends Error {
   constructor(
-    readonly status: 400 | 401 | 403,
+    readonly status: 400 | 401 | 403 | 503,
     message: string,
   ) {
     super(message)
@@ -160,7 +160,6 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
       }
     }
     if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
-
     let account: Awaited<ReturnType<typeof checkUserIdpStatus>>
     try {
       account = await checkUserIdpStatus(session)

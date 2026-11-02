@@ -33,6 +33,12 @@ CREATE TABLE "auth_events" (
 	"timestamp" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "backchannel_logout_jtis" (
+	"jti" text PRIMARY KEY NOT NULL,
+	"consumed_at" timestamp with time zone NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "custom_namespace_roles" (
 	"id" text PRIMARY KEY NOT NULL,
 	"namespace" text NOT NULL,
@@ -280,6 +286,18 @@ CREATE TABLE "principal_disabled_periods" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "principal_access_flags" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "principal_access_flags_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"principal_key" text NOT NULL,
+	"flag" text NOT NULL,
+	"reason" text NOT NULL,
+	"created_by" text NOT NULL,
+	"created_at" timestamp with time zone NOT NULL,
+	"lifted_by" text,
+	"lifted_at" timestamp with time zone,
+	"lift_reason" text
+);
+--> statement-breakpoint
 CREATE TABLE "principal_name_history" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "principal_name_history_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"principal_id" bigint NOT NULL,
@@ -352,7 +370,19 @@ CREATE TABLE "service_principals" (
 CREATE TABLE "session_revocations" (
 	"principal_key" text PRIMARY KEY NOT NULL,
 	"not_before" integer,
-	"sessions_not_before" integer
+	"sessions_not_before" integer,
+	"revoked_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "suspension_requests" (
+	"id" text PRIMARY KEY NOT NULL,
+	"principal_key" text NOT NULL,
+	"suspended_by" text NOT NULL,
+	"reason" text NOT NULL,
+	"created_at" timestamp with time zone NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"confirmed_by" text,
+	"confirmed_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "web_sessions" (
@@ -382,6 +412,7 @@ CREATE UNIQUE INDEX "access_requests_one_pending" ON "access_requests" USING btr
 CREATE INDEX "announcements_created" ON "announcements" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "auth_events_principal_idx" ON "auth_events" USING btree ("principal_key","timestamp");--> statement-breakpoint
 CREATE INDEX "auth_events_timestamp_idx" ON "auth_events" USING btree ("timestamp");--> statement-breakpoint
+CREATE INDEX "backchannel_logout_jtis_expiry_idx" ON "backchannel_logout_jtis" USING btree ("expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "custom_namespace_roles_name" ON "custom_namespace_roles" USING btree ("namespace",lower("name"));--> statement-breakpoint
 CREATE UNIQUE INDEX "custom_repo_roles_name" ON "custom_repo_roles" USING btree ("namespace",lower("name"));--> statement-breakpoint
 CREATE INDEX "desktop_sessions_status" ON "desktop_sessions" USING btree ("status");--> statement-breakpoint
@@ -401,6 +432,7 @@ CREATE INDEX "namespace_members_user" ON "namespace_members" USING btree ("user_
 CREATE INDEX "pats_owner" ON "pats" USING btree ("iss","sub");--> statement-breakpoint
 CREATE INDEX "principal_disabled_periods_principal_idx" ON "principal_disabled_periods" USING btree ("principal_id");--> statement-breakpoint
 CREATE INDEX "principal_disabled_periods_pending_idx" ON "principal_disabled_periods" USING btree ("restoration_type") WHERE "principal_disabled_periods"."restoration_type" = 'pending';--> statement-breakpoint
+CREATE INDEX "principal_access_flags_principal_idx" ON "principal_access_flags" USING btree ("principal_key");--> statement-breakpoint
 CREATE INDEX "principal_name_history_principal_idx" ON "principal_name_history" USING btree ("principal_id","valid_from");--> statement-breakpoint
 CREATE UNIQUE INDEX "principals_iss_sub_key" ON "principals" USING btree ("iss","sub");--> statement-breakpoint
 CREATE INDEX "rate_limits_key_endpoint_time_idx" ON "rate_limits" USING btree ("limit_key","endpoint","requested_at");--> statement-breakpoint
@@ -409,4 +441,5 @@ CREATE INDEX "repo_group_collaborators_group" ON "repo_group_collaborators" USIN
 CREATE INDEX "seal_keys_valid_from_idx" ON "seal_keys" USING btree ("valid_from");--> statement-breakpoint
 CREATE INDEX "seal_keys_valid_until_idx" ON "seal_keys" USING btree ("valid_until");--> statement-breakpoint
 CREATE INDEX "service_principals_owner" ON "service_principals" USING btree ("owner_iss","owner_sub");--> statement-breakpoint
+CREATE INDEX "suspension_requests_principal_idx" ON "suspension_requests" USING btree ("principal_key");--> statement-breakpoint
 CREATE INDEX "web_sessions_principal_idx" ON "web_sessions" USING btree ("principal_id");

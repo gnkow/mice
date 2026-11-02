@@ -24,6 +24,7 @@ export { signOutEverywhere } from './credentials/selfRevocation.js'
 
 // Directory sync
 export { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directory/directorySync.js'
+
 // OIDC and login
 export { backChannelLogout } from './oidc/backChannelLogout.js'
 export { registerLoginRoutes } from './oidc/loginRoutes.js'
