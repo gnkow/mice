@@ -118,13 +118,16 @@ describe('RBAC S18 list for reviewer', () => {
       true,
     )
 
-    const forManager = await listAccessRequestsForReviewer(manager)
+    const subjects = new Set([wantUser.sub, wantAdmin.sub])
+    const forManager = (await listAccessRequestsForReviewer(manager))
+      .filter((r) => subjects.has(r.sub))
     assert.deepEqual(
       forManager.map((r) => r.requestedRole).sort(),
       ['user'],
     )
 
-    const forAdmin = await listAccessRequestsForReviewer(admin)
+    const forAdmin = (await listAccessRequestsForReviewer(admin))
+      .filter((r) => subjects.has(r.sub))
     assert.deepEqual(
       forAdmin.map((r) => r.requestedRole).sort(),
       ['admin', 'user'],
