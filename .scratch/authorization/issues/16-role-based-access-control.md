@@ -190,7 +190,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 - [x] **S24** Instance actions via new perms — create namespace, session, tokens, etc. map to new names
 - [x] **S25** Admin separation — Admin denied on data/audit reads
 - [x] **S26** Auditor ACL bypass — `repo:bypass_acl` allows private repo read without collaborator
-- [ ] **S27** Non-auditor repo ACL — still collaborator/ns rules
+- [x] **S27** Non-auditor repo ACL — still collaborator/ns rules
 
 ### Audit
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S27**.
+In progress. Next: **S28**.
 
 ## Comments
 
@@ -322,3 +322,4 @@ In progress. Next: **S27**.
 - 2026-11-03: S24 done — decideInstanceAction uses RBAC permission names; no boolean-admin short-circuit.
 - 2026-11-03: S25 done — removed site-admin repo/namespace visibility bypass; Admin denied on data/audit.
 - 2026-11-03: S26 done — `repo:bypass_acl` grants private-repo read without collaborator (Auditor).
+- 2026-11-03: S27 done — non-auditor roles (and Auditor writes) still require collaborator/ns ACL.
