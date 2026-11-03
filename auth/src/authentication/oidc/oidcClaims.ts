@@ -1,4 +1,4 @@
-import { normalizeGroupsClaim } from '../../authzTypes.js'
+import { extractGroupsFromClaims } from '../../groupBinding.js'
 
 /** Identity asserted by the IdP after a completed login. */
 export type OidcClaims = {
@@ -12,6 +12,8 @@ export type OidcClaims = {
   emailVerified: boolean
   /** True when IdP indicates group overage (too many groups to fit in claims). */
   groupsOverage?: boolean
+  /** True when any groups claim lacked an object id and fell back to a normalized name. */
+  groupsNameBasedFallback?: boolean
 }
 
 function b64url(bytes: Uint8Array): string {
@@ -121,17 +123,20 @@ export function claimsFromPayload(
   if (!sub) throw new Error('id_token missing sub')
   
   const groupsOverage = hasGroupOverage(payload, opts.groupsClaim)
-  const groups = groupsOverage ? [] : normalizeGroupsClaim(payload[opts.groupsClaim])
-  
+  const extracted = groupsOverage
+    ? { groups: [] as ReturnType<typeof extractGroupsFromClaims>['groups'], nameBasedFallback: false }
+    : extractGroupsFromClaims(payload[opts.groupsClaim], { issuer: iss })
+
   return {
     sub,
     iss,
     email,
     name,
     idToken: opts.idToken,
-    groups,
+    groups: extracted.groups.map((g) => g.bindingKey),
     authTime: typeof payload.auth_time === 'number' ? payload.auth_time : undefined,
     emailVerified: typeof payload.email === 'string' && payload.email_verified === true,
     ...(groupsOverage ? { groupsOverage: true } : {}),
+    ...(extracted.nameBasedFallback ? { groupsNameBasedFallback: true } : {}),
   }
 }

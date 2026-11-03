@@ -1,8 +1,6 @@
-import { directoryNow } from './authentication/directory/directory.js'
 import {
   isPredefinedRepoRole,
   maxRepoRole,
-  normalizeGroup,
   parseUserKey,
   userKey,
   type BasePermission,
@@ -13,6 +11,8 @@ import {
 } from './authzTypes.js'
 import { getCustomRepoRole, isValidCollaboratorRole } from './customRoles.js'
 import * as authzRepo from './authzRepository.js'
+import { toGroupBindingKey } from './groupBinding.js'
+import { defaultGroupIssuer, getGroupDisplayName, upsertGroupDisplayNames } from './groupDisplayStore.js'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -39,7 +39,8 @@ export async function getRepoCollaboratorRole(ns: string, repo: string, user: Us
 
 /** Max repo collaborator role from IdP group bindings (resolved to base rank). */
 export async function getRepoCollaboratorRoleFromGroups(ns: string, repo: string, groups: string[]): Promise<RepoRole | null> {
-  const rows = await authzRepo.groupCollaboratorRoles(ns, repo, groups.map(normalizeGroup).filter(Boolean))
+  const keys = groups.map((g) => toGroupBindingKey(defaultGroupIssuer(), g).bindingKey)
+  const rows = await authzRepo.groupCollaboratorRoles(ns, repo, keys)
   let role: BasePermission = 'none'
   for (const r of rows) role = maxRepoRole(role, await collaboratorRoleToBase(ns, r.role))
   return role === 'none' ? null : (role as RepoRole)
@@ -60,20 +61,13 @@ export async function customRepoRoleIdsForUser(
   return ids
 }
 
-async function currentGroupName(id: string): Promise<string | undefined> {
-  const directory = directoryNow()
-  if (!directory.configured) return undefined
-  const group = await directory.getGroup(id)
-  return group?.name
-}
-
 export async function listRepoCollaborators(ns: string, repo: string): Promise<CollaboratorPrincipal[]> {
   const { users, groups } = await authzRepo.listCollaboratorRows(ns, repo)
   const named = await Promise.all(groups.map(async (row) => ({
     kind: 'group' as const,
     group: row.group,
     role: row.role,
-    name: await currentGroupName(row.group),
+    name: await getGroupDisplayName(row.group),
   })))
   return [
     ...users.map((r) => ({ kind: 'user' as const, ...parseUserKey(r.key), role: r.role })),
@@ -100,14 +94,23 @@ export async function removeRepoCollaborator(ns: string, repoName: string, targe
   return authzRepo.removeCollaborator(ns, repoName, userKey(target))
 }
 
-export async function setRepoGroupCollaborator(ns: string, repoName: string, group: string, role: CollaboratorRoleRef): Promise<Result> {
+export async function setRepoGroupCollaborator(
+  ns: string,
+  repoName: string,
+  group: string,
+  role: CollaboratorRoleRef,
+  opts?: { iss?: string; displayName?: string },
+): Promise<Result> {
   if (!(await isValidCollaboratorRole(ns, role))) return { ok: false, error: 'Invalid role' }
-  const g = normalizeGroup(group)
-  if (!g) return { ok: false, error: 'Group name required' }
-  await authzRepo.setGroupCollaborator(ns, repoName, g, role)
+  if (!group.trim()) return { ok: false, error: 'Group name required' }
+  const { bindingKey, idBased, groupId } = toGroupBindingKey(opts?.iss ?? defaultGroupIssuer(), group)
+  const displayName = (opts?.displayName ?? '').trim() || groupId
+  await upsertGroupDisplayNames([{ bindingKey, displayName, idBased }])
+  await authzRepo.setGroupCollaborator(ns, repoName, bindingKey, role)
   return { ok: true }
 }
 
 export async function removeRepoGroupCollaborator(ns: string, repoName: string, group: string): Promise<boolean> {
-  return authzRepo.removeGroupCollaborator(ns, repoName, normalizeGroup(group))
+  const { bindingKey } = toGroupBindingKey(defaultGroupIssuer(), group)
+  return authzRepo.removeGroupCollaborator(ns, repoName, bindingKey)
 }

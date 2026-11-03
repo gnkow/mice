@@ -256,7 +256,9 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
     if (kind === 'group') {
       if (!body.group) return c.json({ error: 'group required' }, 400)
-      const result = await setNamespaceGroupMember(ns, body.group, body.role)
+      const result = await setNamespaceGroupMember(ns, body.group, body.role, {
+        displayName: body.name,
+      })
       if (!result.ok) return c.json({ error: result.error }, 400)
     } else {
       if (!body.sub || !body.iss) {
@@ -344,7 +346,9 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
     if (kind === 'group') {
       if (!body.group) return c.json({ error: 'group required' }, 400)
-      const result = await setRepoGroupCollaborator(ns, repo, body.group, body.role)
+      const result = await setRepoGroupCollaborator(ns, repo, body.group, body.role, {
+        displayName: body.name,
+      })
       if (!result.ok) return c.json({ error: result.error }, 400)
     } else {
       if (!body.sub || !body.iss) {

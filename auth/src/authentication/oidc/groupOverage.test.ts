@@ -101,7 +101,11 @@ describe('Group Overage Detection (Ticket 18, U17)', () => {
     })
 
     assert.equal(claims.groupsOverage, undefined)
-    assert.deepEqual(claims.groups, ['eng', 'admin'])
+    assert.equal(claims.groupsNameBasedFallback, true)
+    assert.deepEqual(claims.groups, [
+      'https://idp.example.com|eng',
+      'https://idp.example.com|admin',
+    ])
   })
 })
 
@@ -128,8 +132,8 @@ describe('Directory API Group Fetching (Ticket 18, U17)', () => {
 
     const groups = await fetchGroupsOnOverage(claims, directory)
     assert.equal(groups.length, 5)
-    assert.ok(groups.includes('eng'))
-    assert.ok(groups.includes('admin'))
+    assert.ok(groups.includes('https://idp.example.com|eng'))
+    assert.ok(groups.includes('https://idp.example.com|admin'))
   })
 
   it('returns empty array when directory not configured', async () => {
@@ -218,7 +222,11 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
 
     const success = await resolveGroupOverage(claims, directory)
     assert.equal(success, true)
-    assert.deepEqual(claims.groups, ['eng', 'admin', 'qa'])
+    assert.deepEqual(claims.groups, [
+      'https://idp.example.com|eng',
+      'https://idp.example.com|admin',
+      'https://idp.example.com|qa',
+    ])
     assert.equal(claims.groupsOverage, undefined)
   })
 

@@ -41,10 +41,15 @@ export async function fetchGroupsOnOverage(
     )
   }
 
-  // Fetch groups from directory API
+  // Fetch groups from directory API as binding keys
   try {
-    const groups = (await directory.getUserGroups(claims.sub)).map((group) => group.id)
-    
+    const { groupBindingKey } = await import('../../groupBinding.js')
+    const iss = directory.issuer || claims.iss
+    const groups = (await directory.getUserGroups(claims.sub))
+      .map((group) => group.id)
+      .filter((id) => id.length > 0)
+      .map((id) => groupBindingKey(iss, id))
+
     if (groups.length === 0) {
       console.warn(
         `[mice-auth] Group overage for user ${claims.sub} but directory returned no groups. ` +
@@ -55,7 +60,7 @@ export async function fetchGroupsOnOverage(
         `[mice-auth] Fetched ${groups.length} groups from directory for user ${claims.sub} (overage recovery)`
       )
     }
-    
+
     return groups
   } catch (error) {
     console.error(

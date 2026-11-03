@@ -231,7 +231,7 @@ async function finishLogin(
         return fail(400, 'Re-authentication was not recent enough.', true)
       }
     }
-    const groups = await sessionGroups(user, directory)
+    const { groups, nameBasedFallback } = await sessionGroups(user, directory)
     return {
       ok: true,
       ...(pkce.reauth ? { reauth: pkce.reauth } : {}),
@@ -245,6 +245,7 @@ async function finishLogin(
         idToken: user.idToken,
         ...(user.authTime !== undefined ? { authTime: user.authTime } : {}),
         ...(groups.length ? { groups } : {}),
+        ...(nameBasedFallback ? { groupsNameBasedFallback: true } : {}),
       },
     }
   } catch (e) {
@@ -252,17 +253,52 @@ async function finishLogin(
   }
 }
 
-/** Token group names plus the directory object ids, so a renamed group still matches a grant. */
-async function sessionGroups(user: { sub: string; groups: string[] }, directory: Directory): Promise<string[]> {
-  if (!directory.configured) return user.groups
-  try {
-    const listed = await directory.getUserGroups(user.sub)
-    const ids = listed.map((group) => group.id).filter((id) => id.length > 0)
-    return [...new Set([...user.groups, ...ids])]
-  } catch (err) {
-    console.error('[mice-auth] directory group id lookup failed', err)
-    return user.groups
+/**
+ * Binding keys from the token plus directory object ids, and refresh the display-name cache.
+ */
+async function sessionGroups(
+  user: { sub: string; iss: string; groups: string[]; groupsNameBasedFallback?: boolean },
+  directory: Directory,
+): Promise<{ groups: string[]; nameBasedFallback: boolean }> {
+  const { groupBindingKey, parseGroupBindingKey, toGroupBindingKey } = await import('../../groupBinding.js')
+  const { upsertGroupDisplayNames } = await import('../../groupDisplayStore.js')
+  const iss = user.iss
+  const keys = new Set<string>()
+  const cacheRows: Array<{ bindingKey: string; displayName: string; idBased: boolean }> = []
+  let nameBasedFallback = !!user.groupsNameBasedFallback
+
+  for (const g of user.groups) {
+    const parsed = parseGroupBindingKey(g)
+    if (parsed) {
+      keys.add(groupBindingKey(parsed.iss, parsed.groupId))
+      continue
+    }
+    const resolved = toGroupBindingKey(iss, g)
+    keys.add(resolved.bindingKey)
+    if (!resolved.idBased) nameBasedFallback = true
   }
+
+  if (directory.configured) {
+    try {
+      const listed = await directory.getUserGroups(user.sub)
+      const dirIss = directory.issuer || iss
+      for (const group of listed) {
+        if (!group.id) continue
+        const bindingKey = groupBindingKey(dirIss, group.id)
+        keys.add(bindingKey)
+        cacheRows.push({
+          bindingKey,
+          displayName: group.name || group.id,
+          idBased: true,
+        })
+      }
+    } catch (err) {
+      console.error('[mice-auth] directory group id lookup failed', err)
+    }
+  }
+
+  if (cacheRows.length) await upsertGroupDisplayNames(cacheRows)
+  return { groups: [...keys], nameBasedFallback }
 }
 
 /** Login flow over an OIDC provider and clock. */

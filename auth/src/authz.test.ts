@@ -366,7 +366,7 @@ await describe('Phase 2–3 extras', async () => {
     const r2 = await removeNamespaceGroupMember(ns, 'owners')
     assert.equal(r2.ok, false)
     const listed = await listNamespaceMembers(ns)
-    assert.ok(listed.some((m) => m.kind === 'group' && m.group === 'owners'))
+    assert.ok(listed.some((m) => m.kind === 'group' && m.group.endsWith('|owners')))
   })
 
   await it('training gate blocks until completed', async () => {

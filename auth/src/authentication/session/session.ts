@@ -31,8 +31,11 @@ export type SessionUser = {
   name: string
   /** OIDC id_token for RP-initiated logout (optional). */
   idToken?: string
-  /** IdP groups, matched against namespace and repository group grants an administrator has recorded. */
+  /** IdP group binding keys (`iss|group_id`), matched against recorded grants. */
   groups?: string[]
+  /** True when session groups include name-based fallback keys (IdP gave no object ids). */
+  groupsNameBasedFallback?: boolean
+
   /**
    * Fine-grained PAT resource scopes (Phase 2). Empty/undefined = full user
    * effective access. Never exceeds the user's grants.

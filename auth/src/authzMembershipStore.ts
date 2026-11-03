@@ -1,6 +1,5 @@
 import {
   isPredefinedNsRole,
-  normalizeGroup,
   parseUserKey,
   userKey,
   type MemberPrincipal,
@@ -10,9 +9,10 @@ import {
   type UserKey,
 } from './authzTypes.js'
 import { getCustomNamespaceRole, isValidMemberRole } from './customRoles.js'
-import { directoryNow } from './authentication/directory/directory.js'
 import { isInstanceAdmin } from './authzInstanceStore.js'
 import * as repo from './authzRepository.js'
+import { toGroupBindingKey } from './groupBinding.js'
+import { defaultGroupIssuer, getGroupDisplayName, upsertGroupDisplayNames } from './groupDisplayStore.js'
 
 type Result = { ok: true } | { ok: false; error: string }
 type Who = UserKey & { groups?: string[] }
@@ -94,53 +94,9 @@ export async function isCustomNamespaceRoleAssigned(ns: string, roleId: string):
   return repo.isMemberRoleAssigned(ns, roleId)
 }
 
-const OBJECT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-
-async function objectIdForStoredName(name: string): Promise<string | null | undefined> {
-  const directory = directoryNow()
-  if (!directory.configured || OBJECT_ID.test(name)) return undefined
-  const hits = await directory.searchGroups(name, 20)
-  const match = hits.filter((hit) => hit.name.trim().toLowerCase() === name && OBJECT_ID.test(hit.group))
-  if (match.length === 1) return match[0].group
-  if (match.length === 0) return null
-  return undefined
-}
-
-/** Rewrite name-based group grants to the IdP object id. Names the directory no longer has are returned. */
-export async function reconcileNamespaceGroupIds(ns: string): Promise<string[]> {
-  const directory = directoryNow()
-  if (!directory.configured) return []
-  const missing: string[] = []
-  const { groups } = await repo.listMemberRows(ns)
-  for (const row of groups) {
-    const id = await objectIdForStoredName(row.group)
-    if (id === undefined) continue
-    if (id === null) {
-      missing.push(row.group)
-      continue
-    }
-    await repo.setGroupMember(ns, id, row.role)
-    await repo.removeGroupMember(ns, row.group)
-  }
-  const collaborators = await repo.listNamespaceGroupCollaboratorRows(ns)
-  for (const row of collaborators) {
-    const id = await objectIdForStoredName(row.group)
-    if (id === undefined) continue
-    if (id === null) {
-      if (!missing.includes(row.group)) missing.push(row.group)
-      continue
-    }
-    await repo.setGroupCollaborator(ns, row.repo, id, row.role)
-    await repo.removeGroupCollaborator(ns, row.repo, row.group)
-  }
-  return missing
-}
-
-async function currentGroupName(id: string): Promise<string | undefined> {
-  const directory = directoryNow()
-  if (!directory.configured) return undefined
-  const group = await directory.getGroup(id)
-  return group?.name
+/** Greenfield: no name→id rewrite; bindings are written as `iss|group_id` up front. */
+export async function reconcileNamespaceGroupIds(_ns: string): Promise<string[]> {
+  return []
 }
 
 export async function listNamespaceMembers(ns: string): Promise<MemberPrincipal[]> {
@@ -149,7 +105,7 @@ export async function listNamespaceMembers(ns: string): Promise<MemberPrincipal[
     kind: 'group' as const,
     group: row.group,
     role: row.role,
-    name: await currentGroupName(row.group),
+    name: await getGroupDisplayName(row.group),
   })))
   return [
     ...users.map((r) => ({ kind: 'user' as const, ...parseUserKey(r.key), role: r.role })),
@@ -166,13 +122,21 @@ export async function removeNamespaceMember(ns: string, target: UserKey): Promis
   return repo.removeMember(ns, userKey(target))
 }
 
-export async function setNamespaceGroupMember(ns: string, group: string, role: MemberRoleRef): Promise<Result> {
+export async function setNamespaceGroupMember(
+  ns: string,
+  group: string,
+  role: MemberRoleRef,
+  opts?: { iss?: string; displayName?: string },
+): Promise<Result> {
   if (!(await isValidMemberRole(ns, role))) return { ok: false, error: 'Invalid role' }
-  const g = normalizeGroup(group)
-  if (!g) return { ok: false, error: 'Group name required' }
-  return repo.setGroupMember(ns, g, role)
+  if (!group.trim()) return { ok: false, error: 'Group name required' }
+  const { bindingKey, idBased, groupId } = toGroupBindingKey(opts?.iss ?? defaultGroupIssuer(), group)
+  const displayName = (opts?.displayName ?? '').trim() || groupId
+  await upsertGroupDisplayNames([{ bindingKey, displayName, idBased }])
+  return repo.setGroupMember(ns, bindingKey, role)
 }
 
 export async function removeNamespaceGroupMember(ns: string, group: string): Promise<Result> {
-  return repo.removeGroupMember(ns, normalizeGroup(group))
+  const { bindingKey } = toGroupBindingKey(defaultGroupIssuer(), group)
+  return repo.removeGroupMember(ns, bindingKey)
 }

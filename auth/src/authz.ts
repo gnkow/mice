@@ -238,21 +238,29 @@ export async function confirmPrivilegedGroups(user: SessionUser): Promise<Sessio
 
 /** Session groups that the directory still lists. A group added since login stays off. */
 async function withDirectoryGroups(user: SessionUser): Promise<SessionUser> {
+  const directory = directoryNow()
   let listed
   try {
-    listed = await directoryNow().getUserGroups(user.sub)
+    listed = await directory.getUserGroups(user.sub)
   } catch {
     throw Object.assign(new Error('Directory unavailable'), { status: 503 })
   }
+  const { groupBindingKey, parseGroupBindingKey } = await import('./groupBinding.js')
+  const iss = directory.issuer || user.iss
   const live = new Set<string>()
   for (const group of listed) {
     live.add(group.id)
     live.add(normalizeGroup(group.id))
     live.add(normalizeGroup(group.name))
+    if (group.id) live.add(groupBindingKey(iss, group.id))
   }
   return {
     ...user,
-    groups: (user.groups ?? []).filter((group) => live.has(group) || live.has(normalizeGroup(group))),
+    groups: (user.groups ?? []).filter((group) => {
+      if (live.has(group) || live.has(normalizeGroup(group))) return true
+      const parsed = parseGroupBindingKey(group)
+      return !!(parsed && (live.has(parsed.groupId) || live.has(normalizeGroup(parsed.groupId))))
+    }),
   }
 }
 

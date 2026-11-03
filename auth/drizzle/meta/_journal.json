@@ -71,6 +71,13 @@
       "when": 1794000001000,
       "tag": "0009_drop_service_principals",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794000002000,
+      "tag": "0010_group_display_names",
+      "breakpoints": true
     }
   ]
 }

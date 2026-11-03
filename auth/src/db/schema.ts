@@ -119,6 +119,23 @@ export const repoGroupCollaborators = pgTable(
   (t) => [primaryKey({ columns: [t.repositoryId, t.groupKey] }), index('repo_group_collaborators_group').on(t.groupKey)],
 )
 
+/**
+ * Cached IdP group display names. Grant keys are `iss|group_id` on membership tables;
+ * this table is presentation + the name-based-fallback warning flag only.
+ */
+export const groupDisplayNames = pgTable(
+  'group_display_names',
+  {
+    issuer: text('issuer').notNull(),
+    groupId: text('group_id').notNull(),
+    displayName: text('display_name').notNull(),
+    /** False when group_id is a normalized display name used because the IdP gave no object id. */
+    idBased: boolean('id_based').notNull().default(true),
+    updatedAt: ts('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.issuer, t.groupId] })],
+)
+
 export const customNamespaceRoles = pgTable(
   'custom_namespace_roles',
   {

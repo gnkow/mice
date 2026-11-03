@@ -23,6 +23,8 @@ import {
   type InstancePermission,
   type MemberRoleRef,
 } from './authzTypes.js'
+import { toGroupBindingKey } from './groupBinding.js'
+import { defaultGroupIssuer } from './groupDisplayStore.js'
 
 export type NamespaceSettings = {
   id: string
@@ -37,8 +39,18 @@ type Result = { ok: true } | { ok: false; error: string }
 
 const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000
 
-export function sessionGroups(user: { groups?: string[] }): string[] {
-  return (user.groups ?? []).map(normalizeGroup).filter(Boolean)
+export function sessionGroups(user: { groups?: string[]; iss?: string }): string[] {
+  const iss = user.iss?.trim() ? user.iss : defaultGroupIssuer()
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const g of user.groups ?? []) {
+    if (!g?.trim()) continue
+    const { bindingKey } = toGroupBindingKey(iss, g)
+    if (seen.has(bindingKey)) continue
+    seen.add(bindingKey)
+    out.push(bindingKey)
+  }
+  return out
 }
 
 export function repoKey(ns: string, repo: string): string {
