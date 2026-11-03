@@ -50,28 +50,42 @@ async function purgeWhere(where: SQL): Promise<number> {
 
 const startsWith = (prefix: string) => sql`starts_with(${favorites.id}, ${prefix})`
 const target = (type: FavoriteType, id: string) => and(eq(favorites.type, type), eq(favorites.id, id))
-const repoScoped = inArray(favorites.type, ['repo', 'branch', 'stage'])
 
 /** Delete favorites that point at entities removed by an audited mutation. */
 export async function purgeFavoritesForAudit(event: AuditEvent): Promise<void> {
   if (event.status < 200 || event.status >= 300) return
   const d = event.detail ?? {}
   const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
+  const namespaceId = event.namespace_id
+  const repositoryId = event.repository_id
   switch (event.action) {
     case 'namespace.delete':
-      if (event.namespace) {
-        await purgeWhere(or(target('namespace', event.namespace), and(repoScoped, startsWith(`${event.namespace}/`)))!)
+      if (namespaceId) {
+        await purgeWhere(target('namespace', namespaceId)!)
+        const repoIds = Array.isArray(d.repository_ids)
+          ? d.repository_ids.filter((id): id is string => typeof id === 'string')
+          : []
+        for (const repositoryId of repoIds) {
+          await purgeWhere(
+            or(
+              target('repo', repositoryId),
+              and(
+                inArray(favorites.type, ['branch', 'stage']),
+                or(eq(favorites.id, repositoryId), startsWith(`${repositoryId}@`), startsWith(`${repositoryId}!`)),
+              ),
+            )!,
+          )
+        }
       }
       break
     case 'repo.delete':
-      if (event.namespace && event.repo) {
-        const prefix = `${event.namespace}/${event.repo}`
+      if (repositoryId) {
         await purgeWhere(
           or(
-            target('repo', prefix),
+            target('repo', repositoryId),
             and(
               inArray(favorites.type, ['branch', 'stage']),
-              or(eq(favorites.id, prefix), startsWith(`${prefix}@`), startsWith(`${prefix}!`)),
+              or(eq(favorites.id, repositoryId), startsWith(`${repositoryId}@`), startsWith(`${repositoryId}!`)),
             ),
           )!,
         )
@@ -79,12 +93,12 @@ export async function purgeFavoritesForAudit(event: AuditEvent): Promise<void> {
       break
     case 'branch.delete': {
       const b = str(d.branch)
-      if (event.namespace && event.repo && b) await purgeWhere(target('branch', `${event.namespace}/${event.repo}@${b}`)!)
+      if (repositoryId && b) await purgeWhere(target('branch', `${repositoryId}@${b}`)!)
       break
     }
     case 'workspace.delete': {
       const w = str(d.workspace_id)
-      if (event.namespace && event.repo && w) await purgeWhere(target('stage', `${event.namespace}/${event.repo}!${w}`)!)
+      if (repositoryId && w) await purgeWhere(target('stage', `${repositoryId}!${w}`)!)
       break
     }
     case 'session.destroy': {

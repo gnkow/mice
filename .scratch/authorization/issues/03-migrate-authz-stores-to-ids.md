@@ -4,17 +4,21 @@
 
 **Blocked by:** 01 (Stable Repository IDs Infrastructure), 02 (Stable Namespace IDs Infrastructure)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Migrate `repoCollaborators` table: replace `(namespace, repo)` with `repository_id` FK
-- [ ] Migrate `namespaceMembers` table: replace `namespace` with `namespace_id` FK
-- [ ] Migrate `customRepoRoles` table: add `repository_id` FK
-- [ ] Migrate `customNamespaceRoles` table: add `namespace_id` FK
-- [ ] Migrate favorites, workspaces, jobs tables to use `repository_id` and `namespace_id`
-- [ ] Update audit event schema to include `repository_id`, `namespace_id`, `repository_name_snapshot`, `namespace_name_snapshot`
-- [ ] Create `repository_tombstones` table: `(name, deleted_at)` with check preventing name reuse for 90 days
-- [ ] Create `namespace_tombstones` table: `(name, deleted_at)` with check preventing name reuse for 90 days
-- [ ] Update all authorization query functions to use IDs
-- [ ] Tests verify grants persist through rename
-- [ ] Tests verify audit events include both IDs and name snapshots
-- [ ] Tests verify tombstones prevent name reuse
+- [x] Migrate `repoCollaborators` table: replace `(namespace, repo)` with `repository_id` FK
+- [x] Migrate `namespaceMembers` table: replace `namespace` with `namespace_id` FK
+- [x] Migrate `customRepoRoles` table: key by `namespace_id` FK (namespace-scoped templates)
+- [x] Migrate `customNamespaceRoles` table: key by `namespace_id` FK
+- [x] Migrate favorites, workspaces, jobs tables to use `repository_id` and `namespace_id`
+- [x] Update audit event schema to include `repository_id`, `namespace_id`, `repository_name_snapshot`, `namespace_name_snapshot`
+- [x] Create `repository_tombstones` table: `(name, deleted_at)` with check preventing name reuse for 90 days
+- [x] Create `namespace_tombstones` table: `(name, deleted_at)` with check preventing name reuse for 90 days
+- [x] Update all authorization query functions to use IDs
+- [x] Tests verify grants persist through rename
+- [x] Tests verify audit events include both IDs and name snapshots
+- [x] Tests verify tombstones prevent name reuse
+
+## Notes
+
+Greenfield rewrite (no data backfill). Custom repo roles remain namespace-scoped templates keyed by `namespace_id` (matching prior behavior). Favorites for namespace/repo use entity UUIDs; branch/stage embed `repository_id`. Audit keeps `namespace`/`repo` as name snapshots alongside `namespace_id`/`repository_id`.

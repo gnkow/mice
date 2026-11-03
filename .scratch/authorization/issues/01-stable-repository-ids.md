@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Add `repositories` table with columns: `id` (UUID, PK), `namespace_id` (FK to namespaces, will be added in ticket 02), `name` (text), `created_at`, `updated_at`
-- [ ] Add unique constraint on `(namespace_id, name)` once namespace IDs exist
-- [ ] Update repository creation to mint UUID and insert into repositories table
-- [ ] Authorization collaborator checks resolve repository ID from path on each request
-- [ ] API responses include `repository_id` field
-- [ ] Tests verify repository creation returns stable ID
-- [ ] Tests verify same repository has same ID across requests
-- [ ] Tests verify authorization works by ID (not just name)
+- [x] Add `repositories` table with columns: `id` (UUID, PK), `namespace_id` (FK to namespaces, will be added in ticket 02), `name` (text), `created_at`, `updated_at`
+- [x] Add unique constraint on `(namespace_id, name)` once namespace IDs exist
+- [x] Update repository creation to mint UUID and insert into repositories table
+- [x] Authorization collaborator checks resolve repository ID from path on each request
+- [x] API responses include `repository_id` field
+- [x] Tests verify repository creation returns stable ID
+- [x] Tests verify same repository has same ID across requests
+- [x] Tests verify authorization works by ID (not just name)

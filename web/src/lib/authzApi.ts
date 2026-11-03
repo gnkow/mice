@@ -283,6 +283,7 @@ export function createNamespaceAuthz(input: {
 }
 
 export type AuthzNamespaceSummary = {
+  id: string
   name: string
   basePermission: BasePermission
   membersCanCreateRepos: boolean

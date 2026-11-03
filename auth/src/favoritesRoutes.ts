@@ -60,7 +60,7 @@ function favoriteError(err: unknown, c: Context): Response | null {
 
 const policy = {
   originCheck: true,
-  requires: { capability: 'hasFavorites', message: 'Service principals have no favorites' },
+  requires: { capability: 'hasFavorites', message: 'Favorites unavailable' },
   fail: favoriteError,
 } as const
 

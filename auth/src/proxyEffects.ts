@@ -2,6 +2,7 @@ import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
 import { setRepoCollaborator } from './authzCollaboratorStore.js'
 import { decideInstanceAction } from './authz.js'
 import { ensureNamespaceForCreate, getNamespace } from './authzNamespaceStore.js'
+import { ensureRepository } from './repositoryStore.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
 import { type SessionUser } from './authentication/index.js'
 
@@ -52,7 +53,10 @@ export async function seedRepoCreate(user: SessionUser, namespace: string, repo:
     await ensureNamespaceForCreate(user, namespace, 'none')
   }
   // A collaborator grant hangs off a namespace row; an unseeded namespace has nothing to attach to.
-  if (await getNamespace(namespace)) await setRepoCollaborator(namespace, repo, user, 'admin')
+  if (await getNamespace(namespace)) {
+    await ensureRepository(namespace, repo)
+    await setRepoCollaborator(namespace, repo, user, 'admin')
+  }
 }
 
 /** Audit that a site admin was allowed through on the bypass, not on a grant. */

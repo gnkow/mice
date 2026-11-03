@@ -37,7 +37,7 @@ function denied(reason: string, status = 403): Decision {
   return { allow: false, status, reason }
 }
 
-/** The scoped-credential rule: a scoped credential (PAT scopes, service principal) never gets instance-admin power. */
+/** The scoped-credential rule: a scoped credential (PAT scopes) never gets instance-admin power. */
 export async function isUnscopedInstanceAdmin(user: SessionUser): Promise<boolean> {
   return !isScopedCredential(user) && await isInstanceAdmin(user)
 }
@@ -499,7 +499,6 @@ export type InstanceAction =
   | 'lineage.view'
   | 'store.admin'
   | 'instance.admin'
-  | 'serviceprincipal.admin'
   | 'directory.sync'
   | 'namespace.create'
   | 'access.review.all'
@@ -526,7 +525,6 @@ const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
   'lineage.view': { permissions: ['view_lineage'], admin: 'any', reason: 'Missing permission view_lineage' },
   'store.admin': { admin: 'unscoped', reason: 'Requires instance admin' },
   'instance.admin': { admin: 'any', reason: 'Forbidden' },
-  'serviceprincipal.admin': { admin: 'any', reason: 'Instance admin required' },
   'directory.sync': { admin: 'any', reason: 'Instance admin required' },
   'namespace.create': { permissions: ['create_namespace'], admin: 'any', reason: 'Missing permission create_namespace' },
   'access.review.all': { permissions: ['create_namespace'], admin: 'any', reason: 'Forbidden' },
@@ -603,12 +601,6 @@ export async function decideNamespaceAction(user: SessionUser, ns: string, actio
 export async function decideAccessReview(user: SessionUser): Promise<Decision> {
   if ((await decideInstanceAction(user, 'access.review.all')).allow) return ALLOWED
   if ((await namespacesWithCapability(user, 'review_access_requests')).length > 0) return ALLOWED
-  return denied('Forbidden')
-}
-
-/** Managing a service principal: instance admin or its current owner. */
-export async function decideServicePrincipalManage(user: SessionUser, isOwner: boolean): Promise<Decision> {
-  if (isOwner || (await decideInstanceAction(user, 'serviceprincipal.admin')).allow) return ALLOWED
   return denied('Forbidden')
 }
 

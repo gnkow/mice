@@ -21,6 +21,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
 } from 'drizzle-orm/pg-core'
 
 
@@ -43,80 +44,129 @@ export const instanceTraining = pgTable('instance_training', {
   userKey: text('user_key').primaryKey(),
 })
 
-export const namespaces = pgTable('namespaces', {
-  name: text('name').primaryKey(),
-  basePermission: text('base_permission').notNull(),
-  membersCanCreateRepos: boolean('members_can_create_repos').notNull(),
-  createdAt: ts('created_at').notNull(),
-  createdBy: text('created_by').notNull(),
-})
+export const namespaces = pgTable(
+  'namespaces',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    basePermission: text('base_permission').notNull(),
+    membersCanCreateRepos: boolean('members_can_create_repos').notNull(),
+    createdAt: ts('created_at').notNull(),
+    createdBy: text('created_by').notNull(),
+  },
+  (t) => [uniqueIndex('namespaces_name').on(t.name)],
+)
+
+export const repositories = pgTable(
+  'repositories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: ts('created_at').notNull(),
+    updatedAt: ts('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('repositories_namespace_name').on(t.namespaceId, t.name)],
+)
 
 export const namespaceMembers = pgTable(
   'namespace_members',
   {
-    namespace: text('namespace').notNull().references(() => namespaces.name, { onDelete: 'cascade' }),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
     userKey: text('user_key').notNull(),
     role: text('role').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.namespace, t.userKey] }), index('namespace_members_user').on(t.userKey)],
+  (t) => [primaryKey({ columns: [t.namespaceId, t.userKey] }), index('namespace_members_user').on(t.userKey)],
 )
 
 export const namespaceGroupMembers = pgTable(
   'namespace_group_members',
   {
-    namespace: text('namespace').notNull().references(() => namespaces.name, { onDelete: 'cascade' }),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
     groupKey: text('group_key').notNull(),
     role: text('role').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.namespace, t.groupKey] }), index('namespace_group_members_group').on(t.groupKey)],
+  (t) => [primaryKey({ columns: [t.namespaceId, t.groupKey] }), index('namespace_group_members_group').on(t.groupKey)],
 )
 
 export const repoCollaborators = pgTable(
   'repo_collaborators',
   {
-    namespace: text('namespace').notNull().references(() => namespaces.name, { onDelete: 'cascade' }),
-    repo: text('repo').notNull(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
     userKey: text('user_key').notNull(),
     role: text('role').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.namespace, t.repo, t.userKey] }), index('repo_collaborators_user').on(t.userKey)],
+  (t) => [primaryKey({ columns: [t.repositoryId, t.userKey] }), index('repo_collaborators_user').on(t.userKey)],
 )
 
 export const repoGroupCollaborators = pgTable(
   'repo_group_collaborators',
   {
-    namespace: text('namespace').notNull().references(() => namespaces.name, { onDelete: 'cascade' }),
-    repo: text('repo').notNull(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
     groupKey: text('group_key').notNull(),
     role: text('role').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.namespace, t.repo, t.groupKey] }), index('repo_group_collaborators_group').on(t.groupKey)],
+  (t) => [primaryKey({ columns: [t.repositoryId, t.groupKey] }), index('repo_group_collaborators_group').on(t.groupKey)],
 )
 
 export const customNamespaceRoles = pgTable(
   'custom_namespace_roles',
   {
     id: text('id').primaryKey(),
-    namespace: text('namespace').notNull().references(() => namespaces.name, { onDelete: 'cascade' }),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
     permissions: jsonb('permissions').$type<string[]>().notNull(),
     baseRepositoryRole: text('base_repository_role'),
   },
-  (t) => [uniqueIndex('custom_namespace_roles_name').on(t.namespace, sql`lower(${t.name})`)],
+  (t) => [uniqueIndex('custom_namespace_roles_name').on(t.namespaceId, sql`lower(${t.name})`)],
 )
 
 export const customRepoRoles = pgTable(
   'custom_repo_roles',
   {
     id: text('id').primaryKey(),
-    namespace: text('namespace').notNull().references(() => namespaces.name, { onDelete: 'cascade' }),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
     base: text('base').notNull(),
     permissions: jsonb('permissions').$type<string[]>().notNull(),
   },
-  (t) => [uniqueIndex('custom_repo_roles_name').on(t.namespace, sql`lower(${t.name})`)],
+  (t) => [uniqueIndex('custom_repo_roles_name').on(t.namespaceId, sql`lower(${t.name})`)],
+)
+
+export const namespaceTombstones = pgTable(
+  'namespace_tombstones',
+  {
+    name: text('name').primaryKey(),
+    deletedAt: ts('deleted_at').notNull(),
+  },
+)
+
+export const repositoryTombstones = pgTable(
+  'repository_tombstones',
+  {
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    deletedAt: ts('deleted_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.namespaceId, t.name] })],
 )
 
 export const accessRequests = pgTable(
@@ -163,24 +213,6 @@ export const cliCredentialTokens = pgTable('cli_credential_tokens', {
   expiresAt: ts('expires_at').notNull(),
   usedAt: ts('used_at'),
 })
-
-export const servicePrincipals = pgTable(
-  'service_principals',
-  {
-    id: text('id').primaryKey(),
-    name: text('name').notNull(),
-    ownerIss: text('owner_iss').notNull(),
-    ownerSub: text('owner_sub').notNull(),
-    ownerEmail: text('owner_email').notNull(),
-    ownerName: text('owner_name').notNull(),
-    reason: text('reason'),
-    createdAt: ts('created_at').notNull(),
-    status: text('status').notNull(),
-    suspendedAt: ts('suspended_at'),
-    suspendedCause: text('suspended_cause'),
-  },
-  (t) => [index('service_principals_owner').on(t.ownerIss, t.ownerSub)],
-)
 
 /**
  * Cut-offs per principal: `notBefore` ends Sessions, `sessionsNotBefore` ends Sessions issued at or before
@@ -389,15 +421,16 @@ export const jobs = pgTable(
   'jobs',
   {
     id: text('id').primaryKey(),
-    namespace: text('namespace').notNull(),
-    repo: text('repo').notNull(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
     status: text('status').notNull(),
     pinCommit: text('pin_commit').notNull(),
     createdAt: ts('created_at').notNull(),
     body: jsonb('body').$type<JobRun>().notNull(),
   },
   (t) => [
-    index('jobs_repo_created').on(t.namespace, t.repo, t.createdAt),
+    index('jobs_repo_created').on(t.repositoryId, t.createdAt),
     index('jobs_status_created').on(t.status, t.createdAt),
     index('jobs_pin_commit').on(t.pinCommit),
   ],

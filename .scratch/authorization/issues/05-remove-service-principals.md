@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Delete `servicePrincipals` table from schema
-- [ ] Remove service principal creation/management routes
-- [ ] Remove `decideServicePrincipalManage` function
-- [ ] Remove `serviceprincipal.admin` instance action
-- [ ] Remove service principal authentication logic
-- [ ] Remove service principal UI components
-- [ ] Remove service principal types and interfaces
-- [ ] Tests verify no service principal routes are reachable
+- [x] Delete `servicePrincipals` table from schema
+- [x] Remove service principal creation/management routes
+- [x] Remove `decideServicePrincipalManage` function
+- [x] Remove `serviceprincipal.admin` instance action
+- [x] Remove service principal authentication logic
+- [x] Remove service principal UI components
+- [x] Remove service principal types and interfaces
+- [x] Tests verify no service principal routes are reachable

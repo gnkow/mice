@@ -328,6 +328,7 @@ await describe('publicJob', async () => {
 
 await describe('job id rekey', async () => {
   await it('local runs resolve provisional id to result commit id', async () => {
+    await createNamespaceAuthz(admin, 'n', 'none')
     const provisional = 'abcdabcdabcdabcd'
     const commit = '0123456789abcdef0123456789abcdef'
     const base = {
@@ -378,6 +379,7 @@ await describe('job id rekey', async () => {
 
 await describe('publishSyncedCliJobs', async () => {
   await it('creates terminal CLI jobs and sets sync_branch', async () => {
+    await createNamespaceAuthz(admin, 'pubns', 'none')
     const pin = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     const result = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
     const published = await publishSyncedCliJobs(

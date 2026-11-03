@@ -7,8 +7,7 @@ export const REASON_HEADER = 'x-mice-reason'
 
 const MAX_REASON_LENGTH = 1000
 
-/** `registered` is the fixed reason of a service principal. */
-export type ReasonSource = 'explicit' | 'commit-message' | 'registered'
+export type ReasonSource = 'explicit' | 'commit-message'
 
 export type ResolvedReason = { reason: string; reason_source: ReasonSource }
 
@@ -78,9 +77,9 @@ function declaredReason(actor: { sub: string; iss: string }): string | undefined
 const clean = (v: string | null | undefined): string => (v ?? '').trim().slice(0, MAX_REASON_LENGTH)
 
 /**
- * Picks the reason for a mutation: an explicit one wins; a service principal falls back to its
- * registered reason; others fall back to the commit message. A chosen reason shorter than the
- * single minimum-length setting is rejected, never silently replaced by a fallback.
+ * Picks the reason for a mutation: an explicit one wins; otherwise fall back to the commit
+ * message. A chosen reason shorter than the single minimum-length setting is rejected, never
+ * silently replaced by a fallback.
  */
 export function resolveReason(input: {
   actor: { sub: string; iss: string }

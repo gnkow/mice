@@ -150,37 +150,50 @@ function isUniqueViolation(e: unknown): boolean {
   return code?.code === '23505' || code?.cause?.code === '23505'
 }
 
+async function namespaceIdByName(ns: string): Promise<string | null> {
+  const rows = await getDb().select({ id: namespaces.id }).from(namespaces).where(eq(namespaces.name, ns)).limit(1)
+  return rows[0]?.id ?? null
+}
+
 export async function listCustomNamespaceRoles(ns: string): Promise<CustomNamespaceRole[]> {
-  const rows = await getDb().select().from(customNamespaceRoles).where(eq(customNamespaceRoles.namespace, ns))
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return []
+  const rows = await getDb().select().from(customNamespaceRoles).where(eq(customNamespaceRoles.namespaceId, nsId))
   return rows.map(toNsRole).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function listCustomRepoRoles(ns: string): Promise<CustomRepoRole[]> {
-  const rows = await getDb().select().from(customRepoRoles).where(eq(customRepoRoles.namespace, ns))
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return []
+  const rows = await getDb().select().from(customRepoRoles).where(eq(customRepoRoles.namespaceId, nsId))
   return rows.map(toRepoRole).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function getCustomNamespaceRole(ns: string, id: string): Promise<CustomNamespaceRole | null> {
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return null
   const rows = await getDb()
     .select()
     .from(customNamespaceRoles)
-    .where(and(eq(customNamespaceRoles.namespace, ns), eq(customNamespaceRoles.id, id)))
+    .where(and(eq(customNamespaceRoles.namespaceId, nsId), eq(customNamespaceRoles.id, id)))
     .limit(1)
   return rows[0] ? toNsRole(rows[0]) : null
 }
 
 export async function getCustomRepoRole(ns: string, id: string): Promise<CustomRepoRole | null> {
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return null
   const rows = await getDb()
     .select()
     .from(customRepoRoles)
-    .where(and(eq(customRepoRoles.namespace, ns), eq(customRepoRoles.id, id)))
+    .where(and(eq(customRepoRoles.namespaceId, nsId), eq(customRepoRoles.id, id)))
     .limit(1)
   return rows[0] ? toRepoRole(rows[0]) : null
 }
 
-async function lockNamespaceRow(tx: Tx, ns: string): Promise<boolean> {
-  const rows = await tx.select().from(namespaces).where(eq(namespaces.name, ns)).for('update')
-  return rows.length > 0
+async function lockNamespaceRow(tx: Tx, ns: string): Promise<{ id: string } | null> {
+  const rows = await tx.select({ id: namespaces.id }).from(namespaces).where(eq(namespaces.name, ns)).for('update')
+  return rows[0] ?? null
 }
 
 export async function createCustomNamespaceRole(
@@ -209,17 +222,18 @@ export async function createCustomNamespaceRole(
   }
   try {
     return await inTransaction(async (tx) => {
-      if (!(await lockNamespaceRow(tx, ns))) return { ok: false, error: 'Namespace not found' } as const
+      const locked = await lockNamespaceRow(tx, ns)
+      if (!locked) return { ok: false, error: 'Namespace not found' } as const
       const count = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(customNamespaceRoles)
-        .where(eq(customNamespaceRoles.namespace, ns))
+        .where(eq(customNamespaceRoles.namespaceId, locked.id))
       if ((count[0]?.n ?? 0) >= MAX_ROLES_PER_KIND) {
         return { ok: false, error: `At most ${MAX_ROLES_PER_KIND} custom namespace roles` } as const
       }
       await tx.insert(customNamespaceRoles).values({
         id: role.id,
-        namespace: ns,
+        namespaceId: locked.id,
         name,
         description: role.description ?? null,
         permissions: perms,
@@ -268,11 +282,13 @@ export async function updateCustomNamespaceRole(
     set.baseRepositoryRole = b
   }
   try {
+    const nsId = await namespaceIdByName(ns)
+    if (!nsId) return { ok: false, error: 'Not found' }
     if (Object.keys(set).length) {
       await getDb()
         .update(customNamespaceRoles)
         .set(set)
-        .where(and(eq(customNamespaceRoles.namespace, ns), eq(customNamespaceRoles.id, id)))
+        .where(and(eq(customNamespaceRoles.namespaceId, nsId), eq(customNamespaceRoles.id, id)))
     }
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
@@ -288,9 +304,11 @@ export async function deleteCustomNamespaceRole(
   assigned: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (assigned) return { ok: false, error: 'Role is still assigned to members' }
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return { ok: false, error: 'Not found' }
   const rows = await getDb()
     .delete(customNamespaceRoles)
-    .where(and(eq(customNamespaceRoles.namespace, ns), eq(customNamespaceRoles.id, id)))
+    .where(and(eq(customNamespaceRoles.namespaceId, nsId), eq(customNamespaceRoles.id, id)))
     .returning({ id: customNamespaceRoles.id })
   return rows.length ? { ok: true } : { ok: false, error: 'Not found' }
 }
@@ -320,17 +338,18 @@ export async function createCustomRepoRole(
   }
   try {
     return await inTransaction(async (tx) => {
-      if (!(await lockNamespaceRow(tx, ns))) return { ok: false, error: 'Namespace not found' } as const
+      const locked = await lockNamespaceRow(tx, ns)
+      if (!locked) return { ok: false, error: 'Namespace not found' } as const
       const count = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(customRepoRoles)
-        .where(eq(customRepoRoles.namespace, ns))
+        .where(eq(customRepoRoles.namespaceId, locked.id))
       if ((count[0]?.n ?? 0) >= MAX_ROLES_PER_KIND) {
         return { ok: false, error: `At most ${MAX_ROLES_PER_KIND} custom repo roles` } as const
       }
       await tx.insert(customRepoRoles).values({
         id: role.id,
-        namespace: ns,
+        namespaceId: locked.id,
         name,
         description: role.description ?? null,
         base: role.base,
@@ -382,11 +401,13 @@ export async function updateCustomRepoRole(
     set.permissions = filterRedundantRepoFines(base, cur.permissions)
   }
   try {
+    const nsId = await namespaceIdByName(ns)
+    if (!nsId) return { ok: false, error: 'Not found' }
     if (Object.keys(set).length) {
       await getDb()
         .update(customRepoRoles)
         .set(set)
-        .where(and(eq(customRepoRoles.namespace, ns), eq(customRepoRoles.id, id)))
+        .where(and(eq(customRepoRoles.namespaceId, nsId), eq(customRepoRoles.id, id)))
     }
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
@@ -402,9 +423,11 @@ export async function deleteCustomRepoRole(
   assigned: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (assigned) return { ok: false, error: 'Role is still assigned to collaborators' }
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return { ok: false, error: 'Not found' }
   const rows = await getDb()
     .delete(customRepoRoles)
-    .where(and(eq(customRepoRoles.namespace, ns), eq(customRepoRoles.id, id)))
+    .where(and(eq(customRepoRoles.namespaceId, nsId), eq(customRepoRoles.id, id)))
     .returning({ id: customRepoRoles.id })
   return rows.length ? { ok: true } : { ok: false, error: 'Not found' }
 }

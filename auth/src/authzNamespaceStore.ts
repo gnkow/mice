@@ -15,6 +15,7 @@ export async function listNamespacesAuthz() {
 /** Namespaces visible to the user (member/owner), or all if instance admin. */
 export async function listNamespacesForUser(user: UserKey & { groups?: string[] }): Promise<
   Array<{
+    id: string
     name: string
     basePermission: BasePermission
     membersCanCreateRepos: boolean
@@ -32,6 +33,7 @@ export async function listNamespacesForUser(user: UserKey & { groups?: string[] 
     const role = roles.get(name) ?? null
     if (!admin && !role) continue
     out.push({
+      id: settings.id,
       name,
       basePermission: settings.basePermission,
       membersCanCreateRepos: settings.membersCanCreateRepos,
@@ -71,6 +73,13 @@ export async function updateNamespaceSettings(
   patch: Partial<{ basePermission: BasePermission; membersCanCreateRepos: boolean }>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return repo.updateNamespaceSettings(ns, patch)
+}
+
+export async function renameNamespaceAuthz(
+  from: string,
+  to: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return repo.renameNamespace(from, to)
 }
 
 /** Remove the namespace with its members, custom roles and repo collaborators in one statement. */

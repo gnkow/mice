@@ -3,8 +3,12 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { JobRun } from './jobsTypes.js'
 import { breakTable } from './db/testDatabase.js'
+import { isolatedAuth } from './testSupport.js'
 
+const t = isolatedAuth()
 const { appendJob, getJob, listJobs, rekeyJob, resolveJobId, upsertJob } = await import('./jobsStore.js')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
+await createNamespaceAuthz(t.person('jobs-owner'), 'ns', 'none')
 
 const OLD = 'aaaaaaaaaaaaaaaa'
 const NEW = 'bbbbbbbbbbbbbbbb'

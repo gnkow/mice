@@ -96,8 +96,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (denied) return denied
     const unresolvedGroups = await reconcileNamespaceGroupIds(ns)
     return c.json({
-      name: ns,
       ...settings,
+      name: ns,
       members: await listNamespaceMembers(ns),
       unresolvedGroups,
     })

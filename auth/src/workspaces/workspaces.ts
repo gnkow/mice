@@ -4,6 +4,7 @@ import { constants } from 'node:fs'
 import { join } from 'node:path'
 import { validWorkspaceId } from './ids.js'
 import { getJob } from '../jobsStore.js'
+import { ensureRepository } from '../repositoryStore.js'
 import { createDiskDocument } from '../diskStore.js'
 import { getSessionRecord, listSessions } from '../sessionsStore.js'
 import { cachedCapabilities, getCapabilities, type Driver } from './capabilities.js'
@@ -48,6 +49,10 @@ export type WorkspaceState = {
   generated_name?: boolean
   namespace: string
   repo: string
+  /** Stable namespace UUID when the AuthZ entity exists. */
+  namespace_id: string
+  /** Stable repository UUID when the AuthZ entity exists. */
+  repository_id: string
   branch: string | null
   source: { branch: string } | { commit: string }
   base_commit: string | null
@@ -196,7 +201,13 @@ export class WorkspaceService {
       if (!e.isDirectory() || !validWorkspaceId(e.name)) continue
       // An unreadable state file is an incomplete create: ignored, left for inspection.
       const st = this.stateDoc(e.name).read()
-      if (st?.id === e.name) this.states.set(st.id, st)
+      if (st?.id === e.name) {
+        this.states.set(st.id, {
+          ...st,
+          namespace_id: st.namespace_id ?? '',
+          repository_id: st.repository_id ?? '',
+        })
+      }
     }
     for (const st of this.states.values()) {
       if (st.status === 'preparing') this.kick(st.id, 0)
@@ -282,6 +293,7 @@ export class WorkspaceService {
     }
     const driver = await this.pickDriver()
     const nowIso = new Date(this.now()).toISOString()
+    const entity = await ensureRepository(namespace, repo)
     const st: WorkspaceState = {
       id,
       kind: input.kind ?? 'user',
@@ -289,6 +301,8 @@ export class WorkspaceService {
       generated_name: !explicitName,
       namespace,
       repo,
+      namespace_id: entity?.namespaceId ?? '',
+      repository_id: entity?.id ?? '',
       branch: branchName,
       source: cleanSource,
       base_commit: null,

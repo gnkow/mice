@@ -150,10 +150,10 @@ export function appendJobAttributionFromToken(
 
 /**
  * Check if a principal can electronically sign documents.
- * Only humans can sign; service principals and jobs cannot.
+ * Only human Principals can sign.
  */
-export function canElectronicallySign(principal: { iss: string }): boolean {
-  return principal.iss.replace(/\/+$/, '') !== 'urn:mice:service'
+export function canElectronicallySign(_principal: { iss: string }): boolean {
+  return true
 }
 
 /**

@@ -2,14 +2,20 @@ import { existsSync, mkdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm'
 import { getDb } from './db/database.js'
-import { jobAliases, jobs } from './db/schema.js'
+import { jobAliases, jobs, namespaces, repositories } from './db/schema.js'
+import { ensureRepository } from './repositoryStore.js'
 import { env } from './env.js'
 import type { JobRun, JobStatus } from './jobsTypes.js'
 
-const toRow = (job: JobRun) => ({
+async function repositoryIdForJob(job: JobRun): Promise<string> {
+  const row = await ensureRepository(job.namespace, job.repo)
+  if (!row) throw new Error(`unknown repository ${job.namespace}/${job.repo}`)
+  return row.id
+}
+
+const toRow = async (job: JobRun) => ({
   id: job.id,
-  namespace: job.namespace,
-  repo: job.repo,
+  repositoryId: await repositoryIdForJob(job),
   status: job.status,
   pinCommit: job.pin_commit,
   createdAt: new Date(job.created_at),
@@ -54,7 +60,7 @@ export async function appendJob(job: JobRun): Promise<void> {
 
 /** Replace the stored snapshot of one job. */
 export async function upsertJob(job: JobRun): Promise<void> {
-  const row = toRow(job)
+  const row = await toRow(job)
   await getDb().insert(jobs).values(row).onConflictDoUpdate({ target: jobs.id, set: row })
 }
 
@@ -86,8 +92,8 @@ export async function rekeyJob(
     return { logRenamed: false }
   }
   // One transaction: the old id resolves to a job at every instant, and a failure leaves nothing changed.
+  const row = await toRow(job)
   await getDb().transaction(async (tx) => {
-    const row = toRow(job)
     await tx.insert(jobs).values(row).onConflictDoUpdate({ target: jobs.id, set: row })
     await tx
       .insert(jobAliases)
@@ -130,8 +136,8 @@ export async function listJobs(q: JobListQuery): Promise<{
   // Allow higher ceiling for ACL over-fetch on global list routes.
   const limit = Math.min(Math.max(1, q.limit ?? 50), 500)
   const where: SQL[] = []
-  if (q.namespace) where.push(eq(jobs.namespace, q.namespace))
-  if (q.repo) where.push(eq(jobs.repo, q.repo))
+  if (q.namespace) where.push(eq(namespaces.name, q.namespace))
+  if (q.repo) where.push(eq(repositories.name, q.repo))
   if (q.status) where.push(eq(jobs.status, q.status))
   if (q.pin_commit) where.push(eq(jobs.pinCommit, q.pin_commit))
   if (q.cursor) {
@@ -145,7 +151,9 @@ export async function listJobs(q: JobListQuery): Promise<{
   const rows = await getDb()
     .select({ id: jobs.id, body: jobs.body })
     .from(jobs)
-    .where(and(...where))
+    .innerJoin(repositories, eq(repositories.id, jobs.repositoryId))
+    .innerJoin(namespaces, eq(namespaces.id, repositories.namespaceId))
+    .where(where.length ? and(...where) : undefined)
     .orderBy(desc(jobs.createdAt), desc(jobs.id))
     .limit(limit + 1)
   const page = rows.slice(0, limit).map((r) => r.body)

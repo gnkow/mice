@@ -57,6 +57,20 @@
       "when": 1793560006000,
       "tag": "0007_principal_flag_history",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0008_stable_entity_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794000001000,
+      "tag": "0009_drop_service_principals",
+      "breakpoints": true
     }
   ]
 }

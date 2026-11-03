@@ -32,17 +32,20 @@ export type AuditEvent = {
   action: string
   namespace?: string
   repo?: string
+  /** Stable namespace UUID; `namespace` remains the name snapshot at event time. */
+  namespace_id?: string
+  /** Stable repository UUID; `repo` remains the name snapshot at event time. */
+  repository_id?: string
   message?: string
   /** Why the change was made (mandatory for dataset and admin mutations); `message` stays the commit message. */
   reason?: string
-  reason_source?: 'explicit' | 'commit-message' | 'registered'
+  reason_source?: 'explicit' | 'commit-message'
   /** Dataset commit ids before and after a dataset mutation. */
   dataset?: { base?: string; head?: string }
   /** The mutation succeeded but its resulting dataset version could not be determined. */
   unverified?: true
   detail?: Record<string, unknown>
-  /** Set when the actor is a service principal; `owner` is its accountable human. */
-  actorKind?: 'service'
+  /** Optional accountable human when the actor is automation attributed to a person. */
   owner?: AuditActor
   /** Hashed IP (SHA-256(IP + daily_salt)) for anomaly detection while preserving privacy (U8). */
   hashed_ip?: string
@@ -271,7 +274,51 @@ export type AuditInput = Omit<AuditEvent, 'id' | 'ts' | 'phase' | 'intent_id' | 
   via: AuditVia | 'system'
 }
 
+async function resolveEntityRefs(partial: AuditInput): Promise<{
+  namespace?: string
+  repo?: string
+  namespace_id?: string
+  repository_id?: string
+}> {
+  const { readNamespace, readNamespaceById, readRepository, readRepositoryById } = await import('./authzRepository.js')
+  let namespace = partial.namespace
+  let repo = partial.repo
+  let namespace_id = partial.namespace_id
+  let repository_id = partial.repository_id
+
+  if (repository_id && (!namespace || !repo || !namespace_id)) {
+    const row = await readRepositoryById(repository_id)
+    if (row) {
+      namespace ??= row.namespace
+      repo ??= row.name
+      namespace_id ??= row.namespaceId
+    }
+  }
+  if (namespace_id && !namespace) {
+    const row = await readNamespaceById(namespace_id)
+    if (row) namespace = row.name
+  }
+  if (namespace && repo && !repository_id) {
+    const row = await readRepository(namespace, repo)
+    if (row) {
+      repository_id = row.id
+      namespace_id ??= row.namespaceId
+    }
+  }
+  if (namespace && !namespace_id) {
+    const row = await readNamespace(namespace)
+    if (row) namespace_id = row.id
+  }
+  return {
+    ...(namespace ? { namespace } : {}),
+    ...(repo ? { repo } : {}),
+    ...(namespace_id ? { namespace_id } : {}),
+    ...(repository_id ? { repository_id } : {}),
+  }
+}
+
 async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' | 'intent_id'> | object = {}): Promise<AuditEvent> {
+  const refs = await resolveEntityRefs(partial)
   return {
     id: partial.id ?? randomBytes(8).toString('hex'),
     ts: partial.ts ?? new Date().toISOString(),
@@ -281,8 +328,7 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
     path: partial.path,
     status: partial.status,
     action: partial.action,
-    ...(partial.namespace ? { namespace: partial.namespace } : {}),
-    ...(partial.repo ? { repo: partial.repo } : {}),
+    ...refs,
     ...(partial.message ? { message: partial.message } : {}),
     ...(partial.reason ? { reason: partial.reason, reason_source: partial.reason_source } : {}),
     ...(partial.dataset ? { dataset: partial.dataset } : {}),

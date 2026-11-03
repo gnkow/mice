@@ -40,7 +40,7 @@ export async function maybeBootstrapInstanceAdmin(user: SessionUser): Promise<bo
 
 export async function addInstanceAdmin(actor: UserKey, target: UserKey): Promise<Result> {
   if (!(await isInstanceAdmin(actor))) return { ok: false, error: 'Forbidden' }
-  if (!can(target, 'canBeAdmin')) return { ok: false, error: 'A service principal cannot be an instance admin' }
+  if (!can(target, 'canBeAdmin')) return { ok: false, error: 'Forbidden' }
   await repo.addAdminKey(userKey(target))
   return { ok: true }
 }

@@ -84,7 +84,7 @@ mice push --reason "Correct mislabeled rows from batch 7"   # declares the reaso
 mice namespace member set acme --sub s --iss i --role member --reason "New starter on project X"
 ```
 
-Raw API/PAT callers send the `X-Mice-Reason` header (any mutation) or call `POST /auth/reason {reason, ttlSec}` first. A missing or too-short reason gets a `400` (`reason_required` / `reason_too_short`) before the request reaches oxen. Service principals use their registered reason.
+Raw API callers send the `X-Mice-Reason` header (any mutation) or call `POST /auth/reason {reason, ttlSec}` first. A missing or too-short reason gets a `400` (`reason_required` / `reason_too_short`) before the request reaches oxen.
 
 #### Management commands
 

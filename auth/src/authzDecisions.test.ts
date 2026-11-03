@@ -11,7 +11,7 @@ const { setInstancePermissions } = await import('./authzInstanceStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { setNamespaceMember } = await import('./authzMembershipStore.js')
 const { createCustomNamespaceRole } = await import('./customRoles.js')
-const { decideInstanceAction, decideNamespaceAction, decideAccessReview, decideServicePrincipalManage, preparePrincipal } = authz
+const { decideInstanceAction, decideNamespaceAction, decideAccessReview, preparePrincipal } = authz
 
 const admin = t.admin
 await preparePrincipal(admin)
@@ -35,7 +35,6 @@ const INSTANCE_CASES: InstanceCase[] = [
   { action: 'lineage.view', permission: 'view_lineage', reason: 'Missing permission view_lineage' },
   { action: 'store.admin', reason: 'Requires instance admin', adminUnscopedOnly: true },
   { action: 'instance.admin', reason: 'Forbidden' },
-  { action: 'serviceprincipal.admin', reason: 'Instance admin required' },
   { action: 'directory.sync', reason: 'Instance admin required' },
   { action: 'namespace.create', permission: 'create_namespace', reason: 'Missing permission create_namespace' },
   { action: 'access.review.all', permission: 'create_namespace', reason: 'Forbidden' },
@@ -148,10 +147,8 @@ describe('composite decisions', async () => {
     assert.deepEqual(await decideAccessReview(none), deny('Forbidden'))
   })
 
-  it('service principal management: admin or owner', async () => {
-    assert.deepEqual(await decideServicePrincipalManage(admin, false), ALLOW)
-    assert.deepEqual(await decideServicePrincipalManage(none, true), ALLOW)
-    assert.deepEqual(await decideServicePrincipalManage(none, false), deny('Forbidden'))
+  it('service principal management API is gone', () => {
+    assert.equal('decideServicePrincipalManage' in authz, false)
   })
 
   it('repo collaborator management carries status and reason', async () => {

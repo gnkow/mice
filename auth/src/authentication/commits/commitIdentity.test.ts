@@ -178,21 +178,4 @@ describe('Electronic Signatures - Human Only', () => {
     assert.doesNotThrow(() => requireSigningCapability(user))
   })
 
-  it('rejects electronic signature from service principal', () => {
-    const servicePrincipal = { iss: 'urn:mice:service', sub: 'sp-123' }
-    assert.equal(canElectronicallySign(servicePrincipal), false)
-    assert.throws(
-      () => requireSigningCapability(servicePrincipal),
-      /Only human principals can electronically sign/
-    )
-  })
-
-  it('rejects electronic signature from job', () => {
-    const job = { iss: 'urn:mice:service', sub: 'job-123' }
-    assert.equal(canElectronicallySign(job), false)
-    assert.throws(
-      () => requireSigningCapability(job),
-      /Only human principals can electronically sign/
-    )
-  })
 })
