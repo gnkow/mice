@@ -10,6 +10,14 @@ The current authorization system uses boolean instance admin flags and individua
 
 Implement a role-based access control (RBAC) system with 5 formal roles (External User, User, Manager, Auditor, Admin), each with a defined permission set. Users without access submit role-based or custom permission requests. Managers and admins review and approve requests up to their authority level. All permission changes are versioned in PostgreSQL history tables and audited in immudb.
 
+## Locked Decisions
+
+- **Cutover:** Wipe previous instance permissions, instance-admin flags, and the old message-only access-request grant path. No dual-run, no aliases of the old 8-string catalog.
+- **Admin:** Separation of duties — role `admin` manages the system only; **no** data/audit read; **no** site-admin repo bypass. Bootstrap grants the Admin role (not a boolean superuser).
+- **Expiry:** Keep mandatory `expires_at` on delegated role assignments and custom permission grants (same rules as #14: required for non-bootstrap delegated grants).
+- **MVP:** Includes UI (seams 32–36), not backend-only.
+- **Process:** TDD (red → green, one seam at a time). **Commit and push after every seam.** Schema lands only as needed for the next red test — not a horizontal “schema week.”
+
 ## User Stories
 
 1. As a new user with no access, I want to request a role (External/User/Manager), so that I can gain appropriate access
@@ -48,6 +56,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] `permission_snapshots` table: periodic audit snapshots
 - [ ] All tables have proper indexes and constraints
 - [ ] One pending request per user constraint enforced
+- [ ] Delegated role and custom-permission grants require `expires_at`
 
 ### Access Request Workflow
 - [ ] No-access users see ONLY "Request Access" UI (no navigation)
@@ -69,6 +78,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] Admins/Managers can grant roles/permissions directly in Settings (bypass request)
 - [ ] Direct grants follow same authority rules (cannot grant more than you have)
 - [ ] Direct grants recorded in audit trail same as request approvals
+- [ ] Direct grants require expiry (delegated)
 
 ### Authorization Logic
 - [ ] `getUserRole(user)` returns active role
@@ -77,6 +87,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] `canApproveRequest(reviewer, request)` validates approval authority
 - [ ] All API endpoints updated to check new permission model
 - [ ] Auditor bypass ACL implemented in repository read checks
+- [ ] Admin cannot read data/audits (no site-admin bypass)
 
 ### Profile UI
 - [ ] Profile → Account shows role badge (Admin/Manager/User/Auditor/External/Pending)
@@ -108,7 +119,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] Settings → Users section with user list
 - [ ] Each user row shows: name, email, current role, custom permissions count
 - [ ] "Grant Access" button opens modal
-- [ ] Modal: role dropdown, custom permissions multi-select, reason textarea
+- [ ] Modal: role dropdown, custom permissions multi-select, reason textarea, expiry
 - [ ] Submit directly grants without creating request
 - [ ] Authority validation (same rules as approval)
 
@@ -127,91 +138,81 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] Reasons stored for all changes
 - [ ] Permission snapshots created on role/permission changes
 
-### Testing
-- [ ] Test: No-access user sees only Request Access UI
-- [ ] Test: User requests User role → approved → can write repos
-- [ ] Test: User requests Manager role → approved → can create namespaces
-- [ ] Test: Manager approves Manager request (same level) → success
-- [ ] Test: Manager tries to approve Admin request → blocked
-- [ ] Test: Manager tries to approve permissions they lack → blocked with error message
-- [ ] Test: Admin directly grants Auditor role → user can read all repos bypassing ACL
-- [ ] Test: Auditor reads private repo without collaborator access → allowed
-- [ ] Test: Admin tries to read audit logs → denied (no `audit:read` permission)
-- [ ] Test: User submits second request while first pending → blocked
-- [ ] Test: All permission changes recorded in PostgreSQL history tables
-- [ ] Test: All permission changes audited to immudb with complete metadata
-- [ ] Test: Effective permissions correctly merge role + custom permissions
+## Implementation Plan — TDD Seams (subtasks)
 
-## Implementation Plan
+Work **one seam at a time**: failing test → minimal implementation → commit → push. Do not write tests at unlisted seams. Wipe of old tables/APIs happens when the replacing seams land (not a separate migration phase).
 
-### Phase 1: Database Schema (Week 1)
-- Create all tables in `auth/src/db/schema.ts`
-- Add indexes and constraints
-- Create TypeScript types for roles and permissions
-- Write migration scripts (greenfield, no existing data migration)
+**Not seams:** Drizzle internals, private helpers, immudb mock call-counts without the audit query/write API.
 
-### Phase 2: Authorization Logic (Week 1-2)
-- Implement `getUserRole()`, `getEffectivePermissions()`, `hasPermission()`
-- Implement `canApproveRequest()` with authority validation
-- Update `authz.ts` with new permission checking logic
-- Implement Auditor bypass ACL logic
-- Update all API endpoint guards to use new system
+### Catalog (pure)
 
-### Phase 3: Access Request Backend (Week 2)
-- Create `POST /auth/access-requests` (submit request)
-- Create `GET /auth/access-requests` (list for reviewers)
-- Create `POST /auth/access-requests/:id/approve` (approve with optional modifications)
-- Create `POST /auth/access-requests/:id/deny` (deny with reason)
-- Implement one-pending-request constraint enforcement
-- Add request status updates
+- [ ] **S01** Permission catalog — full `resource:op` list complete/valid; no schema coupling
+- [ ] **S02** Role → permission bundle — each of 5 roles maps to its fixed set (key inclusions/exclusions; Admin lacks data/audit; Auditor has `repo:bypass_acl`)
+- [ ] **S03** Effective merge — `role ∪ custom`, deduped; independent of storage
 
-### Phase 4: Direct Grant Backend (Week 2)
-- Create `POST /auth/users/:id/grant-role` (direct role grant)
-- Create `POST /auth/users/:id/grant-permissions` (direct permission grant)
-- Implement same authority validation as approval
-- Record in history tables and audit trail
+### Store: roles
 
-### Phase 5: Request Access UI (Week 3)
-- Create `RequestAccessPage` component (full-screen)
-- Role selection form with descriptions
-- Custom permissions multi-select
-- Submit request flow
-- "Pending" state UI
+- [ ] **S04** Assign role — active role set; reason/actor; `expiresAt` required for delegated (non-bootstrap)
+- [ ] **S05** Revoke / replace role — previous role closed; history append-only
+- [ ] **S06** Read role — `getUserRole`; expired role treated as none
+- [ ] **S07** Role history — grant/revoke rows queryable via store API
 
-### Phase 6: Profile Permissions UI (Week 3)
-- Update Profile → Account with role badge
-- Create Profile → Permissions tab
-- List all permissions with checkbox grid
-- "Request Additional Permissions" button and modal
-- Show pending request indicator
+### Store: custom permissions
 
-### Phase 7: Settings Access Requests UI (Week 3-4)
-- Create Settings → Access Requests tab
-- Request list with filters
-- Request detail modal with modification capability
-- Approve/deny flows with reason
-- Authority validation UI
+- [ ] **S08** Grant custom perms — beyond role; expiry required when delegated
+- [ ] **S09** Revoke custom perms — history append-only
+- [ ] **S10** Read custom + effective — `getEffectivePermissions` / `hasPermission` (role ∪ custom, expiry-aware)
+- [ ] **S11** Permission history — via store API
+- [ ] **S12** Permission snapshots — written on role/perm change; readable via store API
 
-### Phase 8: Direct Grant UI (Week 4)
-- Add Settings → Users section
-- User list with current roles
-- Grant access modal
-- Role and permission selection
-- Authority validation
+### Authority
 
-### Phase 9: Audit Trail Integration (Week 4)
-- Hook all role/permission changes to immudb
-- Implement audit event schema
-- Add audit event queries
-- Create permission snapshot job
+- [ ] **S13** Role approval authority — Manager ≤ Manager; Admin any role; others none
+- [ ] **S14** Permission grant authority — reviewer must hold every granted perm
+- [ ] **S15** Modify-before-approve — granted role/perms may differ from requested; still pass S13–S14
 
-### Phase 10: Testing & Documentation (Week 5)
-- Write comprehensive test suite
-- Test all role combinations
-- Test approval authority validation
-- Test audit trail completeness
-- Update authorization spec
-- Create user documentation
+### Access requests
+
+- [ ] **S16** Submit request — role and/or custom perms + required justification
+- [ ] **S17** One pending — second submit blocked (app + DB)
+- [ ] **S18** List for reviewer — filtered by reviewer authority
+- [ ] **S19** Approve — applies role/perms immediately; links request id in history
+- [ ] **S20** Deny — status + reason; no grant
+
+### Direct grant
+
+- [ ] **S21** Direct role grant — same authority + expiry as approve; no request row required
+- [ ] **S22** Direct custom-perm grant — same
+
+### Decision adapters (via existing `decide*` / authorize APIs)
+
+- [ ] **S23** Pending gate — no role ⇒ pending-only (not “no ns membership”)
+- [ ] **S24** Instance actions via new perms — create namespace, session, tokens, etc. map to new names
+- [ ] **S25** Admin separation — Admin denied on data/audit reads
+- [ ] **S26** Auditor ACL bypass — `repo:bypass_acl` allows private repo read without collaborator
+- [ ] **S27** Non-auditor repo ACL — still collaborator/ns rules
+
+### Audit
+
+- [ ] **S28** Immudb events — `role.assign` / `role.revoke` / `permission.grant` / `permission.revoke` (+ request id when applicable), via existing audit write/query seam
+
+### HTTP
+
+- [ ] **S29** Access-request routes — submit / list / approve / deny contracts
+- [ ] **S30** Direct-grant routes — role + permissions (+ expiry)
+- [ ] **S31** `/auth/me/authz` — role, effective perms, pending, catalog (replaces old 8-bool map); wipe old permission APIs here
+
+### Web (MVP)
+
+- [ ] **S32** No-access shell — only Request Access; after submit → pending state, no nav
+- [ ] **S33** Request Access form — role radios (External/User/Manager) or custom multi-select + justification
+- [ ] **S34** Profile role badge + Permissions tab — checklist + request-additional + pending indicator
+- [ ] **S35** Settings → Access Requests — list/filter, detail, modify, approve/deny, authority error
+- [ ] **S36** Settings → Users / Grant Access — list + grant modal with expiry + authority validation
+
+**Order:** S01–S03 → S04–S12 → S13–S15 → S16–S20 → S21–S22 → S23–S27 → S28 → S29–S31 → S32–S36
+
+**Protocol per seam:** write failing test → minimal green → commit with message naming the seam (`feat(auth): RBAC S0N …` or `test(auth): RBAC S0N …`) → push.
 
 ## Technical Notes
 
@@ -219,10 +220,11 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - Full permission catalog in `docs/specs/authorization-system.md`
 - 150+ permissions across 16 categories
 - Extensible design (no schema changes for new permissions)
+- Replace `INSTANCE_PERMISSIONS` in auth/web/cli contract in the same workstream (no compatibility aliases)
 
 ### Role Permission Mappings
 - **External**: 31 read-only permissions
-- **User**: 51 read/write permissions  
+- **User**: 51 read/write permissions
 - **Manager**: 79 permissions (User + namespace management + approvals)
 - **Auditor**: 38 permissions (universal read + bypass ACL)
 - **Admin**: 34 permissions (system management, NO data/audit access)
@@ -232,15 +234,15 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 function canApproveRequest(reviewer: Principal, request: AccessRequest): boolean {
   const reviewerRole = reviewer.role
   const requestedRole = request.requested_role
-  
+
   // Admin can approve anything
   if (reviewerRole === 'admin') return true
-  
+
   // Manager can approve up to Manager level
   if (reviewerRole === 'manager') {
     return ['external', 'user', 'manager'].includes(requestedRole)
   }
-  
+
   return false
 }
 
@@ -258,7 +260,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
   if (await hasPermission(user, 'repo:bypass_acl')) {
     return true // Auditor bypasses all ACL checks
   }
-  
+
   // Normal ACL check: is collaborator, namespace member, etc.
   return checkRepoCollaborator(user, repoId)
 }
@@ -268,27 +270,29 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 - Requires: Current authentication system (OIDC, sessions)
 - Requires: Current audit trail (immudb integration)
+- Requires: #14 expiry semantics (extend to role + custom grants)
 - Blocks: User onboarding flow
 - Blocks: Team/namespace creation flow
+- Blocks: #13 auditor access (consumes `repo:bypass_acl` from this ticket)
 - Related: `.specs/02-authorization.md` (update required)
+- Related: Issue #04 superseded by this ticket (old remove-workflow plan cancelled)
 
 ## References
 
 - Detailed spec: `docs/specs/authorization-system.md`
-- API endpoint audit: See task output in conversation
 - Current authorization: `auth/src/authz.ts`
 - Current instance permissions: `auth/src/authzInstanceStore.ts`
 - Issue #04: Remove old access request workflow (superseded by this ticket)
+- Issue #14: Instance permission expiry (keep; apply to new grants)
 
 ## Estimated Effort
 
-**5 weeks** (1 developer)
-
-- Database & core logic: 2 weeks
-- Backend APIs: 1 week  
-- Frontend UIs: 1.5 weeks
-- Testing & docs: 0.5 weeks
+**5 weeks** (1 developer) — estimate only; delivery is seam-by-seam, not week phases.
 
 ## Status
 
-Ready for implementation. All design decisions finalized. Spec complete and extensible.
+Ready for implementation. Design decisions and TDD seams locked. Spec complete and extensible. Next: **S01**.
+
+## Comments
+
+- 2026-11-03: Planned with TDD. Locked wipe cutover, Admin no data access, keep expiry, MVP includes UI. Replaced horizontal Phase 1–10 with seams S01–S36; commit+push after every seam.
