@@ -67,6 +67,7 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['instance.admin.add', 'Instance admin added', 'Instance'],
   ['instance.admin.remove', 'Instance admin removed', 'Instance'],
   ['instance.permissions.update', 'Instance permissions changed', 'Instance'],
+  ['instance.group_binding.check', 'Group binding mode checked', 'Instance'],
   ['announcement.create', 'Announcement published', 'Instance'],
   ['announcement.update', 'Announcement updated', 'Instance'],
   ['announcement.delete', 'Announcement deleted', 'Instance'],

@@ -3,7 +3,7 @@ import { env } from './env.js'
 import { decideInstanceAction, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
 import { denialResponse } from './decisionHttp.js'
 import { isCustomRepoRoleAssigned, listRepoCollaborators, removeRepoCollaborator, removeRepoGroupCollaborator, setRepoCollaborator, setRepoGroupCollaborator } from './authzCollaboratorStore.js'
-import { isCustomNamespaceRoleAssigned, listNamespaceMembers, reconcileNamespaceGroupIds, removeNamespaceGroupMember, removeNamespaceMember, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
+import { isCustomNamespaceRoleAssigned, listNamespaceMembers, namespaceGroupBindingWarning, reconcileNamespaceGroupIds, removeNamespaceGroupMember, removeNamespaceMember, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
 import { createNamespaceAuthz, deleteNamespaceAuthz, getNamespace, listNamespacesForUser, updateNamespaceSettings } from './authzNamespaceStore.js'
 import {
   ALL_NAMESPACE_CAPABILITIES,
@@ -95,11 +95,14 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const denied = denialResponse(c, await decideNamespaceAction(session, ns, 'namespace.view'))
     if (denied) return denied
     const unresolvedGroups = await reconcileNamespaceGroupIds(ns)
+    const members = await listNamespaceMembers(ns)
+    const groupBindingWarning = await namespaceGroupBindingWarning(ns)
     return c.json({
       ...settings,
       name: ns,
-      members: await listNamespaceMembers(ns),
+      members,
       unresolvedGroups,
+      ...(groupBindingWarning ? { groupBindingWarning } : {}),
     })
   }))
 

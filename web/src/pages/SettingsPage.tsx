@@ -1,4 +1,4 @@
-import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, GitCompare, FileText, Ban } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, GitCompare, FileText, Ban, UsersRound } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
@@ -9,6 +9,7 @@ import { AccessReviewSection } from '../components/AccessReviewSection'
 import { IdpDriftSection } from '../components/IdpDriftSection'
 import { ReenableSection } from '../components/ReenableSection'
 import { DisabledSignersSection } from '../components/DisabledSignersSection'
+import { GroupBindingSection } from '../components/GroupBindingSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
@@ -100,6 +101,7 @@ export function SettingsPage() {
           { id: 'disabled-signers', label: 'Disabled signers', Icon: ShieldAlert },
           { id: 'mice-suspension', label: 'Suspension', Icon: Ban },
           { id: 'seal-key-rotation', label: 'Keys', Icon: ShieldCheck },
+          { id: 'group-binding', label: 'Group binding', Icon: UsersRound },
         ] 
       },
       {
@@ -166,6 +168,7 @@ export function SettingsPage() {
             <DisabledSignersSection />
             <MiceSuspensionSection signedInIss={signedInIss} />
             <SealKeyRotationSection />
+            <GroupBindingSection />
             <InstanceAdminSection signedInIss={signedInIss} />
             <AnnouncementsSection />
           </>}

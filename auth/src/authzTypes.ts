@@ -23,13 +23,27 @@ export type CollaboratorRoleRef = RepoRole | string
 
 export type UserKey = { sub: string; iss: string }
 
+export type GroupBindingModeLabel = 'id-based' | 'name-based'
+
 export type MemberPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: MemberRoleRef }
-  | { kind: 'group'; group: string; role: MemberRoleRef; name?: string }
+  | {
+      kind: 'group'
+      group: string
+      role: MemberRoleRef
+      name?: string
+      bindingMode?: GroupBindingModeLabel
+    }
 
 export type CollaboratorPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: CollaboratorRoleRef }
-  | { kind: 'group'; group: string; role: CollaboratorRoleRef; name?: string }
+  | {
+      kind: 'group'
+      group: string
+      role: CollaboratorRoleRef
+      name?: string
+      bindingMode?: GroupBindingModeLabel
+    }
 
 export const userKey = principalKey
 export const parseUserKey = parsePrincipalKey

@@ -4,15 +4,22 @@
 
 **Blocked by:** 08 (Group ID Binding - Schema and Extraction)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Admin settings page: "Group binding validation" section
-- [ ] Check button: validates IdP provides group IDs by inspecting sample claims or IdP metadata
-- [ ] If IDs available: display "Group binding mode: ID-based (recommended)"
-- [ ] If IDs unavailable: display warning "Group IDs not available. Binding uses names. IdP group rename will break access."
-- [ ] Namespace owners can see binding mode (ID-based vs name-based) for their group bindings
-- [ ] Warning persists in UI when name-based fallback is active
-- [ ] Tests verify validation detects Azure AD group IDs
-- [ ] Tests verify validation detects Keycloak group IDs
-- [ ] Tests verify warning shown when IDs unavailable
-- [ ] Tests verify namespace owners see binding mode indicator
+- [x] Admin settings page: "Group binding validation" section
+- [x] Check button: validates IdP provides group IDs by inspecting sample claims or IdP metadata
+- [x] If IDs available: display "Group binding mode: ID-based (recommended)"
+- [x] If IDs unavailable: display warning "Group IDs not available. Binding uses names. IdP group rename will break access."
+- [x] Namespace owners can see binding mode (ID-based vs name-based) for their group bindings
+- [x] Warning persists in UI when name-based fallback is active
+- [x] Tests verify validation detects Azure AD group IDs
+- [x] Tests verify validation detects Keycloak group IDs
+- [x] Tests verify warning shown when IDs unavailable
+- [x] Tests verify namespace owners see binding mode indicator
+
+## Notes
+
+- Pure: `auth/src/groupBindingMode.ts` (`assessGroupBindingMode`)
+- Persist: `group_binding_status` + `GET/POST /auth/instance/group-binding[/check]`
+- Namespace: members include `bindingMode`; `groupBindingWarning` when any grant is name-based
+- UI: Settings → Group binding; Namespace members show mode + warning

@@ -54,13 +54,27 @@ export type RepoFinePermission =
   | 'lineage_read'
   | 'lineage_rebuild'
 
+export type GroupBindingMode = 'id-based' | 'name-based'
+
 export type MemberPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: MemberRoleRef }
-  | { kind: 'group'; group: string; role: MemberRoleRef; name?: string }
+  | {
+      kind: 'group'
+      group: string
+      role: MemberRoleRef
+      name?: string
+      bindingMode?: GroupBindingMode
+    }
 
 export type CollaboratorPrincipal =
   | { kind: 'user'; sub: string; iss: string; role: CollaboratorRoleRef }
-  | { kind: 'group'; group: string; role: CollaboratorRoleRef; name?: string }
+  | {
+      kind: 'group'
+      group: string
+      role: CollaboratorRoleRef
+      name?: string
+      bindingMode?: GroupBindingMode
+    }
 
 export type CustomNamespaceRole = {
   id: string
@@ -85,10 +99,17 @@ function normalizeMember(m: {
   group?: string
   name?: string
   role: MemberRoleRef
+  bindingMode?: GroupBindingMode
 }): MemberPrincipal {
   if (m.kind === 'group' || (m.group && !m.sub)) {
     const name = m.name?.trim()
-    return { kind: 'group', group: String(m.group ?? ''), role: m.role, ...(name ? { name } : {}) }
+    return {
+      kind: 'group',
+      group: String(m.group ?? ''),
+      role: m.role,
+      ...(name ? { name } : {}),
+      ...(m.bindingMode ? { bindingMode: m.bindingMode } : {}),
+    }
   }
   return {
     kind: 'user',
@@ -196,12 +217,32 @@ export async function fetchNamespaceAuthz(ns: string, signal?: AbortSignal) {
       MemberPrincipal | { sub: string; iss: string; role: MemberRoleRef }
     >
     unresolvedGroups?: string[]
+    groupBindingWarning?: string
   }>(`/auth/namespaces/${encodeURIComponent(ns)}`, { signal })
   return {
     ...data,
     members: data.members.map(normalizeMember),
     unresolvedGroups: data.unresolvedGroups ?? [],
+    groupBindingWarning: data.groupBindingWarning,
   }
+}
+
+export type GroupBindingStatus = {
+  mode: GroupBindingMode
+  message: string
+  warning: boolean
+  checkedAt: string | null
+}
+
+export function fetchGroupBindingStatus(signal?: AbortSignal) {
+  return authzFetch<GroupBindingStatus>('/auth/instance/group-binding', { signal })
+}
+
+export function checkGroupBindingMode(sampleGroups?: string[]) {
+  return authzFetch<GroupBindingStatus>('/auth/instance/group-binding/check', {
+    method: 'POST',
+    body: JSON.stringify(sampleGroups ? { sampleGroups } : {}),
+  })
 }
 
 export function patchNamespaceAuthz(

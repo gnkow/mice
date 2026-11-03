@@ -9,6 +9,7 @@ import { guarded } from './authentication/index.js'
 import { getDb } from './db/database.js'
 import { principals } from './db/schema.js'
 import type { AuditDep } from './routeDeps.js'
+import { checkGroupBindingMode, getGroupBindingStatus } from './groupBindingStatusStore.js'
 
 async function adminViews() {
   const admins = await listInstanceAdmins()
@@ -121,6 +122,28 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
         detail: { target: t, permissions },
       })
       return c.json({ ok: true })
+    }),
+  )
+
+  app.get(
+    '/auth/instance/group-binding',
+    guarded({ gate: adminOnly }, async ({ c }) => c.json(await getGroupBindingStatus())),
+  )
+
+  app.post(
+    '/auth/instance/group-binding/check',
+    guarded({ mutates: true, reason: true, gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
+      const sample =
+        body && typeof body === 'object' && Array.isArray((body as { sampleGroups?: unknown }).sampleGroups)
+          ? ((body as { sampleGroups: unknown[] }).sampleGroups.filter((g): g is string => typeof g === 'string'))
+          : undefined
+      const status = await checkGroupBindingMode(sample)
+      await audit(c, user, 'session', {
+        action: 'instance.group_binding.check',
+        message: status.message,
+        detail: { mode: status.mode, warning: status.warning },
+      })
+      return c.json(status)
     }),
   )
 }

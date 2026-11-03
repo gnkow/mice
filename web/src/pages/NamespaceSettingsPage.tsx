@@ -271,6 +271,11 @@ export function NamespaceSettingsPage() {
                       {state.data.unresolvedGroups.join(', ')}
                     </p>
                   )}
+                  {state.data.groupBindingWarning && (
+                    <p className="flash flash-error" role="status">
+                      {state.data.groupBindingWarning}
+                    </p>
+                  )}
                 </div>
                 <p className="muted small ns-settings-count">
                   {state.data.members.length} member
@@ -296,7 +301,13 @@ export function NamespaceSettingsPage() {
                           <>
                             <code className="ns-member-sub">{m.name || m.group}</code>
                             <span className="muted small">
-                              {m.name && m.name !== m.group ? m.group : 'Group'}
+                              {m.bindingMode === 'name-based'
+                                ? 'Name-based binding'
+                                : m.bindingMode === 'id-based'
+                                  ? 'ID-based binding'
+                                  : m.name && m.name !== m.group
+                                    ? m.group
+                                    : 'Group'}
                             </span>
                           </>
                         ) : (

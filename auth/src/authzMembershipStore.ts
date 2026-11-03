@@ -11,8 +11,13 @@ import {
 import { getCustomNamespaceRole, isValidMemberRole } from './customRoles.js'
 import { isInstanceAdmin } from './authzInstanceStore.js'
 import * as repo from './authzRepository.js'
-import { toGroupBindingKey } from './groupBinding.js'
-import { defaultGroupIssuer, getGroupDisplayName, upsertGroupDisplayNames } from './groupDisplayStore.js'
+import { isGroupObjectId, parseGroupBindingKey, toGroupBindingKey } from './groupBinding.js'
+import {
+  defaultGroupIssuer,
+  getGroupDisplayNames,
+  upsertGroupDisplayNames,
+} from './groupDisplayStore.js'
+import { GROUP_BINDING_NAME_BASED_MESSAGE } from './groupBindingMode.js'
 
 type Result = { ok: true } | { ok: false; error: string }
 type Who = UserKey & { groups?: string[] }
@@ -101,16 +106,30 @@ export async function reconcileNamespaceGroupIds(_ns: string): Promise<string[]>
 
 export async function listNamespaceMembers(ns: string): Promise<MemberPrincipal[]> {
   const { users, groups } = await repo.listMemberRows(ns)
-  const named = await Promise.all(groups.map(async (row) => ({
-    kind: 'group' as const,
-    group: row.group,
-    role: row.role,
-    name: await getGroupDisplayName(row.group),
-  })))
+  const display = await getGroupDisplayNames(groups.map((row) => row.group))
+  const named = groups.map((row) => {
+    const cached = display.get(row.group)
+    const parsed = parseGroupBindingKey(row.group)
+    const idBased = cached?.idBased ?? (parsed ? isGroupObjectId(parsed.groupId) : false)
+    return {
+      kind: 'group' as const,
+      group: row.group,
+      role: row.role,
+      name: cached?.displayName ?? undefined,
+      bindingMode: (idBased ? 'id-based' : 'name-based') as 'id-based' | 'name-based',
+    }
+  })
   return [
     ...users.map((r) => ({ kind: 'user' as const, ...parseUserKey(r.key), role: r.role })),
     ...named,
   ]
+}
+
+/** Warning for namespace owners when any group grant is name-based. */
+export async function namespaceGroupBindingWarning(ns: string): Promise<string | undefined> {
+  const members = await listNamespaceMembers(ns)
+  const nameBased = members.some((m) => m.kind === 'group' && m.bindingMode === 'name-based')
+  return nameBased ? GROUP_BINDING_NAME_BASED_MESSAGE : undefined
 }
 
 export async function setNamespaceMember(ns: string, target: UserKey, role: MemberRoleRef): Promise<Result> {

@@ -136,6 +136,14 @@ export const groupDisplayNames = pgTable(
   (t) => [primaryKey({ columns: [t.issuer, t.groupId] })],
 )
 
+/** Singleton row: last admin validation of IdP group-id availability. */
+export const groupBindingStatus = pgTable('group_binding_status', {
+  id: text('id').primaryKey(),
+  mode: text('mode').notNull(),
+  message: text('message').notNull(),
+  checkedAt: ts('checked_at').notNull(),
+})
+
 export const customNamespaceRoles = pgTable(
   'custom_namespace_roles',
   {
