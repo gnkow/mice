@@ -314,3 +314,29 @@ describe('RBAC S10 effective permissions', () => {
     assert.equal(await hasPermission(target, 'repo:files:write'), false)
   })
 })
+
+describe('RBAC S11 permission history', () => {
+  it('lists grant rows with reasons via the store API', async () => {
+    const actor = person('actor-s11')
+    const target = person('target-perm-hist')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor,
+          target,
+          permissions: ['directory:search'],
+          reason: 'need search',
+          expiresAt: Date.now() + dayMs,
+        })
+      ).ok,
+      true,
+    )
+    const history = await listPermissionHistory(target)
+    assert.equal(history.length, 1)
+    assert.equal(history[0].permission, 'directory:search')
+    assert.equal(history[0].action, 'granted')
+    assert.equal(history[0].grantReason, 'need search')
+  })
+})
