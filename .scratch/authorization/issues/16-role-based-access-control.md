@@ -77,7 +77,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 ### Direct Grant
 - [ ] Admins/Managers can grant roles/permissions directly in Settings (bypass request)
 - [ ] Direct grants follow same authority rules (cannot grant more than you have)
-- [ ] Direct grants recorded in audit trail same as request approvals
+- [x] Direct grants recorded in audit trail same as request approvals
 - [ ] Direct grants require expiry (delegated)
 
 ### Authorization Logic
@@ -127,9 +127,9 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] Every role grant/revoke recorded in `principal_role_history`
 - [ ] Every permission grant/revoke recorded in `principal_permission_history`
 - [ ] Every access request approval/denial recorded with reviewer and reason
-- [ ] All changes audited to immudb with action, actor, subject, timestamp, reason
-- [ ] Audit events include: `role.assign`, `role.revoke`, `permission.grant`, `permission.revoke`
-- [ ] Access request ID linked in audit events
+- [x] All changes audited to immudb with action, actor, subject, timestamp, reason
+- [x] Audit events include: `role.assign`, `role.revoke`, `permission.grant`, `permission.revoke`
+- [x] Access request ID linked in audit events
 
 ### Versioning
 - [ ] History tables are append-only (never updated or deleted)
@@ -194,7 +194,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 ### Audit
 
-- [ ] **S28** Immudb events — `role.assign` / `role.revoke` / `permission.grant` / `permission.revoke` (+ request id when applicable), via existing audit write/query seam
+- [x] **S28** Immudb events — `role.assign` / `role.revoke` / `permission.grant` / `permission.revoke` (+ request id when applicable), via existing audit write/query seam
 
 ### HTTP
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S28**.
+In progress. Next: **S29**.
 
 ## Comments
 
@@ -323,3 +323,4 @@ In progress. Next: **S28**.
 - 2026-11-03: S25 done — removed site-admin repo/namespace visibility bypass; Admin denied on data/audit.
 - 2026-11-03: S26 done — `repo:bypass_acl` grants private-repo read without collaborator (Auditor).
 - 2026-11-03: S27 done — non-auditor roles (and Auditor writes) still require collaborator/ns ACL.
+- 2026-11-03: S28 done — assign/revoke role and custom perms append immudb events queryable via audit API.

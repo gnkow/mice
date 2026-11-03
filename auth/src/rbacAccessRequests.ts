@@ -193,6 +193,7 @@ export async function approveAccessRequest(input: {
       permissions: grantedPermissions,
       reason,
       expiresAt: input.expiresAt,
+      accessRequestId: req.id,
     })
     if (!permResult.ok) return permResult
   }

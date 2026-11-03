@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm'
+import { appendAudit, type AuditActor } from './audit.js'
 import { ensurePrincipal } from './authentication/session/session.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { getDb } from './db/database.js'
@@ -18,6 +19,58 @@ type UserKey = { sub: string; iss: string }
 type Result = { ok: true } | { ok: false; error: string }
 
 const INTERNAL_GRANT_EXPIRY = new Date('9999-12-31T00:00:00.000Z')
+
+const BOOTSTRAP_ACTOR: AuditActor = {
+  sub: 'rbac-bootstrap',
+  iss: 'urn:mice:system',
+  email: '',
+  name: 'RBAC bootstrap',
+}
+
+async function auditActorFor(user: UserKey | null): Promise<{
+  actor: AuditActor
+  via: 'session' | 'system'
+}> {
+  if (!user) return { actor: BOOTSTRAP_ACTOR, via: 'system' }
+  const iss = canonicalIssuer(user.iss)
+  const [row] = await getDb()
+    .select({ email: principals.email, name: principals.name })
+    .from(principals)
+    .where(and(eq(principals.iss, iss), eq(principals.sub, user.sub)))
+    .limit(1)
+  return {
+    actor: {
+      sub: user.sub,
+      iss,
+      email: row?.email ?? '',
+      name: row?.name ?? '',
+    },
+    via: 'session',
+  }
+}
+
+async function recordRbacAudit(input: {
+  actor: UserKey | null
+  action: 'role.assign' | 'role.revoke' | 'permission.grant' | 'permission.revoke'
+  reason: string
+  target: UserKey
+  detail: Record<string, unknown>
+}): Promise<void> {
+  const { actor, via } = await auditActorFor(input.actor)
+  await appendAudit({
+    actor,
+    via,
+    method: 'POST',
+    path: `/auth/rbac/${input.action}`,
+    status: 200,
+    action: input.action,
+    reason: input.reason,
+    detail: {
+      target: { sub: input.target.sub, iss: canonicalIssuer(input.target.iss) },
+      ...input.detail,
+    },
+  })
+}
 
 export type RoleHistoryEntry = {
   role: InstanceRole
@@ -156,6 +209,13 @@ export async function assignRole(input: {
       revokedBy: grantedBy,
       revokeReason: input.reason,
     })
+    await recordRbacAudit({
+      actor: input.actor,
+      action: 'role.revoke',
+      reason: input.reason,
+      target: input.target,
+      detail: { role: existing.role },
+    })
   }
 
   await getDb()
@@ -190,6 +250,16 @@ export async function assignRole(input: {
   })
 
   await writePermissionSnapshot(input.target, 'role_change')
+  await recordRbacAudit({
+    actor: input.actor,
+    action: 'role.assign',
+    reason: input.reason,
+    target: input.target,
+    detail: {
+      role: input.role,
+      ...(input.accessRequestId ? { access_request_id: input.accessRequestId } : {}),
+    },
+  })
   return { ok: true }
 }
 
@@ -223,6 +293,13 @@ export async function revokeRole(input: {
   })
   await getDb().delete(principalRoles).where(eq(principalRoles.principalId, targetId))
   await writePermissionSnapshot(input.target, 'role_change')
+  await recordRbacAudit({
+    actor: input.actor,
+    action: 'role.revoke',
+    reason: input.reason,
+    target: input.target,
+    detail: { role: existing.role },
+  })
   return { ok: true }
 }
 
@@ -351,6 +428,7 @@ export async function grantCustomPermissions(input: {
   reason: string
   expiresAt?: Date | number | null
   bootstrap?: boolean
+  accessRequestId?: string | null
 }): Promise<Result> {
   const cleaned: InstancePermission[] = []
   for (const p of input.permissions) {
@@ -409,6 +487,16 @@ export async function grantCustomPermissions(input: {
     })
   }
   await writePermissionSnapshot(input.target, 'permission_grant')
+  await recordRbacAudit({
+    actor: input.actor,
+    action: 'permission.grant',
+    reason: input.reason,
+    target: input.target,
+    detail: {
+      permissions: cleaned,
+      ...(input.accessRequestId ? { access_request_id: input.accessRequestId } : {}),
+    },
+  })
   return { ok: true }
 }
 
@@ -476,5 +564,12 @@ export async function revokeCustomPermissions(input: {
       )
   }
   await writePermissionSnapshot(input.target, 'permission_revoke')
+  await recordRbacAudit({
+    actor: input.actor,
+    action: 'permission.revoke',
+    reason: input.reason,
+    target: input.target,
+    detail: { permissions: [...input.permissions].filter(isInstancePermission) },
+  })
   return { ok: true }
 }
