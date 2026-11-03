@@ -161,7 +161,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 - [x] **S08** Grant custom perms — beyond role; expiry required when delegated
 - [x] **S09** Revoke custom perms — history append-only
-- [ ] **S10** Read custom + effective — `getEffectivePermissions` / `hasPermission` (role ∪ custom, expiry-aware)
+- [x] **S10** Read custom + effective — `getEffectivePermissions` / `hasPermission` (role ∪ custom, expiry-aware)
 - [ ] **S11** Permission history — via store API
 - [ ] **S12** Permission snapshots — written on role/perm change; readable via store API
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S10**.
+In progress. Next: **S11**.
 
 ## Comments
 
@@ -305,3 +305,4 @@ In progress. Next: **S10**.
 - 2026-11-03: S07 done — `listRoleHistory` returns ordered grant/revoke rows with reasons.
 - 2026-11-03: S08 done — `principal_permissions` + `grantCustomPermissions` with delegated expiry.
 - 2026-11-03: S09 done — revoke custom perms + `principal_permission_history`.
+- 2026-11-03: S10 done — `getEffectivePermissions` / `hasPermission` over store state.

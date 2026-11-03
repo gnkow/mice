@@ -10,6 +10,7 @@ import {
   principals,
 } from './db/schema.js'
 import { isInstancePermission, type InstancePermission } from './rbacCatalog.js'
+import { mergeEffectivePermissions } from './rbacEffective.js'
 import { isInstanceRole, type InstanceRole } from './rbacRoles.js'
 
 type UserKey = { sub: string; iss: string }
@@ -355,6 +356,23 @@ export async function grantCustomPermissions(input: {
     })
   }
   return { ok: true }
+}
+
+export async function getEffectivePermissions(
+  user: UserKey,
+  now = Date.now(),
+): Promise<InstancePermission[]> {
+  const role = await getUserRole(user, now)
+  const custom = await getCustomPermissions(user, now)
+  return mergeEffectivePermissions(role, custom)
+}
+
+export async function hasPermission(
+  user: UserKey,
+  permission: InstancePermission,
+  now = Date.now(),
+): Promise<boolean> {
+  return (await getEffectivePermissions(user, now)).includes(permission)
 }
 
 export async function revokeCustomPermissions(input: {

@@ -5,8 +5,10 @@ import { ensurePrincipal } from './authentication/session/session.js'
 import {
   assignRole,
   getCustomPermissions,
+  getEffectivePermissions,
   getUserRole,
   grantCustomPermissions,
+  hasPermission,
   listPermissionHistory,
   listRoleHistory,
   revokeCustomPermissions,
@@ -278,5 +280,37 @@ describe('RBAC S09 revoke custom permissions', () => {
       ],
     )
     assert.equal(history.at(-1)?.revokeReason, 'no longer needed')
+  })
+})
+
+describe('RBAC S10 effective permissions', () => {
+  it('merges active role bundle with non-expired custom permissions', async () => {
+    const actor = person('actor-s10')
+    const target = person('target-effective')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    const expiresAt = Date.now() + dayMs
+    assert.equal(
+      (await assignRole({ actor, target, role: 'external', reason: 'base', expiresAt })).ok,
+      true,
+    )
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor,
+          target,
+          permissions: ['namespace:create'],
+          reason: 'extra',
+          expiresAt,
+        })
+      ).ok,
+      true,
+    )
+    const effective = await getEffectivePermissions(target)
+    assert.equal(effective.includes('repo:files:read'), true)
+    assert.equal(effective.includes('namespace:create'), true)
+    assert.equal(effective.includes('repo:files:write'), false)
+    assert.equal(await hasPermission(target, 'namespace:create'), true)
+    assert.equal(await hasPermission(target, 'repo:files:write'), false)
   })
 })
