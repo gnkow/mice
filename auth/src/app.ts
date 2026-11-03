@@ -9,6 +9,7 @@ import { registerAnnouncementRoutes } from './announcementRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
 import { registerFavoritesRoutes } from './favoritesRoutes.js'
 import { registerInstanceRoutes } from './instanceRoutes.js'
+import { registerRbacGrantRoutes } from './rbacGrantRoutes.js'
 import { registerJobRoutes } from './jobsRoutes.js'
 import { registerMetaRoutes } from './metaRoutes.js'
 import { registerNamespaceRoutes } from './namespaceRoutes.js'
@@ -80,6 +81,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   // Use device flow (mice login) for CLI access instead
   // registerTokenRoutes removed with personal access tokens.
   registerInstanceRoutes(app, { audit })
+  registerRbacGrantRoutes(app, { audit })
   registerRevocationRoutes(app)
   registerReasonRoutes(app)
   registerNamespaceRoutes(app, { audit })

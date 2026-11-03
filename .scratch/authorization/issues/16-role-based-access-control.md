@@ -199,7 +199,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 ### HTTP
 
 - [x] **S29** Access-request routes — submit / list / approve / deny contracts
-- [ ] **S30** Direct-grant routes — role + permissions (+ expiry)
+- [x] **S30** Direct-grant routes — role + permissions (+ expiry)
 - [ ] **S31** `/auth/me/authz` — role, effective perms, pending, catalog (replaces old 8-bool map); wipe old permission APIs here
 
 ### Web (MVP)
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S30**.
+In progress. Next: **S31**.
 
 ## Comments
 
@@ -325,3 +325,4 @@ In progress. Next: **S30**.
 - 2026-11-03: S27 done — non-auditor roles (and Auditor writes) still require collaborator/ns ACL.
 - 2026-11-03: S28 done — assign/revoke role and custom perms append immudb events queryable via audit API.
 - 2026-11-03: S29 done — `/auth/access-requests` submit/list/approve/deny wired to RBAC (role/perms + expiry).
+- 2026-11-03: S30 done — `POST /auth/grants/role` and `/auth/grants/permissions` with expiry + authority.

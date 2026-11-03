@@ -66,6 +66,8 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['role.revoke', 'Role revoked', 'Access'],
   ['permission.grant', 'Permission granted', 'Access'],
   ['permission.revoke', 'Permission revoked', 'Access'],
+  ['access.grant.role', 'Role granted directly', 'Access'],
+  ['access.grant.permissions', 'Permissions granted directly', 'Access'],
   ['training.update', 'Training status changed', 'Access'],
   ['instance.settings.update', 'Instance settings changed', 'Instance'],
   ['instance.admin.add', 'Instance admin added', 'Instance'],
