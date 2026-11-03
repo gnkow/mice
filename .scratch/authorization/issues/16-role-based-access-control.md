@@ -146,7 +146,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 ### Catalog (pure)
 
-- [ ] **S01** Permission catalog — full `resource:op` list complete/valid; no schema coupling
+- [x] **S01** Permission catalog — full `resource:op` list complete/valid; no schema coupling
 - [ ] **S02** Role → permission bundle — each of 5 roles maps to its fixed set (key inclusions/exclusions; Admin lacks data/audit; Auditor has `repo:bypass_acl`)
 - [ ] **S03** Effective merge — `role ∪ custom`, deduped; independent of storage
 
@@ -291,8 +291,9 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-Ready for implementation. Design decisions and TDD seams locked. Spec complete and extensible. Next: **S01**.
+In progress. Next: **S02**.
 
 ## Comments
 
 - 2026-11-03: Planned with TDD. Locked wipe cutover, Admin no data access, keep expiry, MVP includes UI. Replaced horizontal Phase 1–10 with seams S01–S36; commit+push after every seam.
+- 2026-11-03: S01 done — `auth/src/rbacCatalog.ts` matches spec catalog tables (137 permissions).
