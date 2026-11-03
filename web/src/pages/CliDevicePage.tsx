@@ -2,7 +2,7 @@ import { Check as ActionCheck, Search as ActionSearch, X as ActionX } from 'luci
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
 import { formatScope, type PatScope } from '../lib/tokens'
 
 type DeviceStatus = {
@@ -67,8 +67,7 @@ export function CliDevicePage() {
     authz.kind === 'ok' &&
     !!authz.data &&
     (!authz.data.enforce ||
-      authz.data.instanceAdmin ||
-      authz.data.permissions.cli_device_approve)
+      hasEffectivePermission(authz.data, 'cli_device:approve'))
 
   const status = useAsync(
     (signal) =>

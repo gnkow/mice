@@ -215,7 +215,7 @@ export async function cmdWhoami(opts = {}) {
   console.log(`sub: ${u.sub}`)
   if (data.authz) {
     console.log(
-      `authz: enforce=${data.authz.enforce} pending=${data.authz.pending} admin=${data.authz.instanceAdmin}`,
+      `authz: enforce=${data.authz.enforce} pending=${data.authz.pending} role=${data.authz.role ?? 'none'}`,
     )
   }
   console.log(`remote: ${data.remote ?? remote}`)

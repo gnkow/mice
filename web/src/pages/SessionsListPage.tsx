@@ -7,7 +7,7 @@ import { SessionRowActions, useMaySessionConnect } from '../components/SessionRo
 import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
 import { listSessions, sessionMounts, type DesktopSession } from '../lib/sessions'
 import { FavoriteStar } from '../components/FavoriteStar'
 import { SortControl, useListSort, type SortFields } from '../components/SortControl'
@@ -50,9 +50,8 @@ export function SessionsListPage() {
     authz.kind === 'ok' &&
     !!authz.data &&
     (!authz.data.enforce ||
-      authz.data.instanceAdmin ||
-      authz.data.permissions.session_create ||
-      authz.data.permissions.session_admin)
+      hasEffectivePermission(authz.data, 'session:create') ||
+      hasEffectivePermission(authz.data, 'session:delete'))
 
   function goPage(next: number) {
     const nextParams = new URLSearchParams(params)

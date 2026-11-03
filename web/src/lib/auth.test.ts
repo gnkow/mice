@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
-import { INSTANCE_PERMISSIONS } from './authzContract'
 import { fetchAuthzMe } from './auth'
 
 const realFetch = globalThis.fetch
@@ -13,17 +12,22 @@ function respondWith(body: unknown) {
 }
 
 describe('fetchAuthzMe', () => {
-  const permissions = Object.fromEntries(INSTANCE_PERMISSIONS.map((p) => [p, false]))
-  const valid = { enforce: true, pending: false, instanceAdmin: false, permissions, hasAnyGrant: false }
+  const valid = {
+    enforce: true,
+    pending: false,
+    role: 'user' as const,
+    effectivePermissions: ['namespace:create'],
+    permissionCatalog: ['namespace:create', 'repo:read'],
+  }
 
   it('returns a payload that matches the contract', async () => {
     respondWith(valid)
     assert.deepEqual(await fetchAuthzMe(), valid)
   })
 
-  it('returns null for a payload missing a catalog permission', async () => {
-    const { session_admin: _drop, ...rest } = permissions
-    respondWith({ ...valid, permissions: rest })
+  it('returns null for a payload missing permissionCatalog', async () => {
+    const { permissionCatalog: _drop, ...rest } = valid
+    respondWith(rest)
     assert.equal(await fetchAuthzMe(), null)
   })
 

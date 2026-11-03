@@ -38,6 +38,16 @@ export async function fetchAuthzMe(signal?: AbortSignal): Promise<AuthzMe | null
   return parseAuthzMe(await res.json())
 }
 
+/** True when the caller's effective RBAC permissions include `permission`. */
+export function hasEffectivePermission(me: AuthzMe, permission: string): boolean {
+  return me.effectivePermissions.includes(permission)
+}
+
+/** System-management Admin role (not data access). */
+export function isAdminRole(me: AuthzMe): boolean {
+  return me.role === 'admin'
+}
+
 export async function logout(): Promise<LogoutResult> {
   const res = await fetch('/auth/logout', {
     method: 'POST',

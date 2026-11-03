@@ -5,7 +5,7 @@ import {
   NamespaceCreateSettings,
   type NamespaceCreateSettingsValue,
 } from '../components/NamespaceCreateSettings'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
 import {
   createNamespaceAuthz,
   putNamespaceMember,
@@ -27,7 +27,7 @@ export function NewNamespacePage() {
   const canCreate =
     authz.kind === 'ok' &&
     authz.data &&
-    (authz.data.instanceAdmin || authz.data.permissions.create_namespace)
+    hasEffectivePermission(authz.data, 'namespace:create')
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -68,7 +68,7 @@ export function NewNamespacePage() {
 
       {authz.kind === 'ok' && !canCreate && (
         <p className="flash flash-error" role="status">
-          You need the <code>create_namespace</code> permission or instance
+          You need the <code>namespace:create</code> permission or
           admin to create a namespace.
         </p>
       )}

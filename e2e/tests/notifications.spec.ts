@@ -1,10 +1,8 @@
 import { expect } from '@playwright/test'
 import { cleanTest as test } from '../fixtures'
-import { INSTANCE_PERMISSIONS } from '../../auth/src/authzContract'
-
-// /auth/me/authz must carry every instance permission or the web rejects it.
-const noPermissions = Object.fromEntries(INSTANCE_PERMISSIONS.map((p) => [p, false]))
 import { mintSession } from '../helpers/session'
+
+const permissionCatalog = ['tokens:create', 'tokens:list', 'tokens:revoke', 'namespace:list']
 
 test('notification preferences persist', async ({ page }) => {
   await mintSession(page, { sub: `notification-${Date.now()}` })
@@ -55,8 +53,11 @@ test('notification inbox and profile settings stay available without resource gr
     }
     if (path === '/auth/me/authz') {
       return route.fulfill({ json: {
-        enforce: true, pending, instanceAdmin: !pending,
-        permissions: { ...noPermissions, manage_own_tokens: !pending }, hasAnyGrant: !pending,
+        enforce: true,
+        pending,
+        role: pending ? null : 'user',
+        effectivePermissions: pending ? [] : ['tokens:create', 'tokens:list', 'tokens:revoke'],
+        permissionCatalog,
       } })
     }
     if (path === '/auth/instance') {

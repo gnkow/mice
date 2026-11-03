@@ -23,6 +23,7 @@ describe('authz contract', () => {
     const cli = await import(`${repoRoot}cli/lib/authzContract.mjs`)
     for (const key of [
       'INSTANCE_PERMISSIONS',
+      'INSTANCE_ROLES',
       'NAMESPACE_ROLES',
       'REPO_ROLES',
       'NAMESPACE_CAPABILITIES',
@@ -33,19 +34,19 @@ describe('authz contract', () => {
   })
 
   it('/auth/me/authz shape parses and rejects malformed input', () => {
-    const permissions = Object.fromEntries(contract.INSTANCE_PERMISSIONS.map((p) => [p, true]))
     const ok = {
       enforce: true,
       pending: false,
-      instanceAdmin: false,
-      permissions,
-      instancePermissionCatalog: [...contract.INSTANCE_PERMISSIONS],
-      hasAnyGrant: true,
+      role: 'user' as const,
+      effectivePermissions: ['namespace:create'],
+      permissionCatalog: ['namespace:create', 'repo:read'],
     }
-    assert.deepEqual(contract.parseAuthzMe(ok)?.permissions, permissions)
+    assert.deepEqual(contract.parseAuthzMe(ok)?.role, 'user')
+    assert.deepEqual(contract.parseAuthzMe(ok)?.effectivePermissions, ['namespace:create'])
     assert.equal(contract.parseAuthzMe(null), null)
     assert.equal(contract.parseAuthzMe({ ...ok, enforce: 'yes' }), null)
-    assert.equal(contract.parseAuthzMe({ ...ok, permissions: { view_audit: true } }), null)
-    assert.equal(contract.parseAuthzMe({ ...ok, instancePermissionCatalog: ['bogus'] }), null)
+    assert.equal(contract.parseAuthzMe({ ...ok, role: 'superuser' }), null)
+    assert.equal(contract.parseAuthzMe({ ...ok, permissionCatalog: [] }), null)
+    assert.equal(contract.parseAuthzMe({ ...ok, effectivePermissions: [1] }), null)
   })
 })

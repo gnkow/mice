@@ -32,7 +32,8 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const me = await page.request.get(`${AUTH_URL}/auth/me/authz`)
     expect(me.ok()).toBeTruthy()
     const authz = await me.json()
-    expect(authz.instanceAdmin).toBeTruthy()
+    expect(authz.role).toBe('admin')
+    expect(authz.pending).toBe(false)
 
     const ns = uniqueId('autho-ns')
     const create = await page.request.post(`${AUTH_URL}/auth/namespaces`, {

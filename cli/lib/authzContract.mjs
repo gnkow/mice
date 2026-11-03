@@ -13,6 +13,8 @@ export const INSTANCE_PERMISSIONS = [
     'session_connect',
     'session_admin',
 ];
+/** Formal instance roles for RBAC (GET /auth/me/authz). */
+export const INSTANCE_ROLES = ['external', 'user', 'manager', 'auditor', 'admin'];
 export const NAMESPACE_ROLES = ['owner', 'member'];
 export const REPO_ROLES = ['read', 'triage', 'write', 'maintain', 'admin'];
 export const NAMESPACE_CAPABILITIES = [
@@ -45,8 +47,14 @@ export const REPO_FINE_PERMISSIONS = [
 export function isInstancePermission(v) {
     return typeof v === 'string' && INSTANCE_PERMISSIONS.includes(v);
 }
+export function isInstanceRole(v) {
+    return typeof v === 'string' && INSTANCE_ROLES.includes(v);
+}
 export function isRepoRole(v) {
     return typeof v === 'string' && REPO_ROLES.includes(v);
+}
+function isStringArray(v) {
+    return Array.isArray(v) && v.every((x) => typeof x === 'string');
 }
 /** Validate an untrusted /auth/me/authz payload; null when it does not match the contract. */
 export function parseAuthzMe(raw) {
@@ -57,33 +65,19 @@ export function parseAuthzMe(raw) {
         return null;
     if (typeof r.pending !== 'boolean')
         return null;
-    if (typeof r.instanceAdmin !== 'boolean')
+    if (r.role !== null && !isInstanceRole(r.role))
         return null;
-    if (typeof r.hasAnyGrant !== 'boolean')
+    if (!isStringArray(r.effectivePermissions))
         return null;
-    if (typeof r.permissions !== 'object' || r.permissions === null)
+    if (!isStringArray(r.permissionCatalog) || r.permissionCatalog.length === 0)
         return null;
-    const perms = r.permissions;
-    const permissions = {};
-    for (const p of INSTANCE_PERMISSIONS) {
-        if (typeof perms[p] !== 'boolean')
-            return null;
-        permissions[p] = perms[p];
-    }
     const out = {
         enforce: r.enforce,
         pending: r.pending,
-        instanceAdmin: r.instanceAdmin,
-        permissions,
-        hasAnyGrant: r.hasAnyGrant,
+        role: r.role,
+        effectivePermissions: r.effectivePermissions,
+        permissionCatalog: r.permissionCatalog,
     };
-    if (r.instancePermissionCatalog !== undefined) {
-        if (!Array.isArray(r.instancePermissionCatalog))
-            return null;
-        if (!r.instancePermissionCatalog.every(isInstancePermission))
-            return null;
-        out.instancePermissionCatalog = r.instancePermissionCatalog;
-    }
     if (r.trainingCompleted !== undefined) {
         if (typeof r.trainingCompleted !== 'boolean')
             return null;

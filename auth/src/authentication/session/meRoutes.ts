@@ -5,9 +5,7 @@ import type { AuditDep } from '../../routeDeps.js'
 import { authenticateUser } from './requireAuth.js'
 import { isPendingUser } from '../../authz.js'
 import { canSearchDirectory, searchDirectory } from '../directory/directory.js'
-import { hasInstancePermission, isInstanceAdmin, setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from '../../authzInstanceStore.js'
-import { userHasAnyGrant } from '../../authzVisibility.js'
-import { ALL_INSTANCE_PERMISSIONS } from '../../authzTypes.js'
+import { setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from '../../authzInstanceStore.js'
 import { rememberNotificationUser } from '../../notifications.js'
 import { listCliCredentials, revokeCliCredentialFamily } from '../credentials/cliCredentials.js'
 import { currentEmailsByAuthor } from './session.js'
@@ -17,9 +15,9 @@ import {
   listAccessRequestsForReviewer,
   submitAccessRequest,
 } from '../../rbacAccessRequests.js'
-import { isInstancePermission } from '../../rbacCatalog.js'
+import { INSTANCE_PERMISSION_CATALOG, isInstancePermission } from '../../rbacCatalog.js'
 import { isInstanceRole } from '../../rbacRoles.js'
-import { getUserRole, hasPermission } from '../../rbacStore.js'
+import { getEffectivePermissions, getUserRole, hasPermission } from '../../rbacStore.js'
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -38,20 +36,16 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     })
   })
 
-  /** Effective AuthZ summary for UI (pending gate, instance flags). */
+  /** Effective AuthZ summary for UI (RBAC role + effective permissions). */
   app.get('/auth/me/authz', guarded({}, async ({ c, user: session }) => {
     const pending = await isPendingUser(session)
+    const role = await getUserRole(session)
     return c.json({
       enforce: true,
       pending,
-      instanceAdmin: await isInstanceAdmin(session),
-      permissions: Object.fromEntries(
-        await Promise.all(
-          ALL_INSTANCE_PERMISSIONS.map(async (p) => [p, await hasInstancePermission(session, p)] as const),
-        ),
-      ) as Record<(typeof ALL_INSTANCE_PERMISSIONS)[number], boolean>,
-      instancePermissionCatalog: ALL_INSTANCE_PERMISSIONS,
-      hasAnyGrant: await userHasAnyGrant(session),
+      role,
+      effectivePermissions: await getEffectivePermissions(session),
+      permissionCatalog: [...INSTANCE_PERMISSION_CATALOG],
       trainingCompleted: await hasCompletedTraining(session),
       requireTraining: env.authzRequireTraining,
     })

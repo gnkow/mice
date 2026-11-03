@@ -2,7 +2,7 @@ import { Layers as ActionLayers, Plug as ActionPlug, Square as ActionSquare, Tra
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
 import { confirmDelete } from '../lib/confirmDelete'
 import {
   connectAndOpen,
@@ -27,9 +27,8 @@ export function useMaySessionConnect(): boolean {
     authz.kind === 'ok' &&
     !!authz.data &&
     (!authz.data.enforce ||
-      authz.data.instanceAdmin ||
-      authz.data.permissions.session_connect ||
-      authz.data.permissions.session_admin)
+      hasEffectivePermission(authz.data, 'session:connect') ||
+      hasEffectivePermission(authz.data, 'session:delete'))
   )
 }
 

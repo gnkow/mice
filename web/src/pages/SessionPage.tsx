@@ -6,7 +6,7 @@ import { SessionWorkspacesTab } from '../components/SessionWorkspacesTab'
 import { StatusPill } from '../components/StatusPill'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
 import { confirmDelete } from '../lib/confirmDelete'
 import {
   connectAndOpen,
@@ -45,9 +45,8 @@ export function SessionPage() {
     authz.kind === 'ok' &&
     !!authz.data &&
     (!authz.data.enforce ||
-      authz.data.instanceAdmin ||
-      authz.data.permissions.session_connect ||
-      authz.data.permissions.session_admin)
+      hasEffectivePermission(authz.data, 'session:connect') ||
+      hasEffectivePermission(authz.data, 'session:delete'))
 
   const reload = useCallback(async () => {
     if (!sessionId) return

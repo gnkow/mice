@@ -7,7 +7,7 @@ import {
   type NamespaceCreateSettingsValue,
 } from '../components/NamespaceCreateSettings'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
 import {
   createNamespaceAuthz,
   listAuthzNamespaces,
@@ -103,7 +103,7 @@ export function NewRepoPage() {
   const canCreateNamespace =
     me.kind === 'ok' &&
     me.data &&
-    (me.data.instanceAdmin || me.data.permissions.create_namespace)
+    hasEffectivePermission(me.data, 'namespace:create')
   const nsFieldsDisabled =
     busy || (me.kind === 'ok' && !canCreateNamespace)
 
@@ -166,7 +166,7 @@ export function NewRepoPage() {
       if (creatingNewNamespace) {
         if (!canCreateNamespace) {
           throw new Error(
-            'You need create_namespace permission or instance admin to create a namespace.',
+            'You need namespace:create permission to create a namespace.',
           )
         }
         await createNamespaceAuthz({
@@ -255,7 +255,7 @@ export function NewRepoPage() {
             <div className="new-repo-new-ns">
               {me.kind === 'ok' && !canCreateNamespace ? (
                 <p className="flash flash-error" role="status">
-                  You need <code>create_namespace</code> or instance admin to
+                  You need <code>namespace:create</code> to
                   create a namespace.
                 </p>
               ) : (

@@ -14,6 +14,9 @@ export const INSTANCE_PERMISSIONS = [
   'session_admin',
 ] as const
 
+/** Formal instance roles for RBAC (GET /auth/me/authz). */
+export const INSTANCE_ROLES = ['external', 'user', 'manager', 'auditor', 'admin'] as const
+
 export const NAMESPACE_ROLES = ['owner', 'member'] as const
 
 export const REPO_ROLES = ['read', 'triage', 'write', 'maintain', 'admin'] as const
@@ -48,6 +51,7 @@ export const REPO_FINE_PERMISSIONS = [
 ] as const
 
 export type InstancePermission = (typeof INSTANCE_PERMISSIONS)[number]
+export type InstanceRole = (typeof INSTANCE_ROLES)[number]
 export type NamespaceRole = (typeof NAMESPACE_ROLES)[number]
 export type RepoRole = (typeof REPO_ROLES)[number]
 export type NamespaceCapability = (typeof NAMESPACE_CAPABILITIES)[number]
@@ -57,20 +61,30 @@ export function isInstancePermission(v: unknown): v is InstancePermission {
   return typeof v === 'string' && (INSTANCE_PERMISSIONS as readonly string[]).includes(v)
 }
 
+export function isInstanceRole(v: unknown): v is InstanceRole {
+  return typeof v === 'string' && (INSTANCE_ROLES as readonly string[]).includes(v)
+}
+
 export function isRepoRole(v: unknown): v is RepoRole {
   return typeof v === 'string' && (REPO_ROLES as readonly string[]).includes(v)
 }
 
-/** Response body of GET /auth/me/authz. */
+/** Response body of GET /auth/me/authz (RBAC). */
 export type AuthzMe = {
   enforce: boolean
   pending: boolean
-  instanceAdmin: boolean
-  permissions: Record<InstancePermission, boolean>
-  instancePermissionCatalog?: InstancePermission[]
-  hasAnyGrant: boolean
+  /** Formal role, or null when pending (no role assigned). */
+  role: InstanceRole | null
+  /** Role bundle ∪ custom grants. */
+  effectivePermissions: string[]
+  /** Full RBAC permission catalog for UI checklists. */
+  permissionCatalog: string[]
   trainingCompleted?: boolean
   requireTraining?: boolean
+}
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === 'string')
 }
 
 /** Validate an untrusted /auth/me/authz payload; null when it does not match the contract. */
@@ -79,26 +93,15 @@ export function parseAuthzMe(raw: unknown): AuthzMe | null {
   const r = raw as Record<string, unknown>
   if (typeof r.enforce !== 'boolean') return null
   if (typeof r.pending !== 'boolean') return null
-  if (typeof r.instanceAdmin !== 'boolean') return null
-  if (typeof r.hasAnyGrant !== 'boolean') return null
-  if (typeof r.permissions !== 'object' || r.permissions === null) return null
-  const perms = r.permissions as Record<string, unknown>
-  const permissions = {} as Record<InstancePermission, boolean>
-  for (const p of INSTANCE_PERMISSIONS) {
-    if (typeof perms[p] !== 'boolean') return null
-    permissions[p] = perms[p]
-  }
+  if (r.role !== null && !isInstanceRole(r.role)) return null
+  if (!isStringArray(r.effectivePermissions)) return null
+  if (!isStringArray(r.permissionCatalog) || r.permissionCatalog.length === 0) return null
   const out: AuthzMe = {
     enforce: r.enforce,
     pending: r.pending,
-    instanceAdmin: r.instanceAdmin,
-    permissions,
-    hasAnyGrant: r.hasAnyGrant,
-  }
-  if (r.instancePermissionCatalog !== undefined) {
-    if (!Array.isArray(r.instancePermissionCatalog)) return null
-    if (!r.instancePermissionCatalog.every(isInstancePermission)) return null
-    out.instancePermissionCatalog = r.instancePermissionCatalog
+    role: r.role,
+    effectivePermissions: r.effectivePermissions,
+    permissionCatalog: r.permissionCatalog,
   }
   if (r.trainingCompleted !== undefined) {
     if (typeof r.trainingCompleted !== 'boolean') return null

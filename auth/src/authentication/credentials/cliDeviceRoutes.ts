@@ -4,8 +4,7 @@ import { parsePatScopes } from './patScopes.js'
 import { guarded, type GuardPolicy } from '../session/routeGuard.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { authorizeCliDeviceApprove, isPendingUser, preparePrincipal } from '../../authz.js'
-import { isInstanceAdmin } from '../../authzInstanceStore.js'
-import { userHasAnyGrant } from '../../authzVisibility.js'
+import { getUserRole } from '../../rbacStore.js'
 import { approveDevice, denyDevice, lookupDeviceByUserCode, pollDevice, startDeviceAuth } from './cliDevice.js'
 import { logoutCliCredential, refreshCliCredential } from './cliCredentials.js'
 import { bearerToken, resolveBearer } from '../session/requireAuth.js'
@@ -260,8 +259,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
       authz: {
         enforce: true,
         pending,
-        instanceAdmin: await isInstanceAdmin(user),
-        hasAnyGrant: await userHasAnyGrant(user),
+        role: await getUserRole(user),
       },
       remote: env.publicOxenRemote,
     })

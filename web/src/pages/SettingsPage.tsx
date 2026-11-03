@@ -13,7 +13,7 @@ import { GroupBindingSection } from '../components/GroupBindingSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthMe, fetchAuthzMe } from '../lib/auth'
+import { fetchAuthMe, fetchAuthzMe, isAdminRole } from '../lib/auth'
 import {
   addInstanceAdmin,
   fetchInstance,
@@ -52,7 +52,7 @@ export function SettingsPage() {
   const [form, setForm] = useState<OxenSettings>(loadSettings)
   const [saved, setSaved] = useState(false)
   const [probe, setProbe] = useState<string | null>(null)
-  const isInstanceAdmin = me.kind === 'ok' && !!me.data?.instanceAdmin
+  const isInstanceAdmin = me.kind === 'ok' && !!me.data && isAdminRole(me.data)
 
   function onSave(e: FormEvent) {
     e.preventDefault()

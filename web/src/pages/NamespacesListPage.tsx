@@ -5,7 +5,7 @@ import { MetaPills } from '../components/MetaPills'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission, isAdminRole } from '../lib/auth'
 import { confirmDelete } from '../lib/confirmDelete'
 import { deleteNamespaceAuthz, listAuthzNamespaces } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
@@ -34,7 +34,7 @@ export function NamespacesListPage() {
   const canCreate =
     me.kind === 'ok' &&
     me.data &&
-    (me.data.instanceAdmin || me.data.permissions.create_namespace)
+    hasEffectivePermission(me.data, 'namespace:create')
 
   const merged = useMemo(() => {
     const oxen = catalog.kind === 'ok' ? catalog.data.namespaces : []
@@ -79,7 +79,7 @@ export function NamespacesListPage() {
     setParams(nextParams, { replace: true })
   }
 
-  const isAdmin = me.kind === 'ok' && !!me.data?.instanceAdmin
+  const isAdmin = me.kind === 'ok' && !!me.data && isAdminRole(me.data)
 
   async function onRemove(ns: MergedNamespace) {
     if (

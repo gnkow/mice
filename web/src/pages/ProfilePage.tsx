@@ -8,41 +8,13 @@ import { loadAppearance, saveAppearance, subscribeAppearance, type Appearance } 
 import { NotificationSettingsPage } from './NotificationSettingsPage'
 import { ProfileFavoritesSection } from '../components/ProfileFavoritesSection'
 import { ProfileCliAccessSection } from '../components/ProfileCliAccessSection'
-import type { InstancePermission } from '../lib/authzContract'
 
-const PERMISSION_INFO: Record<InstancePermission, { label: string; description: string }> = {
-  create_namespace: {
-    label: 'Create namespace',
-    description: 'Create new namespaces and become their owner',
-  },
-  view_audit: {
-    label: 'View audit',
-    description: 'Access audit logs and security events',
-  },
-  view_lineage: {
-    label: 'View lineage',
-    description: 'View data lineage and provenance reports',
-  },
-  manage_own_tokens: {
-    label: 'Manage own tokens',
-    description: 'Approve CLI device logins and revoke those credentials',
-  },
-  cli_device_approve: {
-    label: 'Approve CLI devices',
-    description: 'Approve CLI device authorization requests',
-  },
-  session_create: {
-    label: 'Create sessions',
-    description: 'Create workspace sessions',
-  },
-  session_connect: {
-    label: 'Connect to sessions',
-    description: 'Connect to workspace sessions',
-  },
-  session_admin: {
-    label: 'Administer sessions',
-    description: 'Manage all workspace sessions (admin-level access)',
-  },
+const ROLE_LABEL: Record<string, string> = {
+  external: 'External User',
+  user: 'User',
+  manager: 'Manager',
+  auditor: 'Auditor',
+  admin: 'Admin',
 }
 
 export function ProfilePage() {
@@ -112,14 +84,14 @@ export function ProfilePage() {
                   <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '600' }}>
                     {me.data.user.name}
                   </h3>
-                  {authz.kind === 'ok' && authz.data?.instanceAdmin && (
+                  {authz.kind === 'ok' && authz.data?.role && (
                     <span className="pill" style={{ 
                       backgroundColor: 'var(--color-accent)', 
                       color: 'white',
                       fontWeight: '600',
                       letterSpacing: '0.02em'
                     }}>
-                      Admin
+                      {ROLE_LABEL[authz.data.role] ?? authz.data.role}
                     </span>
                   )}
                   {authz.kind === 'ok' && authz.data?.pending && (
@@ -151,13 +123,11 @@ export function ProfilePage() {
                     <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.875rem' }}>
                       <span className="muted" style={{ minWidth: '4rem' }}>Role:</span>
                       <span style={{ fontWeight: '500' }}>
-                        {authz.data.pending 
-                          ? 'Pending approval' 
-                          : authz.data.instanceAdmin 
-                            ? 'Instance Administrator' 
-                            : Object.values(authz.data.permissions).some(v => v)
-                              ? 'User with delegated permissions'
-                              : 'User'}
+                        {authz.data.pending
+                          ? 'Pending approval'
+                          : authz.data.role
+                            ? (ROLE_LABEL[authz.data.role] ?? authz.data.role)
+                            : 'User'}
                       </span>
                     </div>
                   )}
@@ -185,24 +155,20 @@ export function ProfilePage() {
             
             {!authz.data.pending && (
               <div className="ns-settings-subsection">
-                {authz.data.instanceAdmin && (
-                  <p className="muted small" style={{ marginBottom: '1rem' }}>
-                    As an <strong>Instance Administrator</strong>, you have all permissions listed below.
-                  </p>
-                )}
-                
-                <h3 className="muted small" style={{ marginBottom: '0.75rem' }}>Instance permissions</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {Object.entries(PERMISSION_INFO).map(([perm, info]) => {
-                    const hasPermission = authz.data.instanceAdmin || authz.data.permissions[perm as InstancePermission]
+                <h3 className="muted small" style={{ marginBottom: '0.75rem' }}>
+                  Instance permissions ({authz.data.effectivePermissions.length} granted)
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '24rem', overflow: 'auto' }}>
+                  {authz.data.permissionCatalog.map((perm) => {
+                    const hasPermission = authz.data.effectivePermissions.includes(perm)
                     return (
-                      <div 
+                      <div
                         key={perm}
-                        style={{ 
+                        style={{
                           display: 'flex',
-                          alignItems: 'flex-start',
+                          alignItems: 'center',
                           gap: '0.75rem',
-                          padding: '0.75rem',
+                          padding: '0.5rem 0.75rem',
                           border: '1px solid var(--color-border)',
                           borderRadius: '0.375rem',
                           backgroundColor: hasPermission ? 'var(--color-canvas-subtle)' : 'transparent',
@@ -218,34 +184,24 @@ export function ProfilePage() {
                           border: hasPermission ? 'none' : '2px solid var(--color-border)',
                           backgroundColor: hasPermission ? 'var(--color-accent)' : 'transparent',
                           flexShrink: 0,
-                          marginTop: '0.125rem',
                         }}>
                           {hasPermission && (
                             <Check size={14} color="white" strokeWidth={3} />
                           )}
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ 
-                            fontWeight: hasPermission ? '600' : '500',
-                            marginBottom: '0.25rem',
-                            color: hasPermission ? 'var(--color-fg-default)' : 'var(--color-fg-muted)'
-                          }}>
-                            {info.label}
-                          </div>
-                          <div className="muted small">
-                            {info.description}
-                          </div>
-                        </div>
+                        <code style={{
+                          fontWeight: hasPermission ? '600' : '500',
+                          color: hasPermission ? 'var(--color-fg-default)' : 'var(--color-fg-muted)',
+                        }}>
+                          {perm}
+                        </code>
                       </div>
                     )
                   })}
                 </div>
-                
-                {!authz.data.instanceAdmin && !Object.values(authz.data.permissions).some(v => v) && (
+                {authz.data.effectivePermissions.length === 0 && (
                   <p className="muted small" style={{ marginTop: '1rem' }}>
-                    {authz.data.hasAnyGrant 
-                      ? 'You have access to specific namespaces or repositories.' 
-                      : 'Contact an administrator to request permissions.'}
+                    Contact an administrator to request permissions.
                   </p>
                 )}
               </div>
