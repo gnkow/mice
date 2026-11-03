@@ -53,6 +53,7 @@ const {
   updateCustomNamespaceRole,
   updateCustomRepoRole,
 } = await import('./customRoles.js')
+const { assignRole } = await import('./rbacStore.js')
 
 function mkUser(id: string, groups?: string[]) {
   return {
@@ -62,6 +63,17 @@ function mkUser(id: string, groups?: string[]) {
     name: id,
     ...(groups ? { groups } : {}),
   }
+}
+
+/** RBAC pending gate: namespace grants alone no longer clear pending — assign a formal role. */
+async function withFormalRole(
+  user: { sub: string; iss: string },
+  role: 'external' | 'user' | 'manager' | 'auditor' | 'admin' = 'user',
+) {
+  assert.equal(
+    (await assignRole({ actor: null, target: user, role, reason: 'test', bootstrap: true })).ok,
+    true,
+  )
 }
 
 const admin = {
@@ -86,6 +98,7 @@ const bob = {
 
 before(async () => {
   await preparePrincipal(admin)
+  await withFormalRole(admin, 'admin')
 })
 
 after(async () => {
@@ -140,6 +153,9 @@ await describe('TC-AUTHO matrix', async () => {
     const ns = 'tc06'
     await createNamespaceAuthz(admin, ns, 'none', true)
     await setRepoCollaborator(ns, 'only', bob, 'write')
+    // Collaborator grants do not clear the RBAC pending gate.
+    assert.equal(await isPendingUser(bob), true)
+    await withFormalRole(bob, 'external')
     assert.equal(await isPendingUser(bob), false)
     assert.equal((await hasRepoPermission(bob, ns, 'only', 'write')).ok, true)
     assert.equal((await hasRepoPermission(bob, ns, 'other', 'read')).ok, false)
@@ -222,6 +238,7 @@ await describe('TC-AUTHO matrix', async () => {
       name: 'Admin2',
     }
     await addInstanceAdmin(admin, admin2)
+    await withFormalRole(admin2, 'admin')
     const d = await authorizeApiRequest({
       user: admin2,
       via: 'session',
@@ -310,6 +327,8 @@ await describe('Phase 2–3 extras', async () => {
       name: 'Carol',
       groups: ['Engineering'],
     }
+    assert.equal(await isPendingUser(carol), true)
+    await withFormalRole(carol, 'external')
     assert.equal(await isPendingUser(carol), false)
     assert.equal((await hasRepoPermission(carol, ns, 'r', 'read')).ok, true)
     assert.equal((await hasRepoPermission(carol, ns, 'r', 'write')).ok, false)
@@ -374,6 +393,7 @@ await describe('Phase 2–3 extras', async () => {
     const ns = 'tc-train'
     await createNamespaceAuthz(admin, ns, 'read', true)
     await setNamespaceMember(ns, trainee, 'member')
+    await withFormalRole(trainee, 'user')
     await setTrainingCompletedSelf(trainee, false)
 
     const prev = env.authzRequireTraining
@@ -439,6 +459,8 @@ await describe('Phase 2–3 extras', async () => {
     const reader = mkUser('push-reader')
     await setRepoCollaborator(ns, 'r', writer, 'write')
     await setRepoCollaborator(ns, 'r', reader, 'read')
+    await withFormalRole(writer, 'user')
+    await withFormalRole(reader, 'external')
     const pushRoutes: Array<[string, string]> = [
       ['POST', `/api/repos/${ns}/r/commits/upload`],
       ['POST', `/api/repos/${ns}/r/commits/abc`],
@@ -491,6 +513,7 @@ await describe('Phase 2–3 extras', async () => {
     await createNamespaceAuthz(admin, ns, 'read', true)
     const u = mkUser('allowlist-user')
     await setNamespaceMember(ns, u, 'member')
+    await withFormalRole(u, 'user')
     for (const pathname of [
       '/api/version',
       '/api/health',
@@ -606,12 +629,14 @@ await describe('enforcement gates', async () => {
     assert.equal(version.allow, true)
   })
 
-  await it('create_namespace instance permission skips pending gate', async () => {
+  await it('create_namespace instance permission alone does not skip RBAC pending gate', async () => {
     const u = mkUser('create-ns-perm')
     await writeInstancePermissions(u, ['create_namespace'])
-    assert.equal(await canSkipPendingGate(u), true)
-    assert.equal(await isPendingUser(u), false)
+    assert.equal(await canSkipPendingGate(u), false)
+    assert.equal(await isPendingUser(u), true)
     assert.equal(await hasInstancePermission(u, 'create_namespace'), true)
+    await withFormalRole(u, 'manager')
+    assert.equal(await isPendingUser(u), false)
   })
 
   await it('view_audit is an instance permission grant', async () => {
@@ -663,7 +688,7 @@ await describe('access requests', async () => {
     assert.equal(again.ok, false)
   })
 
-  await it('approve with namespace+role clears pending', async () => {
+  await it('approve with namespace+role grants membership but RBAC pending needs a formal role', async () => {
     const ns = 'tc-ar-ns'
     await createNamespaceAuthz(admin, ns, 'read', true)
     const u = mkUser('ar-member')
@@ -673,6 +698,8 @@ await describe('access requests', async () => {
       role: 'member',
     })
     assert.equal(resolved.ok, true)
+    assert.equal(await isPendingUser(u), true)
+    await withFormalRole(u, 'user')
     assert.equal(await isPendingUser(u), false)
     assert.equal((await hasRepoPermission(u, ns, 'r', 'read')).ok, true)
   })
@@ -705,6 +732,7 @@ await describe('access requests', async () => {
     if (!role.ok) return
     const reviewer = mkUser('ns-reviewer')
     await setNamespaceMember(ns, reviewer, role.role.id)
+    await withFormalRole(reviewer, 'manager')
     assert.equal(await canReviewAccessRequests(reviewer), true)
 
     const u = mkUser('ar-into-ns')
@@ -714,6 +742,8 @@ await describe('access requests', async () => {
       role: 'member',
     })
     assert.equal(resolved.ok, true)
+    assert.equal(await isPendingUser(u), true)
+    await withFormalRole(u, 'user')
     assert.equal(await isPendingUser(u), false)
   })
 
@@ -750,6 +780,7 @@ await describe('custom roles CRUD and capabilities', async () => {
     if (!created.ok) return
     const u = mkUser('base-writer')
     await setNamespaceMember(ns, u, created.role.id)
+    await withFormalRole(u, 'user')
     assert.equal(await effectiveRepoRole(u, ns, 'any'), 'write')
     assert.equal(await hasNamespaceCapability(ns, u, 'create_repos'), true)
     const d = await authorizeApiRequest({
@@ -1090,6 +1121,7 @@ await describe('repo / namespace API decisions', async () => {
     await createNamespaceAuthz(admin, ns, 'none', true)
     const admin2 = mkUser('list-admin2')
     await addInstanceAdmin(admin, admin2)
+    await withFormalRole(admin2, 'admin')
     // remove any accidental membership — admin2 has none
     const d = await authorizeApiRequest({
       user: admin2,
@@ -1106,6 +1138,7 @@ await describe('repo / namespace API decisions', async () => {
     const ns = 'tc-ns-create-grant'
     await createNamespaceAuthz(admin, ns, 'read', true)
     await setNamespaceMember(ns, u, 'member')
+    await withFormalRole(u, 'user')
     const denied = await authorizeApiRequest({
       user: u,
       via: 'session',
@@ -1116,6 +1149,7 @@ await describe('repo / namespace API decisions', async () => {
 
     const withPerm = mkUser('ns-create-ok')
     await writeInstancePermissions(withPerm, ['create_namespace'])
+    await withFormalRole(withPerm, 'manager')
     const allowed = await authorizeApiRequest({
       user: withPerm,
       via: 'session',

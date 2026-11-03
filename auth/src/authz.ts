@@ -4,7 +4,8 @@ import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorR
 import { hasCompletedTraining, hasInstancePermission, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
-import { ownedNamespaces, userCanSeeNamespace, userHasAnyGrant } from './authzVisibility.js'
+import { ownedNamespaces, userCanSeeNamespace } from './authzVisibility.js'
+import { getUserRole } from './rbacStore.js'
 import {
   maxRepoRole,
   normalizeGroup,
@@ -69,12 +70,11 @@ export async function preparePrincipal(user: SessionUser): Promise<void> {
 }
 
 export async function canSkipPendingGate(user: SessionUser): Promise<boolean> {
-  return (await decideInstanceAction(user, 'namespace.create')).allow
+  return (await getUserRole(user)) != null
 }
 
 export async function isPendingUser(user: SessionUser): Promise<boolean> {
-  if (await canSkipPendingGate(user)) return false
-  return !await userHasAnyGrant(user)
+  return (await getUserRole(user)) == null
 }
 
 /**
@@ -272,7 +272,7 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
   if (interpreted.kind === 'public') return allow()
 
   if (await isPendingUser(user)) {
-    return deny('Access pending: no namespace membership or grants')
+    return deny('Access pending: no formal role')
   }
 
   if (
