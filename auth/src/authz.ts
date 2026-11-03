@@ -1,18 +1,18 @@
 import { directoryNow } from './authentication/directory/directory.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
-import { hasCompletedTraining, hasInstancePermission, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
+import { hasCompletedTraining, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
 import { ownedNamespaces, userCanSeeNamespace } from './authzVisibility.js'
-import { getUserRole } from './rbacStore.js'
+import { getUserRole, hasPermission } from './rbacStore.js'
+import type { InstancePermission as RbacPermission } from './rbacCatalog.js'
 import {
   maxRepoRole,
   normalizeGroup,
   REPO_ROLE_RANK,
   roleAtLeast,
   type BasePermission,
-  type InstancePermission,
   type NamespaceCapability,
   type RepoRole,
 } from './authzTypes.js'
@@ -321,7 +321,7 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
     }
     case 'repo.create': {
       if (!ns) return deny('Namespace required to create repository')
-      if (await hasInstancePermission(user, 'create_namespace') && !await getNamespace(ns)) {
+      if (await hasPermission(user, 'namespace:create') && !await getNamespace(ns)) {
         return allow()
       }
       const settings = await getNamespace(ns)
@@ -515,37 +515,40 @@ export type InstanceAction =
   | 'session.connect'
 
 type InstancePolicy = {
-  /** Any one of these instance permissions allows the action (besides admin). */
-  permissions?: InstancePermission[]
-  /** 'unscoped': scoped credentials never pass as admin. */
-  admin: 'any' | 'unscoped'
+  /** Any one of these RBAC instance permissions allows the action. */
+  permissions: readonly RbacPermission[]
+  /** 'unscoped': scoped credentials (PAT) never pass, even with the permission. */
+  credential: 'any' | 'unscoped'
   reason: string
 }
 
 /**
- * Instance-wide actions: allowed for an instance admin or a holder of a named
- * permission. Each action records its denial reason.
+ * Instance-wide actions: allowed when the principal's effective RBAC permissions
+ * include any listed permission. Boolean instance-admin no longer short-circuits.
  */
 const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
-  'tokens.manage': { permissions: ['manage_own_tokens'], admin: 'any', reason: 'Missing permission manage_own_tokens' },
-  'cli.device.approve': { permissions: ['cli_device_approve'], admin: 'any', reason: 'Missing permission cli_device_approve' },
-  'audit.view': { permissions: ['view_audit'], admin: 'any', reason: 'Missing permission view_audit' },
-  'lineage.view': { permissions: ['view_lineage'], admin: 'any', reason: 'Missing permission view_lineage' },
-  'store.admin': { admin: 'unscoped', reason: 'Requires instance admin' },
-  'instance.admin': { admin: 'any', reason: 'Forbidden' },
-  'directory.sync': { admin: 'any', reason: 'Instance admin required' },
-  'namespace.create': { permissions: ['create_namespace'], admin: 'any', reason: 'Missing permission create_namespace' },
-  'access.review.all': { permissions: ['create_namespace'], admin: 'any', reason: 'Forbidden' },
-  'session.admin': { permissions: ['session_admin'], admin: 'any', reason: 'Missing permission session_admin' },
-  'session.create': { permissions: ['session_admin', 'session_create'], admin: 'any', reason: 'Missing permission session_create' },
-  'session.connect': { permissions: ['session_connect'], admin: 'any', reason: 'Missing permission session_connect' },
+  'tokens.manage': { permissions: ['tokens:create', 'tokens:list', 'tokens:revoke'], credential: 'any', reason: 'Missing permission tokens:create' },
+  'cli.device.approve': { permissions: ['cli_device:approve'], credential: 'any', reason: 'Missing permission cli_device:approve' },
+  'audit.view': { permissions: ['audit:read'], credential: 'any', reason: 'Missing permission audit:read' },
+  'lineage.view': { permissions: ['lineage:read'], credential: 'any', reason: 'Missing permission lineage:read' },
+  'store.admin': { permissions: ['store:gc', 'store:scrub'], credential: 'unscoped', reason: 'Missing permission store:gc' },
+  'instance.admin': { permissions: ['instance:admins:add', 'instance:settings:update'], credential: 'any', reason: 'Missing permission instance:admins:add' },
+  'directory.sync': { permissions: ['instance:settings:update'], credential: 'any', reason: 'Missing permission instance:settings:update' },
+  'namespace.create': { permissions: ['namespace:create'], credential: 'any', reason: 'Missing permission namespace:create' },
+  'access.review.all': { permissions: ['access_request:review'], credential: 'any', reason: 'Missing permission access_request:review' },
+  'session.admin': { permissions: ['session:delete'], credential: 'any', reason: 'Missing permission session:delete' },
+  'session.create': { permissions: ['session:create'], credential: 'any', reason: 'Missing permission session:create' },
+  'session.connect': { permissions: ['session:connect'], credential: 'any', reason: 'Missing permission session:connect' },
 }
 
 export async function decideInstanceAction(user: SessionUser, action: InstanceAction): Promise<Decision> {
   const policy = INSTANCE_ACTION_POLICY[action]
-  const admin = policy.admin === 'unscoped' ? await isUnscopedInstanceAdmin(user) : await isInstanceAdmin(user)
-  if (admin) return ALLOWED
-  for (const p of policy.permissions ?? []) if (await hasInstancePermission(user, p)) return ALLOWED
+  if (policy.credential === 'unscoped' && isScopedCredential(user)) {
+    return denied(policy.reason)
+  }
+  for (const p of policy.permissions) {
+    if (await hasPermission(user, p)) return ALLOWED
+  }
   return denied(policy.reason)
 }
 

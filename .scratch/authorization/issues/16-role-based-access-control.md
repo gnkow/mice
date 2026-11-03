@@ -187,7 +187,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 ### Decision adapters (via existing `decide*` / authorize APIs)
 
 - [x] **S23** Pending gate — no role ⇒ pending-only (not “no ns membership”)
-- [ ] **S24** Instance actions via new perms — create namespace, session, tokens, etc. map to new names
+- [x] **S24** Instance actions via new perms — create namespace, session, tokens, etc. map to new names
 - [ ] **S25** Admin separation — Admin denied on data/audit reads
 - [ ] **S26** Auditor ACL bypass — `repo:bypass_acl` allows private repo read without collaborator
 - [ ] **S27** Non-auditor repo ACL — still collaborator/ns rules
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S24**.
+In progress. Next: **S25**.
 
 ## Comments
 
@@ -319,3 +319,4 @@ In progress. Next: **S24**.
 - 2026-11-03: S21 done — directGrantRole with authority + expiry, no request row.
 - 2026-11-03: S22 done — directGrantPermissions with authority + expiry.
 - 2026-11-03: S23 done — isPendingUser keyed off formal role; authz tests updated.
+- 2026-11-03: S24 done — decideInstanceAction uses RBAC permission names; no boolean-admin short-circuit.

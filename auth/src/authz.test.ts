@@ -53,7 +53,7 @@ const {
   updateCustomNamespaceRole,
   updateCustomRepoRole,
 } = await import('./customRoles.js')
-const { assignRole } = await import('./rbacStore.js')
+const { assignRole, grantCustomPermissions } = await import('./rbacStore.js')
 
 function mkUser(id: string, groups?: string[]) {
   return {
@@ -258,7 +258,19 @@ await describe('TC-AUTHO matrix', async () => {
     assert.equal(gate.allow, true)
     assert.ok(gate.forceNamespace === ns || gate.ownedOnly?.includes(ns))
 
-    await writeInstancePermissions(bob, ['view_audit'])
+    await withFormalRole(bob, 'external')
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor: null,
+          target: bob,
+          permissions: ['audit:read'],
+          reason: 'test',
+          bootstrap: true,
+        })
+      ).ok,
+      true,
+    )
     const g2 = await authorizeAuditQuery(bob, undefined)
     assert.equal(g2.allow, true)
     assert.equal(g2.forceNamespace, undefined)
@@ -917,15 +929,26 @@ await describe('custom roles CRUD and capabilities', async () => {
 })
 
 await describe('atomic instance + job gates', async () => {
-  await it('manage_own_tokens and cli_device_approve deny without grant under enforce', async () => {
+  await it('tokens and cli_device permissions gate manage/approve under RBAC', async () => {
     const u = mkUser('token-cli-user')
-    await writeInstancePermissions(u, [])
     assert.equal((await authorizeManageOwnTokens(u)).allow, false)
     assert.equal((await authorizeCliDeviceApprove(u)).allow, false)
-    await writeInstancePermissions(u, ['manage_own_tokens', 'cli_device_approve'])
+    await withFormalRole(u, 'external')
     assert.equal((await authorizeManageOwnTokens(u)).allow, true)
+    assert.equal((await authorizeCliDeviceApprove(u)).allow, false)
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor: null,
+          target: u,
+          permissions: ['cli_device:approve'],
+          reason: 'test',
+          bootstrap: true,
+        })
+      ).ok,
+      true,
+    )
     assert.equal((await authorizeCliDeviceApprove(u)).allow, true)
-    await writeInstancePermissions(u, [])
   })
 
   await it('job cancel/complete implied by write; custom role can grant cancel without submit', async () => {
@@ -976,11 +999,12 @@ await describe('lineage ACL', async () => {
     const repo = 'r1'
     await createNamespaceAuthz(admin, ns, 'none', true)
     await setRepoCollaborator(ns, repo, alice, 'read')
+    await withFormalRole(alice, 'external')
 
     assert.equal((await authorizeLineageQuery(mkUser('anyone'), ns, repo)).allow, false)
 
     const outsider = mkUser('lin-outsider')
-    await writeInstancePermissions(outsider, [])
+    await withFormalRole(outsider, 'external')
     assert.equal((await authorizeLineageQuery(outsider, ns, repo)).allow, false)
 
     assert.equal((await authorizeLineageQuery(alice, ns, repo)).allow, true)
@@ -988,9 +1012,20 @@ await describe('lineage ACL', async () => {
     const missingNs = await authorizeLineageQuery(alice, undefined, undefined)
     assert.equal(missingNs.allow, false)
 
-    await writeInstancePermissions(bob, ['view_lineage'])
+    await withFormalRole(bob, 'external')
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor: null,
+          target: bob,
+          permissions: ['lineage:read'],
+          reason: 'test',
+          bootstrap: true,
+        })
+      ).ok,
+      true,
+    )
     assert.equal((await authorizeLineageQuery(bob, undefined, undefined)).allow, true)
-    await writeInstancePermissions(bob, [])
   })
 
   await it('authorizeLineageRebuild: requires repo admin (or owner / instance admin)', async () => {
