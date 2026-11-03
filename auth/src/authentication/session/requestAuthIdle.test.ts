@@ -12,7 +12,9 @@ process.env.SESSION_TTL_SEC = '3600'
 
 const { Hono } = await import('hono')
 const { applyGlobalGuards } = await import('./requireAuth.js')
-const { sealSession, getSession } = await import('./session.js')
+const { getSession } = await import('./session.js')
+const { unsealSessionCookie } = await import('./cookieSeal.js')
+const { sealedSessionCookie } = await import('../../testSupport.js')
 const { env } = await import('../../env.js')
 
 const user = { sub: 'alice', iss: 'test', email: 'a@x.io', name: 'Alice' }
@@ -24,7 +26,7 @@ app.get('/me', async (c) => c.json({ ok: !!(await getSession(c)) }))
 app.get('/auth/notifications/count', (c) => c.json({ ok: true }))
 
 async function cookieFor(over: { sessionStart?: number; lastActive?: number }) {
-  return `${env.cookieName}=${await sealSession({ ...user, ...over })}`
+  return sealedSessionCookie({ ...user, ...over })
 }
 
 function cookieFrom(res: Response): string | null {
@@ -56,7 +58,7 @@ describe('sliding idle timeout', () => {
     const fresh = cookieFrom(await app.request('/me', { headers: { cookie } }))
     assert.ok(fresh)
     const { openSession } = await import('./session.js')
-    const reopened = await openSession(fresh.split('=')[1])
+    const reopened = await openSession((await unsealSessionCookie(fresh.slice(fresh.indexOf('=') + 1)))!)
     assert.equal(reopened?.sessionStart, start)
   })
 

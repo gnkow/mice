@@ -11,9 +11,8 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 
 const { Hono } = await import('hono')
 const { registerNamespaceRoutes } = await import('./namespaceRoutes.js')
-const { sealSession } = await import('./authentication/index.js')
 const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
-const { env } = await import('./env.js')
+const { sealedSessionCookie } = await import('./testSupport.js')
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
 await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
@@ -22,8 +21,7 @@ const audits: string[] = []
 const app = new Hono()
 registerNamespaceRoutes(app, { audit: async (_c, _u, _via, f) => void audits.push(f.action) })
 
-const cookie = async (sub: string) =>
-  `${env.cookieName}=${await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) })}`
+const cookie = async (sub: string) => sealedSessionCookie({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) })
 const call = async (as: string | null, method: string, path: string, body?: unknown) =>
   app.request(path, {
     method,

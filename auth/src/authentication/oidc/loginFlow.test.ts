@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, describe, it } from 'node:test'
+import { SignJWT, exportJWK, generateKeyPair } from 'jose'
 
 let idTokenClaims: Record<string, unknown> = {}
-const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
+const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true })
+const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256', use: 'sig' }
 
 const idp: Server = createServer((req, res) => {
   const base = `http://127.0.0.1:${(idp.address() as AddressInfo).port}`
@@ -16,13 +18,21 @@ const idp: Server = createServer((req, res) => {
         issuer: base,
         authorization_endpoint: `${base}/auth`,
         token_endpoint: `${base}/token`,
+        jwks_uri: `${base}/jwks`,
       }),
     )
     return
   }
+  if (req.url === '/jwks') {
+    res.end(JSON.stringify({ keys: [jwk] }))
+    return
+  }
   req.resume()
   req.on('end', () => {
-    res.end(JSON.stringify({ id_token: `${b64({ alg: 'none' })}.${b64(idTokenClaims)}.sig` }))
+    void new SignJWT(idTokenClaims)
+      .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+      .sign(privateKey)
+      .then((idToken) => res.end(JSON.stringify({ id_token: idToken })))
   })
 })
 await new Promise<void>((r) => idp.listen(0, '127.0.0.1', r))

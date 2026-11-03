@@ -8,24 +8,35 @@ import assert from 'node:assert/strict'
 import { getDb } from '../../db/database.js'
 import { principals } from '../../db/schema.js'
 import { setDirectoryFetchForTests } from '../directory/directory.js'
+import { overrideEnv } from '../../env.js'
 import { checkDisabledPrincipalsWithSigningRights, getPrincipalAccessState } from './principalAccessMonitoring.js'
+
+function directoryFetch(disabled: (url: string) => boolean): (url: string) => Promise<Response> {
+  return async (url) => {
+    if (url.includes('/protocol/openid-connect/token')) {
+      return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 300 }), { status: 200 })
+    }
+    if (url.includes('/users/') && disabled(url)) {
+      return new Response(JSON.stringify({ enabled: false, firstName: 'Disabled', lastName: 'User' }), { status: 200 })
+    }
+    if (url.includes('/users/')) {
+      return new Response(JSON.stringify({ enabled: true, firstName: 'Enabled', lastName: 'User' }), { status: 200 })
+    }
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+}
 
 describe('Principal Access Monitoring (Ticket 11)', () => {
   beforeEach(async () => {
-    // Clean slate
     await getDb().delete(principals)
-    
-    // Set up mock directory
-    setDirectoryFetchForTests(async (url) => {
-      // Mock directory responses
-      if (url.includes('/users/disabled-user')) {
-        return new Response(JSON.stringify({ enabled: false }), { status: 200 })
-      }
-      if (url.includes('/users/enabled-user')) {
-        return new Response(JSON.stringify({ enabled: true }), { status: 200 })
-      }
-      return new Response(JSON.stringify({ enabled: true }), { status: 200 })
+    overrideEnv({
+      directoryProvider: 'keycloak',
+      keycloakAdminUrl: 'http://directory.test',
+      keycloakRealm: 'mice',
+      oidcClientId: 'mice-auth',
+      oidcClientSecret: 'test-secret',
     })
+    setDirectoryFetchForTests(directoryFetch((url) => url.includes('/users/disabled-user')))
   })
 
   describe('Disabled Principal Alarm', () => {
@@ -78,12 +89,7 @@ describe('Principal Access Monitoring (Ticket 11)', () => {
       ])
 
       // Update mock to return disabled for both
-      setDirectoryFetchForTests(async (url) => {
-        if (url.includes('/users/disabled-user')) {
-          return new Response(JSON.stringify({ enabled: false }), { status: 200 })
-        }
-        return new Response(JSON.stringify({ enabled: true }), { status: 200 })
-      })
+      setDirectoryFetchForTests(directoryFetch((url) => url.includes('/users/disabled-user')))
 
       const alarms = await checkDisabledPrincipalsWithSigningRights()
 

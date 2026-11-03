@@ -3,6 +3,7 @@
  */
 
 import type { Hono } from 'hono'
+import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { guarded } from '../session/routeGuard.js'
 import { authorizeInstanceAction } from '../../authz.js'
 import {
@@ -16,7 +17,8 @@ import {
 import { appendAudit } from '../../audit.js'
 
 const requireInstanceAdmin = {
-  requires: { capability: 'isInstanceAdmin', message: 'Instance admin required' },
+  gate: async (user: { sub: string; iss: string }) =>
+    (await isInstanceAdmin(user)) ? null : 'Instance admin required',
   originCheck: true,
   jsonOnly: true,
 } as const
@@ -141,7 +143,10 @@ export function registerIdpDriftRoutes(app: Hono): void {
    * POST /auth/admin/idp-drift/baseline
    * Establish new baseline (after reviewing drift as intentional)
    */
-  app.post('/auth/admin/idp-drift/baseline', guarded(requireInstanceAdmin, async ({ c, user, body }) => {
+  app.post('/auth/admin/idp-drift/baseline', guarded({
+    ...requireInstanceAdmin,
+    body: 'json',
+  }, async ({ c, user, body }) => {
     await authorizeInstanceAction(user, 'instance.admin')
 
     const mfaClaimsAvailable = body?.mfaClaimsAvailable as { acr?: string; amr: string[] } | undefined

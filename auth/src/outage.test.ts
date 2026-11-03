@@ -14,15 +14,18 @@ process.env.OXEN_UPSTREAM = 'http://oxen.invalid'
 process.env.PUBLIC_WEB_ORIGIN = 'http://localhost'
 
 const { createApp } = await import('./app.js')
-const { sealSession } = await import('./authentication/index.js')
+const { env } = await import('./env.js')
 const { closeMainDatabase } = await import('./db/database.js')
 const { setUpstreamFetch } = await import('./proxy.js')
 
 after(() => closeMainDatabase())
 
 const app = createApp()
-const user = { iss: 'https://idp.test', sub: 'u', email: 'admin@outage.test', emailVerified: true, name: 'U' }
-const headers = async () => ({ cookie: `mice_session=${await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 30 })}`, origin: 'http://localhost' })
+// Four cookie segments force an unseal, which has to read the seal-key table.
+const headers = () => ({
+  cookie: `${env.cookieName}=aaaa.bbbb.cccc.dddd`,
+  origin: 'http://localhost',
+})
 
 await describe('database outage fails closed', async () => {
   await it('/readyz is red and names every unreachable store; /healthz stays up', async () => {

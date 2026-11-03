@@ -40,6 +40,9 @@ setDirectoryFetchForTests(async (url) => {
   if (urlStr.includes('search=ghost')) {
     return new Response(JSON.stringify([]), { status: 200 })
   }
+  if (urlStr.includes('/users/') && urlStr.includes('/groups')) {
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+  }
   if (urlStr.includes('/users/')) {
     return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
   }

@@ -6,16 +6,12 @@
  * Env: AUTH_URL (default http://localhost:8080), SESSION_SECRET
  */
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { describe, it } from 'node:test'
-import { EncryptJWT } from 'jose'
 
 const AUTH_URL = (process.env.AUTH_URL ?? 'http://localhost:8080').replace(
   /\/$/,
   '',
 )
-const SESSION_SECRET =
-  process.env.SESSION_SECRET ?? 'dev-only-change-me-mice-session-secret'
 
 async function authUp() {
   try {
@@ -26,21 +22,51 @@ async function authUp() {
   }
 }
 
-async function sealSessionCookie() {
-  const key = createHash('sha256').update(SESSION_SECRET).digest()
-  const token = await new EncryptJWT({
-    sub: 'cli-integration',
-    iss: 'mice-e2e',
-    email: 'cli-integration@mice.local',
-    name: 'CLI Integration',
-    id_token: '',
-    groups: [],
+function cookieJar() {
+  const cookies = new Map()
+  return {
+    store(res) {
+      for (const line of res.headers.getSetCookie?.() ?? []) {
+        const pair = line.split(';', 1)[0]
+        const eq = pair.indexOf('=')
+        if (eq > 0) cookies.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim())
+      }
+    },
+    header() {
+      return [...cookies].map(([name, value]) => `${name}=${value}`).join('; ')
+    },
+  }
+}
+
+/** Signs in through the live IdP and returns the BFF session cookie. */
+async function browserSession() {
+  const jar = cookieJar()
+  let next = `${AUTH_URL}/auth/login`
+  let res = await fetch(next, { redirect: 'manual' })
+  for (let hop = 0; hop < 8; hop++) {
+    jar.store(res)
+    if (res.status < 300 || res.status >= 400) break
+    next = new URL(res.headers.get('location'), next).toString()
+    res = await fetch(next, { redirect: 'manual', headers: { cookie: jar.header() } })
+  }
+  const html = await res.text()
+  const action = html.match(/action="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&')
+  if (!action) throw new Error('IdP login form was not found')
+  res = await fetch(action, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { cookie: jar.header(), 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ username: 'mice_admin', password: 'admin123', credentialId: '' }),
   })
-    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .encrypt(key)
-  return `mice_session=${token}`
+  for (let hop = 0; hop < 8; hop++) {
+    jar.store(res)
+    if (res.status < 300 || res.status >= 400) break
+    next = new URL(res.headers.get('location'), res.url || action).toString()
+    res = await fetch(next, { redirect: 'manual', headers: { cookie: jar.header() } })
+  }
+  const session = [...jar.header().split('; ')].find((part) => part.startsWith('__Host-mice_session='))
+  if (!session) throw new Error('login did not set a session cookie')
+  return session
 }
 
 const up = await authUp()
@@ -57,11 +83,12 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
     assert.ok(started.device_code)
     assert.match(started.user_code, /^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
 
-    const cookie = await sealSessionCookie()
+    const cookie = await browserSession()
     const approve = await fetch(`${AUTH_URL}/auth/cli/device/approve`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Origin: AUTH_URL,
         Cookie: cookie,
       },
       body: JSON.stringify({ user_code: started.user_code, confirmation: 'APPROVE' }),
@@ -89,7 +116,7 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
     })
     assert.equal(who.status, 200)
     const me = await who.json()
-    assert.equal(me.user.email, 'cli-integration@mice.local')
+    assert.equal(me.user.email, 'mice_admin@mice.com')
 
     const api = await fetch(`${AUTH_URL}/api/version`, {
       headers: { Authorization: `Bearer ${token}` },

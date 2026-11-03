@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, describe, it } from 'node:test'
+import { SignJWT, exportJWK, generateKeyPair } from 'jose'
 
 let idTokenClaims: Record<string, unknown> = {}
-const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
+const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true })
+const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256', use: 'sig' }
 
 const idp: Server = createServer((req, res) => {
   const base = `http://127.0.0.1:${(idp.address() as AddressInfo).port}`
@@ -16,13 +18,21 @@ const idp: Server = createServer((req, res) => {
         issuer: base,
         authorization_endpoint: `${base}/auth`,
         token_endpoint: `${base}/token`,
+        jwks_uri: `${base}/jwks`,
       }),
     )
     return
   }
+  if (req.url === '/jwks') {
+    res.end(JSON.stringify({ keys: [jwk] }))
+    return
+  }
   req.resume()
   req.on('end', () => {
-    res.end(JSON.stringify({ id_token: `${b64({ alg: 'none' })}.${b64(idTokenClaims)}.sig` }))
+    void new SignJWT(idTokenClaims)
+      .setProtectedHeader({ alg: 'RS256', kid: 'test' })
+      .sign(privateKey)
+      .then((idToken) => res.end(JSON.stringify({ id_token: idToken })))
   })
 })
 await new Promise<void>((r) => idp.listen(0, '127.0.0.1', r))
@@ -34,6 +44,7 @@ process.env.OIDC_REDIRECT_URI = 'http://localhost/auth/callback'
 process.env.SESSION_SECRET = 'test-session-secret-for-oidc'
 
 const { exchangeCode } = await import('./oidc.js')
+const { ID_TOKEN_LEEWAY_SEC } = await import('./oidcClaims.js')
 
 const now = () => Math.floor(Date.now() / 1000)
 const claims = (over: Record<string, unknown> = {}) => ({
@@ -79,7 +90,7 @@ describe('login: exchangeCode against a stub IdP', () => {
   it('rejects wrong audience, wrong issuer, expiry and nonce', async () => {
     await assert.rejects(login({ aud: 'other' }), /audience/)
     await assert.rejects(login({ iss: 'https://evil.example' }), /issuer/)
-    await assert.rejects(login({ exp: now() - 5 }), /expired/)
+    await assert.rejects(login({ exp: now() - ID_TOKEN_LEEWAY_SEC - 1 }), /expired/)
     await assert.rejects(login({}, 'replayed'), /nonce/)
   })
 

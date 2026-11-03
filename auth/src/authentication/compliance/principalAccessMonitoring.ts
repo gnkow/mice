@@ -59,7 +59,8 @@ async function getIdpStatus(sub: string): Promise<{ enabled: boolean } | null> {
   
   try {
     const account = await directory.userStatus(sub)
-    return { enabled: account.status === 'enabled' }
+    if (account.status === 'error') return null
+    return { enabled: account.status !== 'disabled' }
   } catch (error) {
     console.error(`[mice-auth] Failed to check IdP status for ${sub}:`, error)
     return null

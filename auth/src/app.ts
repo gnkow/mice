@@ -3,7 +3,7 @@ import { auditReadiness } from './audit.js'
 import { diskReadiness } from './diskStore.js'
 import { postgresReadiness } from './db/database.js'
 import { isStoreOutage } from './db/outage.js'
-import { applyGlobalGuards, authenticateRequest, backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
+import { applyGlobalGuards, authenticateRequest, backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerDisabledSignerRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
@@ -62,6 +62,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerSigningRoutes(app, { audit })
   registerIdpBaselineRoutes(app, { audit })
   registerIdpDriftRoutes(app)
+  registerDisabledSignerRoutes(app)
   registerAccessReviewRoutes(app, { audit })
   registerNameHistoryRoutes(app)
   registerMeRoutes(app, { audit })

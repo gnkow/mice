@@ -1,5 +1,5 @@
 /**
- * Adapter interface for a test IdP (seam 3). The in-process `createFakeIdp` implements it today; a container
+ * Adapter interface for a test IdP (seam 3). The in-process `createFakeIdpAdapter` implements it today; a container
  * adapter over the Keycloak realms in `auth/keycloak/` (realm-mice.json) would implement the same interface by
  * driving the realm's login form in `signIn`, and `idpAdapter.contract.test.ts` would run against both.
  */

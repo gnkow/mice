@@ -19,3 +19,5 @@ The daily drift job also runs `checkDisabledPrincipalsWithSigningRights`. A Prin
 
 - `auth/src/authentication/compliance/principalAccessMonitoring.ts`
 - `auth/src/authentication/compliance/idpDriftSchedule.ts`
+- `auth/src/authentication/compliance/disabledSignerRoutes.ts` (`GET /auth/admin/disabled-signers`)
+- `web/src/components/DisabledSignersSection.tsx`

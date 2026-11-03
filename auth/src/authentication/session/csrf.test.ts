@@ -11,17 +11,15 @@ process.env.PUBLIC_WEB_ORIGIN = 'https://mice.example.com'
 
 const { Hono } = await import('hono')
 const { sameOriginGuard } = await import('./csrf.js')
-const { sealSession } = await import('./session.js')
-const { env } = await import('../../env.js')
+const { sealedSessionCookie } = await import('../../testSupport.js')
 const { queryAudit } = await import('../../audit.js')
 
-const token = await sealSession({
+const cookie = await sealedSessionCookie({
   sub: 'alice',
   iss: 'test',
   email: 'alice@example.com',
   name: 'Alice',
 })
-const cookie = `${env.cookieName}=${token}`
 
 const app = new Hono()
 app.use('*', sameOriginGuard)
@@ -48,7 +46,7 @@ describe('same-origin guard on cookie sessions', () => {
   })
 
   it('allows same-origin writes', async () => {
-    const res = await hit('POST', { cookie, 'sec-fetch-site': 'same-origin' })
+    const res = await hit('POST', { cookie, 'sec-fetch-site': 'same-origin', origin: 'http://mice.example.com' })
     assert.equal(res.status, 200)
   })
 
@@ -57,8 +55,8 @@ describe('same-origin guard on cookie sessions', () => {
     assert.equal((await hit('POST', { cookie, origin: 'http://internal:8080', host: 'internal:8080' })).status, 200)
   })
 
-  it('allows writes with no browser signals', async () => {
-    assert.equal((await hit('POST', { cookie })).status, 200)
+  it('rejects a session write that sends no Origin', async () => {
+    assert.equal((await hit('POST', { cookie })).status, 403)
   })
 
   it('does not affect GET', async () => {

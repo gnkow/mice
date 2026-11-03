@@ -45,6 +45,7 @@ app.post('/lazy', guarded({}, async ({ c, readBody }) => {
 describe('route entry', () => {
   it('answers the credential outcome status, not always 401', async () => {
     const headers = { ...(await ctx.sessionHeaders(ann)), ...json }
+    delete headers.origin
     const r = await app.request('http://localhost/origin', { method: 'POST', headers })
     assert.deepEqual([r.status, await r.json()], [403, { error: 'Origin check failed' }])
   })

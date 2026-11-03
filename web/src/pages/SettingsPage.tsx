@@ -1,4 +1,4 @@
-import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, ShieldAlert, FileText, Ban } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, GitCompare, FileText, Ban } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
@@ -6,6 +6,9 @@ import { AdminRevocationSection } from '../components/AdminRevocationSection'
 import { SealKeyRotationSection } from '../components/SealKeyRotationSection'
 import { MiceSuspensionSection } from '../components/MiceSuspensionSection'
 import { AccessReviewSection } from '../components/AccessReviewSection'
+import { IdpDriftSection } from '../components/IdpDriftSection'
+import { ReenableSection } from '../components/ReenableSection'
+import { DisabledSignersSection } from '../components/DisabledSignersSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
@@ -77,6 +80,7 @@ export function SettingsPage() {
         { id: 'access-requests', label: 'Requests', Icon: Inbox },
         ...(isInstanceAdmin ? [
           { id: 'user-revocation', label: 'Revocations', Icon: UserX },
+          { id: 're-enable', label: 'Re-enable', Icon: UserCheck },
           { id: 'delegated-permissions', label: 'Permissions', Icon: ListChecks },
         ] : []),
       ] 
@@ -92,6 +96,8 @@ export function SettingsPage() {
         title: 'Security', 
         items: [
           { id: 'idp-baseline', label: 'Baseline', Icon: ShieldAlert },
+          { id: 'idp-drift', label: 'Drift', Icon: GitCompare },
+          { id: 'disabled-signers', label: 'Disabled signers', Icon: ShieldAlert },
           { id: 'mice-suspension', label: 'Suspension', Icon: Ban },
           { id: 'seal-key-rotation', label: 'Keys', Icon: ShieldCheck },
         ] 
@@ -152,9 +158,12 @@ export function SettingsPage() {
           <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
           {isInstanceAdmin && <>
             <AdminRevocationSection />
+            <ReenableSection />
             <DelegatedPermissionsSection signedInIss={signedInIss} />
             <AccessReviewSection />
             <IdpBaselineSection />
+            <IdpDriftSection />
+            <DisabledSignersSection />
             <MiceSuspensionSection signedInIss={signedInIss} />
             <SealKeyRotationSection />
             <InstanceAdminSection signedInIss={signedInIss} />

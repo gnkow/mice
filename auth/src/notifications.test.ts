@@ -21,7 +21,7 @@ const { getNovu, purgeTouchedSubscribers, useNovu } = await import('./novu.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
 const { getDb } = await import('./db/database.js')
 const { notificationCursor, notificationTombstones, notificationUsers } = await import('./db/schema.js')
-const { sealSession } = await import('./authentication/index.js')
+const { sealedSessionCookie } = await import('./testSupport.js')
 const { setRepoCollaborator, removeRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { preparePrincipal } = await import('./authz.js')
@@ -38,7 +38,7 @@ const realNovu = getNovu()
 
 async function request(path = '', method = 'GET', body?: unknown, user: SessionUser | null = reader, origin = 'http://localhost') {
   const headers: Record<string, string> = { origin }
-  if (user) headers.cookie = `mice_session=${await sealSession(user)}`
+  if (user) headers.cookie = await sealedSessionCookie(user)
   if (body !== undefined) headers['content-type'] = 'application/json'
   return app.request(`http://localhost/auth/notifications${path}`, {
     method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -102,7 +102,7 @@ await describe('notification authorization, inbox and API', async () => {
     assert.equal((await request('/read-all', 'POST', {})).status, 400)
     assert.equal((await request('/announcements', 'POST', { title: 'Hi', summary: 'Hello' })).status, 403)
     const invalid = await app.request('http://localhost/auth/notifications/read-all', {
-      method: 'POST', headers: { cookie: `mice_session=${await sealSession(reader)}`, origin: 'http://localhost', 'content-type': 'application/json' },
+      method: 'POST', headers: { cookie: await sealedSessionCookie(reader), origin: 'http://localhost', 'content-type': 'application/json' },
       body: '{',
     })
     assert.equal(invalid.status, 400)

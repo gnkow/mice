@@ -41,6 +41,29 @@ process.env.OIDC_VERIFY_ID_TOKEN = 'true'
 process.env.OIDC_JWKS_COOLDOWN_MS = '0'
 
 const { startLogin, completeLogin } = await import('./loginFlow.js')
+const { overrideEnv } = await import('../../env.js')
+const { setDirectoryFetchForTests } = await import('../directory/directory.js')
+overrideEnv({
+  oidcIssuer: issuer,
+  oidcIssuerPublic: issuer,
+  oidcClientId: 'mice-web',
+  oidcClientSecret: 'secret',
+  oidcRedirectUri: 'http://localhost/auth/callback',
+  directoryProvider: 'keycloak',
+  keycloakAdminUrl: 'http://directory.test',
+  keycloakRealm: 'mice',
+})
+setDirectoryFetchForTests(async (url) => {
+  const u = String(url)
+  if (u.includes('/protocol/openid-connect/token')) {
+    return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 300 }), { status: 200 })
+  }
+  if (u.includes('/users/')) {
+    return new Response(JSON.stringify({ enabled: true, firstName: 'Ada', lastName: 'Lovelace' }), { status: 200 })
+  }
+  if (u.includes('/groups')) return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+  return new Response('{}', { status: 404 })
+})
 
 const now = () => Math.floor(Date.now() / 1000)
 const claims = (nonce: string) => ({

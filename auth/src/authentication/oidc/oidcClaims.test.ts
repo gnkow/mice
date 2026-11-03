@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 
 process.env.OIDC_CLIENT_ID = 'mice-web'
 const { validateIdTokenClaims } = await import('./oidc.js')
+const { ID_TOKEN_LEEWAY_SEC } = await import('./oidcClaims.js')
 const { sealSession, openSession } = await import('../session/session.js')
 
 const now = 1_800_000_000
@@ -38,7 +39,7 @@ describe('id_token claim validation', () => {
   })
 
   it('rejects an expired or missing exp', () => {
-    assert.throws(() => validateIdTokenClaims({ ...valid, exp: now - 1 }, expected), /expired/)
+    assert.throws(() => validateIdTokenClaims({ ...valid, exp: now - ID_TOKEN_LEEWAY_SEC - 1 }, expected), /expired/)
     const { exp: _omit, ...noExp } = valid
     assert.throws(() => validateIdTokenClaims(noExp, expected), /expired/)
   })

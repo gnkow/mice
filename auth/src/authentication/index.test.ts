@@ -12,13 +12,13 @@ process.env.AUTHZ_BOOTSTRAP_ADMINS = 'root@x.io'
 const { Hono } = await import('hono')
 const facade = await import('./index.js')
 const { env } = await import('../env.js')
-const { authenticateRequest, requirePrincipal, sealSession } = facade
+const { sealedSessionCookie } = await import('../testSupport.js')
+const { authenticateRequest, requirePrincipal } = facade
 type Principal = import('./index.js').Principal
 type SessionUser = import('./index.js').SessionUser
 
 const user = (sub: string): SessionUser => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
-const cookie = async (sub: string) =>
-  `${env.cookieName}=${await sealSession({ ...user(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })}`
+const cookie = async (sub: string) => sealedSessionCookie(user(sub))
 
 const app = new Hono()
 app.get('/maybe', async (c) => {

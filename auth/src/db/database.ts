@@ -33,7 +33,7 @@ export function getDb(): Db {
   return ensureOpen().db
 }
 
-function expectedMigrationCount(): number {
+export function expectedMigrationCount(): number {
   const journal = JSON.parse(
     readFileSync(`${MIGRATIONS_FOLDER}/meta/_journal.json`, 'utf8'),
   ) as { entries: unknown[] }

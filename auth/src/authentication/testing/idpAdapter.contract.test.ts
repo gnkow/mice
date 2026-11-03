@@ -3,7 +3,7 @@ import { after, describe, it } from 'node:test'
 import { fakeClock } from '../../clock.js'
 import { decodeJwtPayload } from '../oidc/oidcClaims.js'
 import { createOidcProvider, pkceChallenge, randomString } from '../oidc/oidc.js'
-import { createFakeIdp } from './fakeIdp.js'
+import { createFakeIdpAdapter } from './fakeIdpAdapter.js'
 import type { IdpAdapter } from './idpAdapter.js'
 
 /**
@@ -11,7 +11,7 @@ import type { IdpAdapter } from './idpAdapter.js'
  * container adapter over auth/keycloak/realm-mice.json to `adapters` to run the same table against Keycloak.
  */
 const clock = fakeClock(Date.UTC(2026, 5, 1))
-const adapters: Array<{ name: string; make: () => IdpAdapter | Promise<IdpAdapter> }> = [{ name: 'in-process fake IdP', make: () => createFakeIdp({ clock }) }]
+const adapters: Array<{ name: string; make: () => IdpAdapter | Promise<IdpAdapter> }> = [{ name: 'in-process fake IdP', make: () => createFakeIdpAdapter({ clock }) }]
 
 for (const { name, make } of adapters) {
   describe(`IdP adapter contract: ${name}`, async () => {

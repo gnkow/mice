@@ -177,12 +177,11 @@ await describe('mandatory reason on admin and permission changes', async () => {
   })
 
   await it('does not ask for a reason on token management', async () => {
-    const res = await app.request('/auth/tokens', {
-      method: 'POST',
+    const res = await app.request('/auth/me/tokens/missing', {
+      method: 'DELETE',
       headers: await adminHeaders(),
-      body: JSON.stringify({ label: 'laptop' }),
     })
-    assert.equal(res.status, 200)
+    assert.equal(res.status, 404)
   })
 })
 

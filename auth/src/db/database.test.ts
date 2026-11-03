@@ -2,7 +2,7 @@ import './testSchema.js'
 import assert from 'node:assert/strict'
 import { before, describe, it } from 'node:test'
 import { sql } from 'drizzle-orm'
-import { assertSchemaVersion, inTransaction, postgresReadiness, schemaVersion } from './database.js'
+import { assertSchemaVersion, expectedMigrationCount, inTransaction, postgresReadiness, schemaVersion } from './database.js'
 import { postgresConfig } from './connection.js'
 import { connectTestDatabase } from './testDatabase.js'
 
@@ -17,7 +17,7 @@ const exists = async (id: string) =>
 
 describe('main database', () => {
   it('applies the baseline migration and reports it ready', async () => {
-    assert.equal(await schemaVersion(), 1)
+    assert.equal(await schemaVersion(), expectedMigrationCount())
     const ready = await postgresReadiness()
     assert.equal(ready.ok, true)
   })

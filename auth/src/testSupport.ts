@@ -54,10 +54,7 @@ export function isolatedAuth(extraEnv: Record<string, string> = {}) {
     person,
     admin,
     async sessionHeaders(user: TestPerson): Promise<Record<string, string>> {
-      const { sealSession } = await import('./authentication/index.js')
-      const { env } = await import('./env.js')
-      const token = await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 30 })
-      return { cookie: `${env.cookieName}=${token}` }
+      return { cookie: await sealedSessionCookie(user), origin: 'http://localhost' }
     },
     restore() {
       if (restored) return
@@ -69,6 +66,47 @@ export function isolatedAuth(extraEnv: Record<string, string> = {}) {
       }
     },
   }
+}
+
+/**
+ * A configured directory that reports every user enabled and named, plus a sealed Session cookie.
+ * Authentication checks the live directory and only accepts a sealed cookie, so a raw session id is not a session.
+ */
+export async function sealedSessionCookie(
+  user: TestPerson & { sessionStart?: number; lastActive?: number; authTime?: number },
+): Promise<string> {
+  const { overrideEnv } = await import('./env.js')
+  overrideEnv({
+    directoryProvider: 'keycloak',
+    keycloakAdminUrl: 'http://directory.test',
+    keycloakRealm: 'mice',
+    oidcClientId: 'mice-auth',
+    oidcClientSecret: 'test-secret',
+  })
+  const { setDirectoryFetchForTests } = await import('./authentication/directory/directory.js')
+  setDirectoryFetchForTests(async (input) => {
+    const url = String(input)
+    if (url.includes('/protocol/openid-connect/token')) {
+      return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 300 }), { status: 200 })
+    }
+    if (url.includes('/groups')) {
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    if (url.includes('/users/')) {
+      return new Response(JSON.stringify({ enabled: true, firstName: 'Test', lastName: 'User' }), { status: 200 })
+    }
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  const { ensureBootstrapKey } = await import('./authentication/session/sealKeys.js')
+  const { sealSession } = await import('./authentication/session/session.js')
+  const { sealSessionCookie } = await import('./authentication/session/cookieSeal.js')
+  const { env } = await import('./env.js')
+  await ensureBootstrapKey()
+  const id = await sealSession({
+    ...user,
+    sessionStart: user.sessionStart ?? Math.floor(Date.now() / 1000) - 30,
+  })
+  return `${env.cookieName}=${await sealSessionCookie(id)}`
 }
 
 /**

@@ -25,3 +25,4 @@ The deploy-time MFA check is issue 14. An IdP outage incident record is issue 46
 - `auth/src/authentication/compliance/idpDriftRoutes.ts`
 - `auth/src/boot.ts`
 - `auth/src/authentication/signing/signingRoutes.ts`
+- `web/src/components/IdpDriftSection.tsx`

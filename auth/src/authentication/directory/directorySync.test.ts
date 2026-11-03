@@ -13,8 +13,9 @@ process.env.OIDC_ISSUER_PUBLIC = 'idp'
 const { Hono } = await import('hono')
 const { applyGlobalGuards, authenticateRequest } = await import('../session/requireAuth.js')
 const { runDirectorySync, makeDirectorySyncRoute, checkDirectorySyncStale } = await import('./directorySync.js')
-const { rememberNotificationUser } = await import('../../notifications.js')
-const { novuInbox } = await import('../../testSupport.js')
+const { rememberNotificationUser, subscriberId } = await import('../../notifications.js')
+const { notificationUserKey } = await import('../../notificationsStore.js')
+const { useNovu } = await import('../../novu.js')
 const { purgeTouchedSubscribers } = await import('../../novu.js')
 const { sealSession } = await import('../session/session.js')
 const { sealSessionCookie } = await import('../session/cookieSeal.js')
@@ -115,8 +116,18 @@ await describe('directory sync', async () => {
 await describe('stale directory-sync alert', async () => {
   const INTERVAL = 900
   after(purgeTouchedSubscribers)
-  const received = async (sub: string, expect = 0) =>
-    (await novuInbox(mk(sub), expect)).filter((n) => n.title === 'Directory sync is stale').length
+  const triggered: Array<{ subscriberId: string; title: string }> = []
+  useNovu({
+    async trigger(id, _eventId, payload) {
+      triggered.push({ subscriberId: id, title: String((payload as { title?: string }).title ?? '') })
+    },
+    async feed() { return [] },
+    async mark() {},
+    async deleteSubscriber() {},
+    async health() { return { ok: true } },
+  })
+  const received = (sub: string) =>
+    triggered.filter((n) => n.title === 'Directory sync is stale' && n.subscriberId === subscriberId(notificationUserKey(mk(sub)))).length
 
   await it('alerts admins once past 2x the interval, clears on success, re-alerts when stale again', async () => {
     await rememberNotificationUser(mk('root'))
@@ -126,22 +137,22 @@ await describe('stale directory-sync alert', async () => {
 
     at(t0 + 10_000_000 + 2 * INTERVAL * 1000 - 1000)
     assert.equal(await checkDirectorySyncStale(INTERVAL), false)
-    assert.equal(await received('root'), 0)
+    assert.equal(received('root'), 0)
 
     at(t0 + 10_000_000 + 2 * INTERVAL * 1000 + 1000)
     assert.equal(await checkDirectorySyncStale(INTERVAL), true)
-    assert.equal(await received('root', 1), 1)
-    assert.equal(await received('plain'), 0)
+    assert.equal(received('root'), 1)
+    assert.equal(received('plain'), 0)
     assert.ok((await queryAudit({ action: 'directory.sync.stale' })).events.length >= 1)
 
     at(t0 + 10_000_000 + 3 * INTERVAL * 1000)
     assert.equal(await checkDirectorySyncStale(INTERVAL), false, 'not repeated while still stale')
-    assert.equal(await received('root', 1), 1)
+    assert.equal(received('root'), 1)
 
     await runDirectorySync({ lookup: async () => 'enabled' })
     at(t0 + 10_000_000 + 6 * INTERVAL * 1000)
     assert.equal(await checkDirectorySyncStale(INTERVAL), true, 're-alerts after a later stale spell')
-    assert.equal(await received('root', 2), 2)
+    assert.equal(received('root'), 2)
   })
 })
 

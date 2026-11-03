@@ -24,3 +24,4 @@ The first time a Principal is seen IdP-disabled, `principal_disabled_periods` re
 - `auth/src/authentication/access/reenableRoutes.ts`
 - `auth/src/authentication/session/requireAuth.ts`
 - `auth/src/authentication/oidc/loginFlow.ts`
+- `web/src/components/ReenableSection.tsx`
