@@ -12,6 +12,7 @@ import { currentEmailsByAuthor } from './session.js'
 import {
   approveAccessRequest,
   denyAccessRequest,
+  getOwnPendingAccessRequest,
   listAccessRequestsForReviewer,
   submitAccessRequest,
 } from '../../rbacAccessRequests.js'
@@ -49,6 +50,11 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
       trainingCompleted: await hasCompletedTraining(session),
       requireTraining: env.authzRequireTraining,
     })
+  }))
+
+  /** Caller's own pending access request (Profile → Permissions). */
+  app.get('/auth/me/access-request', guarded({}, async ({ c, user: session }) => {
+    return c.json({ request: await getOwnPendingAccessRequest(session) })
   }))
 
   /** IdP / store directory search for AuthZ member & collaborator pickers. */

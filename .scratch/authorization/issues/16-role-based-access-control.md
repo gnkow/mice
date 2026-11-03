@@ -206,7 +206,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 - [x] **S32** No-access shell — only Request Access; after submit → pending state, no nav
 - [x] **S33** Request Access form — role radios (External/User/Manager) or custom multi-select + justification
-- [ ] **S34** Profile role badge + Permissions tab — checklist + request-additional + pending indicator
+- [x] **S34** Profile role badge + Permissions tab — checklist + request-additional + pending indicator
 - [ ] **S35** Settings → Access Requests — list/filter, detail, modify, approve/deny, authority error
 - [ ] **S36** Settings → Users / Grant Access — list + grant modal with expiry + authority validation
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S34**.
+In progress. Next: **S35**.
 
 ## Comments
 
@@ -329,3 +329,4 @@ In progress. Next: **S34**.
 - 2026-11-03: S31 done — `/auth/me/authz` returns role + effectivePermissions + permissionCatalog; bootstrap assigns Admin role.
 - 2026-11-03: S32 done — no-access shell: Request Access only, post-submit pending view, no profile/nav escape.
 - 2026-11-03: S33 done — Request Access form: External/User/Manager radios or custom permission multi-select.
+- 2026-11-03: S34 done — Profile role badge + Permissions checklist, request-additional, own pending via GET /auth/me/access-request.

@@ -111,6 +111,25 @@ export async function submitAccessRequest(input: {
   return { ok: true, request: toRequest(created) }
 }
 
+/** Caller's own pending access request, or null. */
+export async function getOwnPendingAccessRequest(
+  user: UserRef,
+): Promise<RbacAccessRequest | null> {
+  const iss = canonicalIssuer(user.iss)
+  const [row] = await getDb()
+    .select()
+    .from(accessRequests)
+    .where(
+      and(
+        eq(accessRequests.sub, user.sub),
+        eq(accessRequests.iss, iss),
+        eq(accessRequests.status, 'pending'),
+      ),
+    )
+    .limit(1)
+  return row ? toRequest(row) : null
+}
+
 export async function listAccessRequestsForReviewer(
   reviewer: UserRef,
   opts?: { pendingOnly?: boolean },

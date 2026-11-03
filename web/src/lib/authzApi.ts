@@ -454,6 +454,15 @@ export type AccessRequestRow = {
   message: string
   createdAt: string
   status: string
+  requestedRole?: string | null
+  requestedPermissions?: string[]
+}
+
+/** Caller's own pending access request, if any. */
+export function fetchOwnAccessRequest(signal?: AbortSignal) {
+  return authzFetch<{ request: AccessRequestRow | null }>('/auth/me/access-request', {
+    signal,
+  })
 }
 
 export function listAccessRequests(signal?: AbortSignal) {
