@@ -208,6 +208,14 @@ export const accessRequests = pgTable(
     status: text('status').notNull(),
     resolvedAt: ts('resolved_at'),
     resolvedBy: text('resolved_by'),
+    /** RBAC: requested formal role (nullable when custom-permissions-only). */
+    requestedRole: text('requested_role'),
+    /** RBAC: requested custom permissions beyond / instead of a role. */
+    requestedPermissions: text('requested_permissions').array().notNull().default(sql`'{}'::text[]`),
+    requestType: text('request_type'),
+    approvalReason: text('approval_reason'),
+    grantedRole: text('granted_role'),
+    grantedPermissions: text('granted_permissions').array(),
   },
   (t) => [
     uniqueIndex('access_requests_one_pending')

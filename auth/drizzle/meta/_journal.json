@@ -127,6 +127,13 @@
       "when": 1794000009000,
       "tag": "0017_permission_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794000010000,
+      "tag": "0018_access_requests_rbac",
+      "breakpoints": true
     }
   ]
 }

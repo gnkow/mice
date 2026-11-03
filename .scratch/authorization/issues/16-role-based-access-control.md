@@ -173,7 +173,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 ### Access requests
 
-- [ ] **S16** Submit request — role and/or custom perms + required justification
+- [x] **S16** Submit request — role and/or custom perms + required justification
 - [ ] **S17** One pending — second submit blocked (app + DB)
 - [ ] **S18** List for reviewer — filtered by reviewer authority
 - [ ] **S19** Approve — applies role/perms immediately; links request id in history
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S16**.
+In progress. Next: **S17**.
 
 ## Comments
 
@@ -311,3 +311,4 @@ In progress. Next: **S16**.
 - 2026-11-03: S13 done — `canApproveRole` Manager≤Manager, Admin any.
 - 2026-11-03: S14 done — `canGrantPermissions` requires reviewer holds every perm.
 - 2026-11-03: S15 done — `canApproveModifiedGrant` validates granted (not requested) set.
+- 2026-11-03: S16 done — RBAC `submitAccessRequest` with role/perms + justification.
