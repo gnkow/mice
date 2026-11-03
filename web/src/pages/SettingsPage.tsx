@@ -13,20 +13,29 @@ import { GroupBindingSection } from '../components/GroupBindingSection'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthMe, fetchAuthzMe, isAdminRole } from '../lib/auth'
+import { fetchAuthMe, fetchAuthzMe, hasEffectivePermission, isAdminRole, type AuthzMe } from '../lib/auth'
 import {
   addInstanceAdmin,
   fetchInstance,
   listAccessRequests,
-  listAuthzNamespaces,
   removeInstanceAdmin,
   revokeUserSessions,
   resolveAccessRequest,
   setInstancePermissions,
   type AccessRequestRow,
   type InstancePermission,
-  type MemberRoleRef,
 } from '../lib/authzApi'
+import {
+  approvableRoles,
+  buildApproveBody,
+  buildDenyBody,
+  filterAccessRequests,
+  formatRequestedAccess,
+  isAuthorityError,
+  type AccessRequestStatusFilter,
+} from '../lib/accessRequestReview'
+import { profileRoleBadge } from '../lib/profileRoleBadge'
+import { togglePermission } from '../lib/requestAccessForm'
 import { fetchServerVersion } from '../lib/oxen/api'
 import {
   loadSettings,
@@ -53,7 +62,9 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [probe, setProbe] = useState<string | null>(null)
   const isInstanceAdmin = me.kind === 'ok' && !!me.data && isAdminRole(me.data)
-
+  const canReviewAccess =
+    me.kind === 'ok' && !!me.data && hasEffectivePermission(me.data, 'access_request:list')
+  
   function onSave(e: FormEvent) {
     e.preventDefault()
     saveSettings(form)
@@ -78,7 +89,7 @@ export function SettingsPage() {
     { 
       title: 'Access & Permissions', 
       items: [
-        { id: 'access-requests', label: 'Requests', Icon: Inbox },
+        ...(canReviewAccess ? [{ id: 'access-requests', label: 'Requests', Icon: Inbox }] : []),
         ...(isInstanceAdmin ? [
           { id: 'user-revocation', label: 'Revocations', Icon: UserX },
           { id: 're-enable', label: 'Re-enable', Icon: UserCheck },
@@ -157,7 +168,7 @@ export function SettingsPage() {
         </section>
 
         {me.kind === 'ok' && me.data && <>
-          <AccessRequestsSection isInstanceAdmin={!!isInstanceAdmin} />
+          {canReviewAccess && <AccessRequestsSection authz={me.data} />}
           {isInstanceAdmin && <>
             <AdminRevocationSection />
             <ReenableSection />
@@ -179,89 +190,101 @@ export function SettingsPage() {
   )
 }
 
-function AccessRequestsSection({
-  isInstanceAdmin,
-}: {
-  isInstanceAdmin: boolean
-}) {
-  const state = useAsync(async (signal) => {
-    try {
-      return await listAccessRequests(signal)
-    } catch {
-      return null
-    }
-  }, [])
-  const nsList = useAsync(async (signal) => {
-    try {
-      const data = await listAuthzNamespaces(signal)
-      return data.namespaces
-    } catch {
-      return []
-    }
-  }, [])
-
+function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
+  const state = useAsync(async (signal) => listAccessRequests(signal), [])
+  const [statusFilter, setStatusFilter] = useState<AccessRequestStatusFilter>('pending')
   const [error, setError] = useState<string | null>(null)
+  const [authorityError, setAuthorityError] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [approveId, setApproveId] = useState<string | null>(null)
-  const [approveNs, setApproveNs] = useState('')
-  const [approveRole, setApproveRole] = useState<MemberRoleRef>('member')
-  const [approvePerm, setApprovePerm] = useState<InstancePermission | ''>('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [mode, setMode] = useState<'review' | 'deny'>('review')
+  const [grantedRole, setGrantedRole] = useState<string | null>(null)
+  const [grantedPermissions, setGrantedPermissions] = useState<string[]>([])
+  const [expiresLocal, setExpiresLocal] = useState(defaultExpiryLocalValue)
+  const [reason, setReason] = useState('')
 
-  if (state.kind === 'ok' && state.data === null) return null
+  const allRequests = state.kind === 'ok' ? state.data.requests : []
+  const requests = filterAccessRequests(allRequests, statusFilter)
+  const selected = allRequests.find((r) => r.id === selectedId) ?? null
+  const roleChoices = approvableRoles(authz.role)
+  const pendingCount = filterAccessRequests(allRequests, 'pending').length
 
-  const requests =
-    state.kind === 'ok' && state.data
-      ? state.data.requests.filter((r) => r.status === 'pending')
-      : []
-  const reviewNamespaces =
-    state.kind === 'ok' && state.data ? state.data.reviewNamespaces : []
-  const nsOptions =
-    nsList.kind === 'ok'
-      ? nsList.data.filter(
-          (n) =>
-            isInstanceAdmin ||
-            n.role === 'owner' ||
-            reviewNamespaces.includes(n.name),
-        )
-      : []
+  function openReview(req: AccessRequestRow) {
+    setSelectedId(req.id)
+    setMode('review')
+    setGrantedRole(req.requestedRole ?? null)
+    setGrantedPermissions([...(req.requestedPermissions ?? [])])
+    setExpiresLocal(defaultExpiryLocalValue())
+    setReason('')
+    setError(null)
+    setAuthorityError(false)
+  }
 
-  async function onDeny(req: AccessRequestRow) {
+  function openDeny(req: AccessRequestRow) {
+    setSelectedId(req.id)
+    setMode('deny')
+    setReason('')
+    setError(null)
+    setAuthorityError(false)
+  }
+
+  function closeDetail() {
+    setSelectedId(null)
+    setError(null)
+    setAuthorityError(false)
+  }
+
+  async function onApprove(e: FormEvent) {
+    e.preventDefault()
+    if (!selected) return
+    const expiresAt = new Date(expiresLocal).getTime()
+    const built = buildApproveBody({
+      expiresAt,
+      grantedRole,
+      grantedPermissions,
+      reason,
+    })
+    if (!built.ok) {
+      setError(built.error)
+      setAuthorityError(false)
+      return
+    }
     setBusy(true)
     setError(null)
+    setAuthorityError(false)
     try {
-      await resolveAccessRequest(req.id, 'deny')
+      await resolveAccessRequest(selected.id, built.body)
+      closeDetail()
       state.reload()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Deny failed')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Approve failed'
+      setError(message)
+      setAuthorityError(isAuthorityError(message))
     } finally {
       setBusy(false)
     }
   }
 
-  async function onApprove(e: FormEvent) {
+  async function onDeny(e: FormEvent) {
     e.preventDefault()
-    if (!approveId) return
+    if (!selected) return
+    const built = buildDenyBody({ reason })
+    if (!built.ok) {
+      setError(built.error)
+      setAuthorityError(false)
+      return
+    }
     setBusy(true)
     setError(null)
+    setAuthorityError(false)
     try {
-      if (approvePerm && isInstanceAdmin) {
-        await resolveAccessRequest(approveId, 'approve', {
-          permission: approvePerm,
-        })
-      } else if (approveNs) {
-        await resolveAccessRequest(approveId, 'approve', {
-          namespace: approveNs,
-          role: approveRole,
-        })
-      } else if (isInstanceAdmin) {
-        await resolveAccessRequest(approveId, 'approve')
-      } else {
-        throw new Error('Choose a namespace to approve into')
-      }
-      setApproveId(null)
+      await resolveAccessRequest(selected.id, built.body)
+      closeDetail()
       state.reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Approve failed')
+      const message = err instanceof Error ? err.message : 'Deny failed'
+      setError(message)
+      setAuthorityError(isAuthorityError(message))
     } finally {
       setBusy(false)
     }
@@ -275,135 +298,193 @@ function AccessRequestsSection({
     >
       <div className="ns-settings-section-head">
         <div>
-          <h2 id="access-requests-heading"><Inbox size={18} className="button-label-icon" aria-hidden="true" />Access requests</h2>
+          <h2 id="access-requests-heading">
+            <Inbox size={18} className="button-label-icon" aria-hidden="true" />
+            Access requests
+          </h2>
           <p className="muted small">
-            Pending SSO users waiting for a namespace seat or instance
-            permission.
+            Review role and permission requests. You can modify the grant before approving.
           </p>
         </div>
-        <p className="muted small ns-settings-count">
-          {requests.length} pending
-        </p>
+        <p className="muted small ns-settings-count">{pendingCount} pending</p>
       </div>
-      {error && <p className="flash flash-error" role="status">{error}</p>}
-      {state.kind === 'loading' && <p className="muted">Loading…</p>}
-      {state.kind === 'ok' && requests.length === 0 && (
-        <p className="muted small">No pending requests.</p>
+
+      <fieldset className="appearance-fieldset" style={{ marginBottom: '1rem' }}>
+        <legend>Filter</legend>
+        {(['pending', 'approved', 'denied', 'all'] as const).map((f) => (
+          <label key={f}>
+            <input
+              type="radio"
+              name="ar-status-filter"
+              checked={statusFilter === f}
+              onChange={() => setStatusFilter(f)}
+            />
+            {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+          </label>
+        ))}
+      </fieldset>
+
+      {error && (
+        <p className={`flash ${authorityError ? 'flash-warn' : 'flash-error'}`} role="alert">
+          {authorityError ? <strong>Authority: </strong> : null}
+          {error}
+        </p>
       )}
+      {state.kind === 'loading' && <p className="muted">Loading…</p>}
+      {state.kind === 'error' && (
+        <p className="flash flash-error" role="alert">
+          {state.message}
+        </p>
+      )}
+      {state.kind === 'ok' && requests.length === 0 && (
+        <p className="muted small">No {statusFilter === 'all' ? '' : `${statusFilter} `}requests.</p>
+      )}
+
       {requests.length > 0 && (
         <ul className="ns-member-list">
           {requests.map((r) => (
-            <li
-              key={r.id}
-              className="ns-member-row"
-              data-access-request={r.id}
-            >
+            <li key={r.id} className="ns-member-row" data-access-request={r.id}>
               <div className="ns-member-main">
-                <code className="ns-member-sub">{r.name}</code>
+                <code className="ns-member-sub">{r.name || r.email}</code>
                 <span className="muted small">
                   {r.email}
                   {' · '}
-                  <span className="mono">
-                    {r.sub}@{r.iss}
-                  </span>
+                  {formatRequestedAccess(r)}
+                  {' · '}
+                  {r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}
                 </span>
-                {r.message ? (
-                  <span className="muted small">{r.message}</span>
-                ) : null}
+                {r.message ? <span className="muted small">{r.message}</span> : null}
               </div>
-              <span className="ns-tag">pending</span>
-              <button
-                type="button"
-                className="btn primary small"
-                disabled={busy}
-                onClick={() => {
-                  setApproveId(r.id)
-                  setApproveNs(nsOptions[0]?.name ?? '')
-                  setApproveRole('member')
-                  setApprovePerm('')
-                }}
-              >
-                <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Approve
-              </button>
-              <button
-                type="button"
-                className="btn ghost small"
-                disabled={busy}
-                onClick={() => void onDeny(r)}
-              >
-                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Deny
-              </button>
+              <span className="ns-tag">{r.status}</span>
+              {r.status === 'pending' && (
+                <>
+                  <button
+                    type="button"
+                    className="btn primary small"
+                    disabled={busy}
+                    onClick={() => openReview(r)}
+                  >
+                    <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
+                    Review
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost small"
+                    disabled={busy}
+                    onClick={() => openDeny(r)}
+                  >
+                    <ActionX size={14} aria-hidden="true" className="button-label-icon" />
+                    Deny
+                  </button>
+                </>
+              )}
             </li>
           ))}
         </ul>
       )}
 
-      {approveId && (
-        <form className="ns-member-form" onSubmit={onApprove}>
-          <h3 className="ns-settings-subhead">Approve request</h3>
-          <div className="ns-member-form-fields cols-3">
-            {isInstanceAdmin && (
-              <label>
-                Instance permission
-                <select
-                  value={approvePerm}
-                  onChange={(e) =>
-                    setApprovePerm(e.target.value as InstancePermission | '')
-                  }
-                >
-                  <option value="">Namespace seat…</option>
-                  {INSTANCE_PERMS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {!approvePerm && (
-              <>
-                <label>
-                  Namespace
-                  <select
-                    value={approveNs}
-                    onChange={(e) => setApproveNs(e.target.value)}
-                    required={!isInstanceAdmin}
-                  >
-                    <option value="">Select namespace</option>
-                    {nsOptions.map((n) => (
-                      <option key={n.name} value={n.name}>
-                        {n.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Role
-                  <select
-                    value={approveRole}
-                    onChange={(e) =>
-                      setApproveRole(e.target.value as MemberRoleRef)
-                    }
-                  >
-                    <option value="member">member</option>
-                    <option value="owner">owner</option>
-                  </select>
-                </label>
-              </>
-            )}
-            <div className="ns-member-form-actions">
-              <button className="btn primary" type="submit" disabled={busy}>
-                <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Confirm
-              </button>
-              <button
-                className="btn ghost"
-                type="button"
-                disabled={busy}
-                onClick={() => setApproveId(null)}
+      {selected && mode === 'review' && (
+        <form className="ns-member-form" onSubmit={onApprove} style={{ marginTop: '1rem' }}>
+          <h3 className="ns-settings-subhead">Review request</h3>
+          <p className="muted small">
+            {selected.name} ({selected.email}) · requested{' '}
+            {formatRequestedAccess(selected)}
+          </p>
+          <div className="ns-settings-grid">
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Grant role</span>
+              <select
+                value={grantedRole ?? ''}
+                onChange={(e) => setGrantedRole(e.target.value || null)}
               >
-                <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
-              </button>
+                <option value="">No role (permissions only)</option>
+                {roleChoices.map((role) => (
+                  <option key={role} value={role}>
+                    {profileRoleBadge({ role, pending: false })}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Expires</span>
+              <input
+                type="datetime-local"
+                value={expiresLocal}
+                onChange={(e) => setExpiresLocal(e.target.value)}
+                required
+              />
+            </label>
+          </div>
+          <fieldset style={{ marginTop: '0.75rem' }}>
+            <legend>Grant permissions (optional modify)</legend>
+            <div
+              style={{
+                maxHeight: '10rem',
+                overflow: 'auto',
+                border: '1px solid var(--color-border)',
+                borderRadius: '0.375rem',
+                padding: '0.5rem',
+              }}
+            >
+              {authz.permissionCatalog.map((perm) => (
+                <label key={perm} className="radio-row" style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={grantedPermissions.includes(perm)}
+                    onChange={() =>
+                      setGrantedPermissions((prev) => togglePermission(prev, perm))
+                    }
+                  />
+                  <code className="small">{perm}</code>
+                </label>
+              ))}
             </div>
+          </fieldset>
+          <label style={{ display: 'block', marginTop: '0.75rem' }}>
+            Approval reason (optional)
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="Why this grant is appropriate"
+            />
+          </label>
+          <div className="btn-row ns-settings-actions">
+            <button className="btn primary" type="submit" disabled={busy}>
+              <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
+              {busy ? 'Approving…' : 'Approve'}
+            </button>
+            <button className="btn ghost" type="button" disabled={busy} onClick={closeDetail}>
+              <ActionX size={14} aria-hidden="true" className="button-label-icon" />
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {selected && mode === 'deny' && (
+        <form className="ns-member-form" onSubmit={onDeny} style={{ marginTop: '1rem' }}>
+          <h3 className="ns-settings-subhead">Deny request</h3>
+          <p className="muted small">
+            {selected.name} ({selected.email}) · {formatRequestedAccess(selected)}
+          </p>
+          <label>
+            Denial reason (required)
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Why this request is denied"
+              required
+            />
+          </label>
+          <div className="btn-row ns-settings-actions">
+            <button className="btn danger" type="submit" disabled={busy}>
+              {busy ? 'Denying…' : 'Deny'}
+            </button>
+            <button className="btn ghost" type="button" disabled={busy} onClick={closeDetail}>
+              Cancel
+            </button>
           </div>
         </form>
       )}

@@ -468,22 +468,25 @@ export function fetchOwnAccessRequest(signal?: AbortSignal) {
 export function listAccessRequests(signal?: AbortSignal) {
   return authzFetch<{
     requests: AccessRequestRow[]
-    reviewNamespaces: string[]
   }>('/auth/access-requests', { signal })
 }
 
+/** Approve or deny an access request (RBAC: expiresAt / grantedRole / grantedPermissions / reason). */
 export function resolveAccessRequest(
   id: string,
-  action: 'approve' | 'deny',
-  grant?: {
-    namespace?: string
-    role?: MemberRoleRef
-    permission?: InstancePermission
-  },
+  body:
+    | {
+        action: 'approve'
+        expiresAt: number
+        grantedRole?: string | null
+        grantedPermissions?: string[]
+        reason?: string
+      }
+    | { action: 'deny'; reason: string },
 ) {
   return authzFetch(`/auth/access-requests/${encodeURIComponent(id)}`, {
     method: 'POST',
-    body: JSON.stringify({ action, ...grant }),
+    body: JSON.stringify(body),
   })
 }
 
