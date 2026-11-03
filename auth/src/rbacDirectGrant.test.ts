@@ -2,8 +2,13 @@ import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { ensurePrincipal } from './authentication/session/session.js'
-import { assignRole, getUserRole, listRoleHistory } from './rbacStore.js'
-import { directGrantRole } from './rbacDirectGrant.js'
+import {
+  assignRole,
+  getCustomPermissions,
+  getUserRole,
+  listRoleHistory,
+} from './rbacStore.js'
+import { directGrantPermissions, directGrantRole } from './rbacDirectGrant.js'
 
 const dayMs = 24 * 60 * 60 * 1000
 
@@ -78,5 +83,49 @@ describe('RBAC S21 direct role grant', () => {
     assert.equal(result.ok, false)
     if (result.ok) throw new Error('expected failure')
     assert.match(result.error, /expir/i)
+  })
+})
+
+describe('RBAC S22 direct custom permission grant', () => {
+  it('grants custom permissions the actor holds', async () => {
+    const manager = person('direct-perm-mgr')
+    const target = person('direct-perm-target')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(target)
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const result = await directGrantPermissions({
+      actor: manager,
+      target,
+      permissions: ['namespace:create'],
+      reason: 'extra',
+      expiresAt: Date.now() + dayMs,
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(await getCustomPermissions(target), ['namespace:create'])
+  })
+
+  it('blocks granting permissions the actor lacks', async () => {
+    const manager = person('direct-perm-mgr2')
+    const target = person('direct-perm-blocked')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(target)
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const result = await directGrantPermissions({
+      actor: manager,
+      target,
+      permissions: ['store:gc'],
+      reason: 'nope',
+      expiresAt: Date.now() + dayMs,
+    })
+    assert.equal(result.ok, false)
+    if (result.ok) throw new Error('expected failure')
+    assert.match(result.error, /authority|forbidden/i)
+    assert.deepEqual(await getCustomPermissions(target), [])
   })
 })

@@ -182,7 +182,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 ### Direct grant
 
 - [x] **S21** Direct role grant — same authority + expiry as approve; no request row required
-- [ ] **S22** Direct custom-perm grant — same
+- [x] **S22** Direct custom-perm grant — same
 
 ### Decision adapters (via existing `decide*` / authorize APIs)
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S22**.
+In progress. Next: **S23**.
 
 ## Comments
 
@@ -317,3 +317,4 @@ In progress. Next: **S22**.
 - 2026-11-03: S19 done — approveAccessRequest applies role and links request id.
 - 2026-11-03: S20 done — denyAccessRequest with reason, no grant.
 - 2026-11-03: S21 done — directGrantRole with authority + expiry, no request row.
+- 2026-11-03: S22 done — directGrantPermissions with authority + expiry.
