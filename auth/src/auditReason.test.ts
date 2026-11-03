@@ -18,9 +18,12 @@ let since = 0
 const admin = iso.admin
 await preparePrincipal(admin)
 const writer = iso.person('reason-writer')
+const manager = iso.person('reason-manager')
 await createNamespaceAuthz(admin, 'rs', 'none', true)
 await setRepoCollaborator('rs', 'r', writer, 'write')
 await preparePrincipal(writer)
+await iso.grantRole(writer, 'user')
+await iso.grantRole(manager, 'manager')
 
 type Row = {
   id: string
@@ -142,9 +145,15 @@ const adminHeaders = async (reason?: string) => ({
 
 await describe('mandatory reason on admin and permission changes', async () => {
   await it('rejects a namespace create without a reason and changes nothing', async () => {
+    // Manager (not Admin) creates namespaces — Admin has no data-plane create (S25).
+    const managerHeaders = async (reason?: string) => ({
+      ...(await iso.sessionHeaders(manager)),
+      'content-type': 'application/json',
+      ...(reason ? { 'x-mice-reason': reason } : {}),
+    })
     const res = await app.request('/auth/namespaces', {
       method: 'POST',
-      headers: await adminHeaders(),
+      headers: await managerHeaders(),
       body: JSON.stringify({ name: 'newns', basePermission: 'none' }),
     })
     assert.equal(res.status, 400)
@@ -152,7 +161,7 @@ await describe('mandatory reason on admin and permission changes', async () => {
     assert.equal((await rows()).some((r) => r.phase === 'intent'), false)
     const ok = await app.request('/auth/namespaces', {
       method: 'POST',
-      headers: await adminHeaders('Set up the proteomics namespace'),
+      headers: await managerHeaders('Set up the proteomics namespace'),
       body: JSON.stringify({ name: 'newns', basePermission: 'none' }),
     })
     assert.equal(ok.status, 200)
@@ -233,6 +242,7 @@ await describe('declared reason for clients that cannot send a header', async ()
     assert.equal((await declare('Upload of plate run 42')).status, 200)
     const other = iso.person('someone-else')
     await preparePrincipal(other)
+    await iso.grantRole(other, 'user')
     await setRepoCollaborator('rs', 'r', other, 'write')
     const res = await app.request('/api/repos/rs/r/commits/abc123/complete', {
       method: 'POST',

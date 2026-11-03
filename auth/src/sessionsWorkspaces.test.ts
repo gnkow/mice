@@ -27,7 +27,6 @@ const { WorkspaceService, setWorkspaceService } = await import('./workspaces/wor
 const { LeaseError } = await import('./workspaces/leases.js')
 const { resetHostVolumePathsForTest } = await import('./workspaces/capabilities.js')
 const { FakeOxen } = await import('./workspaces/fakeOxen.js')
-const { writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { setNamespaceMember } = await import('./authzMembershipStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { preparePrincipal } = await import('./authz.js')
@@ -38,13 +37,21 @@ const sw = await import('./sessionsWorkspaces.js')
 resetHostVolumePathsForTest({ store: '/host/store', ws: '/host/ws' })
 
 const C1 = 'c1111111111111111111111111111111'
+const { assignRole } = await import('./rbacStore.js')
+const { ensurePrincipal } = await import('./authentication/session/session.js')
 const admin: { sub: string; iss: string; email: string; emailVerified?: boolean; name: string } = { sub: 'admin', iss: 'test', email: 'admin@mice.local', emailVerified: true, name: 'Admin' }
 const reader = { sub: 'reader', iss: 'test', email: 'reader@example.com', name: 'Reader' }
+/** User role: can connect to own sessions but not session.admin (unlike Manager). */
+const other = { sub: 'other', iss: 'test', email: 'other@example.com', name: 'Other' }
 await preparePrincipal(admin)
-await preparePrincipal(reader)
+await assignRole({ actor: null, target: admin, role: 'manager', reason: 'test', bootstrap: true })
+await ensurePrincipal(reader)
+await assignRole({ actor: null, target: reader, role: 'manager', reason: 'test', bootstrap: true })
+await ensurePrincipal(other)
+await assignRole({ actor: null, target: other, role: 'user', reason: 'test', bootstrap: true })
 await createNamespaceAuthz(admin, 'rns', 'read', true)
 await setNamespaceMember('rns', reader, 'member')
-await writeInstancePermissions(reader, ['session_create'])
+await setNamespaceMember('rns', other, 'member')
 
 const fakeDocker = () => ({
   volumes: new Map<string, string[]>(),
@@ -199,11 +206,12 @@ await describe('workspace mounts in sessions', async () => {
 
   await it('a workspace that is not ready → 409 at create; unknown → 404', async () => {
     const w = await mkWs('rns', false)
-    const st = svc.getState(w)!
-    st.status = 'preparing' as never
+    await svc.whenSettled(w)
+    // Force not-ready after prepare finishes so background work cannot overwrite the status.
+    svc.getState(w)!.status = 'preparing' as never
     await assert.rejects(create(admin, [{ workspace_id: w, mount_mode: 'ro' }]), (e: unknown) => (e as { status?: number }).status === 409)
     await assert.rejects(create(admin, [{ workspace_id: 'w_zzzzzzzzzz' }]), (e: unknown) => (e as { status?: number }).status === 404)
-    await svc.whenSettled(w)
+    svc.getState(w)!.status = 'ready' as never
   })
 
   await it('repo-read user can mount ro but not rw', async () => {
@@ -403,15 +411,18 @@ await describe('workspace mounts in sessions', async () => {
       return sessions.updateSessionMounts(u as never, 'session', s.id, parsed)
     }
     const status = (e: unknown) => (e as { status?: number }).status
-    await assert.rejects(put(admin, [{ workspace_id: w }]), (e) => status(e) === 409) // still provisioning
     await ready(s.id)
+    await updateSession(s.id, { status: 'provisioning' })
+    await assert.rejects(put(admin, [{ workspace_id: w }]), (e) => status(e) === 409) // not ready for mount edits
+    await updateSession(s.id, { status: 'ready' })
     await assert.rejects(put(admin, [{ workspace_id: w, pin_commit: 'abc' }]), (e) => status(e) === 400)
     await assert.rejects(put(admin, [{ namespace: 'rns', repo: 'r' }]), (e) => status(e) === 400)
     await assert.rejects(put(admin, [{ workspace_id: w }, { workspace_id: w }]), (e) => status(e) === 400)
     await assert.rejects(put(admin, Array.from({ length: 9 }, (_, i) => ({ workspace_id: `w_abcdefghi${i}` }))), (e) => status(e) === 400)
     await assert.rejects(put(admin, [{ workspace_id: 'w_zzzzzzzzzz' }]), (e) => status(e) === 404)
-    await assert.rejects(put(reader, [{ workspace_id: w, mount_mode: 'ro' }]), (e) => status(e) === 403) // not the owner
-    // a reader owning a session cannot add a new workspace; nothing changes
+    // User (not Manager) is denied editing someone else's session; Manager has session.admin.
+    await assert.rejects(put(other, [{ workspace_id: w, mount_mode: 'ro' }]), (e) => status(e) === 403)
+    // Namespace member with read-only repo access cannot create a new workspace via remount.
     const rs = await create(reader, [{ workspace_id: w, mount_mode: 'ro' }])
     await ready(rs.id)
     const before = svc.list({ namespace: 'rns', repo: 'r' }).length

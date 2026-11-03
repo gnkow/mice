@@ -23,6 +23,7 @@ const { ensureBootstrapKey } = await import('../session/sealKeys.js')
 const { issueCliCredential } = await import('../credentials/cliCredentials.js')
 const { queryAudit } = await import('../../audit.js')
 const { maybeBootstrapInstanceAdmin } = await import('../../authzInstanceStore.js')
+const { preparePrincipal } = await import('../../authz.js')
 const { env, overrideEnv } = await import('../../env.js')
 overrideEnv({
   directoryProvider: 'keycloak',
@@ -45,7 +46,9 @@ setDirectoryFetchForTests(async (url) => {
 })
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
-await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
+const root = { ...mk('root'), emailVerified: true as const }
+await maybeBootstrapInstanceAdmin(root)
+await preparePrincipal(root)
 
 const app = new Hono()
 applyGlobalGuards(app)

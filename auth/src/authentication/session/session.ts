@@ -237,9 +237,10 @@ export async function setSessionCookie(c: Context, user: SessionUser): Promise<v
 
 function writeCookie(c: Context, id: string, maxAge: number): void {
   // `__Host-` requires Secure, no Domain and Path=/; the browser refuses the cookie otherwise.
+  const hostPrefixed = env.cookieName.startsWith('__Host-')
   setCookie(c, env.cookieName, id, {
     httpOnly: true,
-    secure: true,
+    secure: hostPrefixed || env.cookieSecure,
     sameSite: 'Lax',
     path: '/',
     maxAge: Math.max(1, maxAge),
@@ -267,10 +268,12 @@ export async function destroySession(c: Context): Promise<void> {
 
 export function clearSessionCookie(c: Context): void {
   // Attributes must match Set-Cookie or browsers keep the session cookie.
-  deleteCookie(c, env.cookieName, { path: '/', secure: true, sameSite: 'Lax' })
+  const hostPrefixed = env.cookieName.startsWith('__Host-')
+  const secure = hostPrefixed || env.cookieSecure
+  deleteCookie(c, env.cookieName, { path: '/', secure, sameSite: 'Lax' })
   setCookie(c, env.cookieName, '', {
     httpOnly: true,
-    secure: true,
+    secure,
     sameSite: 'Lax',
     path: '/',
     maxAge: 0,

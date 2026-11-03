@@ -11,13 +11,16 @@ const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { initAudit, queryAudit, useAuditLedger, verifyAudit } = await import('./audit.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
-
 const admin = iso.admin
 await preparePrincipal(admin)
 const writer = iso.person('block-writer')
+const auditor = iso.person('block-auditor')
 await createNamespaceAuthz(admin, 'bk', 'none', true)
 await setRepoCollaborator('bk', 'r', writer, 'write')
 await preparePrincipal(writer)
+await iso.grantRole(writer, 'user')
+await preparePrincipal(auditor)
+await iso.grantRole(auditor, 'auditor')
 
 const real = await openLedger(immudbConfig())
 /** Seq numbers whose stored value is reported altered, as if someone rewrote them on the server. */
@@ -59,6 +62,13 @@ async function adminCall(method: string, path: string, body?: unknown) {
   return app.request(path, {
     method,
     headers: { ...(await iso.sessionHeaders(admin)), 'content-type': 'application/json', 'x-mice-reason': 'Operator decision after review' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+}
+async function auditorCall(method: string, path: string, body?: unknown) {
+  return app.request(path, {
+    method,
+    headers: { ...(await iso.sessionHeaders(auditor)), 'content-type': 'application/json', 'x-mice-reason': 'Auditor review' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
@@ -120,7 +130,8 @@ describe('failed verification blocks dataset mutations', () => {
 describe('export bundle', () => {
   it('contains the events and a fresh verification result', async () => {
     assert.equal((await put()).status, 200)
-    const res = await adminCall('GET', '/auth/audit/export.bundle?namespace=bk')
+    // Admin has no audit:read (S25); Auditor exports.
+    const res = await auditorCall('GET', '/auth/audit/export.bundle?namespace=bk')
     assert.equal(res.status, 200)
     const bundle = (await res.json()) as Record<string, any>
     assert.equal(bundle.format, 'mice-audit-bundle/2')
@@ -131,9 +142,9 @@ describe('export bundle', () => {
   })
 
   it('logs who exported which range', async () => {
-    await adminCall('GET', '/auth/audit/export.bundle?namespace=bk&since=2020-01-01')
+    await auditorCall('GET', '/auth/audit/export.bundle?namespace=bk&since=2020-01-01')
     const ev = (await rows()).find((r) => r.action === 'audit.export')!
-    assert.equal(ev.actor.sub, 'admin')
+    assert.equal(ev.actor.sub, 'block-auditor')
     assert.equal((ev.detail?.filters as any).namespace, 'bk')
     assert.equal((ev.detail?.filters as any).since, '2020-01-01')
     assert.equal(ev.detail?.format, 'bundle')

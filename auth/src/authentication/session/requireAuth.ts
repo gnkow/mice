@@ -161,25 +161,29 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
       }
     }
     if (policy.requires && !can(session, policy.requires.capability)) return deny(403, policy.requires.message)
-    let account: Awaited<ReturnType<typeof checkUserIdpStatus>>
-    try {
-      account = await checkUserIdpStatus(session)
-    } catch {
-      await noteIdpOutage({
-        at: Date.now(),
-        check: 'authenticated-request',
-        requestId: c.req.header('x-request-id') ?? 'authenticated-request',
-      })
-      return deny(503, 'Service Unavailable - IdP check failed')
-    }
-    await closeIdpOutage(Date.now())
-    const idpStatus = account.status
-    if (idpStatus === 'disabled') await recordIdpDisabled(session)
-    if (idpStatus !== 'enabled') {
-      return deny(503, 'Service Unavailable - IdP check failed')
-    }
-    if (!account.name.trim()) {
-      return deny(403, 'Your account has no name in the identity provider.')
+    // Synthetic Playwright issuer: skip live IdP when AUTH_DEV_MODE is on.
+    const skipIdp = env.authDevMode && canonicalIssuer(session.iss) === 'mice-e2e'
+    if (!skipIdp) {
+      let account: Awaited<ReturnType<typeof checkUserIdpStatus>>
+      try {
+        account = await checkUserIdpStatus(session)
+      } catch {
+        await noteIdpOutage({
+          at: Date.now(),
+          check: 'authenticated-request',
+          requestId: c.req.header('x-request-id') ?? 'authenticated-request',
+        })
+        return deny(503, 'Service Unavailable - IdP check failed')
+      }
+      await closeIdpOutage(Date.now())
+      const idpStatus = account.status
+      if (idpStatus === 'disabled') await recordIdpDisabled(session)
+      if (idpStatus !== 'enabled') {
+        return deny(503, 'Service Unavailable - IdP check failed')
+      }
+      if (!account.name.trim()) {
+        return deny(403, 'Your account has no name in the identity provider.')
+      }
     }
     const reenable = await considerReenable(session, async (event) => {
       const stored = await appendAudit({

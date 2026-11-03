@@ -7,6 +7,7 @@ import { uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const OXEN_URL = process.env.OXEN_URL ?? 'http://127.0.0.1:3001'
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..')
 
@@ -32,7 +33,9 @@ async function login(page: Page, label: string, email = `${uniqueId(label)}@mice
 
 /** A context without the suite-wide X-Mice-Reason header, so the reason rule is what is tested. */
 async function bareSession(browser: import('@playwright/test').Browser, label: string, email?: string) {
-  const ctx = await browser.newContext({ extraHTTPHeaders: { 'x-mice-reason': '' } })
+  const ctx = await browser.newContext({
+    extraHTTPHeaders: { 'x-mice-reason': '', origin: BASE_URL },
+  })
   const page = await ctx.newPage()
   await login(page, label, email)
   return { ctx, page }

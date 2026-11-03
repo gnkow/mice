@@ -25,15 +25,21 @@ const restoreUpstream = setUpstreamFetch(async (url, init) => {
   return new Response('{"status":"ok"}', { headers: { 'content-type': 'application/json' } })
 })
 
+const { assignRole } = await import('./rbacStore.js')
+const { ensurePrincipal } = await import('./authentication/session/session.js')
 const person = (sub: string) => ({ sub, iss: 'test', email: `${sub}@example.com`, name: sub })
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin', emailVerified: true }
 await preparePrincipal(admin)
+await assignRole({ actor: null, target: admin, role: 'manager', reason: 'test', bootstrap: true })
 const writer = person('po-writer')
 const reader = person('po-reader')
 await createNamespaceAuthz(admin, 'po', 'none', true)
 await setRepoCollaborator('po', 'r', writer, 'write')
 await setRepoCollaborator('po', 'r', reader, 'read')
-for (const u of [writer, reader]) await preparePrincipal(u)
+for (const u of [writer, reader]) {
+  await ensurePrincipal(u)
+  await assignRole({ actor: null, target: u, role: 'user', reason: 'test', bootstrap: true })
+}
 
 function appFor(user: typeof writer) {
   const app = new Hono()

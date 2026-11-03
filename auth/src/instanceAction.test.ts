@@ -1,54 +1,67 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { after, describe, it } from 'node:test'
+import { isolatedAuth } from './testSupport.js'
 
-process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@mice.local'
-process.env.AUTHZ_REQUIRE_TRAINING = 'false'
-process.env.SESSION_SECRET = 'test-secret'
-process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
+const t = isolatedAuth()
+after(() => t.restore())
 
 const { authorizeInstanceAction, authorizeManageOwnTokens, authorizeCliDeviceApprove, authorizeStoreAdmin, preparePrincipal } =
   await import('./authz.js')
-const { setInstancePermissions } = await import('./authzInstanceStore.js')
 
-
-const person = (sub: string) => ({ sub, iss: 'test', email: `${sub}@example.com`, name: sub })
-const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin', emailVerified: true }
+const admin = t.admin
 await preparePrincipal(admin)
 
-const ACTIONS = [
-  { action: 'tokens.manage', permission: 'manage_own_tokens', reason: 'Missing permission manage_own_tokens' },
-  { action: 'cli.device.approve', permission: 'cli_device_approve', reason: 'Missing permission cli_device_approve' },
-  { action: 'audit.view', permission: 'view_audit', reason: 'Missing permission view_audit' },
-  { action: 'lineage.view', permission: 'view_lineage', reason: 'Missing permission view_lineage' },
-] as const
+/** Actions where Admin holds the mapped permission (S25). */
+const ADMIN_ALLOWS = [
+  { action: 'tokens.manage' as const, grantRole: 'user' as const, reason: 'Missing permission tokens:create' },
+  { action: 'store.admin' as const, grantRole: 'admin' as const, reason: 'Missing permission store:gc' },
+]
+
+/** Actions Admin does not hold — Manager/User do (S25 separation). */
+const ADMIN_DENIED = [
+  { action: 'cli.device.approve' as const, grantRole: 'manager' as const, reason: 'Missing permission cli_device:approve' },
+  { action: 'audit.view' as const, grantRole: 'manager' as const, reason: 'Missing permission audit:read' },
+  { action: 'lineage.view' as const, grantRole: 'manager' as const, reason: 'Missing permission lineage:read' },
+]
 
 describe('authorizeInstanceAction', () => {
-  for (const { action, permission, reason } of ACTIONS) {
-    it(`${action}: admin and named permission allow, others deny`, async () => {
-      const holder = person(`holder-${action}`)
-      const outsider = person(`outsider-${action}`)
-      await preparePrincipal(holder)
+  for (const { action, grantRole, reason } of ADMIN_ALLOWS) {
+    it(`${action}: Admin and granted role allow, others deny`, async () => {
+      const holder = t.person(`holder-${action}`)
+      const outsider = t.person(`outsider-${action}`)
+      await t.grantRole(holder, grantRole)
       await preparePrincipal(outsider)
-      await setInstancePermissions(admin, holder, [permission], Date.now() + 86_400_000)
       assert.equal((await authorizeInstanceAction(admin, action)).allow, true)
       assert.equal((await authorizeInstanceAction(holder, action)).allow, true)
       assert.deepEqual(await authorizeInstanceAction(outsider, action), { allow: false, reason })
     })
   }
 
-  it('store.admin requires an unscoped instance admin', async () => {
-    const scopedAdmin = { ...admin, patScopes: ['repo:read'] }
+  for (const { action, grantRole, reason } of ADMIN_DENIED) {
+    it(`${action}: granted role allows; Admin and outsiders deny`, async () => {
+      const holder = t.person(`holder-${action}`)
+      const outsider = t.person(`outsider-${action}`)
+      await t.grantRole(holder, grantRole)
+      await preparePrincipal(outsider)
+      assert.deepEqual(await authorizeInstanceAction(admin, action), { allow: false, reason })
+      assert.equal((await authorizeInstanceAction(holder, action)).allow, true)
+      assert.deepEqual(await authorizeInstanceAction(outsider, action), { allow: false, reason })
+    })
+  }
+
+  it('store.admin requires an unscoped credential with store:gc', async () => {
+    const scopedAdmin = { ...admin, patScopes: [{ namespace: 'x', maxRole: 'read' as const }] }
     assert.equal((await authorizeInstanceAction(admin, 'store.admin')).allow, true)
     assert.deepEqual(await authorizeInstanceAction(scopedAdmin as never, 'store.admin'), {
       allow: false,
-      reason: 'Requires instance admin',
+      reason: 'Missing permission store:gc',
     })
-    assert.equal((await authorizeInstanceAction(person('nobody'), 'store.admin')).allow, false)
+    assert.equal((await authorizeInstanceAction(t.person('nobody'), 'store.admin')).allow, false)
   })
 
   it('named wrappers agree with the policy table', async () => {
-    const u = person('wrapper-user')
+    const u = t.person('wrapper-user')
     await preparePrincipal(u)
     assert.deepEqual(await authorizeManageOwnTokens(u), await authorizeInstanceAction(u, 'tokens.manage'))
     assert.deepEqual(await authorizeCliDeviceApprove(u), await authorizeInstanceAction(u, 'cli.device.approve'))

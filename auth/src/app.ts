@@ -17,6 +17,7 @@ import { notificationReadiness, registerNotificationRoutes } from './notificatio
 import { proxyToOxen } from './proxy.js'
 import { registerReasonRoutes } from './reasonRoutes.js'
 import type { AuditFn } from './routeDeps.js'
+import { registerDevSessionRoutes } from './authentication/session/devSessionRoutes.js'
 import { registerSessionRoutes } from './sessionsRoutes.js'
 import { registerWorkspaceRoutes } from './workspaces/routes.js'
 
@@ -72,6 +73,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerLoginRoutes(app, { audit })
   registerWebSessionRoutes(app)
   registerSealKeyRoutes(app)
+  registerDevSessionRoutes(app)
 
   app.post('/auth/backchannel-logout', backChannelLogout)
   app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())

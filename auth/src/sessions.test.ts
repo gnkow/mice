@@ -23,7 +23,6 @@ const {
   publicSession,
   sessionsAuditRetentionPolicy,
 } = await import('./sessions.js')
-const { writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { encryptGuacamoleLiteToken, mintConnectPayload } = await import(
   './sessionsConnect.js'
 )
@@ -206,27 +205,29 @@ describe('sessions', () => {
     assert.ok(p.actions.includes('session.connect'))
   })
 
-  it('authorizeSessionCreate/connect deny without instance perms under enforce', async () => {
+  it('authorizeSessionCreate/connect deny without formal role permissions', async () => {
+    const { ensurePrincipal } = await import('./authentication/session/session.js')
+    const { assignRole } = await import('./rbacStore.js')
     const user = {
       sub: 'sess-user',
       iss: 'test',
       email: 'sess@example.com',
       name: 'Sess',
     }
-    await writeInstancePermissions(user, [])
+    await ensurePrincipal(user)
     assert.equal((await authorizeSessionCreate(user)).allow, false)
 
-    await writeInstancePermissions(user, ['session_create'])
+    await assignRole({ actor: null, target: user, role: 'manager', reason: 'test', bootstrap: true })
     assert.equal((await authorizeSessionCreate(user)).allow, true)
 
     const owned = baseSession({
       owner: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
     })
-    assert.equal((await authorizeSessionAccess(user, owned, 'connect')).allow, false)
+    // Owner may stop without session:connect; connect needs User+ session:connect (Manager has both).
+    assert.equal((await authorizeSessionAccess(user, owned, 'connect')).allow, true)
     assert.equal((await authorizeSessionAccess(user, owned, 'stop')).allow, true)
 
-    await writeInstancePermissions(user, ['session_create', 'session_connect'])
-    assert.equal((await authorizeSessionAccess(user, owned, 'connect')).allow, true)
-    await writeInstancePermissions(user, [])
+    await assignRole({ actor: null, target: user, role: 'external', reason: 'test', bootstrap: true })
+    assert.equal((await authorizeSessionAccess(user, owned, 'connect')).allow, false)
   })
 })

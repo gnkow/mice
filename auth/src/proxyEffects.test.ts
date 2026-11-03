@@ -13,9 +13,12 @@ const { getRepoCollaboratorRole, setRepoCollaborator } = await import('./authzCo
 const { createNamespaceAuthz, getNamespace } = await import('./authzNamespaceStore.js')
 
 
+const { assignRole } = await import('./rbacStore.js')
+const { ensurePrincipal } = await import('./authentication/session/session.js')
 const person = (sub: string) => ({ sub, iss: 'test', email: `${sub}@example.com`, name: sub })
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin', emailVerified: true }
 await preparePrincipal(admin)
+await assignRole({ actor: null, target: admin, role: 'manager', reason: 'test', bootstrap: true })
 
 const catalog = () =>
   new Response(JSON.stringify({ namespaces: [{ namespace: 'pe-a' }, { name: 'pe-b' }] }), {
@@ -31,7 +34,8 @@ describe('filterNamespaceCatalog', async () => {
   await createNamespaceAuthz(admin, 'pe-a', 'none', true)
   await createNamespaceAuthz(admin, 'pe-b', 'none', true)
   await setRepoCollaborator('pe-a', 'r', member, 'read')
-  await preparePrincipal(member)
+  await ensurePrincipal(member)
+  await assignRole({ actor: null, target: member, role: 'user', reason: 'test', bootstrap: true })
 
   it('narrows the catalog to visible namespaces', async () => {
     const out = await filterNamespaceCatalog(member, 'GET', '/api/namespaces', catalog())

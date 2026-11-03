@@ -14,6 +14,10 @@ const { queryAudit } = await import('./audit.js')
 
 const admin = ctx.admin
 await preparePrincipal(admin)
+// File writes need a data role + namespace ownership (Admin no longer bypasses repo ACL).
+await ctx.grantRole(admin, 'manager')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
+assert.equal((await createNamespaceAuthz(admin, 'lin', 'none')).ok, true)
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })

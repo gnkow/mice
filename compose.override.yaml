@@ -1,5 +1,12 @@
 # Dev-only: auto-loaded by `docker compose up`. Production runs `docker compose -f compose.yaml up`.
 services:
+  auth:
+    environment:
+      # Playwright mintSession + synthetic mice-e2e issuer (opaque sealed sessions).
+      AUTH_DEV_MODE: "true"
+      # __Host- cookies need Secure+HTTPS; local UI is http://localhost.
+      SESSION_COOKIE_NAME: mice_session
+
   oxen-server:
     ports:
       # Published for e2e setup helpers (OXEN_URL). Browser traffic must use the BFF.

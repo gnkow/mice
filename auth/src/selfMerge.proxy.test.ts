@@ -18,7 +18,8 @@ let since = 0
 const admin = iso.admin
 const merger = iso.person('merger')
 await preparePrincipal(admin)
-await preparePrincipal(merger)
+await iso.grantRole(admin, 'manager')
+await iso.grantRole(merger, 'user')
 await createNamespaceAuthz(admin, 'sm', 'none', true)
 await setRepoCollaborator('sm', 'r', merger, 'maintain')
 

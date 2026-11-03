@@ -24,7 +24,8 @@ const { sealSession } = await import('../session/session.js')
 const { sealSessionCookie } = await import('../session/cookieSeal.js')
 const { ensureBootstrapKey } = await import('../session/sealKeys.js')
 const { env } = await import('../../env.js')
-const { maybeBootstrapInstanceAdmin } = await import('../../authzInstanceStore.js')
+const { assignRole } = await import('../../rbacStore.js')
+const { ensurePrincipal } = await import('../session/session.js')
 const { setDirectoryFetchForTests } = await import('../directory/directory.js')
 
 setDirectoryFetchForTests(async (url) => {
@@ -41,12 +42,23 @@ setDirectoryFetchForTests(async (url) => {
   throw new Error(`Unexpected request: ${urlStr}`)
 })
 
-const admin = { sub: 'admin1', iss: 'idp', email: 'admin1@test.com', name: 'admin1', emailVerified: true }
-await maybeBootstrapInstanceAdmin(admin)
+// Manager has cli_device:approve; avoid bootstrap Admin (S25 — no device approve).
+const approver = {
+  sub: 'mgr1',
+  iss: 'idp',
+  email: 'mgr1@test.com',
+  name: 'mgr1',
+  emailVerified: true as const,
+}
+await ensurePrincipal(approver)
+assert.equal(
+  (await assignRole({ actor: null, target: approver, role: 'manager', reason: 'test', bootstrap: true })).ok,
+  true,
+)
 
 const cookie = async () => {
   const now = Math.floor(Date.now() / 1000)
-  const sessionId = await sealSession({ ...admin, sessionStart: now - 30 })
+  const sessionId = await sealSession({ ...approver, sessionStart: now - 30 })
   return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
 }
 

@@ -26,7 +26,6 @@ const {
   keycloakDirectoryConfigured,
 } = await import('./directory.js')
 const { setRepoCollaborator } = await import('../../authzCollaboratorStore.js')
-const { writeInstancePermissions } = await import('../../authzInstanceStore.js')
 const { setNamespaceMember, setNamespaceGroupMember } = await import('../../authzMembershipStore.js')
 const { createNamespaceAuthz } = await import('../../authzNamespaceStore.js')
 const { preparePrincipal } = await import('../../authz.js')
@@ -74,7 +73,13 @@ describe('directory search', () => {
     const users = await searchStoreDirectory('alice', 'user', 10)
     assert.ok(users.some((u) => u.kind === 'user' && u.sub === 'alice-sub'))
     const groups = await searchStoreDirectory('engin', 'group', 10)
-    assert.ok(groups.some((g) => g.kind === 'group' && g.group === 'engineering'))
+    assert.ok(
+      groups.some(
+        (g) =>
+          g.kind === 'group' &&
+          (g.group === 'engineering' || g.group.endsWith('|engineering') || g.name === 'engineering'),
+      ),
+    )
     const collab = await searchStoreDirectory('bob-collab', 'user', 10)
     assert.ok(collab.some((u) => u.kind === 'user' && u.sub === 'bob-collab'))
   })
@@ -85,7 +90,8 @@ describe('directory search', () => {
     assert.equal(res.source, 'none')
   })
 
-  it('canSearchDirectory allows admins and manage_members; denies pending', async () => {
+  it('canSearchDirectory allows directory:search holders; denies pending', async () => {
+    const { assignRole } = await import('../../rbacStore.js')
     await preparePrincipal(admin)
     assert.equal(await canSearchDirectory(admin), true)
 
@@ -99,11 +105,11 @@ describe('directory search', () => {
       name: 'Alice',
     }
     await preparePrincipal(member)
-    // member without manage_members / owner → deny
+    await assignRole({ actor: null, target: member, role: 'user', reason: 'test', bootstrap: true })
+    // User role has no directory:search; member without manage_members → deny
     assert.equal(await canSearchDirectory(member), false)
 
-    await writeInstancePermissions(pending, ['create_namespace'])
-    await preparePrincipal(pending)
+    await assignRole({ actor: null, target: pending, role: 'manager', reason: 'test', bootstrap: true })
     assert.equal(await canSearchDirectory(pending), true)
   })
 

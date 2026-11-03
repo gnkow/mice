@@ -30,14 +30,14 @@ export async function searchStoreDirectory(
       for (const m of await listNamespaceMembers(ns)) {
         if (m.kind === 'group') {
           const g = normalizeGroup(m.group)
-          if (g) groups.set(g, g)
+          if (g) groups.set(g, m.name?.trim() || g)
         }
       }
     }
     for (const p of await listAllCollaboratorPrincipals()) {
       if (p.kind === 'group') {
         const g = normalizeGroup(p.group)
-        if (g) groups.set(g, g)
+        if (g) groups.set(g, p.name?.trim() || g)
       }
     }
     const out: DirectoryGroupHit[] = []

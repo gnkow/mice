@@ -16,7 +16,6 @@ const { sealSession } = await import('./authentication/session/session.js')
 const { sealSessionCookie } = await import('./authentication/session/cookieSeal.js')
 const { ensureBootstrapKey } = await import('./authentication/session/sealKeys.js')
 const { issueCliCredential, resolveCliCredential } = await import('./authentication/credentials/cliCredentials.js')
-const { maybeBootstrapInstanceAdmin } = await import('./authzInstanceStore.js')
 const { env, overrideEnv } = await import('./env.js')
 overrideEnv({
   directoryProvider: 'keycloak',
@@ -39,7 +38,9 @@ setDirectoryFetchForTests(async (url) => {
 })
 
 const mk = (sub: string) => ({ sub, iss: 'idp', email: `${sub}@x.io`, name: sub })
-await maybeBootstrapInstanceAdmin({ ...mk('root'), emailVerified: true })
+const { preparePrincipal } = await import('./authz.js')
+const root = { ...mk('root'), emailVerified: true as const }
+await preparePrincipal(root)
 await ensureBootstrapKey()
 
 const audited: string[] = []

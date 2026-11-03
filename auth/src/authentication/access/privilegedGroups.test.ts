@@ -26,6 +26,20 @@ const { createNamespaceAuthz } = await import('../../authzNamespaceStore.js')
 const { removeRepoGroupCollaborator, setRepoGroupCollaborator } = await import('../../authzCollaboratorStore.js')
 const { removeNamespaceGroupMember, setNamespaceGroupMember } = await import('../../authzMembershipStore.js')
 const { setDirectoryFetchForTests } = await import('../directory/directory.js')
+const { ensurePrincipal } = await import('../session/session.js')
+const { assignRole } = await import('../../rbacStore.js')
+
+/** Pending gate (S23): authorize* requires a formal role even when ACL would allow. */
+async function withUserRole<T extends { sub: string; iss: string; email?: string; name?: string }>(
+  user: T,
+): Promise<T> {
+  await ensurePrincipal(user)
+  assert.equal(
+    (await assignRole({ actor: null, target: user, role: 'user', reason: 'test', bootstrap: true })).ok,
+    true,
+  )
+  return user
+}
 
 setDirectoryFetchForTests(async (url) => {
   const urlStr = String(url)
@@ -63,14 +77,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-merge'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'maintain')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const merge = await authorizeApiRequest({
       user: holder,
       via: 'session',
@@ -85,14 +99,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-write'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'write')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const write = await authorizeApiRequest({
       user: holder,
       via: 'session',
@@ -108,14 +122,14 @@ describe('privileged group re-check', () => {
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setNamespaceGroupMember(ns, GROUP, 'member')).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'write')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa-grant',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     assert.equal((await authorizeApiRequest({
       user: holder,
       via: 'session',
@@ -147,14 +161,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-read'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'maintain')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const read = await authorizeApiRequest({
       user: holder,
       via: 'session',
@@ -168,14 +182,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-down'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'maintain')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa-down',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const merge = await authorizeApiRequest({
       user: holder,
       via: 'session',
@@ -190,14 +204,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-admin'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'admin')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa-admin',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const deletion = await authorizeApiRequest({
       user: holder,
       via: 'session',
@@ -212,14 +226,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-collab'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'admin')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa-collab',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const decision = await decideManageRepoCollaborators(holder, ns, 'study')
     assert.equal(decision.allow, false)
     assert.equal(decision.status, 403)
@@ -229,14 +243,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-job'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'write')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const decision = await authorizeRepoAction(holder, ns, 'study', 'job.submit')
     assert.equal(decision.allow, false)
     assert.equal(decision.status, 403)
@@ -251,6 +265,12 @@ describe('privileged group re-check', () => {
     const { env } = await import('../../env.js')
     await ensureBootstrapKey()
     const now = Math.floor(Date.now() / 1000)
+    await withUserRole({
+      sub: 'qa-sign',
+      iss: 'http://kc.test/realms/mice',
+      email: 'qa@example.com',
+      name: 'QA Signer',
+    })
     const sessionId = await sealSession({
       sub: 'qa-sign',
       iss: 'http://kc.test/realms/mice',
@@ -280,14 +300,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-collab-down'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', GROUP, 'admin')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa-down',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const decision = await decideManageRepoCollaborators(holder, ns, 'study')
     assert.equal(decision.allow, false)
     assert.equal(decision.status, 503)
@@ -297,14 +317,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-added'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setRepoGroupCollaborator(ns, 'study', ADDED, 'read')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa-added',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [],
-    }
+    })
     const read = await authorizeApiRequest({
       user: holder,
       via: 'session',
@@ -319,14 +339,14 @@ describe('privileged group re-check', () => {
     const ns = 'priv-ns-admin'
     assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
     assert.equal((await setNamespaceGroupMember(ns, GROUP, 'owner')).ok, true)
-    const holder = {
+    const holder = await withUserRole({
       sub: 'qa',
       iss: 'http://kc.test/realms/mice',
       email: 'qa@example.com',
       emailVerified: true,
       name: 'QA',
       groups: [GROUP],
-    }
+    })
     const decision = await decideNamespaceAction(holder, ns, 'namespace.delete')
     assert.equal(decision.allow, false)
     assert.equal(decision.status, 403)

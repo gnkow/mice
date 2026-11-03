@@ -7,7 +7,6 @@ const t = isolatedAuth()
 after(() => t.restore())
 
 const authz = await import('./authz.js')
-const { setInstancePermissions } = await import('./authzInstanceStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { setNamespaceMember } = await import('./authzMembershipStore.js')
 const { createCustomNamespaceRole } = await import('./customRoles.js')
@@ -22,25 +21,28 @@ const deny = (reason: string) => ({ allow: false, status: 403, reason })
 
 type InstanceCase = {
   action: Parameters<typeof decideInstanceAction>[1]
-  permission?: Parameters<typeof setInstancePermissions>[2][number]
+  /** Formal role that holds the mapped permission (S24). */
+  grantRole: 'user' | 'manager' | 'admin' | 'auditor'
   reason: string
-  /** A scoped admin is rejected. */
-  adminUnscopedOnly?: boolean
+  /** Admin role is denied (S25 separation) even though they are bootstrap admin. */
+  adminDenied?: boolean
+  /** Scoped credentials are rejected even with the permission. */
+  unscopedOnly?: boolean
 }
 
 const INSTANCE_CASES: InstanceCase[] = [
-  { action: 'tokens.manage', permission: 'manage_own_tokens', reason: 'Missing permission manage_own_tokens' },
-  { action: 'cli.device.approve', permission: 'cli_device_approve', reason: 'Missing permission cli_device_approve' },
-  { action: 'audit.view', permission: 'view_audit', reason: 'Missing permission view_audit' },
-  { action: 'lineage.view', permission: 'view_lineage', reason: 'Missing permission view_lineage' },
-  { action: 'store.admin', reason: 'Requires instance admin', adminUnscopedOnly: true },
-  { action: 'instance.admin', reason: 'Forbidden' },
-  { action: 'directory.sync', reason: 'Instance admin required' },
-  { action: 'namespace.create', permission: 'create_namespace', reason: 'Missing permission create_namespace' },
-  { action: 'access.review.all', permission: 'create_namespace', reason: 'Forbidden' },
-  { action: 'session.admin', permission: 'session_admin', reason: 'Missing permission session_admin' },
-  { action: 'session.create', permission: 'session_create', reason: 'Missing permission session_create' },
-  { action: 'session.connect', permission: 'session_connect', reason: 'Missing permission session_connect' },
+  { action: 'tokens.manage', grantRole: 'user', reason: 'Missing permission tokens:create' },
+  { action: 'cli.device.approve', grantRole: 'manager', reason: 'Missing permission cli_device:approve', adminDenied: true },
+  { action: 'audit.view', grantRole: 'manager', reason: 'Missing permission audit:read', adminDenied: true },
+  { action: 'lineage.view', grantRole: 'manager', reason: 'Missing permission lineage:read', adminDenied: true },
+  { action: 'store.admin', grantRole: 'admin', reason: 'Missing permission store:gc', unscopedOnly: true },
+  { action: 'instance.admin', grantRole: 'admin', reason: 'Missing permission instance:admins:add' },
+  { action: 'directory.sync', grantRole: 'admin', reason: 'Missing permission instance:settings:update' },
+  { action: 'namespace.create', grantRole: 'manager', reason: 'Missing permission namespace:create', adminDenied: true },
+  { action: 'access.review.all', grantRole: 'manager', reason: 'Missing permission access_request:review' },
+  { action: 'session.admin', grantRole: 'manager', reason: 'Missing permission session:delete', adminDenied: true },
+  { action: 'session.create', grantRole: 'manager', reason: 'Missing permission session:create', adminDenied: true },
+  { action: 'session.connect', grantRole: 'user', reason: 'Missing permission session:connect', adminDenied: true },
 ]
 
 describe('decideInstanceAction matrix', () => {
@@ -48,24 +50,25 @@ describe('decideInstanceAction matrix', () => {
     describe(c.action, async () => {
       const holder = t.person(`holder-${c.action}`)
       const none = t.person(`none-${c.action}`)
-      await preparePrincipal(holder)
+      await t.grantRole(holder, c.grantRole)
       await preparePrincipal(none)
-      if (c.permission) await setInstancePermissions(admin, holder, [c.permission], Date.now() + 86_400_000)
 
-      it('admin allows', async () => {
-        assert.deepEqual(await decideInstanceAction(admin, c.action), ALLOW)
+      it('bootstrap Admin role', async () => {
+        const d = await decideInstanceAction(admin, c.action)
+        if (c.adminDenied) assert.deepEqual(d, deny(c.reason))
+        else assert.deepEqual(d, ALLOW)
       })
 
-      if (c.permission) {
-        it('named permission allows', async () => {
-          assert.deepEqual(await decideInstanceAction(holder, c.action), ALLOW)
-        })
-      }
+      it('granted role allows', async () => {
+        assert.deepEqual(await decideInstanceAction(holder, c.action), ALLOW)
+      })
 
       it('scoped credential', async () => {
-        const expectedAdmin = c.adminUnscopedOnly ? deny(c.reason) : ALLOW
-        assert.deepEqual(await decideInstanceAction(scoped(admin) as never, c.action), expectedAdmin)
-        if (c.permission) assert.deepEqual(await decideInstanceAction(scoped(holder) as never, c.action), ALLOW)
+        if (c.unscopedOnly) {
+          assert.deepEqual(await decideInstanceAction(scoped(holder) as never, c.action), deny(c.reason))
+        } else {
+          assert.deepEqual(await decideInstanceAction(scoped(holder) as never, c.action), ALLOW)
+        }
       })
 
       it('none denies with the recorded reason', async () => {
@@ -136,11 +139,11 @@ describe('composite decisions', async () => {
   const reviewer = t.person('comp-reviewer')
   for (const u of [none, creator, reviewer]) await preparePrincipal(u)
 
-  it('access review: admin, create_namespace or a review capability; others deny', async () => {
+  it('access review: Admin/Manager role or a review capability; others deny', async () => {
     await createNamespaceAuthz(creator, 'ns2', 'none')
     const role = await createCustomNamespaceRole('ns2', { name: 'R', permissions: ['review_access_requests'] })
     if (role.ok) await setNamespaceMember('ns2', reviewer, role.role.id)
-    await setInstancePermissions(admin, creator, ['create_namespace'], Date.now() + 86_400_000)
+    await t.grantRole(creator, 'manager')
     assert.deepEqual(await decideAccessReview(admin), ALLOW)
     assert.deepEqual(await decideAccessReview(creator), ALLOW)
     assert.deepEqual(await decideAccessReview(reviewer), ALLOW)

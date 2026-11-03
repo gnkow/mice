@@ -34,8 +34,9 @@ process.env.OXEN_UPSTREAM = `http://127.0.0.1:${(upstream.address() as AddressIn
 const { Hono } = await import('hono')
 const { proxyToOxen } = await import('./proxy.js')
 const { queryAudit } = await import('./audit.js')
-const { addAdminKey } = await import('./authzRepository.js')
-const { userKey } = await import('./authzTypes.js')
+const { ensurePrincipal } = await import('./authentication/session/session.js')
+const { assignRole } = await import('./rbacStore.js')
+const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 
 const alice = {
   sub: 'alice',
@@ -50,7 +51,14 @@ const stranger = {
   name: 'Stranger',
 }
 let actor = alice
-await addAdminKey(userKey(alice))
+await ensurePrincipal(alice)
+assert.equal(
+  (await assignRole({ actor: null, target: alice, role: 'manager', reason: 'test', bootstrap: true })).ok,
+  true,
+)
+// Owner of namespaces exercised by author-injection writes (Admin no longer bypasses repo ACL).
+assert.equal((await createNamespaceAuthz(alice, 'a', 'none')).ok, true)
+assert.equal((await createNamespaceAuthz(alice, 'acme', 'none')).ok, true)
 
 const app = new Hono()
 app.all('/api/*', (c) => proxyToOxen(c, { user: actor, via: 'session' }))

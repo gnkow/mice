@@ -51,7 +51,8 @@ describe('login flow over a fake OIDC provider', () => {
       emailVerified: true,
       name: 'U One',
       idToken: 'id.token.jwt',
-      groups: ['devs', 'admins'],
+      groups: ['https://idp.test|devs', 'https://idp.test|admins'],
+      groupsNameBasedFallback: true,
     })
     assert.equal(provider.lastComplete?.code, 'c')
   })
@@ -145,8 +146,9 @@ describe('login flow over a fake OIDC provider', () => {
     })
     assert.equal(res.ok, true)
     if (!res.ok) return
-    // Should have fetched groups from directory (devs, admins) instead of using empty array from IdP
-    assert.deepEqual(res.user.groups, ['devs', 'admins'])
+    // Should have fetched groups from directory (devs, admins) instead of using empty array from IdP.
+    // Session groups are stored as binding keys (iss|id).
+    assert.deepEqual(res.user.groups, ['https://idp.test|devs', 'https://idp.test|admins'])
   })
 
   it('fails login when overage detected but directory fetch returns empty', async () => {
@@ -175,6 +177,6 @@ describe('login flow over a fake OIDC provider', () => {
     })
     assert.equal(res.ok, true)
     if (!res.ok) return
-    assert.deepEqual(res.user.groups, ['devs', 'admins'])
+    assert.deepEqual(res.user.groups, ['https://idp.test|devs', 'https://idp.test|admins'])
   })
 })

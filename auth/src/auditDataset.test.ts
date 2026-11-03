@@ -7,6 +7,7 @@ const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('./app.js')
 const { setUpstreamFetch } = await import('./proxy.js')
 const { preparePrincipal } = await import('./authz.js')
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
 
@@ -15,6 +16,10 @@ let since = 0
 const admin = iso.admin
 await preparePrincipal(admin)
 await createNamespaceAuthz(admin, 'ds', 'none', true)
+// Admin has no data-write perms (S25); a User collaborator performs mutations.
+const writer = iso.person('ds-writer')
+await setRepoCollaborator('ds', 'r', writer, 'maintain')
+await iso.grantRole(writer, 'user')
 
 type Row = {
   action: string
@@ -61,7 +66,7 @@ const send = async (method: string, path: string, body?: unknown) =>
   app.request(path, {
     method,
     headers: {
-      ...(await iso.sessionHeaders(admin)),
+      ...(await iso.sessionHeaders(writer)),
       'content-type': 'application/json',
       'x-mice-reason': 'Routine dataset change',
     },

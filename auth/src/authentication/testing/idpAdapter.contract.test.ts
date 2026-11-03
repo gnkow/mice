@@ -54,7 +54,15 @@ for (const { name, make } of adapters) {
     it('issues the configured identity and echoes state', async () => {
       const r = await signIn('ann')
       assert.ok(r.ok && 'claims' in r)
-      assert.deepEqual([r.state, r.claims.sub, r.claims.email, r.claims.name, r.claims.groups], ['s1', 'ann', 'ann@mice.local', 'Ann', ['devs']])
+      assert.equal(r.state, 's1')
+      assert.equal(r.claims.sub, 'ann')
+      assert.equal(r.claims.email, 'ann@mice.local')
+      assert.equal(r.claims.name, 'Ann')
+      // Groups are stored as binding keys (iss|id).
+      assert.ok(
+        Array.isArray(r.claims.groups) &&
+          r.claims.groups.some((g) => g === 'devs' || String(g).endsWith('|devs')),
+      )
     })
 
     it('distinguishes MFA from non-MFA in amr and acr', async () => {

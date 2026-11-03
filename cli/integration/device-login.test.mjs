@@ -39,7 +39,7 @@ function cookieJar() {
 }
 
 /** Signs in through the live IdP and returns the BFF session cookie. */
-async function browserSession() {
+async function browserSession(username, password) {
   const jar = cookieJar()
   let next = `${AUTH_URL}/auth/login`
   let res = await fetch(next, { redirect: 'manual' })
@@ -56,7 +56,7 @@ async function browserSession() {
     method: 'POST',
     redirect: 'manual',
     headers: { cookie: jar.header(), 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ username: 'mice_admin', password: 'admin123', credentialId: '' }),
+    body: new URLSearchParams({ username, password, credentialId: '' }),
   })
   for (let hop = 0; hop < 8; hop++) {
     jar.store(res)
@@ -67,6 +67,16 @@ async function browserSession() {
   const session = [...jar.header().split('; ')].find((part) => part.startsWith('__Host-mice_session='))
   if (!session) throw new Error('login did not set a session cookie')
   return session
+}
+
+async function sessionPrincipal(cookie) {
+  const res = await fetch(`${AUTH_URL}/auth/me`, { headers: { Cookie: cookie } })
+  const text = await res.text()
+  assert.equal(res.status, 200, text)
+  const body = JSON.parse(text)
+  const principal = body.user ?? body
+  assert.ok(principal?.sub && principal?.iss)
+  return principal
 }
 
 const up = await authUp()
@@ -83,13 +93,35 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
     assert.ok(started.device_code)
     assert.match(started.user_code, /^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
 
-    const cookie = await browserSession()
+    // Admin cannot approve devices (S25). Warm the Manager principal, then grant Manager role.
+    const manageWarm = await browserSession('mice_manage', 'manage123')
+    const manager = await sessionPrincipal(manageWarm)
+    const adminCookie = await browserSession('mice_admin', 'admin123')
+    const grant = await fetch(`${AUTH_URL}/auth/grants/role`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: AUTH_URL,
+        Cookie: adminCookie,
+        'X-Mice-Reason': 'CLI device-login integration test',
+      },
+      body: JSON.stringify({
+        sub: manager.sub,
+        iss: manager.iss,
+        role: 'manager',
+        expiresAt: Date.now() + 86_400_000,
+        reason: 'CLI device-login integration test',
+      }),
+    })
+    assert.equal(grant.status, 200, await grant.text())
+
+    const manageCookie = await browserSession('mice_manage', 'manage123')
     const approve = await fetch(`${AUTH_URL}/auth/cli/device/approve`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Origin: AUTH_URL,
-        Cookie: cookie,
+        Cookie: manageCookie,
       },
       body: JSON.stringify({ user_code: started.user_code, confirmation: 'APPROVE' }),
     })
@@ -116,7 +148,7 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
     })
     assert.equal(who.status, 200)
     const me = await who.json()
-    assert.equal(me.user.email, 'mice_admin@mice.com')
+    assert.equal(me.user.email, 'mice_manage@mice.com')
 
     const api = await fetch(`${AUTH_URL}/api/version`, {
       headers: { Authorization: `Bearer ${token}` },

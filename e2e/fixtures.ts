@@ -7,7 +7,7 @@ import {
   waitForOxen,
 } from './helpers/oxenApi'
 import { cleanupContext, cleanupSince, revokeTokensSince, snapshot, trackSessionCookies } from './helpers/cleanup'
-import { mintSession } from './helpers/session'
+import { mintSession, mintSessionCookie } from './helpers/session'
 
 export type RepoFixture = {
   namespace: string
@@ -20,10 +20,36 @@ type Fixtures = {
   seededRepo: RepoFixture
 }
 
+const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
+
+/** Oxen create alone is invisible under RBAC; claim AuthZ ownership for the suite identity. */
+async function claimNamespace(namespace: string): Promise<void> {
+  const minted = await mintSessionCookie()
+  const res = await fetch(`${BASE_URL}/auth/namespaces`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      cookie: `${minted.cookieName}=${minted.cookieValue}`,
+      origin: BASE_URL,
+      'x-mice-reason': 'e2e: claim seeded namespace',
+    },
+    body: JSON.stringify({
+      name: namespace,
+      basePermission: 'none',
+      membersCanCreateRepos: true,
+    }),
+  })
+  if (!res.ok && res.status !== 409) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`claimNamespace failed ${res.status}: ${text}`)
+  }
+}
+
 async function makeRepo(seeded: boolean): Promise<RepoFixture> {
   const namespace = uniqueId('mice-e2e')
   const repo = 'repo'
   await createRepo(namespace, repo)
+  await claimNamespace(namespace)
   if (seeded) {
     await putFile(
       namespace,

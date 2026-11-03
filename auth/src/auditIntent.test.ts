@@ -36,6 +36,7 @@ const writer = iso.person('intent-writer')
 await createNamespaceAuthz(admin, 'in', 'none', true)
 await setRepoCollaborator('in', 'r', writer, 'write')
 await preparePrincipal(writer)
+await iso.grantRole(writer, 'user')
 
 type Row = {
   id: string

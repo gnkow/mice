@@ -56,6 +56,26 @@ export function isolatedAuth(extraEnv: Record<string, string> = {}) {
     async sessionHeaders(user: TestPerson): Promise<Record<string, string>> {
       return { cookie: await sealedSessionCookie(user), origin: 'http://localhost' }
     },
+    /**
+     * Assign a formal RBAC role in tests (bootstrap expiry). Needed after S23:
+     * principals without a role are pending-gated and cannot use the API.
+     */
+    async grantRole(
+      user: TestPerson,
+      role: 'external' | 'user' | 'manager' | 'auditor' | 'admin' = 'user',
+    ) {
+      const { ensurePrincipal } = await import('./authentication/session/session.js')
+      const { assignRole } = await import('./rbacStore.js')
+      await ensurePrincipal(user)
+      const result = await assignRole({
+        actor: null,
+        target: user,
+        role,
+        reason: 'test',
+        bootstrap: true,
+      })
+      if (!result.ok) throw new Error(`grantRole failed: ${result.error}`)
+    },
     restore() {
       if (restored) return
       restored = true

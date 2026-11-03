@@ -15,10 +15,11 @@ const {
   captureNotificationAudit, emitNotification, notificationFromAudit, registerNotificationRoutes,
   rememberNotificationUser, replayNotificationAudit, subscriberId,
 } = await import('./notifications.js')
-const { getNotificationCursor, listNotificationUsers, notificationUserKey } = await import('./notificationsStore.js')
+const { getNotificationCursor, listNotificationUsers, notificationUserKey, setNotificationCursor } = await import('./notificationsStore.js')
 const { defaultNotificationPreferences, notificationQuiet, parseNotificationPreferences, resourceIsMuted } = await import('./notificationsTypes.js')
 const { getNovu, purgeTouchedSubscribers, useNovu } = await import('./novu.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
+const { useAuditLedger } = await import('./audit.js')
 const { getDb } = await import('./db/database.js')
 const { notificationCursor, notificationTombstones, notificationUsers } = await import('./db/schema.js')
 const { sealedSessionCookie } = await import('./testSupport.js')
@@ -34,7 +35,14 @@ const outsider: SessionUser = { iss, sub: 'outsider', email: 'other@notification
 const app = new Hono()
 registerNotificationRoutes(app)
 const ledger = await openLedger(immudbConfig())
+useAuditLedger(ledger)
 const realNovu = getNovu()
+
+/** Skip historical immudb txs so replay only sees events journaled in this test. */
+async function pinCursorAtTip() {
+  const tip = (await ledger.readAll()).reduce((m, r) => Math.max(m, r.seq), 0)
+  await setNotificationCursor(tip)
+}
 
 async function request(path = '', method = 'GET', body?: unknown, user: SessionUser | null = reader, origin = 'http://localhost') {
   const headers: Record<string, string> = { origin }
@@ -81,6 +89,7 @@ beforeEach(async () => {
   await purgeTouchedSubscribers()
   useNovu(realNovu)
   for (const t of [notificationUsers, notificationTombstones, notificationCursor]) await getDb().delete(t)
+  await pinCursorAtTip()
   await preparePrincipal(admin)
   await createNamespaceAuthz(admin, 'team', 'none')
   await setRepoCollaborator('team', 'data', reader, 'read')

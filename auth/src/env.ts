@@ -141,6 +141,11 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     sessionsAuditRetentionDays: Number(
       src.SESSIONS_AUDIT_RETENTION_DAYS ?? 365,
     ),
+    /**
+     * Local/e2e only: enables POST /auth/dev/session and skips live IdP checks for
+     * the synthetic `mice-e2e` issuer. Forbidden when NODE_ENV=production.
+     */
+    authDevMode: src.AUTH_DEV_MODE === 'true',
     /** Comma-separated emails or subject IDs for first instance admin. */
     authzBootstrapAdmins: src.AUTHZ_BOOTSTRAP_ADMINS ?? '',
     /** Phase 3: require training completion before product /api. */
