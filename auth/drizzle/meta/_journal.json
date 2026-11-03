@@ -113,6 +113,13 @@
       "when": 1794000007000,
       "tag": "0015_principal_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794000008000,
+      "tag": "0016_principal_permission_history",
+      "breakpoints": true
     }
   ]
 }

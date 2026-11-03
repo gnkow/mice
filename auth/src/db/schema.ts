@@ -367,6 +367,27 @@ export const principalPermissions = pgTable(
   ],
 )
 
+/** Append-only custom permission change log (RBAC). */
+export const principalPermissionHistory = pgTable(
+  'principal_permission_history',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    principalId: bigint('principal_id', { mode: 'number' })
+      .notNull()
+      .references(() => principals.id, { onDelete: 'cascade' }),
+    permission: text('permission').notNull(),
+    action: text('action').notNull(),
+    grantedAt: ts('granted_at').notNull(),
+    grantedBy: bigint('granted_by', { mode: 'number' }).references(() => principals.id),
+    revokedAt: ts('revoked_at'),
+    revokedBy: bigint('revoked_by', { mode: 'number' }).references(() => principals.id),
+    grantReason: text('grant_reason'),
+    revokeReason: text('revoke_reason'),
+    accessRequestId: text('access_request_id'),
+  },
+  (t) => [index('principal_permission_history_principal_idx').on(t.principalId, t.grantedAt)],
+)
+
 /** Set and lift of a Mice flag, with the reason, the actor, and the time. */
 export const principalFlagHistory = pgTable('principal_flag_history', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),

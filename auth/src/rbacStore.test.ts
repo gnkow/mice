@@ -7,7 +7,9 @@ import {
   getCustomPermissions,
   getUserRole,
   grantCustomPermissions,
+  listPermissionHistory,
   listRoleHistory,
+  revokeCustomPermissions,
   revokeRole,
 } from './rbacStore.js'
 
@@ -236,5 +238,45 @@ describe('RBAC S08 grant custom permissions', () => {
       true,
     )
     assert.deepEqual(await getCustomPermissions(target), ['namespace:create', 'store:gc'])
+  })
+})
+
+describe('RBAC S09 revoke custom permissions', () => {
+  it('revokes selected custom permissions and appends history', async () => {
+    const actor = person('actor-s09')
+    const target = person('target-revoke-perm')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    const expiresAt = Date.now() + dayMs
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor,
+          target,
+          permissions: ['namespace:create', 'store:gc'],
+          reason: 'grant both',
+          expiresAt,
+        })
+      ).ok,
+      true,
+    )
+    const revoked = await revokeCustomPermissions({
+      actor,
+      target,
+      permissions: ['store:gc'],
+      reason: 'no longer needed',
+    })
+    assert.equal(revoked.ok, true)
+    assert.deepEqual(await getCustomPermissions(target), ['namespace:create'])
+    const history = await listPermissionHistory(target)
+    assert.deepEqual(
+      history.map((h) => ({ permission: h.permission, action: h.action })),
+      [
+        { permission: 'namespace:create', action: 'granted' },
+        { permission: 'store:gc', action: 'granted' },
+        { permission: 'store:gc', action: 'revoked' },
+      ],
+    )
+    assert.equal(history.at(-1)?.revokeReason, 'no longer needed')
   })
 })

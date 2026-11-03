@@ -2,7 +2,13 @@ import { and, asc, eq } from 'drizzle-orm'
 import { ensurePrincipal } from './authentication/session/session.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { getDb } from './db/database.js'
-import { principalPermissions, principalRoleHistory, principalRoles, principals } from './db/schema.js'
+import {
+  principalPermissionHistory,
+  principalPermissions,
+  principalRoleHistory,
+  principalRoles,
+  principals,
+} from './db/schema.js'
 import { isInstancePermission, type InstancePermission } from './rbacCatalog.js'
 import { isInstanceRole, type InstanceRole } from './rbacRoles.js'
 
@@ -210,6 +216,15 @@ export async function revokeRole(input: {
   return { ok: true }
 }
 
+export type PermissionHistoryEntry = {
+  permission: InstancePermission
+  action: 'granted' | 'revoked'
+  grantedAt: string
+  grantReason: string | null
+  revokedAt: string | null
+  revokeReason: string | null
+}
+
 export async function getCustomPermissions(
   user: UserKey,
   now = Date.now(),
@@ -227,6 +242,52 @@ export async function getCustomPermissions(
     out.push(r.permission)
   }
   return out
+}
+
+export async function listPermissionHistory(user: UserKey): Promise<PermissionHistoryEntry[]> {
+  const id = await principalIdOf(user)
+  if (id == null) return []
+  const rows = await getDb()
+    .select()
+    .from(principalPermissionHistory)
+    .where(eq(principalPermissionHistory.principalId, id))
+    .orderBy(asc(principalPermissionHistory.id))
+  return rows.flatMap((r) => {
+    if (!isInstancePermission(r.permission)) return []
+    if (r.action !== 'granted' && r.action !== 'revoked') return []
+    return [{
+      permission: r.permission,
+      action: r.action,
+      grantedAt: r.grantedAt.toISOString(),
+      grantReason: r.grantReason,
+      revokedAt: r.revokedAt?.toISOString() ?? null,
+      revokeReason: r.revokeReason,
+    }]
+  })
+}
+
+async function appendPermissionHistory(input: {
+  principalId: number
+  permission: InstancePermission
+  action: 'granted' | 'revoked'
+  grantedAt: Date
+  grantedBy: number | null
+  grantReason: string | null
+  revokedAt?: Date | null
+  revokedBy?: number | null
+  revokeReason?: string | null
+}): Promise<void> {
+  await getDb().insert(principalPermissionHistory).values({
+    principalId: input.principalId,
+    permission: input.permission,
+    action: input.action,
+    grantedAt: input.grantedAt,
+    grantedBy: input.grantedBy,
+    grantReason: input.grantReason,
+    revokedAt: input.revokedAt ?? null,
+    revokedBy: input.revokedBy ?? null,
+    revokeReason: input.revokeReason ?? null,
+  })
 }
 
 export async function grantCustomPermissions(input: {
@@ -284,6 +345,63 @@ export async function grantCustomPermissions(input: {
           expiresAt,
         },
       })
+    await appendPermissionHistory({
+      principalId: targetId,
+      permission,
+      action: 'granted',
+      grantedAt,
+      grantedBy,
+      grantReason: input.reason,
+    })
+  }
+  return { ok: true }
+}
+
+export async function revokeCustomPermissions(input: {
+  actor: UserKey
+  target: UserKey
+  permissions: readonly string[]
+  reason: string
+}): Promise<Result> {
+  const targetId = await principalIdOf(input.target)
+  if (targetId == null) return { ok: false, error: 'Not found' }
+  const revokedBy = await ensurePrincipal(input.actor)
+  const revokedAt = new Date()
+
+  for (const permission of input.permissions) {
+    if (!isInstancePermission(permission)) {
+      return { ok: false, error: `Invalid permission: ${permission}` }
+    }
+    const [existing] = await getDb()
+      .select()
+      .from(principalPermissions)
+      .where(
+        and(
+          eq(principalPermissions.principalId, targetId),
+          eq(principalPermissions.permission, permission),
+        ),
+      )
+      .limit(1)
+    if (!existing) continue
+    await appendPermissionHistory({
+      principalId: targetId,
+      permission,
+      action: 'revoked',
+      grantedAt: existing.grantedAt,
+      grantedBy: existing.grantedBy,
+      grantReason: existing.grantReason,
+      revokedAt,
+      revokedBy,
+      revokeReason: input.reason,
+    })
+    await getDb()
+      .delete(principalPermissions)
+      .where(
+        and(
+          eq(principalPermissions.principalId, targetId),
+          eq(principalPermissions.permission, permission),
+        ),
+      )
   }
   return { ok: true }
 }
