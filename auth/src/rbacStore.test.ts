@@ -160,3 +160,34 @@ describe('RBAC S06 getUserRole expiry', () => {
     assert.equal(await getUserRole(target, expiresAt), null)
   })
 })
+
+describe('RBAC S07 role history', () => {
+  it('returns grant and revoke rows in order with reasons', async () => {
+    const actor = person('actor-s07')
+    const target = person('target-history')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    assert.equal(
+      (
+        await assignRole({
+          actor,
+          target,
+          role: 'user',
+          reason: 'join',
+          expiresAt: Date.now() + dayMs,
+        })
+      ).ok,
+      true,
+    )
+    assert.equal(
+      (await revokeRole({ actor, target, reason: 'left' })).ok,
+      true,
+    )
+    const history = await listRoleHistory(target)
+    assert.equal(history.length, 2)
+    assert.equal(history[0].action, 'granted')
+    assert.equal(history[0].grantReason, 'join')
+    assert.equal(history[1].action, 'revoked')
+    assert.equal(history[1].revokeReason, 'left')
+  })
+})

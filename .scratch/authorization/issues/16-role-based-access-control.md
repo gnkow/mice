@@ -155,7 +155,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 - [x] **S04** Assign role — active role set; reason/actor; `expiresAt` required for delegated (non-bootstrap)
 - [x] **S05** Revoke / replace role — previous role closed; history append-only
 - [x] **S06** Read role — `getUserRole`; expired role treated as none
-- [ ] **S07** Role history — grant/revoke rows queryable via store API
+- [x] **S07** Role history — grant/revoke rows queryable via store API
 
 ### Store: custom permissions
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S07**.
+In progress. Next: **S08**.
 
 ## Comments
 
@@ -302,3 +302,4 @@ In progress. Next: **S07**.
 - 2026-11-03: S04 done — `principal_roles` + `assignRole` with delegated expiry / bootstrap.
 - 2026-11-03: S05 done — replace/revoke roles with append-only `principal_role_history`.
 - 2026-11-03: S06 done — expired roles read as none via `getUserRole(now)`.
+- 2026-11-03: S07 done — `listRoleHistory` returns ordered grant/revoke rows with reasons.
