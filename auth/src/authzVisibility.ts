@@ -11,14 +11,13 @@ const who = (user: Who) => ({ key: userKey(user), groups: repo.sessionGroups(use
  * repo collaborator grant (user or IdP group) under the namespace.
  */
 export async function userCanSeeNamespace(user: Who, ns: string): Promise<boolean> {
-  if (await isInstanceAdmin(user)) return true
+  // Boolean instance-admin no longer sees every namespace (Admin/Auditor separation).
   if (await resolveNamespaceRole(ns, user)) return true
   return repo.hasCollaboratorGrantIn(ns, who(user))
 }
 
-/** Namespace names visible to the user (member, collab, or instance admin). */
+/** Namespace names visible to the user (member or collab). */
 export async function visibleNamespaceNames(user: Who): Promise<string[] | 'all'> {
-  if (await isInstanceAdmin(user)) return 'all'
   const seats = await namespaceRolesFor(user)
   const collab = new Set(await repo.collaboratorNamespaces(who(user)))
   const names = Object.keys(await repo.readNamespaces())

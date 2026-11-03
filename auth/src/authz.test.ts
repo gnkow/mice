@@ -228,7 +228,7 @@ await describe('TC-AUTHO matrix', async () => {
     assert.equal(r.ok, false)
   })
 
-  await it('TC-AUTHO-11: site admin bypass when no grant', async () => {
+  await it('TC-AUTHO-11: site admin no longer bypasses repo ACL without membership', async () => {
     const ns = 'tc11'
     await createNamespaceAuthz(admin, ns, 'none', true)
     const admin2 = {
@@ -245,8 +245,7 @@ await describe('TC-AUTHO matrix', async () => {
       method: 'GET',
       pathname: `/api/repos/${ns}/secret`,
     })
-    assert.equal(d.allow, true)
-    assert.equal(d.siteAdminBypass, true)
+    assert.equal(d.allow, false)
   })
 
   await it('TC-AUTHO-12: Owner audit scoped; view_audit instance-wide', async () => {
@@ -1151,7 +1150,7 @@ await describe('repo / namespace API decisions', async () => {
     assert.equal(bypass.allow, true)
   })
 
-  await it('site admin bypass when not a member of listed namespace', async () => {
+  await it('site admin cannot list repos in a namespace they are not a member of', async () => {
     const ns = 'tc-list-bypass'
     await createNamespaceAuthz(admin, ns, 'none', true)
     const admin2 = mkUser('list-admin2')
@@ -1164,8 +1163,7 @@ await describe('repo / namespace API decisions', async () => {
       method: 'GET',
       pathname: `/api/repos/${ns}`,
     })
-    assert.equal(d.allow, true)
-    assert.equal(d.siteAdminBypass, true)
+    assert.equal(d.allow, false)
   })
 
   await it('namespace.create requires create_namespace or instance admin', async () => {

@@ -188,7 +188,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 - [x] **S23** Pending gate — no role ⇒ pending-only (not “no ns membership”)
 - [x] **S24** Instance actions via new perms — create namespace, session, tokens, etc. map to new names
-- [ ] **S25** Admin separation — Admin denied on data/audit reads
+- [x] **S25** Admin separation — Admin denied on data/audit reads
 - [ ] **S26** Auditor ACL bypass — `repo:bypass_acl` allows private repo read without collaborator
 - [ ] **S27** Non-auditor repo ACL — still collaborator/ns rules
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S25**.
+In progress. Next: **S26**.
 
 ## Comments
 
@@ -320,3 +320,4 @@ In progress. Next: **S25**.
 - 2026-11-03: S22 done — directGrantPermissions with authority + expiry.
 - 2026-11-03: S23 done — isPendingUser keyed off formal role; authz tests updated.
 - 2026-11-03: S24 done — decideInstanceAction uses RBAC permission names; no boolean-admin short-circuit.
+- 2026-11-03: S25 done — removed site-admin repo/namespace visibility bypass; Admin denied on data/audit.

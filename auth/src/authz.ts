@@ -167,10 +167,8 @@ export async function hasRepoPermission(
   ) {
     return { ok: true, effective, bypass: false }
   }
-  // PAT scopes never get site-admin bypass
-  if (await isUnscopedInstanceAdmin(user)) {
-    return { ok: true, effective: 'admin', bypass: true }
-  }
+  // Separation of duties: boolean instance-admin no longer bypasses repository ACLs.
+  // Universal read is `repo:bypass_acl` (Auditor).
   return {
     ok: false,
     effective,
@@ -286,7 +284,6 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
   const ns = interpreted.namespace ?? input.createNamespace
   const repo = interpreted.repo ?? input.createRepo
   const action = interpreted.authzAction
-  const bypass: AuthzDecision = { allow: true, status: 403, reason: 'ok', siteAdminBypass: true }
   let mutationUser = user
   if (
     !['GET', 'HEAD'].includes(method) &&
@@ -312,7 +309,6 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
       const targetNs = interpreted.targetNamespace
       if (!targetNs) return deny('Invalid namespace')
       if (await userCanSeeNamespace(user, targetNs)) return allow()
-      if (await isInstanceAdmin(user)) return bypass
       return deny('Not allowed to view that namespace')
     }
     case 'namespace.create': {
@@ -326,21 +322,18 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
       }
       const settings = await getNamespace(ns)
       if (!settings) {
-        if (await isInstanceAdmin(user)) return bypass
         return deny('Namespace not found in AuthZ; create it first')
       }
       if (await hasNamespaceCapability(ns, mutationUser, 'create_repos')) return allow()
       const nsRole = await resolveNamespaceRole(ns, mutationUser)
       if (nsRole === 'owner') return allow()
       if (nsRole === 'member' && settings.membersCanCreateRepos) return allow()
-      if (await isInstanceAdmin(user)) return bypass
       return deny('Not allowed to create repositories in this namespace')
     }
     case 'repo.list': {
       const listNs = interpreted.targetNamespace
       if (!listNs) return deny('Invalid namespace')
       if (await resolveNamespaceRole(listNs, user)) return allow()
-      if (await isInstanceAdmin(user)) return bypass
       return deny('Not a member of this namespace')
     }
     case 'other':
