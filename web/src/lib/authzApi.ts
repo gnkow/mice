@@ -485,6 +485,7 @@ export function fetchInstance(signal?: AbortSignal) {
       sub: string
       iss: string
       permissions: InstancePermission[]
+      expiresAt: number
     }>
   }>('/auth/instance', { signal })
 }
@@ -545,10 +546,15 @@ export function liftMiceSuspension(principal: string, reason: string) {
 export function setInstancePermissions(
   target: { sub: string; iss: string },
   permissions: InstancePermission[],
+  expiresAt?: number,
 ) {
   return authzFetch('/auth/instance/permissions', {
     method: 'PUT',
-    body: JSON.stringify({ ...target, permissions }),
+    body: JSON.stringify({
+      ...target,
+      permissions,
+      ...(expiresAt != null ? { expiresAt } : {}),
+    }),
   })
 }
 

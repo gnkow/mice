@@ -50,7 +50,7 @@ describe('decideInstanceAction matrix', () => {
       const none = t.person(`none-${c.action}`)
       await preparePrincipal(holder)
       await preparePrincipal(none)
-      if (c.permission) await setInstancePermissions(admin, holder, [c.permission])
+      if (c.permission) await setInstancePermissions(admin, holder, [c.permission], Date.now() + 86_400_000)
 
       it('admin allows', async () => {
         assert.deepEqual(await decideInstanceAction(admin, c.action), ALLOW)
@@ -140,7 +140,7 @@ describe('composite decisions', async () => {
     await createNamespaceAuthz(creator, 'ns2', 'none')
     const role = await createCustomNamespaceRole('ns2', { name: 'R', permissions: ['review_access_requests'] })
     if (role.ok) await setNamespaceMember('ns2', reviewer, role.role.id)
-    await setInstancePermissions(admin, creator, ['create_namespace'])
+    await setInstancePermissions(admin, creator, ['create_namespace'], Date.now() + 86_400_000)
     assert.deepEqual(await decideAccessReview(admin), ALLOW)
     assert.deepEqual(await decideAccessReview(creator), ALLOW)
     assert.deepEqual(await decideAccessReview(reviewer), ALLOW)

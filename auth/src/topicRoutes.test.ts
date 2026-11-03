@@ -70,6 +70,39 @@ await describe('instance routes', async () => {
     assert.equal(denied.status, 403)
     assert.ok(audited.includes('instance.admin.add'))
   })
+
+  await it('requires expiresAt when setting delegated permissions and returns it on GET', async () => {
+    const h = { ...(await cookie('root')), ...json }
+    const missing = await app.request('/auth/instance/permissions', {
+      method: 'PUT',
+      headers: h,
+      body: JSON.stringify({ sub: 'delegatee', iss: 'idp', permissions: ['view_audit'] }),
+    })
+    assert.equal(missing.status, 403)
+    const missingBody = (await missing.json()) as { error: string }
+    assert.match(missingBody.error, /expir/i)
+
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000
+    const ok = await app.request('/auth/instance/permissions', {
+      method: 'PUT',
+      headers: h,
+      body: JSON.stringify({
+        sub: 'delegatee',
+        iss: 'idp',
+        permissions: ['view_audit'],
+        expiresAt,
+      }),
+    })
+    assert.equal(ok.status, 200)
+
+    const listed = (await (await app.request('/auth/instance', { headers: await cookie('root') })).json()) as {
+      permissions: Array<{ sub: string; iss: string; permissions: string[]; expiresAt: number }>
+    }
+    const row = listed.permissions.find((p) => p.sub === 'delegatee' && p.iss === 'idp')
+    assert.ok(row)
+    assert.deepEqual(row.permissions, ['view_audit'])
+    assert.equal(row.expiresAt, expiresAt)
+  })
 })
 
 await describe('revocation routes', async () => {

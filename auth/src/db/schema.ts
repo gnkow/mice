@@ -36,6 +36,7 @@ export const instancePermissions = pgTable(
   {
     userKey: text('user_key').notNull(),
     permission: text('permission').notNull(),
+    expiresAt: ts('expires_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.userKey, t.permission] })],
 )

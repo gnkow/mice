@@ -585,6 +585,12 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   )
 }
 
+function defaultExpiryLocalValue(): string {
+  const d = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
   const state = useAsync((signal) => fetchInstance(signal), [])
   const [error, setError] = useState<string | null>(null)
@@ -594,6 +600,7 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
   const [permChecks, setPermChecks] = useState<InstancePermission[]>([
     'create_namespace',
   ])
+  const [expiresLocal, setExpiresLocal] = useState(defaultExpiryLocalValue)
 
   if (state.kind === 'error') {
     return (
@@ -613,14 +620,25 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
       setError('Choose a user from search or enter sub/iss manually')
       return
     }
+    if (permChecks.length > 0 && !expiresLocal.trim()) {
+      setError('Expiry date is required for delegated permissions')
+      return
+    }
+    const expiresAt = permChecks.length > 0 ? new Date(expiresLocal).getTime() : undefined
+    if (permChecks.length > 0 && (expiresAt == null || !Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
+      setError('Expiry must be a future date and time')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       await setInstancePermissions(
         { sub: permSub.trim(), iss: issuer },
         permChecks,
+        expiresAt,
       )
       setPermSub('')
+      setExpiresLocal(defaultExpiryLocalValue())
       state.reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed')
@@ -642,7 +660,7 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
                 Delegated permissions
               </h2>
               <p className="muted small">
-                Delegate individual instance permissions to non-admins.
+                Delegate individual instance permissions to non-admins. Every grant needs an expiry.
               </p>
             </div>
             <p className="muted small ns-settings-count">
@@ -661,6 +679,8 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
                       {p.iss}
                       {' · '}
                       {p.permissions.join(', ')}
+                      {' · expires '}
+                      {new Date(p.expiresAt).toLocaleString()}
                     </span>
                   </div>
                   <button
@@ -694,6 +714,16 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
                   setPermIss(iss)
                 }}
               />
+              <label>
+                Expires
+                <input
+                  type="datetime-local"
+                  value={expiresLocal}
+                  onChange={(e) => setExpiresLocal(e.target.value)}
+                  disabled={busy}
+                  required={permChecks.length > 0}
+                />
+              </label>
             </div>
             <fieldset className="ns-check-fieldset">
               <legend>Permissions</legend>

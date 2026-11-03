@@ -122,11 +122,12 @@ export async function resolveAccessRequest(
       actor,
       { sub: req.sub, iss: req.iss },
       [...perms],
+      Date.now() + 90 * 24 * 60 * 60 * 1000,
     )
   } else if ((await decideInstanceAction(actor, 'instance.admin')).allow) {
     await setInstancePermissions(actor, { sub: req.sub, iss: req.iss }, [
       'create_namespace',
-    ])
+    ], Date.now() + 90 * 24 * 60 * 60 * 1000)
   } else {
     return { ok: false, error: 'Specify namespace+role or permission to grant' }
   }

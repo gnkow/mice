@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { closeMainDatabase, openMainDatabase } from './db/database.js'
-import { initAudit, setAuditObserver, startAuditVerifySchedule } from './audit.js'
+import { appendAudit, initAudit, setAuditObserver, startAuditVerifySchedule } from './audit.js'
 import { acquireDataDirLock } from './dataDirLock.js'
 import { assertProductionStartup, setAuthenticationObserver, startAccessReviewAlertSchedule, startClockDriftSchedule, startDirectorySyncSchedule, startIdpDriftSchedule, startSealKeyRotationSchedule } from './authentication/index.js'
 import { env, oidcConfigured } from './env.js'
@@ -46,6 +46,16 @@ export async function boot(): Promise<void> {
   startIdpDriftSchedule() // Ticket 23: Daily IdP drift detection
   startAccessReviewAlertSchedule()
   startClockDriftSchedule()
+  const { startInstancePermissionExpirySchedule } = await import('./instancePermissionExpiry.js')
+  startInstancePermissionExpirySchedule({
+    audit: async (event) => {
+      await appendAudit({
+        action: event.action,
+        message: event.message,
+        detail: event.detail,
+      })
+    },
+  })
 
   setAuditObserver((event) => {
     purgeFavoritesForAudit(event).catch((err) => console.error('[mice-auth] favorites purge failed', err))

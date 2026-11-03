@@ -106,7 +106,13 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
       }
       const permissions = body.permissions as InstancePermission[]
       const t = target(body)
-      const result = await setInstancePermissions(user, t, permissions)
+      const expiresAt =
+        typeof body.expiresAt === 'number'
+          ? body.expiresAt
+          : typeof body.expiresAt === 'string'
+            ? Date.parse(body.expiresAt)
+            : null
+      const result = await setInstancePermissions(user, t, permissions, expiresAt)
       if (!result.ok) {
         await audit(c, user, 'session', {
           action: 'instance.permissions.update',
@@ -119,7 +125,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
       await audit(c, user, 'session', {
         action: 'instance.permissions.update',
         message: `Set instance permissions for ${t.sub}`,
-        detail: { target: t, permissions },
+        detail: { target: t, permissions, ...(expiresAt != null ? { expiresAt } : {}) },
       })
       return c.json({ ok: true })
     }),

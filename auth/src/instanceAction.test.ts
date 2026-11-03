@@ -30,7 +30,7 @@ describe('authorizeInstanceAction', () => {
       const outsider = person(`outsider-${action}`)
       await preparePrincipal(holder)
       await preparePrincipal(outsider)
-      await setInstancePermissions(admin, holder, [permission])
+      await setInstancePermissions(admin, holder, [permission], Date.now() + 86_400_000)
       assert.equal((await authorizeInstanceAction(admin, action)).allow, true)
       assert.equal((await authorizeInstanceAction(holder, action)).allow, true)
       assert.deepEqual(await authorizeInstanceAction(outsider, action), { allow: false, reason })

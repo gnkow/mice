@@ -624,9 +624,9 @@ await describe('enforcement gates', async () => {
   await it('setInstancePermissions requires instance admin actor', async () => {
     const actor = mkUser('not-admin-actor')
     const target = mkUser('perm-target')
-    const denied = await setInstancePermissions(actor, target, ['view_audit'])
+    const denied = await setInstancePermissions(actor, target, ['view_audit'], Date.now() + 86_400_000)
     assert.equal(denied.ok, false)
-    const ok = await setInstancePermissions(admin, target, ['view_audit'])
+    const ok = await setInstancePermissions(admin, target, ['view_audit'], Date.now() + 86_400_000)
     assert.equal(ok.ok, true)
     assert.equal(await hasInstancePermission(target, 'view_audit'), true)
   })
