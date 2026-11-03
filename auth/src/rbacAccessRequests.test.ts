@@ -64,3 +64,24 @@ describe('RBAC S16 submit access request', () => {
     assert.deepEqual(result.request.requestedPermissions, ['namespace:create'])
   })
 })
+
+describe('RBAC S17 one pending request', () => {
+  it('blocks a second submit while the first is still pending', async () => {
+    const user = person('req-twice')
+    await ensurePrincipal(user)
+    const first = await submitAccessRequest({
+      user,
+      message: 'first request',
+      requestedRole: 'user',
+    })
+    assert.equal(first.ok, true)
+    const second = await submitAccessRequest({
+      user,
+      message: 'second request',
+      requestedRole: 'manager',
+    })
+    assert.equal(second.ok, false)
+    if (second.ok) throw new Error('expected failure')
+    assert.match(second.error, /pending/i)
+  })
+})
