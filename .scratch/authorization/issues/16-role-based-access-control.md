@@ -198,7 +198,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 ### HTTP
 
-- [ ] **S29** Access-request routes — submit / list / approve / deny contracts
+- [x] **S29** Access-request routes — submit / list / approve / deny contracts
 - [ ] **S30** Direct-grant routes — role + permissions (+ expiry)
 - [ ] **S31** `/auth/me/authz` — role, effective perms, pending, catalog (replaces old 8-bool map); wipe old permission APIs here
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S29**.
+In progress. Next: **S30**.
 
 ## Comments
 
@@ -324,3 +324,4 @@ In progress. Next: **S29**.
 - 2026-11-03: S26 done — `repo:bypass_acl` grants private-repo read without collaborator (Auditor).
 - 2026-11-03: S27 done — non-auditor roles (and Auditor writes) still require collaborator/ns ACL.
 - 2026-11-03: S28 done — assign/revoke role and custom perms append immudb events queryable via audit API.
+- 2026-11-03: S29 done — `/auth/access-requests` submit/list/approve/deny wired to RBAC (role/perms + expiry).

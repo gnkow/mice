@@ -3,16 +3,23 @@ import { env } from '../../env.js'
 import { guarded } from './routeGuard.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { authenticateUser } from './requireAuth.js'
-import { canReviewAccessRequests, listAccessRequests, resolveAccessRequest, submitAccessRequest } from '../../accessRequests.js'
-import { decideInstanceAction, isPendingUser } from '../../authz.js'
+import { isPendingUser } from '../../authz.js'
 import { canSearchDirectory, searchDirectory } from '../directory/directory.js'
 import { hasInstancePermission, isInstanceAdmin, setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from '../../authzInstanceStore.js'
-import { namespacesWithCapability } from '../../authzMembershipStore.js'
 import { userHasAnyGrant } from '../../authzVisibility.js'
-import { ALL_INSTANCE_PERMISSIONS, type InstancePermission, type MemberRoleRef } from '../../authzTypes.js'
+import { ALL_INSTANCE_PERMISSIONS } from '../../authzTypes.js'
 import { rememberNotificationUser } from '../../notifications.js'
 import { listCliCredentials, revokeCliCredentialFamily } from '../credentials/cliCredentials.js'
 import { currentEmailsByAuthor } from './session.js'
+import {
+  approveAccessRequest,
+  denyAccessRequest,
+  listAccessRequestsForReviewer,
+  submitAccessRequest,
+} from '../../rbacAccessRequests.js'
+import { isInstancePermission } from '../../rbacCatalog.js'
+import { isInstanceRole } from '../../rbacRoles.js'
+import { getUserRole, hasPermission } from '../../rbacStore.js'
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -65,61 +72,153 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
   }))
 
   app.post('/auth/access-requests', guarded({ body: 'optional' }, async ({ c, user: session, body }) => {
-    const message = (body.message as string | undefined) ?? ''
-    const req = await submitAccessRequest(session, message)
-    await auditMutation(c, session, 'session', {
-      action: 'access-request.submit',
-      message: 'Submitted access request',
-      detail: { requestId: req.id },
-    })
-    return c.json({ ok: true, request: req })
-  }))
-
-  app.get('/auth/access-requests', guarded({ gate: async (u) => (await canReviewAccessRequests(u) ? null : 'Forbidden') }, async ({ c, user: session }) => {
-    const fullHistory = (await decideInstanceAction(session, 'access.review.all')).allow
-    return c.json({
-      requests: await listAccessRequests({ pendingOnly: !fullHistory }),
-      reviewNamespaces: await namespacesWithCapability(
-        session,
-        'review_access_requests',
-      ),
-    })
-  }))
-
-  app.post('/auth/access-requests/:id', guarded({ mutates: true, reason: true, body: 'json' }, async ({ c, user: session, body: raw }) => {
-    const body = raw as {
-      action?: 'approve' | 'deny'
-      namespace?: string
-      role?: MemberRoleRef
-      permission?: InstancePermission
+    const message = typeof body.message === 'string' ? body.message : ''
+    const requestedRole =
+      body.requestedRole === null || body.requestedRole === undefined
+        ? null
+        : typeof body.requestedRole === 'string' && isInstanceRole(body.requestedRole)
+          ? body.requestedRole
+          : undefined
+    if (body.requestedRole !== undefined && body.requestedRole !== null && requestedRole === undefined) {
+      return c.json({ error: `Invalid role: ${String(body.requestedRole)}` }, 400)
     }
-    if (body.action !== 'approve' && body.action !== 'deny') {
-      return c.json({ error: 'action required' }, 400)
+    const rawPerms = Array.isArray(body.requestedPermissions) ? body.requestedPermissions : []
+    const requestedPermissions: string[] = []
+    for (const p of rawPerms) {
+      if (typeof p !== 'string' || !isInstancePermission(p)) {
+        return c.json({ error: `Invalid permission: ${String(p)}` }, 400)
+      }
+      requestedPermissions.push(p)
     }
-    const result = await resolveAccessRequest(session, c.req.param('id'), body.action, {
-      namespace: body.namespace,
-      role: body.role,
-      permission: body.permission,
+    const result = await submitAccessRequest({
+      user: session,
+      message,
+      requestedRole,
+      requestedPermissions,
     })
     if (!result.ok) {
       await auditMutation(c, session, 'session', {
-        action: `access-request.${body.action}`,
+        action: 'access-request.submit',
         status: 400,
-        message: `Access request ${body.action} failed: ${result.error}`,
-        detail: { requestId: c.req.param('id') },
+        message: `Access request submit failed: ${result.error}`,
       })
       return c.json({ error: result.error }, 400)
     }
     await auditMutation(c, session, 'session', {
-      action: `access-request.${body.action}`,
-      namespace: body.action === 'approve' ? body.namespace : undefined,
-      message: `Access request ${result.request.status}`,
+      action: 'access-request.submit',
+      message: 'Submitted access request',
+      detail: {
+        requestId: result.request.id,
+        requestedRole: result.request.requestedRole,
+        requestedPermissions: result.request.requestedPermissions,
+      },
+    })
+    return c.json({ ok: true, request: result.request })
+  }))
+
+  app.get(
+    '/auth/access-requests',
+    guarded({
+      gate: async (u) => ((await hasPermission(u, 'access_request:list')) ? null : 'Forbidden'),
+    }, async ({ c, user: session }) => {
+      // Admins see resolved history; managers see pending they can act on.
+      const pendingOnly = (await getUserRole(session)) !== 'admin'
+      return c.json({
+        requests: await listAccessRequestsForReviewer(session, { pendingOnly }),
+      })
+    }),
+  )
+
+  app.post('/auth/access-requests/:id', guarded({ mutates: true, reason: true, body: 'json' }, async ({ c, user: session, body }) => {
+    if (!(await hasPermission(session, 'access_request:review'))) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    const action = body.action
+    if (action !== 'approve' && action !== 'deny') {
+      return c.json({ error: 'action required' }, 400)
+    }
+    const requestId = c.req.param('id')
+
+    if (action === 'deny') {
+      const reason = typeof body.reason === 'string' ? body.reason : ''
+      if (!reason.trim()) return c.json({ error: 'Denial reason is required' }, 400)
+      const result = await denyAccessRequest({ reviewer: session, requestId, reason })
+      if (!result.ok) {
+        const status = result.error === 'Not found' ? 404 : result.error.startsWith('Forbidden') ? 403 : 400
+        await auditMutation(c, session, 'session', {
+          action: 'access-request.deny',
+          status,
+          message: `Access request deny failed: ${result.error}`,
+          detail: { requestId },
+        })
+        return c.json({ error: result.error }, status)
+      }
+      await auditMutation(c, session, 'session', {
+        action: 'access-request.deny',
+        message: 'Access request denied',
+        detail: {
+          requestId: result.request.id,
+          requester: { sub: result.request.sub, iss: result.request.iss },
+          reason,
+        },
+      })
+      return c.json({ ok: true, request: result.request })
+    }
+
+    const expiresAt = body.expiresAt
+    if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+      return c.json({ error: 'expiresAt is required for approval' }, 400)
+    }
+    const grantedRole =
+      body.grantedRole === undefined
+        ? undefined
+        : body.grantedRole === null
+          ? null
+          : typeof body.grantedRole === 'string' && isInstanceRole(body.grantedRole)
+            ? body.grantedRole
+            : undefined
+    if (body.grantedRole !== undefined && body.grantedRole !== null && grantedRole === undefined) {
+      return c.json({ error: `Invalid role: ${String(body.grantedRole)}` }, 400)
+    }
+    let grantedPermissions: string[] | undefined
+    if (body.grantedPermissions !== undefined) {
+      if (!Array.isArray(body.grantedPermissions)) {
+        return c.json({ error: 'grantedPermissions must be an array' }, 400)
+      }
+      grantedPermissions = []
+      for (const p of body.grantedPermissions) {
+        if (typeof p !== 'string' || !isInstancePermission(p)) {
+          return c.json({ error: `Invalid permission: ${String(p)}` }, 400)
+        }
+        grantedPermissions.push(p)
+      }
+    }
+    const result = await approveAccessRequest({
+      reviewer: session,
+      requestId,
+      expiresAt,
+      grantedRole,
+      grantedPermissions,
+      reason: typeof body.reason === 'string' ? body.reason : undefined,
+    })
+    if (!result.ok) {
+      const status = result.error === 'Not found' ? 404 : result.error.startsWith('Forbidden') ? 403 : 400
+      await auditMutation(c, session, 'session', {
+        action: 'access-request.approve',
+        status,
+        message: `Access request approve failed: ${result.error}`,
+        detail: { requestId },
+      })
+      return c.json({ error: result.error }, status)
+    }
+    await auditMutation(c, session, 'session', {
+      action: 'access-request.approve',
+      message: 'Access request approved',
       detail: {
         requestId: result.request.id,
         requester: { sub: result.request.sub, iss: result.request.iss },
-        ...(body.action === 'approve'
-          ? { role: body.role, permission: body.permission }
-          : {}),
+        grantedRole: body.grantedRole,
+        grantedPermissions: body.grantedPermissions,
       },
     })
     return c.json({ ok: true, request: result.request })
