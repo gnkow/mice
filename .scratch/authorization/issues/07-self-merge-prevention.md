@@ -4,15 +4,21 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Merge endpoint extracts commit author(s) from commits in the merge
-- [ ] Compare merge signer `iss|sub` to each commit's author identity
-- [ ] If signer === any commit author, reject merge with error "Self-merge forbidden (4-eyes principle)"
-- [ ] Audit both approved and denied merge attempts (include signer, authors, reason)
-- [ ] Authorization continues to enforce `write` role minimum (already implemented)
-- [ ] Responsibility split documented: authorization = role check, repositories = author comparison
-- [ ] Tests verify user can merge other users' commits
-- [ ] Tests verify user cannot merge their own commits
-- [ ] Tests verify audit logs record denied self-merge attempts
-- [ ] Tests verify merge with multiple authors blocks if signer matches any author
+- [x] Merge endpoint extracts commit author(s) from commits in the merge
+- [x] Compare merge signer `iss|sub` to each commit's author identity
+- [x] If signer === any commit author, reject merge with error "Self-merge forbidden (4-eyes principle)"
+- [x] Audit both approved and denied merge attempts (include signer, authors, reason)
+- [x] Authorization continues to enforce `write` role minimum (already implemented)
+- [x] Responsibility split documented: authorization = role check, repositories = author comparison
+- [x] Tests verify user can merge other users' commits
+- [x] Tests verify user cannot merge their own commits
+- [x] Tests verify audit logs record denied self-merge attempts
+- [x] Tests verify merge with multiple authors blocks if signer matches any author
+
+## Notes
+
+- Decision: `auth/src/selfMerge.ts` (`decideSelfMerge`)
+- Gate: `auth/src/proxy.ts` on `action === 'merge'` (GET mergeable authors, then POST or 403)
+- Authz role floor unchanged (`maintain` / fine `merge` via path map)

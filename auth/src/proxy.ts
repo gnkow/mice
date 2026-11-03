@@ -16,6 +16,11 @@ import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
 import { filterNamespaceCatalog, recordSiteAdminBypass, seedRepoCreate } from './proxyEffects.js'
+import {
+  authorsFromCommits,
+  decideSelfMerge,
+  signerAuthorKey,
+} from './selfMerge.js'
 
 const HOP_BY_HOP = new Set([
   'connection',
@@ -130,6 +135,29 @@ export function setUpstreamFetch(next: typeof fetch): () => void {
   upstreamFetch = next
   return () => {
     upstreamFetch = prev
+  }
+}
+
+/** Commits that would enter the merge; fail closed when oxen cannot answer. */
+async function loadMergeAuthors(
+  pathname: string,
+  headers: Headers,
+): Promise<{ ok: true; authors: string[] } | { ok: false }> {
+  try {
+    const res = await upstreamFetch(`${env.oxenUpstream}${pathname}`, {
+      method: 'GET',
+      headers,
+      redirect: 'manual',
+    })
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined)
+      return { ok: false }
+    }
+    const body = (await res.json()) as { commits?: unknown }
+    if (!Array.isArray(body.commits)) return { ok: false }
+    return { ok: true, authors: authorsFromCommits(body.commits as { author?: unknown }[]) }
+  } catch {
+    return { ok: false }
   }
 }
 
@@ -277,6 +305,53 @@ export async function proxyToOxen(
       intent = await appendIntent(auditFields(0))
     } catch {
       return auditUnavailable()
+    }
+  }
+
+  // Repositories: 4-eyes self-merge check (authz already enforced the role floor above).
+  if (mutating && classified.action === 'merge') {
+    const loaded = await loadMergeAuthors(pathname, reqHeaders)
+    if (!loaded.ok) {
+      if (intent) {
+        const fields = auditFields(503)
+        await appendOutcome(intent.id, {
+          ...fields,
+          detail: { ...fields.detail, self_merge: true, reason: 'authors_unavailable' },
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          status_message: 'unavailable',
+          error: { detail: 'Merge author check unavailable' },
+        }),
+        { status: 503, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    const selfMerge = decideSelfMerge(user, loaded.authors)
+    if (!selfMerge.allow) {
+      if (intent) {
+        const fields = auditFields(403)
+        await appendOutcome(intent.id, {
+          ...fields,
+          detail: {
+            ...fields.detail,
+            self_merge: true,
+            reason: selfMerge.reason,
+            authors: loaded.authors,
+            matching_authors: selfMerge.matchingAuthors,
+            signer: signerAuthorKey(user),
+          },
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          status_message: 'forbidden',
+          error: { detail: selfMerge.reason },
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      )
     }
   }
 

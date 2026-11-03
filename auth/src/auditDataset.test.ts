@@ -46,6 +46,10 @@ beforeEach(async () => {
     const path = new URL(String(url)).pathname
     if (!init?.method || init.method === 'GET') {
       if (path.endsWith('/branches/main')) return branchHead ? json(branchHead) : json({}, 404)
+      // Self-merge check GETs the merge range before POST; authors must not include the admin.
+      if (path.includes('/merge/')) {
+        return json({ is_mergeable: true, conflicts: [], commits: [{ id: 'c1', author: 'other|user' }] })
+      }
       return json({}, 404)
     }
     return writeAnswer()

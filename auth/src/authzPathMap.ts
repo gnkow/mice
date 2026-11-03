@@ -4,6 +4,7 @@ import type { RepoRole } from './authzTypes.js'
 export const ACTION_MIN_ROLE: Record<string, RepoRole> = {
   'repo.delete': 'admin',
   'repo.metadata': 'admin',
+  // Role floor only; 4-eyes self-merge is enforced in proxy/selfMerge (repositories).
   merge: 'maintain',
   'branch.delete': 'maintain',
   'file.write': 'write',
