@@ -388,6 +388,23 @@ export const principalPermissionHistory = pgTable(
   (t) => [index('principal_permission_history_principal_idx').on(t.principalId, t.grantedAt)],
 )
 
+/** Point-in-time effective permission snapshots (RBAC). */
+export const permissionSnapshots = pgTable(
+  'permission_snapshots',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    principalId: bigint('principal_id', { mode: 'number' })
+      .notNull()
+      .references(() => principals.id, { onDelete: 'cascade' }),
+    snapshotAt: ts('snapshot_at').notNull(),
+    role: text('role'),
+    customPermissions: text('custom_permissions').array().notNull(),
+    effectivePermissions: text('effective_permissions').array().notNull(),
+    snapshotReason: text('snapshot_reason').notNull(),
+  },
+  (t) => [index('permission_snapshots_principal_idx').on(t.principalId, t.snapshotAt)],
+)
+
 /** Set and lift of a Mice flag, with the reason, the actor, and the time. */
 export const principalFlagHistory = pgTable('principal_flag_history', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),

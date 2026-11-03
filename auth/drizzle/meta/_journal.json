@@ -120,6 +120,13 @@
       "when": 1794000008000,
       "tag": "0016_principal_permission_history",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794000009000,
+      "tag": "0017_permission_snapshots",
+      "breakpoints": true
     }
   ]
 }

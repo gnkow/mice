@@ -3,6 +3,7 @@ import { ensurePrincipal } from './authentication/session/session.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { getDb } from './db/database.js'
 import {
+  permissionSnapshots,
   principalPermissionHistory,
   principalPermissions,
   principalRoleHistory,
@@ -182,6 +183,7 @@ export async function assignRole(input: {
     grantReason: input.reason,
   })
 
+  await writePermissionSnapshot(input.target, 'role_change')
   return { ok: true }
 }
 
@@ -214,6 +216,7 @@ export async function revokeRole(input: {
     revokeReason: input.reason,
   })
   await getDb().delete(principalRoles).where(eq(principalRoles.principalId, targetId))
+  await writePermissionSnapshot(input.target, 'role_change')
   return { ok: true }
 }
 
@@ -224,6 +227,50 @@ export type PermissionHistoryEntry = {
   grantReason: string | null
   revokedAt: string | null
   revokeReason: string | null
+}
+
+export type PermissionSnapshot = {
+  role: InstanceRole | null
+  customPermissions: InstancePermission[]
+  effectivePermissions: InstancePermission[]
+  snapshotReason: string
+  snapshotAt: string
+}
+
+async function writePermissionSnapshot(
+  target: UserKey,
+  reason: string,
+): Promise<void> {
+  const principalId = await principalIdOf(target)
+  if (principalId == null) return
+  const role = await getUserRole(target)
+  const custom = await getCustomPermissions(target)
+  const effective = mergeEffectivePermissions(role, custom)
+  await getDb().insert(permissionSnapshots).values({
+    principalId,
+    snapshotAt: new Date(),
+    role,
+    customPermissions: custom,
+    effectivePermissions: effective,
+    snapshotReason: reason,
+  })
+}
+
+export async function listPermissionSnapshots(user: UserKey): Promise<PermissionSnapshot[]> {
+  const id = await principalIdOf(user)
+  if (id == null) return []
+  const rows = await getDb()
+    .select()
+    .from(permissionSnapshots)
+    .where(eq(permissionSnapshots.principalId, id))
+    .orderBy(asc(permissionSnapshots.id))
+  return rows.map((r) => ({
+    role: r.role && isInstanceRole(r.role) ? r.role : null,
+    customPermissions: r.customPermissions.filter(isInstancePermission),
+    effectivePermissions: r.effectivePermissions.filter(isInstancePermission),
+    snapshotReason: r.snapshotReason,
+    snapshotAt: r.snapshotAt.toISOString(),
+  }))
 }
 
 export async function getCustomPermissions(
@@ -355,6 +402,7 @@ export async function grantCustomPermissions(input: {
       grantReason: input.reason,
     })
   }
+  await writePermissionSnapshot(input.target, 'permission_grant')
   return { ok: true }
 }
 
@@ -421,5 +469,6 @@ export async function revokeCustomPermissions(input: {
         ),
       )
   }
+  await writePermissionSnapshot(input.target, 'permission_revoke')
   return { ok: true }
 }

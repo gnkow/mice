@@ -163,7 +163,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 - [x] **S09** Revoke custom perms — history append-only
 - [x] **S10** Read custom + effective — `getEffectivePermissions` / `hasPermission` (role ∪ custom, expiry-aware)
 - [x] **S11** Permission history — via store API
-- [ ] **S12** Permission snapshots — written on role/perm change; readable via store API
+- [x] **S12** Permission snapshots — written on role/perm change; readable via store API
 
 ### Authority
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S12**.
+In progress. Next: **S13**.
 
 ## Comments
 
@@ -307,3 +307,4 @@ In progress. Next: **S12**.
 - 2026-11-03: S09 done — revoke custom perms + `principal_permission_history`.
 - 2026-11-03: S10 done — `getEffectivePermissions` / `hasPermission` over store state.
 - 2026-11-03: S11 done — `listPermissionHistory` store seam.
+- 2026-11-03: S12 done — `permission_snapshots` on role/perm changes.

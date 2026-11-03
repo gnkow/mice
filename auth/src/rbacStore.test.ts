@@ -10,6 +10,7 @@ import {
   grantCustomPermissions,
   hasPermission,
   listPermissionHistory,
+  listPermissionSnapshots,
   listRoleHistory,
   revokeCustomPermissions,
   revokeRole,
@@ -338,5 +339,39 @@ describe('RBAC S11 permission history', () => {
     assert.equal(history[0].permission, 'directory:search')
     assert.equal(history[0].action, 'granted')
     assert.equal(history[0].grantReason, 'need search')
+  })
+})
+
+describe('RBAC S12 permission snapshots', () => {
+  it('records a snapshot after role and permission changes', async () => {
+    const actor = person('actor-s12')
+    const target = person('target-snap')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    const expiresAt = Date.now() + dayMs
+    assert.equal(
+      (await assignRole({ actor, target, role: 'user', reason: 'role', expiresAt })).ok,
+      true,
+    )
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor,
+          target,
+          permissions: ['namespace:create'],
+          reason: 'custom',
+          expiresAt,
+        })
+      ).ok,
+      true,
+    )
+    const snaps = await listPermissionSnapshots(target)
+    assert.ok(snaps.length >= 2)
+    const latest = snaps.at(-1)!
+    assert.equal(latest.role, 'user')
+    assert.deepEqual(latest.customPermissions, ['namespace:create'])
+    assert.equal(latest.effectivePermissions.includes('repo:files:write'), true)
+    assert.equal(latest.effectivePermissions.includes('namespace:create'), true)
+    assert.equal(latest.snapshotReason, 'permission_grant')
   })
 })
