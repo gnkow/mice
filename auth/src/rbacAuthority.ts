@@ -21,3 +21,22 @@ export function canGrantPermissions(
   const have = new Set<string>(reviewerEffective)
   return permissions.every((p) => have.has(p))
 }
+
+/**
+ * Authority check for the grant that will actually be applied (after optional
+ * modify-before-approve). Ignores the originally requested role/perms.
+ */
+export function canApproveModifiedGrant(input: {
+  reviewerRole: InstanceRole
+  reviewerEffective: readonly InstancePermission[]
+  grantedRole: InstanceRole | null
+  grantedPermissions: readonly string[]
+}): boolean {
+  if (input.grantedRole != null && !canApproveRole(input.reviewerRole, input.grantedRole)) {
+    return false
+  }
+  if (input.grantedPermissions.length > 0) {
+    return canGrantPermissions(input.reviewerEffective, input.grantedPermissions)
+  }
+  return input.grantedRole != null
+}

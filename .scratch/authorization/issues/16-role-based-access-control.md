@@ -169,7 +169,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 - [x] **S13** Role approval authority — Manager ≤ Manager; Admin any role; others none
 - [x] **S14** Permission grant authority — reviewer must hold every granted perm
-- [ ] **S15** Modify-before-approve — granted role/perms may differ from requested; still pass S13–S14
+- [x] **S15** Modify-before-approve — granted role/perms may differ from requested; still pass S13–S14
 
 ### Access requests
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S15**.
+In progress. Next: **S16**.
 
 ## Comments
 
@@ -310,3 +310,4 @@ In progress. Next: **S15**.
 - 2026-11-03: S12 done — `permission_snapshots` on role/perm changes.
 - 2026-11-03: S13 done — `canApproveRole` Manager≤Manager, Admin any.
 - 2026-11-03: S14 done — `canGrantPermissions` requires reviewer holds every perm.
+- 2026-11-03: S15 done — `canApproveModifiedGrant` validates granted (not requested) set.

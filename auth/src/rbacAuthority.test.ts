@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { canApproveRole, canGrantPermissions } from './rbacAuthority.js'
+import {
+  canApproveModifiedGrant,
+  canApproveRole,
+  canGrantPermissions,
+} from './rbacAuthority.js'
 import type { InstanceRole } from './rbacRoles.js'
 import { getRolePermissions } from './rbacRoles.js'
 
@@ -36,5 +40,51 @@ describe('RBAC S14 permission grant authority', () => {
     const adminPerms = getRolePermissions('admin')
     assert.equal(canGrantPermissions(adminPerms, ['instance:admins:add', 'store:gc']), true)
     assert.equal(canGrantPermissions(adminPerms, ['audit:read']), false)
+  })
+})
+
+describe('RBAC S15 modify-before-approve', () => {
+  it('validates the granted role/perms, not the originally requested ones', () => {
+    const managerPerms = getRolePermissions('manager')
+    // Requested Admin, but reviewer grants User instead → allowed
+    assert.equal(
+      canApproveModifiedGrant({
+        reviewerRole: 'manager',
+        reviewerEffective: managerPerms,
+        grantedRole: 'user',
+        grantedPermissions: [],
+      }),
+      true,
+    )
+    // Still trying to grant Admin → blocked
+    assert.equal(
+      canApproveModifiedGrant({
+        reviewerRole: 'manager',
+        reviewerEffective: managerPerms,
+        grantedRole: 'admin',
+        grantedPermissions: [],
+      }),
+      false,
+    )
+    // Role ok but custom perm reviewer lacks → blocked
+    assert.equal(
+      canApproveModifiedGrant({
+        reviewerRole: 'manager',
+        reviewerEffective: managerPerms,
+        grantedRole: 'user',
+        grantedPermissions: ['store:gc'],
+      }),
+      false,
+    )
+    // Subset of requested customs that reviewer holds → allowed
+    assert.equal(
+      canApproveModifiedGrant({
+        reviewerRole: 'manager',
+        reviewerEffective: managerPerms,
+        grantedRole: 'external',
+        grantedPermissions: ['namespace:create'],
+      }),
+      true,
+    )
   })
 })
