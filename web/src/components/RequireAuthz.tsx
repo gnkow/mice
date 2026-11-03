@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { fetchAuthzMe } from '../lib/auth'
+import { shouldRedirectPendingUser } from '../lib/pendingAccessShell'
 
 /**
- * When AuthZ enforce is on, zero-grant users are sent to /pending
- * (except instance admin / create_namespace, which the API already excludes).
- * Personal notification inbox/preferences remain available without resource grants.
+ * When AuthZ enforce is on, users without a formal role are sent to /pending.
+ * No escape routes (profile/notifications) — the no-access shell is the only UI (S32).
  */
 export function RequireAuthz() {
   const location = useLocation()
@@ -44,8 +44,7 @@ export function RequireAuthz() {
     )
   }
 
-  const personalNotifications = location.pathname === '/notifications' || location.pathname === '/profile' || location.pathname === '/profile/notifications'
-  if (state === 'pending' && location.pathname !== '/pending' && !personalNotifications) {
+  if (state === 'pending' && shouldRedirectPendingUser(location.pathname, true)) {
     return <Navigate to="/pending" replace />
   }
 

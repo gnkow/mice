@@ -428,10 +428,20 @@ export function deleteRepoCollaborator(
   )
 }
 
-export function submitAccessRequest(message?: string) {
+export function submitAccessRequest(input: {
+  message: string
+  requestedRole?: string | null
+  requestedPermissions?: string[]
+}) {
   return authzFetch('/auth/access-requests', {
     method: 'POST',
-    body: JSON.stringify({ message: message ?? '' }),
+    body: JSON.stringify({
+      message: input.message,
+      ...(input.requestedRole !== undefined ? { requestedRole: input.requestedRole } : {}),
+      ...(input.requestedPermissions !== undefined
+        ? { requestedPermissions: input.requestedPermissions }
+        : {}),
+    }),
   })
 }
 
