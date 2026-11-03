@@ -213,3 +213,45 @@ export async function approveAccessRequest(input: {
   if (!updated) return { ok: false, error: 'Already resolved' }
   return { ok: true, request: toRequest(updated) }
 }
+
+export async function denyAccessRequest(input: {
+  reviewer: UserRef
+  requestId: string
+  reason: string
+}): Promise<Result> {
+  const reason = input.reason.trim()
+  if (!reason) return { ok: false, error: 'Denial reason is required' }
+
+  const reviewerRole = await getUserRole(input.reviewer)
+  if (!reviewerRole || (reviewerRole !== 'manager' && reviewerRole !== 'admin')) {
+    return { ok: false, error: 'Forbidden' }
+  }
+
+  const [found] = await getDb()
+    .select()
+    .from(accessRequests)
+    .where(eq(accessRequests.id, input.requestId))
+    .limit(1)
+  if (!found) return { ok: false, error: 'Not found' }
+  if (found.status !== 'pending') return { ok: false, error: 'Already resolved' }
+
+  // Reviewer must have authority over the requested role (or be admin for perms-only).
+  const req = toRequest(found)
+  if (req.requestedRole && !canApproveRole(reviewerRole, req.requestedRole)) {
+    return { ok: false, error: 'Forbidden: insufficient approval authority' }
+  }
+
+  const [updated] = await getDb()
+    .update(accessRequests)
+    .set({
+      status: 'denied',
+      resolvedAt: new Date(),
+      resolvedBy: userKey(input.reviewer),
+      approvalReason: reason,
+    })
+    .where(and(eq(accessRequests.id, input.requestId), eq(accessRequests.status, 'pending')))
+    .returning()
+
+  if (!updated) return { ok: false, error: 'Already resolved' }
+  return { ok: true, request: toRequest(updated) }
+}

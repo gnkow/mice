@@ -5,6 +5,7 @@ import { ensurePrincipal } from './authentication/session/session.js'
 import { assignRole, getUserRole, listRoleHistory } from './rbacStore.js'
 import {
   approveAccessRequest,
+  denyAccessRequest,
   listAccessRequestsForReviewer,
   submitAccessRequest,
 } from './rbacAccessRequests.js'
@@ -192,6 +193,35 @@ describe('RBAC S19 approve access request', () => {
     assert.equal(approved.ok, false)
     if (approved.ok) throw new Error('expected failure')
     assert.match(approved.error, /authority|forbidden|cannot/i)
+    assert.equal(await getUserRole(applicant), null)
+  })
+})
+
+describe('RBAC S20 deny access request', () => {
+  it('denies with a reason and does not grant a role', async () => {
+    const manager = person('denier-mgr')
+    const applicant = person('denied-user')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(applicant)
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const submitted = await submitAccessRequest({
+      user: applicant,
+      message: 'please',
+      requestedRole: 'user',
+    })
+    assert.equal(submitted.ok, true)
+    if (!submitted.ok) throw new Error('submit failed')
+    const denied = await denyAccessRequest({
+      reviewer: manager,
+      requestId: submitted.request.id,
+      reason: 'insufficient business need',
+    })
+    assert.equal(denied.ok, true)
+    if (!denied.ok) throw new Error('deny failed')
+    assert.equal(denied.request.status, 'denied')
     assert.equal(await getUserRole(applicant), null)
   })
 })
