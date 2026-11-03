@@ -2,7 +2,11 @@ import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { ensurePrincipal } from './authentication/session/session.js'
-import { submitAccessRequest } from './rbacAccessRequests.js'
+import { assignRole } from './rbacStore.js'
+import {
+  listAccessRequestsForReviewer,
+  submitAccessRequest,
+} from './rbacAccessRequests.js'
 
 const person = (sub: string) => ({
   sub,
@@ -83,5 +87,47 @@ describe('RBAC S17 one pending request', () => {
     assert.equal(second.ok, false)
     if (second.ok) throw new Error('expected failure')
     assert.match(second.error, /pending/i)
+  })
+})
+
+describe('RBAC S18 list for reviewer', () => {
+  it('filters pending requests by the reviewer approval authority', async () => {
+    const manager = person('reviewer-mgr')
+    const admin = person('reviewer-admin')
+    const wantUser = person('want-user-role')
+    const wantAdmin = person('want-admin-role')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(admin)
+    await ensurePrincipal(wantUser)
+    await ensurePrincipal(wantAdmin)
+    const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    assert.equal(
+      (await assignRole({ actor: null, target: admin, role: 'admin', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    assert.equal(
+      (await submitAccessRequest({ user: wantUser, message: 'user please', requestedRole: 'user' })).ok,
+      true,
+    )
+    assert.equal(
+      (await submitAccessRequest({ user: wantAdmin, message: 'admin please', requestedRole: 'admin' })).ok,
+      true,
+    )
+
+    const forManager = await listAccessRequestsForReviewer(manager)
+    assert.deepEqual(
+      forManager.map((r) => r.requestedRole).sort(),
+      ['user'],
+    )
+
+    const forAdmin = await listAccessRequestsForReviewer(admin)
+    assert.deepEqual(
+      forAdmin.map((r) => r.requestedRole).sort(),
+      ['admin', 'user'],
+    )
   })
 })
