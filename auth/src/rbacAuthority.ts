@@ -1,3 +1,4 @@
+import type { InstancePermission } from './rbacCatalog.js'
 import type { InstanceRole } from './rbacRoles.js'
 
 const MANAGER_APPROVABLE: readonly InstanceRole[] = ['external', 'user', 'manager']
@@ -10,4 +11,13 @@ export function canApproveRole(
   if (reviewerRole === 'admin') return true
   if (reviewerRole === 'manager') return MANAGER_APPROVABLE.includes(requestedRole)
   return false
+}
+
+/** Reviewer must hold every permission they attempt to grant. */
+export function canGrantPermissions(
+  reviewerEffective: readonly InstancePermission[],
+  permissions: readonly string[],
+): boolean {
+  const have = new Set<string>(reviewerEffective)
+  return permissions.every((p) => have.has(p))
 }
