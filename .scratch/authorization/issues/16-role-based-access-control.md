@@ -152,7 +152,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 ### Store: roles
 
-- [ ] **S04** Assign role — active role set; reason/actor; `expiresAt` required for delegated (non-bootstrap)
+- [x] **S04** Assign role — active role set; reason/actor; `expiresAt` required for delegated (non-bootstrap)
 - [ ] **S05** Revoke / replace role — previous role closed; history append-only
 - [ ] **S06** Read role — `getUserRole`; expired role treated as none
 - [ ] **S07** Role history — grant/revoke rows queryable via store API
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S04**.
+In progress. Next: **S05**.
 
 ## Comments
 
@@ -299,3 +299,4 @@ In progress. Next: **S04**.
 - 2026-11-03: S01 done — `auth/src/rbacCatalog.ts` matches spec catalog tables (137 permissions).
 - 2026-11-03: S02 done — `auth/src/rbacRoles.ts` role bundles + Admin/Auditor separation.
 - 2026-11-03: S03 done — `mergeEffectivePermissions` role ∪ custom, deduped.
+- 2026-11-03: S04 done — `principal_roles` + `assignRole` with delegated expiry / bootstrap.

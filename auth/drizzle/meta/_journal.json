@@ -92,6 +92,13 @@
       "when": 1794000004000,
       "tag": "0012_instance_permission_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794000005000,
+      "tag": "0013_principal_roles",
+      "breakpoints": true
     }
   ]
 }

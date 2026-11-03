@@ -315,6 +315,18 @@ export const principals = pgTable(
   (t) => [uniqueIndex('principals_iss_sub_key').on(t.iss, t.sub)],
 )
 
+/** Current formal instance role (RBAC). One active role per principal. */
+export const principalRoles = pgTable('principal_roles', {
+  principalId: bigint('principal_id', { mode: 'number' })
+    .primaryKey()
+    .references(() => principals.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(),
+  grantedAt: ts('granted_at').notNull(),
+  grantedBy: bigint('granted_by', { mode: 'number' }).references(() => principals.id),
+  grantReason: text('grant_reason'),
+  expiresAt: ts('expires_at').notNull(),
+})
+
 /** Set and lift of a Mice flag, with the reason, the actor, and the time. */
 export const principalFlagHistory = pgTable('principal_flag_history', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
