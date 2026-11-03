@@ -176,7 +176,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 - [x] **S16** Submit request — role and/or custom perms + required justification
 - [x] **S17** One pending — second submit blocked (app + DB)
 - [x] **S18** List for reviewer — filtered by reviewer authority
-- [ ] **S19** Approve — applies role/perms immediately; links request id in history
+- [x] **S19** Approve — applies role/perms immediately; links request id in history
 - [ ] **S20** Deny — status + reason; no grant
 
 ### Direct grant
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S19**.
+In progress. Next: **S20**.
 
 ## Comments
 
@@ -314,3 +314,4 @@ In progress. Next: **S19**.
 - 2026-11-03: S16 done — RBAC `submitAccessRequest` with role/perms + justification.
 - 2026-11-03: S17 done — one pending access request per user enforced.
 - 2026-11-03: S18 done — listAccessRequestsForReviewer filtered by authority.
+- 2026-11-03: S19 done — approveAccessRequest applies role and links request id.

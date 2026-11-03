@@ -2,8 +2,9 @@ import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { ensurePrincipal } from './authentication/session/session.js'
-import { assignRole } from './rbacStore.js'
+import { assignRole, getUserRole, listRoleHistory } from './rbacStore.js'
 import {
+  approveAccessRequest,
   listAccessRequestsForReviewer,
   submitAccessRequest,
 } from './rbacAccessRequests.js'
@@ -132,5 +133,65 @@ describe('RBAC S18 list for reviewer', () => {
       forAdmin.map((r) => r.requestedRole).sort(),
       ['admin', 'user'],
     )
+  })
+})
+
+describe('RBAC S19 approve access request', () => {
+  it('applies the granted role immediately and links the request in history', async () => {
+    const manager = person('approver-mgr')
+    const applicant = person('applicant-user')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(applicant)
+    const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const submitted = await submitAccessRequest({
+      user: applicant,
+      message: 'need user',
+      requestedRole: 'user',
+    })
+    assert.equal(submitted.ok, true)
+    if (!submitted.ok) throw new Error('submit failed')
+
+    const approved = await approveAccessRequest({
+      reviewer: manager,
+      requestId: submitted.request.id,
+      expiresAt,
+    })
+    assert.equal(approved.ok, true)
+    assert.equal(await getUserRole(applicant), 'user')
+    const history = await listRoleHistory(applicant)
+    const grant = history.find((h) => h.action === 'granted' && h.role === 'user')
+    assert.ok(grant)
+    assert.equal(grant?.accessRequestId, submitted.request.id)
+  })
+
+  it('blocks a manager from approving an Admin request', async () => {
+    const manager = person('approver-mgr2')
+    const applicant = person('applicant-admin')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(applicant)
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const submitted = await submitAccessRequest({
+      user: applicant,
+      message: 'need admin',
+      requestedRole: 'admin',
+    })
+    assert.equal(submitted.ok, true)
+    if (!submitted.ok) throw new Error('submit failed')
+    const approved = await approveAccessRequest({
+      reviewer: manager,
+      requestId: submitted.request.id,
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    })
+    assert.equal(approved.ok, false)
+    if (approved.ok) throw new Error('expected failure')
+    assert.match(approved.error, /authority|forbidden|cannot/i)
+    assert.equal(await getUserRole(applicant), null)
   })
 })

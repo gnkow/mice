@@ -26,6 +26,7 @@ export type RoleHistoryEntry = {
   grantReason: string | null
   revokedAt: string | null
   revokeReason: string | null
+  accessRequestId: string | null
 }
 
 function toExpiryDate(expiresAt: Date | number): Date {
@@ -75,6 +76,7 @@ export async function listRoleHistory(user: UserKey): Promise<RoleHistoryEntry[]
       grantReason: r.grantReason,
       revokedAt: r.revokedAt?.toISOString() ?? null,
       revokeReason: r.revokeReason,
+      accessRequestId: r.accessRequestId,
     }]
   })
 }
@@ -89,6 +91,7 @@ async function appendRoleHistory(input: {
   revokedAt?: Date | null
   revokedBy?: number | null
   revokeReason?: string | null
+  accessRequestId?: string | null
 }): Promise<void> {
   await getDb().insert(principalRoleHistory).values({
     principalId: input.principalId,
@@ -100,6 +103,7 @@ async function appendRoleHistory(input: {
     revokedAt: input.revokedAt ?? null,
     revokedBy: input.revokedBy ?? null,
     revokeReason: input.revokeReason ?? null,
+    accessRequestId: input.accessRequestId ?? null,
   })
 }
 
@@ -110,6 +114,7 @@ export async function assignRole(input: {
   reason: string
   expiresAt?: Date | number | null
   bootstrap?: boolean
+  accessRequestId?: string | null
 }): Promise<Result> {
   if (!isInstanceRole(input.role)) {
     return { ok: false, error: `Invalid role: ${String(input.role)}` }
@@ -181,6 +186,7 @@ export async function assignRole(input: {
     grantedAt,
     grantedBy,
     grantReason: input.reason,
+    accessRequestId: input.accessRequestId,
   })
 
   await writePermissionSnapshot(input.target, 'role_change')
