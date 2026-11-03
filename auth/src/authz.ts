@@ -47,7 +47,7 @@ export type AuthzDecision = {
   allow: boolean
   status: 403 | 401 | 503
   reason: string
-  /** Instance admin used site_admin_bypass for this check. */
+  /** ACL bypass used for this check (`repo:bypass_acl`); recorded as site_admin_bypass in audit. */
   siteAdminBypass?: boolean
   requiredRole?: RepoRole
   effectiveRole?: BasePermission
@@ -167,8 +167,14 @@ export async function hasRepoPermission(
   ) {
     return { ok: true, effective, bypass: false }
   }
-  // Separation of duties: boolean instance-admin no longer bypasses repository ACLs.
-  // Universal read is `repo:bypass_acl` (Auditor).
+  // Universal read: Auditor (or custom grant of repo:bypass_acl). Never for PATs.
+  if (
+    need === 'read' &&
+    !isScopedCredential(user) &&
+    await hasPermission(user, 'repo:bypass_acl')
+  ) {
+    return { ok: true, effective, bypass: true }
+  }
   return {
     ok: false,
     effective,

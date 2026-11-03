@@ -37,7 +37,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] 5 formal roles defined: External User, User, Manager, Auditor, Admin
 - [ ] Each role has a defined permission bundle (150+ granular permissions)
 - [ ] Role hierarchy for approval authority: Manager can approve up to Manager, Admin can approve all
-- [ ] Auditor role has `repo:bypass_acl` permission for universal read access
+- [x] Auditor role has `repo:bypass_acl` permission for universal read access
 - [ ] Admin role has NO data/audit read permissions (separation of duties)
 
 ### Permission Model
@@ -86,8 +86,8 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [ ] `hasPermission(user, permission)` checks effective permissions
 - [ ] `canApproveRequest(reviewer, request)` validates approval authority
 - [ ] All API endpoints updated to check new permission model
-- [ ] Auditor bypass ACL implemented in repository read checks
-- [ ] Admin cannot read data/audits (no site-admin bypass)
+- [x] Auditor bypass ACL implemented in repository read checks
+- [x] Admin cannot read data/audits (no site-admin bypass)
 
 ### Profile UI
 - [ ] Profile → Account shows role badge (Admin/Manager/User/Auditor/External/Pending)
@@ -189,7 +189,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 - [x] **S23** Pending gate — no role ⇒ pending-only (not “no ns membership”)
 - [x] **S24** Instance actions via new perms — create namespace, session, tokens, etc. map to new names
 - [x] **S25** Admin separation — Admin denied on data/audit reads
-- [ ] **S26** Auditor ACL bypass — `repo:bypass_acl` allows private repo read without collaborator
+- [x] **S26** Auditor ACL bypass — `repo:bypass_acl` allows private repo read without collaborator
 - [ ] **S27** Non-auditor repo ACL — still collaborator/ns rules
 
 ### Audit
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S26**.
+In progress. Next: **S27**.
 
 ## Comments
 
@@ -321,3 +321,4 @@ In progress. Next: **S26**.
 - 2026-11-03: S23 done — isPendingUser keyed off formal role; authz tests updated.
 - 2026-11-03: S24 done — decideInstanceAction uses RBAC permission names; no boolean-admin short-circuit.
 - 2026-11-03: S25 done — removed site-admin repo/namespace visibility bypass; Admin denied on data/audit.
+- 2026-11-03: S26 done — `repo:bypass_acl` grants private-repo read without collaborator (Auditor).
