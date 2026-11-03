@@ -167,7 +167,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 
 ### Authority
 
-- [ ] **S13** Role approval authority — Manager ≤ Manager; Admin any role; others none
+- [x] **S13** Role approval authority — Manager ≤ Manager; Admin any role; others none
 - [ ] **S14** Permission grant authority — reviewer must hold every granted perm
 - [ ] **S15** Modify-before-approve — granted role/perms may differ from requested; still pass S13–S14
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S13**.
+In progress. Next: **S14**.
 
 ## Comments
 
@@ -308,3 +308,4 @@ In progress. Next: **S13**.
 - 2026-11-03: S10 done — `getEffectivePermissions` / `hasPermission` over store state.
 - 2026-11-03: S11 done — `listPermissionHistory` store seam.
 - 2026-11-03: S12 done — `permission_snapshots` on role/perm changes.
+- 2026-11-03: S13 done — `canApproveRole` Manager≤Manager, Admin any.
