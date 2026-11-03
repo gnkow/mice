@@ -136,3 +136,27 @@ describe('RBAC S05 revoke and replace role', () => {
     assert.equal(history.at(-1)?.revokeReason, 'no longer needed')
   })
 })
+
+describe('RBAC S06 getUserRole expiry', () => {
+  it('treats an expired role as none', async () => {
+    const actor = person('actor-s06')
+    const target = person('target-expired')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    const expiresAt = Date.now() + 60_000
+    assert.equal(
+      (
+        await assignRole({
+          actor,
+          target,
+          role: 'user',
+          reason: 'short',
+          expiresAt,
+        })
+      ).ok,
+      true,
+    )
+    assert.equal(await getUserRole(target, expiresAt - 1), 'user')
+    assert.equal(await getUserRole(target, expiresAt), null)
+  })
+})
