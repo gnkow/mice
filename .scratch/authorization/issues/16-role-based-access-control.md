@@ -98,8 +98,8 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 
 ### Request Access UI (No-Access Users)
 - [x] Full-screen "Request Access" component (nothing else visible)
-- [ ] Role selection: External User, User, Manager (radio buttons with descriptions)
-- [ ] Custom permissions multi-select (advanced option)
+- [x] Role selection: External User, User, Manager (radio buttons with descriptions)
+- [x] Custom permissions multi-select (advanced option)
 - [x] Justification textarea (required)
 - [x] Submit button creates access request
 - [x] After submit: "Request Pending" message with no navigation
@@ -205,7 +205,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 ### Web (MVP)
 
 - [x] **S32** No-access shell — only Request Access; after submit → pending state, no nav
-- [ ] **S33** Request Access form — role radios (External/User/Manager) or custom multi-select + justification
+- [x] **S33** Request Access form — role radios (External/User/Manager) or custom multi-select + justification
 - [ ] **S34** Profile role badge + Permissions tab — checklist + request-additional + pending indicator
 - [ ] **S35** Settings → Access Requests — list/filter, detail, modify, approve/deny, authority error
 - [ ] **S36** Settings → Users / Grant Access — list + grant modal with expiry + authority validation
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S33**.
+In progress. Next: **S34**.
 
 ## Comments
 
@@ -328,3 +328,4 @@ In progress. Next: **S33**.
 - 2026-11-03: S30 done — `POST /auth/grants/role` and `/auth/grants/permissions` with expiry + authority.
 - 2026-11-03: S31 done — `/auth/me/authz` returns role + effectivePermissions + permissionCatalog; bootstrap assigns Admin role.
 - 2026-11-03: S32 done — no-access shell: Request Access only, post-submit pending view, no profile/nav escape.
+- 2026-11-03: S33 done — Request Access form: External/User/Manager radios or custom permission multi-select.
