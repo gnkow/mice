@@ -4,7 +4,7 @@ import type { AuditDep } from './routeDeps.js'
 import { directGrantPermissions, directGrantRole } from './rbacDirectGrant.js'
 import { isInstancePermission } from './rbacCatalog.js'
 import { isInstanceRole } from './rbacRoles.js'
-import { getUserRole } from './rbacStore.js'
+import { getUserRole, listRbacUsers } from './rbacStore.js'
 
 function target(body: Record<string, unknown>): { sub: string; iss: string } | null {
   if (typeof body.sub !== 'string' || typeof body.iss !== 'string') return null
@@ -24,12 +24,19 @@ function grantReason(body: Record<string, unknown>): string {
   return typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Direct grant'
 }
 
-/** Direct role and custom-permission grants (Settings → Grant Access). */
+  /** Direct role and custom-permission grants (Settings → Grant Access). */
 export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
   const reviewerOnly = async (u: { sub: string; iss: string }) => {
     const role = await getUserRole(u)
     return role === 'manager' || role === 'admin' ? null : 'Forbidden'
   }
+
+  app.get(
+    '/auth/grants/users',
+    guarded({ gate: reviewerOnly }, async ({ c }) => {
+      return c.json({ users: await listRbacUsers() })
+    }),
+  )
 
   app.post(
     '/auth/grants/role',

@@ -573,3 +573,49 @@ export async function revokeCustomPermissions(input: {
   })
   return { ok: true }
 }
+
+export type RbacUserRow = {
+  sub: string
+  iss: string
+  name: string
+  email: string
+  role: InstanceRole | null
+  customPermissionCount: number
+}
+
+/** Settings → Users: principals with current role and custom-perm count. */
+export async function listRbacUsers(now = Date.now()): Promise<RbacUserRow[]> {
+  const people = await getDb()
+    .select({
+      id: principals.id,
+      sub: principals.sub,
+      iss: principals.iss,
+      name: principals.name,
+      email: principals.email,
+    })
+    .from(principals)
+    .orderBy(asc(principals.name), asc(principals.email), asc(principals.sub))
+
+  const roleById = new Map<number, InstanceRole>()
+  for (const r of await getDb().select().from(principalRoles)) {
+    if (!isInstanceRole(r.role)) continue
+    if (r.expiresAt.getTime() <= now) continue
+    roleById.set(r.principalId, r.role)
+  }
+
+  const countById = new Map<number, number>()
+  for (const r of await getDb().select().from(principalPermissions)) {
+    if (r.expiresAt.getTime() <= now) continue
+    if (!isInstancePermission(r.permission)) continue
+    countById.set(r.principalId, (countById.get(r.principalId) ?? 0) + 1)
+  }
+
+  return people.map((p) => ({
+    sub: p.sub,
+    iss: p.iss,
+    name: p.name ?? '',
+    email: p.email ?? '',
+    role: roleById.get(p.id) ?? null,
+    customPermissionCount: countById.get(p.id) ?? 0,
+  }))
+}

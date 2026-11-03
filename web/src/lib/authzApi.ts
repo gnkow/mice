@@ -471,6 +471,46 @@ export function listAccessRequests(signal?: AbortSignal) {
   }>('/auth/access-requests', { signal })
 }
 
+export type RbacUserRow = {
+  sub: string
+  iss: string
+  name: string
+  email: string
+  role: string | null
+  customPermissionCount: number
+}
+
+/** Settings → Users list (managers/admins). */
+export function listRbacUsers(signal?: AbortSignal) {
+  return authzFetch<{ users: RbacUserRow[] }>('/auth/grants/users', { signal })
+}
+
+export function grantRole(input: {
+  sub: string
+  iss: string
+  role: string
+  expiresAt: number
+  reason: string
+}) {
+  return authzFetch('/auth/grants/role', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function grantPermissions(input: {
+  sub: string
+  iss: string
+  permissions: string[]
+  expiresAt: number
+  reason: string
+}) {
+  return authzFetch('/auth/grants/permissions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 /** Approve or deny an access request (RBAC: expiresAt / grantedRole / grantedPermissions / reason). */
 export function resolveAccessRequest(
   id: string,

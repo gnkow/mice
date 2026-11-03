@@ -17,13 +17,17 @@ import { fetchAuthMe, fetchAuthzMe, hasEffectivePermission, isAdminRole, type Au
 import {
   addInstanceAdmin,
   fetchInstance,
+  grantPermissions,
+  grantRole,
   listAccessRequests,
+  listRbacUsers,
   removeInstanceAdmin,
   revokeUserSessions,
   resolveAccessRequest,
   setInstancePermissions,
   type AccessRequestRow,
   type InstancePermission,
+  type RbacUserRow,
 } from '../lib/authzApi'
 import {
   approvableRoles,
@@ -34,6 +38,7 @@ import {
   isAuthorityError,
   type AccessRequestStatusFilter,
 } from '../lib/accessRequestReview'
+import { buildDirectGrantBodies } from '../lib/directGrantForm'
 import { profileRoleBadge } from '../lib/profileRoleBadge'
 import { togglePermission } from '../lib/requestAccessForm'
 import { fetchServerVersion } from '../lib/oxen/api'
@@ -89,7 +94,12 @@ export function SettingsPage() {
     { 
       title: 'Access & Permissions', 
       items: [
-        ...(canReviewAccess ? [{ id: 'access-requests', label: 'Requests', Icon: Inbox }] : []),
+        ...(canReviewAccess
+          ? [
+              { id: 'access-requests', label: 'Requests', Icon: Inbox },
+              { id: 'users-grant', label: 'Users', Icon: UsersRound },
+            ]
+          : []),
         ...(isInstanceAdmin ? [
           { id: 'user-revocation', label: 'Revocations', Icon: UserX },
           { id: 're-enable', label: 'Re-enable', Icon: UserCheck },
@@ -168,7 +178,10 @@ export function SettingsPage() {
         </section>
 
         {me.kind === 'ok' && me.data && <>
-          {canReviewAccess && <AccessRequestsSection authz={me.data} />}
+          {canReviewAccess && <>
+            <AccessRequestsSection authz={me.data} />
+            <UsersGrantSection authz={me.data} signedInIss={signedInIss} />
+          </>}
           {isInstanceAdmin && <>
             <AdminRevocationSection />
             <ReenableSection />
@@ -483,6 +496,232 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
               {busy ? 'Denying…' : 'Deny'}
             </button>
             <button className="btn ghost" type="button" disabled={busy} onClick={closeDetail}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  )
+}
+
+function UsersGrantSection({
+  authz,
+  signedInIss,
+}: {
+  authz: AuthzMe
+  signedInIss: string
+}) {
+  const state = useAsync((signal) => listRbacUsers(signal), [])
+  const [error, setError] = useState<string | null>(null)
+  const [authorityError, setAuthorityError] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [grantOpen, setGrantOpen] = useState(false)
+  const [targetSub, setTargetSub] = useState('')
+  const [targetIss, setTargetIss] = useState(signedInIss)
+  const [grantRoleValue, setGrantRoleValue] = useState<string | null>('user')
+  const [grantPerms, setGrantPerms] = useState<string[]>([])
+  const [expiresLocal, setExpiresLocal] = useState(defaultExpiryLocalValue)
+  const [reason, setReason] = useState('')
+
+  const users = state.kind === 'ok' ? state.data.users : []
+  const roleChoices = approvableRoles(authz.role)
+
+  function openGrant(user?: RbacUserRow) {
+    setGrantOpen(true)
+    setTargetSub(user?.sub ?? '')
+    setTargetIss(user?.iss ?? signedInIss)
+    setGrantRoleValue(roleChoices[0] ?? null)
+    setGrantPerms([])
+    setExpiresLocal(defaultExpiryLocalValue())
+    setReason('')
+    setError(null)
+    setAuthorityError(false)
+  }
+
+  async function onGrant(e: FormEvent) {
+    e.preventDefault()
+    const expiresAt = new Date(expiresLocal).getTime()
+    const built = buildDirectGrantBodies({
+      sub: targetSub,
+      iss: targetIss,
+      role: grantRoleValue,
+      permissions: grantPerms,
+      expiresAt,
+      reason,
+    })
+    if (!built.ok) {
+      setError(built.error)
+      setAuthorityError(false)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setAuthorityError(false)
+    try {
+      for (const item of built.bodies) {
+        if (item.kind === 'role') await grantRole(item.body)
+        else await grantPermissions(item.body)
+      }
+      setGrantOpen(false)
+      state.reload()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Grant failed'
+      setError(message)
+      setAuthorityError(isAuthorityError(message))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section
+      id="users-grant"
+      className="settings-section"
+      aria-labelledby="users-grant-heading"
+    >
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="users-grant-heading">
+            <UsersRound size={18} className="button-label-icon" aria-hidden="true" />
+            Users
+          </h2>
+          <p className="muted small">
+            Grant a formal role and/or custom permissions directly (no access request).
+          </p>
+        </div>
+        <button type="button" className="btn primary small" onClick={() => openGrant()}>
+          <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />
+          Grant Access
+        </button>
+      </div>
+
+      {error && (
+        <p className={`flash ${authorityError ? 'flash-warn' : 'flash-error'}`} role="alert">
+          {authorityError ? <strong>Authority: </strong> : null}
+          {error}
+        </p>
+      )}
+      {state.kind === 'loading' && <p className="muted">Loading…</p>}
+      {state.kind === 'error' && (
+        <p className="flash flash-error" role="alert">
+          {state.message}
+        </p>
+      )}
+      {state.kind === 'ok' && users.length === 0 && (
+        <p className="muted small">No principals yet.</p>
+      )}
+      {users.length > 0 && (
+        <ul className="ns-member-list">
+          {users.map((u) => (
+            <li key={`${u.iss}|${u.sub}`} className="ns-member-row">
+              <div className="ns-member-main">
+                <code className="ns-member-sub">{u.name || u.email || u.sub}</code>
+                <span className="muted small">
+                  {u.email}
+                  {' · '}
+                  {u.role
+                    ? profileRoleBadge({ role: u.role, pending: false })
+                    : 'No role'}
+                  {' · '}
+                  {u.customPermissionCount} custom permission
+                  {u.customPermissionCount === 1 ? '' : 's'}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn ghost small"
+                disabled={busy}
+                onClick={() => openGrant(u)}
+              >
+                Grant Access
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {grantOpen && (
+        <form className="ns-member-form" onSubmit={onGrant} style={{ marginTop: '1rem' }}>
+          <h3 className="ns-settings-subhead">Grant Access</h3>
+          <DirectoryPicker
+            kind="user"
+            sub={targetSub}
+            iss={targetIss}
+            defaultIss={signedInIss}
+            onChange={(next) => {
+              setTargetSub(next.sub)
+              setTargetIss(next.iss)
+            }}
+          />
+          <div className="ns-settings-grid" style={{ marginTop: '0.75rem' }}>
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Role</span>
+              <select
+                value={grantRoleValue ?? ''}
+                onChange={(e) => setGrantRoleValue(e.target.value || null)}
+              >
+                <option value="">No role change</option>
+                {roleChoices.map((role) => (
+                  <option key={role} value={role}>
+                    {profileRoleBadge({ role, pending: false })}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Expires</span>
+              <input
+                type="datetime-local"
+                value={expiresLocal}
+                onChange={(e) => setExpiresLocal(e.target.value)}
+                required
+              />
+            </label>
+          </div>
+          <fieldset style={{ marginTop: '0.75rem' }}>
+            <legend>Custom permissions</legend>
+            <div
+              style={{
+                maxHeight: '10rem',
+                overflow: 'auto',
+                border: '1px solid var(--color-border)',
+                borderRadius: '0.375rem',
+                padding: '0.5rem',
+              }}
+            >
+              {authz.permissionCatalog.map((perm) => (
+                <label key={perm} className="radio-row" style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={grantPerms.includes(perm)}
+                    onChange={() => setGrantPerms((prev) => togglePermission(prev, perm))}
+                  />
+                  <code className="small">{perm}</code>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <label style={{ display: 'block', marginTop: '0.75rem' }}>
+            Reason (required)
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="Why this grant is appropriate"
+              required
+            />
+          </label>
+          <div className="btn-row ns-settings-actions">
+            <button className="btn primary" type="submit" disabled={busy}>
+              {busy ? 'Granting…' : 'Grant'}
+            </button>
+            <button
+              className="btn ghost"
+              type="button"
+              disabled={busy}
+              onClick={() => setGrantOpen(false)}
+            >
               Cancel
             </button>
           </div>

@@ -105,23 +105,23 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [x] After submit: "Request Pending" message with no navigation
 
 ### Settings Access Requests UI
-- [ ] Settings → Access Requests tab (visible to managers/admins)
-- [ ] List pending requests with: user name/email, requested role, requested permissions, justification, date
-- [ ] Filter by status: pending/approved/denied
-- [ ] Request detail modal: shows user info, current role, requested changes
-- [ ] Modify requested role/permissions dropdown (before approval)
-- [ ] Approval reason textarea (optional)
-- [ ] Approve button (validates authority, blocks if insufficient)
-- [ ] Deny button with reason
-- [ ] Authority validation message if cannot approve
+- [x] Settings → Access Requests tab (visible to managers/admins)
+- [x] List pending requests with: user name/email, requested role, requested permissions, justification, date
+- [x] Filter by status: pending/approved/denied
+- [x] Request detail modal: shows user info, current role, requested changes
+- [x] Modify requested role/permissions dropdown (before approval)
+- [x] Approval reason textarea (optional)
+- [x] Approve button (validates authority, blocks if insufficient)
+- [x] Deny button with reason
+- [x] Authority validation message if cannot approve
 
 ### Direct Grant UI
-- [ ] Settings → Users section with user list
-- [ ] Each user row shows: name, email, current role, custom permissions count
-- [ ] "Grant Access" button opens modal
-- [ ] Modal: role dropdown, custom permissions multi-select, reason textarea, expiry
-- [ ] Submit directly grants without creating request
-- [ ] Authority validation (same rules as approval)
+- [x] Settings → Users section with user list
+- [x] Each user row shows: name, email, current role, custom permissions count
+- [x] "Grant Access" button opens modal
+- [x] Modal: role dropdown, custom permissions multi-select, reason textarea, expiry
+- [x] Submit directly grants without creating request
+- [x] Authority validation (same rules as approval)
 
 ### Audit Trail
 - [ ] Every role grant/revoke recorded in `principal_role_history`
@@ -208,7 +208,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 - [x] **S33** Request Access form — role radios (External/User/Manager) or custom multi-select + justification
 - [x] **S34** Profile role badge + Permissions tab — checklist + request-additional + pending indicator
 - [x] **S35** Settings → Access Requests — list/filter, detail, modify, approve/deny, authority error
-- [ ] **S36** Settings → Users / Grant Access — list + grant modal with expiry + authority validation
+- [x] **S36** Settings → Users / Grant Access — list + grant modal with expiry + authority validation
 
 **Order:** S01–S03 → S04–S12 → S13–S15 → S16–S20 → S21–S22 → S23–S27 → S28 → S29–S31 → S32–S36
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-In progress. Next: **S36**.
+Done. Seams S01–S36 complete.
 
 ## Comments
 
@@ -331,3 +331,4 @@ In progress. Next: **S36**.
 - 2026-11-03: S33 done — Request Access form: External/User/Manager radios or custom permission multi-select.
 - 2026-11-03: S34 done — Profile role badge + Permissions checklist, request-additional, own pending via GET /auth/me/access-request.
 - 2026-11-03: S35 done — Settings Access Requests: status filter, modify-before-approve, deny reason, authority error.
+- 2026-11-03: S36 done — Settings Users list + Grant Access (role/perms + expiry) via GET /auth/grants/users and POST /auth/grants/*.
