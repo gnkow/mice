@@ -2,7 +2,8 @@ import { and, asc, eq } from 'drizzle-orm'
 import { ensurePrincipal } from './authentication/session/session.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { getDb } from './db/database.js'
-import { principalRoleHistory, principalRoles, principals } from './db/schema.js'
+import { principalPermissions, principalRoleHistory, principalRoles, principals } from './db/schema.js'
+import { isInstancePermission, type InstancePermission } from './rbacCatalog.js'
 import { isInstanceRole, type InstanceRole } from './rbacRoles.js'
 
 type UserKey = { sub: string; iss: string }
@@ -206,5 +207,83 @@ export async function revokeRole(input: {
     revokeReason: input.reason,
   })
   await getDb().delete(principalRoles).where(eq(principalRoles.principalId, targetId))
+  return { ok: true }
+}
+
+export async function getCustomPermissions(
+  user: UserKey,
+  now = Date.now(),
+): Promise<InstancePermission[]> {
+  const id = await principalIdOf(user)
+  if (id == null) return []
+  const rows = await getDb()
+    .select()
+    .from(principalPermissions)
+    .where(eq(principalPermissions.principalId, id))
+  const out: InstancePermission[] = []
+  for (const r of rows) {
+    if (r.expiresAt.getTime() <= now) continue
+    if (!isInstancePermission(r.permission)) continue
+    out.push(r.permission)
+  }
+  return out
+}
+
+export async function grantCustomPermissions(input: {
+  actor: UserKey | null
+  target: UserKey
+  permissions: readonly string[]
+  reason: string
+  expiresAt?: Date | number | null
+  bootstrap?: boolean
+}): Promise<Result> {
+  const cleaned: InstancePermission[] = []
+  for (const p of input.permissions) {
+    if (!isInstancePermission(p)) {
+      return { ok: false, error: `Invalid permission: ${p}` }
+    }
+    if (!cleaned.includes(p)) cleaned.push(p)
+  }
+  if (cleaned.length === 0) return { ok: true }
+
+  let expiresAt: Date
+  if (input.bootstrap) {
+    expiresAt = INTERNAL_GRANT_EXPIRY
+  } else {
+    if (input.expiresAt == null) {
+      return { ok: false, error: 'expiresAt is required for delegated permission grants' }
+    }
+    const when = typeof input.expiresAt === 'number' ? input.expiresAt : input.expiresAt.getTime()
+    if (!Number.isFinite(when) || when <= Date.now()) {
+      return { ok: false, error: 'expiresAt must be a future time' }
+    }
+    expiresAt = toExpiryDate(input.expiresAt)
+  }
+
+  const targetId = await ensurePrincipal(input.target)
+  const grantedBy = input.actor ? await ensurePrincipal(input.actor) : null
+  const grantedAt = new Date()
+
+  for (const permission of cleaned) {
+    await getDb()
+      .insert(principalPermissions)
+      .values({
+        principalId: targetId,
+        permission,
+        grantedAt,
+        grantedBy,
+        grantReason: input.reason,
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [principalPermissions.principalId, principalPermissions.permission],
+        set: {
+          grantedAt,
+          grantedBy,
+          grantReason: input.reason,
+          expiresAt,
+        },
+      })
+  }
   return { ok: true }
 }

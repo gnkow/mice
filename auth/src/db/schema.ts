@@ -348,6 +348,25 @@ export const principalRoleHistory = pgTable(
   (t) => [index('principal_role_history_principal_idx').on(t.principalId, t.grantedAt)],
 )
 
+/** Custom instance permissions beyond the principal's role defaults (RBAC). */
+export const principalPermissions = pgTable(
+  'principal_permissions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    principalId: bigint('principal_id', { mode: 'number' })
+      .notNull()
+      .references(() => principals.id, { onDelete: 'cascade' }),
+    permission: text('permission').notNull(),
+    grantedAt: ts('granted_at').notNull(),
+    grantedBy: bigint('granted_by', { mode: 'number' }).references(() => principals.id),
+    grantReason: text('grant_reason'),
+    expiresAt: ts('expires_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('principal_permissions_principal_perm').on(t.principalId, t.permission),
+  ],
+)
+
 /** Set and lift of a Mice flag, with the reason, the actor, and the time. */
 export const principalFlagHistory = pgTable('principal_flag_history', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),

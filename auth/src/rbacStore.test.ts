@@ -2,7 +2,14 @@ import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { ensurePrincipal } from './authentication/session/session.js'
-import { assignRole, getUserRole, listRoleHistory, revokeRole } from './rbacStore.js'
+import {
+  assignRole,
+  getCustomPermissions,
+  getUserRole,
+  grantCustomPermissions,
+  listRoleHistory,
+  revokeRole,
+} from './rbacStore.js'
 
 const dayMs = 24 * 60 * 60 * 1000
 
@@ -189,5 +196,45 @@ describe('RBAC S07 role history', () => {
     assert.equal(history[0].grantReason, 'join')
     assert.equal(history[1].action, 'revoked')
     assert.equal(history[1].revokeReason, 'left')
+  })
+})
+
+describe('RBAC S08 grant custom permissions', () => {
+  it('refuses delegated custom grants without expiresAt', async () => {
+    const actor = person('actor-s08')
+    const target = person('target-custom-no-exp')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    const result = await grantCustomPermissions({
+      actor,
+      target,
+      permissions: ['namespace:create'],
+      reason: 'extra',
+    })
+    assert.equal(result.ok, false)
+    if (result.ok) throw new Error('expected failure')
+    assert.match(result.error, /expir/i)
+    assert.deepEqual(await getCustomPermissions(target), [])
+  })
+
+  it('stores custom permissions beyond the role with expiry', async () => {
+    const actor = person('actor-s08b')
+    const target = person('target-custom')
+    await ensurePrincipal(actor)
+    await ensurePrincipal(target)
+    const expiresAt = Date.now() + 14 * dayMs
+    assert.equal(
+      (
+        await grantCustomPermissions({
+          actor,
+          target,
+          permissions: ['namespace:create', 'store:gc'],
+          reason: 'extra capacity',
+          expiresAt,
+        })
+      ).ok,
+      true,
+    )
+    assert.deepEqual(await getCustomPermissions(target), ['namespace:create', 'store:gc'])
   })
 })
