@@ -1,5 +1,5 @@
 {
-  "id": "db45cf6a-08cd-4768-9080-2b15aa213c61",
+  "id": "fa567cef-9dee-44e6-bba5-9c9f094e5282",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -67,6 +67,43 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "requested_role": {
+          "name": "requested_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_permissions": {
+          "name": "requested_permissions",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "request_type": {
+          "name": "request_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approval_reason": {
+          "name": "approval_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_role": {
+          "name": "granted_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_permissions": {
+          "name": "granted_permissions",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -93,6 +130,37 @@
           "with": {}
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.access_review_reports": {
+      "name": "access_review_reports",
+      "schema": "",
+      "columns": {
+        "quarter": {
+          "name": "quarter",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "report": {
+          "name": "report",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -234,6 +302,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "hashed_ip": {
+          "name": "hashed_ip",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "timestamp": {
           "name": "timestamp",
           "type": "timestamp with time zone",
@@ -334,6 +408,130 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.cli_credential_families": {
+      "name": "cli_credential_families",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "iss": {
+          "name": "iss",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sub": {
+          "name": "sub",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cli_credential_tokens": {
+      "name": "cli_credential_tokens",
+      "schema": "",
+      "columns": {
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cli_credential_tokens_family_id_cli_credential_families_id_fk": {
+          "name": "cli_credential_tokens_family_id_cli_credential_families_id_fk",
+          "tableFrom": "cli_credential_tokens",
+          "tableTo": "cli_credential_families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.custom_namespace_roles": {
       "name": "custom_namespace_roles",
       "schema": "",
@@ -344,9 +542,9 @@
           "primaryKey": true,
           "notNull": true
         },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
+        "namespace_id": {
+          "name": "namespace_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -380,7 +578,7 @@
           "name": "custom_namespace_roles_name",
           "columns": [
             {
-              "expression": "namespace",
+              "expression": "namespace_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -399,15 +597,15 @@
         }
       },
       "foreignKeys": {
-        "custom_namespace_roles_namespace_namespaces_name_fk": {
-          "name": "custom_namespace_roles_namespace_namespaces_name_fk",
+        "custom_namespace_roles_namespace_id_namespaces_id_fk": {
+          "name": "custom_namespace_roles_namespace_id_namespaces_id_fk",
           "tableFrom": "custom_namespace_roles",
           "tableTo": "namespaces",
           "columnsFrom": [
-            "namespace"
+            "namespace_id"
           ],
           "columnsTo": [
-            "name"
+            "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -429,9 +627,9 @@
           "primaryKey": true,
           "notNull": true
         },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
+        "namespace_id": {
+          "name": "namespace_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -465,7 +663,7 @@
           "name": "custom_repo_roles_name",
           "columns": [
             {
-              "expression": "namespace",
+              "expression": "namespace_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -484,15 +682,15 @@
         }
       },
       "foreignKeys": {
-        "custom_repo_roles_namespace_namespaces_name_fk": {
-          "name": "custom_repo_roles_namespace_namespaces_name_fk",
+        "custom_repo_roles_namespace_id_namespaces_id_fk": {
+          "name": "custom_repo_roles_namespace_id_namespaces_id_fk",
           "tableFrom": "custom_repo_roles",
           "tableTo": "namespaces",
           "columnsFrom": [
-            "namespace"
+            "namespace_id"
           ],
           "columnsTo": [
-            "name"
+            "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -713,8 +911,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "pat_id": {
-          "name": "pat_id",
+        "refresh_token": {
+          "name": "refresh_token",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -914,6 +1112,95 @@
             "user_key",
             "type",
             "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.group_binding_status": {
+      "name": "group_binding_status",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.group_display_names": {
+      "name": "group_display_names",
+      "schema": "",
+      "columns": {
+        "issuer": {
+          "name": "issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_id": {
+          "name": "group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id_based": {
+          "name": "id_based",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "group_display_names_issuer_group_id_pk": {
+          "name": "group_display_names_issuer_group_id_pk",
+          "columns": [
+            "issuer",
+            "group_id"
           ]
         }
       },
@@ -1203,6 +1490,66 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.idp_outages": {
+      "name": "idp_outages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "idp_outages_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check": {
+          "name": "check",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paper_procedure": {
+          "name": "paper_procedure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.instance_admins": {
       "name": "instance_admins",
       "schema": "",
@@ -1235,6 +1582,12 @@
         "permission": {
           "name": "permission",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         }
@@ -1341,15 +1694,9 @@
           "primaryKey": true,
           "notNull": true
         },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repo": {
-          "name": "repo",
-          "type": "text",
+        "repository_id": {
+          "name": "repository_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -1383,13 +1730,7 @@
           "name": "jobs_repo_created",
           "columns": [
             {
-              "expression": "namespace",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "repo",
+              "expression": "repository_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1443,7 +1784,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "jobs_repository_id_repositories_id_fk": {
+          "name": "jobs_repository_id_repositories_id_fk",
+          "tableFrom": "jobs",
+          "tableTo": "repositories",
+          "columnsFrom": [
+            "repository_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -1669,9 +2024,9 @@
       "name": "namespace_group_members",
       "schema": "",
       "columns": {
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
+        "namespace_id": {
+          "name": "namespace_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -1706,25 +2061,25 @@
         }
       },
       "foreignKeys": {
-        "namespace_group_members_namespace_namespaces_name_fk": {
-          "name": "namespace_group_members_namespace_namespaces_name_fk",
+        "namespace_group_members_namespace_id_namespaces_id_fk": {
+          "name": "namespace_group_members_namespace_id_namespaces_id_fk",
           "tableFrom": "namespace_group_members",
           "tableTo": "namespaces",
           "columnsFrom": [
-            "namespace"
+            "namespace_id"
           ],
           "columnsTo": [
-            "name"
+            "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "namespace_group_members_namespace_group_key_pk": {
-          "name": "namespace_group_members_namespace_group_key_pk",
+        "namespace_group_members_namespace_id_group_key_pk": {
+          "name": "namespace_group_members_namespace_id_group_key_pk",
           "columns": [
-            "namespace",
+            "namespace_id",
             "group_key"
           ]
         }
@@ -1738,9 +2093,9 @@
       "name": "namespace_members",
       "schema": "",
       "columns": {
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
+        "namespace_id": {
+          "name": "namespace_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -1775,25 +2130,25 @@
         }
       },
       "foreignKeys": {
-        "namespace_members_namespace_namespaces_name_fk": {
-          "name": "namespace_members_namespace_namespaces_name_fk",
+        "namespace_members_namespace_id_namespaces_id_fk": {
+          "name": "namespace_members_namespace_id_namespaces_id_fk",
           "tableFrom": "namespace_members",
           "tableTo": "namespaces",
           "columnsFrom": [
-            "namespace"
+            "namespace_id"
           ],
           "columnsTo": [
-            "name"
+            "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "namespace_members_namespace_user_key_pk": {
-          "name": "namespace_members_namespace_user_key_pk",
+        "namespace_members_namespace_id_user_key_pk": {
+          "name": "namespace_members_namespace_id_user_key_pk",
           "columns": [
-            "namespace",
+            "namespace_id",
             "user_key"
           ]
         }
@@ -1803,14 +2158,46 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.namespaces": {
-      "name": "namespaces",
+    "public.namespace_tombstones": {
+      "name": "namespace_tombstones",
       "schema": "",
       "columns": {
         "name": {
           "name": "name",
           "type": "text",
           "primaryKey": true,
+          "notNull": true
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.namespaces": {
+      "name": "namespaces",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
         "base_permission": {
@@ -1838,7 +2225,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "namespaces_name": {
+          "name": "namespaces_name",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -1946,107 +2349,76 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.pats": {
-      "name": "pats",
+    "public.permission_snapshots": {
+      "name": "permission_snapshots",
       "schema": "",
       "columns": {
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "permission_snapshots_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prefix": {
-          "name": "prefix",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sub": {
-          "name": "sub",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "iss": {
-          "name": "iss",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
+        "snapshot_at": {
+          "name": "snapshot_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scopes": {
-          "name": "scopes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
+        "role": {
+          "name": "role",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "groups": {
-          "name": "groups",
-          "type": "jsonb",
+        "custom_permissions": {
+          "name": "custom_permissions",
+          "type": "text[]",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
+        },
+        "effective_permissions": {
+          "name": "effective_permissions",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot_reason": {
+          "name": "snapshot_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {
-        "pats_owner": {
-          "name": "pats_owner",
+        "permission_snapshots_principal_idx": {
+          "name": "permission_snapshots_principal_idx",
           "columns": [
             {
-              "expression": "iss",
+              "expression": "principal_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "sub",
+              "expression": "snapshot_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2058,17 +2430,23 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "pats_id_unique": {
-          "name": "pats_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
+      "foreignKeys": {
+        "permission_snapshots_principal_id_principals_id_fk": {
+          "name": "permission_snapshots_principal_id_principals_id_fk",
+          "tableFrom": "permission_snapshots",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
             "id"
-          ]
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -2167,44 +2545,205 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.principal_access_states": {
-      "name": "principal_access_states",
+    "public.principal_disabled_periods": {
+      "name": "principal_disabled_periods",
       "schema": "",
       "columns": {
-        "principal_key": {
-          "name": "principal_key",
-          "type": "text",
+        "id": {
+          "name": "id",
+          "type": "bigint",
           "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "principal_disabled_periods_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "bigint",
+          "primaryKey": false,
           "notNull": true
         },
-        "idp_disabled_at": {
-          "name": "idp_disabled_at",
+        "disabled_at": {
+          "name": "disabled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "re_enabled_at": {
+          "name": "re_enabled_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
-        "restore_requires_approval": {
-          "name": "restore_requires_approval",
-          "type": "boolean",
+        "restoration_type": {
+          "name": "restoration_type",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
+          "notNull": false
+        },
+        "confirmed_by": {
+          "name": "confirmed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "audit_event_id": {
+          "name": "audit_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "principal_disabled_periods_principal_idx": {
+          "name": "principal_disabled_periods_principal_idx",
+          "columns": [
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "principal_disabled_periods_pending_idx": {
+          "name": "principal_disabled_periods_pending_idx",
+          "columns": [
+            {
+              "expression": "restoration_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"principal_disabled_periods\".\"restoration_type\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "principal_disabled_periods_principal_id_principals_id_fk": {
+          "name": "principal_disabled_periods_principal_id_principals_id_fk",
+          "tableFrom": "principal_disabled_periods",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.principal_flag_history": {
+      "name": "principal_flag_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "principal_flag_history_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "bigint",
+          "primaryKey": false,
           "notNull": true
         },
-        "updated_at": {
-          "name": "updated_at",
+        "flag": {
+          "name": "flag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_iss": {
+          "name": "actor_iss",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_sub": {
+          "name": "actor_sub",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "principal_flag_history_principal_id_principals_id_fk": {
+          "name": "principal_flag_history_principal_id_principals_id_fk",
+          "tableFrom": "principal_flag_history",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -2308,6 +2847,501 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.principal_permission_history": {
+      "name": "principal_permission_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "principal_permission_history_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grant_reason": {
+          "name": "grant_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoke_reason": {
+          "name": "revoke_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_request_id": {
+          "name": "access_request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "principal_permission_history_principal_idx": {
+          "name": "principal_permission_history_principal_idx",
+          "columns": [
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "granted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "principal_permission_history_principal_id_principals_id_fk": {
+          "name": "principal_permission_history_principal_id_principals_id_fk",
+          "tableFrom": "principal_permission_history",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "principal_permission_history_granted_by_principals_id_fk": {
+          "name": "principal_permission_history_granted_by_principals_id_fk",
+          "tableFrom": "principal_permission_history",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "principal_permission_history_revoked_by_principals_id_fk": {
+          "name": "principal_permission_history_revoked_by_principals_id_fk",
+          "tableFrom": "principal_permission_history",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "revoked_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.principal_permissions": {
+      "name": "principal_permissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "principal_permissions_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grant_reason": {
+          "name": "grant_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "principal_permissions_principal_perm": {
+          "name": "principal_permissions_principal_perm",
+          "columns": [
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "principal_permissions_principal_id_principals_id_fk": {
+          "name": "principal_permissions_principal_id_principals_id_fk",
+          "tableFrom": "principal_permissions",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "principal_permissions_granted_by_principals_id_fk": {
+          "name": "principal_permissions_granted_by_principals_id_fk",
+          "tableFrom": "principal_permissions",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.principal_role_history": {
+      "name": "principal_role_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "principal_role_history_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grant_reason": {
+          "name": "grant_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoke_reason": {
+          "name": "revoke_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_request_id": {
+          "name": "access_request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "principal_role_history_principal_idx": {
+          "name": "principal_role_history_principal_idx",
+          "columns": [
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "granted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "principal_role_history_principal_id_principals_id_fk": {
+          "name": "principal_role_history_principal_id_principals_id_fk",
+          "tableFrom": "principal_role_history",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "principal_role_history_granted_by_principals_id_fk": {
+          "name": "principal_role_history_granted_by_principals_id_fk",
+          "tableFrom": "principal_role_history",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "principal_role_history_revoked_by_principals_id_fk": {
+          "name": "principal_role_history_revoked_by_principals_id_fk",
+          "tableFrom": "principal_role_history",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "revoked_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.principal_roles": {
+      "name": "principal_roles",
+      "schema": "",
+      "columns": {
+        "principal_id": {
+          "name": "principal_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grant_reason": {
+          "name": "grant_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "principal_roles_principal_id_principals_id_fk": {
+          "name": "principal_roles_principal_id_principals_id_fk",
+          "tableFrom": "principal_roles",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "principal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "principal_roles_granted_by_principals_id_fk": {
+          "name": "principal_roles_granted_by_principals_id_fk",
+          "tableFrom": "principal_roles",
+          "tableTo": "principals",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.principals": {
       "name": "principals",
       "schema": "",
@@ -2352,6 +3386,25 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_login_at": {
+          "name": "last_login_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flags": {
+          "name": "flags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
         }
       },
       "indexes": {
@@ -2465,15 +3518,9 @@
       "name": "repo_collaborators",
       "schema": "",
       "columns": {
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repo": {
-          "name": "repo",
-          "type": "text",
+        "repository_id": {
+          "name": "repository_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -2508,26 +3555,25 @@
         }
       },
       "foreignKeys": {
-        "repo_collaborators_namespace_namespaces_name_fk": {
-          "name": "repo_collaborators_namespace_namespaces_name_fk",
+        "repo_collaborators_repository_id_repositories_id_fk": {
+          "name": "repo_collaborators_repository_id_repositories_id_fk",
           "tableFrom": "repo_collaborators",
-          "tableTo": "namespaces",
+          "tableTo": "repositories",
           "columnsFrom": [
-            "namespace"
+            "repository_id"
           ],
           "columnsTo": [
-            "name"
+            "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "repo_collaborators_namespace_repo_user_key_pk": {
-          "name": "repo_collaborators_namespace_repo_user_key_pk",
+        "repo_collaborators_repository_id_user_key_pk": {
+          "name": "repo_collaborators_repository_id_user_key_pk",
           "columns": [
-            "namespace",
-            "repo",
+            "repository_id",
             "user_key"
           ]
         }
@@ -2541,15 +3587,9 @@
       "name": "repo_group_collaborators",
       "schema": "",
       "columns": {
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repo": {
-          "name": "repo",
-          "type": "text",
+        "repository_id": {
+          "name": "repository_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -2584,27 +3624,159 @@
         }
       },
       "foreignKeys": {
-        "repo_group_collaborators_namespace_namespaces_name_fk": {
-          "name": "repo_group_collaborators_namespace_namespaces_name_fk",
+        "repo_group_collaborators_repository_id_repositories_id_fk": {
+          "name": "repo_group_collaborators_repository_id_repositories_id_fk",
           "tableFrom": "repo_group_collaborators",
-          "tableTo": "namespaces",
+          "tableTo": "repositories",
           "columnsFrom": [
-            "namespace"
+            "repository_id"
           ],
           "columnsTo": [
-            "name"
+            "id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
-        "repo_group_collaborators_namespace_repo_group_key_pk": {
-          "name": "repo_group_collaborators_namespace_repo_group_key_pk",
+        "repo_group_collaborators_repository_id_group_key_pk": {
+          "name": "repo_group_collaborators_repository_id_group_key_pk",
           "columns": [
-            "namespace",
-            "repo",
+            "repository_id",
             "group_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.repositories": {
+      "name": "repositories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "namespace_id": {
+          "name": "namespace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "repositories_namespace_name": {
+          "name": "repositories_namespace_name",
+          "columns": [
+            {
+              "expression": "namespace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "repositories_namespace_id_namespaces_id_fk": {
+          "name": "repositories_namespace_id_namespaces_id_fk",
+          "tableFrom": "repositories",
+          "tableTo": "namespaces",
+          "columnsFrom": [
+            "namespace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.repository_tombstones": {
+      "name": "repository_tombstones",
+      "schema": "",
+      "columns": {
+        "namespace_id": {
+          "name": "namespace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "repository_tombstones_namespace_id_namespaces_id_fk": {
+          "name": "repository_tombstones_namespace_id_namespaces_id_fk",
+          "tableFrom": "repository_tombstones",
+          "tableTo": "namespaces",
+          "columnsFrom": [
+            "namespace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "repository_tombstones_namespace_id_name_pk": {
+          "name": "repository_tombstones_namespace_id_name_pk",
+          "columns": [
+            "namespace_id",
+            "name"
           ]
         }
       },
@@ -2681,132 +3853,6 @@
           "columns": [
             {
               "expression": "valid_until",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.service_pat_expiry_notices": {
-      "name": "service_pat_expiry_notices",
-      "schema": "",
-      "columns": {
-        "pat_id": {
-          "name": "pat_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "notified_at": {
-          "name": "notified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.service_principals": {
-      "name": "service_principals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_iss": {
-          "name": "owner_iss",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_sub": {
-          "name": "owner_sub",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_email": {
-          "name": "owner_email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_name": {
-          "name": "owner_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "suspended_at": {
-          "name": "suspended_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "suspended_cause": {
-          "name": "suspended_cause",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "service_principals_owner": {
-          "name": "service_principals_owner",
-          "columns": [
-            {
-              "expression": "owner_iss",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_sub",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

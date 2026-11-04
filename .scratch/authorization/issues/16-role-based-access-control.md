@@ -132,7 +132,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [x] Access request ID linked in audit events
 
 ### Versioning
-- [x] History tables are append-only (never updated or deleted); enforced by database triggers (`0019_rbac_history_append_only.sql`)
+- [x] History tables are append-only (never updated or deleted); enforced by database triggers (`auth/scripts/append-only-triggers.sql`, folded into the baseline migration)
 - [x] Role changes track: granted_at, granted_by, revoked_at, revoked_by
 - [x] Permission changes track: granted_at, granted_by, revoked_at, revoked_by
 - [x] Reasons stored for all changes
