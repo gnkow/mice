@@ -13,6 +13,11 @@ import { sealSession, type SessionUser } from './session.js'
 
 const ROLES: InstanceRole[] = ['external', 'user', 'manager', 'auditor', 'admin']
 
+function devMfaIdToken(): string {
+  const part = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  return [part({ alg: 'none' }), part({ acr: 'mfa', amr: ['pwd', 'otp'] }), 'dev'].join('.')
+}
+
 export function registerDevSessionRoutes(app: Hono): void {
   if (!env.authDevMode) return
 
@@ -51,6 +56,8 @@ export function registerDevSessionRoutes(app: Hono): void {
       name,
       emailVerified: body.emailVerified !== false,
       ...(groups.length ? { groups } : {}),
+      // Lets e2e exercise MFA-gated roles (Auditor); the claims are unsigned test data.
+      ...(body.mfa === true ? { idToken: devMfaIdToken() } : {}),
     }
 
     const id = await sealSession(user)

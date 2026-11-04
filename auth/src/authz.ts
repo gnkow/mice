@@ -564,6 +564,9 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
   if (policy.credential === 'unscoped' && isScopedCredential(user)) {
     return denied(policy.reason)
   }
+  if ((await getUserRole(user)) === 'auditor' && !sessionHasMfa(user)) {
+    return denied('Auditor access requires MFA evidence')
+  }
   for (const p of policy.permissions) {
     if (await hasPermission(user, p)) return ALLOWED
   }

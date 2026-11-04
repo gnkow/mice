@@ -13,6 +13,7 @@ import {
   type AuditFacets,
   type AuditResource,
 } from '../lib/audit'
+import { signatureEvidenceRows } from '../lib/signatureEvidence'
 
 const FILTER_KEYS = [
   'actor',
@@ -337,6 +338,7 @@ export function AuditPage() {
                             : '—'}
                         </span>
                       )}
+                      <SignatureEvidence event={ev} />
                     </td>
                   </tr>
                 ))}
@@ -346,5 +348,23 @@ export function AuditPage() {
         )}
       </StateBlock>
     </main>
+  )
+}
+
+function SignatureEvidence({ event }: { event: AuditEvent }) {
+  const rows = signatureEvidenceRows(event.action, event.detail)
+  if (rows.length === 0) return null
+  return (
+    <details className="small" data-testid="signature-evidence">
+      <summary>Signature evidence</summary>
+      <dl>
+        {rows.map((r) => (
+          <div key={r.label}>
+            <dt className="muted">{r.label}</dt>
+            <dd className="mono">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   )
 }

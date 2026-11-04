@@ -15,7 +15,14 @@ export type TestPerson = {
   email: string
   name: string
   emailVerified?: boolean
+  idToken?: string
 }
+
+/** Unsigned id_token carrying MFA claims; the Auditor role requires MFA evidence on the session. */
+export const withMfa = <T extends TestPerson>(user: T): T => ({
+  ...user,
+  idToken: ['e30', Buffer.from(JSON.stringify({ acr: 'mfa', amr: ['pwd', 'otp'] })).toString('base64url'), 's'].join('.'),
+})
 
 /**
  * Isolated auth environment for tests: test env vars and a private workspace data directory in the project.

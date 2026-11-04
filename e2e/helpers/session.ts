@@ -15,6 +15,8 @@ export type TestIdentity = {
    */
   role?: 'none' | 'external' | 'user' | 'manager' | 'auditor' | 'admin'
   instanceAdmin?: boolean
+  /** Session carries MFA evidence (required for the Auditor role). */
+  mfa?: boolean
 }
 
 export type MintedSession = {
@@ -57,6 +59,7 @@ export async function mintSessionCookie(
       email: user.email,
       name: user.name,
       emailVerified: true,
+      ...(identity.mfa ? { mfa: true } : {}),
       role: user.role,
       ...(user.instanceAdmin !== undefined ? { instanceAdmin: user.instanceAdmin } : {}),
       ...(user.groups?.length ? { groups: user.groups } : {}),

@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { isolatedAuth, withMfa } from './testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('./app.js')
@@ -68,7 +68,7 @@ async function adminCall(method: string, path: string, body?: unknown) {
 async function auditorCall(method: string, path: string, body?: unknown) {
   return app.request(path, {
     method,
-    headers: { ...(await iso.sessionHeaders(auditor)), 'content-type': 'application/json', 'x-mice-reason': 'Auditor review' },
+    headers: { ...(await iso.sessionHeaders(withMfa(auditor))), 'content-type': 'application/json', 'x-mice-reason': 'Auditor review' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
