@@ -15,7 +15,7 @@ import { createDatasetCapture, createLineageCapture, type DatasetVersions } from
 import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
-import { filterNamespaceCatalog, recordSiteAdminBypass, seedRepoCreate } from './proxyEffects.js'
+import { filterNamespaceCatalog, recordAclBypassRead, seedRepoCreate } from './proxyEffects.js'
 import {
   authorsFromCommits,
   decideSelfMerge,
@@ -245,8 +245,8 @@ export async function proxyToOxen(
     reason = resolved.value
   }
 
-  if (decision.siteAdminBypass) {
-    await recordSiteAdminBypass({
+  if (decision.aclBypass) {
+    await recordAclBypassRead({
       user,
       via,
       method,

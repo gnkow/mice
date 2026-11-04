@@ -1,4 +1,6 @@
 import { directoryNow } from './authentication/directory/directory.js'
+import { extractMfaEvidence } from './authentication/signing/mfaEvidence.js'
+import { decodeJwtPayload } from './authentication/oidc/oidcClaims.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
 import { hasCompletedTraining, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
@@ -47,8 +49,8 @@ export type AuthzDecision = {
   allow: boolean
   status: 403 | 401 | 503
   reason: string
-  /** ACL bypass used for this check (`repo:bypass_acl`); recorded as site_admin_bypass in audit. */
-  siteAdminBypass?: boolean
+  /** ACL bypass used for this check (`repo:bypass_acl`); recorded as acl_bypass_read in audit. */
+  aclBypass?: boolean
   requiredRole?: RepoRole
   effectiveRole?: BasePermission
 }
@@ -89,7 +91,7 @@ export async function isPendingUser(user: SessionUser): Promise<boolean> {
 /**
  * Additive effective repo role for user on ns/repo.
  * Owner ⇒ admin; base perms for members; user + IdP group collaborators; max of all.
- * Instance admin is handled separately (site_admin_bypass).
+ * Instance admin has no ACL bypass.
  */
 export async function effectiveRepoRole(
   user: SessionUser,
@@ -180,7 +182,8 @@ export async function hasRepoPermission(
   if (
     need === 'read' &&
     !isScopedCredential(user) &&
-    await hasPermission(user, 'repo:bypass_acl')
+    await hasPermission(user, 'repo:bypass_acl') &&
+    sessionHasMfa(user)
   ) {
     return { ok: true, effective, bypass: true }
   }
@@ -188,6 +191,15 @@ export async function hasRepoPermission(
     ok: false,
     effective,
     bypass: false,
+  }
+}
+
+function sessionHasMfa(user: SessionUser): boolean {
+  if (!user.idToken) return false
+  try {
+    return extractMfaEvidence(decodeJwtPayload(user.idToken)).hasMfa
+  } catch {
+    return false
   }
 }
 
@@ -368,7 +380,7 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
       allow: true,
       status: 403,
       reason: 'ok',
-      siteAdminBypass: check.bypass,
+      aclBypass: check.bypass,
       requiredRole: need,
       effectiveRole: check.effective,
     }

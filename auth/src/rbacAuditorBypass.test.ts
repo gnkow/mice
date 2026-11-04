@@ -31,7 +31,10 @@ const person = (sub: string) => ({
 
 describe('RBAC S26 Auditor ACL bypass', () => {
   it('lets Auditor read a private repo without collaborator membership', async () => {
-    const auditor = person('auditor-bypass')
+    const auditor = {
+      ...person('auditor-bypass'),
+      idToken: ['e30', Buffer.from(JSON.stringify({ acr: 'mfa', amr: ['pwd', 'otp'] })).toString('base64url'), 's'].join('.'),
+    }
     await ensurePrincipal(auditor)
     assert.equal(
       (await assignRole({
@@ -52,6 +55,6 @@ describe('RBAC S26 Auditor ACL bypass', () => {
       pathname: '/api/repos/aud-bypass-ns/secret',
     })
     assert.equal(d.allow, true)
-    assert.equal(d.siteAdminBypass, true)
+    assert.equal(d.aclBypass, true)
   })
 })

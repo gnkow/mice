@@ -16,15 +16,15 @@ The admin UI grants the role with a required expiry. A grant with no expiry is r
 
 ## In code today
 
-`auth/src/authentication/auditor/auditorAccess.ts` has pure checks for expiry, MFA, read-only, and an audit record shape, with unit tests. There is no auditor column, no session flag, no route, and no middleware that calls those checks. Signature evidence from authentication issue 26 is on the signing audit detail, with no auditor view.
+Expiry, read-only enforcement, MFA gating (session id_token `acr`/`amr`) and per-read `site_admin_bypass` audit events are enforced in `authz.ts` and `proxy.ts`, with tests in `auditorAccess.enforcement.test.ts` and `auditorAccess.audit.test.ts`. The earlier unwired stub was removed. There is still no auditor view of signature evidence from authentication issue 26.
 
 ## Acceptance
 
-- [ ] An admin can grant the Auditor role only with an expiry
-- [ ] A request after expiry is refused while the IdP account is still enabled
-- [ ] Auditor requests require MFA evidence
-- [ ] The Auditor can read repository data, history, and audit logs across ACLs
-- [ ] Write, merge, delete, and sign routes reject the Auditor role
-- [ ] Every Auditor read appends an audit event with that Principal
-- [ ] No impersonation or support-login route exists
+- [x] An admin can grant the Auditor role only with an expiry
+- [x] A request after expiry is refused while the IdP account is still enabled
+- [x] Auditor requests require MFA evidence
+- [x] The Auditor can read repository data, history, and audit logs across ACLs
+- [x] Write, merge, delete, and sign routes reject the Auditor role
+- [x] Every Auditor read appends an audit event with that Principal
+- [x] No impersonation or support-login route exists
 - [ ] The auditor view can open the signature evidence stored by authentication issue 26

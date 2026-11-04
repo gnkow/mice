@@ -60,7 +60,7 @@ export async function seedRepoCreate(user: SessionUser, namespace: string, repo:
 }
 
 /** Audit that a site admin was allowed through on the bypass, not on a grant. */
-export async function recordSiteAdminBypass(input: {
+export async function recordAclBypassRead(input: {
   user: SessionUser
   via: AuditVia
   method: string
@@ -75,7 +75,7 @@ export async function recordSiteAdminBypass(input: {
     method: input.method,
     path: input.pathname,
     status: 0,
-    action: 'site_admin_bypass',
+    action: 'acl_bypass_read',
     namespace: input.namespace,
     repo: input.repo,
     detail: { reason: input.reason },

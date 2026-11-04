@@ -49,7 +49,7 @@ describe('RBAC S25 Admin separation of duties', () => {
       pathname: '/api/repos/sod-ns/secret',
     })
     assert.equal(d.allow, false)
-    assert.equal(d.siteAdminBypass, undefined)
+    assert.equal(d.aclBypass, undefined)
   })
 
   it('does not let boolean instance-admin bypass repository ACLs', async () => {

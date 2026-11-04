@@ -55,7 +55,7 @@ describe('RBAC S27 Non-auditor repo ACL', () => {
         pathname: `/api/repos/${ns}/secret`,
       })
       assert.equal(d.allow, false)
-      assert.equal(d.siteAdminBypass, undefined)
+      assert.equal(d.aclBypass, undefined)
     })
   }
 

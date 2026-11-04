@@ -95,7 +95,7 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['audit.export', 'Audit log exported', 'Audit'],
   ['audit.checkpoint', 'Audit checkpoint signed', 'Audit'],
   ['audit.break.acknowledge', 'Audit chain break acknowledged', 'Audit'],
-  ['site_admin_bypass', 'Site-admin bypass used', 'Audit'],
+  ['acl_bypass_read', 'Auditor ACL bypass read', 'Audit'],
   ['request.rejected', 'Request rejected (unclassifiable body)', 'Audit'],
   ['request.cross_site_rejected', 'Cross-site request rejected', 'Audit'],
   ['other', 'Other change', 'Other'],
