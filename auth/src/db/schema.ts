@@ -342,7 +342,7 @@ export const principalRoleHistory = pgTable(
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     principalId: bigint('principal_id', { mode: 'number' })
       .notNull()
-      .references(() => principals.id, { onDelete: 'cascade' }),
+      .references(() => principals.id, { onDelete: 'no action' }),
     role: text('role').notNull(),
     action: text('action').notNull(),
     grantedAt: ts('granted_at').notNull(),
@@ -382,7 +382,7 @@ export const principalPermissionHistory = pgTable(
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     principalId: bigint('principal_id', { mode: 'number' })
       .notNull()
-      .references(() => principals.id, { onDelete: 'cascade' }),
+      .references(() => principals.id, { onDelete: 'no action' }),
     permission: text('permission').notNull(),
     action: text('action').notNull(),
     grantedAt: ts('granted_at').notNull(),
@@ -403,7 +403,7 @@ export const permissionSnapshots = pgTable(
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     principalId: bigint('principal_id', { mode: 'number' })
       .notNull()
-      .references(() => principals.id, { onDelete: 'cascade' }),
+      .references(() => principals.id, { onDelete: 'no action' }),
     snapshotAt: ts('snapshot_at').notNull(),
     role: text('role'),
     customPermissions: text('custom_permissions').array().notNull(),

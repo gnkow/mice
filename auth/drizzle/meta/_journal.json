@@ -134,6 +134,13 @@
       "when": 1794000010000,
       "tag": "0018_access_requests_rbac",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794000020000,
+      "tag": "0019_rbac_history_append_only",
+      "breakpoints": true
     }
   ]
 }

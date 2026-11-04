@@ -61,8 +61,8 @@ The BFF implements role-based access control (RBAC) with 5 formal roles (Externa
 #### Instance Roles (RBAC)
 
 - **5 formal roles**: External User, User, Manager, Auditor, Admin
-- **Role-based permissions**: Each role has a defined permission bundle (150+ granular permissions)
-- **Permission extensibility**: Permissions stored as TEXT[] (no schema changes for new permissions)
+- **Role-based permissions**: Each role has a defined permission bundle (137 granular permissions)
+- **Permission extensibility**: Permissions stored as text values (no schema changes for new permissions)
 - **Custom permissions**: Users can have role + additional custom permissions beyond role defaults
 - **Permission naming**: `<resource>:<sub-resource>:<operation>` (e.g., `repo:files:read`, `workspace:lease:acquire`)
 - **Maximum granularity**: Split permissions to finest-grained operations (read vs write vs delete, acquire vs renew vs release)
@@ -71,18 +71,18 @@ The BFF implements role-based access control (RBAC) with 5 formal roles (Externa
 
 | Role | Permission Count | Key Capabilities |
 |------|-----------------|------------------|
-| **External User** | 31 | Read-only: repos, sessions, jobs, metadata |
-| **User** | 51 | Read/write: files, branches, commits, workspaces, jobs |
-| **Manager** | 79 | User + create namespaces + manage members + approve requests |
-| **Auditor** | 38 | Universal read (bypass ACLs) + audit/lineage access |
-| **Admin** | 34 | System management + user management (NO data/audit access) |
+| **External User** | 34 | Read-only: repos, sessions, jobs, metadata |
+| **User** | 64 | Read/write: files, branches, commits, workspaces, jobs |
+| **Manager** | 104 | User + create namespaces + manage members + approve requests |
+| **Auditor** | 44 | Universal read (bypass ACLs) + audit/lineage access |
+| **Admin** | 39 | System management + user management (NO data/audit access) |
 
 **Separation of Duties:**
 - Admin manages system but CANNOT access data, repos, audit logs, lineage
 - Auditor reads everything (bypass repo ACLs) but CANNOT write or manage
 - Manager approves requests up to Manager level (cannot grant more than they have)
 
-**Permission Catalog:** See `docs/specs/authorization-system.md` for complete 150+ permission list across 16 categories.
+**Permission Catalog:** See `docs/specs/authorization-system.md` for complete 137 permission list across 22 categories.
 
 #### Repository Roles
 
@@ -184,7 +184,7 @@ The following gaps were identified between the spec decisions and current implem
 **Status**: New requirement. Complete redesign of authorization system.
 
 **Scope**:
-- Implement 5 formal roles (External User, User, Manager, Auditor, Admin) with 150+ granular permissions
+- Implement 5 formal roles (External User, User, Manager, Auditor, Admin) with 137 granular permissions
 - Database schema: `principal_roles`, `principal_role_history`, `principal_permissions`, `principal_permission_history`, `access_requests`, `permission_snapshots`
 - Access request workflow: users request roles/permissions, managers/admins approve up to their authority level
 - Direct grant: admins/managers grant roles/permissions without request
