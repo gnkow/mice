@@ -64,6 +64,15 @@ describe('Keycloak directory adapter', () => {
     ])
   })
 
+  it('treats a user unknown to the directory as having no groups but still fails on server errors', async () => {
+    const respond = (status: number): typeof fetch => async (input) =>
+      String(input).endsWith('/token') ? json({ access_token: 'tok', expires_in: 60 }) : json({}, status)
+    const unknown = createKeycloakDirectory(config, { fetch: respond(404) })
+    assert.deepEqual(await unknown.getUserGroups('ghost'), [])
+    const broken = createKeycloakDirectory(config, { fetch: respond(500) })
+    await assert.rejects(broken.getUserGroups('ghost'), /directory group lookup failed \(500\)/)
+  })
+
   it('returns a group object id and the current display name', async () => {
     const fetchFn: typeof fetch = async (input) => {
       const url = String(input)

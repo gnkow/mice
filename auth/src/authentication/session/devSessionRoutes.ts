@@ -37,8 +37,9 @@ export function registerDevSessionRoutes(app: Hono): void {
       : []
 
     const roleRaw = typeof body.role === 'string' ? body.role.trim().toLowerCase() : 'admin'
-    if (!isInstanceRole(roleRaw)) {
-      return c.json({ error: `Invalid role (want one of ${ROLES.join(', ')})` }, 400)
+    // `none` mints a signed-in user without a formal role (the access-request path).
+    if (roleRaw !== 'none' && !isInstanceRole(roleRaw)) {
+      return c.json({ error: `Invalid role (want one of none, ${ROLES.join(', ')})` }, 400)
     }
     const role = roleRaw
     const instanceAdmin = body.instanceAdmin === true || role === 'admin'
@@ -55,14 +56,16 @@ export function registerDevSessionRoutes(app: Hono): void {
     const id = await sealSession(user)
     const sealed = await sealSessionCookie(id)
 
-    const granted = await assignRole({
-      actor: null,
-      target: user,
-      role,
-      reason: 'auth-dev-mode e2e mint',
-      bootstrap: true,
-    })
-    if (!granted.ok) return c.json({ error: granted.error }, 400)
+    if (role !== 'none') {
+      const granted = await assignRole({
+        actor: null,
+        target: user,
+        role,
+        reason: 'auth-dev-mode e2e mint',
+        bootstrap: true,
+      })
+      if (!granted.ok) return c.json({ error: granted.error }, 400)
+    }
 
     if (instanceAdmin) await addAdminKey(userKey(user))
 

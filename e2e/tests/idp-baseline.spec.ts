@@ -1,7 +1,9 @@
 import { test, expect, openAccountMenu } from '../fixtures'
+import { mintSession } from '../helpers/session'
 
 test.describe('IdP MFA Baseline (Admin)', () => {
   test('admin can view and trigger IdP baseline check', async ({ page }) => {
+    await mintSession(page, { role: 'admin' })
     // Navigate to Settings
     await page.goto('/')
     await openAccountMenu(page)
@@ -13,14 +15,14 @@ test.describe('IdP MFA Baseline (Admin)', () => {
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 
     // Navigate to IdP MFA Baseline section
-    await page.getByRole('link', { name: 'IdP MFA baseline' }).click()
+    await page.getByRole('link', { name: 'Baseline', exact: true }).click()
 
     // Verify section is visible
     await expect(page.getByRole('heading', { name: /IdP MFA Baseline/i })).toBeVisible()
     await expect(page.getByText(/Part 11.*requires two distinct identification/i)).toBeVisible()
 
     // Verify "Check Now" button exists
-    const checkButton = page.getByRole('button', { name: /Check Now/i })
+    const checkButton = page.locator('#idp-baseline').getByRole('button', { name: /Check Now|Checking/i })
     await expect(checkButton).toBeVisible()
 
     // Trigger baseline check
@@ -28,7 +30,7 @@ test.describe('IdP MFA Baseline (Admin)', () => {
 
     // Wait for check to complete (button changes to "Checking..." and back)
     await expect(checkButton).toBeDisabled()
-    await expect(page.getByRole('button', { name: /Checking/i })).toBeVisible({ timeout: 2000 })
+    await expect(checkButton).toHaveText(/Checking/i, { timeout: 2000 })
     
     // Wait for result (either success or error message)
     await expect(
@@ -40,6 +42,7 @@ test.describe('IdP MFA Baseline (Admin)', () => {
   })
 
   test('baseline status shows MFA availability', async ({ page }) => {
+    await mintSession(page, { role: 'admin' })
     await page.goto('/')
     await openAccountMenu(page)
     await page
@@ -48,7 +51,7 @@ test.describe('IdP MFA Baseline (Admin)', () => {
       .click()
 
     // Navigate to IdP baseline section
-    await page.getByRole('link', { name: 'IdP MFA baseline' }).click()
+    await page.getByRole('link', { name: 'Baseline', exact: true }).click()
 
     // If a check has been performed, verify the status display
     const lastCheckText = page.getByText(/Last Check/i)

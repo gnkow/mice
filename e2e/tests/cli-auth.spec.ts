@@ -75,7 +75,8 @@ test.describe('CLI auth via device login (PLAT-AUTH)', () => {
 
     await page.goto(`/cli/device?user_code=${encodeURIComponent(started.user_code)}`)
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
-    await expect(page.getByText(started.user_code)).toBeVisible()
+    await expect(page.locator('code.mono', { hasText: started.user_code })).toBeVisible()
+    await page.getByPlaceholder('APPROVE').fill('APPROVE')
     await page.getByRole('button', { name: 'Approve' }).click()
     await expect(page.getByText(/Approved/i)).toBeVisible()
 

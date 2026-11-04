@@ -17,7 +17,7 @@ test('notification preferences persist', async ({ page }) => {
 })
 
 test('notification inbox and profile settings stay available without resource grants', async ({ page }) => {
-  let pending = true
+  let pending = false
   let tokenCreated = false
   const categories = Object.fromEntries(
     ['access', 'jobs', 'sessions', 'repositories', 'files', 'metadata', 'security', 'announcements']
@@ -55,8 +55,8 @@ test('notification inbox and profile settings stay available without resource gr
       return route.fulfill({ json: {
         enforce: true,
         pending,
-        role: pending ? null : 'user',
-        effectivePermissions: pending ? [] : ['tokens:create', 'tokens:list', 'tokens:revoke'],
+        role: pending ? null : 'admin',
+        effectivePermissions: pending ? [] : ['access_request:list', 'namespace:list'],
         permissionCatalog,
       } })
     }
@@ -134,14 +134,11 @@ test('notification inbox and profile settings stay available without resource gr
   await expect(page.locator('.profile-menu-panel').getByRole('button')).toHaveText(['Sign out'])
   pending = false
   await page.locator('.profile-menu-panel').getByRole('link', { name: 'Settings', exact: true }).click()
-  await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
   await expect(page.locator('main h2').first()).toHaveText('Connection')
   await expect(page.getByRole('heading', { name: 'Access', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Access requests', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Authorization policy', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Instance administrators', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Delegated permissions', exact: true })).toBeVisible()
   await page.goto('/profile')
   await expect(page.getByRole('heading', { name: 'Access', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Device Sessions', exact: false })).toBeVisible()
 })

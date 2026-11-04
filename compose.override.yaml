@@ -6,6 +6,8 @@ services:
       AUTH_DEV_MODE: "true"
       # __Host- cookies need Secure+HTTPS; local UI is http://localhost.
       SESSION_COOKIE_NAME: mice_session
+      # e2e signs in through Keycloak as the realm user `mice`; it needs instance admin.
+      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice_admin@mice.com,mice@example.com,partner@partner.example}
 
   oxen-server:
     ports:

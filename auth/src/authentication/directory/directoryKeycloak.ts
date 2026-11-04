@@ -194,6 +194,8 @@ export function createKeycloakDirectory(
         const res = await doFetch(`${adminBase()}/users/${encodeURIComponent(sub)}/groups`, {
           headers: { Authorization: `Bearer ${tok}` },
         })
+        // Unknown to the directory (e.g. synthetic or locally-minted subjects) means no directory groups.
+        if (res.status === 404) return []
         if (!res.ok) {
           throw new Error(`directory group lookup failed (${res.status})`)
         }

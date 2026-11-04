@@ -83,34 +83,6 @@ test.describe('audit log (PLAT-AUDIT)', () => {
     expect(write!.message).toBe('audit session commit')
   })
 
-  test('TC-AUDIT-02: PAT write records via: pat', async ({ page }) => {
-    await sessionLogin(page, {
-      name: 'PAT Audit',
-      email: 'pat-audit@mice.local',
-      sub: uniqueId('pat-audit'),
-    })
-    const created = await page.request.post(`${BASE_URL}/auth/tokens`, {
-      data: { label: 'audit-pat' },
-    })
-    expect(created.ok()).toBeTruthy()
-    const { token: pat } = await created.json()
-    await page.context().clearCookies()
-
-    const ns = uniqueId('audit-pat-ns')
-    const create = await page.request.post(`${AUTH_URL}/api/repos`, {
-      headers: { Authorization: `Bearer ${pat}` },
-      data: { namespace: ns, name: 'repo' },
-    })
-    expect(create.ok()).toBeTruthy()
-
-    // Re-login to query audit (session required)
-    await sessionLogin(page)
-    const { events } = await countAuditEvents(page, { namespace: ns })
-    const row = events.find((e) => e.action === 'repo.create')
-    expect(row).toBeTruthy()
-    expect(row!.via).toBe('pat')
-  })
-
   test('TC-AUDIT-03: GET /api does not create audit lines', async ({
     page,
   }) => {

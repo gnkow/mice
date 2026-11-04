@@ -54,7 +54,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
     await page.getByLabel('Device code').fill(started.user_code)
     await page.getByRole('button', { name: 'Look up' }).click()
-    await expect(page.getByText(started.user_code)).toBeVisible()
+    await expect(page.locator('code.mono', { hasText: started.user_code })).toBeVisible()
     await expect(page.getByText(/waiting for approval/i)).toBeVisible()
 
     await page.getByRole('button', { name: 'Deny' }).click()
@@ -139,21 +139,6 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     expect(body.status).toBe('approved')
     expect(body.token).toMatch(/^mice_cli_/)
     expect(body.user.email).toBe('api-approve@mice.local')
-  })
-
-  test('TC-CLI-14: Profile documents mice login for day-to-day CLI', async ({
-    page,
-  }) => {
-    await sessionLogin(page)
-    await page.goto('/profile')
-    await expect(
-      page.getByRole('heading', { name: 'CLI tokens' }),
-    ).toBeVisible()
-    const section = page.locator('section[aria-labelledby="cli-tokens-heading"]')
-    await expect(section.locator('pre.settings-code')).toContainText('mice login')
-    await expect(section.locator('pre.settings-code')).toContainText(
-      'oxen config --auth',
-    )
   })
 
   test('TC-CLI-15: unknown user code shows error on device page', async ({

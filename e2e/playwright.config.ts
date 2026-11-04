@@ -18,8 +18,8 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL,
-    // Every dataset and access change needs a reason; suite traffic states one. Reason-rule tests use bare contexts.
-    extraHTTPHeaders: { 'x-mice-reason': 'e2e: automated test change' },
+    // Every dataset and access change needs a reason, and cookie-session mutations need an Origin; suite traffic states both. Reason-rule tests use bare contexts.
+    extraHTTPHeaders: { 'x-mice-reason': 'e2e: automated test change', origin: baseURL },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     launchOptions: slowMo > 0 ? { slowMo } : undefined,

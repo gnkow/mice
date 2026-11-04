@@ -19,9 +19,13 @@ test.describe('Sessions UI', () => {
     await page.getByRole('button', { name: 'New session' }).click()
     const dialog = page.getByRole('dialog', { name: 'New session' })
     // The default repo is whichever comes first in the catalog (possibly empty): pin a seeded one.
-    await dialog
-      .getByRole('combobox', { name: 'Repository' })
-      .selectOption(`${seededRepo.namespace}/${seededRepo.repo}`)
+    // The Repository select is hidden when the catalog holds exactly one repo.
+    const repoSelect = dialog.getByRole('combobox', { name: 'Repository' })
+    // Wait for the catalog: the select is empty while loading, then either filled or removed.
+    await expect(repoSelect.locator('option')).not.toHaveCount(0, { timeout: 15_000 }).catch(() => {})
+    if (await repoSelect.count()) {
+      await repoSelect.selectOption(`${seededRepo.namespace}/${seededRepo.repo}`)
+    }
     await dialog.getByRole('button', { name: 'Create session' }).click()
     // Creation navigates directly to the session detail page.
     await expect(page).toHaveURL(/\/sessions\/[0-9a-f]+/)

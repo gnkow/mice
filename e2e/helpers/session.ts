@@ -13,7 +13,7 @@ export type TestIdentity = {
    * Formal RBAC role. Defaults to manager (namespace:create + data access).
    * Pair with instanceAdmin for suite cleanup of /auth/instance.
    */
-  role?: 'external' | 'user' | 'manager' | 'auditor' | 'admin'
+  role?: 'none' | 'external' | 'user' | 'manager' | 'auditor' | 'admin'
   instanceAdmin?: boolean
 }
 

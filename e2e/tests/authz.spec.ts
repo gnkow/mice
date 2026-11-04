@@ -16,6 +16,7 @@ async function sessionLogin(
     email: string
     sub: string
     groups?: string[]
+    role?: 'none' | 'external' | 'user' | 'manager' | 'auditor' | 'admin'
   },
 ) {
   await mintSession(page, { ...identity, iss: 'mice-e2e' })
@@ -32,7 +33,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const me = await page.request.get(`${AUTH_URL}/auth/me/authz`)
     expect(me.ok()).toBeTruthy()
     const authz = await me.json()
-    expect(authz.role).toBe('admin')
+    expect(authz.role).toBe('manager')
     expect(authz.pending).toBe(false)
 
     const ns = uniqueId('autho-ns')
@@ -105,7 +106,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     expect(
       membersBody.members?.some(
         (m: { kind?: string; group?: string }) =>
-          m.kind === 'group' && m.group === 'mice-readers',
+          m.kind === 'group' && m.name === 'mice-readers',
       ),
     ).toBeTruthy()
 
@@ -126,7 +127,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       name: 'Group Reader',
       email: `grp-r-${uniqueId('e')}@mice.local`,
       sub: uniqueId('grp-reader'),
-      groups: ['mice-readers'],
+      groups: ['http://localhost:8180/realms/mice|mice-readers'],
     })
     const me = await page.request.get(`${AUTH_URL}/auth/me/authz`)
     expect(me.ok()).toBeTruthy()
@@ -160,11 +161,12 @@ test.describe('authorization (PLAT-AUTHO)', () => {
   test('TC-AUTHO-access-request: submit request', async ({ page }) => {
     await sessionLogin(page, {
       name: 'Requester',
+      role: 'none',
       email: `req-${uniqueId('e')}@mice.local`,
       sub: uniqueId('req'),
     })
     const res = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
-      data: { message: 'need access for repository X' },
+      data: { message: 'need access for repository X', requestedRole: 'user' },
     })
     expect(res.ok()).toBeTruthy()
     const body = await res.json()
@@ -188,11 +190,12 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const reqSub = uniqueId('rev-req')
     await sessionLogin(page, {
       name: 'Pending User',
+      role: 'none',
       email: `rev-req-${uniqueId('e')}@mice.local`,
       sub: reqSub,
     })
     const submit = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
-      data: { message: 'please add me' },
+      data: { message: 'please add me', requestedRole: 'user' },
     })
     expect(submit.ok()).toBeTruthy()
     const submitted = await submit.json()
@@ -205,16 +208,22 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     })
     const approve = await page.request.post(
       `${AUTH_URL}/auth/access-requests/${encodeURIComponent(requestId)}`,
-      { data: { action: 'approve', namespace: ns, role: 'member' } },
+      { data: { action: 'approve', expiresAt: Date.now() + 24 * 60 * 60 * 1000 } },
     )
     expect(approve.ok()).toBeTruthy()
 
+    await sessionLogin(page, {
+      name: 'Settings Admin',
+      email: `rev-settings-${uniqueId('e')}@mice.local`,
+      sub: uniqueId('rev-settings'),
+      role: 'admin',
+    })
     await page.goto(`${BASE_URL}/settings`)
     await expect(
       page.getByRole('heading', { name: 'Access requests' }),
     ).toBeVisible()
     await expect(
-      page.getByRole('heading', { name: 'Instance admin' }),
+      page.getByRole('heading', { name: 'Instance administrators' }),
     ).toBeVisible()
   })
 
@@ -375,11 +384,12 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const reqSub = uniqueId('deny-req')
     await sessionLogin(page, {
       name: 'Denied User',
+      role: 'none',
       email: `deny-req-${uniqueId('e')}@mice.local`,
       sub: reqSub,
     })
     const submit = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
-      data: { message: 'please deny me' },
+      data: { message: 'please deny me', requestedRole: 'user' },
     })
     expect(submit.ok()).toBeTruthy()
     const requestId = (await submit.json()).request?.id as string
@@ -391,19 +401,20 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     })
     const deny = await page.request.post(
       `${AUTH_URL}/auth/access-requests/${encodeURIComponent(requestId)}`,
-      { data: { action: 'deny' } },
+      { data: { action: 'deny', reason: 'e2e: request denied' } },
     )
     expect(deny.ok()).toBeTruthy()
     const body = await deny.json()
     expect(body.request?.status).toBe('denied')
   })
 
-  test('TC-AUTHO-instance: permissions and enforce toggle', async ({
+  test('TC-AUTHO-instance: delegated permissions and admins', async ({
     page,
   }) => {
     const adminSub = uniqueId('inst-admin')
     await sessionLogin(page, {
       name: 'Instance Admin',
+      role: 'admin',
       email: `inst-${uniqueId('e')}@mice.local`,
       sub: adminSub,
     })
@@ -421,6 +432,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
           sub: targetSub,
           iss: 'mice-e2e',
           permissions: ['create_namespace', 'view_audit'],
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
         },
       },
     )
@@ -430,11 +442,6 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       data: { sub: uniqueId('extra-admin'), iss: 'mice-e2e' },
     })
     expect(addAdmin.ok()).toBeTruthy()
-
-    const patch = await page.request.patch(`${AUTH_URL}/auth/instance`, {
-      data: { enforce: Boolean(before.enforce) },
-    })
-    expect(patch.ok()).toBeTruthy()
   })
 
   test('TC-AUTHO-custom-ns-role: create namespace role and assign', async ({
@@ -552,11 +559,12 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     const reqSub = uniqueId('perm-req')
     await sessionLogin(page, {
       name: 'Perm Requester',
+      role: 'none',
       email: `perm-req-${uniqueId('e')}@mice.local`,
       sub: reqSub,
     })
     const submit = await page.request.post(`${AUTH_URL}/auth/access-requests`, {
-      data: { message: 'need create_namespace' },
+      data: { message: 'need namespace:create', requestedPermissions: ['namespace:create'] },
     })
     expect(submit.ok()).toBeTruthy()
     const requestId = (await submit.json()).request?.id as string
@@ -571,7 +579,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       {
         data: {
           action: 'approve',
-          permission: 'create_namespace',
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
         },
       },
     )

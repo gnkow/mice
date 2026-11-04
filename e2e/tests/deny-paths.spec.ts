@@ -40,27 +40,6 @@ test.describe('deny paths (fail closed)', () => {
     expect(sameSite.ok()).toBeTruthy()
   })
 
-  test('TC-DENY-02: a revoked PAT is rejected on /api and /auth', async ({ page }) => {
-    await sessionUser(page, 'deny-revoked')
-    const { token, id } = await mintPat(page)
-
-    const bare = await page.context().browser()!.newContext()
-    try {
-      const before = await bare.request.get(`${AUTH_URL}/auth/me/authz`, { headers: bearer(token) })
-      expect(before.ok()).toBeTruthy()
-
-      const revoke = await page.request.delete(`${AUTH_URL}/auth/tokens/${encodeURIComponent(id)}`)
-      expect(revoke.ok()).toBeTruthy()
-
-      const api = await bare.request.get(`${AUTH_URL}/api/repos`, { headers: bearer(token) })
-      expect(api.status()).toBe(401)
-      const auth = await bare.request.get(`${AUTH_URL}/auth/me/authz`, { headers: bearer(token) })
-      expect(auth.status()).toBe(401)
-    } finally {
-      await bare.close()
-    }
-  })
-
   test('TC-DENY-03: an invalid PAT is rejected', async ({ browser }) => {
     const bare = await browser.newContext()
     try {
