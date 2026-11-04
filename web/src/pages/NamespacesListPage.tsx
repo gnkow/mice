@@ -5,7 +5,8 @@ import { MetaPills } from '../components/MetaPills'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe, hasEffectivePermission, isAdminRole } from '../lib/auth'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
+import { canDeleteNamespace } from '../lib/namespaceActions'
 import { confirmDelete } from '../lib/confirmDelete'
 import { deleteNamespaceAuthz, listAuthzNamespaces } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
@@ -79,7 +80,6 @@ export function NamespacesListPage() {
     setParams(nextParams, { replace: true })
   }
 
-  const isAdmin = me.kind === 'ok' && !!me.data && isAdminRole(me.data)
 
   async function onRemove(ns: MergedNamespace) {
     if (
@@ -197,8 +197,7 @@ export function NamespacesListPage() {
           <>
             <ul className="ns-card-list">
               {slice.items.map((ns) => {
-                const canDelete =
-                  !!ns.authz && (ns.authz.role === 'owner' || isAdmin)
+                const canDelete = canDeleteNamespace(ns.authz)
                 return (
                   <li key={ns.name}>
                     <article className="ns-card">

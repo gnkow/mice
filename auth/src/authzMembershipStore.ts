@@ -78,7 +78,6 @@ export async function customNamespaceRoleIds(ns: string, user: Who): Promise<str
 }
 
 export async function hasNamespaceCapability(ns: string, user: Who, cap: NamespaceCapability): Promise<boolean> {
-  if (await isInstanceAdmin(user)) return true
   if ((await resolveNamespaceRole(ns, user)) === 'owner') return true
   for (const id of await customNamespaceRoleIds(ns, user)) {
     const role = await getCustomNamespaceRole(ns, id)
@@ -134,6 +133,9 @@ export async function namespaceGroupBindingWarning(ns: string): Promise<string |
 
 export async function setNamespaceMember(ns: string, target: UserKey, role: MemberRoleRef): Promise<Result> {
   if (!(await isValidMemberRole(ns, role))) return { ok: false, error: 'Invalid role' }
+  if (await isInstanceAdmin(target)) {
+    return { ok: false, error: 'Instance admins cannot be granted namespace membership (separation of duties)' }
+  }
   return repo.setMember(ns, userKey(target), role)
 }
 

@@ -1,6 +1,5 @@
 import { type SessionUser } from './authentication/index.js'
 import { userKey, type BasePermission, type NamespaceRole, type UserKey } from './authzTypes.js'
-import { isInstanceAdmin } from './authzInstanceStore.js'
 import { namespaceRolesFor } from './authzMembershipStore.js'
 import * as repo from './authzRepository.js'
 
@@ -12,7 +11,7 @@ export async function listNamespacesAuthz() {
   return repo.readNamespaces()
 }
 
-/** Namespaces visible to the user (member/owner), or all if instance admin. */
+/** Namespaces where the user holds a membership; instance admins get no data bypass. */
 export async function listNamespacesForUser(user: UserKey & { groups?: string[] }): Promise<
   Array<{
     id: string
@@ -26,12 +25,11 @@ export async function listNamespacesForUser(user: UserKey & { groups?: string[] 
 > {
   const all = await repo.readNamespaces()
   const counts = await repo.memberCounts()
-  const admin = await isInstanceAdmin(user)
   const roles = await namespaceRolesFor(user)
   const out = []
   for (const [name, settings] of Object.entries(all)) {
     const role = roles.get(name) ?? null
-    if (!admin && !role) continue
+    if (!role) continue
     out.push({
       id: settings.id,
       name,

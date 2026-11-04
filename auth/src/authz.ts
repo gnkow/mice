@@ -5,7 +5,7 @@ import { hasCompletedTraining, isInstanceAdmin, maybeBootstrapInstanceAdmin } fr
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
 import { ownedNamespaces, userCanSeeNamespace } from './authzVisibility.js'
-import { assignRole, getUserRole, hasPermission } from './rbacStore.js'
+import { assignRole, getUserRole, hasPermission, listRbacUsers } from './rbacStore.js'
 import type { InstancePermission as RbacPermission } from './rbacCatalog.js'
 import {
   maxRepoRole,
@@ -220,7 +220,6 @@ async function manageRepoCollaborators(
   ns: string,
   repo: string,
 ): Promise<boolean> {
-  if (await isInstanceAdmin(user)) return true
   if (await resolveNamespaceRole(ns, user) === 'owner') return true
   const check = await hasRepoPermission(user, ns, repo, 'admin')
   if (check.ok && !check.bypass) return true
@@ -447,7 +446,6 @@ export async function authorizeLineageRebuild(
   namespace: string,
   repo: string,
 ): Promise<{ allow: boolean; reason?: string }> {
-  if (await isInstanceAdmin(user)) return { allow: true }
   const check = await hasRepoPermission(user, namespace, repo, 'admin', {
     method: 'POST',
     action: 'lineage.rebuild',
@@ -557,7 +555,14 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
   for (const p of policy.permissions) {
     if (await hasPermission(user, p)) return ALLOWED
   }
+  if (action === 'namespace.create' && !(await hasNonAdminUsers())) {
+    return denied('No non-admin users exist yet: grant namespace:create to a manager first')
+  }
   return denied(policy.reason)
+}
+
+async function hasNonAdminUsers(): Promise<boolean> {
+  return (await listRbacUsers()).some((u) => u.role !== null && u.role !== 'admin')
 }
 
 export async function authorizeInstanceAction(
@@ -611,7 +616,7 @@ export async function decideNamespaceAction(user: SessionUser, ns: string, actio
       throw err
     }
   }
-  if (policy.member && (await isInstanceAdmin(actor) || await resolveNamespaceRole(ns, actor))) return ALLOWED
+  if (policy.member && await resolveNamespaceRole(ns, actor)) return ALLOWED
   if (policy.capability && await hasNamespaceCapability(ns, actor, policy.capability)) return ALLOWED
   return denied(policy.reason)
 }

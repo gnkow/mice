@@ -108,9 +108,8 @@ describe('decideNamespaceAction matrix', async () => {
         assert.deepEqual(await decideNamespaceAction(owner, 'ns1', c.action), ALLOW)
       })
 
-      it('admin and owner allow', async () => {
-        assert.deepEqual(await decideNamespaceAction(owner, 'ns1', c.action), ALLOW)
-        assert.deepEqual(await decideNamespaceAction(admin, 'ns1', c.action), ALLOW)
+      it('denies an instance admin without membership (separation of duties)', async () => {
+        assert.deepEqual(await decideNamespaceAction(admin, 'ns1', c.action), deny(c.reason))
       })
 
       if (c.named) {
@@ -155,7 +154,7 @@ describe('composite decisions', async () => {
   })
 
   it('repo collaborator management carries status and reason', async () => {
-    assert.deepEqual(await authz.decideManageRepoCollaborators(admin, 'ns2', 'r'), ALLOW)
+    assert.deepEqual(await authz.decideManageRepoCollaborators(admin, 'ns2', 'r'), deny('Forbidden'))
     assert.deepEqual(await authz.decideManageRepoCollaborators(none, 'ns2', 'r'), deny('Forbidden'))
   })
 
