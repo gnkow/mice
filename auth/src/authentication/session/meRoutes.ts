@@ -23,7 +23,7 @@ import { getEffectivePermissions, getUserRole, hasPermission } from '../../rbacS
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
   app.get('/auth/me', async (c) => {
-    const session = await authenticateUser(c)
+    const session = await authenticateUser(c, { allowAuditorWithoutMfa: true })
     if (!session) return c.json({ authenticated: false }, 401)
     await rememberNotificationUser(session)
     return c.json({

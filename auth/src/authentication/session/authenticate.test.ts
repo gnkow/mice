@@ -131,4 +131,35 @@ await describe('authenticate', async () => {
     await preparePrincipal(user)
     assert.equal(await hasInstancePermission(user, 'create_namespace'), false)
   })
+
+  await it('refuses an Auditor without MFA evidence on every credential, with a single reason', async () => {
+    const { ensurePrincipal } = await import('./session.js')
+    const { assignRole } = await import('../../rbacStore.js')
+    const mfaToken = ['e30', Buffer.from(JSON.stringify({ acr: 'mfa', amr: ['pwd', 'otp'] })).toString('base64url'), 's'].join('.')
+    const plainToken = ['e30', Buffer.from(JSON.stringify({ amr: ['pwd'] })).toString('base64url'), 's'].join('.')
+    const role = async (sub: string, r: 'auditor' | 'user') => {
+      await ensurePrincipal(mk(sub))
+      const res = await assignRole({ actor: null, target: mk(sub), role: r, reason: 'test', bootstrap: true })
+      assert.ok(res.ok)
+    }
+    const sessionCookie = async (sub: string, idToken?: string) => {
+      const sessionId = await sealSession({ ...mk(sub), idToken, sessionStart: Math.floor(Date.now() / 1000) - 30 })
+      return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
+    }
+    await role('aud-plain', 'auditor')
+    await role('aud-mfa', 'auditor')
+    await role('usr-plain', 'user')
+    const app = appFor({})
+    const reason = 'Auditor access requires MFA evidence'
+
+    const noMfa = await app.request('/x', { headers: { cookie: await sessionCookie('aud-plain', plainToken) } })
+    assert.equal(noMfa.status, 403)
+    assert.deepEqual(await noMfa.json(), { error: reason })
+    assert.equal((await app.request('/x', { headers: { cookie: await sessionCookie('aud-plain') } })).status, 403)
+    const { accessToken } = await issueCliCredential(mk('aud-plain'))
+    assert.equal((await app.request('/x', { headers: bearer(accessToken) })).status, 403)
+
+    assert.equal((await app.request('/x', { headers: { cookie: await sessionCookie('aud-mfa', mfaToken) } })).status, 200)
+    assert.equal((await app.request('/x', { headers: { cookie: await sessionCookie('usr-plain', plainToken) } })).status, 200)
+  })
 })

@@ -3,7 +3,7 @@ import { auditReadiness } from './audit.js'
 import { diskReadiness } from './diskStore.js'
 import { postgresReadiness } from './db/database.js'
 import { isStoreOutage } from './db/outage.js'
-import { applyGlobalGuards, authenticateRequest, backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerDisabledSignerRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
+import { applyGlobalGuards, authenticateOutcome, backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerDisabledSignerRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
@@ -89,15 +89,15 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerNamespaceRoutes(app, { audit })
 
   app.all('/api/*', async (c) => {
-    const authed = await authenticateRequest(c, { allowScoped: true })
-    if (!authed) {
+    const authed = await authenticateOutcome(c, { allowScoped: true })
+    if (!authed.ok) {
       return c.json(
         {
           status: 'error',
-          status_message: 'unauthorized',
-          error: { detail: 'Authentication required' },
+          status_message: authed.status === 401 ? 'unauthorized' : 'forbidden',
+          error: { detail: authed.error },
         },
-        401,
+        authed.status,
       )
     }
     return proxy(c, { user: authed.user, via: authed.via })

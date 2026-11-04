@@ -1,7 +1,7 @@
 import type { Context, Hono, MiddlewareHandler } from 'hono'
 import { actorFromUser, appendAudit, type AuditVia } from '../../audit.js'
 import { sameOriginGuard } from './csrf.js'
-import { preparePrincipal } from '../../authz.js'
+import { auditorMfaRefusal, preparePrincipal } from '../../authz.js'
 import { env } from '../../env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
 import { can, canonicalIssuer, isScopedCredential, type Capability } from './principal.js'
@@ -119,6 +119,8 @@ export type AuthPolicy = {
   originCheck?: boolean
   /** Cookie Sessions on unsafe methods must send application/json. */
   jsonOnly?: boolean
+  /** Skips the Auditor MFA rule so the caller can still see who it is (only `/auth/me`). */
+  allowAuditorWithoutMfa?: boolean
 }
 
 export type AuthOutcome =
@@ -202,6 +204,8 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
     if (await isSuspended(session)) return refuseSuspended(c, session, 'session')
 
     await preparePrincipal(session)
+    const mfaRefusal = policy.allowAuditorWithoutMfa ? null : await auditorMfaRefusal(session)
+    if (mfaRefusal) return deny(403, mfaRefusal)
     return { ok: true, user: session, via: 'session' }
   }
   if (policy.credential === 'session') return deny(401, 'Authentication required')
@@ -213,5 +217,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
   if (await isSuspended(pat)) return refuseSuspended(c, pat, 'pat')
   await preparePrincipal(pat)
+  const patMfaRefusal = policy.allowAuditorWithoutMfa ? null : await auditorMfaRefusal(pat)
+  if (patMfaRefusal) return deny(403, patMfaRefusal)
   return { ok: true, user: pat, via: 'pat' }
 }

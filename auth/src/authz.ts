@@ -194,6 +194,13 @@ export async function hasRepoPermission(
   }
 }
 
+export const AUDITOR_MFA_REASON = 'Auditor access requires MFA evidence'
+
+/** The one rule: an Auditor-role principal must carry MFA evidence on every request. */
+export async function auditorMfaRefusal(user: SessionUser): Promise<string | null> {
+  return (await getUserRole(user)) === 'auditor' && !sessionHasMfa(user) ? AUDITOR_MFA_REASON : null
+}
+
 function sessionHasMfa(user: SessionUser): boolean {
   if (!user.idToken) return false
   try {
@@ -564,9 +571,8 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
   if (policy.credential === 'unscoped' && isScopedCredential(user)) {
     return denied(policy.reason)
   }
-  if ((await getUserRole(user)) === 'auditor' && !sessionHasMfa(user)) {
-    return denied('Auditor access requires MFA evidence')
-  }
+  const mfaRefusal = await auditorMfaRefusal(user)
+  if (mfaRefusal) return denied(mfaRefusal)
   for (const p of policy.permissions) {
     if (await hasPermission(user, p)) return ALLOWED
   }
