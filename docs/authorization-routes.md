@@ -107,6 +107,17 @@ User's effective repo role is the **maximum** of:
 
 **Role hierarchy**: `admin > maintain > write > triage > read > none`
 
+## Approver Decision
+
+`approver` is not a rank in the hierarchy. It is an explicit grant that only a namespace Owner assigns or removes, at namespace or repository scope, with an audit event (`approver.grant`, `approver.revoke`) and a reason. `decideIsApprover(user, ns, repo)` in `auth/src/authz.ts` allows only when the user holds that grant. `maintain`, Owner, instance admin and bootstrap grants never imply it. The signing ceremony for merges into validated branches (gxp-compliance 01) calls this decision; merge itself keeps its `maintain` floor in the path map.
+
+| Pattern | Methods | Decision | Description |
+|---------|---------|----------|-------------|
+| `/auth/namespaces/:ns/approvers` | GET | namespace view | List namespace-wide approvers |
+| `/auth/namespaces/:ns/approvers` | PUT, DELETE | namespace Owner | Assign or remove an approver |
+| `/auth/namespaces/:ns/repos/:repo/approvers` | GET | namespace view | List repository approvers |
+| `/auth/namespaces/:ns/repos/:repo/approvers` | PUT, DELETE | namespace Owner | Assign or remove an approver |
+
 ## Testing
 
 - **Parity test** (`auth/src/authz.test.ts`): Verifies `OXEN_PATH_ROLE_MAP` matches `ACTION_MIN_ROLE`

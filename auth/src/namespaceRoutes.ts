@@ -1,6 +1,7 @@
 import type { Hono } from 'hono'
 import { env } from './env.js'
-import { decideInstanceAction, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
+import { decideInstanceAction, decideManageApprovers, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
+import { grantApprover, listApprovers, revokeApprover } from './authzApproverStore.js'
 import { denialResponse } from './decisionHttp.js'
 import { isCustomRepoRoleAssigned, listRepoCollaborators, removeRepoCollaborator, removeRepoGroupCollaborator, setRepoCollaborator, setRepoGroupCollaborator } from './authzCollaboratorStore.js'
 import { isCustomNamespaceRoleAssigned, listNamespaceMembers, namespaceGroupBindingWarning, reconcileNamespaceGroupIds, removeNamespaceGroupMember, removeNamespaceMember, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
@@ -410,6 +411,54 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     })
     return c.json({ ok: true, collaborators: await listRepoCollaborators(ns, repo) })
   }))
+
+  for (const base of ['/auth/namespaces/:ns/approvers', '/auth/namespaces/:ns/repos/:repo/approvers']) {
+    const scopeOf = (c: { req: { param(k: string): string | undefined } }) => {
+      const repo = c.req.param('repo')
+      return { ns: c.req.param('ns') as string, ...(repo ? { repo } : {}) }
+    }
+
+    app.get(base, guarded({}, async ({ c, user: session }) => {
+      const scope = scopeOf(c)
+      const denied = denialResponse(c, await decideNamespaceAction(session, scope.ns, 'namespace.view'))
+      if (denied) return denied
+      return c.json({ approvers: await listApprovers(scope) })
+    }))
+
+    app.put(base, guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
+      const scope = scopeOf(c)
+      const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
+      if (denied) return denied
+      const body = (await c.req.json().catch(() => ({}))) as { sub?: string; iss?: string }
+      if (!body.sub || !body.iss) return c.json({ error: 'sub and iss required' }, 400)
+      if (!(await grantApprover(scope, { sub: body.sub, iss: body.iss }))) return c.json({ error: 'Not found' }, 404)
+      await auditMutation(c, session, 'session', {
+        action: 'approver.grant',
+        namespace: scope.ns,
+        ...(scope.repo ? { repo: scope.repo } : {}),
+        message: 'Assigned approver role',
+        detail: { target: memberTarget(body) },
+      })
+      return c.json({ ok: true, approvers: await listApprovers(scope) })
+    }))
+
+    app.delete(base, guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
+      const scope = scopeOf(c)
+      const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
+      if (denied) return denied
+      const body = (await c.req.json().catch(() => ({}))) as { sub?: string; iss?: string }
+      if (!body.sub || !body.iss) return c.json({ error: 'sub and iss required' }, 400)
+      await revokeApprover(scope, { sub: body.sub, iss: body.iss })
+      await auditMutation(c, session, 'session', {
+        action: 'approver.revoke',
+        namespace: scope.ns,
+        ...(scope.repo ? { repo: scope.repo } : {}),
+        message: 'Removed approver role',
+        detail: { target: memberTarget(body) },
+      })
+      return c.json({ ok: true, approvers: await listApprovers(scope) })
+    }))
+  }
 
   app.get('/auth/namespaces/:ns/custom-roles/permissions', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')

@@ -270,6 +270,12 @@ CREATE TABLE "meta_revisions" (
 	"value" integer NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "namespace_approvers" (
+	"namespace_id" uuid NOT NULL,
+	"user_key" text NOT NULL,
+	CONSTRAINT "namespace_approvers_namespace_id_user_key_pk" PRIMARY KEY("namespace_id","user_key")
+);
+--> statement-breakpoint
 CREATE TABLE "namespace_group_members" (
 	"namespace_id" uuid NOT NULL,
 	"group_key" text NOT NULL,
@@ -435,6 +441,12 @@ CREATE TABLE "rate_limits" (
 	"requested_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "repo_approvers" (
+	"repository_id" uuid NOT NULL,
+	"user_key" text NOT NULL,
+	CONSTRAINT "repo_approvers_repository_id_user_key_pk" PRIMARY KEY("repository_id","user_key")
+);
+--> statement-breakpoint
 CREATE TABLE "repo_collaborators" (
 	"repository_id" uuid NOT NULL,
 	"user_key" text NOT NULL,
@@ -510,6 +522,7 @@ ALTER TABLE "custom_namespace_roles" ADD CONSTRAINT "custom_namespace_roles_name
 ALTER TABLE "custom_repo_roles" ADD CONSTRAINT "custom_repo_roles_namespace_id_namespaces_id_fk" FOREIGN KEY ("namespace_id") REFERENCES "namespaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "idp_drift_reports" ADD CONSTRAINT "idp_drift_reports_baseline_id_idp_baseline_id_fk" FOREIGN KEY ("baseline_id") REFERENCES "idp_baseline"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "jobs" ADD CONSTRAINT "jobs_repository_id_repositories_id_fk" FOREIGN KEY ("repository_id") REFERENCES "repositories"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "namespace_approvers" ADD CONSTRAINT "namespace_approvers_namespace_id_namespaces_id_fk" FOREIGN KEY ("namespace_id") REFERENCES "namespaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_group_members" ADD CONSTRAINT "namespace_group_members_namespace_id_namespaces_id_fk" FOREIGN KEY ("namespace_id") REFERENCES "namespaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "namespace_members" ADD CONSTRAINT "namespace_members_namespace_id_namespaces_id_fk" FOREIGN KEY ("namespace_id") REFERENCES "namespaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "permission_snapshots" ADD CONSTRAINT "permission_snapshots_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -526,6 +539,7 @@ ALTER TABLE "principal_role_history" ADD CONSTRAINT "principal_role_history_gran
 ALTER TABLE "principal_role_history" ADD CONSTRAINT "principal_role_history_revoked_by_principals_id_fk" FOREIGN KEY ("revoked_by") REFERENCES "principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "principal_roles" ADD CONSTRAINT "principal_roles_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "principals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "principal_roles" ADD CONSTRAINT "principal_roles_granted_by_principals_id_fk" FOREIGN KEY ("granted_by") REFERENCES "principals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "repo_approvers" ADD CONSTRAINT "repo_approvers_repository_id_repositories_id_fk" FOREIGN KEY ("repository_id") REFERENCES "repositories"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo_collaborators" ADD CONSTRAINT "repo_collaborators_repository_id_repositories_id_fk" FOREIGN KEY ("repository_id") REFERENCES "repositories"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repo_group_collaborators" ADD CONSTRAINT "repo_group_collaborators_repository_id_repositories_id_fk" FOREIGN KEY ("repository_id") REFERENCES "repositories"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "repositories" ADD CONSTRAINT "repositories_namespace_id_namespaces_id_fk" FOREIGN KEY ("namespace_id") REFERENCES "namespaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

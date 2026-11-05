@@ -14,6 +14,8 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['repo.metadata', 'Repository settings changed', 'Repositories'],
   ['repo.collaborator.set', 'Repository collaborator added or changed', 'Repositories'],
   ['repo.collaborator.remove', 'Repository collaborator removed', 'Repositories'],
+  ['approver.grant', 'Approver role assigned', 'Repositories'],
+  ['approver.revoke', 'Approver role removed', 'Repositories'],
   ['workspace.create', 'Workspace created', 'Workspaces'],
   ['workspace.delete', 'Workspace deleted', 'Workspaces'],
   ['workspace.commit', 'Workspace committed', 'Workspaces'],

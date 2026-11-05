@@ -21,6 +21,12 @@ export const NAMESPACE_ROLES = ['owner', 'member'] as const
 
 export const REPO_ROLES = ['read', 'triage', 'write', 'maintain', 'admin'] as const
 
+/**
+ * Orthogonal grant, not a rank in REPO_ROLES: assigned by a namespace Owner at namespace or
+ * repository scope, and required to sign a merge into a validated branch.
+ */
+export const APPROVER_ROLE = 'approver'
+
 export const NAMESPACE_CAPABILITIES = [
   'manage_members',
   'manage_settings',

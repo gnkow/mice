@@ -1,5 +1,5 @@
 {
-  "id": "5aff9855-6842-44e9-b884-857fd47a8942",
+  "id": "f4dcb54a-042e-4cce-a06e-f9e8e839a5c1",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2001,6 +2001,53 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.namespace_approvers": {
+      "name": "namespace_approvers",
+      "schema": "",
+      "columns": {
+        "namespace_id": {
+          "name": "namespace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_key": {
+          "name": "user_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "namespace_approvers_namespace_id_namespaces_id_fk": {
+          "name": "namespace_approvers_namespace_id_namespaces_id_fk",
+          "tableFrom": "namespace_approvers",
+          "tableTo": "namespaces",
+          "columnsFrom": [
+            "namespace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "namespace_approvers_namespace_id_user_key_pk": {
+          "name": "namespace_approvers_namespace_id_user_key_pk",
+          "columns": [
+            "namespace_id",
+            "user_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.namespace_group_members": {
       "name": "namespace_group_members",
       "schema": "",
@@ -3490,6 +3537,53 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.repo_approvers": {
+      "name": "repo_approvers",
+      "schema": "",
+      "columns": {
+        "repository_id": {
+          "name": "repository_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_key": {
+          "name": "user_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "repo_approvers_repository_id_repositories_id_fk": {
+          "name": "repo_approvers_repository_id_repositories_id_fk",
+          "tableFrom": "repo_approvers",
+          "tableTo": "repositories",
+          "columnsFrom": [
+            "repository_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "repo_approvers_repository_id_user_key_pk": {
+          "name": "repo_approvers_repository_id_user_key_pk",
+          "columns": [
+            "repository_id",
+            "user_key"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

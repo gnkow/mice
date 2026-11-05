@@ -6,10 +6,12 @@ import { getDb, inTransaction, type Tx } from './db/database.js'
 import {
   instancePermissions,
   instanceTraining,
+  namespaceApprovers,
   namespaceGroupMembers,
   namespaceMembers,
   namespaces,
   namespaceTombstones,
+  repoApprovers,
   repoCollaborators,
   repoGroupCollaborators,
   repositories,
@@ -834,5 +836,70 @@ export async function removeGroupCollaborator(ns: string, repo: string, group: s
       and(eq(repoGroupCollaborators.repositoryId, repositoryId), eq(repoGroupCollaborators.groupKey, group)),
     )
     .returning({ k: repoGroupCollaborators.groupKey })
+  return rows.length > 0
+}
+
+// ── Approvers ───────────────────────────────────────────────────────────────
+
+export type ApproverScope = { ns: string; repo?: string }
+
+async function approverScopeId(scope: ApproverScope, create: boolean): Promise<string | null> {
+  if (!scope.repo) return namespaceIdByName(scope.ns)
+  return create ? requireRepositoryId(scope.ns, scope.repo) : existingRepositoryId(scope.ns, scope.repo)
+}
+
+export async function addApprover(scope: ApproverScope, key: string): Promise<boolean> {
+  const id = await approverScopeId(scope, true)
+  if (!id) return false
+  if (scope.repo) {
+    await getDb().insert(repoApprovers).values({ repositoryId: id, userKey: key }).onConflictDoNothing()
+  } else {
+    await getDb().insert(namespaceApprovers).values({ namespaceId: id, userKey: key }).onConflictDoNothing()
+  }
+  return true
+}
+
+export async function removeApprover(scope: ApproverScope, key: string): Promise<boolean> {
+  const id = await approverScopeId(scope, false)
+  if (!id) return false
+  const rows = scope.repo
+    ? await getDb()
+        .delete(repoApprovers)
+        .where(and(eq(repoApprovers.repositoryId, id), eq(repoApprovers.userKey, key)))
+        .returning({ k: repoApprovers.userKey })
+    : await getDb()
+        .delete(namespaceApprovers)
+        .where(and(eq(namespaceApprovers.namespaceId, id), eq(namespaceApprovers.userKey, key)))
+        .returning({ k: namespaceApprovers.userKey })
+  return rows.length > 0
+}
+
+export async function listApproverKeys(scope: ApproverScope): Promise<string[]> {
+  const id = await approverScopeId(scope, false)
+  if (!id) return []
+  const rows = scope.repo
+    ? await getDb().select({ k: repoApprovers.userKey }).from(repoApprovers).where(eq(repoApprovers.repositoryId, id))
+    : await getDb().select({ k: namespaceApprovers.userKey }).from(namespaceApprovers).where(eq(namespaceApprovers.namespaceId, id))
+  return rows.map((r) => r.k)
+}
+
+/** True when the user is an approver on the repository directly or through its namespace. */
+export async function isApproverKey(ns: string, repo: string, key: string): Promise<boolean> {
+  const nsId = await namespaceIdByName(ns)
+  if (nsId) {
+    const rows = await getDb()
+      .select({ k: namespaceApprovers.userKey })
+      .from(namespaceApprovers)
+      .where(and(eq(namespaceApprovers.namespaceId, nsId), eq(namespaceApprovers.userKey, key)))
+      .limit(1)
+    if (rows.length) return true
+  }
+  const repoId = await existingRepositoryId(ns, repo)
+  if (!repoId) return false
+  const rows = await getDb()
+    .select({ k: repoApprovers.userKey })
+    .from(repoApprovers)
+    .where(and(eq(repoApprovers.repositoryId, repoId), eq(repoApprovers.userKey, key)))
+    .limit(1)
   return rows.length > 0
 }

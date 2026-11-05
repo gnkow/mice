@@ -116,6 +116,29 @@ export const repoGroupCollaborators = pgTable(
   (t) => [primaryKey({ columns: [t.repositoryId, t.groupKey] }), index('repo_group_collaborators_group').on(t.groupKey)],
 )
 
+/** Approvers are an orthogonal grant (not a rank): they may sign merges into validated branches. */
+export const namespaceApprovers = pgTable(
+  'namespace_approvers',
+  {
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    userKey: text('user_key').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.namespaceId, t.userKey] })],
+)
+
+export const repoApprovers = pgTable(
+  'repo_approvers',
+  {
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    userKey: text('user_key').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.repositoryId, t.userKey] })],
+)
+
 /**
  * Cached IdP group display names. Grant keys are `iss|group_id` on membership tables;
  * this table is presentation + the name-based-fallback warning flag only.

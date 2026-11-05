@@ -6,6 +6,7 @@ import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorR
 import { hasCompletedTraining, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
+import { isApprover } from './authzApproverStore.js'
 import { ownedNamespaces, userCanSeeNamespace } from './authzVisibility.js'
 import { getUserRole, hasPermission, listRbacUsers } from './rbacStore.js'
 import type { InstancePermission as RbacPermission } from './rbacCatalog.js'
@@ -199,6 +200,27 @@ function sessionHasMfa(user: SessionUser): boolean {
   } catch {
     return false
   }
+}
+
+/** Only a namespace Owner assigns or removes approvers; instance admin does not. */
+export async function decideManageApprovers(user: SessionUser, ns: string): Promise<Decision> {
+  try {
+    const actor = await withDirectoryGroups(user)
+    return (await resolveNamespaceRole(ns, actor)) === 'owner' ? ALLOWED : denied('Forbidden')
+  } catch (err) {
+    if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+      return denied('Directory unavailable', 503)
+    }
+    throw err
+  }
+}
+
+/**
+ * "Approver for this repository": holds an explicit approver grant on the repository or its
+ * namespace. `maintain`, Owner, admin and bootstrap grants never imply it.
+ */
+export async function decideIsApprover(user: SessionUser, ns: string, repo: string): Promise<Decision> {
+  return (await isApprover(ns, repo, user)) ? ALLOWED : denied('Approver role required')
 }
 
 /** Repo Admin, Owner, manage_collaborators fine grant, or instance admin. */

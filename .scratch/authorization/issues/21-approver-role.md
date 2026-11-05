@@ -6,7 +6,7 @@
 
 **Blocked by:** None
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## In code today
 
@@ -14,9 +14,9 @@
 
 ## Acceptance
 
-- [ ] `approver` exists in the role catalog, assignable at namespace and repository scope by an Owner only
-- [ ] Assignment and removal write audit events
-- [ ] Authorization exposes an "approver for this repository" decision the signing ceremony (gxp-compliance 01) can call
-- [ ] `maintain` alone cannot sign; no code path requires two mergers or approvers
-- [ ] Bootstrap and admin grants never confer `approver` implicitly
-- [ ] `docs/authorization-routes.md` and the path map list the new decision
+- [x] `approver` exists in the role catalog (`APPROVER_ROLE` in `authzContract.ts`, an orthogonal grant, not a rank), assignable at namespace and repository scope by an Owner only. Users only for now; group approvers are not supported
+- [x] Assignment and removal write audit events (`approver.grant`, `approver.revoke`)
+- [x] Authorization exposes an "approver for this repository" decision the signing ceremony (gxp-compliance 01) can call (`decideIsApprover`)
+- [x] `maintain` alone cannot sign; no code path requires two mergers or approvers (the signing check itself lands in gxp-compliance 01)
+- [x] Bootstrap and admin grants never confer `approver` implicitly
+- [x] `docs/authorization-routes.md` lists the new decision and routes (the path map covers only `/api` proxy routes, so it is unchanged)
