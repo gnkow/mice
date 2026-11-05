@@ -87,8 +87,10 @@ The BFF implements role-based access control (RBAC) with 5 formal roles (Externa
 #### Repository Roles
 
 - **Repository roles**: read < triage < write < maintain < admin (5 predefined roles).
-- **Merge requires write**: Minimum role for merge is `write` (not `maintain`).
-- **Self-merge forbidden**: Merge blocked when signer === commit author. Enforced in repositories module (05), not authorization.
+- **Merge request requires write**: Minimum role to open or update a merge request is `write` (not `maintain`). Merging into a validated branch additionally needs the `approver` role (below) and an e-signature (04).
+- **`approver` role**: Namespace/repository role, orthogonal to the hierarchy (it grants no read/write by itself and is not implied by `admin`). Assignable by the namespace Owner only; assignment and removal are audited. It is the only role that may sign a merge into a validated branch or revoke a signature or commit QC status (04). One approver suffices; there is no minimum-approver, onboarding, offboarding or escalation rule: a merge request stays unapproved until an eligible approver exists.
+- **Author exclusion** (replaces self-merge ban): the signer must not have authored or co-authored any commit in the merged range. Enforced in the repositories module (05) where the signature is created, not in authorization.
+- **No direct commits to validated branches**: nobody (Owners and instance admins included) commits, force-pushes or deletes a validated branch; all changes go through a signed merge. Automation cannot hold `approver`.
 
 #### Namespace Roles
 
@@ -269,16 +271,15 @@ The following gaps were identified between the spec decisions and current implem
 
 **Blocks**: Separation of duties compliance, GxP requirements
 
-### 5. Self-Merge Prevention (MEDIUM) ⏱️ 3 days
+### 5. Approver Role and Author Exclusion (MEDIUM) ⏱️ 3 days
 
 **Status**: Not implemented.
 
 **Scope**:
-- Authorization enforces `write` role for merge (already done)
-- Repositories module (05) adds merge-time check: extract commit author(s), compare to merge signer
-- Block merge if signer === any commit author in the merge
+- Authorization defines the `approver` role (Owner-assignable, audited) and the `write` role for merge requests
+- Repositories module (05) enforces at signature creation: signer holds `approver` and has authored or co-authored no commit in the merged range
 - Audit merge attempts (approved and denied)
-- Responsibility split: authorization = role check, repositories = author comparison
+- Responsibility: authorization = role definition and check, repositories (05) = author exclusion
 
 **Blocks**: GxP merge review gate (4-eyes principle)
 
@@ -397,7 +398,7 @@ The following gaps were identified between the spec decisions and current implem
 7. `branch.create` - Create branches
 8. `branch.delete` - Delete branches
 9. `branch.protect` - Manage branch protection rules
-10. `merge` - Merge branches (requires `write` base role)
+10. `merge` - Merge branches (requires `write` base role; merges into validated branches also require `approver`)
 11. `file.write` - Write files
 12. `file.delete` - Delete files
 13. `metadata.edit` - Edit repository metadata
@@ -452,6 +453,13 @@ Route classification table in `authzPathMap.ts` is the source of truth. When oxe
 3. Update `docs/authorization-routes.md`
 4. Update this spec if major changes
 
+## Alignment with 04 (2026-11-05)
+
+- New `approver` namespace/repository role (Owner-assignable, audited) replaces "maintain signs at merge"; it is the only role that signs merges into validated branches or revokes signatures/commit QC status.
+- Superseded: the two-eligible-mergers rule, the self-merge ban and its 02/05 responsibility split; author exclusion is enforced in 05 where the signature is created. No escalation or minimum-approver rules.
+- Merge into a validated branch = `write` to open the merge request + `approver` to sign. Nobody (incl. Owners, instance admins) commits to, force-pushes or deletes a validated branch directly. No PATs or service principals; automation cannot approve.
+- "Merge role: write minimum" below applies to merge requests and non-validated branches only.
+
 ## Known Conflicts and Resolutions
 
 ### From Original 28 Questions (Now Superseded by New Grilling)
@@ -469,7 +477,7 @@ The original spec had 28 grilling questions (Q1-Q28). These have been superseded
 - **Group bootstrap**: Originally supported, now removed
 
 **Preserved Decisions:**
-- Self-merge forbidden (Q1)
+- Self-merge forbidden (Q1), now as author exclusion for the `approver` signer (see 04)
 - Last-owner guards with row locking (Q7)
 - Unclassified routes denied (Q2)
 - Stable entity IDs (Q4, Q5)
@@ -482,15 +490,15 @@ The original spec had 28 grilling questions (Q1-Q28). These have been superseded
 ### Cross-Spec Conflicts
 
 - **01 (Authentication) vs 02 (Authorization)**: Group staleness resolved by authentication spec U3 (groups checked at login + refresh + privileged ops; session-cached groups bounded by 8h session lifetime).
-- **02 vs 05 (Repositories)**: Self-merge prevention responsibility split - authorization enforces write role, repositories compares author to signer.
-- **02 vs 04 (GxP Compliance)**: Merge signing needs write role minimum; self-merge blocked; every GxP repo needs ≥2 eligible mergers.
+- **02 vs 05 (Repositories)**: RESOLVED: authorization defines `approver`; repositories (05) enforces author exclusion where the signature is created.
+- **02 vs 04 (GxP Compliance)**: RESOLVED: signing needs the `approver` role, not write/maintain; one approver suffices; the former "at least two eligible mergers" rule is dropped.
 
 ## Impact on Other Specs
 
 ### Blocks or Dependencies
 
-- **Blocks 04 (GxP Compliance)**: Merge signer must differ from author (Q1); every GxP repository needs ≥2 eligible mergers.
-- **Blocks 05 (Repositories)**: Stable repository IDs foundational; self-merge check lives in repositories module.
+- **Blocks 04 (GxP Compliance)**: `approver` role; signer must not be an author in the merged range (Q1); one approver suffices.
+- **Blocks 05 (Repositories)**: Stable repository IDs foundational; author-exclusion check lives in repositories module.
 - **Blocks 09 (Jobs)**: Service principal removal means Jobs use BFF-internal tokens.
 - **Depends on 01 (Authentication)**: Group staleness, credential types, revocation timing.
 - **Depends on 05 (Repositories)**: Stable repository IDs must exist before authorization can reference them.

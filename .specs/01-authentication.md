@@ -35,9 +35,9 @@ SSO login through an external IdP yields a sealed Session cookie; the CLI uses a
 - Revocation uses database-time cut-off plus monotonic revocation generation per Principal; effective on all instances within 1 s of commit.
 - Groups are fetched server-side from the directory at login, refresh and privileged operations (sign/merge/admin); overage triggers directory API fetch; ordinary reads use session-cached groups (bounded by 8h session lifetime).
 - Offboarding combines directory-sync revocation, live IdP/directory check (NO cache, NO grace period), back-channel logout (Sessions only) and manual admin revoke. IdP unreachable = all operations fail (503).
-- Step-up: fresh IdP login (prompt=login, same `iss`+`sub`, MFA evidence required), anchored on BFF callback receipt time with 5-15 min hard cap for signing; the CLI uses device flow.
-- IdP MFA capability validated at deployment (baseline check); signing refused if MFA evidence (acr/amr) unavailable.
-- The id_token signature is always verified and an https issuer is required.
+- Step-up: fresh IdP login (prompt=login, same `iss`+`sub`, MFA evidence required), anchored on BFF callback receipt time with 5-15 min hard cap for signing; browser only. The CLI can open merge requests but never signs (04).
+- The IdP must assert acr/amr/auth_time; startup fails if it lacks the capability, and signing is refused without MFA evidence.
+- The id_token is always verified in every environment (JWKS signature, `iss`, `aud`, `auth_time` age) and an https issuer is required (ADR 0001 amended).
 - Production requires an external IdP; Keycloak is development-only.
 - All state in PostgreSQL; multiple BFF instances share revocation state.
 - Hashed source IPs (SHA-256 with daily salt) logged for anomaly detection.
@@ -60,6 +60,15 @@ Stale IdP group membership is bounded by the stated maximum staleness of the dir
 
 Open grilling questions: see questions.md in this folder.
 
+## Alignment with 04 (2026-11-05)
+
+04 is authoritative. Changed here:
+- Signing is browser step-up only; the CLI opens merge requests but never signs. No PATs or service principals; automation cannot sign. The signer is the new `approver` role, not "maintain signs at merge".
+- The ID token is always verified (JWKS, `iss`, `aud`, `auth_time` age); the IdP must assert acr/amr/auth_time and startup fails if it cannot. ADR 0001 is amended.
+- Audit outage: all mutations refused, reads continue, no outbox, no held output or "finalizing" state. No break-glass.
+
+Superseded where conflicting: Q3/Q4 (04), Q8 and Q28 (CLI/PAT signing), Q9 (verification only under `GXP_STRICT`), Q20 held-output note (running Jobs' result commit is blocked and refused, not held), Q21, Q83 (commit-time submitter check failure refuses the commit; nothing is held in finalizing), 04-Q12/08-Q11 held-output references.
+
 ## Decisions from grilling
 
 Credentials and offboarding
@@ -74,9 +83,9 @@ Credentials and offboarding
 Step-up and tokens
 - Step-up uses prompt=login with the same `iss`+`sub`, and requires acr/amr (MFA) evidence where the IdP exposes it (Q6).
 - BFF callback receipt time is the freshness anchor, with a hard cap of 5-15 minutes for signing (Q7).
-- CLI step-up is a device flow with a fresh IdP login; a web-only link is an interim fallback (Q8).
+- CLI step-up for signing does not exist: signing happens only in the browser (04; supersedes Q8).
 - The device flow shows requester context, uses a high-entropy code, 10-minute expiry, polling limits, a fresh login to approve, and counters in the Main database (Q15).
-- The id_token signature is always verified, https issuer required, and a new ADR supersedes ADR 0001 (Q9).
+- The id_token signature is always verified, https issuer required, and ADR 0001 is amended (Q9).
 - No key-rotation tooling; a leaked secret means logging everyone out, accepted (Q16).
 
 Identity and groups
@@ -1094,7 +1103,7 @@ Q69–Q83 answered; see "Round 3 decisions" in spec.md.
 - **Device flow** authentication for CLI users
 - **Scoped credentials** with repository-id and action scopes
 - **Keychain storage** for short-lived tokens
-- **Step-up via device flow** for sensitive CLI actions
+- **Browser step-up** for signing; the CLI device flow is login only (04)
 
 ### 08 - Workspaces (Desktop Sessions)
 - **Session tokens** for Desktop Session authorization
@@ -1137,7 +1146,7 @@ Q69–Q83 answered; see "Round 3 decisions" in spec.md.
 
 **Blocks implementation of:**
 - 04 (gxp-compliance) - signing ceremony (needs MFA evidence extraction)
-- 07 (cli) - CLI step-up (device flow integration pending)
+- 07 (cli) - CLI login via device flow (no CLI signing)
 - 08 (workspaces) - Job token validation (commit identity complete, trailer integration pending)
 
 **Blocked by:**

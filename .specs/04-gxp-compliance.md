@@ -1,5 +1,5 @@
-Status: needs-info
-Blocked on: (1) owner confirmation of reviewer escalation (Q18: no auto-escalation v1; GXP-R-058 thresholds, recipients and offboarded-reviewer fallback unconfirmed); (2) Q22 recording conflict with the global decision (recording of desktop sessions never); (3) research-repo exemption from always-on strict (Q10, open).
+Status: ready-for-agent (re-grilled 2026-11-05; the "Re-grilling decisions" section supersedes earlier decisions and the Open Questions below where they conflict)
+Blocked on: nothing. Former blockers closed: escalation (Q18, replaced by the approver role), Q22 (recording never, accepted risk), Q10 (no exemption).
 
 # 04 — GxP compliance (PLAT-GXP)
 
@@ -9,7 +9,7 @@ Regulated teams need Part 11 / Annex 11 oriented product controls on top of auth
 
 ## Solution
 
-Strict mode is always on (not a switch). It enforces fail-closed audit, required reasons on configured mutation classes, and e-signatures on a defined action set. The initial signed action is the merge: an eligible `maintain` user other than the author signs at merge time with meaning "Approved" (stored as a field). There is no separate approver role.
+Strict mode is always on (not a switch, no exemption). It enforces fail-closed audit, required reasons and change-control ids on defined mutation classes, and e-signatures on merges into validated branches. The default branch of every repository is validated from creation and starts empty; content arrives only through signed merges. An `approver` (a namespace/repository role, not necessarily a manager) who did not author any commit in the merged range signs the merge with meaning "Approved" (stored as a field). Commits carry a QC status (None, QC Marked, QC Passed, QC Failed) that is a property of the commit and identical on every branch.
 
 ## User Stories
 
@@ -30,14 +30,21 @@ Strict mode is always on (not a switch). It enforces fail-closed audit, required
 
 ## Implementation Decisions
 
-- Strict mode is permanently on and enables: fail-closed audit for all mutations, fail-closed lineage, reason policy, e-signature enforcement.
-- E-signature scope v1: the merge action by a `maintain` user; privileged settings follow.
-- Re-authentication through AUTH step-up; session cookie alone is insufficient.
-- Revocation is an annotation record linked to the original; no compensating oxen commit.
+- Strict mode is permanently on and enables: fail-closed audit for all mutations, reason policy, e-signature enforcement. No per-repo exemption.
+- E-signature scope v1: every merge into a validated branch. The default branch is validated from creation; other branches opt in. Marking or unmarking a validated branch is a signed, reasoned action. Merges into non-validated branches need no signature and inherit commit QC status.
+- Signer is the `approver` role (assignable by Owner, audited). The signer must not have authored or co-authored any commit in the merged range. One approver suffices. There are no minimum-approver, onboarding or offboarding rules: a merge request stays unapproved until an eligible approver exists. No auto-escalation.
+- Nobody (including Owners and site admins) commits, force-pushes or deletes a validated branch directly. The CLI can open merge requests; signing happens only through browser step-up. No PATs or service principals exist, and automation cannot approve.
+- Re-authentication through AUTH step-up; session cookie alone is insufficient. The ID token is always verified (JWKS, iss, aud, auth_time age); the IdP must assert acr/amr/auth_time or signing is refused; startup fails if the IdP lacks the capability; ADR 0001 is amended.
+- Signature binds source head, target head and merge-result SHA-256 manifest digest (manifest stored before the signature is final). Commit ids are informational. A merge request goes stale if the target moves; the author re-syncs and approval starts over.
+- Commit QC status: None, QC Marked (merge request for approval open), QC Passed (after signed merge), QC Failed (after revocation). Status is per commit and branch-invariant. Any approver can revoke individual commits, several, or all commits of a signature, with reason and step-up, and notifying the Owners and the original signer; revoker independence is not required. Revoking before the merge blocks the merge. Failed returns to Passed only through a new signature. No data is removed; revocation does not propagate between commits of a signature. A merge commit keeps its own status; revoking the signature fails it. The UI warns on merge commits and descendants that contain QC Failed commits.
+- Reasons (min length, pick-list category, free text) and the change-control id (per-namespace pattern) are required for: changes or deletions of existing records on validated branches, destructive actions, privileged settings, revocation. The change-control id is also required on merge signatures. New data (new files, commits on non-validated branches) needs neither.
+- Audit order is intent, then effect, then outcome. Failed outcomes are audited. A reconciliation job flags intents without outcome (it writes its own audit record, never repairs).
+- When audit is unavailable all mutations are refused and reads continue. There is no outbox and no held output; users see "audit unavailable, nothing was saved" and the client keeps local work. A health probe and operator alert on audit degradation are required; a single immudb instance is unsupported for production.
 - The full signature record lives in immudb (append-only, with `esign.*` audit events); PostgreSQL holds only an index.
-- Recording of desktop Sessions never happens (global decision); compensating controls are in the Sessions module.
-- Reviewer escalation (GXP-R-058): role-only gate; no auto-escalation in v1; owner confirmation pending.
-- Backup/restore integrity (GXP-R-061/063) is a hard start gate; the target is Kubernetes (Compose dev-only).
+- Recording of desktop Sessions never happens (global decision); accepted risk, compensating controls (single RW session per Workspace, off-box auditd) are stated in the validation strategy.
+- Backup/restore integrity (GXP-R-061/063): backup target configured and reachable is a start gate; a restore test is required before the first regulated action (first validated-branch merge or signature). Target is Kubernetes (Compose dev-only).
+- No break-glass in v1.
+- Releases carry a signed release manifest (versions and digests of IdP configuration, search index, custom verifiers) verified at start; a mismatch is audited and shown in the admin overview.
 
 ## Testing Decisions
 
@@ -50,9 +57,21 @@ CSV templates, separate approver workflow, PR-like review.
 
 ## Further Notes
 
-Self-signing is forbidden in GxP namespaces and self-merge is forbidden everywhere, so another eligible maintainer must sign the merge; every repository needs at least two eligible maintainers. Confirm this satisfies the validation strategy.
+The signer must not have authored any commit in the merged range, so an approver cannot approve their own work; if they are the only approver the request waits. The former "at least two eligible maintainers per repo" rule is dropped. Template content enters a new repository through a merge request into the empty default branch, signed like any other merge (no unsigned seed).
 
-Open grilling questions: see questions.md in this folder.
+Open grilling questions: see questions.md in this folder (superseded where "Re-grilling decisions" conflict).
+
+## Re-grilling decisions (2026-11-05, supersede conflicting items below)
+
+- Signature only for merges into validated branches; default branch validated from creation (empty); approver role; signer not an author in the range; one approver suffices; no min-approver/escalation/offboarding rules (supersedes Q1, Q18).
+- Signature binds content digest (manifest); commit ids informational (Q5, Q23).
+- Commit QC status None / QC Marked / QC Passed / QC Failed, per commit, branch-invariant; revoke by any approver on commits or whole signature; Failed to Passed via new signature; no propagation; merge before revocation is blocked (supersedes Q6, Q7).
+- Reasons only for changes/deletions of existing records on validated branches, destructive actions, privileged settings, revocation; change-control id on those plus merge signatures (supersedes Q13, Q14).
+- Intent, effect, outcome audit order; failed outcomes audited; audit outage blocks all mutations, reads continue, no outbox, no held output (supersedes Q12).
+- No direct commits to validated branches by anyone; CLI opens merge requests, signs via browser step-up; no PATs/SPs (Q20).
+- No break-glass (Q21). No research-repo exemption (Q10). ID token verified and IdP capability checked at start; ADR 0001 amended (Q3, Q4).
+- Backup configured at start, restore tested before first regulated action (refines Q16).
+- Q22 closed as accepted risk with compensating controls. Retention (Q15) and principal snapshot (Q9) covered by other specs; release manifest signed and verified at start (Q26).
 
 ## Decisions from grilling
 
@@ -89,14 +108,16 @@ Inherited (not restated): Q1, Q3, Q15, Q20, Q21, Q22 (superseded, see below), Q2
 
 ## Conflicts and open risks
 
-- Q22 inherited 00 Q22 (recording mandatory for GxP-touching Sessions), but 10-sessions Q4 reversed it: recording never. The spec follows the global decision; the validation strategy must rely on the compensating controls (single rw session per Workspace, off-box auditd). RISK.
-- Q10: possible exemption of research repos from always-on strict is open. PENDING.
-- Q18: no auto-escalation and escalation thresholds, recipients and offboarded-reviewer fallback not confirmed by the owner; this is the blocker. PENDING.
-- Q16 conflicts with the earlier "backup deferred" stance; backup/restore must now be built before the first start. OVERRODE.
-- Q12: held-output retention is undefined. DEFERRED.
+- Q22: 10-sessions Q4 reversed recording to never. Accepted risk; the validation strategy relies on compensating controls (single rw session per Workspace, off-box auditd). ACCEPTED.
+- Q10: no research-repo exemption. CLOSED.
+- Q18: replaced by the approver role; no escalation in v1. CLOSED.
+- Q16 conflicts with the earlier "backup deferred" stance; backup target is needed at start and restore must be tested before the first regulated action. OVERRODE.
+- Q12: held output removed; mutations are refused during audit outage. CLOSED.
 - Q8 moves the signature record to immudb; 03-audit must carry the record size and verification proofs.
-- Q18 relies on 02 Q1 (forbid self-merge, at least two mergers per repo); small teams with one maintainer cannot merge.
-- Q3/00 Q3 absolute fail-closed (no protective exemption) combined with Q12 holds is a documented availability risk.
+- 02 Q1 (self-merge forbidden everywhere, at least two mergers per repo) conflicts with the approver model; 02 must be aligned (signer not an author in range, one approver).
+- Q3/00 Q3 absolute fail-closed (no protective exemption) is a documented availability risk; mitigated by the required audit health probe, alert and non-single-instance production deployment.
+- QC status per commit and branch-invariant: 05 (Repositories) must expose it and the merge-request QC Marked state.
+- 01-authentication: ADR 0001 must be amended (ID token always verified).
 - Lease renewals are audited per renewal; no exception. RESOLVED.
 - Q17 report-only verification is consistent with 05 Q22 (no purge in product).
 
@@ -327,19 +348,19 @@ Challenges: "CSV templates out of scope"; test decisions.
 ## Recording and compensating controls
 - **Q22 inherited 00 Q22 (recording mandatory for GxP-touching Sessions), but 10-sessions Q4 reversed it: recording never**: The spec follows the global decision (no desktop recording). REGULATORY RISK: no primary capture of desktop work. Compensating controls are single RW session per Workspace and off-box auditd (system-level, not application). Validation strategy must rely on these controls.
 
-## Open escalation and reviewer decisions
-- **Q10 (possible exemption of research repos from always-on strict)**: PENDING. If research repositories are exempt, need a clear flag and enforcement boundary.
-- **Q18 (no auto-escalation, escalation thresholds/recipients/offboarded-reviewer fallback not confirmed by owner)**: BLOCKER for ready-for-agent status. Without defined escalation, no notification fires when a reviewer is unavailable. Relates to 14 (Notifications) Q4 (no auto-escalation, reassignment only).
+## Resolved escalation and reviewer decisions
+- **Q10**: CLOSED. No research-repo exemption.
+- **Q18**: CLOSED. The approver role replaces escalation; unapproved merge requests simply wait. 14 (Notifications) needs no escalation thresholds.
 
-## Held output and fail-closed interactions
-- **Q12 (held-output retention undefined)**: DEFERRED. When audit is down and a Job finishes, output stays in Workspace in "finalizing" state. How long outputs are retained is not set. Interacts with 08 Q2 (Workspace transient, loss risk stated) and 09 Q9 (finalizing visible state).
-- **Q3/00 Q3 (absolute fail-closed, no protective exemption) combined with Q12 holds**: Documented availability risk. If immudb is down, work stops; if it recovers slowly, held outputs accumulate. Sizing and capacity planning needed.
+## Fail-closed interactions
+- **Q12 superseded**: no held output; mutations are refused during audit outage and the client keeps local work. 08 Q2 and 09 Q9 ("finalizing" state) must be aligned.
+- **Q3/00 Q3 (absolute fail-closed)**: availability risk. If immudb is down, all writes stop. Mitigated by a required health probe and alert and no single-instance production deployment.
 
 ## Signature record storage and verification
 - **Q8 (full signature record in immudb, Postgres index only)**: Impacts 03 (Audit). The signature manifestation (name, time, meaning, record hash) is stored in immudb, not Postgres. 03 must carry the record size and verification proofs. Postgres signature table becomes a non-authoritative query index.
 
-## Dependency on two-merger rule
-- **Q18 (any eligible maintainer can merge, at least two per repo)**: Relies on 02 Q1 (forbid self-merge everywhere). Small teams with one maintainer cannot merge until a second is assigned. Review gate is unmeetable without two mergers. Impacts all GxP repositories.
+## Approver model and 02 alignment
+- **Approver role replaces the two-merger rule**: one approver suffices; the signer must not have authored a commit in the range. 02 Q1 (self-merge forbidden, two mergers per repo) must be aligned.
 
 ## Backup conflicts and overrides
 - **Q16 (backup/restore is a hard start gate) conflicts with earlier "backup deferred" stance**: OVERRODE the deferral. Backup and restore must now be built and tested before the first regulated start. Impacts 16 Q2 (Operations), 08 Q2 (interim Workspace upper backup).

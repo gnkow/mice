@@ -15,7 +15,7 @@ Repository lifecycle and browsing through the BFF with dedicated audited actions
 1. As a scientist, I want to create a repository in a namespace, so that I can start versioning data.
 2. As a scientist, I want to browse branches, commits and files, so that I can see history.
 3. As a scientist, I want large listings and previews paged and capped, so that the app stays responsive.
-4. As a maintainer, I want to merge a branch, so that work reaches the main line.
+4. As an approver, I want to review and sign a merge request, so that work reaches the validated main line.
 5. As a repository admin, I want to rename a repository, so that names stay meaningful.
 6. As a repository admin, I want the rename to preserve access, favorites, metadata and lineage, so that nothing is lost.
 7. As a repository admin, I want to transfer a repository to another namespace, so that ownership can change.
@@ -30,7 +30,9 @@ Repository lifecycle and browsing through the BFF with dedicated audited actions
 - Stable repository id in PostgreSQL; the oxen name is an attribute.
 - Physical oxen repository names are static (physical key = stable id). Rename changes only the display name in the BFF persistence layer, audited as Intent/Outcome; no oxen move, so commit ids never change. Copy-based rename is not needed.
 - The BFF translates names for the CLI and clone URLs.
-- Merge page plus `maintain` is the gate; no PR product in this spec. No direct writes or pushes on the default branch; the BFF rejects them. The merge carries expected source and target heads and returns 409 on mismatch. Reverts are revert commits only.
+- Merge request page plus the `approver` role is the gate (04); no separate PR product. The default branch is validated from creation and starts empty; other branches opt in, and marking or unmarking is a signed, reasoned action. Nobody (including Owners and admins) commits, force-pushes or deletes a validated branch directly; the BFF rejects every direct write, push, pointer move and branch delete, and all writes (small-file commit, chunked upload, zip/URL import, lineage corrections) reach it only through a merge request. Templates enter the empty default branch by a signed merge request, no unsigned seed.
+- Merging into a validated branch needs a signature by one `approver` (Owner-assignable, audited) who authored or co-authored no commit in the merged range; the repositories module enforces this. The signature binds source head, target head and merge-result manifest digest; the merge returns 409 on head mismatch and the MR goes stale if the target moves (author re-syncs, approval restarts, no auto-rebase). The MR stays unapproved until an approver exists. Merges into non-validated branches need no signature. Reverts are revert commits only.
+- Commit QC status (None, QC Marked when an MR is open, QC Passed after the signed merge, QC Failed after revocation) is per commit and branch-invariant; non-validated branches inherit it. Any approver can revoke commits or a whole signature (reason, step-up); revoking before merge blocks the merge. The UI shows status per commit and warns on merge commits and descendants containing QC Failed commits. Signatures are indexed by repository for revocation visibility.
 - A separate repository tag store is dropped; PLAT-META tags cover it.
 - Transfer requires source repo `admin` and destination namespace Owner approval; collaborators are dropped by default behind an access-change diff and explicit confirmation. It is a BFF metadata change (namespace re-pointing) with no oxen move.
 - Preview and listing ceilings: text preview 1 MiB, tree page 500, commit page 100; paging is server-side end to end and unpaged requests above the limit are rejected.
@@ -50,6 +52,14 @@ PR-style review, physical rename or move of oxen repositories, hard delete.
 Throttling of heavy copies now only concerns Jobs and uploads.
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+- Gate is the `approver` role, not `maintain`; Q11's bypass is closed for every validated branch (no direct writes by anyone, including Owners/admins), and Q13 (local merge then push) is rejected the same way.
+- Default branch is validated from creation, empty at start; templates arrive by signed merge request.
+- Signature binds source head, target head, manifest digest; stale MR on target move (supersedes the Q14 head-only binding).
+- Commit QC status per commit as above; revocation by any approver blocks pre-merge and never propagates.
+- Superseded where conflicting: Q11 options/recommendation, Q13, Q14, decisions-log rows on "maintain" gate and "main protected globally"; 02 Q1 two-mergers rule no longer applies.
 
 ## Decisions from grilling
 
@@ -86,7 +96,7 @@ Inherited (not restated): Q1, Q7, Q9, Q17, Q19, Q20, Q24, Q26.
 - Q25: needs CLI and clone-URL translation through the BFF; the 07-cli module must implement it. RISK.
 - Original spec said transfer needs destination `write`; 02 Q6 requires destination namespace Owner approval. The spec now follows 02 Q6.
 - Q22: no purge conflicts with secrets in history; mitigated only by the operator runbook. RISK.
-- Q11 with 04: the merge signer must differ from the author (02 Q1: at least two eligible mergers per repo).
+- Q11 with 04: the merge signer is an `approver` who authored no commit in the merged range (04); the two-mergers rule is dropped.
 - Q12: no branch repointing means only main is protected globally (02 Q17); force-push or delete of other released branches is unprotected. RISK.
 - Static names make the oxen layer opaque to operators; the id-to-name mapping in Postgres is a single point of recovery and needs backup (04 Q16).
 
@@ -325,7 +335,7 @@ Challenges: "Single seam ... black-box" vs the required mid-rename failure test.
 - **Q25 needs CLI and clone-URL translation through BFF**: RISK. With static physical names (opaque ids), the 07-cli module MUST implement name translation. Clone URLs and CLI commands reference display names; BFF translates to physical ids. If 07 does not implement this, repositories are unreachable by name.
 
 ## Protected branch and force-push risks
-- **Q11 with 04 (merge signer must differ from author)**: Relates to 02 Q1 (at least two eligible mergers per repo). No direct writes on main enforced; approval (signature) via merge always required.
+- **Q11 with 04 (merge signer must not be an author in the range)**: Enforced in this module; one approver suffices, no two-mergers rule. No direct writes on validated branches; signature via merge always required.
 - **Q12 (no branch repointing, revert commits only everywhere)**: Means only main is protected globally (02 Q17). Force-push or delete of other released branches is unprotected. RISK accepted as chosen. 05 Q12 mitigates with revert-only policy.
 
 ## Purge and secrets conflict

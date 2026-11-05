@@ -57,9 +57,20 @@ Treat the plans as intent only. Each epic gets a fresh spec (01-16) written as i
 
 ## Further Notes
 
-Unresolved: overlay on shared filesystem; reviewer escalation target (Q24); legal sign-off on retention. The deployment target is decided (Kubernetes). Backup and restore is a hard start gate, not deferred.
+Unresolved: overlay on shared filesystem; legal sign-off on retention. The reviewer escalation target (Q24) is closed: there is no escalation (see 04). The deployment target is decided (Kubernetes). Backup and restore is a hard start gate, not deferred.
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+04 is the source of truth for GxP. Changes here:
+- Q9/Q24 superseded: e-signature only for merges into validated branches (default branch validated from creation); the signer holds the `approver` role (not maintain), must not have authored or co-authored any commit in the merged range; one approver suffices; no escalation, no minimum-approver, onboarding or offboarding rules. "Merge plus maintain" and "no self-signing" are replaced by this author-exclusion rule.
+- Q10 superseded: commit QC status None / QC Marked / QC Passed / QC Failed; any approver can revoke with reason and step-up.
+- Q18 closed: ID token always verified (JWKS, iss, aud, auth_time age); the IdP must assert acr/amr/auth_time, startup fails otherwise; ADR 0001 is amended.
+- Q3 refined: audit outage refuses all mutations, reads continue; no outbox, no held output; client keeps local work; health probe and alert required; single immudb unsupported in production. Audit order is intent, effect, outcome.
+- Q22 closed: recording never; accepted risk with compensating controls.
+- No break-glass, no research-repository exemption; nobody commits directly to a validated branch; no PATs or service principals (Q19 stays moot).
+- Backup target configured at start; restore tested before the first regulated action. Signed release manifest verified at start.
 
 ## Decisions from grilling
 
@@ -102,9 +113,9 @@ Testing and parity
 
 - Q8 (erasure impossible): conflicts with its own option analysis; legal sign-off needed. Blocker for Status.
 - Q3 (absolute fail-closed) holds with no exception: 08 Q18 aggregation was dropped (auth round 6 S1). RESOLVED. Consequence: immudb outage stops Workspace work at lease expiry; size lease TTL and renewal rate accordingly.
-- Q22 (recording mandatory in strict) is OVERRIDDEN by the global decision and 10 Q4: desktop sessions are never recorded. 04 Q22 still inherits Q22 and must be corrected; compensating controls are one read-write session per Workspace and off-box auditd.
+- Q22 (recording mandatory in strict) is OVERRIDDEN by the global decision and 10 Q4: desktop sessions are never recorded; 04 closes it as accepted risk. Compensating controls are one read-write session per Workspace and off-box auditd.
 - Q7 (copy-based rename with freeze) is superseded by 05 Q25: static physical names, rename only in the BFF. 05 Q3-Q6 are mostly moot.
-- Q24: reviewer escalation target remains unresolved (04 Q18 also awaits owner confirmation).
+- Q24: CLOSED by 04 (2026-11-05): the `approver` role signs; one approver suffices; no escalation, a merge request stays unapproved until an approver exists.
 - Q23: no automatic retries, yet 09 Q9 retries the finalize Intent and 03 Q21 retries the Outcome inline; the spec must state these are bounded internal retries, not mutation retries.
 - Q19 (service principals can never sign) is moot: service principals are removed (01 Q12, Q13); Jobs use BFF-internal tokens and automated commits are never signed (08 Q7).
 - The overlay-on-shared-filesystem spike (08 Q1) is UNRESOLVED; Kubernetes is the production target (16 Q1) but Jobs on it are unsupported until the spike passes (09 Q11). Blocker for Status.
@@ -113,7 +124,7 @@ Testing and parity
 - 16 Q2 and 04 Q16 make backup and restore a hard start gate; the former deferral is void.
 - 16 Q21: DEFERRED supply-chain/SBOM gap must close before regulated use.
 - 16 Q27: maintenance windows only; inferred outcomes remain possible after a crash.
-- 04 Q10: whether research repositories need an exemption from always-on strict is open.
+- 04 Q10: CLOSED: no research-repository exemption; strict is always on.
 - Q26: derived stores repaired via Postgres outbox; 04 Q17 verification is report-only and never repairs or deletes.
 
 ## Update from authentication review
@@ -125,7 +136,7 @@ Testing and parity
 # Open Questions
 
 
-Status: the cross-cutting spec is `needs-info` (deployment target, overlay on a shared filesystem, reviewer escalation unresolved) and binds all sixteen module specs.
+Status: the cross-cutting spec is `needs-info` (overlay on a shared filesystem unresolved; reviewer escalation closed by 04) and binds all sixteen module specs.
 Biggest risks: N instances sharing disk state with no coordination design, fail-closed everywhere with no safe path for emergencies, an audit model whose "after" facts are inferred rather than observed, and retention-forever colliding with privacy law.
 Every question carries an example, 2-4 options, a recommendation and the prior decision it challenges.
 
@@ -368,13 +379,13 @@ Challenges: "plans treated as intent only"; "every JSON store ... in the plans i
 
 2. **Overlay-on-shared-filesystem (Q1)**: 08 Q1 spike UNRESOLVED. Kubernetes is production target (16 Q1) but Jobs unsupported until spike passes (09 Q11). **Status blocker.**
 
-3. **Recording mandate overridden (Q22)**: Global decision and 10 Q4 override Q22 (desktop sessions never recorded). 04 Q22 still inherits and must be corrected. Compensating controls: one rw session/Workspace + off-box auditd.
+3. **Recording mandate overridden (Q22)**: Global decision and 10 Q4 override Q22 (desktop sessions never recorded); 04 closes it as accepted risk. Compensating controls: one rw session/Workspace + off-box auditd.
 
 4. **Rename superseded (Q7)**: Superseded by 05 Q25 (static physical names, rename only in BFF). 05 Q3-Q6 mostly moot.
 
 ## Open Risks and Blockers
 
-5. **Reviewer escalation unresolved (Q24)**: Remains unresolved (04 Q18 also awaits owner confirmation).
+5. **Reviewer escalation (Q24)**: CLOSED by 04: `approver` role, one approver suffices, no escalation.
 
 6. **Absolute fail-closed (Q3)**: Holds with no exception. 08 Q18 aggregation dropped (auth round 6 S1). Consequence: immudb outage stops Workspace work at lease expiry. RESOLVED but requires careful lease TTL sizing.
 
@@ -452,7 +463,7 @@ This spec provides decisions that apply to every module. Each module spec inheri
 - Q14: SHA-256 authoritative; computed in BFF stream, verified on download/Job input
 
 ### Identity Provider (applies to 01, 15)
-- Q18: Always verify id_token signature; amend ADR 0001
+- Q18: Always verify id_token (JWKS, iss, aud, auth_time age); IdP must assert acr/amr/auth_time, startup fails otherwise; ADR 0001 amended (04)
 - External IdP required; Keycloak dev-only
 
 ### Runners and Jobs (applies to 09, 16)
@@ -483,7 +494,7 @@ This spec provides decisions that apply to every module. Each module spec inheri
 - Q1: Overlay-on-shared-filesystem spike (08 Q1)
 
 ### Open Dependencies
-- Q24: Reviewer escalation target unresolved (affects 04, 14, 15)
+- Q24: closed by 04 (no escalation; approver role)
 - Q15: URL import entry criteria undefined (affects 06)
 - Q20: Search engine ADR if Postgres FTS insufficient (affects 12)
 

@@ -52,6 +52,14 @@ Kubernetes runner ownership of labels and pod identity needs design.
 
 Open grilling questions: see questions.md in this folder.
 
+## Alignment with 04 (2026-11-05)
+
+04 is authoritative; where older text in this file conflicts, it is superseded.
+- Jobs commit only to a non-validated (safe) branch; nobody commits directly to a validated branch. Only a human `approver` signature merges into the validated branch. Jobs never sign; no auto-merge; no PATs or service principals for signing. Supersedes "human maintainer signature" and "Merge+maintain gate" wording (Q6).
+- Audit outage: all mutations are refused and reads continue; there is no outbox and no held output. The "finalizing" state, the audit-pending header, held-output retention and "finalizing until audit returns" (Q9, 03 Q21) are removed. A Job that finishes during an outage cannot persist its result commit or lineage: the result is not persisted and the Job reports failure; the user resubmits per the existing no-automatic-retries decision (04). No new behaviour or retention is defined here.
+- Audit order is intent, effect, outcome; failed outcomes are audited.
+- Result commits carry per-commit QC status (None, QC Marked, QC Passed, QC Failed), branch-invariant.
+
 ## Decisions from grilling
 
 Scheduling and runner
@@ -72,8 +80,8 @@ Images, inputs and secrets
 
 Results, audit and lineage
 - A result commit stores the submitting Principal as `author` (canonical `iss|sub`) and that Principal's email at submission as `email`. The message ends with one attribution line, `Job: <job id>, Token: sha256:<hash>`. A client-supplied `Job:` line is removed first. A human commit does not get the line. The line is not a signature, and a Job cannot sign. Moved from authentication issue 21 (U6, T2); the `Submitted-by` trailer is not used.
-- A job token lasts only for that job's maximum runtime. At commit the BFF re-checks the submitting Principal with the IdP. A disabled or revoked submitter blocks the result commit. An unreachable IdP leaves that commit in finalizing until the IdP returns or the retention window ends, and it is never auto-approved. The job may finish running; only the result commit is blocked. Moved from authentication issue 36 (U13, Q20, Q83, T1). This replaces Q19's recommendation to cancel the running job.
-- Hold the result and retry the Intent in a visible "finalizing" state; Intent at submit and at finalize (Q9).
+- A job token lasts only for that job's maximum runtime. At commit the BFF re-checks the submitting Principal with the IdP. A disabled or revoked submitter blocks the result commit. An unreachable IdP blocks that commit and it is never auto-approved (no "finalizing" state; see Alignment with 04). The job may finish running; only the result commit is blocked. Moved from authentication issue 36 (U13, Q20, Q83, T1). This replaces Q19's recommendation to cancel the running job.
+- Intent at submit and at result commit (Q9). The "hold the result and retry in a visible finalizing state" part is removed (see Alignment with 04).
 - Execution status and delivery status are split; the Outcome carries both (Q27).
 - Log SHA-256 plus head/tail in the Outcome; full log durable; `log_truncated` marker (Q16).
 - Normalised job-file table, counts and manifest hash on the JobRun; lineage is the single edge store (Q24).
@@ -91,7 +99,7 @@ Testing
 - Q11 versus 16 Q1: production is Kubernetes yet the Kubernetes runner is unsupported until the 08 spike; fallback is copy/node-local scratch. PENDING.
 - Q20 versus 14 Q18: 09 uses queued-threshold only, 14 uses heartbeat-based stuck detection; align the two.
 - Q13/Q19 and 01: service principals removed; CI unsupported; 12-14 and 00 Q19 must reflect BFF-internal job tokens.
-- Q6 and 08 Q7: automated commits never signed; merge to main needs a human signature.
+- Q6 and 08 Q7: automated commits never signed; merge into a validated branch needs a human `approver` signature.
 - Q21: priority class and Kubernetes queueing are DEFERRED.
 - Q17: lineage and legal-hold interplay with 00 Q8 (no erasure) relies on legal sign-off.
 
@@ -407,7 +415,7 @@ Challenges: Cross-cutting rename decision; spec silent on Jobs vs rename.
 - **00 (Cross-cutting)**: Service principals removed (Q13/00 Q19). No automatic retries (Q23/00 Q23). Jobs use BFF-internal tokens (authentication T2).
 - **01 (Authentication)**: The IdP user-status check used at result commit is authentication. Job token lifetime, the commit hold, and the attribution line are in this spec.
 - **02 (Authorization)**: Job submission authorized per user. No PATs or SPs (Q13/02 Q21).
-- **03 (Audit)**: Job submit/start/finish/fail audited (story 7). Finalizing state with audit-pending header (Q9/03 Q21). Intent at submit and at finalize (Q9).
+- **03 (Audit)**: Job submit/start/finish/fail audited (story 7). Finalizing state and audit-pending header removed (04 2026-11-05). Intent at submit and at result commit (Q9).
 - **04 (GxP Compliance)**: Automated commits unsigned (Q6/04 Q7/08 Q7). Merge to main needs human signature. Approved-image catalogue (Q8).
 - **05 (Repositories)**: Rename refused while Jobs exist (Q28/05 Q25). Job Pins reference repo id + commit id.
 - **08 (Workspaces)**: Jobs mount Workspaces. Failed output stays in Workspace (Q5/08 Q3). Lease fencing (Q4/08 Q4). Dirty refused (Q26/08 Q26).

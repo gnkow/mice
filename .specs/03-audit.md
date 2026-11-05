@@ -9,7 +9,7 @@ Regulated users need proof of who changed what, when, and with what result, that
 
 ## Solution
 
-An Audit module over immudb with append, read range and verify. Every mutation writes an Intent event before it takes effect and an Outcome event after, linked by `intent_id`. Append failure refuses the mutation with 503. Events reach immudb through a Postgres outbox and relay. A reconciler resolves orphaned intents.
+An Audit module over immudb with append, read range and verify. Every mutation writes an Intent event before it takes effect, then the effect, then an Outcome event (success or failure), linked by `intent_id`. Append failure refuses the mutation with 503. Events are appended to immudb directly (no outbox). A reconciler flags intents without outcome.
 
 ## User Stories
 
@@ -30,8 +30,10 @@ An Audit module over immudb with append, read range and verify. Every mutation w
 ## Implementation Decisions
 
 - immudb is the only audit store; there is no home-grown hash chain (ADR 0005).
-- Intent failure returns 503 for every mutation (no exceptions, including lease renewals).
-- The reconciler runs as one leader (PostgreSQL advisory lock), infers a result only when verifiable by content digest (else "unknown"), and appends an Outcome idempotent by intent id.
+- Intent failure returns 503 for every mutation (no exceptions, including lease renewals). Reads continue; there is no outbox and no held output ("audit unavailable, nothing was saved"). Failed outcomes are audited.
+- A health probe and operator alert on audit degradation are required; a single immudb instance is unsupported for production.
+- The reconciler runs as one leader (PostgreSQL advisory lock) and flags intents without outcome with its own audit record; it never repairs or infers results.
+- The full e-signature record lives in immudb with `esign.*` events; PostgreSQL holds only an index (04).
 - The dataset content digest and oxen commit id are recorded before and after each proxied mutation as `{base, head}`; locks are used only where oxen is not atomic.
 - Reason and change-control id are first-class event fields; ownership split with GxP is that this spec stores them and 04 decides when they are required.
 - Events reference repositories by stable id plus the name at event time.
@@ -53,6 +55,16 @@ Retention and purge, WORM storage beyond immudb.
 The extra oxen read adds latency to every mutation; the budget is p95 overhead of 250 ms, tested.
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+04 is authoritative. Changed here:
+- Order is intent, effect, outcome; failed outcomes are audited.
+- Audit outage: all mutations refused, reads continue. No outbox, no "audit pending" header, no held output or finalizing state. Health probe and alert required; single immudb unsupported in production.
+- The reconciler only flags intents without outcome (own audit record, no repair or inference).
+- Signature records live in immudb (`esign.*`), PostgreSQL index non-authoritative.
+
+Superseded where conflicting: Q1 and Q9 (outbox and relay, compensating Outcome via outbox), Q3/Q4/Q5 (inferred outcomes, "result being confirmed"), Q21 ("audit pending" header, bounded retry then real result), 04-Q12 held output, 09-Q9 finalizing state.
 
 ## Decisions from grilling
 
@@ -369,7 +381,7 @@ Challenges: "Testing seam: BFF HTTP boundary, black-box, real containers".
 ## Cross-cutting impacts
 - **01 (Authentication)**: Audit of authentication events (login, logout, refresh, step-up, failure, revocation) with request id and Principal (authentication T7). No tokens/cookies logged; redaction tested (Q25).
 - **02 (Authorization)**: Summarization strategy for routine reads (Q15/02 Q9). Bypass mutations audited individually; listing reads summarized.
-- **04 (GxP Compliance)**: Signature storage (Q8), integrity verification (Q12), held-output retention (Q12/04 Q12), traceability matrix (Q26/04 Q26).
+- **04 (GxP Compliance)**: Signature storage (Q8), integrity verification (Q12), no held output (04 Q12 superseded: mutations are refused during an audit outage), traceability matrix (Q26/04 Q26).
 - **05 (Repositories)**: Rename and transfer audited as dedicated actions (Q7, inherited 00 Q6). Observed base/head plus oxen commit id (Q7).
 - **08 (Workspaces)**: Conflict detail in Postgres with digest in audit event (Q16/08 Q16). Lease renewals per renewal (Q18/08 Q18).
 - **09 (Jobs)**: Finalizing state with audit-pending header (Q21/09 Q9). Job I/O normalized table (Q24/09 Q24); lineage is single edge store.

@@ -33,7 +33,7 @@ A generic entity-metadata model in PostgreSQL with inheritance, plus a derived s
 - Own records and history in PostgreSQL are authoritative; the search engine is derived and rebuildable online.
 - Search starts on PostgreSQL full-text; OpenSearch or Meilisearch only if the prototype misses the relevance set or load target (new ADR). AuthZ scope is applied before paging.
 - Schemas are namespace-scoped from the start, with an instance-wide tier.
-- File metadata unpinned by default; pin on approve/release.
+- File metadata unpinned by default; pinned at the signed merge into a validated branch (and on release Pins). Revocation (QC Failed) blocks new Pins on the failed commits.
 - `sensitive` values are never indexed and never written to audit; masked at read; encryption only if later required.
 - Index keys use stable repository ids; physical oxen names are static.
 - User and group metadata is removed from the first release.
@@ -57,6 +57,13 @@ Fan-out on namespace edits needs async batching and an impact preview.
 
 Open grilling questions: see questions.md in this folder.
 
+## Alignment with 04 (2026-11-05)
+
+- The gate is a merge request signed by an `approver` (not "Merge plus maintain"); the signer is not an author in the merged range. "Pin on approve/release" means pin at the signed merge into a validated branch. Merges into non-validated branches need no signature and take no pinned snapshot; commits inherit QC status.
+- If the target moves, the MR is stale and the snapshot is recomputed on re-sync; a snapshot never outlives a revoked signature as valid: QC Failed commits cannot be newly Pinned, existing snapshot records stay (no data removed).
+- Metadata writes that change existing records on validated branches need reason and change-control id; new metadata needs neither.
+- Superseded: Q8 recommendation "regulated namespaces only" and 05-reference "snapshot at merge" wording where it names maintain. Q16 "second approver" for schema changes is a separate schema-change control, not the merge approver role.
+
 ## Decisions from grilling
 
 Search and authorisation
@@ -78,7 +85,7 @@ Index lifecycle
 
 Inheritance, fan-out and revisions
 - Namespace edit: advisory impact preview, actual count recorded, "updating" state, query-time resolution namespace→repo (Q7).
-- Effective-metadata snapshot at every merge, immutable, with signer identity (Q8).
+- Effective-metadata snapshot at every signed merge into a validated branch, immutable, with signer identity (Q8); it is captured when the merge-result manifest is stored and is consistent with the signature's bound heads and digest.
 - Metadata revision recorded in Pin and Job lineage; committed snapshot opt-in (Q9).
 - Head capture only for pin/snapshot; one per bulk operation; Intent event kept; documented exception (Q10).
 - Bulk: one Intent and Outcome per request with per-ref results, cap, all-or-nothing per repo (Q11).

@@ -28,7 +28,9 @@ Containerised production stack on Kubernetes (PostgreSQL, immudb, Novu with Mong
 - Target is Kubernetes for the first regulated release; Compose is dev-only; other targets are unsupported.
 - Multi-instance replaces every single-process guard with Postgres leases and fencing after an inventory; auth state moves to Postgres with stateless cookies and no sticky routing.
 - Shared RWX storage for bulk trees is subject to a time-boxed spike with pass criteria; fallback is copy or node-local scratch.
-- The backup contract is a hard start gate (04): ordered quiesced snapshot plus manifest, post-restore reconciler, rehearsed restores. An availability target is set first.
+- The backup contract is a hard start gate (04): ordered quiesced snapshot plus manifest, post-restore reconciler, rehearsed restores. A backup target must be configured and reachable at start, and a restore test is required before the first regulated action (first validated-branch merge or signature). An availability target is set first.
+- Start gates (04): the IdP must assert acr/amr/auth_time and the ID token is always verified, otherwise startup fails; the signed release manifest (versions and digests of IdP configuration, search index, custom verifiers) is verified, a mismatch is audited and shown in the admin overview.
+- Audit health: a probe and operator alert on audit (immudb) degradation are required; on outage all mutations are refused and reads continue (no outbox, no held output). A single immudb instance is unsupported for production.
 - Database migrations run pre-deploy under an advisory lock with expand-contract (ADR); database operations remain the database containers' own.
 - Non-atomic disk writes for jobs and aliases move into PostgreSQL; queues use SKIP LOCKED with lease and fencing.
 - Deploys happen in maintenance windows only.
@@ -40,13 +42,23 @@ Containerised production stack on Kubernetes (PostgreSQL, immudb, Novu with Mong
 
 ## Out of Scope
 
-HA of databases and retention policy beyond the backup start gate (backup/restore itself is now in scope, Q2/Q3).
+HA of Postgres and retention policy beyond the backup start gate (backup/restore itself is now in scope, Q2/Q3). immudb HA is required for production (see Alignment with 04).
 
 ## Further Notes
 
 Target decided: Kubernetes (Q1).
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+04 is authoritative. Changed here:
+- Backup target configured and reachable at start; restore test required before the first regulated action.
+- Audit health probe and alert required; a single immudb is unsupported in production (immudb HA now in scope); audit outage refuses mutations, reads continue, no outbox or held output.
+- Startup fails if the IdP lacks acr/amr/auth_time; the ID token is always verified (ADR 0001 amended).
+- Signed release manifest verified at start; mismatch audited and shown in the admin overview.
+
+Superseded where conflicting: Q2/Q3 gate wording, Q4 options keeping a single immudb, Q5 (immudb stays a readiness gate), Q27 (no outbox/finalizing view), and "HA of databases" out of scope for immudb.
 
 ## Decisions from grilling
 

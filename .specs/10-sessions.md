@@ -51,6 +51,14 @@ Per-feature clipboard policy cannot be enforced if the gateway cannot parse virt
 
 Open grilling questions: see questions.md in this folder.
 
+## Alignment with 04 (2026-11-05)
+
+04 is authoritative; where older text below conflicts, it is superseded.
+- Recording never; accepted risk (04 Q22 closed). Compensating controls are the single read-write session per Workspace and off-box auditd, stated in the validation strategy.
+- Strict mode is always on with no exemption and no break-glass; `GXP_STRICT` wording and "non-strict deployments" relaxations are superseded: only instance admins relax clipboard/drive policy, with reasons for privileged settings (04).
+- Audit outage: all mutations (including Session transitions) are refused, reads continue; no outbox, no held output. Users see "audit unavailable, nothing was saved". Session transitions keep intent, effect, outcome order; failed outcomes are audited.
+- Session users cannot commit to a validated branch; merges there need an `approver` signature via browser step-up.
+
 ## Decisions from grilling
 
 Lifecycle
@@ -85,7 +93,7 @@ Templates, gateway, platform
 
 ## Conflicts and open risks
 
-- Q4 OVERRODE 00 Q22 and 04 Q22 (recording mandatory for GxP-touching Sessions); those logs and specs still say mandatory. Regulatory risk: no primary capture, accepted by owner.
+- Q4 OVERRODE 00 Q22 and 04 Q22 (recording mandatory for GxP-touching Sessions). 04 (2026-11-05) now agrees: recording never, accepted risk with compensating controls. Regulatory risk: no primary capture, accepted by owner.
 - Q13: concurrent-create race remains, "as is".
 - Q21: guest outside-mount data loss, "as is", documented only.
 - Q14: now resolved by 16 Q1 (Kubernetes); the pod provisioner is the target, Docker dev-only.

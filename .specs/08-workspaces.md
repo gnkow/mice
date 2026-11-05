@@ -57,6 +57,14 @@ Spike on 2026-10 verified Docker Desktop overlay volumes only; shared-FS behavio
 
 Open grilling questions: see questions.md in this folder.
 
+## Alignment with 04 (2026-11-05)
+
+04 is authoritative; where older text below conflicts, it is superseded.
+- Nobody commits directly to a validated branch. Automated Workspace commits go to a non-validated (safe) branch; a human `approver` signature (not "maintain signs at merge") merges into a validated branch. The approver must not have authored a commit in the merged range; one approver suffices. No auto-merge. Supersedes Q6/Q7 wording about the "Merge+maintain gate" and "human maintainer signature".
+- Audit order is intent, effect, outcome; failed outcomes are audited. During an audit outage all mutations are refused (including commit and merge), reads continue, and there is no outbox or held output. Users see "audit unavailable, nothing was saved" and the client keeps local work. Q18 (renewal exception, TTL longer than the audit outage) is superseded where it conflicts with this.
+- No break-glass; strict mode has no exemption.
+- Commit QC status (None, QC Marked, QC Passed, QC Failed) is per commit and branch-invariant; a merge into a non-validated branch inherits it.
+
 ## Decisions from grilling
 
 Storage and leases
@@ -72,7 +80,7 @@ Storage and leases
 
 Commit, merge and conflicts
 - Failed-job output is committable only on acknowledgement; commit and lineage carry the failure state (Q3).
-- Automated job commits are never signed; lineage shows unsigned/pending; merge to main needs a human signature (Q7).
+- Automated job commits are never signed; lineage shows unsigned/pending; merge into a validated branch needs a human `approver` signature (Q7, 04).
 - Commit fails unless skipped entries are acknowledged (recorded on the Outcome); in-tree symlinks become manifest entries (Q13).
 - Discarded "theirs" files are preserved on a safe branch or hold area (Q15).
 - Conflict detail in Postgres; digest and counts in the audit event (Q16).

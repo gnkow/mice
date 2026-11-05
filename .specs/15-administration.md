@@ -47,6 +47,13 @@ Rule precedence is decided: env seeds absent keys only and UI-owned keys win (Q1
 
 Open grilling questions: see questions.md in this folder.
 
+## Alignment with 04 (2026-11-05)
+
+- Q14/Q15 closed: no PATs or service principals exist (04); nothing automated can hold `approver`, sign or approve. The Q15 premise "maintain user signs at merge" is superseded: signing needs the `approver` role (02), assigned by a namespace Owner and audited, never by a bootstrap rule.
+- Q13 (access-request review) is unaffected: self-approval forbidden, second reviewer for maintain/admin, no auto-escalation. The "escalation to instance admins" recommendation and the unresolved "reviewer escalation target" are void (no escalation anywhere, 04). The two-reviewer rule does not apply to merge signing: one approver suffices.
+- Q7 stays: no break-glass (04). Audit outage refuses all mutations, reads continue, no outbox; consistent with revoke/suspend failing with 503.
+- Bootstrap rules (Q9/Q10) never grant `approver`.
+
 ## Decisions from grilling
 
 Announcements
@@ -92,7 +99,7 @@ Docs and testing
 
 ## Update from authentication review
 - Q16 IdP-migration tooling is moot (auth Q80); keep only the directory adapter for the single IdP.
-- Q9/Q10 bootstrap rules grant read-only baseline only; write, sign and approve need a recorded admin grant (auth R1). Rules apply to everyone including externals, so guests must be kept out of privileged IdP groups.
+- Q9/Q10 bootstrap rules grant read-only baseline only; write, sign (`approver`) and approve need a recorded admin or Owner grant (auth R1). Rules apply to everyone including externals, so guests must be kept out of privileged IdP groups.
 - Q21 no revocation cache is confirmed (auth Q79).
 - Revocation and suspend fail with 503 when immudb is down; no deferred append (auth R8).
 - Quarterly signed access review report (auth S3) and daily IdP drift report (auth T5) are administration features.
@@ -103,7 +110,7 @@ Docs and testing
 # Open Questions
 
 
-Status: spec is `needs-info`; the console exists in code (Settings, announcements, access requests, bootstrap, training API) but the respec adds receipts, audiences, editable bootstrap rules and service principals on top of it.
+Status: spec is `needs-info`; the console exists in code (Settings, announcements, access requests, bootstrap, training API) but the respec adds receipts, audiences and editable bootstrap rules on top of it (service principals removed).
 Biggest risks: strict-mode admin actions that can deadlock a compromise response, receipts that look like GxP evidence but prove little, bootstrap rules that only ever add access, and a directory dependency on Keycloak that production will not have.
 Every question carries an example, 2-4 options, a recommendation and the prior decision it challenges.
 

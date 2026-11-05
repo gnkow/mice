@@ -24,16 +24,16 @@ The recipient projection in PostgreSQL is authoritative; Novu is the delivery se
 9. As a user who lost access to a resource, I want its notifications to stop revealing details.
 10. As a workspace owner, I want lease contention (rate-limited), quota, failed commit and stuck-operation alerts.
 11. As a user, I want own-account security alerts (new device, session revoked by an admin); these cannot be disabled.
-12. As a reviewer, I want approval requests and reminders as the assigned reviewer, with no auto-escalation; any eligible maintainer may merge.
+12. As an approver, I want merge-request-for-approval notices for repositories where I hold the `approver` role, with no auto-escalation; one approver suffices. As an Owner or original signer, I want to be notified when a signature is revoked.
 13. As an admin, I want a delivery-health view, so that failing channels are visible.
 14. As a CLI user, I want `mice notifications`.
 
 ## Implementation Decisions
 
 - Postgres holds the authoritative recipient projection; Novu (MongoDB, Redis) is delivery only. The worker is multi-instance safe with durable replay from audit; dedupe relies on the Novu transaction id (see Conflicts and open risks).
-- Every catalog category is on by default; non-optional are own-account security events and approvals to the current approver.
+- Every catalog category is on by default; non-optional are own-account security events and approval notices to approvers.
 - Rate limiting for lease-contention events; thresholds set in implementation.
-- No escalation: the assigned reviewer is notified; on revoke, pending reviews are reassigned to namespace owners with notice and audit. Self-merge is forbidden.
+- No escalation: merge-request-for-approval notices go to users holding the `approver` role on the repo, with no deadlines and no fallback; a request stays unapproved until an approver exists. Revocation notifies the Owners and the original signer.
 - Optional channels (webhook, Slack, Teams) are later phases; web push deferred.
 - Stuck-job recipients and subscription ownership: Notifications owns job event types; whether a per-job subscription is a favorite/watch is unresolved (13 Q2/Q3).
 
@@ -51,6 +51,14 @@ Escalation design (decided: none), webhook channels, web push, per-user cost con
 "All on by default" with non-optional own-account security and approval notices (Q3); everything else may be disabled.
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+04 is authoritative; where older text below conflicts, it is superseded.
+- Recipients of merge-request-for-approval notices are users holding the `approver` role on the repo (replaces "assigned reviewer" and "any eligible maintainer may merge"). No auto-escalation, no deadlines, no fallback, no offboarded-reviewer handling. Supersedes Q3/Q4/Q5 and the "reassign pending reviews to namespace owners on revoke" rule; the self-merge rule is replaced by "signer must not have authored a commit in the merged range".
+- Revocation of a signature or commit QC notifies the Owners and the original signer.
+- Audit outage: mutations are refused, reads continue; no outbox, no held output. Notification projection from audit is unaffected by new behaviour here.
+- The "Status" risk about approval escalation and reviewer fallback is closed: no escalation exists. The mandatory-versus-preference rule remains open.
 
 ## Decisions from grilling
 

@@ -28,7 +28,7 @@ A lineage graph of file operations and job edges, written as a fail-closed inten
 - Under `GXP_STRICT` the lineage write is part of the intent/outcome flow and refuses the mutation on failure.
 - Gap detection compares oxen commits with explicit operations and intent records.
 - Retention: forever; nothing is hard-deleted. Superseded records are marked `superseded_by` and hidden by default, with an `as_of` view.
-- Corrections require a reason and an e-signed approval by a different Principal; the chain is shown.
+- Corrections require a reason, a change-control id (they change existing records) and approval by an `approver` who is not the correction's author; the chain is shown. A correction that lands on a validated branch goes through a merge request with a signed merge, like any write to it (04).
 - Shared version-ref types with jobs.
 
 ## Testing Decisions
@@ -45,6 +45,13 @@ Separate lineage retention. Lineage export is an NDJSON snapshot included in the
 Overlaps with audit; keep one writer path.
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+- Correction approval is by the `approver` role (not `maintain`/QA role), not the author of the correction; one approver suffices. Reason and change-control id required. Supersedes Q4 option (a) wording "maintain or QA role" and the "same mechanism as Merge+maintain".
+- Corrections never write directly to a validated branch; they go through a merge request and signed merge. Lineage corrections do not alter commit QC status (None / QC Marked / QC Passed / QC Failed is per commit, branch-invariant); lineage views should show the QC status of the commits involved and the UI warning for QC Failed commits.
+- Revocation (QC Failed) removes no lineage ops and does not propagate; gaps (Q19) stay a separate QA-signed record.
+- Q22 merge events: a signed merge's own commit keeps its own QC status.
 
 ## Decisions from grilling
 

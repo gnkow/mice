@@ -32,6 +32,7 @@ A Node-based `mice` CLI, version-pinned to the BFF, with conventional option pre
 - Option precedence: flag over env over config.
 - Help goes to stdout when requested.
 - Credentials are short-lived and session-scoped, stored in the OS keychain (inherited), bound to the issuing remote; environment-only tokens are used on shared PCs. No PATs, no service principals.
+- The CLI can open merge requests and prints a browser step-up link; it never signs, approves or revokes (signatures only through browser step-up, 04). Pushes or commits to a validated branch are rejected; the CLI pushes to a non-validated branch and opens a merge request. Automation cannot approve.
 - The CLI version equals the API contract version; `MICE_VERSION` semantics follow it.
 
 ## Testing Decisions
@@ -49,6 +50,12 @@ Binary distribution, CI or service-principal use, backward-compatibility window 
 Exact-match pinning plus signed releases requires a release process.
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+- Q18 is closed: signing happens only in the browser with step-up; the CLI opens merge requests and shows the step-up link; no CLI/device-flow signing, no PATs, no automated merges. Supersedes the "maintain user signs at merge" wording and Q18 options.
+- Validated branches (default branch always) reject CLI pushes and local-merge pushes (05 Q13); CLI work lands on a non-validated branch plus merge request.
+- Admin/audit step-up (Q17) is unchanged; approver role replaces `maintain` for signing.
 
 ## Decisions from grilling
 

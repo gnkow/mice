@@ -29,7 +29,7 @@ Explicitly authorised, streamed, audited and lineage-recorded transfer, with res
 
 - Chunk/import routes get explicit actions at repo `write`.
 - URL import is disabled (00 Q15). Before re-enabling, entry criteria (allowlist, redirect re-validation, caps, provenance) must be defined.
-- Imports land on a branch and merge; no direct writes on the default branch.
+- Imports land on a non-validated branch; the completing call (small-file direct commit, chunked upload, zip import, URL import) can never commit to a validated branch, including the default branch. Reaching it needs a merge request with a signed merge by an `approver` who is not an author in the range (04, 05). The CLI can open the merge request; signing is browser-only.
 - SHA-256 is authoritative; XXH3-128 stays oxen's identifier.
 - Export reads are audited (all reads are audited); the export is a separate action, default-included with Read, with size and rate alerts.
 - Quota uses Postgres reservation rows with a filesystem quota backstop; quota is stored bytes including history.
@@ -49,6 +49,12 @@ URL import (disabled), malware scanning (customer control; scanner hook is an ex
 Digest computation on large files costs CPU and time; stream it.
 
 Open grilling questions: see questions.md in this folder.
+
+## Alignment with 04 (2026-11-05)
+
+- Imports (06) are not signed; they land on a non-validated branch. The signature is the signed merge into a validated branch by an `approver` who is not an author in the range.
+- Superseded: Q1 "Merge+maintain gate" and "needs a merger other than the uploader (02 Q1)" (now: any approver not in the range's authors; one suffices; no two-mergers rule).
+- Q4 manifest-in-Outcome (digest) remains; the signed-merge manifest digest (04) is separate and binds the merge result.
 
 ## Decisions from grilling
 
@@ -89,7 +95,7 @@ Inherited (not restated): Q1, Q3, Q5, Q16, Q23, Q27.
 - Q18 carves incomplete transfers out of retain-forever; confirm with 03-audit retention. RISK.
 - Q21 reverses the old "exports not separately audited" line; the spec follows 00 Q4 (all reads audited).
 - Q4 defers BFF signing of manifests. DEFERRED.
-- Q1 requires imports through branch plus signed merge (05 Q11, 04); bulk import flows need a merger other than the uploader (02 Q1).
+- Q1 requires imports through branch plus signed merge (05, 04); one approver other than an author in the range suffices (no two-mergers rule).
 - Q25: per-push and clone manifests add load; derived data must be reconcilable via the Postgres outbox.
 
 ---
