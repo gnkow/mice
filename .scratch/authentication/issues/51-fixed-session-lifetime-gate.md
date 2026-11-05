@@ -6,7 +6,7 @@
 
 **Blocked by:** None
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## In code today
 
@@ -14,6 +14,8 @@ Defaults are 15 min / 8 h (`env.ts`), but startup only rejects zero or negative 
 
 ## Acceptance
 
-- [ ] Startup fails when idle > 900 s or absolute > 8 h
-- [ ] Tests cover each boundary
-- [ ] README states the real values
+- [x] Startup fails when idle > 900 s or absolute > 8 h
+- [x] Tests cover each boundary
+- [x] README states the real values
+
+An unset `SESSION_TTL_SEC` uses the 8 h default and passes.

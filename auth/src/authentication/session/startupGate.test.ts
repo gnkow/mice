@@ -62,6 +62,21 @@ describe('production startup gate', () => {
     assert.deepEqual(productionStartupProblems({ SESSION_IDLE_SEC: '900' }), [])
   })
 
+  it('refuses an idle timeout above 15 minutes', () => {
+    const p = productionStartupProblems({ SESSION_IDLE_SEC: '901' })
+    assert.equal(p.length, 1)
+    assert.match(p[0], /SESSION_IDLE_SEC.*900/)
+  })
+
+  it('accepts the absolute lifetime at 8 hours or unset, refuses above or non-positive', () => {
+    assert.deepEqual(productionStartupProblems({ SESSION_IDLE_SEC: '900', SESSION_TTL_SEC: '28800' }), [])
+    for (const SESSION_TTL_SEC of ['28801', '0', '-1', 'abc']) {
+      const p = productionStartupProblems({ SESSION_IDLE_SEC: '900', SESSION_TTL_SEC })
+      assert.equal(p.length, 1, SESSION_TTL_SEC)
+      assert.match(p[0], /SESSION_TTL_SEC/)
+    }
+  })
+
   it('rejects production without a bootstrap admin', () => {
     for (const AUTHZ_BOOTSTRAP_ADMINS of [undefined, '', ' , ']) {
       const p = productionStartupProblems({ ...good, AUTHZ_BOOTSTRAP_ADMINS })

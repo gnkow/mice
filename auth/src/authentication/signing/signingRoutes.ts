@@ -7,9 +7,8 @@ import {
   type SignatureMeaning,
   type SessionInfo,
 } from './signingCeremony.js'
-import { extractMfaEvidence } from './mfaEvidence.js'
-import { decodeJwtPayload } from '../oidc/oidcClaims.js'
-import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.js'
+import { verifySigningEvidence } from './signingEvidence.js'
+import { verifyIdpJwt } from '../oidc/oidc.js'
 import { isSigningBlockedByDrift } from '../compliance/idpDriftDetection.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
@@ -181,35 +180,17 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
 
     try {
       // Ticket 26: Extract MFA evidence AND verification metadata from id_token
-      let mfaVerified = false
-      let mfaEvidenceData = undefined
-      let verificationMetadataData = undefined
-      
-      if (stepUp.user.idToken) {
-        try {
-          const payload = decodeJwtPayload(stepUp.user.idToken)
-          const mfaEvidence = extractMfaEvidence(payload)
-          mfaVerified = mfaEvidence.hasMfa
-          
-          // Store MFA evidence for signature record (Ticket 26)
-          if (mfaEvidence.hasMfa) {
-            mfaEvidenceData = {
-              acr: mfaEvidence.acr,
-              amr: mfaEvidence.amr,
-              auth_time: stepUp.user.authTime,
-            }
-          }
-          
-          // Extract verification metadata (Ticket 26, U19)
-          verificationMetadataData = extractVerificationMetadata(stepUp.user.idToken)
-        } catch (err) {
-          // If we can't decode or extract MFA, treat as no MFA
-          console.warn('[signing] Failed to extract MFA evidence from id_token:', err)
-        }
-      }
+      // Ticket 52: the step-up token is re-verified now; missing or stale claims refuse.
+      const evidence = stepUp.user.idToken
+        ? await verifySigningEvidence(stepUp.user.idToken, {
+            verifyJwt: verifyIdpJwt,
+            nowSec: Math.floor(Date.now() / 1000),
+            maxAgeSec: SIGNING_FRESHNESS_SEC,
+          })
+        : ({ ok: false, reason: 'unverifiable', detail: 'no id_token in session' } as const)
 
-      // Refuse signing without MFA evidence (Part 11 §11.200 requirement)
-      if (!mfaVerified) {
+      // Refuse signing without verified MFA evidence (Part 11 §11.200 requirement)
+      if (!evidence.ok) {
         await audit.append({
           actor: { iss: user.iss, sub: user.sub },
           via: 'session',
@@ -217,13 +198,17 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           path: c.req.path,
           status: 403,
           action: 'signature.mfa_required',
-          message: 'Electronic signature requires MFA evidence',
+          message: 'Electronic signature requires verified MFA evidence',
+          detail: { reason: evidence.reason, ...(evidence.detail ? { error: evidence.detail } : {}) },
         })
-        return c.json({ error: 'MFA required for electronic signature' }, 403)
+        return c.json({ error: 'MFA required for electronic signature', reason: evidence.reason }, 403)
       }
+      const mfaVerified = true
+      const mfaEvidenceData = evidence.mfaEvidence
+      const verificationMetadataData = evidence.verificationMetadata
 
       const session: SessionInfo = {
-        authenticatedAt: (stepUp.user.authTime ?? 0) * 1000, // Convert to ms
+        authenticatedAt: (mfaEvidenceData.auth_time ?? 0) * 1000, // Convert to ms
         mfaVerified,
         principal: {
           iss: user.iss,

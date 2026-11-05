@@ -51,6 +51,10 @@ export interface VerificationMetadata {
   token_verified_at: number
   /** IdP issuer (iss claim) */
   idp_issuer: string
+  /** IdP session id (`sid` claim), when asserted */
+  idp_session_id?: string
+  /** ID token id (`jti` claim), when asserted */
+  token_id?: string
 }
 
 export interface SignatureRecord {

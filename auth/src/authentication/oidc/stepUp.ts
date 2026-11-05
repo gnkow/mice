@@ -90,9 +90,10 @@ export async function handleReauthCallback(c: Context, result: LoginResult): Pro
   if (!current || current.sub !== result.user.sub || current.iss !== result.user.iss) {
     return c.html('<p>Re-authentication does not match your signed-in account.</p>', 400)
   }
-  // Keep the original absolute-expiry anchor; only the authentication time is refreshed.
+  // Keep the original absolute-expiry anchor; only the authentication time and its ID token are refreshed.
   await setSessionCookie(c, {
     ...current,
+    idToken: result.user.idToken,
     ...(result.user.authTime !== undefined ? { authTime: result.user.authTime } : {}),
     lastActive: nowSec(),
   })

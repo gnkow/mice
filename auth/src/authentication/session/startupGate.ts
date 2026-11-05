@@ -25,13 +25,25 @@ function oxenUpstreamProblem(raw: string): string | null {
   return `OXEN_UPSTREAM "${raw}" must be an internal address (oxen-server has no auth of its own)`
 }
 
+const MAX_IDLE_SEC = 900
+const MAX_ABSOLUTE_SEC = 8 * 60 * 60
+
 /** Returns the reasons the deployment must not start (production hardening, GxP-strict). */
 export function productionStartupProblems(
   e: Record<string, string | undefined>,
 ): string[] {
   const problems: string[] = []
-  if (!(Number(e.SESSION_IDLE_SEC ?? 0) > 0)) {
+  const idle = Number(e.SESSION_IDLE_SEC ?? 0)
+  if (!(idle > 0)) {
     problems.push('SESSION_IDLE_SEC must be greater than 0 (idle timeout is off)')
+  } else if (idle > MAX_IDLE_SEC) {
+    problems.push(`SESSION_IDLE_SEC must be at most ${MAX_IDLE_SEC} (15 minutes)`)
+  }
+  if (e.SESSION_TTL_SEC !== undefined) {
+    const ttl = Number(e.SESSION_TTL_SEC)
+    if (!(ttl > 0 && ttl <= MAX_ABSOLUTE_SEC)) {
+      problems.push(`SESSION_TTL_SEC must be between 1 and ${MAX_ABSOLUTE_SEC} (8 hours)`)
+    }
   }
   if (e.NODE_ENV !== 'production') return problems
   if (!e.SESSION_SECRET || e.SESSION_SECRET === DEV_SESSION_SECRET) {

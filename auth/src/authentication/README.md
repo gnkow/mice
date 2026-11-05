@@ -10,7 +10,7 @@ Mice authentication follows a **device-flow-only** approach per the authenticati
 
 ### 1. Web Browser (SSO)
 - **Method:** OpenID Connect (OIDC) flow
-- **Lifetime:** 8 hours absolute, 30 minutes idle timeout
+- **Lifetime:** 8 hours absolute, 15 minutes idle timeout (the instance refuses to start with looser values)
 - **Storage:** Server-side session with HTTP-only cookie
 - **Use case:** Human users in web browsers
 
