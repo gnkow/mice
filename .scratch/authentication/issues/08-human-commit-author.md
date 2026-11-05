@@ -6,7 +6,7 @@ Status: done
 
 **Blocked by:** none
 
-Job id and token hash on a job commit are `.scratch/jobs/issues/01-job-commit-attribution.md`. Job token lifetime and the commit hold are `.scratch/jobs/issues/02-job-token-lifetime-and-commit-hold.md`. Showing a newer email in commit views is issue 49.
+Job id and token hash on a job commit are `.scratch/jobs/issues/01-job-commit-attribution.md`. Job token lifetime and the commit refusal are `.scratch/jobs/issues/02-job-token-lifetime-and-commit-refusal.md`. Showing a newer email in commit views is issue 49.
 
 ## Outcome
 

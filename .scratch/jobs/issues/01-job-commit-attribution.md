@@ -6,7 +6,7 @@ Status: ready-for-agent
 
 **Blocked by:** none
 
-Moved from `.scratch/authentication/issues/21-job-commit-attribution-trailer.md`. The submitter's `author` and `email` follow authentication issue 08. Binding the job token to the job's maximum runtime, and holding the commit when the IdP is down, is issue 02.
+Moved from `.scratch/authentication/issues/21-job-commit-attribution-trailer.md`. The submitter's `author` and `email` follow authentication issue 08. Binding the job token to the job's maximum runtime, and refusing the commit when the IdP is down, is issue 02.
 
 ## What to build
 

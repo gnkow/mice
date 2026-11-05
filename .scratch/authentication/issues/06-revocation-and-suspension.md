@@ -4,7 +4,7 @@ Status: done
 
 **Spec:** `.specs/01-authentication.md` (stories 6, 11, and 12, Q39, R8, Q65)
 
-Mice-only suspension flags that keep grants are issue 28. Job commit blocking after revoke is `.scratch/jobs/issues/02-job-token-lifetime-and-commit-hold.md`.
+Mice-only suspension flags that keep grants are issue 28. Job commit blocking after revoke is `.scratch/jobs/issues/02-job-token-lifetime-and-commit-refusal.md`.
 
 ## Outcome
 

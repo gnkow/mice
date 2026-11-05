@@ -6,7 +6,7 @@ Status: done
 
 **Blocked by:** none
 
-Jobs use the BFF-internal token in `.scratch/jobs/issues/02-job-token-lifetime-and-commit-hold.md`. They are not service principals.
+Jobs use the BFF-internal token in `.scratch/jobs/issues/02-job-token-lifetime-and-commit-refusal.md`. They are not service principals.
 
 ## What to build
 

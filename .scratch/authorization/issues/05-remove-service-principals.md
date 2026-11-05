@@ -1,6 +1,6 @@
 # 05: Remove Service Principals
 
-**What to build:** Remove service principal functionality completely. Service principal creation, management, and authentication no longer exist. Job tokens tied to the submitting user are `.scratch/jobs/issues/01-job-commit-attribution.md` and `.scratch/jobs/issues/02-job-token-lifetime-and-commit-hold.md`.
+**What to build:** Remove service principal functionality completely. Service principal creation, management, and authentication no longer exist. Job tokens tied to the submitting user are `.scratch/jobs/issues/01-job-commit-attribution.md` and `.scratch/jobs/issues/02-job-token-lifetime-and-commit-refusal.md`.
 
 **Blocked by:** None (can start immediately)
 
