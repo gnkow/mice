@@ -14,6 +14,11 @@
 
 ## Acceptance
 
-- [ ] Startup fails with a clear message if the IdP metadata/baseline lacks `acr`, `amr` or `auth_time` support
-- [ ] The baseline and drift report include `auth_time`
-- [ ] Test IdP harness covers an IdP missing each capability
+- [x] Startup fails with a clear message if the IdP discovery metadata lacks `acr`, `amr` or `auth_time` support (production only; `session/idpAssuranceGate.ts`, called from `boot.ts`)
+- [x] The baseline check requires `auth_time` (`authTimeAsserted`)
+- [ ] The drift report includes `auth_time` (`mfaClaimsAvailable` in `idpDriftDetection.ts` still tracks only `acr`/`amr`)
+- [x] Unit tests cover an IdP missing each capability (a harness IdP integration test is not written)
+
+## Notes
+
+The gate reads `claims_supported` from discovery. Keycloak 26 may not advertise `amr` there, so verify against the shipped IdP before relying on it in a real deployment.

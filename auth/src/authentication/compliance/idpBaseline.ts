@@ -9,6 +9,7 @@ import type { PrincipalId } from '../session/principal.js'
 
 export interface IdpBaselineRequirements {
   mfaEnabled: boolean
+  authTimeAsserted: boolean
   accountLockoutConfigured: boolean
   passwordPolicyConfigured: boolean
 }
@@ -65,6 +66,10 @@ export function checkIdpBaseline(requirements: IdpBaselineRequirements): IdpBase
     errors.push('MFA must be enabled on IdP')
   }
   
+  if (!requirements.authTimeAsserted) {
+    errors.push('IdP must assert auth_time')
+  }
+
   if (!requirements.accountLockoutConfigured) {
     errors.push('Account lockout policy must be configured')
   }

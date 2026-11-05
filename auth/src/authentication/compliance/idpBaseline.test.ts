@@ -24,6 +24,7 @@ describe('IdP Baseline Check', () => {
   it('checks MFA is enabled on IdP', () => {
     const requirements: IdpBaselineRequirements = {
       mfaEnabled: true,
+      authTimeAsserted: true,
       accountLockoutConfigured: true,
       passwordPolicyConfigured: true,
     }
@@ -35,6 +36,7 @@ describe('IdP Baseline Check', () => {
   it('checks account lockout policy configured', () => {
     const requirements: IdpBaselineRequirements = {
       mfaEnabled: true,
+      authTimeAsserted: true,
       accountLockoutConfigured: true,
       passwordPolicyConfigured: true,
     }
@@ -45,6 +47,7 @@ describe('IdP Baseline Check', () => {
   it('checks password policy meets requirements', () => {
     const requirements: IdpBaselineRequirements = {
       mfaEnabled: true,
+      authTimeAsserted: true,
       accountLockoutConfigured: true,
       passwordPolicyConfigured: true,
     }
@@ -55,12 +58,26 @@ describe('IdP Baseline Check', () => {
   it('fails baseline if MFA not enabled', () => {
     const requirements: IdpBaselineRequirements = {
       mfaEnabled: false,
+      authTimeAsserted: true,
       accountLockoutConfigured: true,
       passwordPolicyConfigured: true,
     }
     const result = checkIdpBaseline(requirements)
     assert.equal(result.passed, false)
     assert.ok(result.errors.some(e => e.includes('MFA')))
+  })
+})
+
+describe('IdP Baseline auth_time', () => {
+  it('fails baseline if auth_time is not asserted', () => {
+    const result = checkIdpBaseline({
+      mfaEnabled: true,
+      authTimeAsserted: false,
+      accountLockoutConfigured: true,
+      passwordPolicyConfigured: true,
+    })
+    assert.equal(result.passed, false)
+    assert.ok(result.errors.some((e) => e.includes('auth_time')))
   })
 })
 

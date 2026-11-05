@@ -722,7 +722,7 @@ export const idpBaselineChecks = pgTable(
     /** Whether IdP provides MFA evidence (acr/amr claims) */
     mfaAvailable: boolean('mfa_available').notNull(),
     /** Claims found in test id_token (acr, amr values) */
-    claimsFound: jsonb('claims_found').$type<{ acr?: string; amr: string[] }>(),
+    claimsFound: jsonb('claims_found').$type<{ acr?: string; amr: string[]; authTime?: number }>(),
     /** Error message if check failed */
     error: text('error'),
   },
