@@ -1,6 +1,7 @@
 import { can, type SessionUser } from './authentication/index.js'
 import { ALL_INSTANCE_PERMISSIONS, parseUserKey, userKey, type InstancePermission, type UserKey } from './authzTypes.js'
 import * as repo from './authzRepository.js'
+import { assignRole, getUserRole, listAdminPrincipals } from './rbacStore.js'
 import { matchesBootstrap } from './authzRepository.js'
 
 type Result = { ok: true } | { ok: false; error: string }
@@ -12,17 +13,17 @@ function toExpiryDate(expiresAt: Date | number): Date {
   return expiresAt instanceof Date ? expiresAt : new Date(expiresAt)
 }
 
+/** Instance admin is the Admin role; there is no separate flag. */
 export async function isInstanceAdmin(user: UserKey): Promise<boolean> {
   if (!can(user, 'canBeAdmin')) return false
-  return repo.isAdminKey(userKey(user))
+  return (await getUserRole(user)) === 'admin'
 }
 
 export async function listInstanceAdmins(): Promise<UserKey[]> {
-  return (await repo.listAdminKeys()).map(parseUserKey)
+  return listAdminPrincipals()
 }
 
 export async function instancePermissions(user: UserKey, now = Date.now()): Promise<InstancePermission[]> {
-  if (await isInstanceAdmin(user)) return [...ALL_INSTANCE_PERMISSIONS]
   return repo.instancePermissionsOf(userKey(user), now)
 }
 
@@ -35,32 +36,14 @@ export async function hasInstancePermission(
 }
 
 /**
- * Grants instance admin to a Principal on the `AUTHZ_BOOTSTRAP_ADMINS` list.
- * Later allowlisted Principals are granted too, so an existing admin does not
- * block the rest of the list.
+ * Gives the Admin role to a Principal on the `AUTHZ_BOOTSTRAP_ADMINS` list.
+ * Every allowlisted Principal is granted, so an existing admin does not block the rest of the list.
  */
 export async function maybeBootstrapInstanceAdmin(user: SessionUser): Promise<boolean> {
   if (!matchesBootstrap(user)) return false
-  const key = userKey(user)
-  if (await repo.isAdminKey(key)) return true
-  const first = await repo.bootstrapFirstAdmin(key)
-  if (first) return true
-  await repo.addAdminKey(key)
+  if ((await getUserRole(user)) === 'admin') return true
+  await assignRole({ actor: null, target: user, role: 'admin', reason: 'bootstrap', bootstrap: true })
   return true
-}
-
-export async function addInstanceAdmin(actor: UserKey, target: UserKey): Promise<Result> {
-  if (!(await isInstanceAdmin(actor))) return { ok: false, error: 'Forbidden' }
-  if (!can(target, 'canBeAdmin')) return { ok: false, error: 'Forbidden' }
-  await repo.addAdminKey(userKey(target))
-  return { ok: true }
-}
-
-export async function removeInstanceAdmin(actor: UserKey, target: UserKey): Promise<Result> {
-  if (!(await isInstanceAdmin(actor))) return { ok: false, error: 'Forbidden' }
-  const key = userKey(target)
-  if (!(await repo.removeAdminKey(key))) return { ok: false, error: 'At least two instance admins must remain' }
-  return { ok: true }
 }
 
 /**

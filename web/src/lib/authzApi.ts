@@ -552,23 +552,9 @@ export function fetchInstance(signal?: AbortSignal) {
   }>('/auth/instance', { signal })
 }
 
-export function addInstanceAdmin(target: { sub: string; iss: string }) {
-  return authzFetch('/auth/instance/admins', {
-    method: 'POST',
-    body: JSON.stringify(target),
-  })
-}
-
 export function revokeUserSessions(target: { sub: string; iss: string }) {
   return authzFetch('/auth/instance/revoke-sessions', {
     method: 'POST',
-    body: JSON.stringify(target),
-  })
-}
-
-export function removeInstanceAdmin(target: { sub: string; iss: string }) {
-  return authzFetch('/auth/instance/admins', {
-    method: 'DELETE',
     body: JSON.stringify(target),
   })
 }

@@ -248,15 +248,6 @@ export function buildRequest(group, argv, ctx = () => ({})) {
 
     case 'instance': {
       if (!sub || sub === 'show') return { method: 'GET', path: '/auth/instance' }
-      if (sub === 'admin') {
-        const act = args[0]
-        if (act === 'add') {
-          return { method: 'POST', path: '/auth/instance/admins', body: userOnly(flags) }
-        }
-        if (act === 'remove') {
-          return { method: 'DELETE', path: '/auth/instance/admins', body: userOnly(flags) }
-        }
-      }
       if (sub === 'permissions' && args[0] === 'set') {
         return {
           method: 'PUT',

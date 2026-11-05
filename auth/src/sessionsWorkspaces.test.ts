@@ -43,7 +43,6 @@ const admin: { sub: string; iss: string; email: string; emailVerified?: boolean;
 const reader = { sub: 'reader', iss: 'test', email: 'reader@example.com', name: 'Reader' }
 /** User role: can connect to own sessions but not session.admin (unlike Manager). */
 const other = { sub: 'other', iss: 'test', email: 'other@example.com', name: 'Other' }
-await preparePrincipal(admin)
 await assignRole({ actor: null, target: admin, role: 'manager', reason: 'test', bootstrap: true })
 await ensurePrincipal(reader)
 await assignRole({ actor: null, target: reader, role: 'manager', reason: 'test', bootstrap: true })

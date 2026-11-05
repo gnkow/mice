@@ -30,7 +30,7 @@ const {
   preparePrincipal,
 } = await import('./authz.js')
 const { isCustomRepoRoleAssigned, removeRepoCollaborator, setRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
-const { addInstanceAdmin, hasInstancePermission, isInstanceAdmin, setInstancePermissions, removeInstanceAdmin, listInstanceAdmins, setTrainingCompletedSelf, hasCompletedTraining, writeInstancePermissions } = await import('./authzInstanceStore.js')
+const { hasInstancePermission, isInstanceAdmin, setInstancePermissions, setTrainingCompletedSelf, hasCompletedTraining, writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { hasNamespaceCapability, isCustomNamespaceRoleAssigned, setNamespaceMember, setNamespaceGroupMember, removeNamespaceMember, removeNamespaceGroupMember, listNamespaceMembers } = await import('./authzMembershipStore.js')
 const { createNamespaceAuthz, deleteNamespaceAuthz, updateNamespaceSettings, getNamespace } = await import('./authzNamespaceStore.js')
 const {
@@ -189,44 +189,8 @@ await describe('TC-AUTHO matrix', async () => {
     assert.equal(r.ok, false)
   })
 
-  await it('cannot remove an instance admin while only two remain', async () => {
-    const second = mkUser('floor-two')
-    const third = mkUser('floor-three')
-    assert.equal((await addInstanceAdmin(admin, second)).ok, true)
-    assert.equal((await addInstanceAdmin(admin, third)).ok, true)
-    for (const a of await listInstanceAdmins()) {
-      if (a.sub !== admin.sub && a.sub !== second.sub) await removeInstanceAdmin(admin, a)
-    }
-    assert.equal((await listInstanceAdmins()).length, 2)
-    const refused = await removeInstanceAdmin(admin, second)
-    assert.equal(refused.ok, false)
-    if (refused.ok) return
-    assert.equal(refused.error, 'At least two instance admins must remain')
-    assert.equal((await listInstanceAdmins()).length, 2)
-  })
 
-  await it('removes an instance admin while three remain', async () => {
-    const second = mkUser('floor-two')
-    const third = mkUser('floor-three')
-    assert.equal((await addInstanceAdmin(admin, second)).ok, true)
-    assert.equal((await addInstanceAdmin(admin, third)).ok, true)
-    const removed = await removeInstanceAdmin(admin, third)
-    assert.equal(removed.ok, true)
-    const left = await listInstanceAdmins()
-    assert.equal(left.some((a) => a.sub === 'floor-three'), false)
-    assert.ok(left.length >= 2)
-  })
 
-  await it('TC-AUTHO-10: cannot remove last instance admin', async () => {
-    const admins = await listInstanceAdmins()
-    assert.ok(admins.length >= 1)
-    // Ensure only one admin then try remove
-    for (const a of admins) {
-      if (a.sub !== admin.sub) await removeInstanceAdmin(admin, a)
-    }
-    const r = await removeInstanceAdmin(admin, admin)
-    assert.equal(r.ok, false)
-  })
 
   await it('TC-AUTHO-11: site admin no longer bypasses repo ACL without membership', async () => {
     const ns = 'tc11'
@@ -237,7 +201,6 @@ await describe('TC-AUTHO matrix', async () => {
       email: 'admin2@mice.local',
       name: 'Admin2',
     }
-    await addInstanceAdmin(admin, admin2)
     await withFormalRole(admin2, 'admin')
     const d = await authorizeApiRequest({
       user: admin2,
@@ -667,13 +630,6 @@ await describe('enforcement gates', async () => {
     assert.equal(await hasInstancePermission(target, 'view_audit'), true)
   })
 
-  await it('addInstanceAdmin rejects non-admin actor', async () => {
-    const actor = mkUser('not-admin-add')
-    const target = mkUser('would-be-admin')
-    const r = await addInstanceAdmin(actor, target)
-    assert.equal(r.ok, false)
-    assert.equal(await isInstanceAdmin(target), false)
-  })
 })
 
 await describe('access requests', async () => {
@@ -1154,7 +1110,6 @@ await describe('repo / namespace API decisions', async () => {
     const ns = 'tc-list-bypass'
     await createNamespaceAuthz(admin, ns, 'none', true)
     const admin2 = mkUser('list-admin2')
-    await addInstanceAdmin(admin, admin2)
     await withFormalRole(admin2, 'admin')
     // remove any accidental membership — admin2 has none
     const d = await authorizeApiRequest({

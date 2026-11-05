@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { Hono } from 'hono'
-import { addInstanceAdmin, listInstanceAdmins, listInstancePermissionGrants, removeInstanceAdmin, setInstancePermissions } from './authzInstanceStore.js'
+import { listInstanceAdmins, listInstancePermissionGrants, setInstancePermissions } from './authzInstanceStore.js'
 import { matchesBootstrap } from './authzRepository.js'
 import type { InstancePermission } from './authzTypes.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
@@ -50,52 +50,6 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
         permissions: await listInstancePermissionGrants(),
       }),
     ),
-  )
-
-  app.post(
-    '/auth/instance/admins',
-    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, async ({ c, user, body }) => {
-      const t = target(body)
-      const result = await addInstanceAdmin(user, t)
-      if (!result.ok) {
-        await audit(c, user, 'session', {
-          action: 'instance.admin.add',
-          status: 403,
-          message: `Add instance admin denied: ${result.error}`,
-          detail: { target: t },
-        })
-        return c.json({ error: result.error }, 403)
-      }
-      await audit(c, user, 'session', {
-        action: 'instance.admin.add',
-        message: `Added instance admin ${t.sub}`,
-        detail: { target: t },
-      })
-      return c.json({ ok: true })
-    }),
-  )
-
-  app.delete(
-    '/auth/instance/admins',
-    guarded({ mutates: true, reason: true, body: { required: ['sub', 'iss'] } }, async ({ c, user, body }) => {
-      const t = target(body)
-      const result = await removeInstanceAdmin(user, t)
-      if (!result.ok) {
-        await audit(c, user, 'session', {
-          action: 'instance.admin.remove',
-          status: 400,
-          message: `Remove instance admin failed: ${result.error}`,
-          detail: { target: t },
-        })
-        return c.json({ error: result.error }, 400)
-      }
-      await audit(c, user, 'session', {
-        action: 'instance.admin.remove',
-        message: `Removed instance admin ${t.sub}`,
-        detail: { target: t },
-      })
-      return c.json({ ok: true })
-    }),
   )
 
   app.put(

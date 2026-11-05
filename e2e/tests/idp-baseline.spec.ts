@@ -3,7 +3,7 @@ import { mintSession } from '../helpers/session'
 
 test.describe('IdP MFA Baseline (Admin)', () => {
   test('admin can view and trigger IdP baseline check', async ({ page }) => {
-    await mintSession(page, { role: 'admin' })
+    await mintSession(page, { sub: 'e2e-admin', role: 'admin' })
     // Navigate to Settings
     await page.goto('/')
     await openAccountMenu(page)
@@ -42,7 +42,7 @@ test.describe('IdP MFA Baseline (Admin)', () => {
   })
 
   test('baseline status shows MFA availability', async ({ page }) => {
-    await mintSession(page, { role: 'admin' })
+    await mintSession(page, { sub: 'e2e-admin', role: 'admin' })
     await page.goto('/')
     await openAccountMenu(page)
     await page

@@ -145,10 +145,10 @@ describe('intent-first proxied mutations', () => {
 
 describe('intent-first native mutations', () => {
   const addAdmin = async (user = admin) =>
-    app.request('/auth/instance/admins', {
-      method: 'POST',
+    app.request('/auth/instance/permissions', {
+      method: 'PUT',
       headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
-      body: JSON.stringify({ sub: 'new-admin', iss: 'test' }),
+      body: JSON.stringify({ sub: 'new-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }),
     })
 
   it('writes intent then outcome around the change', async () => {
@@ -158,7 +158,7 @@ describe('intent-first native mutations', () => {
     assert.equal(rest.length, 0)
     assert.equal(intent!.phase, 'intent')
     assert.equal(outcome!.phase, 'outcome')
-    assert.equal(outcome!.action, 'instance.admin.add')
+    assert.equal(outcome!.action, 'instance.permissions.update')
     assert.equal(outcome!.intent_id, intent!.id)
   })
 
@@ -166,10 +166,10 @@ describe('intent-first native mutations', () => {
     const headers = await iso.sessionHeaders(admin)
     const restore = breakAuditStore()
     try {
-      const res = await app.request('/auth/instance/admins', {
-        method: 'POST',
+      const res = await app.request('/auth/instance/permissions', {
+        method: 'PUT',
         headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
-        body: JSON.stringify({ sub: 'blocked-admin', iss: 'test' }),
+        body: JSON.stringify({ sub: 'blocked-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }),
       })
       assert.equal(res.status, 503)
     } finally {

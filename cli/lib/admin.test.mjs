@@ -38,12 +38,7 @@ describe('buildRequest', () => {
     assert.throws(() => buildRequest('collaborator', ['remove', 'a/b', '--sub', 's']), /--iss/)
   })
 
-  it('instance admin and permissions', () => {
-    assert.deepEqual(buildRequest('instance', ['admin', 'remove', '--sub', 's', '--iss', 'i']), {
-      method: 'DELETE',
-      path: '/auth/instance/admins',
-      body: { sub: 's', iss: 'i' },
-    })
+  it('instance permissions', () => {
     assert.deepEqual(
       buildRequest('instance', ['permissions', 'set', '--sub', 's', '--iss', 'i', '--permissions', 'view_audit,view_lineage']).body.permissions,
       ['view_audit', 'view_lineage'],

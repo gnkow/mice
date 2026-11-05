@@ -7,7 +7,7 @@ import { hasCompletedTraining, isInstanceAdmin, maybeBootstrapInstanceAdmin } fr
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
 import { ownedNamespaces, userCanSeeNamespace } from './authzVisibility.js'
-import { assignRole, getUserRole, hasPermission, listRbacUsers } from './rbacStore.js'
+import { getUserRole, hasPermission, listRbacUsers } from './rbacStore.js'
 import type { InstancePermission as RbacPermission } from './rbacCatalog.js'
 import {
   maxRepoRole,
@@ -68,16 +68,7 @@ function deny(reason: string, extra?: Partial<AuthzDecision>): AuthzDecision {
  * Writes state, so it runs once at authentication and login; authorization decisions are read-only.
  */
 export async function preparePrincipal(user: SessionUser): Promise<void> {
-  const bootstrapped = await maybeBootstrapInstanceAdmin(user)
-  if (!bootstrapped) return
-  if ((await getUserRole(user)) === 'admin') return
-  await assignRole({
-    actor: null,
-    target: user,
-    role: 'admin',
-    reason: 'bootstrap',
-    bootstrap: true,
-  })
+  await maybeBootstrapInstanceAdmin(user)
 }
 
 export async function canSkipPendingGate(user: SessionUser): Promise<boolean> {

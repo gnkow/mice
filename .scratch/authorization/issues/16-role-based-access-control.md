@@ -85,7 +85,7 @@ Implement a role-based access control (RBAC) system with 5 formal roles (Externa
 - [x] `getEffectivePermissions(user)` merges role permissions + custom permissions
 - [x] `hasPermission(user, permission)` checks effective permissions
 - [x] Approval authority is validated by `canApproveRole`, `canGrantPermissions` and `canApproveModifiedGrant` (`rbacAuthority.ts`)
-- [ ] All API endpoints updated to check new permission model (blocked by the legacy boolean instance-admin flag, see `20-remove-boolean-instance-admin.md`)
+- [x] All API endpoints updated to check new permission model (legacy boolean admin removed in `20-remove-boolean-instance-admin.md`)
 - [x] Auditor bypass ACL implemented in repository read checks
 - [x] Admin cannot read data/audits (no site-admin bypass)
 
@@ -291,7 +291,7 @@ async function authorizeRepoRead(user: Principal, repoId: string): Promise<boole
 
 ## Status
 
-Done. Seams S01–S36 complete. One acceptance item is open and tracked in `20-remove-boolean-instance-admin.md`.
+Done. Seams S01–S36 complete. The last acceptance item was closed by `20-remove-boolean-instance-admin.md`.
 
 ## Comments
 

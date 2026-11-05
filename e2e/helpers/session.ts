@@ -11,10 +11,9 @@ export type TestIdentity = {
   groups?: string[]
   /**
    * Formal RBAC role. Defaults to manager (namespace:create + data access).
-   * Pair with instanceAdmin for suite cleanup of /auth/instance.
+   * Suite cleanup of /auth/instance uses the admin role.
    */
   role?: 'none' | 'external' | 'user' | 'manager' | 'auditor' | 'admin'
-  instanceAdmin?: boolean
   /** Session carries MFA evidence (required for the Auditor role). */
   mfa?: boolean
 }
@@ -46,8 +45,6 @@ export async function mintSessionCookie(
     sub: identity.sub ?? 'e2e-user',
     iss: identity.iss ?? 'mice-e2e',
     role: identity.role ?? 'manager',
-    // Suite cleanup needs /auth/instance; Manager alone is not enough.
-    instanceAdmin: identity.instanceAdmin ?? (identity.role == null || identity.role === 'manager'),
     ...(groups?.length ? { groups } : {}),
   }
   const res = await fetch(`${AUTH_URL}/auth/dev/session`, {
@@ -61,7 +58,6 @@ export async function mintSessionCookie(
       emailVerified: true,
       ...(identity.mfa ? { mfa: true } : {}),
       role: user.role,
-      ...(user.instanceAdmin !== undefined ? { instanceAdmin: user.instanceAdmin } : {}),
       ...(user.groups?.length ? { groups: user.groups } : {}),
     }),
   })

@@ -20,8 +20,8 @@ describe('isScopedCredential', () => {
 })
 
 const { getDb } = await import('../../db/database.js')
-const { instanceAdmins } = await import('../../db/schema.js')
-const reset = async () => { await getDb().delete(instanceAdmins) }
+const { principalRoles } = await import('../../db/schema.js')
+const reset = async () => { await getDb().delete(principalRoles) }
 
 describe('bootstrap identity matching', () => {
   it('matches iss+sub and distinguishes issuers sharing a sub', () => {

@@ -4,7 +4,6 @@ import { describe, it } from 'node:test'
 import { ensurePrincipal } from './authentication/session/session.js'
 import { authorizeApiRequest, authorizeAuditQuery, decideInstanceAction } from './authz.js'
 import { createNamespaceAuthz } from './authzNamespaceStore.js'
-import { addInstanceAdmin } from './authzInstanceStore.js'
 import { assignRole } from './rbacStore.js'
 
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'seed-admin@mice.local'
@@ -55,7 +54,6 @@ describe('RBAC S25 Admin separation of duties', () => {
   it('does not let boolean instance-admin bypass repository ACLs', async () => {
     const admin2 = person('sod-bool-admin')
     await ensurePrincipal(admin2)
-    await addInstanceAdmin(seed, admin2)
     await assignRole({ actor: null, target: admin2, role: 'admin', reason: 'boot', bootstrap: true })
     assert.equal((await createNamespaceAuthz(seed, 'sod-ns2', 'none', true)).ok, true)
     const d = await authorizeApiRequest({

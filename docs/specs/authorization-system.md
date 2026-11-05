@@ -232,8 +232,6 @@ Examples:
 | `instance:settings:read` | View instance settings | GET `/auth/instance` |
 | `instance:settings:update` | Update instance settings | PATCH `/auth/instance` |
 | `instance:admins:list` | List instance admins | GET `/auth/instance` (admins field) |
-| `instance:admins:add` | Add instance admin | POST `/auth/instance/admins` |
-| `instance:admins:remove` | Remove instance admin | DELETE `/auth/instance/admins` |
 | `instance:permissions:list` | List permission grants | GET `/auth/instance` (permissions field) |
 | `instance:permissions:grant` | Grant instance permissions | PUT `/auth/instance/permissions` |
 | `instance:permissions:revoke` | Revoke instance permissions | DELETE `/auth/instance/permissions` |

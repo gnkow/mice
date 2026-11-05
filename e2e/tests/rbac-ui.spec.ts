@@ -30,7 +30,6 @@ test.describe('RBAC web UI (#16)', () => {
   test('TC-RBAC-E2: Profile shows the role badge, the permission checklist and a pending upgrade request', async ({ page }) => {
     await mintSession(page, {
       role: 'user',
-      instanceAdmin: false,
       sub: uniqueId('profile'),
       iss: 'mice-e2e',
       name: 'Profile User',
@@ -62,7 +61,6 @@ test.describe('RBAC web UI (#16)', () => {
     })
     await mintSession(page, {
       role: 'manager',
-      instanceAdmin: false,
       sub: uniqueId('grantor'),
       iss: 'mice-e2e',
       name: 'Grantor Manager',

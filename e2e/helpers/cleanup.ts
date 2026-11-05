@@ -6,20 +6,12 @@ const REASON = 'e2e: automated cleanup'
 
 export type Snapshot = {
   namespaces: Set<string>
-  admins: Map<string, { sub: string; iss: string }>
   tokens: Set<string>
 }
 
-/** An instance-admin API context for the default suite identity. */
+/** An API context for the default suite identity (admins cannot see or delete member namespaces). */
 export async function cleanupContext(): Promise<APIRequestContext> {
-  const minted = await mintSessionCookie({
-    name: 'Mice E2E',
-    email: 'e2e@mice.local',
-    sub: 'e2e-user',
-    iss: 'mice-e2e',
-    role: 'manager',
-    instanceAdmin: true,
-  })
+  const minted = await mintSessionCookie()
   return request.newContext({
     baseURL: BASE_URL,
     extraHTTPHeaders: {
@@ -37,11 +29,9 @@ async function json(ctx: APIRequestContext, path: string): Promise<Record<string
 
 export async function snapshot(ctx: APIRequestContext): Promise<Snapshot> {
   const ns = (await json(ctx, '/auth/namespaces')).namespaces as { name: string }[] | undefined
-  const inst = (await json(ctx, '/auth/instance')).admins as { sub: string; iss: string }[] | undefined
   const tokens = (await json(ctx, '/auth/me/tokens')).tokens as { id: string }[] | undefined
   return {
     namespaces: new Set((ns ?? []).map((n) => n.name)),
-    admins: new Map((inst ?? []).map((a) => [`${a.iss}\u0000${a.sub}`, { sub: a.sub, iss: a.iss }])),
     tokens: new Set((tokens ?? []).map((t) => t.id)),
   }
 }
@@ -88,10 +78,6 @@ export async function revokeTokensSince(
 /** Remove what a test added since `before`; best effort, never fails a test. */
 export async function cleanupSince(ctx: APIRequestContext, before: Snapshot): Promise<void> {
   const after = await snapshot(ctx)
-  for (const [key, admin] of after.admins) {
-    if (before.admins.has(key)) continue
-    await ctx.delete('/auth/instance/admins', { data: admin }).catch(() => undefined)
-  }
   for (const id of after.tokens) {
     if (before.tokens.has(id)) continue
     await ctx.delete(`/auth/me/tokens/${encodeURIComponent(id)}`).catch(() => undefined)

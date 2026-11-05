@@ -3,7 +3,7 @@ import { cleanTest as test } from '../fixtures'
 import { mintSession } from '../helpers/session'
 
 test('admin publishes, hides and deletes an announcement', async ({ page }) => {
-  await mintSession(page, { role: 'admin' })
+  await mintSession(page, { sub: 'e2e-admin', role: 'admin' })
   const title = `Maintenance ${Date.now()}`
   await page.goto('/settings')
   await expect(page.getByRole('link', { name: 'Announcements' })).toBeVisible()

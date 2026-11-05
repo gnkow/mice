@@ -1,5 +1,5 @@
 {
-  "id": "fa567cef-9dee-44e6-bba5-9c9f094e5282",
+  "id": "5aff9855-6842-44e9-b884-857fd47a8942",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1539,25 +1539,6 @@
           "name": "paper_procedure",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.instance_admins": {
-      "name": "instance_admins",
-      "schema": "",
-      "columns": {
-        "user_key": {
-          "name": "user_key",
-          "type": "text",
-          "primaryKey": true,
           "notNull": true
         }
       },

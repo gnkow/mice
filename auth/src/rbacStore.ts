@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, gt } from 'drizzle-orm'
 import { appendAudit, type AuditActor } from './audit.js'
 import { ensurePrincipal } from './authentication/session/session.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
@@ -160,6 +160,28 @@ async function appendRoleHistory(input: {
   })
 }
 
+/** Principals currently holding the Admin role. */
+export async function listAdminPrincipals(now = Date.now()): Promise<Array<{ sub: string; iss: string }>> {
+  return getDb()
+    .select({ sub: principals.sub, iss: principals.iss })
+    .from(principalRoles)
+    .innerJoin(principals, eq(principals.id, principalRoles.principalId))
+    .where(and(eq(principalRoles.role, 'admin'), gt(principalRoles.expiresAt, new Date(now))))
+    .orderBy(asc(principals.iss), asc(principals.sub))
+}
+
+export const ADMIN_MINIMUM_ERROR = 'At least two admins must remain'
+
+/** True when taking `role` away from this principal would leave fewer than two active Admins. */
+async function breaksAdminMinimum(principalId: number, existing: { role: string; expiresAt: Date } | undefined): Promise<boolean> {
+  if (!existing || existing.role !== 'admin' || existing.expiresAt.getTime() <= Date.now()) return false
+  const active = await getDb()
+    .select({ id: principalRoles.principalId })
+    .from(principalRoles)
+    .where(and(eq(principalRoles.role, 'admin'), gt(principalRoles.expiresAt, new Date())))
+  return active.length <= 2 && active.some((r) => r.id === principalId)
+}
+
 export async function assignRole(input: {
   actor: UserKey | null
   target: UserKey
@@ -196,6 +218,10 @@ export async function assignRole(input: {
     .from(principalRoles)
     .where(eq(principalRoles.principalId, targetId))
     .limit(1)
+
+  if (input.role !== 'admin' && (await breaksAdminMinimum(targetId, existing))) {
+    return { ok: false, error: ADMIN_MINIMUM_ERROR }
+  }
 
   if (existing && isInstanceRole(existing.role)) {
     await appendRoleHistory({
@@ -278,6 +304,7 @@ export async function revokeRole(input: {
   if (!existing || !isInstanceRole(existing.role)) {
     return { ok: false, error: 'No active role' }
   }
+  if (await breaksAdminMinimum(targetId, existing)) return { ok: false, error: ADMIN_MINIMUM_ERROR }
   const revokedBy = await ensurePrincipal(input.actor)
   const revokedAt = new Date()
   await appendRoleHistory({

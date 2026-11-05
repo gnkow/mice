@@ -4,7 +4,7 @@ status: accepted
 
 # At least two instance admins remain
 
-Mice does not issue a recovery token. Removing an instance admin is refused when it would leave fewer than two. Two admins can still appoint another, and only then can one of the earlier two be removed. Q67's one-hour, two-person recovery token is not built: the break-glass case it exists for is an instance with no admin left, and this floor keeps that case from being reached by deletion.
+Mice does not issue a recovery token. Revoking or demoting the Admin role is refused when it would leave fewer than two. Two admins can still appoint another, and only then can one of the earlier two be removed. Q67's one-hour, two-person recovery token is not built: the break-glass case it exists for is an instance with no admin left, and this floor keeps that case from being reached by deletion.
 
 ## Considered options
 
@@ -14,4 +14,4 @@ Mice does not issue a recovery token. Removing an instance admin is refused when
 ## Consequences
 
 - Issue 39 is the floor of two, not token persistence. The recovery-token routes and the settings Recovery section come out.
-- An instance admin who can no longer sign in still occupies a row. The floor counts those rows. It does not appoint a replacement when the IdP disables someone.
+- An instance admin who can no longer sign in still occupies a row. The floor counts active Admin-role holders. It does not appoint a replacement when the IdP disables someone.

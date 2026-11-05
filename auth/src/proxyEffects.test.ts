@@ -17,7 +17,6 @@ const { assignRole } = await import('./rbacStore.js')
 const { ensurePrincipal } = await import('./authentication/session/session.js')
 const person = (sub: string) => ({ sub, iss: 'test', email: `${sub}@example.com`, name: sub })
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', name: 'Admin', emailVerified: true }
-await preparePrincipal(admin)
 await assignRole({ actor: null, target: admin, role: 'manager', reason: 'test', bootstrap: true })
 
 const catalog = () =>

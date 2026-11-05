@@ -4,7 +4,6 @@ import { matchesIdentityEntry, type SessionUser } from './authentication/index.j
 import { env } from './env.js'
 import { getDb, inTransaction, type Tx } from './db/database.js'
 import {
-  instanceAdmins,
   instancePermissions,
   instanceTraining,
   namespaceGroupMembers,
@@ -69,41 +68,6 @@ export function matchesBootstrap(user: SessionUser): boolean {
 }
 
 // ── Instance ────────────────────────────────────────────────────────────────
-
-export async function listAdminKeys(): Promise<string[]> {
-  return (await getDb().select().from(instanceAdmins)).map((r) => r.userKey)
-}
-
-export async function isAdminKey(key: string): Promise<boolean> {
-  const rows = await getDb().select().from(instanceAdmins).where(eq(instanceAdmins.userKey, key)).limit(1)
-  return rows.length > 0
-}
-
-export async function addAdminKey(key: string): Promise<void> {
-  await getDb().insert(instanceAdmins).values({ userKey: key }).onConflictDoNothing()
-}
-
-/** Removes an admin unless it is the last one. Returns false when refused. */
-export async function removeAdminKey(key: string): Promise<boolean> {
-  return inTransaction(async (tx) => {
-    await tx.execute(sql`lock table instance_admins in share row exclusive mode`)
-    const all = await tx.select().from(instanceAdmins)
-    if (all.length <= 2 && all.some((r) => r.userKey === key)) return false
-    await tx.delete(instanceAdmins).where(eq(instanceAdmins.userKey, key))
-    return true
-  })
-}
-
-/** Makes `key` the first admin only when none exists yet (race-safe). Returns true when it did. */
-export async function bootstrapFirstAdmin(key: string): Promise<boolean> {
-  return inTransaction(async (tx) => {
-    await tx.execute(sql`lock table instance_admins in share row exclusive mode`)
-    const existing = await tx.select().from(instanceAdmins).limit(1)
-    if (existing.length > 0) return false
-    await tx.insert(instanceAdmins).values({ userKey: key })
-    return true
-  })
-}
 
 export async function instancePermissionsOf(
   key: string,

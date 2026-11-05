@@ -4,8 +4,6 @@
  */
 import type { Hono } from 'hono'
 import { env } from '../../env.js'
-import { addAdminKey } from '../../authzRepository.js'
-import { userKey } from '../../authzTypes.js'
 import { isInstanceRole, type InstanceRole } from '../../rbacRoles.js'
 import { assignRole } from '../../rbacStore.js'
 import { sealSessionCookie } from './cookieSeal.js'
@@ -47,7 +45,6 @@ export function registerDevSessionRoutes(app: Hono): void {
       return c.json({ error: `Invalid role (want one of none, ${ROLES.join(', ')})` }, 400)
     }
     const role = roleRaw
-    const instanceAdmin = body.instanceAdmin === true || role === 'admin'
 
     const user: SessionUser = {
       sub,
@@ -74,12 +71,10 @@ export function registerDevSessionRoutes(app: Hono): void {
       if (!granted.ok) return c.json({ error: granted.error }, 400)
     }
 
-    if (instanceAdmin) await addAdminKey(userKey(user))
-
     return c.json({
       cookieName: env.cookieName,
       cookieValue: sealed,
-      user: { sub, iss, email, name, role, instanceAdmin },
+      user: { sub, iss, email, name, role },
     })
   })
 }

@@ -408,7 +408,7 @@ test.describe('authorization (PLAT-AUTHO)', () => {
     expect(body.request?.status).toBe('denied')
   })
 
-  test('TC-AUTHO-instance: delegated permissions and admins', async ({
+  test('TC-AUTHO-instance: delegated permissions', async ({
     page,
   }) => {
     const adminSub = uniqueId('inst-admin')
@@ -437,11 +437,6 @@ test.describe('authorization (PLAT-AUTHO)', () => {
       },
     )
     expect(putPerms.ok()).toBeTruthy()
-
-    const addAdmin = await page.request.post(`${AUTH_URL}/auth/instance/admins`, {
-      data: { sub: uniqueId('extra-admin'), iss: 'mice-e2e' },
-    })
-    expect(addAdmin.ok()).toBeTruthy()
   })
 
   test('TC-AUTHO-custom-ns-role: create namespace role and assign', async ({

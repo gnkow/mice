@@ -204,10 +204,6 @@ CREATE TABLE "idp_outages" (
 	"paper_procedure" text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "instance_admins" (
-	"user_key" text PRIMARY KEY NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "instance_permissions" (
 	"user_key" text NOT NULL,
 	"permission" text NOT NULL,

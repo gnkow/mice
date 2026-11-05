@@ -15,13 +15,11 @@ import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthMe, fetchAuthzMe, hasEffectivePermission, isAdminRole, type AuthzMe } from '../lib/auth'
 import {
-  addInstanceAdmin,
   fetchInstance,
   grantPermissions,
   grantRole,
   listAccessRequests,
   listRbacUsers,
-  removeInstanceAdmin,
   revokeUserSessions,
   resolveAccessRequest,
   setInstancePermissions,
@@ -735,8 +733,6 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   const state = useAsync((signal) => fetchInstance(signal), [])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [adminSub, setAdminSub] = useState('')
-  const [adminIss, setAdminIss] = useState(signedInIss)
   const [revokeSub, setRevokeSub] = useState('')
   const [revokeIss, setRevokeIss] = useState(signedInIss)
   const [notice, setNotice] = useState<string | null>(null)
@@ -751,26 +747,6 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   }
 
   const data = state.kind === 'ok' ? state.data : null
-
-  async function onAddAdmin(e: FormEvent) {
-    e.preventDefault()
-    const issuer = adminIss.trim() || signedInIss.trim()
-    if (!adminSub.trim() || !issuer) {
-      setError('Choose a user from search or enter sub/iss manually')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      await addInstanceAdmin({ sub: adminSub.trim(), iss: issuer })
-      setAdminSub('')
-      state.reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Add failed')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   async function onRevokeSessions(e: FormEvent) {
     e.preventDefault()
@@ -793,19 +769,6 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
     }
   }
 
-  async function onRemoveAdmin(sub: string, iss: string) {
-    setBusy(true)
-    setError(null)
-    try {
-      await removeInstanceAdmin({ sub, iss })
-      state.reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Remove failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <>
       {error && <p className="flash flash-error" role="status">{error}</p>}
@@ -817,9 +780,8 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
             <div>
               <h2 id="instance-administrators-heading"><ShieldUser size={18} className="button-label-icon" aria-hidden="true" />Instance administrators</h2>
               <p className="muted small">
-                Full instance catalog and site-admin bypass.
-                At least two instance admins remain, so removal that would leave fewer is refused.
-                A Bootstrap mark means this Principal is on AUTHZ_BOOTSTRAP_ADMINS and receives admin again on the next login.
+                Principals holding the Admin role. Grant or change the role under Users; the role cannot be taken from the last two admins.
+                A Bootstrap mark means this Principal is on AUTHZ_BOOTSTRAP_ADMINS and receives the Admin role again on the next login.
               </p>
             </div>
             <p className="muted small ns-settings-count">
@@ -844,39 +806,9 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
                 </div>
                 {a.bootstrap && <span className="ns-tag">bootstrap</span>}
                 <span className="ns-tag ns-tag-accent">admin</span>
-                <button
-                  type="button"
-                  className="btn ghost small"
-                  disabled={busy || data.admins.length <= 2}
-                  title={data.admins.length <= 2 ? 'At least two instance admins must remain' : undefined}
-                  onClick={() => void onRemoveAdmin(a.sub, a.iss)}
-                >
-                  <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
-                </button>
               </li>
             ))}
           </ul>
-          <form className="ns-member-form" onSubmit={onAddAdmin}>
-            <h3 className="ns-settings-subhead">Add admin</h3>
-            <div className="ns-member-form-fields">
-              <DirectoryPicker
-                kind="user"
-                sub={adminSub}
-                iss={adminIss || signedInIss}
-                defaultIss={signedInIss}
-                disabled={busy}
-                onChange={({ sub, iss }) => {
-                  setAdminSub(sub)
-                  setAdminIss(iss)
-                }}
-              />
-              <div className="ns-member-form-actions">
-                <button className="btn primary" type="submit" disabled={busy}>
-                  <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add admin
-                </button>
-              </div>
-            </div>
-          </form>
           <form className="ns-member-form" onSubmit={onRevokeSessions}>
             <h3 className="ns-settings-subhead">Revoke sessions</h3>
             <p className="muted small">Signs the user out everywhere, immediately. They can sign in again.</p>

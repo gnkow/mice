@@ -27,10 +27,6 @@ import {
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' })
 
-export const instanceAdmins = pgTable('instance_admins', {
-  userKey: text('user_key').primaryKey(),
-})
-
 export const instancePermissions = pgTable(
   'instance_permissions',
   {

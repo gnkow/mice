@@ -170,11 +170,11 @@ await describe('mandatory reason on admin and permission changes', async () => {
     assert.equal(o.reason_source, 'explicit')
   })
 
-  await it('applies to instance admin changes and access-request decisions', async () => {
-    const add = await app.request('/auth/instance/admins', {
-      method: 'POST',
+  await it('applies to instance permission changes and access-request decisions', async () => {
+    const add = await app.request('/auth/instance/permissions', {
+      method: 'PUT',
       headers: await adminHeaders(),
-      body: JSON.stringify({ sub: 'x', iss: 'idp' }),
+      body: JSON.stringify({ sub: 'x', iss: 'idp', permissions: [] }),
     })
     assert.equal(add.status, 400)
     const decide = await app.request('/auth/access-requests/nope', {

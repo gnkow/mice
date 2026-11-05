@@ -63,13 +63,13 @@ await describe('instance routes', async () => {
     assert.equal(body.enforce, true)
   })
 
-  await it('validates and audits the admin list changes', async () => {
+  await it('validates and audits instance permission changes', async () => {
     const h = { ...(await cookie('root')), ...json }
-    const bad = await app.request('/auth/instance/admins', { method: 'POST', headers: h, body: '{}' })
+    const bad = await app.request('/auth/instance/permissions', { method: 'PUT', headers: h, body: '{}' })
     assert.equal(bad.status, 400)
-    const denied = await app.request('/auth/instance/admins', { method: 'POST', headers: { ...(await cookie('nobody')), ...json }, body: JSON.stringify({ sub: 'x', iss: 'idp' }) })
+    const denied = await app.request('/auth/instance/permissions', { method: 'PUT', headers: { ...(await cookie('nobody')), ...json }, body: JSON.stringify({ sub: 'x', iss: 'idp', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }) })
     assert.equal(denied.status, 403)
-    assert.ok(audited.includes('instance.admin.add'))
+    assert.ok(audited.includes('instance.permissions.update'))
   })
 
   await it('requires expiresAt when setting delegated permissions and returns it on GET', async () => {

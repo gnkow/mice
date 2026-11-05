@@ -66,6 +66,7 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
       email: `revoke-admin-${Date.now()}@mice.local`,
       sub: `revoke-admin-${Date.now()}`,
       iss: 'mice-e2e',
+      role: 'admin',
     })
     const revoke = await adminPage.request.post(
       `${AUTH_URL}/auth/instance/revoke-sessions`,
