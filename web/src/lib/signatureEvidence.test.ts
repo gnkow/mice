@@ -3,8 +3,8 @@ import { describe, it } from 'node:test'
 import { signatureEvidenceRows } from './signatureEvidence'
 
 describe('signature evidence rows (#13 auditor view)', () => {
-  it('labels MFA and verification evidence from a signature.created detail', () => {
-    const rows = signatureEvidenceRows('signature.created', {
+  it('labels MFA and verification evidence from a esign.created detail', () => {
+    const rows = signatureEvidenceRows('esign.created', {
       mfaEvidence: { hasMfa: true, acr: 'mfa', amr: ['pwd', 'otp'], auth_time: 1_700_000_000 },
       verificationMetadata: { jwks_key_id: 'kid-1', token_verified_at: 1_767_225_600_000, idp_issuer: 'https://idp.test' },
     })
@@ -20,6 +20,6 @@ describe('signature evidence rows (#13 auditor view)', () => {
 
   it('returns no rows for other actions or when evidence is absent', () => {
     assert.deepEqual(signatureEvidenceRows('file.write', { mfaEvidence: { acr: 'mfa', amr: [] } }), [])
-    assert.deepEqual(signatureEvidenceRows('signature.created', undefined), [])
+    assert.deepEqual(signatureEvidenceRows('esign.created', undefined), [])
   })
 })

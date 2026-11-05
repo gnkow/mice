@@ -4,7 +4,7 @@ import { currentClock, type Clock } from '../../clock.js'
 import { getDb } from '../../db/database.js'
 import { cliCredentialFamilies, cliCredentialTokens, principals, webSessions } from '../../db/schema.js'
 import { directoryNow } from '../directory/directory.js'
-import type { PatScope, SessionUser } from '../session/session.js'
+import type { CliCredentialScope, SessionUser } from '../session/session.js'
 
 /** Access tokens last 8 hours. The refresh family lasts 30 days. */
 export const CLI_ACCESS_TTL_SEC = 8 * 60 * 60
@@ -43,7 +43,7 @@ function newSecret(): string {
 export function createCliCredentials(deps: CliCredentialDeps) {
   const { clock } = deps
 
-  async function issue(user: Holder, scopes?: PatScope[]): Promise<IssuedCliCredential> {
+  async function issue(user: Holder, scopes?: CliCredentialScope[]): Promise<IssuedCliCredential> {
     const now = clock.now()
     const familyId = randomBytes(16).toString('hex')
     const accessToken = newSecret()

@@ -4,7 +4,7 @@ import { currentClock, type Clock } from '../../clock.js'
 import { env } from '../../env.js'
 import { getDb } from '../../db/database.js'
 import { deviceAuthorizations } from '../../db/schema.js'
-import type { PatScope, SessionUser } from '../session/session.js'
+import type { CliCredentialScope, SessionUser } from '../session/session.js'
 import { CLI_ACCESS_TTL_SEC, issueCliCredential, revokeCliCredential } from './cliCredentials.js'
 
 const DEVICE_TTL_MS = 10 * 60 * 1000
@@ -22,7 +22,7 @@ export type DeviceRecord = {
   status: DeviceStatus
   createdAt: string
   expiresAt: string
-  scopes?: PatScope[]
+  scopes?: CliCredentialScope[]
   /** Present only while `approved`; removed when the CLI consumes it. */
   token?: string
   refreshToken?: string
@@ -185,7 +185,7 @@ export type DeviceDeps = {
   /** Mints the cli-login credential at approval. */
   mint: (
     user: SessionUser,
-    scopes?: PatScope[],
+    scopes?: CliCredentialScope[],
   ) => Promise<{ token: string; refreshToken: string; expiresIn: number }>
   /** Revokes a minted credential whose approval lost a race. Does not end web sessions. */
   discard: (user: SessionUser, accessToken: string) => Promise<unknown>
@@ -228,7 +228,7 @@ export type DeviceLookup = {
   status: DeviceStatus
   expiresAt: string
   expired: boolean
-  scopes?: PatScope[]
+  scopes?: CliCredentialScope[]
   /** Device name/identifier from CLI - Ticket 25 */
   deviceName?: string
   /** Hashed IP of requesting device (last 4 hex chars for display) - Ticket 25 */
@@ -282,7 +282,7 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
   const nowIso = () => new Date(clock.now()).toISOString()
 
   /** Create a pending device authorization request. */
-  async function start(scopes?: PatScope[], opts?: { deviceName?: string; requestHashedIp?: string }): Promise<DeviceStartResult> {
+  async function start(scopes?: CliCredentialScope[], opts?: { deviceName?: string; requestHashedIp?: string }): Promise<DeviceStartResult> {
     const now = clock.now()
     await repo.purgeExpired(new Date(now - PURGE_AFTER_MS).toISOString())
     const deviceCode = randomBytes(32).toString('base64url')

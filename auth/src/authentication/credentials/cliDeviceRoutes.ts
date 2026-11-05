@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { env } from '../../env.js'
-import { parsePatScopes } from './patScopes.js'
+import { parseCliScopes } from './cliScopes.js'
 import { guarded, type GuardPolicy } from '../session/routeGuard.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { authorizeCliDeviceApprove, isPendingUser, preparePrincipal } from '../../authz.js'
@@ -51,7 +51,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     } catch {
       /* empty body ok */
     }
-    const parsed = parsePatScopes(raw)
+    const parsed = parseCliScopes(raw)
     if (!parsed.ok) return c.json({ error: parsed.error }, 400)
     
     // Extract and hash client IP (Ticket 25)

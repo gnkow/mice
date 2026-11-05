@@ -16,7 +16,7 @@ await appendAudit({
   method: 'POST',
   path: '/auth/sign/execute',
   status: 200,
-  action: 'signature.created',
+  action: 'esign.created',
   detail: { meaning: 'approve', hash: 'h1', signedAt: 't', mfaEvidence: evidence, verificationMetadata: verification },
 })
 
@@ -25,7 +25,7 @@ await iso.grantRole(auditor, 'auditor')
 const jwt = (claims: object) =>
   ['e30', Buffer.from(JSON.stringify(claims)).toString('base64url'), 's'].join('.')
 const query = async (idToken?: string) =>
-  createApp().request('/auth/audit?action=signature.created', {
+  createApp().request('/auth/audit?action=esign.created', {
     headers: await iso.sessionHeaders({ ...auditor, ...(idToken ? { idToken } : {}) } as typeof auditor),
   })
 

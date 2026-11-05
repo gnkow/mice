@@ -3,14 +3,14 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
-import { formatScope, type PatScope } from '../lib/tokens'
+import { formatScope, type CliCredentialScope } from '../lib/tokens'
 
 type DeviceStatus = {
   userCode: string
   status: string
   expiresAt: string
   expired: boolean
-  scopes?: PatScope[]
+  scopes?: CliCredentialScope[]
   deviceName?: string
   requestHashedIp?: string
 }

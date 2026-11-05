@@ -132,7 +132,7 @@ async function hasFineRepoPermission(
   return false
 }
 
-function capByPatScopes(
+function capByCliScopes(
   user: SessionUser,
   ns: string,
   repo: string,
@@ -158,7 +158,7 @@ export async function hasRepoPermission(
 ): Promise<{ ok: boolean; effective: BasePermission; bypass: boolean }> {
   const subject = need === 'admin' ? await withDirectoryGroups(user) : user
   let effective = await effectiveRepoRole(subject, ns, repo)
-  effective = capByPatScopes(user, ns, repo, effective)
+  effective = capByCliScopes(user, ns, repo, effective)
   if (roleAtLeast(effective, need)) {
     return { ok: true, effective, bypass: false }
   }

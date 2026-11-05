@@ -5,9 +5,9 @@ type Detail = Record<string, unknown> | undefined
 const iso = (n: unknown, unit: 'sec' | 'ms') =>
   typeof n === 'number' ? new Date(unit === 'sec' ? n * 1000 : n).toISOString() : undefined
 
-/** Labelled MFA and token-verification evidence stored on a `signature.created` audit event. */
+/** Labelled MFA and token-verification evidence stored on an `esign.created` audit event. */
 export function signatureEvidenceRows(action: string, detail: Detail): EvidenceRow[] {
-  if (action !== 'signature.created' || !detail) return []
+  if (action !== 'esign.created' || !detail) return []
   const mfa = (detail.mfaEvidence ?? {}) as Record<string, unknown>
   const ver = (detail.verificationMetadata ?? {}) as Record<string, unknown>
   const rows: [string, string | undefined][] = [

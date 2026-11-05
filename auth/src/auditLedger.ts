@@ -48,6 +48,15 @@ export type LedgerVerification =
 
 export type LedgerHealth = { ok: true } | { ok: false; detail: string }
 
+export type LedgerProof = {
+  seq: number
+  valid: boolean
+  /** Accumulated linear hash of the record's transaction (hex), which chains it to all earlier history. */
+  transactionHash: string
+  previousTransactionHash: string
+  entryRoot: string
+}
+
 type TxMetadata = { id: number; prevalh: string; ts: number; nentries: number; eh: string; bltxid: number; blroot: string }
 export type LedgerTx = { metadata: TxMetadata; entriesList: { key: string; hvalue: string }[] }
 
@@ -67,6 +76,8 @@ export type Ledger = {
   /** Records under this prefix written after `seq`, oldest first, from the transaction log; at most `limit` transactions are examined. */
   readAfter(seq: number, limit?: number): Promise<{ records: LedgerRecord[]; scannedTo: number }>
   verify(opts?: VerifyOptions): Promise<LedgerVerification>
+  /** Checks one record against its transaction hash and root; undefined when the record does not exist. */
+  prove(id: string, opts?: { tamper?: (record: LedgerRecord) => LedgerRecord }): Promise<LedgerProof | undefined>
   health(): Promise<LedgerHealth>
   close(): Promise<void>
 }
@@ -239,6 +250,31 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
     })
   }
 
+  async function prove(id: string, opts: { tamper?: (record: LedgerRecord) => LedgerRecord } = {}): Promise<LedgerProof | undefined> {
+    const key = keyFor(id)
+    const found = (await readAll()).find((r) => r.key === key)
+    if (!found) return undefined
+    const own = opts.tamper ? opts.tamper(found) : found
+    return run(async (c) => {
+      const tx = (await c.txScan({ initialtx: found.seq, limit: 1, desc: false })).txsList[0]
+      const entry = tx?.entriesList[0]
+      if (!tx || tx.metadata.id !== found.seq || tx.entriesList.length !== 1 || !entry) {
+        return { seq: found.seq, valid: false, transactionHash: '', previousTransactionHash: '', entryRoot: '' }
+      }
+      const hvalue = b64(entry.hvalue)
+      const valid =
+        sha(Buffer.from([0]), Buffer.from(own.value)).equals(hvalue) &&
+        singleEntryRoot(b64(entry.key), hvalue).equals(b64(tx.metadata.eh))
+      return {
+        seq: found.seq,
+        valid,
+        transactionHash: alh(tx.metadata).toString('hex'),
+        previousTransactionHash: b64(tx.metadata.prevalh).toString('hex'),
+        entryRoot: b64(tx.metadata.eh).toString('hex'),
+      }
+    })
+  }
+
   const ledger: Ledger = {
     async append(id, value) {
       const tx = await run((c) => c.set({ key: keyFor(id), value }))
@@ -247,6 +283,7 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
     readAll,
     readAfter,
     verify,
+    prove,
     async health() {
       try {
         await run((c) => c.health())

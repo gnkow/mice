@@ -13,7 +13,7 @@ import { canonicalIssuer } from './principal.js'
 
 export { canonicalIssuer }
 
-export type PatScope = {
+export type CliCredentialScope = {
   namespace: string
   /** Omit = all repos in namespace. */
   repo?: string
@@ -40,7 +40,7 @@ export type SessionUser = {
    * Fine-grained PAT resource scopes (Phase 2). Empty/undefined = full user
    * effective access. Never exceeds the user's grants.
    */
-  patScopes?: PatScope[]
+  patScopes?: CliCredentialScope[]
   /** Epoch seconds of the IdP authentication (id_token `auth_time`), if provided. */
   authTime?: number
   /** Epoch seconds the Session was first issued (absolute TTL anchor). */

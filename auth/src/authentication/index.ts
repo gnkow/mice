@@ -44,7 +44,7 @@ export { AuthenticationDenied, applyGlobalGuards, authenticate, authenticateOutc
 export { guarded } from './session/routeGuard.js'
 export type { GuardArgs } from './session/routeGuard.js'
 export { sealSession, getSession, setSessionCookie, destroySession, clearSessionCookie } from './session/session.js'
-export type { PatScope, SessionUser } from './session/session.js'
+export type { CliCredentialScope, SessionUser } from './session/session.js'
 export type { AuthOutcome, AuthPolicy } from './session/requireAuth.js'
 export type Principal = import('./session/session.js').SessionUser
 export { assertProductionStartup } from './session/startupGate.js'

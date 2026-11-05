@@ -16,6 +16,8 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['repo.collaborator.remove', 'Repository collaborator removed', 'Repositories'],
   ['approver.grant', 'Approver role assigned', 'Repositories'],
   ['approver.revoke', 'Approver role removed', 'Repositories'],
+  ['esign.created', 'Electronic signature recorded', 'Signatures'],
+  ['esign.failed', 'Electronic signature failed', 'Signatures'],
   ['workspace.create', 'Workspace created', 'Workspaces'],
   ['workspace.delete', 'Workspace deleted', 'Workspaces'],
   ['workspace.commit', 'Workspace committed', 'Workspaces'],

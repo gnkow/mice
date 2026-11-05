@@ -6,7 +6,7 @@
 
 **Blocked by:** gxp-compliance/03
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## In code today
 
@@ -14,6 +14,6 @@
 
 ## Acceptance
 
-- [ ] Signature views show the snapshot (name, `iss`, `sub`, time) and the current-name note when it differs
-- [ ] A deactivated account's past signatures stay valid and attributable
-- [ ] `PatScope` and `parsePatScopes` are renamed to CLI credential scopes with no behaviour change
+- [x] Signature views show the snapshot (name, `iss`, `sub`, time) and the current-name note when it differs (`signatureStore().view`)
+- [x] A deactivated account's past signatures stay valid and attributable
+- [x] `PatScope` and `parsePatScopes` are renamed to `CliCredentialScope` and `parseCliScopes` with no behaviour change

@@ -1,10 +1,10 @@
-export type PatScope = {
+export type CliCredentialScope = {
   namespace: string
   repo?: string
   maxRole: 'read' | 'triage' | 'write' | 'maintain' | 'admin'
 }
 
-export function formatScope(s: PatScope): string {
+export function formatScope(s: CliCredentialScope): string {
   return `${s.namespace}${s.repo ? `/${s.repo}` : ''}: ${s.maxRole}`
 }
 

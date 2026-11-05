@@ -493,6 +493,17 @@ CREATE TABLE "session_revocations" (
 	"revoked_at" timestamp with time zone
 );
 --> statement-breakpoint
+CREATE TABLE "signature_index" (
+	"signature_id" text PRIMARY KEY NOT NULL,
+	"ledger_seq" bigint NOT NULL,
+	"repo" text,
+	"source_head" text,
+	"target_head" text,
+	"signer_key" text NOT NULL,
+	"meaning" text NOT NULL,
+	"signed_at" timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "suspension_requests" (
 	"id" text PRIMARY KEY NOT NULL,
 	"principal_key" text NOT NULL,
@@ -582,6 +593,8 @@ CREATE INDEX "repo_group_collaborators_group" ON "repo_group_collaborators" USIN
 CREATE UNIQUE INDEX "repositories_namespace_name" ON "repositories" USING btree ("namespace_id","name");--> statement-breakpoint
 CREATE INDEX "seal_keys_valid_from_idx" ON "seal_keys" USING btree ("valid_from");--> statement-breakpoint
 CREATE INDEX "seal_keys_valid_until_idx" ON "seal_keys" USING btree ("valid_until");--> statement-breakpoint
+CREATE INDEX "signature_index_repo" ON "signature_index" USING btree ("repo");--> statement-breakpoint
+CREATE INDEX "signature_index_signer" ON "signature_index" USING btree ("signer_key");--> statement-breakpoint
 CREATE INDEX "suspension_requests_principal_idx" ON "suspension_requests" USING btree ("principal_key");--> statement-breakpoint
 CREATE INDEX "web_sessions_principal_idx" ON "web_sessions" USING btree ("principal_id");
 --> statement-breakpoint

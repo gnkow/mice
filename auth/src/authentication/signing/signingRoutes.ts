@@ -9,6 +9,7 @@ import {
 } from './signingCeremony.js'
 import { verifySigningEvidence } from './signingEvidence.js'
 import { verifyIdpJwt } from '../oidc/oidc.js'
+import { signatureStore } from './signatureStore.js'
 import { isSigningBlockedByDrift } from '../compliance/idpDriftDetection.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
@@ -43,12 +44,19 @@ const SIGNING_FRESHNESS_SEC = 60 // 60 seconds per spec requirement
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 
+let verifyJwt: (token: string) => Promise<Record<string, unknown>> = verifyIdpJwt
+
+/** Replaces the id_token verifier so route tests need no live IdP keys. */
+export function setSigningJwtVerifierForTests(next: typeof verifyJwt): void {
+  verifyJwt = next
+}
+
 /**
  * Check if session has been idle too long for signing (Round 8 U2).
  * Idle timeout = 15 minutes (900 seconds) since last HTTP request.
  * Returns error response if idle, null if OK.
  */
-function checkIdleTimeout(user: SessionInfo): Response | null {
+function checkIdleTimeout(user: SessionUser): Response | null {
   if (env.sessionIdleSec <= 0) return null // Idle check disabled
   if (!user.lastActive) return null // No lastActive tracking
   
@@ -62,7 +70,7 @@ function checkIdleTimeout(user: SessionInfo): Response | null {
         idleMinutes: idleMin,
         maxIdleMinutes: Math.floor(env.sessionIdleSec / 60),
       },
-      401
+      { status: 401 }
     )
   }
   return null
@@ -124,11 +132,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     // Ticket 23: Check for critical IdP drift before signing
     const driftCheck = await isSigningBlockedByDrift()
     if (driftCheck.blocked) {
-      await audit.append({
-        actor: { iss: user.iss, sub: user.sub },
-        via: 'session',
-        method: c.req.method,
-        path: c.req.path,
+      await audit(c, user, 'session', {
         status: 503,
         action: 'signature.blocked_by_drift',
         message: 'Signature blocked: critical IdP drift detected',
@@ -161,11 +165,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     // Verify hash hasn't changed
     const prepared = prepareForSigning(content)
     if (prepared.hash !== expectedHash) {
-      await audit.append({
-        actor: { iss: user.iss, sub: user.sub },
-        via: 'session',
-        method: c.req.method,
-        path: c.req.path,
+      await audit(c, user, 'session', {
         status: 400,
         action: 'signature.hash_mismatch',
         message: 'Signature rejected: content changed after display',
@@ -183,7 +183,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       // Ticket 52: the step-up token is re-verified now; missing or stale claims refuse.
       const evidence = stepUp.user.idToken
         ? await verifySigningEvidence(stepUp.user.idToken, {
-            verifyJwt: verifyIdpJwt,
+            verifyJwt,
             nowSec: Math.floor(Date.now() / 1000),
             maxAgeSec: SIGNING_FRESHNESS_SEC,
           })
@@ -191,11 +191,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
 
       // Refuse signing without verified MFA evidence (Part 11 §11.200 requirement)
       if (!evidence.ok) {
-        await audit.append({
-          actor: { iss: user.iss, sub: user.sub },
-          via: 'session',
-          method: c.req.method,
-          path: c.req.path,
+        await audit(c, user, 'session', {
           status: 403,
           action: 'signature.mfa_required',
           message: 'Electronic signature requires verified MFA evidence',
@@ -221,16 +217,33 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       }
 
       const signature = createSignature(content, meaning, session)
+      let saved: { id: string; seq: number }
+      try {
+        saved = await (await signatureStore()).record({
+          signer: signature.principal,
+          meaning,
+          contentHash: signature.hash,
+          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
+          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
+        })
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : 'signature record unavailable'
+        await audit(c, user, 'session', {
+          status: 503,
+          action: 'esign.failed',
+          message: `Signature not recorded: ${reason}`,
+          detail: { meaning, hash: signature.hash },
+        })
+        return c.json({ error: 'Signature could not be recorded' }, 503)
+      }
 
-      await audit.append({
-        actor: { iss: user.iss, sub: user.sub },
-        via: 'session',
-        method: c.req.method,
-        path: c.req.path,
+      await audit(c, user, 'session', {
         status: 200,
-        action: 'signature.created',
+        action: 'esign.created',
         message: `Electronic signature created: ${meaning}`,
         detail: {
+          signatureId: saved.id,
+          ledgerSeq: saved.seq,
           meaning,
           hash: signature.hash,
           signedAt: signature.signedAt,
@@ -242,6 +255,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
 
       return c.json({
         signature: {
+          id: saved.id,
           hash: signature.hash,
           meaning: signature.meaning,
           signedAt: signature.signedAt,
@@ -254,13 +268,9 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Signature creation failed'
       
-      await audit.append({
-        actor: { iss: user.iss, sub: user.sub },
-        via: 'session',
-        method: c.req.method,
-        path: c.req.path,
+      await audit(c, user, 'session', {
         status: 400,
-        action: 'signature.failed',
+        action: 'esign.failed',
         message: `Signature failed: ${message}`,
         detail: { meaning },
       })

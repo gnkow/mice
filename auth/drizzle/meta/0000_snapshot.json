@@ -1,5 +1,5 @@
 {
-  "id": "f4dcb54a-042e-4cce-a06e-f9e8e839a5c1",
+  "id": "5a1e83ef-ab06-44b1-8d2e-b2ae671129d6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -3976,6 +3976,98 @@
         }
       },
       "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.signature_index": {
+      "name": "signature_index",
+      "schema": "",
+      "columns": {
+        "signature_id": {
+          "name": "signature_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repo": {
+          "name": "repo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_head": {
+          "name": "source_head",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_head": {
+          "name": "target_head",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "signer_key": {
+          "name": "signer_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "meaning": {
+          "name": "meaning",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signed_at": {
+          "name": "signed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "signature_index_repo": {
+          "name": "signature_index_repo",
+          "columns": [
+            {
+              "expression": "repo",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "signature_index_signer": {
+          "name": "signature_index_signer",
+          "columns": [
+            {
+              "expression": "signer_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

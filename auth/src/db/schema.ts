@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { type PatScope } from '../authentication/index.js'
+import { type CliCredentialScope } from '../authentication/index.js'
 import type { AccessReviewReport } from '../authentication/compliance/accessReview.js'
 import type { JobRun } from '../jobsTypes.js'
 import type { LineageOp } from '../lineage.js'
@@ -114,6 +114,25 @@ export const repoGroupCollaborators = pgTable(
     role: text('role').notNull(),
   },
   (t) => [primaryKey({ columns: [t.repositoryId, t.groupKey] }), index('repo_group_collaborators_group').on(t.groupKey)],
+)
+
+/**
+ * Non-authoritative lookup index over the signature records in the ledger. Holds no evidence;
+ * `rebuildIndex` can recreate every row from the ledger.
+ */
+export const signatureIndex = pgTable(
+  'signature_index',
+  {
+    signatureId: text('signature_id').primaryKey(),
+    ledgerSeq: bigint('ledger_seq', { mode: 'number' }).notNull(),
+    repo: text('repo'),
+    sourceHead: text('source_head'),
+    targetHead: text('target_head'),
+    signerKey: text('signer_key').notNull(),
+    meaning: text('meaning').notNull(),
+    signedAt: ts('signed_at').notNull(),
+  },
+  (t) => [index('signature_index_repo').on(t.repo), index('signature_index_signer').on(t.signerKey)],
 )
 
 /** Approvers are an orthogonal grant (not a rank): they may sign merges into validated branches. */
@@ -250,7 +269,7 @@ export const cliCredentialFamilies = pgTable('cli_credential_families', {
   sub: text('sub').notNull(),
   email: text('email').notNull(),
   name: text('name').notNull(),
-  scopes: jsonb('scopes').$type<PatScope[]>(),
+  scopes: jsonb('scopes').$type<CliCredentialScope[]>(),
   createdAt: ts('created_at').notNull(),
   expiresAt: ts('expires_at').notNull(),
   revokedAt: ts('revoked_at'),
@@ -545,7 +564,7 @@ export const deviceAuthorizations = pgTable(
     status: text('status').notNull(),
     createdAt: ts('created_at').notNull(),
     expiresAt: ts('expires_at').notNull(),
-    scopes: jsonb('scopes').$type<PatScope[]>(),
+    scopes: jsonb('scopes').$type<CliCredentialScope[]>(),
     token: text('token'),
     /** Raw refresh token, present only while the device approval is unconsumed. */
     refreshToken: text('refresh_token'),
