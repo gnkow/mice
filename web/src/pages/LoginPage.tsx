@@ -47,14 +47,15 @@ export function LoginPage() {
         </p>
         <div className="btn-row">
           <a
-            className="btn"
+            className="btn primary"
             href={`/auth/login?prompt=login${
               next && next !== '/'
                 ? `&next=${encodeURIComponent(next)}`
                 : ''
             }`}
           >
-            <ActionLogIn size={14} aria-hidden="true" className="button-label-icon" />Sign in with SSO
+            <ActionLogIn size={14} aria-hidden="true" className="button-label-icon" />
+            Sign in with SSO
           </a>
         </div>
       </main>

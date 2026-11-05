@@ -17,3 +17,5 @@ playwright/.cache/
 auth/bin/
 # Dev database passwords (make db-secrets)
 .secrets/
+# Third-party UI/UX Pro Max skill assets (installed locally)
+.agents/skills/ui-ux-pro-max/

@@ -17,12 +17,32 @@ test.describe('RBAC web UI (#16)', () => {
     await expect(page.getByRole('heading', { name: 'Request access' })).toBeVisible()
     await expect(page.getByRole('navigation')).toHaveCount(0)
 
+    await page.getByRole('radio', { name: /Formal role/ }).check()
+    await page.getByRole('button', { name: 'Continue' }).click()
     await page.getByRole('radio', { name: /^User/ }).check()
-    await page.getByLabel('Justification (required)').fill('Need access to review data')
+    await page.getByRole('button', { name: 'Continue' }).click()
+    await page.getByLabel(/Justification/).fill('Need access to review data')
     await page.getByRole('button', { name: 'Request access' }).click()
 
     await expect(page.getByRole('heading', { name: 'Request pending' })).toBeVisible()
+    await expect(page.getByText('User', { exact: true }).first()).toBeVisible()
     await expect(page.getByRole('navigation')).toHaveCount(0)
+
+    // Reload shows the existing pending request; a new submit overrides it.
+    await page.goto('/pending')
+    await expect(page.getByRole('heading', { name: 'Request pending' })).toBeVisible()
+    await page.getByRole('button', { name: 'Update request' }).click()
+    await expect(page.getByRole('heading', { name: 'Update request' })).toBeVisible()
+    await page.getByRole('radio', { name: /Formal role/ }).check()
+    await page.getByRole('button', { name: 'Continue' }).click()
+    await page.getByRole('radio', { name: /^Manager/ }).check()
+    await page.getByRole('button', { name: 'Continue' }).click()
+    await page.getByLabel(/Justification/).fill('Need manager access instead')
+    await page.getByRole('button', { name: 'Update request' }).click()
+    await expect(page.getByRole('heading', { name: 'Request pending' })).toBeVisible()
+    await expect(page.getByText('Manager', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Need manager access instead')).toBeVisible()
+
     await page.goto('/profile')
     await expect(page).toHaveURL(/\/pending$/)
   })

@@ -68,69 +68,38 @@ export function ProfilePage() {
         {me.kind === 'error' && <p className="flash flash-error" role="alert">Could not load your account.</p>}
         {me.kind === 'ok' && me.data.authenticated && (
           <div className="ns-settings-subsection">
-            <div style={{ 
-              display: 'flex',
-              gap: '1rem',
-              padding: '1rem',
-              border: '1px solid var(--color-border)',
-              borderRadius: '0.375rem',
-              backgroundColor: 'var(--color-canvas-subtle)',
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '56px',
-                height: '56px',
-                borderRadius: '50%',
-                backgroundColor: 'var(--color-accent)',
-                color: 'white',
-                fontSize: '1.5rem',
-                fontWeight: '600',
-                flexShrink: 0,
-              }}>
+            <div className="profile-account-card">
+              <div className="profile-account-avatar" aria-hidden="true">
                 {me.data.user.name.charAt(0).toUpperCase()}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: '600' }}>
-                    {me.data.user.name}
-                  </h3>
+              <div className="profile-account-body">
+                <div className="profile-account-title-row">
+                  <h3>{me.data.user.name}</h3>
                   {badge && (
-                    <span className="pill" style={{ 
-                      backgroundColor: pending ? 'var(--color-warn)' : 'var(--color-accent)', 
-                      color: 'white',
-                      fontWeight: '600',
-                      letterSpacing: '0.02em'
-                    }}>
+                    <span
+                      className={`pill role-badge${pending ? ' is-pending' : ''}`}
+                      role="status"
+                    >
                       {badge}
                     </span>
                   )}
                 </div>
-                <p style={{ margin: '0 0 0.75rem 0', color: 'var(--color-fg-muted)' }}>
-                  {me.data.user.email}
-                </p>
-                <div style={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  gap: '0.5rem',
-                  paddingTop: '0.75rem',
-                  borderTop: '1px solid var(--color-border)',
-                }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.875rem' }}>
-                    <span className="muted" style={{ minWidth: '4rem' }}>Provider:</span>
-                    <span style={{ fontWeight: '500' }}>SSO</span>
+                <p className="profile-account-email">{me.data.user.email}</p>
+                <div className="profile-account-meta">
+                  <div className="profile-account-meta-row">
+                    <span className="profile-account-meta-label">Provider:</span>
+                    <span className="profile-account-meta-value">SSO</span>
                   </div>
                   {badge && (
-                    <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.875rem' }}>
-                      <span className="muted" style={{ minWidth: '4rem' }}>Role:</span>
-                      <span style={{ fontWeight: '500' }}>{badge}</span>
+                    <div className="profile-account-meta-row">
+                      <span className="profile-account-meta-label">Role:</span>
+                      <span className="profile-account-meta-value">{badge}</span>
                     </div>
                   )}
                 </div>
               </div>
             </div>
-            <p className="muted small" style={{ marginTop: '0.75rem' }}>
+            <p className="muted small auth-panel-stack">
               Your identity and commit author are managed by your SSO provider.
             </p>
           </div>
@@ -162,46 +131,25 @@ export function ProfilePage() {
 
             {!pending && (
               <div className="ns-settings-subsection">
-                <h3 className="muted small" style={{ marginBottom: '0.75rem' }}>
+                <h3 className="muted small">
                   Instance permissions ({authz.data.effectivePermissions.length} granted)
                 </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '24rem', overflow: 'auto' }}>
+                <div className="perm-list" role="list">
                   {authz.data.permissionCatalog.map((perm) => {
                     const hasPermission = authz.data.effectivePermissions.includes(perm)
                     return (
                       <div
                         key={perm}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          padding: '0.5rem 0.75rem',
-                          border: '1px solid var(--color-border)',
-                          borderRadius: '0.375rem',
-                          backgroundColor: hasPermission ? 'var(--color-canvas-subtle)' : 'transparent',
-                        }}
+                        className={`perm-row${hasPermission ? ' is-granted' : ''}`}
+                        role="listitem"
+                        aria-label={`${perm}: ${hasPermission ? 'granted' : 'not granted'}`}
                       >
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          width: '20px',
-                          height: '20px',
-                          borderRadius: '0.25rem',
-                          border: hasPermission ? 'none' : '2px solid var(--color-border)',
-                          backgroundColor: hasPermission ? 'var(--color-accent)' : 'transparent',
-                          flexShrink: 0,
-                        }}>
+                        <div className="perm-check" aria-hidden="true">
                           {hasPermission && (
                             <Check size={14} color="white" strokeWidth={3} />
                           )}
                         </div>
-                        <code style={{
-                          fontWeight: hasPermission ? '600' : '500',
-                          color: hasPermission ? 'var(--color-fg-default)' : 'var(--color-fg-muted)',
-                        }}>
-                          {perm}
-                        </code>
+                        <code>{perm}</code>
                       </div>
                     )
                   })}
@@ -294,9 +242,9 @@ function RequestAdditionalSection({
   const upgradeOptions = REQUESTABLE_ROLES.filter((r) => upgrades.includes(r.id))
 
   return (
-    <div className="ns-settings-subsection" style={{ marginTop: '1.5rem' }}>
-      <h3 style={{ marginBottom: '0.5rem' }}>Request additional access</h3>
-      <p className="muted small" style={{ marginBottom: '0.75rem' }}>
+    <div className="ns-settings-subsection auth-panel-stack">
+      <h3>Request additional access</h3>
+      <p className="muted small">
         Ask for a role upgrade or specific permissions beyond your current role.
       </p>
       {!open ? (
@@ -346,7 +294,7 @@ function RequestAdditionalSection({
                   />
                   <span>
                     <strong>{r.label}</strong>
-                    <span className="muted small" style={{ display: 'block' }}>
+                    <span className="muted small role-option-desc">
                       {r.description}
                     </span>
                   </span>
@@ -356,18 +304,9 @@ function RequestAdditionalSection({
           ) : (
             <fieldset>
               <legend>Permissions</legend>
-              <div
-                className="perm-multiselect"
-                style={{
-                  maxHeight: '12rem',
-                  overflow: 'auto',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '0.375rem',
-                  padding: '0.5rem',
-                }}
-              >
+              <div className="perm-multiselect">
                 {permissionCatalog.map((perm) => (
-                  <label key={perm} className="radio-row" style={{ display: 'flex', gap: '0.5rem' }}>
+                  <label key={perm} className="radio-row">
                     <input
                       type="checkbox"
                       checked={form.permissions.includes(perm)}
@@ -385,29 +324,37 @@ function RequestAdditionalSection({
             </fieldset>
           )}
 
-          <label>
+          <label htmlFor="profile-addl-justification">
             Justification (required)
             <textarea
+              id="profile-addl-justification"
               value={form.message}
               onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
               rows={3}
               placeholder="Why you need this access"
               required
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? 'profile-addl-error' : undefined}
             />
           </label>
+          {error && (
+            <p id="profile-addl-error" className="flash flash-error" role="alert">
+              {error}
+            </p>
+          )}
           <div className="btn-row">
-            <button className="btn primary" type="submit" disabled={busy}>
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={busy}
+              aria-busy={busy || undefined}
+            >
               {busy ? 'Submitting…' : 'Submit request'}
             </button>
             <button type="button" className="btn" disabled={busy} onClick={() => setOpen(false)}>
               Cancel
             </button>
           </div>
-          {error && (
-            <p className="flash flash-error" role="alert">
-              {error}
-            </p>
-          )}
         </form>
       )}
     </div>

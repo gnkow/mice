@@ -433,7 +433,7 @@ export function submitAccessRequest(input: {
   requestedRole?: string | null
   requestedPermissions?: string[]
 }) {
-  return authzFetch('/auth/access-requests', {
+  return authzFetch<{ ok: true; request: AccessRequestRow }>('/auth/access-requests', {
     method: 'POST',
     body: JSON.stringify({
       message: input.message,

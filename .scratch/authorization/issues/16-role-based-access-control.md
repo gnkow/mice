@@ -174,7 +174,7 @@ Work **one seam at a time**: failing test → minimal implementation → commit 
 ### Access requests
 
 - [x] **S16** Submit request — role and/or custom perms + required justification
-- [x] **S17** One pending — second submit blocked (app + DB)
+- [x] **S17** One pending — second submit replaces the previous pending request (app + DB)
 - [x] **S18** List for reviewer — filtered by reviewer authority
 - [x] **S19** Approve — applies role/perms immediately; links request id in history
 - [x] **S20** Deny — status + reason; no grant
@@ -313,6 +313,7 @@ Done. Seams S01–S36 complete. The last acceptance item was closed by `20-remov
 - 2026-11-03: S15 done — `canApproveModifiedGrant` validates granted (not requested) set.
 - 2026-11-03: S16 done — RBAC `submitAccessRequest` with role/perms + justification.
 - 2026-11-03: S17 done — one pending access request per user enforced.
+- 2026-11-05: S17 revised — second submit replaces the pending request in place; `/pending` loads and displays the current request.
 - 2026-11-03: S18 done — listAccessRequestsForReviewer filtered by authority.
 - 2026-11-03: S19 done — approveAccessRequest applies role and links request id.
 - 2026-11-03: S20 done — denyAccessRequest with reason, no grant.

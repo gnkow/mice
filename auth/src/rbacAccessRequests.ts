@@ -87,6 +87,33 @@ export async function submitAccessRequest(input: {
       ? 'upgrade'
       : 'additional'
 
+  const existing = await getOwnPendingAccessRequest(input.user)
+  if (existing) {
+    // One pending per user: a new submit replaces the previous pending request in place.
+    const [updated] = await getDb()
+      .update(accessRequests)
+      .set({
+        email: input.user.email ?? existing.email,
+        name: input.user.name ?? existing.name,
+        message,
+        createdAt: new Date(),
+        requestedRole: role,
+        requestedPermissions: perms,
+        requestType,
+      })
+      .where(
+        and(
+          eq(accessRequests.id, existing.id),
+          eq(accessRequests.status, 'pending'),
+        ),
+      )
+      .returning()
+    if (!updated) {
+      return { ok: false, error: 'Could not replace pending access request' }
+    }
+    return { ok: true, request: toRequest(updated) }
+  }
+
   const [created] = await getDb()
     .insert(accessRequests)
     .values({
@@ -102,11 +129,10 @@ export async function submitAccessRequest(input: {
       requestedPermissions: perms,
       requestType,
     })
-    .onConflictDoNothing()
     .returning()
 
   if (!created) {
-    return { ok: false, error: 'A pending access request already exists' }
+    return { ok: false, error: 'Could not create access request' }
   }
   return { ok: true, request: toRequest(created) }
 }

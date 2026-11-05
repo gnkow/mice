@@ -146,9 +146,10 @@ export function CliDevicePage() {
         ) : null}
 
         <form className="cli-device-form" onSubmit={onLookup}>
-          <label>
+          <label htmlFor="cli-device-code">
             Device code
             <input
+              id="cli-device-code"
               className="mono"
               value={codeInput}
               onChange={(e) => setCodeInput(e.target.value)}
@@ -160,7 +161,8 @@ export function CliDevicePage() {
           </label>
           <div className="btn-row">
             <button className="btn" type="submit" disabled={!codeInput.trim()}>
-              <ActionSearch size={14} aria-hidden="true" className="button-label-icon" />Look up
+              <ActionSearch size={14} aria-hidden="true" className="button-label-icon" />
+              Look up
             </button>
           </div>
         </form>
@@ -206,9 +208,13 @@ export function CliDevicePage() {
             {/* Ticket 25: Require typing confirmation */}
             {canAct && (
               <>
-                <label className="cli-confirm-label">
-                  <span>Type <strong>APPROVE</strong> or <strong>{lookup.userCode}</strong> to confirm:</span>
+                <label className="cli-confirm-label" htmlFor="cli-device-confirm">
+                  <span>
+                    Type <strong>APPROVE</strong> or <strong>{lookup.userCode}</strong> to
+                    confirm:
+                  </span>
                   <input
+                    id="cli-device-confirm"
                     className="mono"
                     value={confirmInput}
                     onChange={(e) => setConfirmInput(e.target.value)}
@@ -216,30 +222,34 @@ export function CliDevicePage() {
                     autoComplete="off"
                     autoCapitalize="characters"
                     spellCheck={false}
+                    aria-describedby={actionError ? 'cli-device-action-error' : undefined}
                   />
                 </label>
-                <div className="btn-row">
+                <div className="btn-row cli-device-actions">
                   <button
                     type="button"
                     className="btn primary"
                     disabled={!canSubmitApprove || busy}
+                    aria-busy={busy || undefined}
                     onClick={() => void onApprove()}
                   >
-                    <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />Approve
+                    <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
+                    {busy ? 'Approving…' : 'Approve'}
                   </button>
                   <button
                     type="button"
-                    className="btn ghost"
+                    className="btn danger"
                     disabled={busy}
                     onClick={() => void onDeny()}
                   >
-                    <ActionX size={14} aria-hidden="true" className="button-label-icon" />Deny
+                    <ActionX size={14} aria-hidden="true" className="button-label-icon" />
+                    Deny
                   </button>
                 </div>
               </>
             )}
             {done === 'approved' && (
-              <div className="flash" role="status">
+              <div className="flash flash-success" role="status">
                 <p>
                   Approved. Return to your terminal — login should complete shortly.
                 </p>
@@ -254,7 +264,7 @@ export function CliDevicePage() {
         )}
 
         {actionError && (
-          <p className="flash flash-error" role="alert">
+          <p id="cli-device-action-error" className="flash flash-error" role="alert">
             {actionError}
           </p>
         )}

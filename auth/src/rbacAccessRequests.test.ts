@@ -6,6 +6,7 @@ import { assignRole, getUserRole, listRoleHistory } from './rbacStore.js'
 import {
   approveAccessRequest,
   denyAccessRequest,
+  getOwnPendingAccessRequest,
   listAccessRequestsForReviewer,
   submitAccessRequest,
 } from './rbacAccessRequests.js'
@@ -72,7 +73,7 @@ describe('RBAC S16 submit access request', () => {
 })
 
 describe('RBAC S17 one pending request', () => {
-  it('blocks a second submit while the first is still pending', async () => {
+  it('replaces the pending request when the user submits again', async () => {
     const user = person('req-twice')
     await ensurePrincipal(user)
     const first = await submitAccessRequest({
@@ -81,14 +82,20 @@ describe('RBAC S17 one pending request', () => {
       requestedRole: 'user',
     })
     assert.equal(first.ok, true)
+    if (!first.ok) throw new Error('expected first submit')
     const second = await submitAccessRequest({
       user,
       message: 'second request',
       requestedRole: 'manager',
     })
-    assert.equal(second.ok, false)
-    if (second.ok) throw new Error('expected failure')
-    assert.match(second.error, /pending/i)
+    assert.equal(second.ok, true)
+    if (!second.ok) throw new Error('expected replace')
+    assert.equal(second.request.id, first.request.id)
+    assert.equal(second.request.message, 'second request')
+    assert.equal(second.request.requestedRole, 'manager')
+    const own = await getOwnPendingAccessRequest(user)
+    assert.equal(own?.id, first.request.id)
+    assert.equal(own?.requestedRole, 'manager')
   })
 })
 

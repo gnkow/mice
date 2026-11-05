@@ -320,7 +320,7 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
         <p className="muted small ns-settings-count">{pendingCount} pending</p>
       </div>
 
-      <fieldset className="appearance-fieldset" style={{ marginBottom: '1rem' }}>
+      <fieldset className="appearance-fieldset auth-panel-stack">
         <legend>Filter</legend>
         {(['pending', 'approved', 'denied', 'all'] as const).map((f) => (
           <label key={f}>
@@ -336,7 +336,11 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
       </fieldset>
 
       {error && (
-        <p className={`flash ${authorityError ? 'flash-warn' : 'flash-error'}`} role="alert">
+        <p
+          className={`flash ${authorityError ? 'flash-warn' : 'flash-error'}`}
+          role="alert"
+          id="access-request-authority-error"
+        >
           {authorityError ? <strong>Authority: </strong> : null}
           {error}
         </p>
@@ -395,7 +399,7 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
       )}
 
       {selected && mode === 'review' && (
-        <form className="ns-member-form" onSubmit={onApprove} style={{ marginTop: '1rem' }}>
+        <form className="ns-member-form auth-panel-stack" onSubmit={onApprove}>
           <h3 className="ns-settings-subhead">Review request</h3>
           <p className="muted small">
             {selected.name} ({selected.email}) · requested{' '}
@@ -426,19 +430,11 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
               />
             </label>
           </div>
-          <fieldset style={{ marginTop: '0.75rem' }}>
+          <fieldset>
             <legend>Grant permissions (optional modify)</legend>
-            <div
-              style={{
-                maxHeight: '10rem',
-                overflow: 'auto',
-                border: '1px solid var(--color-border)',
-                borderRadius: '0.375rem',
-                padding: '0.5rem',
-              }}
-            >
+            <div className="perm-multiselect perm-multiselect-compact">
               {authz.permissionCatalog.map((perm) => (
-                <label key={perm} className="radio-row" style={{ display: 'flex', gap: '0.5rem' }}>
+                <label key={perm} className="radio-row">
                   <input
                     type="checkbox"
                     checked={grantedPermissions.includes(perm)}
@@ -451,17 +447,24 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
               ))}
             </div>
           </fieldset>
-          <label style={{ display: 'block', marginTop: '0.75rem' }}>
+          <label htmlFor="access-request-approve-reason">
             Approval reason (optional)
             <textarea
+              id="access-request-approve-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}
               placeholder="Why this grant is appropriate"
+              aria-describedby={error ? 'access-request-authority-error' : undefined}
             />
           </label>
           <div className="btn-row ns-settings-actions">
-            <button className="btn primary" type="submit" disabled={busy}>
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={busy}
+              aria-busy={busy || undefined}
+            >
               <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
               {busy ? 'Approving…' : 'Approve'}
             </button>
@@ -474,23 +477,30 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
       )}
 
       {selected && mode === 'deny' && (
-        <form className="ns-member-form" onSubmit={onDeny} style={{ marginTop: '1rem' }}>
+        <form className="ns-member-form auth-panel-stack" onSubmit={onDeny}>
           <h3 className="ns-settings-subhead">Deny request</h3>
           <p className="muted small">
             {selected.name} ({selected.email}) · {formatRequestedAccess(selected)}
           </p>
-          <label>
+          <label htmlFor="access-request-deny-reason">
             Denial reason (required)
             <textarea
+              id="access-request-deny-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
               placeholder="Why this request is denied"
               required
+              aria-describedby={error ? 'access-request-authority-error' : undefined}
             />
           </label>
           <div className="btn-row ns-settings-actions">
-            <button className="btn danger" type="submit" disabled={busy}>
+            <button
+              className="btn danger"
+              type="submit"
+              disabled={busy}
+              aria-busy={busy || undefined}
+            >
               {busy ? 'Denying…' : 'Deny'}
             </button>
             <button className="btn ghost" type="button" disabled={busy} onClick={closeDetail}>
@@ -640,7 +650,7 @@ function UsersGrantSection({
       )}
 
       {grantOpen && (
-        <form className="ns-member-form" onSubmit={onGrant} style={{ marginTop: '1rem' }}>
+        <form className="ns-member-form auth-panel-stack" onSubmit={onGrant}>
           <h3 className="ns-settings-subhead">Grant Access</h3>
           <DirectoryPicker
             kind="user"
@@ -652,7 +662,7 @@ function UsersGrantSection({
               setTargetIss(next.iss)
             }}
           />
-          <div className="ns-settings-grid" style={{ marginTop: '0.75rem' }}>
+          <div className="ns-settings-grid">
             <label className="ns-settings-field">
               <span className="ns-settings-label">Role</span>
               <select
@@ -677,19 +687,11 @@ function UsersGrantSection({
               />
             </label>
           </div>
-          <fieldset style={{ marginTop: '0.75rem' }}>
+          <fieldset>
             <legend>Custom permissions</legend>
-            <div
-              style={{
-                maxHeight: '10rem',
-                overflow: 'auto',
-                border: '1px solid var(--color-border)',
-                borderRadius: '0.375rem',
-                padding: '0.5rem',
-              }}
-            >
+            <div className="perm-multiselect perm-multiselect-compact">
               {authz.permissionCatalog.map((perm) => (
-                <label key={perm} className="radio-row" style={{ display: 'flex', gap: '0.5rem' }}>
+                <label key={perm} className="radio-row">
                   <input
                     type="checkbox"
                     checked={grantPerms.includes(perm)}
@@ -700,9 +702,10 @@ function UsersGrantSection({
               ))}
             </div>
           </fieldset>
-          <label style={{ display: 'block', marginTop: '0.75rem' }}>
+          <label htmlFor="grant-access-reason">
             Reason (required)
             <textarea
+              id="grant-access-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}
@@ -711,7 +714,12 @@ function UsersGrantSection({
             />
           </label>
           <div className="btn-row ns-settings-actions">
-            <button className="btn primary" type="submit" disabled={busy}>
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={busy}
+              aria-busy={busy || undefined}
+            >
               {busy ? 'Granting…' : 'Grant'}
             </button>
             <button

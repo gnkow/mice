@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { pendingShellViewAfterSubmit, shouldRedirectPendingUser } from './pendingAccessShell'
+import {
+  initialPendingShellView,
+  pendingRequestAccessSummary,
+  pendingShellViewAfterSubmit,
+  shouldRedirectPendingUser,
+} from './pendingAccessShell'
 
 describe('RBAC S32 no-access shell', () => {
   it('keeps pending users on the request shell with no escape routes', () => {
@@ -12,8 +17,29 @@ describe('RBAC S32 no-access shell', () => {
     assert.equal(shouldRedirectPendingUser('/profile', false), false)
   })
 
+  it('opens on the submitted view when a pending request already exists', () => {
+    assert.equal(initialPendingShellView(true), 'submitted')
+    assert.equal(initialPendingShellView(false), 'request')
+  })
+
   it('switches to the submitted pending view after a successful request', () => {
     assert.equal(pendingShellViewAfterSubmit('request'), 'submitted')
     assert.equal(pendingShellViewAfterSubmit('submitted'), 'submitted')
+  })
+
+  it('summarizes role or custom permission requests for the success card', () => {
+    assert.equal(
+      pendingRequestAccessSummary({
+        requestedRole: 'manager',
+        roleLabel: 'Manager',
+      }),
+      'Manager',
+    )
+    assert.equal(
+      pendingRequestAccessSummary({
+        requestedPermissions: ['repo:read'],
+      }),
+      '1 permission',
+    )
   })
 })
