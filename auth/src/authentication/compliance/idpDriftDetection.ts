@@ -16,7 +16,7 @@ export type IdpBaselineConfig = {
   id: number
   establishedAt: Date
   establishedBy: string
-  mfaClaimsAvailable: { acr?: string; amr: string[] }
+  mfaClaimsAvailable: { acr?: string; amr: string[]; authTimeAsserted?: boolean }
   requiredScopes: string[]
   signatureAlgorithm: string
   groupClaimFormat: string
@@ -26,6 +26,8 @@ export type IdpBaselineConfig = {
 
 export type IdpCurrentConfig = {
   mfaClaimsAvailable?: { acr?: string; amr: string[] }
+  /** From discovery `claims_supported`; undefined when the IdP does not publish the list. */
+  authTimeAsserted?: boolean
   requiredScopes: string[]
   signatureAlgorithm: string
   groupClaimFormat: string
@@ -87,6 +89,7 @@ export async function getCurrentIdpConfig(): Promise<IdpCurrentConfig> {
     issuer: string
     scopes_supported?: string[]
     id_token_signing_alg_values_supported?: string[]
+    claims_supported?: string[]
   }
 
   // Determine signature algorithm from discovery
@@ -104,7 +107,9 @@ export async function getCurrentIdpConfig(): Promise<IdpCurrentConfig> {
     signatureAlgorithm,
     groupClaimFormat: 'array', // Would be determined from test login
     issuer: discovery.issuer,
-    // MFA claims would be determined from test login id_token
+    ...(discovery.claims_supported
+      ? { authTimeAsserted: discovery.claims_supported.includes('auth_time') }
+      : {}),
   }
 }
 
@@ -128,6 +133,11 @@ export function detectDrift(
     current.mfaClaimsAvailable.amr.length === 0
   ) {
     criticalDrifts.push('MFA amr claim values no longer populated')
+  }
+
+  // Critical: signing evidence needs auth_time; a baseline that had it must keep it
+  if (baseline.mfaClaimsAvailable?.authTimeAsserted && current.authTimeAsserted === false) {
+    criticalDrifts.push('auth_time claim no longer asserted in id_token')
   }
 
   // Critical: Signature algorithm changed
@@ -280,7 +290,7 @@ export async function isSigningBlockedByDrift(): Promise<{
  */
 export async function establishBaseline(
   establishedBy: string,
-  config: Omit<IdpCurrentConfig, 'issuer'> & { mfaClaimsAvailable: { acr?: string; amr: string[] } }
+  config: Omit<IdpCurrentConfig, 'issuer'> & { mfaClaimsAvailable: { acr?: string; amr: string[]; authTimeAsserted?: boolean } }
 ): Promise<IdpBaselineConfig> {
   const issuer = env.oidcIssuer
 

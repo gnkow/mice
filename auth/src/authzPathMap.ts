@@ -1,6 +1,9 @@
 import type { RepoRole } from './authzTypes.js'
 
-/** Minimum repo role per classified mutating action; the enforced source of truth. */
+/**
+ * Minimum repo role per classified mutating action; the enforced source of truth.
+ * Documented in docs/authorization-routes.md (authzRoutesDocs.test.ts keeps the two in step).
+ */
 export const ACTION_MIN_ROLE: Record<string, RepoRole> = {
   'repo.delete': 'admin',
   'repo.metadata': 'admin',

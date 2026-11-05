@@ -6,11 +6,11 @@
 
 **Status:** ready-for-agent
 
-- [ ] Commit `docs/authorization-routes.md` (currently uncommitted)
-- [ ] Update ADR 0002 (`docs/adr/0002-bff-default-deny.md`) to state "deny all unclassified routes"
-- [ ] Add comment in `authzPathMap.ts` pointing to documentation file
-- [ ] Spec appendix references `docs/authorization-routes.md` for complete table
-- [ ] Route table includes all current oxen routes with minimum role/permission
-- [ ] Documentation shows route classification maintenance process
-- [ ] Tests verify documentation matches `authzPathMap.ts` (parity test)
-- [ ] Tests verify unclassified routes are denied (contract test)
+- [x] Commit `docs/authorization-routes.md` (committed)
+- [x] Update ADR 0002 (`docs/adr/0002-bff-default-deny.md`) to state "deny all unclassified routes"
+- [x] Add comment in `authzPathMap.ts` pointing to documentation file
+- [x] Spec appendix references `docs/authorization-routes.md` for complete table
+- [ ] Route table includes all current oxen routes with minimum role/permission (needs a contract test against a pinned oxen-server route list, which does not exist yet; the docs list every classified route)
+- [x] Documentation shows route classification maintenance process
+- [x] Tests verify documentation matches the enforced tables (`authzRoutesDocs.test.ts`; found and fixed the `merge` role listed as write instead of maintain)
+- [x] Tests verify unclassified routes are denied (`authzRoutesDocs.test.ts`, plus the existing default-deny tests in `authz.test.ts`)

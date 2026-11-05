@@ -6,7 +6,7 @@
 
 **Blocked by:** None
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## In code today
 
@@ -16,7 +16,7 @@
 
 - [x] Startup fails with a clear message if the IdP discovery metadata lacks `acr`, `amr` or `auth_time` support (production only; `session/idpAssuranceGate.ts`, called from `boot.ts`)
 - [x] The baseline check requires `auth_time` (`authTimeAsserted`)
-- [ ] The drift report includes `auth_time` (`mfaClaimsAvailable` in `idpDriftDetection.ts` still tracks only `acr`/`amr`)
+- [x] The drift report includes `auth_time`: critical drift when a baseline that asserted it loses it (`idpDriftDetection.ts`, from discovery `claims_supported`)
 - [x] Unit tests cover an IdP missing each capability (a harness IdP integration test is not written)
 
 ## Notes

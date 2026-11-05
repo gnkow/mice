@@ -760,7 +760,7 @@ export const idpBaseline = pgTable('idp_baseline', {
   /** Admin who established the baseline */
   establishedBy: text('established_by').notNull(),
   /** MFA claims available in tokens */
-  mfaClaimsAvailable: jsonb('mfa_claims_available').$type<{ acr?: string; amr: string[] }>().notNull(),
+  mfaClaimsAvailable: jsonb('mfa_claims_available').$type<{ acr?: string; amr: string[]; authTimeAsserted?: boolean }>().notNull(),
   /** Required OIDC scopes */
   requiredScopes: jsonb('required_scopes').$type<string[]>().notNull(),
   /** Token signature algorithm (e.g., RS256) */

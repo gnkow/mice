@@ -149,7 +149,7 @@ export function registerIdpDriftRoutes(app: Hono): void {
   }, async ({ c, user, body }) => {
     await authorizeInstanceAction(user, 'instance.admin')
 
-    const mfaClaimsAvailable = body?.mfaClaimsAvailable as { acr?: string; amr: string[] } | undefined
+    const mfaClaimsAvailable = body?.mfaClaimsAvailable as { acr?: string; amr: string[]; authTimeAsserted?: boolean } | undefined
     const requiredScopes = body?.requiredScopes as string[] | undefined
     const signatureAlgorithm = body?.signatureAlgorithm as string | undefined
     const groupClaimFormat = body?.groupClaimFormat as string | undefined

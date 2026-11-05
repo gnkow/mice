@@ -46,7 +46,7 @@ Every HTTP request to the BFF is classified into:
 | `POST /api/repos/:ns/:repo/branches` | POST | write | Create branch |
 | `PUT /api/repos/:ns/:repo/branches/:branch` | PUT | write | Update branch pointer |
 | `DELETE /api/repos/:ns/:repo/branches/:branch` | DELETE | maintain | Delete branch |
-| `POST /api/repos/:ns/:repo/merge` | POST | write | Merge branches |
+| `POST /api/repos/:ns/:repo/merge` | POST | maintain | Merge branches |
 | `POST /api/repos/:ns/:repo/workspaces` | POST | write | Create workspace |
 | `POST /api/repos/:ns/:repo/workspaces/:id/**` | POST, PUT | write | Workspace operations |
 | `DELETE /api/repos/:ns/:repo/workspaces/:id` | DELETE | write | Delete workspace |
@@ -72,7 +72,7 @@ The `ACTION_MIN_ROLE` table in `authzPathMap.ts` defines the minimum repo role p
 |--------|----------|
 | `repo.delete` | admin |
 | `repo.metadata` | admin |
-| `merge` | write |
+| `merge` | maintain |
 | `branch.delete` | maintain |
 | `file.write` | write |
 | `file.delete` | write |

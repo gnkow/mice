@@ -11,6 +11,7 @@ import {
   establishBaseline,
   getCurrentBaseline,
   detectDrift,
+  getCurrentIdpConfig,
   isSigningBlockedByDrift,
   type IdpBaselineConfig,
   type IdpCurrentConfig,
@@ -123,6 +124,34 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
 
       assert.equal(criticalDrifts.length, 1)
       assert.ok(criticalDrifts[0].includes('amr claim values no longer populated'))
+    })
+
+    it('detects critical drift: auth_time no longer asserted', () => {
+      const baseline: IdpBaselineConfig = {
+        id: 1,
+        establishedAt: new Date(),
+        establishedBy: 'admin@example.com',
+        mfaClaimsAvailable: { amr: ['mfa', 'otp'], authTimeAsserted: true },
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+        issuer: 'http://localhost:8180/realms/mice',
+        isCurrent: true,
+      }
+
+      const current: IdpCurrentConfig = {
+        mfaClaimsAvailable: { amr: ['mfa', 'otp'] },
+        authTimeAsserted: false,
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+        issuer: 'http://localhost:8180/realms/mice',
+      }
+
+      const { criticalDrifts } = detectDrift(baseline, current)
+
+      assert.equal(criticalDrifts.length, 1)
+      assert.ok(criticalDrifts[0].includes('auth_time'))
     })
 
     it('detects critical drift: signature algorithm changed', () => {
@@ -286,6 +315,29 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
       const { criticalDrifts } = detectDrift(baseline, current)
 
       assert.equal(criticalDrifts.length, 3)
+    })
+  })
+
+  describe('Current IdP config', () => {
+    const withDiscovery = async (doc: Record<string, unknown>) => {
+      const original = globalThis.fetch
+      globalThis.fetch = (async () => new Response(JSON.stringify(doc), { status: 200 })) as typeof fetch
+      try {
+        return await getCurrentIdpConfig()
+      } finally {
+        globalThis.fetch = original
+      }
+    }
+    const base = { issuer: 'http://idp.test', id_token_signing_alg_values_supported: ['RS256'] }
+
+    it('reports auth_time as asserted when discovery advertises it', async () => {
+      const cfg = await withDiscovery({ ...base, claims_supported: ['sub', 'acr', 'amr', 'auth_time'] })
+      assert.equal(cfg.authTimeAsserted, true)
+    })
+
+    it('reports auth_time as not asserted when discovery omits it', async () => {
+      const cfg = await withDiscovery({ ...base, claims_supported: ['sub', 'acr', 'amr'] })
+      assert.equal(cfg.authTimeAsserted, false)
     })
   })
 
