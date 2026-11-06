@@ -15,5 +15,5 @@
 - [ ] A request stays unapproved until an eligible approver signs; there are no deadlines or escalation
 - [ ] Opening a request sets its commits to QC Marked (see repositories/03)
 - [ ] A merge request whose source head or target head moved is stale and cannot be signed
-- [ ] The signature ceremony (gxp-compliance 01) is the only way to complete the merge
+- [ ] The signature ceremony (gxp-compliance 05) is the only way to complete the merge
 - [ ] An approver who authored any commit in the range cannot sign (enforced here, using the existing `selfMerge.ts` author comparison)

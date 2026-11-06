@@ -158,7 +158,7 @@ Admin approves any request → ALLOWED
 
 ### Training
 
-- **Separate spec**: Training system in separate spec. Each permission/capability maps to training module.
+- **Separate spec**: `.specs/17-training.md` (ticket `.scratch/training/issues/01-training-spec.md`). Each permission/capability maps to a training module.
 - **Assume trained**: For now, assume all users trained. No self-attestation.
 
 ## Testing Decisions
@@ -315,10 +315,10 @@ The following gaps were identified between the spec decisions and current implem
 
 ### 8. Training Spec (DEFERRED) ⏱️ TBD
 
-**Status**: Deferred to separate spec.
+**Status**: Deferred to separate spec. Ticket: `.scratch/training/issues/01-training-spec.md` (creates `.specs/17-training.md`).
 
 **Scope**:
-- Create new spec `03-training.md` (or similar)
+- Create new spec `.specs/17-training.md`
 - Map each instance permission to required training module
 - Map each namespace capability to required training module
 - Map repository roles to training requirements

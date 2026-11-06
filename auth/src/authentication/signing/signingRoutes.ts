@@ -37,7 +37,7 @@ import { env } from '../../env.js'
  * 
  * Related tickets:
  * - .scratch/authentication/issues/09-step-up-reauthentication.md
- * - .scratch/gxp-compliance/issues/01-signing-ceremony.md
+ * - .scratch/gxp-compliance/issues/05-sign-validated-branch-merge.md
  */
 
 const SIGNING_FRESHNESS_SEC = 60 // 60 seconds per spec requirement

@@ -4,7 +4,7 @@
 
 **Spec:** `.specs/05-repositories.md`, `.specs/04-gxp-compliance.md`
 
-**Blocked by:** repositories/01, gxp-compliance/01
+**Blocked by:** repositories/01, gxp-compliance/05
 
 **Status:** ready-for-agent
 

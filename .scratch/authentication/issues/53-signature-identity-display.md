@@ -4,7 +4,7 @@
 
 **Spec:** `.specs/01-authentication.md`, `.specs/04-gxp-compliance.md` (Q9)
 
-**Blocked by:** gxp-compliance/03
+**Blocked by:** gxp-compliance/01
 
 **Status:** done
 
