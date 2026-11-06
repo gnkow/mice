@@ -1102,16 +1102,16 @@ This allows future **wildcard permissions**:
 
 | Account | Role | Purpose |
 |---------|------|---------|
-| `mice_admin@mice.com` | `admin` | Instance administrator |
-| `mice_manage@mice.com` | `manager` | Team manager |
+| `mice_admin@mice.com` | `admin` | Instance administrator (bootstrap) |
+| `mice_manager@mice.com` | `manager` | Team manager / access-request review |
 | `mice_auditor@mice.com` | `auditor` | Compliance auditor |
 | `mice_user@mice.com` | `user` | Standard user |
 | `mice_external@mice.com` | `external` | External collaborator |
-| `mice_user_no_access@mice.com` | (none) | No role, triggers request flow |
+| `mice_pending@mice.com` | (none) | No role — `/pending` request flow |
 
 ### Test Scenarios
 
-1. **No access user** requests User role → approved → can write
+1. **Pending user** requests User role → approved → can write
 2. **User** requests Manager role → approved → can create namespace
 3. **Manager** requests permissions they don't have → **blocked**
 4. **Admin** directly grants Auditor role → user can read all repos (bypass ACL)

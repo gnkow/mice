@@ -60,6 +60,7 @@
       ]
     },
     {
+      "id": "a0000000-0000-4000-8000-000000000001",
       "username": "mice_admin",
       "enabled": true,
       "email": "mice_admin@mice.com",
@@ -75,9 +76,10 @@
       ]
     },
     {
-      "username": "mice_manage",
+      "id": "a0000000-0000-4000-8000-000000000002",
+      "username": "mice_manager",
       "enabled": true,
-      "email": "mice_manage@mice.com",
+      "email": "mice_manager@mice.com",
       "emailVerified": true,
       "firstName": "Manager",
       "lastName": "User",
@@ -90,6 +92,7 @@
       ]
     },
     {
+      "id": "a0000000-0000-4000-8000-000000000003",
       "username": "mice_auditor",
       "enabled": true,
       "email": "mice_auditor@mice.com",
@@ -105,6 +108,7 @@
       ]
     },
     {
+      "id": "a0000000-0000-4000-8000-000000000004",
       "username": "mice_user",
       "enabled": true,
       "email": "mice_user@mice.com",
@@ -120,16 +124,33 @@
       ]
     },
     {
-      "username": "mice_user_no_access",
+      "id": "a0000000-0000-4000-8000-000000000005",
+      "username": "mice_external",
       "enabled": true,
-      "email": "mice_user_no_access@mice.com",
+      "email": "mice_external@mice.com",
       "emailVerified": true,
-      "firstName": "No Access",
+      "firstName": "External",
       "lastName": "User",
       "credentials": [
         {
           "type": "password",
-          "value": "noaccess123",
+          "value": "external123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000006",
+      "username": "mice_pending",
+      "enabled": true,
+      "email": "mice_pending@mice.com",
+      "emailVerified": true,
+      "firstName": "Pending",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pending123",
           "temporary": false
         }
       ]
