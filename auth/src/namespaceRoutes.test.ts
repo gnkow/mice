@@ -28,7 +28,12 @@ const cookie = async (sub: string) => {
 const call = async (as: string | null, method: string, path: string, body?: unknown) =>
   app.request(path, {
     method,
-    headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', ...(as ? { cookie: await cookie(as) } : {}) },
+    headers: {
+      'content-type': 'application/json',
+      'x-mice-reason': 'Routine test change',
+      'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+      ...(as ? { cookie: await cookie(as) } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   })
 

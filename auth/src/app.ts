@@ -6,6 +6,7 @@ import { isStoreOutage } from './db/outage.js'
 import { applyGlobalGuards, authenticateOutcome, backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerDisabledSignerRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
 import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
+import { registerAuditHealthRoutes } from './auditHealthRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
 import { registerFavoritesRoutes } from './favoritesRoutes.js'
 import { registerInstanceRoutes } from './instanceRoutes.js'
@@ -69,6 +70,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerNameHistoryRoutes(app)
   registerMeRoutes(app, { audit })
   registerAuditRoutes(app, { audit })
+  registerAuditHealthRoutes(app, { audit })
   registerStepUp(app)
   registerLoginRoutes(app, { audit })
   registerWebSessionRoutes(app)

@@ -33,6 +33,7 @@ type Row = {
   message?: string
   reason?: string
   reason_source?: string
+  category?: string
 }
 const rows = async () =>
   (await ledger.readAll()).filter((r) => r.seq > since).map((r) => JSON.parse(r.value) as Row)
@@ -61,68 +62,105 @@ async function putJson(message: string | undefined, extra: Record<string, string
 }
 
 await describe('mandatory reason on proxied dataset mutations', async () => {
-  await it('rejects a too-short commit message with 400 before anything reaches oxen', async () => {
-    const res = await putJson('fix a')
-    assert.equal(res.status, 400)
-    assert.equal(((await res.json()) as { status_message: string }).status_message, 'reason_too_short')
-    assert.equal(upstream.length, 0)
-    assert.equal((await rows()).some((r) => r.phase === 'intent'), false)
-  })
-
-  await it('rejects a mutation with neither commit message nor reason', async () => {
+  await it('allows a file write without a reason (new data is create-exempt)', async () => {
     const res = await putJson(undefined)
-    assert.equal(res.status, 400)
-    assert.equal(((await res.json()) as { status_message: string }).status_message, 'reason_required')
-    assert.equal(upstream.length, 0)
-  })
-
-  await it('uses a long-enough commit message as the reason and records its source', async () => {
-    const res = await putJson('Correct the plate layout')
     assert.equal(res.status, 200)
-    const o = (await outcomes())[0]!
-    assert.equal(o.reason, 'Correct the plate layout')
-    assert.equal(o.reason_source, 'commit-message')
-    assert.equal(o.message, 'Correct the plate layout')
+    assert.ok(upstream.length >= 1)
+    const o = (await outcomes()).find((r) => r.action === 'file.write')!
+    assert.equal(o.reason, undefined)
   })
 
-  await it('lets an explicit X-Mice-Reason override the commit message and stores both', async () => {
-    const res = await putJson('fix a', { 'x-mice-reason': 'Instrument recalibrated, see deviation 12' })
-    assert.equal(res.status, 200)
-    const o = (await outcomes())[0]!
-    assert.equal(o.reason, 'Instrument recalibrated, see deviation 12')
-    assert.equal(o.reason_source, 'explicit')
-    assert.equal(o.message, 'fix a')
-    assert.equal(upstream[0]!.headers.get('x-mice-reason'), null)
+  await it('allows a branch create without a reason', async () => {
+    const branch = await app.request('/api/repos/rs/r/branches', {
+      method: 'POST',
+      headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'feature' }),
+    })
+    assert.equal(branch.status, 200)
+    assert.ok(upstream.length >= 1)
+    const o = (await outcomes()).find((r) => r.action === 'branch.create')
+    assert.equal(o?.reason, undefined)
   })
 
-  await it('rejects an explicit reason that is too short', async () => {
-    const res = await putJson('Correct the plate layout', { 'x-mice-reason': 'oops' })
-    assert.equal(res.status, 400)
-    assert.equal(upstream.length, 0)
-  })
-
-  await it('takes the minimum length from one setting', async () => {
-    const restore = overrideEnv({ auditReasonMinLength: 30 })
-    try {
-      assert.equal((await putJson('Correct the plate layout')).status, 400)
-    } finally {
-      restore()
-    }
-    assert.equal((await putJson('Correct the plate layout')).status, 200)
-  })
-
-  await it('applies to binary-bodied writes through the header, and to a bodiless branch delete', async () => {
+  await it('rejects a branch delete without a reason before anything reaches oxen', async () => {
     const del = await app.request('/api/repos/rs/r/branches/old', {
       method: 'DELETE',
       headers: await iso.sessionHeaders(admin),
     })
     assert.equal(del.status, 400)
+    assert.equal(((await del.json()) as { status_message: string }).status_message, 'reason_required')
+    assert.equal(upstream.length, 0)
+  })
+
+  await it('rejects a branch delete with free text but no category', async () => {
+    const del = await app.request('/api/repos/rs/r/branches/old', {
+      method: 'DELETE',
+      headers: {
+        ...(await iso.sessionHeaders(admin)),
+        'x-mice-reason': 'Branch merged and obsolete',
+      },
+    })
+    assert.equal(del.status, 400)
+    assert.equal(((await del.json()) as { status_message: string }).status_message, 'reason_category_required')
+    assert.equal(upstream.length, 0)
+  })
+
+  await it('accepts a branch delete with category and free text and records both', async () => {
     const ok = await app.request('/api/repos/rs/r/branches/old', {
       method: 'DELETE',
-      headers: { ...(await iso.sessionHeaders(admin)), 'x-mice-reason': 'Branch merged and obsolete' },
+      headers: {
+        ...(await iso.sessionHeaders(admin)),
+        'x-mice-reason': 'Branch merged and obsolete',
+        'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+      },
     })
     assert.equal(ok.status, 200)
-    assert.equal((await outcomes())[0]!.reason_source, 'explicit')
+    const o = (await outcomes())[0]!
+    assert.equal(o.reason, 'Branch merged and obsolete')
+    assert.equal(o.reason_source, 'explicit')
+    assert.equal(o.category, 'destructive')
+    assert.equal(upstream[0]!.headers.get('x-mice-reason'), null)
+    assert.equal(upstream[0]!.headers.get('x-mice-reason-category'), null)
+  })
+
+  await it('rejects a too-short reason on a delete even with a valid category', async () => {
+    const del = await app.request('/api/repos/rs/r/branches/old', {
+      method: 'DELETE',
+      headers: {
+        ...(await iso.sessionHeaders(admin)),
+        'x-mice-reason': 'short',
+        'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+      },
+    })
+    assert.equal(del.status, 400)
+    assert.equal(((await del.json()) as { status_message: string }).status_message, 'reason_too_short')
+    assert.equal(upstream.length, 0)
+  })
+
+  await it('takes the minimum length from one setting on deletes', async () => {
+    const restore = overrideEnv({ auditReasonMinLength: 30 })
+    try {
+      const short = await app.request('/api/repos/rs/r/branches/old', {
+        method: 'DELETE',
+        headers: {
+          ...(await iso.sessionHeaders(admin)),
+          'x-mice-reason': 'Branch merged and obsolete',
+          'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+        },
+      })
+      assert.equal(short.status, 400)
+    } finally {
+      restore()
+    }
+    const ok = await app.request('/api/repos/rs/r/branches/old', {
+      method: 'DELETE',
+      headers: {
+        ...(await iso.sessionHeaders(admin)),
+        'x-mice-reason': 'Branch merged and obsolete',
+        'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+      },
+    })
+    assert.equal(ok.status, 200)
   })
 
   await it('does not ask for a reason on reads or on object uploads that change nothing visible', async () => {
@@ -140,34 +178,64 @@ await describe('mandatory reason on proxied dataset mutations', async () => {
 const adminHeaders = async (reason?: string) => ({
   ...(await iso.sessionHeaders(admin)),
   'content-type': 'application/json',
-  ...(reason ? { 'x-mice-reason': reason } : {}),
+  ...(reason
+    ? { 'x-mice-reason': reason, 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
+    : {}),
 })
 
 await describe('mandatory reason on admin and permission changes', async () => {
-  await it('rejects a namespace create without a reason and changes nothing', async () => {
+  await it('allows a namespace create without a reason (new resources are exempt)', async () => {
     // Manager (not Admin) creates namespaces — Admin has no data-plane create (S25).
-    const managerHeaders = async (reason?: string) => ({
+    const managerHeaders = async () => ({
       ...(await iso.sessionHeaders(manager)),
       'content-type': 'application/json',
-      ...(reason ? { 'x-mice-reason': reason } : {}),
     })
     const res = await app.request('/auth/namespaces', {
       method: 'POST',
       headers: await managerHeaders(),
       body: JSON.stringify({ name: 'newns', basePermission: 'none' }),
     })
-    assert.equal(res.status, 400)
-    assert.equal(((await res.json()) as { code: string }).code, 'reason_required')
-    assert.equal((await rows()).some((r) => r.phase === 'intent'), false)
-    const ok = await app.request('/auth/namespaces', {
+    assert.equal(res.status, 200)
+    const o = (await outcomes()).find((r) => r.action === 'namespace.create')!
+    assert.equal(o.reason, undefined)
+  })
+
+  await it('requires category and free text on a namespace settings update', async () => {
+    await createNamespaceAuthz(admin, 'upd', 'none', true)
+    // Seed ownership so the manager can patch (createNamespaceAuthz with admin may need a manager-owned ns).
+    const create = await app.request('/auth/namespaces', {
       method: 'POST',
-      headers: await managerHeaders('Set up the proteomics namespace'),
-      body: JSON.stringify({ name: 'newns', basePermission: 'none' }),
+      headers: { ...(await iso.sessionHeaders(manager)), 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'upd-mgr', basePermission: 'none' }),
+    })
+    assert.equal(create.status, 200)
+
+    const noCat = await app.request('/auth/namespaces/upd-mgr', {
+      method: 'PATCH',
+      headers: {
+        ...(await iso.sessionHeaders(manager)),
+        'content-type': 'application/json',
+        'x-mice-reason': 'Tighten default access after review',
+      },
+      body: JSON.stringify({ basePermission: 'read' }),
+    })
+    assert.equal(noCat.status, 400)
+    assert.equal(((await noCat.json()) as { code: string }).code, 'reason_category_required')
+
+    const ok = await app.request('/auth/namespaces/upd-mgr', {
+      method: 'PATCH',
+      headers: {
+        ...(await iso.sessionHeaders(manager)),
+        'content-type': 'application/json',
+        'x-mice-reason': 'Tighten default access after review',
+        'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+      },
+      body: JSON.stringify({ basePermission: 'read' }),
     })
     assert.equal(ok.status, 200)
-    const o = (await outcomes()).find((r) => r.action === 'namespace.create')!
-    assert.equal(o.reason, 'Set up the proteomics namespace')
-    assert.equal(o.reason_source, 'explicit')
+    const o = (await outcomes()).find((r) => r.action === 'namespace.settings.update')!
+    assert.equal(o.reason, 'Tighten default access after review')
+    assert.equal(o.category, 'privileged_settings')
   })
 
   await it('applies to instance permission changes and access-request decisions', async () => {
@@ -206,11 +274,16 @@ await describe('service principals', async () => {
 })
 
 await describe('declared reason for clients that cannot send a header', async () => {
-  const declare = async (reason: string, ttlSec?: number) =>
+  const declare = async (
+    reason: string,
+    ttlSec?: number,
+    category = 'data_correction',
+    changeControlId = 'CC-2026-114',
+  ) =>
     app.request('/auth/reason', {
       method: 'POST',
       headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json' },
-      body: JSON.stringify({ reason, ttlSec }),
+      body: JSON.stringify({ reason, ttlSec, category, changeControlId }),
     })
   const pushLike = async () =>
     app.request('/api/repos/rs/r/commits/abc123/complete', {
@@ -226,7 +299,7 @@ await describe('declared reason for clients that cannot send a header', async ()
       assert.equal((await declare('Upload of plate run 42', 60)).status, 200)
       assert.equal((await pushLike()).status, 200)
       const o = (await outcomes()).at(-1)!
-      assert.deepEqual([o.reason, o.reason_source], ['Upload of plate run 42', 'explicit'])
+      assert.deepEqual([o.reason, o.reason_source, o.category], ['Upload of plate run 42', 'explicit', 'data_correction'])
       clock.advance(61_000)
       assert.equal((await pushLike()).status, 400)
     } finally {
@@ -253,13 +326,20 @@ await describe('declared reason for clients that cannot send a header', async ()
 })
 
 await describe('reason in the audit views', async () => {
-  await it('shows reason and its source in the CSV export', async () => {
-    await putJson('Correct the plate layout')
+  await it('shows reason, source and category in the CSV export', async () => {
+    await app.request('/api/repos/rs/r/branches/old', {
+      method: 'DELETE',
+      headers: {
+        ...(await iso.sessionHeaders(admin)),
+        'x-mice-reason': 'Correct the plate layout',
+        'x-mice-reason-category': 'data_correction', 'x-mice-change-control-id': 'CC-2026-114',
+      },
+    })
     const csv = await (await app.request('/auth/audit/export.csv', { headers: await iso.sessionHeaders(admin) })).text()
     const [header, ...lines] = csv.trim().split('\r\n')
     const cols = header!.split(',')
-    const row = lines.find((l) => l.includes('file.write'))!
-    assert.ok(cols.includes('reason') && cols.includes('reason_source'))
-    assert.match(row, /Correct the plate layout,commit-message/)
+    const row = lines.find((l) => l.includes('branch.delete'))!
+    assert.ok(cols.includes('reason') && cols.includes('reason_source') && cols.includes('category'))
+    assert.match(row, /Correct the plate layout,explicit,data_correction/)
   })
 })

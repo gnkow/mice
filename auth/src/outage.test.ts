@@ -48,7 +48,7 @@ await describe('database outage fails closed', async () => {
     try {
       const res = await app.request('/api/repos/ns/r/file/main/a.csv', {
         method: 'PUT',
-        headers: { ...(await headers()), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+        headers: { ...(await headers()), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
         body: '{}',
       })
       assert.equal(res.status, 503)

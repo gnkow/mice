@@ -32,6 +32,7 @@ export type NamespaceSettings = {
   name: string
   basePermission: BasePermission
   membersCanCreateRepos: boolean
+  changeControlIdPattern: string
   createdAt: string
   createdBy: string
 }
@@ -157,6 +158,7 @@ function toSettings(r: typeof namespaces.$inferSelect): NamespaceSettings {
     name: r.name,
     basePermission: r.basePermission as BasePermission,
     membersCanCreateRepos: r.membersCanCreateRepos,
+    changeControlIdPattern: r.changeControlIdPattern,
     createdAt: r.createdAt.toISOString(),
     createdBy: r.createdBy,
   }
@@ -238,11 +240,12 @@ export async function ensureNamespace(actor: string, name: string, basePermissio
 
 export async function updateNamespaceSettings(
   name: string,
-  patch: Partial<Pick<NamespaceSettings, 'basePermission' | 'membersCanCreateRepos'>>,
+  patch: Partial<Pick<NamespaceSettings, 'basePermission' | 'membersCanCreateRepos' | 'changeControlIdPattern'>>,
 ): Promise<Result> {
   const set: Partial<typeof namespaces.$inferInsert> = {}
   if (patch.basePermission !== undefined) set.basePermission = patch.basePermission
   if (patch.membersCanCreateRepos !== undefined) set.membersCanCreateRepos = patch.membersCanCreateRepos
+  if (patch.changeControlIdPattern !== undefined) set.changeControlIdPattern = patch.changeControlIdPattern
   if (Object.keys(set).length === 0) {
     return (await readNamespace(name)) ? { ok: true } : { ok: false, error: 'Namespace not found' }
   }

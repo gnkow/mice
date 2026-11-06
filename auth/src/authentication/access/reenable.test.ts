@@ -67,7 +67,7 @@ const admin = { ...mk('admin1'), emailVerified: true }
 await maybeBootstrapInstanceAdmin(admin)
 await ensureBootstrapKey()
 
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Absence exceeded thirty days' }
+const json = { 'content-type': 'application/json', 'x-mice-reason': 'Absence exceeded thirty days', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
 
 const cookie = async (user: ReturnType<typeof mk>) => {
   const sessionId = await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 30 })

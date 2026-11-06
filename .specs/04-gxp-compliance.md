@@ -27,6 +27,7 @@ Strict mode is always on (not a switch, no exemption). It enforces fail-closed a
 12. As an auditor, I want to verify integrity of regulated records, so that I can attest completeness.
 13. As a compliance lead, I want unique signing identity, so that credentials are never shared.
 14. As an operator, I want the effective regulated configuration visible in the admin overview and written to audit at each start or change, so that I know what is enforced.
+15. As an auditor, I want every modified entity to keep an append-only version history of its successive states, separate from the audit trail of who and why, so that I can reconstruct what the entity looked like at any point.
 
 ## Implementation Decisions
 
@@ -38,6 +39,7 @@ Strict mode is always on (not a switch, no exemption). It enforces fail-closed a
 - Signature binds source head, target head and merge-result SHA-256 manifest digest (manifest stored before the signature is final). Commit ids are informational. A merge request goes stale if the target moves; the author re-syncs and approval starts over.
 - Commit QC status: None, QC Marked (merge request for approval open), QC Passed (after signed merge), QC Failed (after revocation). Status is per commit and branch-invariant. Any approver can revoke individual commits, several, or all commits of a signature, with reason and step-up, and notifying the Owners and the original signer; revoker independence is not required. Revoking before the merge blocks the merge. Failed returns to Passed only through a new signature. No data is removed; revocation does not propagate between commits of a signature. A merge commit keeps its own status; revoking the signature fails it. The UI warns on merge commits and descendants that contain QC Failed commits.
 - Reasons (min length, pick-list category, free text) and the change-control id (per-namespace pattern) are required for: changes or deletions of existing records on validated branches, destructive actions, privileged settings, revocation. The change-control id is also required on merge signatures. New data (new files, commits on non-validated branches) needs neither.
+- Entity version history is distinct from the Audit trail. Audit records who changed what, when, why and with what result (immudb). Entity version history records the successive states of each mutable domain entity so a prior state can be reconstructed without reading audit. Every modification of an entity appends a new version; prior versions are never edited or deleted. Historic views live on the entity (not only on the Audit page). Creates open the first version; updates and deletes close the prior version and open the next (delete may close without a successor). Already versioned today: oxen repository data, principal names, RBAC roles and permissions (plus permission snapshots), metadata revisions, access-flag history. Remaining mutable BFF entities (namespace settings, memberships, repository collaborators, custom roles, and any other mutable store) must gain the same property; an inventory ticket closes gaps or records an explicit exemption with rationale.
 - Audit order is intent, then effect, then outcome. Failed outcomes are audited. A reconciliation job flags intents without outcome (it writes its own audit record, never repairs).
 - When audit is unavailable all mutations are refused and reads continue. There is no outbox and no held output; users see "audit unavailable, nothing was saved" and the client keeps local work. A health probe and operator alert on audit degradation are required; a single immudb instance is unsupported for production.
 - The full signature record lives in immudb (append-only, with `esign.*` audit events); PostgreSQL holds only an index.
@@ -67,6 +69,7 @@ Open grilling questions: see questions.md in this folder (superseded where "Re-g
 - Signature binds content digest (manifest); commit ids informational (Q5, Q23).
 - Commit QC status None / QC Marked / QC Passed / QC Failed, per commit, branch-invariant; revoke by any approver on commits or whole signature; Failed to Passed via new signature; no propagation; merge before revocation is blocked (supersedes Q6, Q7).
 - Reasons only for changes/deletions of existing records on validated branches, destructive actions, privileged settings, revocation; change-control id on those plus merge signatures (supersedes Q13, Q14).
+- Entity version history ≠ Audit trail; every modified entity is versioned on change with an entity-local historic view (new requirement, story 15).
 - Intent, effect, outcome audit order; failed outcomes audited; audit outage blocks all mutations, reads continue, no outbox, no held output (supersedes Q12).
 - No direct commits to validated branches by anyone; CLI opens merge requests, signs via browser step-up; no PATs/SPs (Q20).
 - No break-glass (Q21). No research-repo exemption (Q10). ID token verified and IdP capability checked at start; ADR 0001 amended (Q3, Q4).
@@ -375,7 +378,7 @@ Challenges: "CSV templates out of scope"; test decisions.
 
 ## Blocks or dependencies
 - **Blocks 01 (Authentication)**: Signature requires MFA evidence (Q4, Q6). IdP must assert acr/amr or signing is refused. IdP baseline check (authentication Q45, T6) is a GxP-compliance validation requirement.
-- **Blocks 02 (Authorization)**: Two-merger rule (Q18 via 02 Q1) is a precondition for the review gate. Self-merge is forbidden in GxP namespaces.
+- **Blocks 02 (Authorization)**: Two-merger rule (Q18 via 02 Q1) is a precondition for the review gate. Self-merge is forbidden in GxP namespaces. Mutable AuthZ entities (namespace settings, memberships, collaborators, custom roles) must carry entity version history (story 15), distinct from audit.
 - **Blocks 04 (Audit)**: Signature records stored in immudb (Q8) require audit module to handle larger record sizes and provide verification proofs.
 - **Blocks 05 (Repositories)**: Merge signer must differ from author (inherited from 02 Q1). Immutable release records (Q23 via 05 Q23) support GxP pinning.
 - **Blocks 08 (Workspaces)**: Automated Job commits are never signed (Q7 via 08 Q7); merge to main needs a human signature. Lease renewals are audited per renewal (Q18 resolved).

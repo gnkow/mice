@@ -57,7 +57,7 @@ const cookie = async (sub: string) => {
   return { cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}` }
 }
 
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' }
+const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
 
 describe('RBAC S29 Access-request routes', () => {
   it('submits a role request and lists it for a manager', async () => {

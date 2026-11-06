@@ -56,7 +56,7 @@ const cookie = async (user: ReturnType<typeof mk>) => {
   return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
 }
 
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Investigation hold' }
+const json = { 'content-type': 'application/json', 'x-mice-reason': 'Investigation hold', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
 
 function app() {
   const app = new Hono()
@@ -196,7 +196,7 @@ await describe('Mice suspension flags', async () => {
     })).status, 200)
     assert.equal((await api.request('/auth/admin/mice-suspension/lift', {
       method: 'POST',
-      headers: { ...headers, 'x-mice-reason': 'Investigation closed' },
+      headers: { ...headers, 'x-mice-reason': 'Investigation closed', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: JSON.stringify({ principal: 'idp|recorded', reason: 'Investigation closed' }),
     })).status, 200)
 
@@ -238,7 +238,7 @@ await describe('Mice suspension flags', async () => {
     })).status, 200)
     assert.equal((await api.request('/auth/admin/mice-suspension/lift', {
       method: 'POST',
-      headers: { ...headers, 'x-mice-reason': 'Investigation closed' },
+      headers: { ...headers, 'x-mice-reason': 'Investigation closed', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: JSON.stringify({ principal: 'idp|audited', reason: 'Investigation closed' }),
     })).status, 200)
     assert.equal((await api.request('/auth/admin/mice-suspension', {

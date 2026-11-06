@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { closeAuditOutage, reportAuditDegradation } from './auditOutage.js'
 import { currentClock, systemClock, type Clock } from './clock.js'
 import { env } from './env.js'
 import { auditActionLabel } from './auditLabels.js'
@@ -17,6 +18,9 @@ export type AuditActor = {
 
 /** `intent` is written before a mutation runs, `outcome` after. Other events carry no phase. */
 export type AuditPhase = 'intent' | 'outcome'
+
+/** User-facing copy when a mutation is refused because the audit store cannot accept an Intent. */
+export const AUDIT_UNAVAILABLE_MESSAGE = 'audit unavailable, nothing was saved'
 
 export type AuditEvent = {
   id: string
@@ -40,6 +44,10 @@ export type AuditEvent = {
   /** Why the change was made (mandatory for dataset and admin mutations); `message` stays the commit message. */
   reason?: string
   reason_source?: 'explicit' | 'commit-message'
+  /** Pick-list category when a reason is required (GxP ticket 03). */
+  category?: string
+  /** QMS change-control id when required (GxP ticket 04). */
+  change_control_id?: string
   /** Dataset commit ids before and after a dataset mutation. */
   dataset?: { base?: string; head?: string }
   /** The mutation succeeded but its resulting dataset version could not be determined. */
@@ -223,7 +231,19 @@ export function startAuditVerifySchedule(
     if (clock.now() - last < intervalMs) return false
     last = clock.now()
     const v = await verifyAudit()
-    if (!v.ok) console.error('[mice-auth] audit verification FAILED', v.firstBreak)
+    if (!v.ok) {
+      console.error('[mice-auth] audit verification FAILED', v.firstBreak)
+      void reportAuditDegradation({
+        at: clock.now(),
+        check: 'verify',
+        requestId: 'verify',
+        detail: v.firstBreak?.reason,
+      }).catch((err) => console.error('[mice-auth] audit outage report failed', err))
+    } else {
+      void closeAuditOutage(clock.now()).catch((err) =>
+        console.error('[mice-auth] audit outage close failed', err),
+      )
+    }
     return true
   }
   const timer = opts.poll === false ? undefined : setInterval(() => void tick(), Math.min(intervalMs, 60_000))
@@ -330,7 +350,14 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
     action: partial.action,
     ...refs,
     ...(partial.message ? { message: partial.message } : {}),
-    ...(partial.reason ? { reason: partial.reason, reason_source: partial.reason_source } : {}),
+    ...(partial.reason
+      ? {
+          reason: partial.reason,
+          reason_source: partial.reason_source,
+          ...(partial.category ? { category: partial.category } : {}),
+        }
+      : {}),
+    ...(partial.change_control_id ? { change_control_id: partial.change_control_id } : {}),
     ...(partial.dataset ? { dataset: partial.dataset } : {}),
     ...(partial.unverified ? { unverified: true as const } : {}),
     ...(partial.detail && Object.keys(partial.detail).length
@@ -356,10 +383,19 @@ async function appendStored(partial: AuditInput, extra: Pick<AuditEvent, 'phase'
     const event = await buildEvent(partial, extra)
     await (await ledgerOrOpen()).append(event.id, JSON.stringify(event))
     lastAppendError = null
+    void closeAuditOutage(currentClock.now()).catch((err) =>
+      console.error('[mice-auth] audit outage close failed', err),
+    )
     return event
   } catch (err) {
     lastAppendError = String(err)
     console.error('[mice-auth] audit append failed', err)
+    void reportAuditDegradation({
+      at: currentClock.now(),
+      check: 'append',
+      requestId: 'append',
+      detail: String(err),
+    }).catch((reportErr) => console.error('[mice-auth] audit outage report failed', reportErr))
     throw err
   }
 }
@@ -391,14 +427,31 @@ export async function appendOutcome(intentId: string, partial: AuditInput): Prom
   }
 }
 
-const intents = new WeakMap<object, { id: string; outcomes: number; reason?: Pick<AuditEvent, 'reason' | 'reason_source'> }>()
+const intents = new WeakMap<object, {
+  id: string
+  outcomes: number
+  reason?: Pick<AuditEvent, 'reason' | 'reason_source' | 'category' | 'change_control_id'>
+}>()
 
 /** Remembers the intent written for a request so native audit calls can link their outcome to it. */
 export function trackIntent(request: object, intent: AuditEvent): void {
   intents.set(request, {
     id: intent.id,
     outcomes: 0,
-    ...(intent.reason ? { reason: { reason: intent.reason, reason_source: intent.reason_source } } : {}),
+    ...(intent.reason || intent.change_control_id
+      ? {
+          reason: {
+            ...(intent.reason
+              ? {
+                  reason: intent.reason,
+                  reason_source: intent.reason_source,
+                  ...(intent.category ? { category: intent.category } : {}),
+                }
+              : {}),
+            ...(intent.change_control_id ? { change_control_id: intent.change_control_id } : {}),
+          },
+        }
+      : {}),
   })
 }
 
@@ -645,6 +698,8 @@ export const AUDIT_CSV_COLUMNS = [
   'message',
   'reason',
   'reason_source',
+  'category',
+  'change_control_id',
   'dataset_base',
   'dataset_head',
   'unverified',
@@ -685,6 +740,8 @@ export function auditEventsToCsv(events: AuditEvent[]): string {
         e.message,
         e.reason,
         e.reason_source,
+        e.category,
+        e.change_control_id,
         e.dataset?.base,
         e.dataset?.head,
         e.unverified ? 'true' : '',

@@ -307,6 +307,7 @@ export function AuditPage() {
                   <th>Repo</th>
                   <th>Resource</th>
                   <th>Status</th>
+                  <th>Reason</th>
                   <th>Message</th>
                 </tr>
               </thead>
@@ -330,6 +331,18 @@ export function AuditPage() {
                       <ResourceCell event={ev} />
                     </td>
                     <td className="mono small">{ev.status}</td>
+                    <td className="small">
+                      {ev.reason ? (
+                        <>
+                          {ev.category ? (
+                            <div className="muted small">{ev.category.replace(/_/g, ' ')}</div>
+                          ) : null}
+                          <div>{ev.reason}</div>
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                     <td className="small">
                       {ev.message || (
                         <span className="muted">

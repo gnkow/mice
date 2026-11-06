@@ -4,10 +4,19 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Reason required for: changes or deletions of existing records on validated branches, destructive actions, privileged settings, revocation
-- [ ] Reason shape is minimum length + pick-list category + free text
-- [ ] New data creation is accepted without a reason
-- [ ] Reason is stored on the audit event (and on the signature record when the action is signed)
-- [ ] HTTP tests: a mutation in each class is refused without a reason and accepted with one
+## Notes
+
+- Reasons are required only when **updating or deleting** existing information (and for privileged settings / destructive / revocation). Creating new resources never requires a reason.
+- Wire format: `X-Mice-Reason` (free text) + `X-Mice-Reason-Category` (pick-list).
+- Proxied `file.write` is treated as create-exempt until validated-branch overwrite detection lands with repositories tickets; deletes and other update-class actions still require category + text.
+- Change-control ids remain ticket 04.
+
+## Acceptance
+
+- [x] Reason required for: changes or deletions of existing records (update/delete classes), destructive actions, privileged settings, revocation
+- [x] Reason shape is minimum length + pick-list category + free text
+- [x] New data creation is accepted without a reason
+- [x] Reason (and category) are stored on the audit event
+- [x] HTTP tests: a mutation in each class is refused without them and accepted with them

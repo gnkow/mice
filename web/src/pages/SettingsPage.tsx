@@ -1,4 +1,4 @@
-import { ListChecks, Megaphone, ShieldCheck, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, GitCompare, FileText, Ban, UsersRound } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
@@ -87,51 +87,58 @@ export function SettingsPage() {
     }
   }
 
+  // Order: frequent day-to-day access work → IdP trust → audit integrity → rare instance ops.
+  // Nav groups and DOM section order stay identical so scrollspy / keyboard order match.
   const groups = [
     { title: 'General', items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
-    { 
-      title: 'Access & Permissions', 
+    {
+      title: 'Access',
       items: [
         ...(canReviewAccess
           ? [
-              { id: 'access-requests', label: 'Requests', Icon: Inbox },
-              { id: 'users-grant', label: 'Users', Icon: UsersRound },
+              { id: 'access-requests', label: 'Access requests', Icon: Inbox },
+              { id: 'users-grant', label: 'Grant access', Icon: ActionUserPlus },
             ]
           : []),
-        ...(isInstanceAdmin ? [
-          { id: 'user-revocation', label: 'Revocations', Icon: UserX },
-          { id: 're-enable', label: 'Re-enable', Icon: UserCheck },
-          { id: 'delegated-permissions', label: 'Permissions', Icon: ListChecks },
-        ] : []),
-      ] 
+        ...(isInstanceAdmin
+          ? [
+              { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
+              { id: 'user-revocation', label: 'Revocations', Icon: UserX },
+              { id: 're-enable', label: 'Re-enable', Icon: UserCheck },
+              { id: 'access-review', label: 'Access review', Icon: FileText },
+            ]
+          : []),
+      ],
     },
-    ...(isInstanceAdmin ? [
-      { 
-        title: 'Compliance', 
-        items: [
-          { id: 'access-review', label: 'Access Review', Icon: FileText },
-        ] 
-      },
-      { 
-        title: 'Security', 
-        items: [
-          { id: 'idp-baseline', label: 'Baseline', Icon: ShieldAlert },
-          { id: 'idp-drift', label: 'Drift', Icon: GitCompare },
-          { id: 'disabled-signers', label: 'Disabled signers', Icon: ShieldAlert },
-          { id: 'mice-suspension', label: 'Suspension', Icon: Ban },
-          { id: 'seal-key-rotation', label: 'Keys', Icon: ShieldCheck },
-          { id: 'group-binding', label: 'Group binding', Icon: UsersRound },
-        ] 
-      },
-      {
-        title: 'Administration',
-        items: [
-          { id: 'instance-administrators', label: 'Administrators', Icon: ShieldUser },
-          { id: 'announcements', label: 'Announcements', Icon: Megaphone },
+    ...(isInstanceAdmin
+      ? [
+          {
+            title: 'Identity',
+            items: [
+              { id: 'idp-baseline', label: 'IdP baseline', Icon: ShieldAlert },
+              { id: 'idp-drift', label: 'IdP drift', Icon: GitCompare },
+              { id: 'disabled-signers', label: 'Disabled signers', Icon: ShieldOff },
+              { id: 'mice-suspension', label: 'Suspension', Icon: Ban },
+              { id: 'group-binding', label: 'Group binding', Icon: Link2 },
+            ],
+          },
+          {
+            title: 'Audit',
+            items: [
+              { id: 'audit-health', label: 'Audit health', Icon: HeartPulse },
+              { id: 'seal-key-rotation', label: 'Seal keys', Icon: KeyRound },
+            ],
+          },
+          {
+            title: 'Instance',
+            items: [
+              { id: 'instance-administrators', label: 'Administrators', Icon: ShieldUser },
+              { id: 'announcements', label: 'Announcements', Icon: Megaphone },
+            ],
+          },
         ]
-      }
-    ] : []),
-  ]
+      : []),
+  ].filter((group) => group.items.length > 0)
 
   return (
     <main className="page wide">
@@ -139,7 +146,7 @@ export function SettingsPage() {
         <div>
           <h1>Settings</h1>
           <p className="lede">
-            Manage connection settings and instance access.
+            Connection, access, identity, and audit controls for this instance.
             Personal preferences and CLI tokens are in your profile.
           </p>
         </div>
@@ -181,16 +188,17 @@ export function SettingsPage() {
             <UsersGrantSection authz={me.data} signedInIss={signedInIss} />
           </>}
           {isInstanceAdmin && <>
+            <DelegatedPermissionsSection signedInIss={signedInIss} />
             <AdminRevocationSection />
             <ReenableSection />
-            <DelegatedPermissionsSection signedInIss={signedInIss} />
             <AccessReviewSection />
             <IdpBaselineSection />
             <IdpDriftSection />
             <DisabledSignersSection />
             <MiceSuspensionSection signedInIss={signedInIss} />
-            <SealKeyRotationSection />
             <GroupBindingSection />
+            <AuditHealthSection />
+            <SealKeyRotationSection />
             <InstanceAdminSection signedInIss={signedInIss} />
             <AnnouncementsSection />
           </>}
@@ -1015,6 +1023,177 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
         </section>
       )}
     </>
+  )
+}
+
+type AuditHealthStatus = {
+  readiness: {
+    ok: boolean
+    store: 'ok' | 'error'
+    chain: 'ok' | 'broken' | 'acknowledged' | 'unverified'
+    detail?: string
+    events?: number
+    verifiedAt?: string
+    firstBreak?: { seq: number; reason: string }
+  }
+  ha: { attested: boolean; detail: string }
+  currentOutage: {
+    startedAt: number
+    endedAt?: number
+    check: string
+    requestId: string
+    paperProcedure: string
+  } | null
+  recentOutages: Array<{
+    startedAt: number
+    endedAt?: number
+    check: string
+    requestId: string
+    paperProcedure: string
+  }>
+  verification?: {
+    ok: boolean
+    events: number
+    verifiedAt: string
+    firstBreak?: { seq: number; reason: string }
+  }
+  checkedAt?: string
+}
+
+function AuditHealthSection() {
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  const status = useAsync(async (signal) => {
+    try {
+      const res = await fetch('/auth/admin/audit-health/status', { signal })
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return await res.json() as AuditHealthStatus
+    } catch (err) {
+      console.error('Failed to fetch audit health status:', err)
+      return null
+    }
+  }, [])
+
+  async function triggerCheck() {
+    setChecking(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const res = await fetch('/auth/admin/audit-health/check', { method: 'POST' })
+      const data = await res.json() as AuditHealthStatus & { error?: string }
+      if (!res.ok) {
+        setError(data.error || 'Check failed')
+      } else {
+        setSuccess(data.readiness.ok ? 'Audit store healthy' : 'Audit store degraded — incident recorded')
+        status.reload()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const data = status.kind === 'ok' ? status.data : null
+
+  return (
+    <section id="audit-health" className="settings-section" aria-labelledby="audit-health-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="audit-health-heading">
+            <HeartPulse size={18} className="button-label-icon" aria-hidden="true" />
+            Audit health
+          </h2>
+          <p className="muted small">
+            Probe immudb availability, confirm HA attestation, and review audit-outage incidents.
+            When the audit store is down, mutations are refused and reads continue.
+          </p>
+        </div>
+      </div>
+
+      {data && (
+        <div className="ns-settings-grid">
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Store</span>
+            <p className={data.readiness.store === 'ok' ? 'flash flash-success' : 'flash flash-warning'}>
+              {data.readiness.store === 'ok' ? (
+                <><ActionCheck size={14} aria-hidden="true" /> Available</>
+              ) : (
+                <><ActionX size={14} aria-hidden="true" /> Unavailable{data.readiness.detail ? `: ${data.readiness.detail}` : ''}</>
+              )}
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Chain</span>
+            <p className={data.readiness.chain === 'broken' ? 'flash flash-warning' : 'muted small'}>
+              {data.readiness.chain}
+              {data.readiness.firstBreak ? ` — ${data.readiness.firstBreak.reason}` : ''}
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">HA attestation</span>
+            <p className={data.ha.attested ? 'flash flash-success' : 'flash flash-warning'}>
+              {data.ha.attested ? (
+                <><ActionCheck size={14} aria-hidden="true" /> IMMUDB_HA=true</>
+              ) : (
+                <><ActionX size={14} aria-hidden="true" /> Not attested</>
+              )}
+            </p>
+            <p className="muted small">{data.ha.detail}</p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Open outage</span>
+            {data.currentOutage ? (
+              <p className="flash flash-warning">
+                Since {new Date(data.currentOutage.startedAt).toLocaleString()}
+                {' · '}
+                check <code className="inline-code">{data.currentOutage.check}</code>
+                {' · '}
+                <code className="inline-code">{data.currentOutage.paperProcedure}</code>
+              </p>
+            ) : (
+              <p className="flash flash-success"><ActionCheck size={14} aria-hidden="true" /> None</p>
+            )}
+          </div>
+
+          {data.recentOutages.length > 0 && (
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Recent incidents</span>
+              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                {data.recentOutages.slice(0, 5).map((o) => (
+                  <li key={`${o.startedAt}-${o.requestId}`}>
+                    {new Date(o.startedAt).toLocaleString()}
+                    {' · '}
+                    {o.check}
+                    {o.endedAt ? ` · closed ${new Date(o.endedAt).toLocaleString()}` : ' · open'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="btn-row ns-settings-actions">
+        <button
+          className="btn primary"
+          type="button"
+          onClick={triggerCheck}
+          disabled={checking}
+        >
+          <HeartPulse size={14} aria-hidden="true" className="button-label-icon" />
+          {checking ? 'Checking…' : 'Check now'}
+        </button>
+      </div>
+
+      {error && <p className="flash flash-error" role="alert">{error}</p>}
+      {success && <p className="flash flash-success" role="status">{success}</p>}
+    </section>
   )
 }
 

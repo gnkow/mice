@@ -47,7 +47,8 @@ With `NODE_ENV=production` the BFF refuses to start unless `SESSION_SECRET` is s
 value, `OIDC_CLIENT_SECRET` is not the shipped `mice-auth-secret`, and `COOKIE_SECURE=true`.
 
 In production the BFF also refuses to start unless `AUTHZ_BOOTSTRAP_ADMINS` names at least one
-instance admin, `AUTH_DEV_MODE` is unset, `AUTH_DATA_DIR` is writable, and `OXEN_UPSTREAM`
+instance admin, `AUTH_DEV_MODE` is unset, `AUTH_DATA_DIR` is writable, `IMMUDB_HA=true`
+(single-instance immudb is unsupported), and `OXEN_UPSTREAM`
 is an internal address (single-label service name, loopback, private range, or
 `.internal`/`.local`/`.svc` suffix). Authorization is always enforced.
 

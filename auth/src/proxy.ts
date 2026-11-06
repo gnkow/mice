@@ -6,11 +6,28 @@ import {
   appendAudit,
   appendIntent,
   appendOutcome,
+  AUDIT_UNAVAILABLE_MESSAGE,
   auditChainBlocked,
   type AuditEvent,
   type AuditVia,
 } from './audit.js'
-import { isDatasetMutation, REASON_HEADER, resolveReason, type ReasonRejection, type ResolvedReason } from './auditReason.js'
+import {
+  declaredChangeControlId,
+  isDatasetMutation,
+  mutationNeedsReason,
+  REASON_CATEGORY_HEADER,
+  REASON_HEADER,
+  resolveReason,
+  type ReasonRejection,
+  type ResolvedReason,
+} from './auditReason.js'
+import {
+  CHANGE_CONTROL_HEADER,
+  changeControlPatternFor,
+  mutationNeedsChangeControl,
+  resolveChangeControl,
+  type ChangeControlRejection,
+} from './changeControl.js'
 import { createDatasetCapture, createLineageCapture, type DatasetVersions } from './proxyLineage.js'
 import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
@@ -36,6 +53,8 @@ const HOP_BY_HOP = new Set([
   'cookie',
   'authorization',
   REASON_HEADER,
+  REASON_CATEGORY_HEADER,
+  CHANGE_CONTROL_HEADER,
 ])
 
 function filterRequestHeaders(headers: Headers): Headers {
@@ -81,7 +100,7 @@ async function rejectReason(
   via: AuditVia,
   method: string,
   pathname: string,
-  rejection: ReasonRejection,
+  rejection: ReasonRejection | ChangeControlRejection,
   scope: { namespace?: string; repo?: string },
 ): Promise<Response> {
   await appendAudit({
@@ -121,7 +140,7 @@ function auditUnavailable(): Response {
     JSON.stringify({
       status: 'error',
       status_message: 'audit_unavailable',
-      error: { detail: 'Audit store unavailable; the change was refused and nothing was applied' },
+      error: { detail: AUDIT_UNAVAILABLE_MESSAGE },
     }),
     { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '30' } },
   )
@@ -237,12 +256,30 @@ export async function proxyToOxen(
   if (mutating && isDatasetMutation(classified.action) && auditChainBlocked()) return auditChainBroken()
 
   let reason: ResolvedReason | undefined
-  if (mutating && isDatasetMutation(classified.action)) {
-    const resolved = resolveReason({ actor: user, explicit: c.req.header(REASON_HEADER), message })
+  let changeControlId: string | undefined
+  if (mutating && mutationNeedsReason(classified.action)) {
+    const resolved = resolveReason({
+      actor: user,
+      explicit: c.req.header(REASON_HEADER),
+      category: c.req.header(REASON_CATEGORY_HEADER),
+      message,
+      required: true,
+    })
     if (!resolved.ok) {
       return rejectReason(user, via, method, pathname, resolved.rejection, { namespace: ns, repo })
     }
     reason = resolved.value
+  }
+  if (mutating && mutationNeedsChangeControl(classified.action)) {
+    const cc = resolveChangeControl({
+      id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
+      pattern: await changeControlPatternFor(ns),
+      required: true,
+    })
+    if (!cc.ok) {
+      return rejectReason(user, via, method, pathname, cc.rejection, { namespace: ns, repo })
+    }
+    changeControlId = cc.value
   }
 
   if (decision.aclBypass) {
@@ -287,6 +324,7 @@ export async function proxyToOxen(
     repo,
     message,
     ...reason,
+    ...(changeControlId ? { change_control_id: changeControlId } : {}),
     ...versions,
     detail: {
       ...(bodyWorkspaceId ? { workspace_id: bodyWorkspaceId } : {}),

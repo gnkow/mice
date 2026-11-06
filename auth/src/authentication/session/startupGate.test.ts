@@ -15,6 +15,7 @@ const good = {
   AUTHZ_BOOTSTRAP_ADMINS: 'admin@example.com',
   AUTH_DATA_DIR: mkdtempSync(join(tmpdir(), 'mice-gate-')),
   SESSION_IDLE_SEC: '900',
+  IMMUDB_HA: 'true',
 }
 
 describe('production startup gate', () => {
@@ -135,6 +136,18 @@ describe('production startup gate', () => {
         OXEN_UPSTREAM: 'http://oxen.example.com',
         SESSION_IDLE_SEC: '900',
       }),
+      [],
+    )
+  })
+
+  it('rejects production without an attested immudb HA deployment', () => {
+    for (const IMMUDB_HA of [undefined, '', 'false', '1']) {
+      const p = productionStartupProblems({ ...good, IMMUDB_HA })
+      assert.equal(p.length, 1, String(IMMUDB_HA))
+      assert.match(p[0]!, /IMMUDB_HA/)
+    }
+    assert.deepEqual(
+      productionStartupProblems({ NODE_ENV: 'development', SESSION_IDLE_SEC: '900' }),
       [],
     )
   })

@@ -27,6 +27,7 @@ import type {
   RepoFinePermission,
 } from './authzTypes.js'
 import type { AuditDep } from './routeDeps.js'
+import { validateChangeControlPattern } from './changeControl.js'
 import { guarded } from './authentication/index.js'
 
 function memberTarget(body: {
@@ -49,7 +50,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ namespaces: await listNamespacesForUser(session) })
   }))
 
-  app.post('/auth/namespaces', guarded({ mutates: true, reason: true }, async ({ c, user: session }) => {
+  app.post('/auth/namespaces', guarded({ mutates: true }, async ({ c, user: session }) => {
     const denied = denialResponse(c, await decideInstanceAction(session, 'namespace.create'))
     if (denied) return denied
     let body: {
@@ -114,11 +115,17 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     let body: Partial<{
       basePermission: BasePermission
       membersCanCreateRepos: boolean
+      changeControlIdPattern: string
     }>
     try {
       body = (await c.req.json()) as typeof body
     } catch {
       return c.json({ error: 'Invalid body' }, 400)
+    }
+    if (body.changeControlIdPattern !== undefined) {
+      const checked = validateChangeControlPattern(body.changeControlIdPattern)
+      if (!checked.ok) return c.json({ error: checked.error }, 400)
+      body = { ...body, changeControlIdPattern: checked.pattern }
     }
     const previous = await getNamespace(ns)
     const result = await updateNamespaceSettings(ns, body)
@@ -131,10 +138,12 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
         previous: previous && {
           basePermission: previous.basePermission,
           membersCanCreateRepos: previous.membersCanCreateRepos,
+          changeControlIdPattern: previous.changeControlIdPattern,
         },
         next: {
           basePermission: body.basePermission,
           membersCanCreateRepos: body.membersCanCreateRepos,
+          changeControlIdPattern: body.changeControlIdPattern,
         },
       },
     })

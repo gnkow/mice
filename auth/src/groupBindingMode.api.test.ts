@@ -26,7 +26,7 @@ async function headers() {
   return {
     ...(await iso.sessionHeaders(admin)),
     'content-type': 'application/json',
-    'x-mice-reason': 'Validate group binding mode for the instance',
+    'x-mice-reason': 'Validate group binding mode for the instance', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
   }
 }
 

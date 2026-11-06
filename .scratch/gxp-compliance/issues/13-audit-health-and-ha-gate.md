@@ -4,8 +4,14 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Health probe reports audit availability
-- [ ] Operator alert fires on audit degradation
-- [ ] Production configuration refuses a single-instance immudb deployment
+- [x] Health probe reports audit availability
+- [x] Operator alert fires on audit degradation
+- [x] Production configuration refuses a single-instance immudb deployment
+
+## Notes
+
+- `/readyz` already reported audit store/chain; admin Settings → Audit health surfaces the same probe plus HA attestation and outage history (`GET/POST /auth/admin/audit-health/*`).
+- Degradation opens a Postgres `audit_outages` incident (IdP-outage shape) and notifies instance admins; append/verify recovery closes it. Paper procedure: `validation-pack:audit-outage`.
+- Production startup requires `IMMUDB_HA=true` (operator attestation that immudb is not a single instance).

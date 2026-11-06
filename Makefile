@@ -22,7 +22,7 @@ help:
 	@echo "  make db-secrets Generate dev passwords for PostgreSQL, immudb and Novu (.secrets/)"
 	@echo "  make up         Start the stack (PostgreSQL, immudb, Novu, oxen-server, auth, web)"
 	@echo "  make down       Stop Compose stack (keep volumes)"
-	@echo "  make reset      Wipe oxen, auth, checkout-store and workspace volumes, restart stack"
+	@echo "  make reset      Wipe all app data volumes + host job/session dirs, restart stack"
 	@echo "  make clean      Stop stack, wipe volumes + deps + test artifacts"
 	@echo "  make install    npm install + Playwright Chromium"
 	@echo "  make test-unit  Auth + CLI + web unit tests (no stack required)"
@@ -87,21 +87,36 @@ test-view: install
 test-ui: install
 	npm run test:e2e:ui -- $(ARGS)
 
-# Wipe persisted server data (repos + authz/PATs/audit + workspace checkouts/overlays), keep node_modules.
+# Wipe every persisted app datastore, then bring the stack back up.
+# Removes: Postgres, immudb, Novu (mongo/redis), oxen repos, auth /data,
+# workspace store/overlays, host job/session dirs, leftover probe volumes.
+# Keeps: node_modules volumes, .secrets/ (dev passwords).
 reset:
 	docker compose down --remove-orphans
-	-docker volume rm mice_oxen-data mice_auth_data \
-		$${WORKSPACES_STORE_VOLUME:-mice-store} $${WORKSPACES_VOLUME:-mice-workspaces}
-	rm -rf "$(JOBS_HOST_DATA_DIR)"
+	@for v in \
+		mice_postgres-data \
+		mice_immudb-data \
+		mice_novu-mongodb \
+		mice_novu-redis \
+		mice_oxen-data \
+		mice_auth_data \
+		$${WORKSPACES_STORE_VOLUME:-mice-store} \
+		$${WORKSPACES_VOLUME:-mice-workspaces} \
+		$$(docker volume ls -q --filter name=mice-probe); do \
+		docker volume rm "$$v" 2>/dev/null || true; \
+	done
+	rm -rf "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)" auth/data
 	mkdir -p "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)"
 	docker compose up -d --build
-	@echo "Reset oxen + auth data volumes and restarted the stack."
+	@echo "Reset all app data volumes and restarted the stack."
 
-# Tear down Compose (including oxen data + web node_modules volumes),
+# Tear down Compose (including data + node_modules volumes),
 # and remove local install / Playwright artifacts.
 clean clear:
 	docker compose down -v --remove-orphans
-	rm -rf "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)"
+	-@for v in $$(docker volume ls -q --filter name=mice-probe); do docker volume rm "$$v"; done
+	-@for v in mice-store mice-workspaces; do docker volume rm "$$v" 2>/dev/null || true; done
+	rm -rf "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)" auth/data
 	rm -rf test-results playwright-report blob-report
 	rm -rf node_modules web/node_modules web/dist
 	@echo "Cleared stack volumes, node_modules, and test artifacts."

@@ -141,7 +141,7 @@ await describe('group grants bind to iss|group_id', async () => {
       method: 'PUT',
       headers: {
         'content-type': 'application/json',
-        'x-mice-reason': 'Grant the quality group',
+        'x-mice-reason': 'Grant the quality group', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
         cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}`,
       },
       body: JSON.stringify({ kind: 'group', group: GROUP, name: 'Quality Assurance', role: 'member' }),

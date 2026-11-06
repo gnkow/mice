@@ -8,6 +8,20 @@
       "when": 1793900877047,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793902000000,
+      "tag": "0001_change_control_id_pattern",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794312000000,
+      "tag": "0002_audit_outages",
+      "breakpoints": true
     }
   ]
 }

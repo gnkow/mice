@@ -11,7 +11,8 @@ export type SectionNavGroup = { title: string; items: SectionNavItem[] }
 /** Grouped in-page navigation; highlights the section currently in view. */
 export function SectionNav({ label, groups }: { label: string; groups: SectionNavGroup[] }) {
   const navRef = useRef<HTMLElement>(null)
-  const ids = groups.flatMap((g) => g.items.map((i) => i.id))
+  const visibleGroups = groups.filter((g) => g.items.length > 0)
+  const ids = visibleGroups.flatMap((g) => g.items.map((i) => i.id))
   const key = ids.join('|')
   const [active, setActive] = useState(ids[0] ?? '')
 
@@ -19,7 +20,7 @@ export function SectionNav({ label, groups }: { label: string; groups: SectionNa
     // Section elements may mount late (async data), so resolve them at scroll time.
     function onScroll() {
       let current = ''
-      for (const id of key.split('|')) {
+      for (const id of key.split('|').filter(Boolean)) {
         const el = document.getElementById(id)
         if (el && el.getBoundingClientRect().top <= 140) current = id
       }
@@ -42,29 +43,36 @@ export function SectionNav({ label, groups }: { label: string; groups: SectionNa
 
   return (
     <nav className="profile-nav" aria-label={label} ref={navRef}>
-      {groups.map((group) => (
-        <div key={group.title} className="profile-nav-group">
-          <p className="profile-nav-title" id={`${key}-${group.title}`}>{group.title}</p>
-          <ul aria-labelledby={`${key}-${group.title}`}>
-            {group.items.map(({ id, label: text, Icon, badge }) => (
-              <li key={id}>
-                <a
-                  href={`#${id}`}
-                  aria-current={active === id ? 'true' : undefined}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    setActive(id)
-                    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                  }}
-                >
-                  <Icon size={16} aria-hidden="true" />{text}
-                  {badge != null && <span className="pill profile-nav-badge">{badge}</span>}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      {visibleGroups.map((group) => {
+        const titleId = `settings-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`
+        return (
+          <div key={group.title} className="profile-nav-group">
+            <p className="profile-nav-title" id={titleId}>{group.title}</p>
+            <ul aria-labelledby={titleId}>
+              {group.items.map(({ id, label: text, Icon, badge }) => (
+                <li key={id}>
+                  <a
+                    href={`#${id}`}
+                    aria-current={active === id ? 'true' : undefined}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setActive(id)
+                      const next = `#${id}`
+                      if (window.location.hash !== next) {
+                        window.history.replaceState(null, '', next)
+                      }
+                      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }}
+                  >
+                    <Icon size={16} aria-hidden="true" />{text}
+                    {badge != null && <span className="pill profile-nav-badge">{badge}</span>}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
     </nav>
   )
 }

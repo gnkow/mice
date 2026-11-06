@@ -69,7 +69,7 @@ function send(
 ) {
   return app.request(path, {
     method: init.method ?? 'POST',
-    headers: { ...(init.contentType ? { 'content-type': init.contentType } : {}), 'x-mice-reason': 'Routine test change' },
+    headers: { ...(init.contentType ? { 'content-type': init.contentType } : {}), 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
     body: init.body,
   })
 }
@@ -105,7 +105,7 @@ describe('proxy author injection fails closed', () => {
     const res = await app.request('/api/repos/a/b/file/main/a.txt', {
       method: 'PUT',
       body: form,
-      headers: { 'x-mice-reason': 'Routine test change' },
+      headers: { 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
     })
     assert.equal(res.status, 200)
     // The proxy first GETs the prior file entry for lineage; the PUT is the write.

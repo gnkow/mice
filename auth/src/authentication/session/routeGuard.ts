@@ -1,6 +1,25 @@
 import type { Context, Handler } from 'hono'
-import { actorFromUser, appendAudit, appendIntent, appendOutcomeFor, trackedIntent, trackIntent } from '../../audit.js'
-import { REASON_HEADER, resolveReason, type ResolvedReason } from '../../auditReason.js'
+import {
+  actorFromUser,
+  appendAudit,
+  appendIntent,
+  appendOutcomeFor,
+  AUDIT_UNAVAILABLE_MESSAGE,
+  trackedIntent,
+  trackIntent,
+} from '../../audit.js'
+import {
+  declaredChangeControlId,
+  REASON_CATEGORY_HEADER,
+  REASON_HEADER,
+  resolveReason,
+  type ResolvedReason,
+} from '../../auditReason.js'
+import {
+  CHANGE_CONTROL_HEADER,
+  changeControlPatternFor,
+  resolveChangeControl,
+} from '../../changeControl.js'
 import { denialResponse } from '../../decisionHttp.js'
 import type { Decision } from '../../authz.js'
 import type { AuditFields } from '../../routeDeps.js'
@@ -92,19 +111,51 @@ export function guarded(
     }
     const base = { actor: actorFromUser(user), via, method: c.req.method, path: c.req.path }
     let reason: ResolvedReason | undefined
+    let changeControlId: string | undefined
     if (needsReason) {
-      const resolved = resolveReason({ actor: user, explicit: c.req.header(REASON_HEADER) })
+      const resolved = resolveReason({
+        actor: user,
+        explicit: c.req.header(REASON_HEADER),
+        category: c.req.header(REASON_CATEGORY_HEADER),
+        required: true,
+      })
       if (!resolved.ok) {
         await appendAudit({ ...base, status: 400, action: 'request.rejected', detail: { reason: resolved.rejection.code } })
         return c.json({ error: resolved.rejection.detail, code: resolved.rejection.code }, 400)
       }
       reason = resolved.value
+      const nsParam = (() => {
+        try {
+          return c.req.param('ns')
+        } catch {
+          return undefined
+        }
+      })()
+      const cc = resolveChangeControl({
+        id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
+        pattern: await changeControlPatternFor(nsParam),
+        required: true,
+      })
+      if (!cc.ok) {
+        await appendAudit({
+          ...base,
+          status: 400,
+          action: 'request.rejected',
+          detail: { reason: cc.rejection.code },
+        })
+        return c.json({ error: cc.rejection.detail, code: cc.rejection.code }, 400)
+      }
+      changeControlId = cc.value
+    }
+    const reasonFields = {
+      ...reason,
+      ...(changeControlId ? { change_control_id: changeControlId } : {}),
     }
     if (mutates) {
       try {
-        trackIntent(c.req.raw, await appendIntent({ ...base, ...reason, status: 0, action: 'bff.mutation' }))
+        trackIntent(c.req.raw, await appendIntent({ ...base, ...reasonFields, status: 0, action: 'bff.mutation' }))
       } catch {
-        return c.json({ error: 'Audit store unavailable; the change was refused and nothing was applied' }, 503)
+        return c.json({ error: AUDIT_UNAVAILABLE_MESSAGE }, 503)
       }
     }
     const ctx = c as unknown as GuardContext
@@ -116,7 +167,7 @@ export function guarded(
       audit: async (f) => {
         await appendOutcomeFor(c.req.raw, {
           ...base,
-          ...reason,
+          ...reasonFields,
           status: f.status ?? 200,
           action: f.action,
           ...(f.message ? { message: f.message } : {}),
@@ -132,7 +183,7 @@ export function guarded(
     const closeIntent = async (status: number) => {
       const tracked = trackedIntent(c.req.raw)
       if (tracked && tracked.outcomes === 0) {
-        await appendOutcomeFor(c.req.raw, { ...base, ...reason, status, action: 'bff.mutation' })
+        await appendOutcomeFor(c.req.raw, { ...base, ...reasonFields, status, action: 'bff.mutation' })
       }
     }
     let res: Response

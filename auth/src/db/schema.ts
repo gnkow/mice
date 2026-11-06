@@ -48,6 +48,8 @@ export const namespaces = pgTable(
     name: text('name').notNull(),
     basePermission: text('base_permission').notNull(),
     membersCanCreateRepos: boolean('members_can_create_repos').notNull(),
+    /** RegExp source for required QMS change-control ids (GxP ticket 04). */
+    changeControlIdPattern: text('change_control_id_pattern').notNull().default('^[A-Za-z0-9][A-Za-z0-9._/-]{2,127}$'),
     createdAt: ts('created_at').notNull(),
     createdBy: text('created_by').notNull(),
   },
@@ -744,6 +746,16 @@ export const authEvents = pgTable(
 
 /** One row per IdP outage. An open incident has no ended_at. */
 export const idpOutages = pgTable('idp_outages', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  startedAt: ts('started_at').notNull(),
+  endedAt: ts('ended_at'),
+  check: text('check').notNull(),
+  requestId: text('request_id').notNull(),
+  paperProcedure: text('paper_procedure').notNull(),
+})
+
+/** One row per audit (immudb) outage. An open incident has no ended_at. */
+export const auditOutages = pgTable('audit_outages', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   startedAt: ts('started_at').notNull(),
   endedAt: ts('ended_at'),

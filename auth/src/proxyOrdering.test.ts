@@ -69,7 +69,7 @@ describe('proxy orchestration order (fake upstream)', () => {
   it('denies before contacting upstream (403)', async () => {
     const res = await appFor(reader).request('/api/repos/po/r/branches', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: '{"new_branch":"b"}',
     })
     assert.equal(res.status, 403)
@@ -79,7 +79,7 @@ describe('proxy orchestration order (fake upstream)', () => {
   it('unauthorized callers get 403, not a body rejection', async () => {
     const res = await appFor(reader).request('/api/repos/po/r/branches', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: 'not json',
     })
     assert.equal(res.status, 403)
@@ -89,7 +89,7 @@ describe('proxy orchestration order (fake upstream)', () => {
   it('authorized callers with an unclassifiable body get 400 and no upstream call', async () => {
     const res = await appFor(writer).request('/api/repos/po/r/branches', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: 'not json',
     })
     assert.equal(res.status, 400)
@@ -99,7 +99,7 @@ describe('proxy orchestration order (fake upstream)', () => {
   it('injects the Principal as author on an allowed write', async () => {
     const res = await appFor(writer).request('/api/repos/po/r/branches', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+      headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: '{"new_branch":"b","author_email":"evil@x.io"}',
     })
     assert.equal(res.status, 200)

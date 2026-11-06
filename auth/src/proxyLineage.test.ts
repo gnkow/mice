@@ -42,7 +42,7 @@ app.all('/api/*', (c) => proxyToOxen(c, { user: admin, via: 'session' }))
 const put = (repo: string) => {
   const form = new FormData()
   form.append('file', new Blob(['a,b\n1,2\n']), 'data.csv')
-  return app.request(`/api/repos/lin/${repo}/file/main/data.csv`, { method: 'PUT', body: form, headers: { 'x-mice-reason': 'Routine test change' } })
+  return app.request(`/api/repos/lin/${repo}/file/main/data.csv`, { method: 'PUT', body: form, headers: { 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' } })
 }
 
 await describe('proxy lineage capture', async () => {

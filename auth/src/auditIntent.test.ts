@@ -67,7 +67,7 @@ beforeEach(async () => {
   restoreUpstream = setUpstreamFetch(async (url, init) => {
     upstreamCalls.push(`${init?.method} ${String(url)}`)
     if (init?.method === 'PUT') auditSnapshotAtUpstream = await rows()
-    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' } })
+    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' } })
   })
 })
 afterEach(() => restoreUpstream())
@@ -75,7 +75,7 @@ afterEach(() => restoreUpstream())
 async function put(user = writer) {
   return app.request('/api/repos/in/r/file/main/a.csv', {
     method: 'PUT',
-    headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+    headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
     body: '{"message":"fix a"}',
   })
 }
@@ -121,7 +121,7 @@ describe('intent-first proxied mutations', () => {
     try {
       const res = await app.request('/api/repos/in/r/file/main/a.csv', {
         method: 'PUT',
-        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
         body: '{"message":"fix a"}',
       })
       assert.equal(res.status, 503)
@@ -147,7 +147,7 @@ describe('intent-first native mutations', () => {
   const addAdmin = async (user = admin) =>
     app.request('/auth/instance/permissions', {
       method: 'PUT',
-      headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+      headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: JSON.stringify({ sub: 'new-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }),
     })
 
@@ -168,7 +168,7 @@ describe('intent-first native mutations', () => {
     try {
       const res = await app.request('/auth/instance/permissions', {
         method: 'PUT',
-        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' },
+        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
         body: JSON.stringify({ sub: 'blocked-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }),
       })
       assert.equal(res.status, 503)

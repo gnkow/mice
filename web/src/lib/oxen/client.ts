@@ -1,5 +1,11 @@
 import { loadSettings } from './settings'
-import { REASON_HEADER, withReason } from '../reason'
+import {
+  CHANGE_CONTROL_HEADER,
+  REASON_CATEGORY_HEADER,
+  REASON_HEADER,
+  summarizeMutation,
+  withReason,
+} from '../reason'
 import { OxenApiError, type StatusMessage } from './types'
 
 export type RequestOptions = {
@@ -41,15 +47,25 @@ export async function oxenFetch<T>(
   }
 
   const method = options.method ?? 'GET'
-  const send = (reason?: string) =>
+  const send = (submission?: { reason: string; category: string; changeControlId: string }) =>
     fetch(resolveUrl(path), {
       method,
-      headers: reason ? { ...headers, [REASON_HEADER]: reason } : headers,
+      headers: submission
+        ? {
+            ...headers,
+            [REASON_HEADER]: submission.reason,
+            [REASON_CATEGORY_HEADER]: submission.category,
+            [CHANGE_CONTROL_HEADER]: submission.changeControlId,
+          }
+        : headers,
       body,
       signal: options.signal,
       credentials: 'same-origin',
     })
-  const res = method === 'GET' || method === 'HEAD' ? await send() : await withReason(send)
+  const res =
+    method === 'GET' || method === 'HEAD'
+      ? await send()
+      : await withReason(send, { changeSummary: summarizeMutation(method, path) })
 
   if (options.raw) {
     if (!res.ok) {

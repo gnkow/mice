@@ -23,6 +23,8 @@ export type NewSignature = {
   verificationMetadata?: VerificationMetadata
   binding?: SignatureBinding
   manifest?: string
+  /** QMS change-control id required on merge signatures (GxP ticket 04). */
+  changeControlId?: string
 }
 
 export type SignatureRecord = {
@@ -36,6 +38,7 @@ export type SignatureRecord = {
   mfaEvidence?: MfaEvidence
   verificationMetadata?: VerificationMetadata
   binding?: SignatureBinding
+  changeControlId?: string
 }
 
 export type SignatureQuery = {
@@ -116,14 +119,24 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
     },
     async record(input) {
       const id = randomUUID()
-      const { manifest, ...rest } = input
+      const { manifest, changeControlId, ...rest } = input
+      const trimmedCc = changeControlId?.trim()
       if (input.binding) {
         if (manifest === undefined || sha256(manifest) !== input.binding.manifestDigest) {
           throw new Error('manifest is missing or does not match the bound digest')
         }
+        if (!trimmedCc) {
+          throw new Error('change-control id is required for a merge signature')
+        }
         await ledger.append(`manifest/${input.binding.manifestDigest}`, manifest)
       }
-      const record: SignatureRecord = { id, kind: 'esign.created', ...rest, signedAt: new Date().toISOString() }
+      const record: SignatureRecord = {
+        id,
+        kind: 'esign.created',
+        ...rest,
+        ...(trimmedCc ? { changeControlId: trimmedCc } : {}),
+        signedAt: new Date().toISOString(),
+      }
       const seq = await ledger.append(`signature/${id}`, JSON.stringify(record))
       await index(record, seq).catch(() => undefined) // the ledger is authoritative; rebuildIndex repairs a failed write
       return { id, seq }

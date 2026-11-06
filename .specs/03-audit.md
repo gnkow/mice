@@ -36,6 +36,7 @@ An Audit module over immudb with append, read range and verify. Every mutation w
 - The full e-signature record lives in immudb with `esign.*` events; PostgreSQL holds only an index (04).
 - The dataset content digest and oxen commit id are recorded before and after each proxied mutation as `{base, head}`; locks are used only where oxen is not atomic.
 - Reason and change-control id are first-class event fields; ownership split with GxP is that this spec stores them and 04 decides when they are required.
+- The Audit trail is not entity version history. Successive states of mutable entities (reconstructable prior versions) are owned by those entities' stores and by 04 GxP; this module records who/when/why/result only.
 - Events reference repositories by stable id plus the name at event time.
 - Every export is audited (filters and row count); browsing reads are recorded as summary events.
 - Multi-instance safe: no instance-local queues.

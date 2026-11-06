@@ -1088,6 +1088,71 @@ code {
   margin-top: 0.25rem;
 }
 
+.reason-prompt {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.reason-prompt-heading {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.reason-prompt-change {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: var(--canvas-subtle, var(--code-bg));
+}
+
+.reason-prompt-summary {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--fg);
+}
+
+.reason-prompt-notice {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.reason-prompt-server {
+  margin: 0;
+}
+
+.reason-prompt-label {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.reason-prompt-label select,
+.reason-prompt-label textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--bg, #fff);
+  color: var(--fg);
+  font: inherit;
+}
+
+.reason-prompt-label textarea {
+  resize: vertical;
+  min-height: 5.5rem;
+  line-height: 1.45;
+}
+
 .confirm-type {
   display: grid;
   gap: 0.45rem;

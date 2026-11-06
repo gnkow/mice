@@ -13,6 +13,7 @@ import {
   type Appearance,
 } from '../lib/appearance'
 import { ConfirmProvider } from './ConfirmProvider'
+import { ReasonPromptProvider } from './ReasonPromptProvider'
 import { initials } from '../lib/initials'
 import { NotificationBell } from './NotificationBell'
 
@@ -139,6 +140,7 @@ export function Layout() {
 
   return (
     <ConfirmProvider>
+    <ReasonPromptProvider>
       <div className="app">
         {drawerOpen && (
           <>
@@ -294,6 +296,7 @@ export function Layout() {
           <span className="muted small">Self-hosted UI for Oxen</span>
         </footer>
       </div>
+    </ReasonPromptProvider>
     </ConfirmProvider>
   )
 }

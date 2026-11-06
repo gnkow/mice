@@ -54,21 +54,21 @@ const REASON = 'Routine test change'
 async function put() {
   return app.request('/api/repos/bk/r/file/main/a.csv', {
     method: 'PUT',
-    headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json', 'x-mice-reason': REASON },
+    headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json', 'x-mice-reason': REASON, 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
     body: '{"message":"fix a"}',
   })
 }
 async function adminCall(method: string, path: string, body?: unknown) {
   return app.request(path, {
     method,
-    headers: { ...(await iso.sessionHeaders(admin)), 'content-type': 'application/json', 'x-mice-reason': 'Operator decision after review' },
+    headers: { ...(await iso.sessionHeaders(admin)), 'content-type': 'application/json', 'x-mice-reason': 'Operator decision after review', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
 async function auditorCall(method: string, path: string, body?: unknown) {
   return app.request(path, {
     method,
-    headers: { ...(await iso.sessionHeaders(withMfa(auditor))), 'content-type': 'application/json', 'x-mice-reason': 'Auditor review' },
+    headers: { ...(await iso.sessionHeaders(withMfa(auditor))), 'content-type': 'application/json', 'x-mice-reason': 'Auditor review', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
@@ -95,7 +95,7 @@ describe('failed verification blocks dataset mutations', () => {
     await verifyAudit()
     const forbidden = await app.request('/auth/audit/acknowledge', {
       method: 'POST',
-      headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json', 'x-mice-reason': 'I would like it fixed' },
+      headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json', 'x-mice-reason': 'I would like it fixed', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
       body: '{}',
     })
     assert.equal(forbidden.status, 403)

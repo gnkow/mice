@@ -48,6 +48,14 @@ _Avoid_: Pre-log, attempt
 The audit event appended after a mutation, carrying the result status and `intent_id` of its Intent event. An Intent event with no Outcome event means the mutation may have started and never completed.
 _Avoid_: Result log, completion
 
+**Audit trail**:
+The append-only sequence of Intent and Outcome events in immudb: who did what, when, with what reason and result. It does not store successive entity states.
+_Avoid_: Entity version history, change log (alone)
+
+**Entity version history**:
+Append-only successive states of a mutable domain entity (revision or valid-from / valid-to), so a prior state can be reconstructed without reading the Audit trail. Every modification of an entity appends a new version; prior versions are never edited or deleted.
+_Avoid_: Audit trail, audit event, History page (oxen commits)
+
 ### Compute and data
 
 **Workspace**:

@@ -1,7 +1,14 @@
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
+import {
+  actorFromUser,
+  appendAudit,
+  appendIntent,
+  appendOutcome,
+  AUDIT_UNAVAILABLE_MESSAGE,
+  type AuditVia,
+} from './audit.js'
 import { env } from './env.js'
 import {
   appendLineage,
@@ -287,6 +294,26 @@ export async function completeCliJob(
     }
   }
 
+  // Persisting a result commit is a mutation: refuse when audit cannot take an Intent.
+  let resultIntent: Awaited<ReturnType<typeof appendIntent>> | undefined
+  if (body.result_commit) {
+    try {
+      resultIntent = await appendIntent({
+        actor: actorFromUser(user),
+        via,
+        method: 'POST',
+        path: `/auth/jobs/${id}/complete`,
+        status: 0,
+        action: 'job.result_commit',
+        namespace: job.namespace,
+        repo: job.repo,
+        detail: { job_id: id, result_commit: body.result_commit },
+      })
+    } catch {
+      return { ok: false, error: AUDIT_UNAVAILABLE_MESSAGE, status: 503 }
+    }
+  }
+
   const updated: JobRun = {
     ...job,
     status: body.status,
@@ -302,7 +329,7 @@ export async function completeCliJob(
   }
   await upsertJob(updated)
   if (updated.status === 'succeeded') await appendJobLineage(updated)
-  await appendAudit({
+  const auditFields = {
     actor: actorFromUser(user),
     via,
     method: 'POST',
@@ -318,7 +345,9 @@ export async function completeCliJob(
       result_branch: updated.result_branch,
       error: updated.error,
     },
-  })
+  }
+  if (resultIntent) await appendOutcome(resultIntent.id, auditFields)
+  else await appendAudit(auditFields)
   return { ok: true, job: updated }
 }
 
@@ -731,8 +760,35 @@ async function executeJob(id: string) {
     const outputRefs: { path: string; hash: string }[] = []
     let terminal: JobStatus = 'succeeded'
     let terminalError: string | null = job.error
+    let resultIntent: Awaited<ReturnType<typeof appendIntent>> | undefined
 
     if (changed.length) {
+      try {
+        resultIntent = await appendIntent({
+          actor: job.actor,
+          via: job.via,
+          method: 'POST',
+          path: `/auth/jobs/${id}`,
+          status: 0,
+          action: 'job.result_commit',
+          namespace: job.namespace,
+          repo: job.repo,
+          detail: { job_id: id },
+        })
+      } catch {
+        job = {
+          ...job,
+          status: 'failed',
+          finished_at: new Date().toISOString(),
+          result_commit: null,
+          result_branch: null,
+          error: AUDIT_UNAVAILABLE_MESSAGE,
+        }
+        await upsertJob(job)
+        cleanupWork(work)
+        return
+      }
+
       const author = {
         name: job.actor.name || job.actor.email || 'mice',
         email: job.actor.email || 'mice@localhost',
@@ -848,7 +904,7 @@ async function executeJob(id: string) {
       await upsertJob(job)
     }
     await appendJobLineage(job)
-    await appendAudit({
+    const completeFields = {
       actor: job.actor,
       via: job.via,
       method: 'POST',
@@ -868,7 +924,9 @@ async function executeJob(id: string) {
         target_branch: job.target_branch || null,
         error: terminalError,
       },
-    })
+    }
+    if (resultIntent) await appendOutcome(resultIntent.id, completeFields)
+    else await appendAudit(completeFields)
     cleanupWork(work)
   } catch (err) {
     activeCancels.delete(id)

@@ -68,7 +68,7 @@ const send = async (method: string, path: string, body?: unknown) =>
     headers: {
       ...(await iso.sessionHeaders(writer)),
       'content-type': 'application/json',
-      'x-mice-reason': 'Routine dataset change',
+      'x-mice-reason': 'Routine dataset change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })

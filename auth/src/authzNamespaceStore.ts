@@ -68,7 +68,11 @@ export async function ensureNamespaceForCreate(
 
 export async function updateNamespaceSettings(
   ns: string,
-  patch: Partial<{ basePermission: BasePermission; membersCanCreateRepos: boolean }>,
+  patch: Partial<{
+    basePermission: BasePermission
+    membersCanCreateRepos: boolean
+    changeControlIdPattern: string
+  }>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return repo.updateNamespaceSettings(ns, patch)
 }

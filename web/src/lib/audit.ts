@@ -18,6 +18,11 @@ export type AuditEvent = {
   namespace?: string
   repo?: string
   message?: string
+  /** Free-text justification when the mutation required a reason. */
+  reason?: string
+  reason_source?: 'explicit' | 'commit-message'
+  /** Pick-list category when a reason was required. */
+  category?: string
   detail?: Record<string, unknown>
 }
 

@@ -1,5 +1,11 @@
 import type { AuthUser } from './auth'
-import { REASON_HEADER, withReason } from './reason'
+import {
+  CHANGE_CONTROL_HEADER,
+  REASON_CATEGORY_HEADER,
+  REASON_HEADER,
+  summarizeMutation,
+  withReason,
+} from './reason'
 
 export type BasePermission =
   | 'none'
@@ -179,7 +185,7 @@ export async function authzFetch<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
 ): Promise<T> {
-  const send = (reason?: string) =>
+  const send = (submission?: { reason: string; category: string }) =>
     fetch(path, {
       credentials: 'same-origin',
       ...init,
@@ -187,11 +193,20 @@ export async function authzFetch<T>(
         Accept: 'application/json',
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
         ...init?.headers,
-        ...(reason ? { [REASON_HEADER]: reason } : {}),
+        ...(submission
+          ? {
+              [REASON_HEADER]: submission.reason,
+              [REASON_CATEGORY_HEADER]: submission.category,
+              [CHANGE_CONTROL_HEADER]: submission.changeControlId,
+            }
+          : {}),
       },
     })
   const method = (init?.method ?? 'GET').toUpperCase()
-  const res = method === 'GET' || method === 'HEAD' ? await send() : await withReason(send)
+  const res =
+    method === 'GET' || method === 'HEAD'
+      ? await send()
+      : await withReason(send, { changeSummary: summarizeMutation(method, path) })
   const text = await res.text()
   let body: unknown = {}
   if (text) {

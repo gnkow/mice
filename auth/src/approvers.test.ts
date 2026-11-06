@@ -29,7 +29,7 @@ const call = async (as: keyof typeof people, method: string, path: string, body?
     method,
     headers: {
       'content-type': 'application/json',
-      'x-mice-reason': 'Routine test change',
+      'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
       cookie: await sealedSessionCookie({ ...people[as], sessionStart: Math.floor(Date.now() / 1000) }),
     },
     body: body ? JSON.stringify(body) : undefined,

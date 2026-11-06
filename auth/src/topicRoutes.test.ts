@@ -53,7 +53,7 @@ const cookie = async (sub: string) => {
   const sessionId = await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })
   return { cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}` }
 }
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change' }
+const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
 
 await describe('instance routes', async () => {
   await it('refuses non-admins and reports enforcement as on', async () => {

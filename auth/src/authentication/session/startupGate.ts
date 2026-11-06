@@ -68,6 +68,9 @@ export function productionStartupProblems(
   if (e.AUTH_DEV_MODE === 'true') {
     problems.push('AUTH_DEV_MODE must not be set in production')
   }
+  if (e.IMMUDB_HA !== 'true') {
+    problems.push('IMMUDB_HA must be "true"; a single immudb instance is unsupported for production')
+  }
   const upstreamProblem = oxenUpstreamProblem(e.OXEN_UPSTREAM ?? 'http://127.0.0.1:3001')
   if (upstreamProblem) problems.push(upstreamProblem)
   const dataDir = e.AUTH_DATA_DIR ?? './data'
