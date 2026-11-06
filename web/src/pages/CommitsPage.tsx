@@ -138,7 +138,7 @@ export function CommitsPage() {
             })}
           />
           <h1>History</h1>
-          {root.kind === 'ok' && (
+          {root.kind === 'ok' && root.data.commit && (
             <p className="history-root muted small">
               Root{' '}
               <Link

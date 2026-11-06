@@ -121,6 +121,11 @@ export type CommitResponse = StatusMessage & {
   commit: Commit
 }
 
+/** Empty repositories return `commit: null` with HTTP 200. */
+export type RootCommitResponse = StatusMessage & {
+  commit: Commit | null
+}
+
 export type MetadataEntry = {
   filename: string
   hash: string

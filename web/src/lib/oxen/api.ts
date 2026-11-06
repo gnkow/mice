@@ -10,6 +10,7 @@ import { extractGzipTar } from './tar'
 import type {
   BranchResponse,
   CommitResponse,
+  RootCommitResponse,
   CompareCommitsResponse,
   CompareDirTreeResponse,
   CompareEntriesResponse,
@@ -554,7 +555,7 @@ export function getRootCommit(
   repo: string,
   signal?: AbortSignal,
 ) {
-  return oxenFetch<CommitResponse>(
+  return oxenFetch<RootCommitResponse>(
     `${repoBase(namespace, repo)}/commits/root`,
     { signal },
   )
