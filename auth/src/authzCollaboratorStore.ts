@@ -20,6 +20,10 @@ export async function isCustomRepoRoleAssigned(ns: string, roleId: string): Prom
   return authzRepo.isRepoRoleAssigned(ns, roleId)
 }
 
+export async function listRepoCollaboratorHistory(ns: string, repo: string) {
+  return authzRepo.listRepoCollaboratorVersions(ns, repo)
+}
+
 export async function getRepoCollaboratorRoleRef(ns: string, repo: string, user: UserKey): Promise<CollaboratorRoleRef | null> {
   return authzRepo.directCollaboratorRole(ns, repo, userKey(user))
 }
