@@ -554,14 +554,20 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
   for (const p of policy.permissions) {
     if (await hasPermission(user, p)) return ALLOWED
   }
-  if (action === 'namespace.create' && !(await hasNonAdminUsers())) {
-    return denied('No non-admin users exist yet: grant namespace:create to a manager first')
+  if (action === 'namespace.create') {
+    const bootstrap = await refuseNamespaceCreateBootstrap()
+    if (bootstrap) return denied(bootstrap)
   }
   return denied(policy.reason)
 }
 
-async function hasNonAdminUsers(): Promise<boolean> {
-  return (await listRbacUsers()).some((u) => u.role !== null && u.role !== 'admin')
+/** Bootstrap SoD: an Admin alone cannot create namespaces until a non-admin Principal exists. */
+export const NAMESPACE_CREATE_BOOTSTRAP_REFUSAL =
+  'No non-admin users exist yet: grant namespace:create to a manager first'
+
+export async function refuseNamespaceCreateBootstrap(): Promise<string | null> {
+  const hasNonAdmin = (await listRbacUsers()).some((u) => u.role !== null && u.role !== 'admin')
+  return hasNonAdmin ? null : NAMESPACE_CREATE_BOOTSTRAP_REFUSAL
 }
 
 export async function authorizeInstanceAction(

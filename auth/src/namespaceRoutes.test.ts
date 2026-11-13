@@ -133,6 +133,10 @@ describe('namespace routes', () => {
     const { members } = (await set.json()) as { members: Array<{ sub?: string }> }
     assert.ok(members.some((m) => m.sub === 'bob'))
 
+    const sod = await call('manager', 'PUT', path, { sub: 'root', iss: 'test', role: 'member' })
+    assert.equal(sod.status, 400)
+    assert.match(await sod.text(), /Instance admins cannot be granted namespace membership/)
+
     assert.equal((await call('alice', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 403)
     assert.equal((await call('manager', 'DELETE', path, { sub: 'bob' })).status, 400)
     assert.equal((await call('manager', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200)

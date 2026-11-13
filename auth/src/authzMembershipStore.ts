@@ -24,6 +24,15 @@ type Who = UserKey & { groups?: string[] }
 
 const who = (user: Who) => ({ key: userKey(user), groups: repo.sessionGroups(user) })
 
+/** Separation of duties: instance admins never hold namespace membership (ticket 06). */
+export const INSTANCE_ADMIN_MEMBERSHIP_REFUSAL =
+  'Instance admins cannot be granted namespace membership (separation of duties)'
+
+/** One SoD gate for membership grants; covers self-grant when the target is the admin. */
+export async function refuseInstanceAdminMembership(target: UserKey): Promise<string | null> {
+  return (await isInstanceAdmin(target)) ? INSTANCE_ADMIN_MEMBERSHIP_REFUSAL : null
+}
+
 /** Direct user membership role ref (predefined or custom id). */
 export async function getNamespaceRoleRef(ns: string, user: UserKey): Promise<MemberRoleRef | null> {
   return repo.directMemberRole(ns, userKey(user))
@@ -133,9 +142,8 @@ export async function namespaceGroupBindingWarning(ns: string): Promise<string |
 
 export async function setNamespaceMember(ns: string, target: UserKey, role: MemberRoleRef): Promise<Result> {
   if (!(await isValidMemberRole(ns, role))) return { ok: false, error: 'Invalid role' }
-  if (await isInstanceAdmin(target)) {
-    return { ok: false, error: 'Instance admins cannot be granted namespace membership (separation of duties)' }
-  }
+  const sod = await refuseInstanceAdminMembership(target)
+  if (sod) return { ok: false, error: sod }
   return repo.setMember(ns, userKey(target), role)
 }
 

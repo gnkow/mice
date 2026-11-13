@@ -16,3 +16,9 @@
 - [x] Tests verify instance admin cannot access repository data
 - [x] Tests verify instance admin can manage users and is denied audit/lineage reads
 - [x] Tests verify bootstrap blocks namespace creation with zero non-admin users
+
+## Comments
+
+**Deep-api Deepen (holds).** Audit: SoD membership check and bootstrap gate held; unit present; dead `addInstanceAdmin` import in `instanceAdminSeparation.test.ts`; SoD string inline.
+
+**Deepen:** `refuseInstanceAdminMembership` + `INSTANCE_ADMIN_MEMBERSHIP_REFUSAL` in `authzMembershipStore.ts`; `refuseNamespaceCreateBootstrap` + `NAMESPACE_CREATE_BOOTSTRAP_REFUSAL` in `authz.ts`. Removed dead import. Strengthened unit (self-grant + SoD gate) and thin route integration (manager cannot add instance admin as member).

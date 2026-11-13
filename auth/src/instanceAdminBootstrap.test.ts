@@ -14,7 +14,7 @@ process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
-const { decideInstanceAction, preparePrincipal } = await import('./authz.js')
+const { decideInstanceAction, NAMESPACE_CREATE_BOOTSTRAP_REFUSAL, preparePrincipal } = await import('./authz.js')
 const { assignRole } = await import('./rbacStore.js')
 
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', emailVerified: true, name: 'Admin' }
@@ -30,10 +30,7 @@ await describe('bootstrap namespace creation', async () => {
     await assignRole({ actor: null, target: admin, role: 'admin', reason: 'test', bootstrap: true })
     const d = await decideInstanceAction(admin, 'namespace.create')
     assert.equal(d.allow, false)
-    assert.equal(
-      d.allow === false && d.reason,
-      'No non-admin users exist yet: grant namespace:create to a manager first',
-    )
+    assert.equal(d.reason, NAMESPACE_CREATE_BOOTSTRAP_REFUSAL)
   })
 
   await it('keeps the plain permission message once a non-admin user exists', async () => {
