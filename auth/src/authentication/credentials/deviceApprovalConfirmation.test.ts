@@ -4,6 +4,31 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import {
+  decideDeviceApprovalConfirmation,
+  DEVICE_APPROVAL_CONFIRM_ERROR,
+  isDeviceApprovalConfirmation,
+} from './deviceApprovalConfirmation.js'
+
+describe('deviceApprovalConfirmation', () => {
+  it('accepts APPROVE or the full user code, ignoring case and space', () => {
+    assert.equal(isDeviceApprovalConfirmation('APPROVE', 'ABCD-EFGH'), true)
+    assert.equal(isDeviceApprovalConfirmation('  approve  ', 'ABCD-EFGH'), true)
+    assert.equal(isDeviceApprovalConfirmation('abcd-efgh', 'ABCD-EFGH'), true)
+    assert.equal(isDeviceApprovalConfirmation('yes', 'ABCD-EFGH'), false)
+    assert.equal(isDeviceApprovalConfirmation('', 'ABCD-EFGH'), false)
+    assert.equal(isDeviceApprovalConfirmation(null, 'ABCD-EFGH'), false)
+  })
+
+  it('decide returns 400 with the typed-confirmation message when refused', () => {
+    assert.deepEqual(decideDeviceApprovalConfirmation('APPROVE', 'ABCD-EFGH'), { ok: true })
+    assert.deepEqual(decideDeviceApprovalConfirmation('nope', 'ABCD-EFGH'), {
+      ok: false,
+      status: 400,
+      error: DEVICE_APPROVAL_CONFIRM_ERROR,
+    })
+  })
+})
 
 process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-device-confirm-'))
 process.env.SESSION_SECRET = 'test-session-secret-for-device-confirm'
