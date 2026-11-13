@@ -22,6 +22,27 @@
       "when": 1794312000000,
       "tag": "0002_audit_outages",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794400000000,
+      "tag": "0003_namespace_settings_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794410000000,
+      "tag": "0004_drop_change_control_id_pattern",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794500000000,
+      "tag": "0005_namespace_membership_versions",
+      "breakpoints": true
     }
   ]
 }

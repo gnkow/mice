@@ -16,6 +16,7 @@ export async function listNamespacesForUser(user: UserKey & { groups?: string[] 
   Array<{
     id: string
     name: string
+    description: string
     basePermission: BasePermission
     membersCanCreateRepos: boolean
     createdAt: string
@@ -33,6 +34,7 @@ export async function listNamespacesForUser(user: UserKey & { groups?: string[] 
     out.push({
       id: settings.id,
       name,
+      description: settings.description,
       basePermission: settings.basePermission,
       membersCanCreateRepos: settings.membersCanCreateRepos,
       createdAt: settings.createdAt,
@@ -48,13 +50,14 @@ export async function createNamespaceAuthz(
   ns: string,
   basePermission: BasePermission,
   membersCanCreateRepos = true,
+  description = '',
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const name = ns.trim()
   if (!name) return { ok: false, error: 'Namespace name required' }
   if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
     return { ok: false, error: 'Invalid namespace name' }
   }
-  return repo.createNamespace(userKey(actor), name, basePermission, membersCanCreateRepos)
+  return repo.createNamespace(userKey(actor), name, basePermission, membersCanCreateRepos, description)
 }
 
 /** Seed namespace if missing (instance admin / create_namespace on first repo). */
@@ -68,20 +71,17 @@ export async function ensureNamespaceForCreate(
 
 export async function updateNamespaceSettings(
   ns: string,
-  patch: Partial<{
-    basePermission: BasePermission
-    membersCanCreateRepos: boolean
-    changeControlIdPattern: string
-  }>,
+  patch: repo.NamespaceSettingsPatch,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return repo.updateNamespaceSettings(ns, patch)
 }
 
-export async function renameNamespaceAuthz(
-  from: string,
-  to: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  return repo.renameNamespace(from, to)
+export async function listNamespaceSettingsHistory(ns: string) {
+  return repo.listNamespaceSettingsVersions(ns)
+}
+
+export async function listNamespaceMembershipHistory(ns: string) {
+  return repo.listNamespaceMembershipVersions(ns)
 }
 
 /** Remove the namespace with its members, custom roles and repo collaborators in one statement. */
