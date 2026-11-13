@@ -19,6 +19,13 @@ The signing ceremony extracts `acr`, `amr`, and `auth_time` from the step-up id_
 ## Code
 
 - `auth/src/authentication/signing/signingRoutes.ts`
-- `auth/src/authentication/signing/signingCeremony.ts`
+- `auth/src/authentication/signing/signingCeremony.ts` (`assembleSignatureEvidence`)
+- `auth/src/authentication/signing/signingEvidence.ts`
 - `auth/src/authentication/oidc/tokenVerificationMetadata.ts`
 - `auth/src/authentication/signing/mfaEvidence.ts`
+
+## Comments
+
+- **Audit:** holds — signature records and audit detail carry `acr`/`amr`/`auth_time` plus JWKS kid, verification time, and issuer when MFA evidence is present.
+- **Deepen:** extracted `assembleSignatureEvidence` in `signingCeremony.ts` so signing verification and token-metadata extraction share one assembly seam; `signingRoutes` unchanged beyond existing `verifySigningEvidence` use.
+- **Tests:** `signingEvidence.test.ts` (assemble + verify), `signatureEvidenceMetadata.test.ts`, `signingCeremony.test.ts`.

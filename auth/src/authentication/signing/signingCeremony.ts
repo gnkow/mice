@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { requireSigningCapability, type PrincipalId } from '../commits/commitIdentity.js'
+import { extractMfaEvidence } from './mfaEvidence.js'
 
 /**
  * Signing Ceremony - Authentication Domain
@@ -85,6 +86,39 @@ export interface SessionInfo {
   mfaEvidence?: MfaEvidence
   /** Token verification metadata (Ticket 26) */
   verificationMetadata?: VerificationMetadata
+}
+
+export type AssembledSignatureEvidence = {
+  mfaEvidence: MfaEvidence
+  verificationMetadata: VerificationMetadata
+}
+
+/**
+ * Build the signature-record evidence shapes from a verified id_token payload.
+ * Callers own JWT verification and MFA refusal; this only assembles stored fields.
+ */
+export function assembleSignatureEvidence(
+  payload: Record<string, unknown>,
+  meta: { jwksKeyId: string; verifiedAtMs: number },
+): AssembledSignatureEvidence {
+  const iss = payload.iss
+  if (typeof iss !== 'string' || !iss) {
+    throw new Error('id_token missing iss (issuer) claim')
+  }
+  const claims = extractMfaEvidence(payload)
+  const mfaEvidence: MfaEvidence = {
+    amr: claims.amr,
+    ...(claims.acr !== undefined ? { acr: claims.acr } : {}),
+    ...(claims.authTime !== undefined ? { auth_time: claims.authTime } : {}),
+  }
+  const verificationMetadata: VerificationMetadata = {
+    jwks_key_id: meta.jwksKeyId,
+    token_verified_at: meta.verifiedAtMs,
+    idp_issuer: iss,
+    ...(typeof payload.sid === 'string' ? { idp_session_id: payload.sid } : {}),
+    ...(typeof payload.jti === 'string' ? { token_id: payload.jti } : {}),
+  }
+  return { mfaEvidence, verificationMetadata }
 }
 
 /**
