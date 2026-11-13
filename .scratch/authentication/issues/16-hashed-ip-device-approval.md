@@ -22,3 +22,9 @@ A daily salt is stored and rotated at midnight UTC. `hashIp` computes SHA-256 of
 - `auth/src/ipHash.ts`
 - `auth/src/db/schema.ts` (`deviceAuthorizations.requestHashedIp`, `deviceApprovals`)
 - `web/src/pages/CliDevicePage.tsx`
+
+## Comments
+
+- **Audit:** holds — salt reuse, SHA-256(IP+salt), display suffix, and rotation covered by `ipHash.test.ts`.
+- **Deepen:** Collapsed extract/hash/suffix/salt into `createIpHash({ utcDay })` (injectable day key proves rotation). Callers use `hashFromHeaders`; device status returns only the 4-hex display suffix so CliDevicePage no longer slices the full hash.
+- **Files:** `auth/src/ipHash.ts`, `auth/src/ipHash.test.ts`, `auth/src/authentication/credentials/cliDeviceRoutes.ts`, `web/src/pages/CliDevicePage.tsx`.

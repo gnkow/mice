@@ -134,4 +134,32 @@ describe('Hashed IP Logging (U8)', () => {
     
     assert.equal(ip, null, 'Should return null when no IP headers')
   })
+
+  it('same IP hashes differently after the UTC day (salt) rotates', async () => {
+    const { createIpHash } = await import('./ipHash.js')
+    let day = '2099-01-01'
+    const hasher = createIpHash({ utcDay: () => day })
+
+    const before = await hasher.hashIp('192.168.1.100')
+    day = '2099-01-02'
+    const after = await hasher.hashIp('192.168.1.100')
+
+    assert.ok(before)
+    assert.ok(after)
+    assert.notEqual(before, after, 'Salt rotation must change the hash')
+    assert.equal(hasher.displaySuffix(before), before!.slice(-4))
+  })
+
+  it('hashFromHeaders extracts the client IP then hashes it', async () => {
+    const { createIpHash } = await import('./ipHash.js')
+    const hasher = createIpHash({ utcDay: () => '2099-06-15' })
+    const headers = new Headers()
+    headers.set('x-forwarded-for', '203.0.113.50, 10.0.0.1')
+
+    const fromHeaders = await hasher.hashFromHeaders(headers)
+    const direct = await hasher.hashIp('203.0.113.50')
+
+    assert.equal(fromHeaders, direct)
+    assert.equal(await hasher.hashFromHeaders(new Headers()), null)
+  })
 })
