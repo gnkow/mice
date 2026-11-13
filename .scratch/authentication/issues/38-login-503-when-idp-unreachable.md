@@ -21,3 +21,13 @@ When `directory.userStatus` returns `error` during login, the response is 503. T
 - [x] Directory status `error` on login returns 503
 - [x] No session row is created
 - [x] Directory status `disabled` and `missing` still return 403
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (acceptance green at `finishLogin` / `completeLogin`; proving tests in `idpAccessCheck.test.ts`, `loginFlowProvider.test.ts`, `idpOutage.test.ts`).
+
+**Deepen (auto-pick):** Collapse directory `userStatus` → HTTP refuse mapping into deep `decideLoginDirectoryStatus(status)` (in-process). `recordIdpCheck` API unchanged — loginFlow still records reachability; decision owns 503 unreachable / 403 disabled|missing / allow. Disabled side-effect flag (`recordDisabled`) stays behind the decision.
+
+**Files:** `auth/src/authentication/oidc/loginDirectoryStatus.ts`, `auth/src/authentication/oidc/loginDirectoryStatus.test.ts`, `auth/src/authentication/oidc/loginFlow.ts`
+
+**Tests:** `loginDirectoryStatus.test.ts`; regression `idpAccessCheck.test.ts`, `loginFlowProvider.test.ts`, `idpOutage.test.ts`

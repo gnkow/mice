@@ -24,4 +24,11 @@ Per-request checks are issue 19. Login status code when the directory is unreach
 
 ## Code
 
-- `auth/src/authentication/oidc/loginFlow.ts` (`finishLogin`)
+- `auth/src/authentication/oidc/loginDirectoryStatus.ts` (`decideLoginDirectoryStatus`)
+- `auth/src/authentication/oidc/loginFlow.ts` (`finishLogin` — thin call + side effects)
+
+## Comments
+
+- **Audit:** holds — `disabled` / `missing` refuse login with 403; no session created for those statuses.
+- **Deepen (auto-pick Top):** Extracted pure `decideLoginDirectoryStatus` so allow/refuse HTTP/message/`recordDisabled` live in one module. `finishLogin` only records IdP reachability / IdP-disabled history then maps the decision; no rewrite of the rest of loginFlow. `idpOutage*` / `reenable*` / `miceSuspension*` untouched.
+- **Tests:** `auth/src/authentication/oidc/loginDirectoryStatus.test.ts`; acceptance still green in `loginFlowProvider.test.ts`
