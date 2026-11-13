@@ -147,3 +147,30 @@ describe('namespace settings entity versions', () => {
     assert.equal((await as(manager, 'GET', `/auth/namespaces/${ns}/settings/history`)).status, 200)
   })
 })
+
+describe('namespace settings entity versions (module seam)', () => {
+  it('createNamespace opens v1; updateNamespaceSettings appends reconstructable states', async () => {
+    const { createNamespace, updateNamespaceSettings, listNamespaceSettingsVersions } =
+      await import('./authzRepository.js')
+    const { userKey } = await import('./authzTypes.js')
+    const ns = `nsver-mod-${Date.now().toString(36)}`
+    assert.equal((await createNamespace(userKey(manager), ns, 'read', true, 'v1')).ok, true)
+
+    const v0 = await listNamespaceSettingsVersions(ns)
+    assert.ok(v0)
+    assert.equal(v0!.length, 1)
+    assert.equal(v0![0]!.description, 'v1')
+    assert.equal(v0![0]!.basePermission, 'read')
+    assert.equal(v0![0]!.validTo, null)
+
+    assert.equal((await updateNamespaceSettings(ns, { description: 'v2', basePermission: 'write' })).ok, true)
+    const v1 = await listNamespaceSettingsVersions(ns)
+    assert.ok(v1)
+    assert.equal(v1!.length, 2)
+    assert.ok(v1![0]!.validTo)
+    assert.equal(v1![0]!.description, 'v1')
+    assert.equal(v1![1]!.description, 'v2')
+    assert.equal(v1![1]!.basePermission, 'write')
+    assert.equal(v1![1]!.validTo, null)
+  })
+})
