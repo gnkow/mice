@@ -27,3 +27,5 @@ Status: done
 - **Seams:** `prepareAccessReviewDocument` / `applyAccessReviewSign` (module); `POST /auth/admin/access-review/sign` (package).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13 — deep-ui Deepen (holds, sign path only): **AccessReviewSection** Sign report uses separate `signing` busy/`aria-busy`, ceremony hint on unsigned, success “Signed as Reviewed.”, accessible sign errors; minimized conflict with other AccessReview edits; E2E `e2e/tests/access-review-sign.spec.ts` (Settings → Access review → Sign). No commit/push (requested).
