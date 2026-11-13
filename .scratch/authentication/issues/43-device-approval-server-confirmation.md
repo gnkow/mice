@@ -32,3 +32,5 @@ Split from issue 25. The approval page already requires the phrase. This issue i
 - **Seams:** `decideDeviceApprovalConfirmation` (module); `POST /auth/cli/device/approve` (package).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13: **deep-ui Deepen (holds)** — Confirmation affordance: labeled confirm input, live hint, Approve `aria-describedby` + disabled until `APPROVE`/user code matches (`isApprovalConfirmation`). E2E `TC-CLI-43` asserts disabled → wrong text stays disabled → `APPROVE` enables → approve succeeds. Page still posts the typed confirmation the route checks. No commit/push (operator request).
