@@ -5,6 +5,24 @@ import type { Directory, DirectoryGroup } from '../directory/directoryTypes.js'
 import type { SessionUser } from '../session/session.js'
 
 /**
+ * Keys that count as "still listed" for a directory group row (id, name, binding key).
+ * Session∩directory matching uses this set so callers do not re-encode live-key rules.
+ */
+export function directoryLiveGroupKeys(
+  listed: readonly DirectoryGroup[],
+  issuer: string,
+): Set<string> {
+  const live = new Set<string>()
+  for (const group of listed) {
+    live.add(group.id)
+    live.add(normalizeGroup(group.id))
+    live.add(normalizeGroup(group.name))
+    if (group.id) live.add(groupBindingKey(issuer, group.id))
+  }
+  return live
+}
+
+/**
  * Session groups that are still present in a directory listing.
  * A group added in the IdP since login stays unused until the next Session.
  */
@@ -13,13 +31,7 @@ export function intersectSessionWithDirectoryGroups(
   listed: readonly DirectoryGroup[],
   issuer: string,
 ): string[] {
-  const live = new Set<string>()
-  for (const group of listed) {
-    live.add(group.id)
-    live.add(normalizeGroup(group.id))
-    live.add(normalizeGroup(group.name))
-    if (group.id) live.add(groupBindingKey(issuer, group.id))
-  }
+  const live = directoryLiveGroupKeys(listed, issuer)
   return sessionGroups.filter((group) => {
     if (live.has(group) || live.has(normalizeGroup(group))) return true
     const parsed = parseGroupBindingKey(group)

@@ -1,11 +1,24 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { groupBindingKey } from '../../groupBinding.js'
-import { intersectSessionWithDirectoryGroups } from './privilegedGroups.js'
+import {
+  directoryLiveGroupKeys,
+  intersectSessionWithDirectoryGroups,
+} from './privilegedGroups.js'
 
 const ISS = 'http://kc.test/realms/mice'
 const GROUP = '11111111-1111-4111-8111-111111111111'
 const OTHER = '22222222-2222-4222-8222-222222222222'
+
+describe('directoryLiveGroupKeys', () => {
+  it('indexes object id, normalized name, and binding key for each listed group', () => {
+    const live = directoryLiveGroupKeys([{ id: GROUP, name: 'Quality Assurance' }], ISS)
+    assert.equal(live.has(GROUP), true)
+    assert.equal(live.has('quality assurance'), true)
+    assert.equal(live.has(groupBindingKey(ISS, GROUP)), true)
+    assert.equal(live.has(OTHER), false)
+  })
+})
 
 describe('intersectSessionWithDirectoryGroups', () => {
   it('keeps session groups the directory still lists by object id', () => {

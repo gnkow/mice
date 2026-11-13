@@ -29,5 +29,6 @@ Every mutating repository or namespace authorization asks the directory for the 
 ## Comments
 
 - **Audit:** holds — privileged writes re-fetch directory groups and authorize with session∩directory; removed groups fail; added groups unused until login; directory failure → 503.
-- **Deepen:** moved recheck into `authentication/access/privilegedGroups.ts` with pure `intersectSessionWithDirectoryGroups` plus `withDirectoryGroups` / `confirmPrivilegedGroups`; `authz` imports and re-exports.
-- **Tests:** `privilegedGroups.unit.test.ts`, `privilegedGroups.test.ts`.
+- **Deepen (auto-pick Top):** `directoryLiveGroupKeys` owns live id/name/binding-key indexing; `intersectSessionWithDirectoryGroups` filters Session∩directory through that set; `withDirectoryGroups` / `confirmPrivilegedGroups` unchanged; did not touch `signingRoutes`.
+- **Tests:** `privilegedGroups.unit.test.ts` (unit); `privilegedGroups.test.ts` (integration).
+- **Seams:** `directoryLiveGroupKeys` / `intersectSessionWithDirectoryGroups` (module); `withDirectoryGroups` via authz (package).
