@@ -29,3 +29,5 @@ Replaces recovery-token persistence. A one-hour two-person token is not needed w
 - **Seams:** `decideAdminMinimum` / `remainingAdminIdsAfterRemoval` (module); `assignRole` / `revokeRole` (package).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13 — deep-ui Deepen (holds→UX gap closed): **Users** (`#users-grant`) two-admin refuse — floor copy, client disable when demoting under ≤2 admins (“Remove blocked”), API `isAdminFloorError` → `Admin floor:` flash-warn + grant success status; E2E `e2e/tests/admin-floor.spec.ts`. No commit/push (requested).
