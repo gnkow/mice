@@ -55,27 +55,6 @@ export function composeAuditReadiness(input: {
   }
 }
 
-export type AuditReadinessDeps = {
-  lastAppendError: () => string | null
-  health: () => Promise<AuditHealthProbe>
-  currentVerification: () => AuditVerification | null
-  isChainBlocked: () => boolean
-}
-
-/** Cheap: pings the ledger and reads the last verification; never walks the proofs. */
-export async function auditReadiness(deps: AuditReadinessDeps): Promise<AuditReadiness> {
-  const health = await deps.health().catch((err: unknown) => ({
-    ok: false as const,
-    detail: String(err),
-  }))
-  return composeAuditReadiness({
-    lastAppendError: deps.lastAppendError(),
-    health,
-    verification: deps.currentVerification(),
-    chainBlocked: deps.isChainBlocked(),
-  })
-}
-
 /** Ports for the live readiness probe (injected by audit.ts). */
 export type AuditReadinessPorts = {
   lastAppendError: () => string | null

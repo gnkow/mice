@@ -26,6 +26,7 @@ import { createAuditIntentOutcome } from './auditIntentOutcome.js'
 
 export type { AuditVerification } from './auditChainGate.js'
 export type { AuditReadiness } from './auditReadiness.js'
+export { composeAuditReadiness } from './auditReadiness.js'
 export { AUDIT_UNAVAILABLE_MESSAGE } from './auditFailClosed.js'
 export { eventJobIds, eventSessionIds, eventWorkspaceIds, applyAuditQueryFilters } from './auditQueryFilters.js'
 export { intentReasonFields, type TrackedReason } from './auditReasonFields.js'
