@@ -1,7 +1,8 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { randomBytes } from 'node:crypto'
+import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
 after(() => t.restore())
@@ -10,32 +11,57 @@ const { Hono } = await import('hono')
 const { registerNamespaceRoutes } = await import('./namespaceRoutes.js')
 const { preparePrincipal } = await import('./authz.js')
 const { sealedSessionCookie } = await import('./testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('./auditLedger.js')
+
+useSignatureStore(
+  openSignatureStore(
+    await openLedger({ ...immudbConfig(), prefix: `esign-nsr/${randomBytes(4).toString('hex')}/` }),
+  ),
+)
 
 const root = { ...t.person('root'), email: 'root@x.io', emailVerified: true as const }
 const manager = t.person('manager')
 const alice = t.person('alice')
 await preparePrincipal(root)
+await preparePrincipal(alice)
 await t.grantRole(manager, 'manager')
+await t.grantRole(alice, 'user')
 
 const audits: string[] = []
 const app = new Hono()
 registerNamespaceRoutes(app, { audit: async (_c, _u, _via, f) => void audits.push(f.action) })
 
-const cookie = async (sub: string) => {
-  const user = sub === 'root' ? root : sub === 'manager' ? manager : { ...t.person(sub), sessionStart: Math.floor(Date.now() / 1000) }
-  return sealedSessionCookie({ ...user, sessionStart: Math.floor(Date.now() / 1000) })
-}
-const call = async (as: string | null, method: string, path: string, body?: unknown) =>
-  app.request(path, {
+const personFor = (sub: string) =>
+  sub === 'root' ? root : sub === 'manager' ? manager : alice
+
+const cookie = async (sub: string) =>
+  sealedSessionCookie({ ...personFor(sub), sessionStart: Math.floor(Date.now() / 1000) })
+
+const call = async (as: string | null, method: string, path: string, body?: unknown) => {
+  const isNsCreate = method === 'POST' && /^\/auth\/namespaces\/?$/.test(path)
+  const needsSig = Boolean(as) && method !== 'GET' && method !== 'HEAD' && !isNsCreate
+  const headers = needsSig
+    ? await regulatedMutationHeaders(personFor(as!), {
+        method,
+        path,
+        body: body ?? {},
+      })
+    : {
+        'content-type': 'application/json',
+        'x-mice-reason': 'Routine test change',
+        'x-mice-reason-category': 'privileged_settings',
+        'x-mice-change-control-id': 'CC-2026-114',
+      }
+  return app.request(path, {
     method,
     headers: {
-      'content-type': 'application/json',
-      'x-mice-reason': 'Routine test change',
-      'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+      ...headers,
       ...(as ? { cookie: await cookie(as) } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   })
+}
 
 describe('namespace routes', () => {
   it('namespaces: anonymous 401, creation needs Manager; the owning manager (not an instance admin) reads and updates', async () => {
@@ -48,17 +74,49 @@ describe('namespace routes', () => {
     const created = await call('manager', 'POST', '/auth/namespaces', { name: 'acme', basePermission: 'read' })
     assert.equal(created.status, 200)
     assert.ok(audits.includes('namespace.create'))
+    const createdBody = (await created.json()) as { name: string; namespace: { id: string; name: string } }
+    assert.equal(createdBody.name, 'acme')
+    assert.match(createdBody.namespace.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    const stableId = createdBody.namespace.id
 
     // Instance admins hold no data access (separation of duties, #06): the owning manager does.
     assert.equal((await call('root', 'GET', '/auth/namespaces/acme')).status, 403)
-    const detail = (await (await call('manager', 'GET', '/auth/namespaces/acme')).json()) as { name: string }
+    const detail = (await (await call('manager', 'GET', '/auth/namespaces/acme')).json()) as {
+      id: string
+      name: string
+    }
     assert.equal(detail.name, 'acme')
+    assert.equal(detail.id, stableId)
     assert.equal((await call('manager', 'GET', '/auth/namespaces/nope')).status, 404)
 
     assert.equal((await call('alice', 'PATCH', '/auth/namespaces/acme', { basePermission: 'write' })).status, 403)
     assert.equal((await call('root', 'PATCH', '/auth/namespaces/acme', { basePermission: 'write' })).status, 403)
     assert.equal((await call('manager', 'PATCH', '/auth/namespaces/acme', { basePermission: 'write' })).status, 200)
     assert.ok(audits.includes('namespace.settings.update'))
+  })
+
+  it('rename preserves the stable namespace id returned at create', async () => {
+    const created = await call('manager', 'POST', '/auth/namespaces', {
+      name: 'stable-route-ns',
+      basePermission: 'none',
+    })
+    assert.equal(created.status, 200)
+    const createdBody = (await created.json()) as { namespace: { id: string } }
+    const stableId = createdBody.namespace.id
+    assert.match(stableId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+
+    const renamed = await call('manager', 'PATCH', '/auth/namespaces/stable-route-ns', {
+      name: 'stable-route-ns-renamed',
+    })
+    assert.equal(renamed.status, 200)
+    const renamedBody = (await renamed.json()) as { namespace: { id: string; name: string } }
+    assert.equal(renamedBody.namespace.name, 'stable-route-ns-renamed')
+    assert.equal(renamedBody.namespace.id, stableId)
+    assert.equal((await call('manager', 'GET', '/auth/namespaces/stable-route-ns')).status, 404)
+    const after = (await (await call('manager', 'GET', '/auth/namespaces/stable-route-ns-renamed')).json()) as {
+      id: string
+    }
+    assert.equal(after.id, stableId)
   })
 
   it('members: only managers change them, and bodies are validated', async () => {

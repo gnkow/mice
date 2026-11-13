@@ -16,3 +16,9 @@
 - [x] Tests verify namespace creation returns stable ID
 - [x] Tests verify namespace rename preserves ID
 - [x] Tests verify authorization works by ID after rename
+
+## Comments
+
+**Deep-api Deepen (holds).** Audit: acceptance holds at `authzRepository` / `authzNamespaceStore` / namespace routes. Unit was present but thin on ensure-mint and membership-after-rename; route integration thin on create/rename id.
+
+**Deepen:** collapsed create+ensure into `insertOwnedNamespace` with an explicit `randomUUID()` mint; rename still updates by stable id. Strengthened unit (`authzRepository.test.ts` stable namespace ids) and thin integration (`namespaceRoutes.test.ts` create returns id; rename preserves id).

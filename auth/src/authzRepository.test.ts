@@ -6,7 +6,7 @@ import { isolatedAuth } from './testSupport.js'
 const t = isolatedAuth()
 after(() => t.restore())
 
-const { createNamespaceAuthz, deleteNamespaceAuthz, getNamespace, renameNamespaceAuthz } = await import('./authzNamespaceStore.js')
+const { createNamespaceAuthz, deleteNamespaceAuthz, getNamespace, updateNamespaceSettings } = await import('./authzNamespaceStore.js')
 const { listNamespaceMembers, removeNamespaceMember, setNamespaceMember, setNamespaceGroupMember, removeNamespaceGroupMember } =
   await import('./authzMembershipStore.js')
 const { listRepoCollaborators, setRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
@@ -17,19 +17,36 @@ const bob = t.person('bob')
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 describe('stable namespace ids', () => {
-  it('create mints a stable UUID that rename preserves', async () => {
+  it('create mints a stable UUID that settings rename preserves', async () => {
     assert.deepEqual(await createNamespaceAuthz(alice, 'stable-ns', 'read'), { ok: true })
     const created = await getNamespace('stable-ns')
     assert.ok(created)
     assert.match(created.id, UUID_RE)
     const id = created.id
 
-    assert.deepEqual(await renameNamespaceAuthz('stable-ns', 'stable-ns-renamed'), { ok: true })
+    assert.deepEqual(await updateNamespaceSettings('stable-ns', { name: 'stable-ns-renamed' }), { ok: true })
     assert.equal(await getNamespace('stable-ns'), null)
     const renamed = await getNamespace('stable-ns-renamed')
     assert.ok(renamed)
     assert.equal(renamed.id, id)
     assert.equal(renamed.createdBy, 'test\u001falice')
+    // Membership rows key on namespace id, so rename must keep the creator Owner.
+    assert.deepEqual(await listNamespaceMembers('stable-ns-renamed'), [
+      { kind: 'user', sub: 'alice', iss: 'test', role: 'owner' },
+    ])
+  })
+
+  it('ensure mints a stable UUID shared with create-or-seed callers', async () => {
+    const { ensureNamespaceForCreate } = await import('./authzNamespaceStore.js')
+    await ensureNamespaceForCreate(alice, 'ensure-ns', 'none')
+    const first = await getNamespace('ensure-ns')
+    assert.ok(first)
+    assert.match(first.id, UUID_RE)
+    await ensureNamespaceForCreate(bob, 'ensure-ns', 'read')
+    const again = await getNamespace('ensure-ns')
+    assert.ok(again)
+    assert.equal(again.id, first.id)
+    assert.equal(again.basePermission, 'none')
   })
 })
 
@@ -63,7 +80,7 @@ describe('grants survive rename', () => {
     assert.deepEqual(await renameRepository('grant-ns', 'data', 'data2'), { ok: true })
     assert.equal((await hasRepoPermission(bob, 'grant-ns', 'data2', 'write')).ok, true)
 
-    assert.deepEqual(await renameNamespaceAuthz('grant-ns', 'grant-ns2'), { ok: true })
+    assert.deepEqual(await updateNamespaceSettings('grant-ns', { name: 'grant-ns2' }), { ok: true })
     assert.equal((await hasRepoPermission(bob, 'grant-ns2', 'data2', 'write')).ok, true)
   })
 })
