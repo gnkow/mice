@@ -181,7 +181,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
    * Rebuild derived lineage for a path from oxen path-version history.
    * Body: { namespace, repo, branch?, path }
    */
-  app.post('/auth/lineage/rebuild', guarded({ mutates: true, body: 'json', invalidBody: 'Invalid JSON body' }, async ({ c, user: session, body: raw }) => {
+  app.post('/auth/lineage/rebuild', guarded({ mutates: true, reason: true, body: 'json', invalidBody: 'Invalid JSON body' }, async ({ c, user: session, body: raw }) => {
     const body = raw as {
       namespace?: string
       repo?: string

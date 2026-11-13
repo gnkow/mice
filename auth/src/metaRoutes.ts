@@ -117,7 +117,19 @@ function metaError(err: unknown, c: Context): Response | null {
 }
 
 const readPolicy = { allowScoped: true, fail: metaError } as const
-const writePolicy = { ...readPolicy, mutates: true, body: 'json', invalidBody: 'Invalid JSON' } as const
+/** Bulk read needs a JSON body but does not mutate or require a reason. */
+const batchReadPolicy = {
+  ...readPolicy,
+  body: 'json',
+  invalidBody: 'Invalid JSON',
+} as const
+const writePolicy = {
+  ...readPolicy,
+  mutates: true,
+  reason: true,
+  body: 'json',
+  invalidBody: 'Invalid JSON',
+} as const
 
 function refFromQuery(c: Context): { type: string; id: string } | null {
   const type = c.req.query('type')
@@ -227,7 +239,7 @@ export function registerMetaRoutes(app: Hono) {
   }))
 
   // Bulk explicit metadata for list views; unknown or unreadable entities are omitted.
-  app.post('/auth/meta/batch', guarded(writePolicy, async ({ c, user, body: raw }) => {
+  app.post('/auth/meta/batch', guarded(batchReadPolicy, async ({ c, user, body: raw }) => {
     const body = raw as { refs?: { type?: string; id?: string; scope?: EntityRef['scope'] }[] }
     const refs = Array.isArray(body.refs) ? body.refs.slice(0, 200) : []
     const items: Record<string, unknown> = {}
@@ -278,7 +290,7 @@ export function registerMetaRoutes(app: Hono) {
   app.put('/auth/meta', write)
   app.patch('/auth/meta', write)
 
-  app.delete('/auth/meta', guarded({ ...readPolicy, mutates: true }, async ({ c, user, audit }) => {
+  app.delete('/auth/meta', guarded({ ...readPolicy, mutates: true, reason: true }, async ({ c, user, audit }) => {
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
     const ref = await resolveRef(q.type, q.id, queryScope(c))
