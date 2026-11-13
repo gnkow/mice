@@ -1,6 +1,6 @@
 /**
  * IdP Baseline Drift Detection (Ticket 23, U20)
- * 
+ *
  * Daily automated check compares current IdP configuration against stored baseline.
  * Critical drift (MFA missing, algorithm changed) blocks signing.
  * Non-critical drift (group format changed) alerts only.
@@ -10,7 +10,6 @@ import { getDb } from '../../db/database.js'
 import { idpBaseline, idpDriftReports } from '../../db/schema.js'
 import { eq, desc } from 'drizzle-orm'
 import { env } from '../../env.js'
-import { extractMfaEvidence } from '../signing/mfaEvidence.js'
 
 export type IdpBaselineConfig = {
   id: number
@@ -46,6 +45,33 @@ export type DriftReport = {
   error?: string
 }
 
+export type OidcDiscoveryDoc = {
+  issuer: string
+  scopes_supported?: string[]
+  id_token_signing_alg_values_supported?: string[]
+  claims_supported?: string[]
+}
+
+export type IdpDriftFetchDeps = {
+  fetchDiscovery?: (issuer: string) => Promise<OidcDiscoveryDoc>
+  issuer?: () => string
+  now?: () => Date
+}
+
+export type AssessDriftOpts = IdpDriftFetchDeps & {
+  /** When true (default for performDriftCheck), store the report. */
+  persist?: boolean
+}
+
+async function defaultFetchDiscovery(issuer: string): Promise<OidcDiscoveryDoc> {
+  const discoveryUrl = `${issuer}/.well-known/openid-configuration`
+  const discoveryRes = await fetch(discoveryUrl)
+  if (!discoveryRes.ok) {
+    throw new Error(`Failed to fetch OIDC discovery: ${discoveryRes.status}`)
+  }
+  return discoveryRes.json() as Promise<OidcDiscoveryDoc>
+}
+
 /**
  * Get the current active baseline configuration.
  */
@@ -73,39 +99,22 @@ export async function getCurrentBaseline(): Promise<IdpBaselineConfig | null> {
 }
 
 /**
- * Get the current IdP configuration by fetching OIDC discovery and test login.
+ * Get the current IdP configuration by fetching OIDC discovery.
  */
-export async function getCurrentIdpConfig(): Promise<IdpCurrentConfig> {
-  const issuer = env.oidcIssuer
+export async function getCurrentIdpConfig(
+  deps: IdpDriftFetchDeps = {},
+): Promise<IdpCurrentConfig> {
+  const issuer = (deps.issuer ?? (() => env.oidcIssuer))()
+  const fetchDiscovery = deps.fetchDiscovery ?? defaultFetchDiscovery
+  const discovery = await fetchDiscovery(issuer)
 
-  // Fetch OIDC discovery
-  const discoveryUrl = `${issuer}/.well-known/openid-configuration`
-  const discoveryRes = await fetch(discoveryUrl)
-  if (!discoveryRes.ok) {
-    throw new Error(`Failed to fetch OIDC discovery: ${discoveryRes.status}`)
-  }
-
-  const discovery = await discoveryRes.json() as {
-    issuer: string
-    scopes_supported?: string[]
-    id_token_signing_alg_values_supported?: string[]
-    claims_supported?: string[]
-  }
-
-  // Determine signature algorithm from discovery
   const signatureAlgorithm = discovery.id_token_signing_alg_values_supported?.[0] ?? 'RS256'
-
-  // Determine required scopes from discovery
   const requiredScopes = discovery.scopes_supported ?? ['openid', 'profile', 'email']
-
-  // For MFA claims and group format, we'd need a test login
-  // For now, return what we can determine from discovery
-  // In production, this would perform a test authentication
 
   return {
     requiredScopes,
     signatureAlgorithm,
-    groupClaimFormat: 'array', // Would be determined from test login
+    groupClaimFormat: 'array',
     issuer: discovery.issuer,
     ...(discovery.claims_supported
       ? { authTimeAsserted: discovery.claims_supported.includes('auth_time') }
@@ -170,10 +179,34 @@ export function detectDrift(
   return { criticalDrifts, nonCriticalDrifts }
 }
 
+async function storeDriftReport(
+  report: DriftReport,
+  checkedAt: Date,
+): Promise<DriftReport> {
+  const [stored] = await getDb()
+    .insert(idpDriftReports)
+    .values({
+      checkedAt,
+      baselineId: report.baselineId,
+      hasCriticalDrift: report.hasCriticalDrift,
+      hasNonCriticalDrift: report.hasNonCriticalDrift,
+      criticalDrifts: report.criticalDrifts,
+      nonCriticalDrifts: report.nonCriticalDrifts,
+      currentConfig: report.currentConfig,
+      error: report.error,
+    })
+    .returning()
+
+  return { ...report, id: stored.id, checkedAt: stored.checkedAt }
+}
+
 /**
- * Perform drift detection check and store report.
+ * Compare the active baseline to current discovery.
+ * `persist: true` stores the report (daily job / admin check); `false` is compare-only.
  */
-export async function performDriftCheck(): Promise<DriftReport> {
+export async function assessDrift(opts: AssessDriftOpts = {}): Promise<DriftReport> {
+  const persist = opts.persist ?? true
+  const now = opts.now ?? (() => new Date())
   const baseline = await getCurrentBaseline()
 
   if (!baseline) {
@@ -184,10 +217,9 @@ export async function performDriftCheck(): Promise<DriftReport> {
   let error: string | undefined
 
   try {
-    currentConfig = await getCurrentIdpConfig()
+    currentConfig = await getCurrentIdpConfig(opts)
   } catch (err) {
     error = err instanceof Error ? err.message : 'Unknown error fetching IdP config'
-    // If we can't fetch current config, create a report with error
     const report: DriftReport = {
       baselineId: baseline.id,
       hasCriticalDrift: false,
@@ -202,28 +234,10 @@ export async function performDriftCheck(): Promise<DriftReport> {
       },
       error,
     }
-
-    // Store report
-    const [stored] = await getDb()
-      .insert(idpDriftReports)
-      .values({
-        checkedAt: new Date(),
-        baselineId: baseline.id,
-        hasCriticalDrift: false,
-        hasNonCriticalDrift: false,
-        criticalDrifts: [],
-        nonCriticalDrifts: [],
-        currentConfig: report.currentConfig,
-        error,
-      })
-      .returning()
-
-    return { ...report, id: stored.id, checkedAt: stored.checkedAt }
+    return persist ? storeDriftReport(report, now()) : report
   }
 
-  // Detect drift
   const { criticalDrifts, nonCriticalDrifts } = detectDrift(baseline, currentConfig)
-
   const report: DriftReport = {
     baselineId: baseline.id,
     hasCriticalDrift: criticalDrifts.length > 0,
@@ -233,22 +247,16 @@ export async function performDriftCheck(): Promise<DriftReport> {
     currentConfig,
   }
 
-  // Store report
-  const [stored] = await getDb()
-    .insert(idpDriftReports)
-    .values({
-      checkedAt: new Date(),
-      baselineId: baseline.id,
-      hasCriticalDrift: report.hasCriticalDrift,
-      hasNonCriticalDrift: report.hasNonCriticalDrift,
-      criticalDrifts: report.criticalDrifts,
-      nonCriticalDrifts: report.nonCriticalDrifts,
-      currentConfig: report.currentConfig,
-      error: undefined,
-    })
-    .returning()
+  return persist ? storeDriftReport(report, now()) : report
+}
 
-  return { ...report, id: stored.id, checkedAt: stored.checkedAt }
+/**
+ * Perform drift detection check and store report.
+ */
+export async function performDriftCheck(
+  deps: IdpDriftFetchDeps = {},
+): Promise<DriftReport> {
+  return assessDrift({ ...deps, persist: true })
 }
 
 /**

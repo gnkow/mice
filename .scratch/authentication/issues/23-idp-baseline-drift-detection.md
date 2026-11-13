@@ -26,3 +26,9 @@ The deploy-time MFA check is issue 14. An IdP outage incident record is issue 46
 - `auth/src/boot.ts`
 - `auth/src/authentication/signing/signingRoutes.ts`
 - `web/src/components/IdpDriftSection.tsx`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (baseline fields, daily store, critical 503 block, non-critical log, admin inspect/check/replace via `idpDriftDetection.test.ts` + routes/signing).
+
+**Deepen (auto-picked):** Unify compare+persist behind `assessDrift({ persist, fetchDiscovery })` (one `storeDriftReport`); schedule timer delegates to `runIdpDriftTick` + `logDriftReport`.

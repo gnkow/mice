@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { getDb } from '../../db/database.js'
 import { idpBaseline, idpDriftReports } from '../../db/schema.js'
 import {
+  assessDrift,
   establishBaseline,
   getCurrentBaseline,
   detectDrift,
@@ -320,13 +321,10 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
 
   describe('Current IdP config', () => {
     const withDiscovery = async (doc: Record<string, unknown>) => {
-      const original = globalThis.fetch
-      globalThis.fetch = (async () => new Response(JSON.stringify(doc), { status: 200 })) as typeof fetch
-      try {
-        return await getCurrentIdpConfig()
-      } finally {
-        globalThis.fetch = original
-      }
+      return getCurrentIdpConfig({
+        fetchDiscovery: async () => doc as never,
+        issuer: () => 'http://idp.test',
+      })
     }
     const base = { issuer: 'http://idp.test', id_token_signing_alg_values_supported: ['RS256'] }
 
@@ -338,6 +336,79 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
     it('reports auth_time as not asserted when discovery omits it', async () => {
       const cfg = await withDiscovery({ ...base, claims_supported: ['sub', 'acr', 'amr'] })
       assert.equal(cfg.authTimeAsserted, false)
+    })
+  })
+
+  describe('assessDrift', () => {
+    const discovery = {
+      issuer: 'http://localhost:8180/realms/mice',
+      scopes_supported: ['openid', 'profile'],
+      id_token_signing_alg_values_supported: ['RS256'],
+      claims_supported: ['sub', 'auth_time'],
+    }
+
+    it('compares without storing when persist is false', async () => {
+      await establishBaseline('admin@example.com', {
+        mfaClaimsAvailable: { amr: ['mfa'], authTimeAsserted: true },
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+      })
+      const result = await assessDrift({
+        persist: false,
+        fetchDiscovery: async () => discovery,
+        issuer: () => discovery.issuer,
+      })
+      assert.equal(result.hasCriticalDrift, true)
+      assert.ok(result.criticalDrifts.some((d) => d.includes('MFA')))
+      const rows = await getDb().select().from(idpDriftReports)
+      assert.equal(rows.length, 0)
+      assert.equal(result.id, undefined)
+    })
+
+    it('stores a report when persist is true', async () => {
+      await establishBaseline('admin@example.com', {
+        mfaClaimsAvailable: { amr: ['mfa'] },
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+      })
+      const result = await assessDrift({
+        persist: true,
+        fetchDiscovery: async () => ({
+          ...discovery,
+          // no MFA claims in current config path — discovery alone; MFA stays undefined → critical
+        }),
+        issuer: () => discovery.issuer,
+      })
+      assert.ok(result.id)
+      const rows = await getDb().select().from(idpDriftReports)
+      assert.equal(rows.length, 1)
+      assert.equal(rows[0].id, result.id)
+    })
+  })
+
+  describe('runIdpDriftTick', () => {
+    it('persists drift and returns access alarm count', async () => {
+      const { runIdpDriftTick } = await import('./idpDriftSchedule.js')
+      await establishBaseline('admin@example.com', {
+        mfaClaimsAvailable: { amr: ['mfa'] },
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+      })
+      const result = await runIdpDriftTick({
+        fetchDiscovery: async () => ({
+          issuer: 'http://localhost:8180/realms/mice',
+          scopes_supported: ['openid'],
+          id_token_signing_alg_values_supported: ['RS256'],
+        }),
+        issuer: () => 'http://localhost:8180/realms/mice',
+      })
+      assert.ok(result.report.id)
+      assert.equal(typeof result.accessAlarmsFound, 'number')
+      const rows = await getDb().select().from(idpDriftReports)
+      assert.equal(rows.length, 1)
     })
   })
 

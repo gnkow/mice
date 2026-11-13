@@ -12,7 +12,7 @@ import {
   performDriftCheck,
   getRecentDriftReports,
   establishBaseline,
-  detectDrift,
+  assessDrift,
 } from '../compliance/idpDriftDetection.js'
 import { appendAudit } from '../../audit.js'
 
@@ -71,16 +71,21 @@ export function registerIdpDriftRoutes(app: Hono): void {
     }
 
     try {
-      const current = await getCurrentIdpConfig()
-      const { criticalDrifts, nonCriticalDrifts } = detectDrift(baseline, current)
+      const report = await assessDrift({ persist: false })
+      if (report.error) {
+        return c.json({
+          error: 'Failed to compare configurations',
+          detail: report.error,
+        }, 503)
+      }
 
       return c.json({
         baseline,
-        current,
-        hasCriticalDrift: criticalDrifts.length > 0,
-        hasNonCriticalDrift: nonCriticalDrifts.length > 0,
-        criticalDrifts,
-        nonCriticalDrifts,
+        current: report.currentConfig,
+        hasCriticalDrift: report.hasCriticalDrift,
+        hasNonCriticalDrift: report.hasNonCriticalDrift,
+        criticalDrifts: report.criticalDrifts,
+        nonCriticalDrifts: report.nonCriticalDrifts,
       })
     } catch (err) {
       return c.json({
