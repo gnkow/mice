@@ -32,6 +32,13 @@ describe('service principals removed (#05): unit', () => {
     assert.equal('decideServicePrincipalManage' in authz, false)
   })
 
+  it('decideInstanceAction has no serviceprincipal.admin action', async () => {
+    await assert.rejects(
+      () => authz.decideInstanceAction(iso.admin, 'serviceprincipal.admin' as never),
+      TypeError,
+    )
+  })
+
   it('schema has no servicePrincipals table', () => {
     assert.equal('servicePrincipals' in schema, false)
   })
