@@ -7,6 +7,11 @@ import { immudbConfig, openLedger, type Ledger, type LedgerVerification } from '
 import { type SessionUser } from './authentication/index.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { AuditDetailPolicyError, validateAuditDetail } from './auditDetailPolicy.js'
+import {
+  auditActionMatches,
+  CURRENT_AUDIT_SCHEMA_VERSION,
+  upcastAuditEvent,
+} from './auditSchema.js'
 
 export type AuditVia = 'session' | 'pat'
 
@@ -60,6 +65,8 @@ export type AuditEvent = {
   owner?: AuditActor
   /** Hashed IP (SHA-256(IP + daily_salt)) for anomaly detection while preserving privacy (U8). */
   hashed_ip?: string
+  /** Event shape version; readers upcast older blobs (US11 / Q19). */
+  schema_version: number
 }
 
 export type AuditQuery = {
@@ -309,10 +316,11 @@ export function extractRepoCreateFromJson(
   return { namespace, repo }
 }
 
-export type AuditInput = Omit<AuditEvent, 'id' | 'ts' | 'phase' | 'intent_id' | 'via'> & {
+export type AuditInput = Omit<AuditEvent, 'id' | 'ts' | 'phase' | 'intent_id' | 'via' | 'schema_version'> & {
   id?: string
   ts?: string
   via: AuditVia | 'system'
+  schema_version?: number
 }
 
 async function resolveEntityRefs(partial: AuditInput): Promise<{
@@ -369,6 +377,7 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
     path: partial.path,
     status: partial.status,
     action: partial.action,
+    schema_version: partial.schema_version ?? CURRENT_AUDIT_SCHEMA_VERSION,
     ...refs,
     ...(partial.message ? { message: partial.message } : {}),
     ...(partial.reason
@@ -534,7 +543,7 @@ export async function readAuditAfter(seq: number, limit?: number): Promise<{ eve
   const events: AuditEvent[] = []
   for (const record of records) {
     try {
-      events.push(JSON.parse(record.value) as AuditEvent)
+      events.push(upcastAuditEvent(JSON.parse(record.value)))
     } catch {
       /* surfaced by verifyAudit */
     }
@@ -546,7 +555,7 @@ async function readAllEvents(): Promise<AuditEvent[]> {
   const out: AuditEvent[] = []
   for (const record of await (await ledgerOrOpen()).readAll()) {
     try {
-      out.push(JSON.parse(record.value) as AuditEvent)
+      out.push(upcastAuditEvent(JSON.parse(record.value)))
     } catch {
       /* surfaced by verifyAudit */
     }
@@ -631,9 +640,8 @@ async function filterEvents(q: AuditQuery): Promise<AuditEvent[]> {
     events = events.filter((e) => e.repo === q.repo)
   }
   if (q.action) {
-    events = events.filter(
-      (e) => e.action === q.action || e.action.startsWith(`${q.action}.`),
-    )
+    const filter = q.action
+    events = events.filter((e) => auditActionMatches(e.action, filter))
   }
   if (q.via) {
     events = events.filter((e) => e.via === q.via)
