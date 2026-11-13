@@ -22,3 +22,11 @@ Status: done
 - `cli/lib/login.mjs`
 - `cli/lib/config.mjs`
 - `cli/mice.mjs`
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (acceptance green via `memoryKeychain` + login/config seams).
+
+**Deepen (auto-pick):** Extract deep `credentialVault(backend)` over `{ read, write, clear }` (ports & adapters). Principal refusal and multi-remote row merge live once; memory and OS `security` adapters only touch secret bytes. Public Keychain seam stays `put` / `list` / `remove`.
+
+**Files:** `cli/lib/keychain.mjs`, `cli/lib/keychain.test.mjs`

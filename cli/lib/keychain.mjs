@@ -23,6 +23,14 @@ const ACCOUNT = 'cli-credentials'
  * }} Keychain
  */
 
+/**
+ * @typedef {{
+ *   read: () => string | null
+ *   write: (secret: string) => void
+ *   clear: () => void
+ * }} SecretBackend
+ */
+
 /** @type {Keychain | null} */
 let active = null
 
@@ -37,24 +45,66 @@ function rejectSecondPrincipal(rows, entry) {
   throw new Error(`This OS user already holds a credential for ${other.principal}`)
 }
 
-/** In-memory stand-in for the OS keychain. */
-export function memoryKeychain() {
-  /** @type {Map<string, CliCredential>} */
-  const rows = new Map()
+/**
+ * Deep credential vault: principal policy + multi-remote rows behind put/list/remove.
+ * Adapters only supply opaque secret bytes.
+ * @param {SecretBackend} backend
+ * @returns {Keychain}
+ */
+export function credentialVault(backend) {
+  /** @returns {CliCredential[]} */
+  function load() {
+    const raw = backend.read()
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  /** @param {CliCredential[]} rows */
+  function save(rows) {
+    if (rows.length === 0) {
+      backend.clear()
+      return
+    }
+    backend.write(JSON.stringify(rows))
+  }
+
   return {
     put(entry) {
-      rejectSecondPrincipal([...rows.values()], entry)
-      rows.set(`${entry.principal}\n${entry.remote}`, { ...entry })
+      const existing = load()
+      rejectSecondPrincipal(existing, entry)
+      const rows = existing.filter(
+        (row) => !(row.principal === entry.principal && row.remote === entry.remote),
+      )
+      rows.push({ ...entry })
+      save(rows)
     },
     list() {
-      return [...rows.values()]
+      return load()
     },
     remove(query) {
-      for (const [key, row] of rows) {
-        if (row.remote === query.remote) rows.delete(key)
-      }
+      save(load().filter((row) => row.remote !== query.remote))
     },
   }
+}
+
+/** In-memory stand-in for the OS keychain. */
+export function memoryKeychain() {
+  /** @type {string | null} */
+  let secret = null
+  return credentialVault({
+    read: () => secret,
+    write: (next) => {
+      secret = next
+    },
+    clear: () => {
+      secret = null
+    },
+  })
 }
 
 /** @param {Keychain | null} next */
@@ -62,56 +112,37 @@ export function useKeychain(next) {
   active = next
 }
 
-function osKeychain() {
+function osSecretBackend() {
   return {
-    list() {
+    read() {
       const found = spawnSync(
         'security',
         ['find-generic-password', '-s', SERVICE, '-a', ACCOUNT, '-w'],
         { encoding: 'utf8' },
       )
-      if (found.status !== 0) return []
-      try {
-        const parsed = JSON.parse(String(found.stdout).trim())
-        return Array.isArray(parsed) ? parsed : []
-      } catch {
-        return []
-      }
+      if (found.status !== 0) return null
+      return String(found.stdout).trim()
     },
-    put(entry) {
-      const existing = this.list()
-      rejectSecondPrincipal(existing, entry)
-      const rows = existing.filter(
-        (row) => !(row.principal === entry.principal && row.remote === entry.remote),
-      )
-      rows.push({ ...entry })
+    write(secret) {
       const saved = spawnSync(
         'security',
-        ['add-generic-password', '-U', '-s', SERVICE, '-a', ACCOUNT, '-w', JSON.stringify(rows)],
+        ['add-generic-password', '-U', '-s', SERVICE, '-a', ACCOUNT, '-w', secret],
         { encoding: 'utf8' },
       )
       if (saved.status !== 0) {
         throw new Error(String(saved.stderr || 'Could not write the OS keychain').trim())
       }
     },
-    remove(query) {
-      const rows = this.list().filter((row) => row.remote !== query.remote)
-      if (rows.length === 0) {
-        spawnSync('security', ['delete-generic-password', '-s', SERVICE, '-a', ACCOUNT], {
-          encoding: 'utf8',
-        })
-        return
-      }
-      const saved = spawnSync(
-        'security',
-        ['add-generic-password', '-U', '-s', SERVICE, '-a', ACCOUNT, '-w', JSON.stringify(rows)],
-        { encoding: 'utf8' },
-      )
-      if (saved.status !== 0) {
-        throw new Error(String(saved.stderr || 'Could not write the OS keychain').trim())
-      }
+    clear() {
+      spawnSync('security', ['delete-generic-password', '-s', SERVICE, '-a', ACCOUNT], {
+        encoding: 'utf8',
+      })
     },
   }
+}
+
+function osKeychain() {
+  return credentialVault(osSecretBackend())
 }
 
 /** @returns {Keychain} */

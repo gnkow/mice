@@ -11,7 +11,13 @@ delete process.env.MICE_PAT
 
 const { cmdLogin, cmdLogout } = await import('./login.mjs')
 const { loadCredentials, resolveToken, saveConfig, saveCredentials } = await import('./config.mjs')
-const { memoryKeychain, useKeychain, credentialFor, actingAsMessage } = await import('./keychain.mjs')
+const {
+  credentialVault,
+  memoryKeychain,
+  useKeychain,
+  credentialFor,
+  actingAsMessage,
+} = await import('./keychain.mjs')
 
 const REMOTE = 'http://bff.example:8080'
 const TOKEN = 'mice_cli_access'
@@ -22,6 +28,35 @@ describe('CLI keychain', () => {
     useKeychain(null)
     delete process.env.MICE_CONFIG_DIR
     rmSync(configDir, { recursive: true, force: true })
+  })
+
+  it('credentialVault refuses a second Principal over a secret backend', () => {
+    /** @type {string | null} */
+    let secret = null
+    const vault = credentialVault({
+      read: () => secret,
+      write: (next) => {
+        secret = next
+      },
+      clear: () => {
+        secret = null
+      },
+    })
+    vault.put({
+      principal: 'http://idp|ada',
+      remote: REMOTE,
+      token: TOKEN,
+    })
+    assert.throws(
+      () =>
+        vault.put({
+          principal: 'http://idp|grace',
+          remote: 'http://other.example:8080',
+          token: 'mice_cli_grace',
+        }),
+      /already holds a credential/,
+    )
+    assert.equal(vault.list().length, 1)
   })
 
   it('mice login stores the device credential for that Principal and remote', async () => {
