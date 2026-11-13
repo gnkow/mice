@@ -45,6 +45,10 @@ export async function boot(): Promise<void> {
     const { verifyAndRecordReleaseManifest } = await import('./releaseManifest.js')
     await verifyAndRecordReleaseManifest()
   }
+  {
+    const { recordRegulatedConfigAtStart } = await import('./regulatedConfig.js')
+    await recordRegulatedConfigAtStart()
+  }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.once(sig, () => {
       void closeMainDatabase().finally(() => process.exit(0))

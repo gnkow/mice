@@ -8,6 +8,7 @@ import { auditMutation } from './auditMutation.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
 import { registerAuditHealthRoutes } from './auditHealthRoutes.js'
 import { registerReleaseManifestRoutes } from './releaseManifestRoutes.js'
+import { registerRegulatedConfigRoutes } from './regulatedConfigRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
 import { registerFavoritesRoutes } from './favoritesRoutes.js'
 import { registerInstanceRoutes } from './instanceRoutes.js'
@@ -73,6 +74,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerAuditRoutes(app, { audit })
   registerAuditHealthRoutes(app, { audit })
   registerReleaseManifestRoutes(app, { audit })
+  registerRegulatedConfigRoutes(app, { audit })
   registerStepUp(app)
   registerLoginRoutes(app, { audit })
   registerWebSessionRoutes(app)
