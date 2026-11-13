@@ -5,6 +5,8 @@ import { fakeClock } from '../../clock.js'
 import {
   cliRefreshReply,
   createCliCredentials,
+  decideCliRefreshIdpAccess,
+  decideCliRefreshTokenState,
   type IdpAccess,
 } from './cliCredentials.js'
 
@@ -22,6 +24,55 @@ function credentials(clock = fakeClock()) {
     idp: async () => 'enabled',
   })
 }
+
+await describe('decideCliRefreshTokenState / decideCliRefreshIdpAccess', async () => {
+  const base = {
+    kind: 'refresh',
+    familyId: 'fam',
+    tokenExpires: new Date(2_000),
+    usedAt: null as Date | null,
+    revokedAt: null as Date | null,
+    sub: 'alice',
+    iss: 'https://idp.example',
+  }
+
+  await it('allows a fresh refresh token before expiry', () => {
+    assert.deepEqual(decideCliRefreshTokenState(base, 1_000), {
+      allow: true,
+      familyId: 'fam',
+      sub: 'alice',
+      iss: 'https://idp.example',
+      refreshExpires: base.tokenExpires,
+    })
+  })
+
+  await it('marks the family revoked on reuse of a used token', () => {
+    assert.deepEqual(
+      decideCliRefreshTokenState({ ...base, usedAt: new Date(500) }, 1_000),
+      { allow: false, error: 'reuse', markFamilyRevoked: true },
+    )
+  })
+
+  await it('refuses an expired family without revoking again', () => {
+    assert.deepEqual(decideCliRefreshTokenState(base, 3_000), {
+      allow: false,
+      error: 'expired',
+      markFamilyRevoked: false,
+    })
+  })
+
+  await it('maps IdP access to refresh errors', () => {
+    assert.deepEqual(decideCliRefreshIdpAccess('enabled'), { allow: true })
+    assert.deepEqual(decideCliRefreshIdpAccess('disabled'), {
+      allow: false,
+      error: 'idp_disabled',
+    })
+    assert.deepEqual(decideCliRefreshIdpAccess('unreachable'), {
+      allow: false,
+      error: 'idp_unreachable',
+    })
+  })
+})
 
 await describe('CLI credential', async () => {
   await it('issues an 8-hour access token and a refresh token that is not a PAT', async () => {
@@ -42,6 +93,7 @@ await describe('CLI credential', async () => {
 
   await it('refuses a retired personal access token without looking it up', async () => {
     assert.equal(await credentials().resolve('mice_pat_retired'), null)
+    assert.deepEqual(await credentials().refresh('mice_pat_retired'), { error: 'unknown' })
   })
 
   await it('refresh replaces the access token and the refresh token', async () => {

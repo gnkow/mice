@@ -5,7 +5,10 @@ import { getDb } from '../../db/database.js'
 import { cliCredentialFamilies, cliCredentialTokens, principals, webSessions } from '../../db/schema.js'
 import { directoryNow } from '../directory/directory.js'
 import type { CliCredentialScope, SessionUser } from '../session/session.js'
-import { isRetiredPersonalAccessToken } from './retiredPersonalAccessToken.js'
+import {
+  classifyBearerCredential,
+  isRetiredPersonalAccessToken,
+} from './retiredPersonalAccessToken.js'
 
 /** Access tokens last 8 hours. The refresh family lasts 30 days. */
 export const CLI_ACCESS_TTL_SEC = 8 * 60 * 60
@@ -70,6 +73,60 @@ export function cliRefreshReply(result: RefreshResult): CliRefreshReply {
   return { status: 200, body: cliCredentialTokensBody(result) }
 }
 
+/** Row shape needed to decide whether a refresh token may rotate. */
+export type CliRefreshTokenRow = {
+  kind: string
+  familyId: string
+  tokenExpires: Date
+  usedAt: Date | null
+  revokedAt: Date | null
+  sub: string
+  iss: string
+}
+
+export type CliRefreshTokenDecision =
+  | { allow: true; familyId: string; sub: string; iss: string; refreshExpires: Date }
+  | { allow: false; error: 'unknown' | 'reuse' | 'expired'; markFamilyRevoked: boolean }
+
+/**
+ * Pure gate for a looked-up refresh token before IdP re-check / mint.
+ * Reuse of a used or family-revoked token refuses and may mark the family revoked.
+ */
+export function decideCliRefreshTokenState(
+  row: CliRefreshTokenRow | undefined,
+  nowMs: number,
+): CliRefreshTokenDecision {
+  if (!row || row.kind !== 'refresh') {
+    return { allow: false, error: 'unknown', markFamilyRevoked: false }
+  }
+  if (row.usedAt || row.revokedAt) {
+    return {
+      allow: false,
+      error: 'reuse',
+      markFamilyRevoked: !row.revokedAt,
+    }
+  }
+  if (row.tokenExpires.getTime() <= nowMs) {
+    return { allow: false, error: 'expired', markFamilyRevoked: false }
+  }
+  return {
+    allow: true,
+    familyId: row.familyId,
+    sub: row.sub,
+    iss: row.iss,
+    refreshExpires: row.tokenExpires,
+  }
+}
+
+/** Map IdP access at refresh time onto a refresh error (or allow). */
+export function decideCliRefreshIdpAccess(
+  access: IdpAccess,
+): { allow: true } | { allow: false; error: 'idp_disabled' | 'idp_unreachable' } {
+  if (access === 'unreachable') return { allow: false, error: 'idp_unreachable' }
+  if (access !== 'enabled') return { allow: false, error: 'idp_disabled' }
+  return { allow: true }
+}
+
 /** Short-lived CLI credentials. Raw tokens are returned once; only their hashes are stored. */
 export function createCliCredentials(deps: CliCredentialDeps) {
   const { clock } = deps
@@ -110,7 +167,8 @@ export function createCliCredentials(deps: CliCredentialDeps) {
   }
 
   async function resolve(accessToken: string): Promise<SessionUser | null> {
-    if (isRetiredPersonalAccessToken(accessToken)) return null
+    // Retired PATs never authenticate; classify before any hash/DB work.
+    if (classifyBearerCredential(accessToken) === 'retired_pat') return null
     const now = clock.now()
     const [row] = await getDb()
       .select({
@@ -139,6 +197,7 @@ export function createCliCredentials(deps: CliCredentialDeps) {
   }
 
   async function refresh(refreshToken: string): Promise<RefreshResult> {
+    if (isRetiredPersonalAccessToken(refreshToken)) return { error: 'unknown' }
     const now = clock.now()
     const hash = hashToken(refreshToken.trim())
     return getDb().transaction(async (tx) => {
@@ -156,28 +215,26 @@ export function createCliCredentials(deps: CliCredentialDeps) {
         .innerJoin(cliCredentialFamilies, eq(cliCredentialFamilies.id, cliCredentialTokens.familyId))
         .where(eq(cliCredentialTokens.tokenHash, hash))
         .for('update')
-      if (!row || row.kind !== 'refresh') return { error: 'unknown' }
-      if (row.usedAt || row.revokedAt) {
-        if (!row.revokedAt) {
+      const tokenState = decideCliRefreshTokenState(row, now)
+      if (!tokenState.allow) {
+        if (tokenState.markFamilyRevoked && row) {
           await tx
             .update(cliCredentialFamilies)
             .set({ revokedAt: new Date(now) })
             .where(eq(cliCredentialFamilies.id, row.familyId))
         }
-        return { error: 'reuse' }
+        return { error: tokenState.error }
       }
-      if (row.tokenExpires.getTime() <= now) return { error: 'expired' }
-      const access = await deps.idp({ sub: row.sub, iss: row.iss })
-      if (access === 'unreachable') return { error: 'idp_unreachable' }
-      if (access !== 'enabled') return { error: 'idp_disabled' }
+      const idpGate = decideCliRefreshIdpAccess(await deps.idp({ sub: tokenState.sub, iss: tokenState.iss }))
+      if (!idpGate.allow) return { error: idpGate.error }
       await tx
         .update(cliCredentialTokens)
         .set({ usedAt: new Date(now) })
         .where(eq(cliCredentialTokens.tokenHash, hash))
       const pair = mintPair(
-        row.familyId,
+        tokenState.familyId,
         new Date(now + CLI_ACCESS_TTL_SEC * 1000),
-        row.tokenExpires,
+        tokenState.refreshExpires,
       )
       await tx.insert(cliCredentialTokens).values(pair.rows)
       return {

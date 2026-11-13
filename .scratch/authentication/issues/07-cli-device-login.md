@@ -32,3 +32,4 @@ Device approval issues an 8-hour access token and a rotating refresh token. It d
 - **Audit:** holds — acceptance covered by `cliCredentials.test.ts` (issue/rotate/reuse/family/IdP/logout) and device-flow issuance paths.
 - **Deepen:** Collapsed refresh→HTTP status/body mapping into `cliRefreshReply` (IdP outage → 503, else 401) and shared token-pair minting via internal `mintPair` used by issue + refresh. Route refresh handler is one call through that seam.
 - **Files:** `auth/src/authentication/credentials/cliCredentials.ts`, `cliCredentials.test.ts`, `cliDeviceRoutes.ts`.
+- **deep-api Deepen** (auto-pick Top): Extracted pure `decideCliRefreshTokenState` (unknown/reuse/expired + markFamilyRevoked) and `decideCliRefreshIdpAccess` so refresh transaction only mutates after both gates allow. `cliRefreshReply` / `mintPair` kept. Unit: `cliCredentials.test.ts` (decision matrix + existing issue/rotate/reuse/family/IdP/logout).
