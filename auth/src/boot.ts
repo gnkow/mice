@@ -37,6 +37,10 @@ export async function boot(): Promise<void> {
   const verification = await initAudit()
   if (!verification.ok) console.error('[mice-auth] audit verification FAILED at boot', verification.firstBreak)
   startAuditVerifySchedule()
+  if (process.env.NODE_ENV === 'production' && process.env.BACKUP_TARGET) {
+    const { recordBackupTargetCheck } = await import('./backupTarget.js')
+    await recordBackupTargetCheck(process.env.BACKUP_TARGET)
+  }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.once(sig, () => {
       void closeMainDatabase().finally(() => process.exit(0))
