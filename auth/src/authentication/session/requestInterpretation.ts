@@ -118,7 +118,11 @@ export function classifyPath(
     // Repo-level metadata mutate (PATCH/PUT on repo root or settings-ish paths).
     if (
       (method === 'PATCH' || method === 'PUT') &&
-      (rest.length === 0 || rest[0] === 'settings' || rest[0] === 'meta')
+      (rest.length === 0 ||
+        rest[0] === 'settings' ||
+        rest[0] === 'meta' ||
+        rest[0] === 'rename' ||
+        rest[0] === 'transfer')
     ) {
       return { action: 'repo.metadata', namespace, repo }
     }

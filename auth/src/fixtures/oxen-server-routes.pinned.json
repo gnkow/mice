@@ -1,0 +1,31 @@
+{
+  "oxenImage": "oxen/oxen-server:latest",
+  "source": "Pinned from docs/authorization-routes.md plus Mice web client mutators (web/src/lib/oxen/api.ts). Refresh when upgrading the compose oxen image.",
+  "routes": [
+    { "method": "GET", "path": "/api/version", "minRole": "read" },
+    { "method": "HEAD", "path": "/api/health", "minRole": "read" },
+    { "method": "GET", "path": "/api/oxen_version", "minRole": "read" },
+    { "method": "GET", "path": "/api/namespaces", "minRole": "read" },
+    { "method": "GET", "path": "/api/namespaces/n", "minRole": "read" },
+    { "method": "GET", "path": "/api/repos/n", "minRole": "read" },
+    { "method": "GET", "path": "/api/repos/n/r/file/main/a.csv", "minRole": "read" },
+    { "method": "POST", "path": "/api/repos", "minRole": "write" },
+    { "method": "PUT", "path": "/api/repos/n/r/file/main/a.csv", "minRole": "write" },
+    { "method": "DELETE", "path": "/api/repos/n/r/file/main/a.csv", "minRole": "write" },
+    { "method": "POST", "path": "/api/repos/n/r/branches", "minRole": "write" },
+    { "method": "PUT", "path": "/api/repos/n/r/branches/main", "minRole": "write" },
+    { "method": "DELETE", "path": "/api/repos/n/r/branches/main", "minRole": "maintain" },
+    { "method": "POST", "path": "/api/repos/n/r/merge", "minRole": "maintain" },
+    { "method": "POST", "path": "/api/repos/n/r/workspaces", "minRole": "write" },
+    { "method": "POST", "path": "/api/repos/n/r/workspaces/w1/files", "minRole": "write" },
+    { "method": "DELETE", "path": "/api/repos/n/r/workspaces/w1", "minRole": "write" },
+    { "method": "PATCH", "path": "/api/repos/n/r", "minRole": "admin" },
+    { "method": "PATCH", "path": "/api/repos/n/r/rename", "minRole": "admin" },
+    { "method": "PATCH", "path": "/api/repos/n/r/transfer", "minRole": "admin" },
+    { "method": "DELETE", "path": "/api/repos/n/r", "minRole": "admin" },
+    { "method": "POST", "path": "/api/repos/n/r/commits/abc/complete", "minRole": "write" },
+    { "method": "POST", "path": "/api/repos/n/r/commits/abc/chunks", "minRole": "write" },
+    { "method": "QUERY", "path": "/api/repos/n/r/versions", "minRole": "read" },
+    { "method": "POST", "path": "/api/repos/n/r/versions/chunks", "minRole": "write" }
+  ]
+}

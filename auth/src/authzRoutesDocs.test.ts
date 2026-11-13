@@ -54,3 +54,27 @@ describe('unclassified routes fail closed (ADR 0002)', () => {
     assert.equal(interpretRequest('GET', '/api/mystery').kind, 'other')
   })
 })
+
+describe('pinned oxen-server route contract', () => {
+  it('classifies every pinned oxen route at the documented minimum role', () => {
+    const pin = JSON.parse(
+      readFileSync(new URL('./fixtures/oxen-server-routes.pinned.json', import.meta.url), 'utf8'),
+    ) as {
+      oxenImage: string
+      routes: Array<{ method: string; path: string; minRole: string }>
+    }
+    assert.ok(pin.oxenImage, 'pin must name the oxen image/version')
+    assert.ok(pin.routes.length >= 15, 'pin must cover the documented oxen surface')
+    for (const route of pin.routes) {
+      const got = interpretRequest(route.method, route.path)
+      assert.equal(
+        got.minRole,
+        route.minRole,
+        `${route.method} ${route.path} → ${got.authzAction}/${got.minRole}`,
+      )
+      if (!['GET', 'HEAD'].includes(route.method.toUpperCase())) {
+        assert.notEqual(got.kind, 'other', `${route.method} ${route.path} must not be unscoped other`)
+      }
+    }
+  })
+})

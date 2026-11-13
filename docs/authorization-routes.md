@@ -51,6 +51,8 @@ Every HTTP request to the BFF is classified into:
 | `POST /api/repos/:ns/:repo/workspaces/:id/**` | POST, PUT | write | Workspace operations |
 | `DELETE /api/repos/:ns/:repo/workspaces/:id` | DELETE | write | Delete workspace |
 | `PATCH /api/repos/:ns/:repo` | PATCH | admin | Update repo metadata |
+| `PATCH /api/repos/:ns/:repo/rename` | PATCH | admin | Rename repository |
+| `PATCH /api/repos/:ns/:repo/transfer` | PATCH | admin | Transfer repository namespace |
 | `DELETE /api/repos/:ns/:repo` | DELETE | admin | Delete repository |
 
 ### Push/Pull Transport Routes
@@ -121,7 +123,8 @@ User's effective repo role is the **maximum** of:
 ## Testing
 
 - **Parity test** (`auth/src/authz.test.ts`): Verifies `OXEN_PATH_ROLE_MAP` matches `ACTION_MIN_ROLE`
-- **Contract test** (TODO): Extract routes from pinned oxen-server, fail on unclassified routes
+- **Docs parity** (`auth/src/authzRoutesDocs.test.ts`): Documentation tables match `ACTION_MIN_ROLE` and enforced min roles
+- **Contract test** (`auth/src/authzRoutesDocs.test.ts` + `auth/src/fixtures/oxen-server-routes.pinned.json`): Every pinned oxen-server route interprets to its documented minimum role; refresh the pin when upgrading `oxen/oxen-server` in compose
 - **Matrix test**: Role × action × state coverage at HTTP boundary
 
 ## Maintenance
@@ -130,8 +133,9 @@ When updating this table:
 
 1. Update `auth/src/authzPathMap.ts` (source of truth)
 2. Update this documentation file
-3. Run tests: `npm test auth/src/authz.test.ts`
-4. Update spec `.specs/02-authorization.md` appendix if major changes
+3. Update `auth/src/fixtures/oxen-server-routes.pinned.json` when oxen adds or renames routes
+4. Run tests: `node --import tsx --test src/authzRoutesDocs.test.ts` (from `auth/`)
+5. Update spec `.specs/02-authorization.md` appendix if major changes
 
 ## Mice-Specific Routes (Non-Oxen)
 
