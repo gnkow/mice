@@ -38,3 +38,5 @@ The deploy-time MFA check is issue 14. An IdP outage incident record is issue 46
 - **Deepen:** Routes accept `IdpDriftFetchDeps` and pass them into current/compare/check (live fetch default).
 - **Integ:** `idpDriftRoutes.test.ts` (401, 404, establish→read→compare→check→reports; compare does not persist).
 - **Files:** `idpDriftRoutes.ts`, `idpDriftRoutes.test.ts` (detection module unchanged at `assessDrift`).
+
+2026-11-13 — **deep-ui Deepen** (holds): Settings `IdpDriftSection` — initial loading, load vs action errors (`role=alert`+Try again), empty-states for missing baseline/reports, submit feedback. E2E: `e2e/tests/settings-auth-admin.spec.ts` · IdP drift.
