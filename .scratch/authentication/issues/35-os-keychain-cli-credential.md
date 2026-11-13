@@ -30,3 +30,8 @@ Status: done
 **Deepen (auto-pick):** Extract deep `credentialVault(backend)` over `{ read, write, clear }` (ports & adapters). Principal refusal and multi-remote row merge live once; memory and OS `security` adapters only touch secret bytes. Public Keychain seam stays `put` / `list` / `remove`.
 
 **Files:** `cli/lib/keychain.mjs`, `cli/lib/keychain.test.mjs`
+
+2026-11-13 Deep-API (integ): **holds**; deepen left as `credentialVault` (still Top). Added CLI package integ: login writes vault secret bytes → `resolveToken` / `credentialFor` read → logout clears; secrets stay out of `credentials.json`.
+- **Seams:** `credentialVault` (unit) → login ↔ vault ↔ `resolveToken` (CLI package integ)
+- **Integ:** `cli/lib/keychain.integration.test.mjs`
+- **No commit/push** this pass.
