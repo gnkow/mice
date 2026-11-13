@@ -20,7 +20,14 @@ Every mutating repository or namespace authorization asks the directory for the 
 
 ## Code
 
-- `auth/src/authz.ts`
+- `auth/src/authentication/access/privilegedGroups.ts`
+- `auth/src/authz.ts` (re-exports `confirmPrivilegedGroups`; callers use `withDirectoryGroups`)
 - `auth/src/authentication/signing/signingRoutes.ts`
 - `auth/src/authentication/directory/directoryKeycloak.ts`
 - `auth/src/proxy.ts`
+
+## Comments
+
+- **Audit:** holds — privileged writes re-fetch directory groups and authorize with session∩directory; removed groups fail; added groups unused until login; directory failure → 503.
+- **Deepen:** moved recheck into `authentication/access/privilegedGroups.ts` with pure `intersectSessionWithDirectoryGroups` plus `withDirectoryGroups` / `confirmPrivilegedGroups`; `authz` imports and re-exports.
+- **Tests:** `privilegedGroups.unit.test.ts`, `privilegedGroups.test.ts`.

@@ -1,4 +1,7 @@
-import { directoryNow } from './authentication/directory/directory.js'
+import {
+  confirmPrivilegedGroups,
+  withDirectoryGroups,
+} from './authentication/access/privilegedGroups.js'
 import { extractMfaEvidence } from './authentication/signing/mfaEvidence.js'
 import { decodeJwtPayload } from './authentication/oidc/oidcClaims.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
@@ -12,7 +15,6 @@ import { getUserRole, hasPermission, listRbacUsers } from './rbacStore.js'
 import type { InstancePermission as RbacPermission } from './rbacCatalog.js'
 import {
   maxRepoRole,
-  normalizeGroup,
   REPO_ROLE_RANK,
   roleAtLeast,
   type BasePermission,
@@ -275,38 +277,7 @@ export type AuthorizeInput = {
   createRepo?: string
 }
 
-/** Loads the directory groups for a sign, merge, or admin action. Throws status 503 when the directory cannot answer. */
-export async function confirmPrivilegedGroups(user: SessionUser): Promise<SessionUser> {
-  return withDirectoryGroups(user)
-}
-
-/** Session groups that the directory still lists. A group added since login stays off. */
-async function withDirectoryGroups(user: SessionUser): Promise<SessionUser> {
-  const directory = directoryNow()
-  let listed
-  try {
-    listed = await directory.getUserGroups(user.sub)
-  } catch {
-    throw Object.assign(new Error('Directory unavailable'), { status: 503 })
-  }
-  const { groupBindingKey, parseGroupBindingKey } = await import('./groupBinding.js')
-  const iss = directory.issuer || user.iss
-  const live = new Set<string>()
-  for (const group of listed) {
-    live.add(group.id)
-    live.add(normalizeGroup(group.id))
-    live.add(normalizeGroup(group.name))
-    if (group.id) live.add(groupBindingKey(iss, group.id))
-  }
-  return {
-    ...user,
-    groups: (user.groups ?? []).filter((group) => {
-      if (live.has(group) || live.has(normalizeGroup(group))) return true
-      const parsed = parseGroupBindingKey(group)
-      return !!(parsed && (live.has(parsed.groupId) || live.has(normalizeGroup(parsed.groupId))))
-    }),
-  }
-}
+export { confirmPrivilegedGroups }
 
 /** Authorize a proxied oxen API request. */
 export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzDecision> {
