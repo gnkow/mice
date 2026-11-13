@@ -27,7 +27,24 @@ export function CommitEmail({
   return (
     <>
       {separator ? ' · ' : null}
-      <span className="mono">&lt;{shown.email}&gt;</span>
+      <span
+        className="commit-email"
+        data-testid="commit-email"
+        data-source={shown.source}
+        aria-label={
+          shown.current
+            ? `Commit email ${shown.email}, current email ${shown.current}`
+            : `Commit email ${shown.email}`
+        }
+      >
+        <span className="mono">&lt;{shown.email}&gt;</span>
+        {shown.current ? (
+          <span className="muted small commit-email-current" data-testid="commit-email-current">
+            {' '}
+            (current: {shown.current})
+          </span>
+        ) : null}
+      </span>
     </>
   )
 }

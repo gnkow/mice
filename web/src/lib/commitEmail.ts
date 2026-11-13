@@ -1,19 +1,27 @@
-/** Which address a commit view should show. The oxen commit keeps the stored value. */
+/** Which addresses a commit view should show. The oxen commit keeps the stored value. */
 export type CommitEmailDisplay = {
+  /** Address rendered inside `&lt;…&gt;` — the submission-time (stored) email when present. */
   email: string
   source: 'stored' | 'current'
+  /** Present when the Principal's current email differs from the commit's stored email. */
+  current?: string
 }
 
 /**
  * Display decision for a commit author email.
- * Prefer the Principal's current email when it differs; otherwise the submission-time address.
+ * Stored email stays primary (matches the oxen commit); a different current email is a side note.
  */
 export function decideCommitEmailDisplay(
   stored: string | undefined,
   current: string | undefined,
 ): CommitEmailDisplay | undefined {
-  if (current && current !== stored) return { email: current, source: 'current' }
-  if (stored) return { email: stored, source: 'stored' }
+  const storedTrim = stored?.trim() || undefined
+  const currentTrim = current?.trim() || undefined
+  if (storedTrim && currentTrim && currentTrim !== storedTrim) {
+    return { email: storedTrim, source: 'stored', current: currentTrim }
+  }
+  if (storedTrim) return { email: storedTrim, source: 'stored' }
+  if (currentTrim) return { email: currentTrim, source: 'current' }
   return undefined
 }
 

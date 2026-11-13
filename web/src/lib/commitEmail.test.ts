@@ -17,10 +17,11 @@ describe('commit email display', () => {
     })
   })
 
-  it('shows the current email when it differs from the stored email', () => {
+  it('keeps the stored email primary and notes the current email when they differ', () => {
     assert.deepEqual(decideCommitEmailDisplay('alice@lab.test', 'jane@lab.test'), {
-      email: 'jane@lab.test',
-      source: 'current',
+      email: 'alice@lab.test',
+      source: 'stored',
+      current: 'jane@lab.test',
     })
   })
 
@@ -29,8 +30,8 @@ describe('commit email display', () => {
     assert.equal(decideCommitEmailDisplay('', undefined), undefined)
   })
 
-  it('keeps shownCommitEmail as the string form of the display decision', () => {
-    assert.equal(shownCommitEmail('alice@lab.test', 'jane@lab.test'), 'jane@lab.test')
+  it('keeps shownCommitEmail as the primary (stored) address', () => {
+    assert.equal(shownCommitEmail('alice@lab.test', 'jane@lab.test'), 'alice@lab.test')
     assert.equal(shownCommitEmail('alice@lab.test', undefined), 'alice@lab.test')
   })
 })

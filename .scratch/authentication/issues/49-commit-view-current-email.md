@@ -40,3 +40,4 @@ Login stores one current email on the Principal. A later login with a different 
 - **Seams:** `emailLookupRequest` / `meRoutes` (unit + HTTP integ)
 - **Integ:** `auth/src/authentication/session/meRoutes.integration.test.ts`
 - **No commit/push** this pass.
+- **Deep-UI (2026-11-13):** Deepen — `decideCommitEmailDisplay` keeps stored email primary and adds `current` when it differs; `CommitEmail` renders both with `aria-label` / `data-testid`. E2E: `e2e/tests/commit-email.spec.ts`. No commit/push.
