@@ -4,6 +4,7 @@ import { getDb } from './db/database.js'
 import { groupBindingStatus } from './db/schema.js'
 import {
   assessGroupBindingMode,
+  groupBindingAssessment,
   type GroupBindingAssessment,
   type GroupBindingMode,
 } from './groupBindingMode.js'
@@ -11,7 +12,6 @@ import {
 const ROW_ID = 'instance'
 
 export type GroupBindingStatus = GroupBindingAssessment & {
-  warning: boolean
   checkedAt: string | null
 }
 
@@ -22,17 +22,10 @@ export async function getGroupBindingStatus(): Promise<GroupBindingStatus> {
     .where(eq(groupBindingStatus.id, ROW_ID))
     .limit(1)
   if (!row) {
-    return {
-      mode: 'name-based',
-      message: assessGroupBindingMode([]).message,
-      warning: true,
-      checkedAt: null,
-    }
+    return { ...assessGroupBindingMode([]), checkedAt: null }
   }
   return {
-    mode: row.mode as GroupBindingMode,
-    message: row.message,
-    warning: row.mode === 'name-based',
+    ...groupBindingAssessment(row.mode as GroupBindingMode, row.message),
     checkedAt: row.checkedAt.toISOString(),
   }
 }
@@ -59,7 +52,6 @@ export async function saveGroupBindingAssessment(
     })
   return {
     ...assessment,
-    warning: assessment.mode === 'name-based',
     checkedAt: now.toISOString(),
   }
 }

@@ -23,3 +23,7 @@
 - Persist: `group_binding_status` + `GET/POST /auth/instance/group-binding[/check]`
 - Namespace: members include `bindingMode`; `groupBindingWarning` when any grant is name-based
 - UI: Settings → Group binding; Namespace members show mode + warning
+
+## Comments
+
+**Deep-api Deepen (2026-11-13):** Holds at `groupBindingMode` / `checkGroupBindingMode`. Top: `groupBindingAssessment` owns `warning`; `assessGroupBindingMode` and status store reuse it. Unit: `groupBindingMode.test.ts`. Integration: store seam + `/auth/instance/group-binding` in `groupBindingMode.api.test.ts`.

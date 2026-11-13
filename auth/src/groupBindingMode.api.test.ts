@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 import {
   GROUP_BINDING_ID_BASED_MESSAGE,
   GROUP_BINDING_NAME_BASED_MESSAGE,
@@ -15,6 +15,10 @@ const { createApp } = await import('./app.js')
 const { preparePrincipal } = await import('./authz.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { setNamespaceGroupMember, listNamespaceMembers } = await import('./authzMembershipStore.js')
+const {
+  checkGroupBindingMode,
+  getGroupBindingStatus,
+} = await import('./groupBindingStatusStore.js')
 
 const app = createApp()
 const admin = iso.admin
@@ -22,28 +26,53 @@ await preparePrincipal(admin)
 
 after(() => iso.restore())
 
-async function headers() {
+async function checkHeaders(body: { sampleGroups: string[] }) {
+  const signed = await regulatedMutationHeaders(admin, {
+    method: 'POST',
+    path: '/auth/instance/group-binding/check',
+    body,
+    reason: 'Validate group binding mode for the instance',
+    category: 'privileged_settings',
+  })
   return {
     ...(await iso.sessionHeaders(admin)),
-    'content-type': 'application/json',
-    'x-mice-reason': 'Validate group binding mode for the instance', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+    ...signed,
+    'x-mice-change-control-id': 'CC-2026-114',
   }
 }
 
+describe('checkGroupBindingMode store seam', () => {
+  it('persists id-based and name-based assessments with warning from mode', async () => {
+    const idBased = await checkGroupBindingMode(['11111111-1111-4111-8111-111111111111'])
+    assert.equal(idBased.mode, 'id-based')
+    assert.equal(idBased.warning, false)
+    assert.equal(idBased.message, GROUP_BINDING_ID_BASED_MESSAGE)
+    assert.ok(idBased.checkedAt)
+
+    const stored = await getGroupBindingStatus()
+    assert.equal(stored.mode, 'id-based')
+    assert.equal(stored.warning, false)
+
+    const named = await checkGroupBindingMode(['Quality Team'])
+    assert.equal(named.mode, 'name-based')
+    assert.equal(named.warning, true)
+    assert.equal((await getGroupBindingStatus()).warning, true)
+  })
+})
+
 describe('instance group-binding validation API', () => {
   it('reports id-based mode after a check with Azure-style GUID samples', async () => {
+    const body = { sampleGroups: ['11111111-1111-4111-8111-111111111111'] }
     const res = await app.request('/auth/instance/group-binding/check', {
       method: 'POST',
-      headers: await headers(),
-      body: JSON.stringify({
-        sampleGroups: ['11111111-1111-4111-8111-111111111111'],
-      }),
+      headers: await checkHeaders(body),
+      body: JSON.stringify(body),
     })
     assert.equal(res.status, 200)
-    const body = (await res.json()) as { mode: string; message: string; warning: boolean }
-    assert.equal(body.mode, 'id-based')
-    assert.equal(body.message, GROUP_BINDING_ID_BASED_MESSAGE)
-    assert.equal(body.warning, false)
+    const json = (await res.json()) as { mode: string; message: string; warning: boolean }
+    assert.equal(json.mode, 'id-based')
+    assert.equal(json.message, GROUP_BINDING_ID_BASED_MESSAGE)
+    assert.equal(json.warning, false)
 
     const get = await app.request('/auth/instance/group-binding', {
       headers: await iso.sessionHeaders(admin),
@@ -55,29 +84,29 @@ describe('instance group-binding validation API', () => {
   })
 
   it('persists a name-based warning when samples lack object ids', async () => {
+    const body = { sampleGroups: ['Quality Team'] }
     const res = await app.request('/auth/instance/group-binding/check', {
       method: 'POST',
-      headers: await headers(),
-      body: JSON.stringify({ sampleGroups: ['Quality Team'] }),
+      headers: await checkHeaders(body),
+      body: JSON.stringify(body),
     })
     assert.equal(res.status, 200)
-    const body = (await res.json()) as { mode: string; message: string; warning: boolean }
-    assert.equal(body.mode, 'name-based')
-    assert.equal(body.message, GROUP_BINDING_NAME_BASED_MESSAGE)
-    assert.equal(body.warning, true)
+    const json = (await res.json()) as { mode: string; message: string; warning: boolean }
+    assert.equal(json.mode, 'name-based')
+    assert.equal(json.message, GROUP_BINDING_NAME_BASED_MESSAGE)
+    assert.equal(json.warning, true)
   })
 
   it('detects Keycloak object ids as id-based', async () => {
+    const body = { sampleGroups: ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'] }
     const res = await app.request('/auth/instance/group-binding/check', {
       method: 'POST',
-      headers: await headers(),
-      body: JSON.stringify({
-        sampleGroups: ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'],
-      }),
+      headers: await checkHeaders(body),
+      body: JSON.stringify(body),
     })
     assert.equal(res.status, 200)
-    const body = (await res.json()) as { mode: string }
-    assert.equal(body.mode, 'id-based')
+    const json = (await res.json()) as { mode: string }
+    assert.equal(json.mode, 'id-based')
   })
 })
 
@@ -112,11 +141,11 @@ describe('namespace group binding mode for owners', () => {
       headers: await iso.sessionHeaders(admin),
     })
     assert.equal(res.status, 200)
-    const body = (await res.json()) as {
+    const json = (await res.json()) as {
       groupBindingWarning?: string
       members: Array<{ kind: string; bindingMode?: string }>
     }
-    assert.equal(body.groupBindingWarning, GROUP_BINDING_NAME_BASED_MESSAGE)
-    assert.ok(body.members.some((m) => m.kind === 'group' && m.bindingMode === 'name-based'))
+    assert.equal(json.groupBindingWarning, GROUP_BINDING_NAME_BASED_MESSAGE)
+    assert.ok(json.members.some((m) => m.kind === 'group' && m.bindingMode === 'name-based'))
   })
 })
