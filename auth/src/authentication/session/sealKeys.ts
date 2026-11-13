@@ -13,7 +13,6 @@ import { getDb } from '../../db/database.js'
 import { sealKeys } from '../../db/schema.js'
 import { eq, and, or, isNull, lte, gte, sql } from 'drizzle-orm'
 
-const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60
 const SEVEN_DAYS_SEC = 7 * 24 * 60 * 60
 const EIGHT_HOURS_SEC = 8 * 60 * 60
 
@@ -29,11 +28,95 @@ export type SealKey = {
   createdAt: Date
 }
 
+type SealKeyRow = {
+  id: string
+  keyMaterial: string
+  validFrom: number
+  validUntil: number | null
+  revokedAt: number | null
+  rotationType: string
+  createdAt: Date
+}
+
+type RotationKind = 'normal' | 'emergency'
+
+/** How the current primary is retired when a new key is issued. */
+const RETIREMENT: Record<
+  RotationKind,
+  {
+    idPrefix: string
+    requireCurrent: boolean
+    retire(at: number): { validUntil: number; revokedAt: number | null }
+  }
+> = {
+  normal: {
+    idPrefix: 'seal_',
+    requireCurrent: false,
+    retire: (at) => ({ validUntil: at + SEVEN_DAYS_SEC, revokedAt: null }),
+  },
+  emergency: {
+    idPrefix: 'seal_emerg_',
+    requireCurrent: true,
+    retire: (at) => ({ validUntil: at + EIGHT_HOURS_SEC, revokedAt: at }),
+  },
+}
+
+function toSealKey(row: SealKeyRow): SealKey {
+  return {
+    id: row.id,
+    keyMaterial: row.keyMaterial,
+    validFrom: row.validFrom,
+    validUntil: row.validUntil,
+    revokedAt: row.revokedAt,
+    rotationType: row.rotationType as RotationKind,
+    createdAt: row.createdAt,
+  }
+}
+
 /**
  * Generate a new seal key with 32 bytes of entropy (AES-256-GCM).
  */
 function generateKeyMaterial(): string {
   return randomBytes(32).toString('base64')
+}
+
+/**
+ * Retire the current primary (per rotation kind) and issue a new primary key.
+ */
+async function performRotation(
+  kind: RotationKind,
+  at: number,
+): Promise<{ oldKey: SealKey | null; newKey: SealKey }> {
+  const policy = RETIREMENT[kind]
+  const currentKey = await getCurrentSealKey()
+  if (policy.requireCurrent && !currentKey) {
+    throw new Error('No current seal key found for emergency rotation')
+  }
+
+  let oldKey: SealKey | null = null
+  if (currentKey && !currentKey.validUntil) {
+    const retired = policy.retire(at)
+    await getDb()
+      .update(sealKeys)
+      .set(retired)
+      .where(eq(sealKeys.id, currentKey.id))
+    oldKey = { ...currentKey, ...retired }
+  }
+
+  const [row] = await getDb()
+    .insert(sealKeys)
+    .values({
+      id: `${policy.idPrefix}${randomBytes(8).toString('hex')}`,
+      keyMaterial: generateKeyMaterial(),
+      validFrom: at,
+      validUntil: null,
+      revokedAt: null,
+      rotationType: kind,
+      createdAt: new Date(),
+    })
+    .returning()
+
+  return { oldKey, newKey: toSealKey(row) }
 }
 
 /**
@@ -57,17 +140,7 @@ export async function getCurrentSealKey(): Promise<SealKey | null> {
     .orderBy(sql`${sealKeys.validFrom} DESC`)
     .limit(1)
   
-  if (!row) return null
-  
-  return {
-    id: row.id,
-    keyMaterial: row.keyMaterial,
-    validFrom: row.validFrom,
-    validUntil: row.validUntil,
-    revokedAt: row.revokedAt,
-    rotationType: row.rotationType as 'normal' | 'emergency',
-    createdAt: row.createdAt,
-  }
+  return row ? toSealKey(row) : null
 }
 
 /**
@@ -95,15 +168,7 @@ export async function getValidSealKeys(): Promise<SealKey[]> {
     )
     .orderBy(sql`${sealKeys.validFrom} DESC`)
   
-  return rows.map(row => ({
-    id: row.id,
-    keyMaterial: row.keyMaterial,
-    validFrom: row.validFrom,
-    validUntil: row.validUntil,
-    revokedAt: row.revokedAt,
-    rotationType: row.rotationType as 'normal' | 'emergency',
-    createdAt: row.createdAt,
-  }))
+  return rows.map(toSealKey)
 }
 
 /**
@@ -116,115 +181,28 @@ export async function getSealKeyById(keyId: string): Promise<SealKey | null> {
     .where(eq(sealKeys.id, keyId))
     .limit(1)
   
-  if (!row) return null
-  
-  return {
-    id: row.id,
-    keyMaterial: row.keyMaterial,
-    validFrom: row.validFrom,
-    validUntil: row.validUntil,
-    revokedAt: row.revokedAt,
-    rotationType: row.rotationType as 'normal' | 'emergency',
-    createdAt: row.createdAt,
-  }
+  return row ? toSealKey(row) : null
 }
 
 /**
  * Normal rotation: Create a new key, mark old key to expire in 7 days (overlap period).
  */
 export async function normalRotation(at = nowSec()): Promise<SealKey> {
-  const keyId = `seal_${randomBytes(8).toString('hex')}`
-  const keyMaterial = generateKeyMaterial()
-  
-  // Get current primary key
-  const currentKey = await getCurrentSealKey()
-  
-  // If there's a current key, set its expiry to now + 7 days
-  if (currentKey && !currentKey.validUntil) {
-    await getDb()
-      .update(sealKeys)
-      .set({ validUntil: at + SEVEN_DAYS_SEC })
-      .where(eq(sealKeys.id, currentKey.id))
-  }
-  
-  // Create new key
-  const [newKey] = await getDb()
-    .insert(sealKeys)
-    .values({
-      id: keyId,
-      keyMaterial,
-      validFrom: at,
-      validUntil: null, // Current primary key
-      revokedAt: null,
-      rotationType: 'normal',
-      createdAt: new Date(),
-    })
-    .returning()
-  
-  return {
-    id: newKey.id,
-    keyMaterial: newKey.keyMaterial,
-    validFrom: newKey.validFrom,
-    validUntil: newKey.validUntil,
-    revokedAt: newKey.revokedAt,
-    rotationType: newKey.rotationType as 'normal',
-    createdAt: newKey.createdAt,
-  }
+  const { newKey } = await performRotation('normal', at)
+  return newKey
 }
 
 /**
  * Emergency rotation: Mark current key as revoked (8-hour grace period), issue new key.
  */
-export async function emergencyRotation(): Promise<{ oldKey: SealKey; newKey: SealKey }> {
-  const now = nowSec()
-  const keyId = `seal_emerg_${randomBytes(8).toString('hex')}`
-  const keyMaterial = generateKeyMaterial()
-  
-  // Get current primary key
-  const currentKey = await getCurrentSealKey()
-  if (!currentKey) {
+export async function emergencyRotation(
+  at = nowSec(),
+): Promise<{ oldKey: SealKey; newKey: SealKey }> {
+  const { oldKey, newKey } = await performRotation('emergency', at)
+  if (!oldKey) {
     throw new Error('No current seal key found for emergency rotation')
   }
-  
-  // Mark current key as revoked with 8-hour grace period
-  await getDb()
-    .update(sealKeys)
-    .set({
-      revokedAt: now,
-      validUntil: now + EIGHT_HOURS_SEC,
-    })
-    .where(eq(sealKeys.id, currentKey.id))
-  
-  // Create new key immediately
-  const [newKey] = await getDb()
-    .insert(sealKeys)
-    .values({
-      id: keyId,
-      keyMaterial,
-      validFrom: now,
-      validUntil: null, // New primary key
-      revokedAt: null,
-      rotationType: 'emergency',
-      createdAt: new Date(),
-    })
-    .returning()
-  
-  return {
-    oldKey: {
-      ...currentKey,
-      revokedAt: now,
-      validUntil: now + EIGHT_HOURS_SEC,
-    },
-    newKey: {
-      id: newKey.id,
-      keyMaterial: newKey.keyMaterial,
-      validFrom: newKey.validFrom,
-      validUntil: newKey.validUntil,
-      revokedAt: newKey.revokedAt,
-      rotationType: newKey.rotationType as 'emergency',
-      createdAt: newKey.createdAt,
-    },
-  }
+  return { oldKey, newKey }
 }
 
 /**
@@ -281,13 +259,5 @@ export async function getAllSealKeys(): Promise<SealKey[]> {
     .from(sealKeys)
     .orderBy(sql`${sealKeys.validFrom} DESC`)
   
-  return rows.map(row => ({
-    id: row.id,
-    keyMaterial: row.keyMaterial,
-    validFrom: row.validFrom,
-    validUntil: row.validUntil,
-    revokedAt: row.revokedAt,
-    rotationType: row.rotationType as 'normal' | 'emergency',
-    createdAt: row.createdAt,
-  }))
+  return rows.map(toSealKey)
 }

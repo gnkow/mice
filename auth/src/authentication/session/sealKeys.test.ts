@@ -151,6 +151,19 @@ describe('Seal Key Rotation (Ticket 17)', () => {
         'Should error when no key exists'
       )
     })
+
+    it('uses an injected clock for revoke, grace, and new key validFrom', async () => {
+      await ensureBootstrapKey()
+      const at = 1_700_000_000
+      const { oldKey, newKey } = await emergencyRotation(at)
+      const eightHours = 8 * 60 * 60
+      assert.equal(oldKey.revokedAt, at)
+      assert.equal(oldKey.validUntil, at + eightHours)
+      assert.equal(newKey.validFrom, at)
+      const storedOld = await getSealKeyById(oldKey.id)
+      assert.equal(storedOld!.revokedAt, at)
+      assert.equal(storedOld!.validUntil, at + eightHours)
+    })
   })
 
   describe('Key Verification', () => {

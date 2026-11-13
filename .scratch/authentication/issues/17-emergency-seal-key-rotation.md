@@ -26,3 +26,11 @@ The unattended 30-day schedule is issue 34. Cookie unseal during overlap is issu
 - `auth/src/authentication/session/rotateSealKey.ts`
 - `web/src/components/SealKeyRotationSection.tsx`
 - `auth/src/boot.ts` (`ensureBootstrapKey`)
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (acceptance covered by `sealKeys.test.ts`).
+
+**Deepen (auto-picked):** Unify normal/emergency rotation behind one `performRotation` + `RETIREMENT` policy table in `sealKeys.ts` (shared retire-and-issue; `toSealKey` mapping). `emergencyRotation(at)` now accepts an injected clock like `normalRotation`. Public seams unchanged for routes/CLI.
+
+**Files:** `auth/src/authentication/session/sealKeys.ts`, `sealKeys.test.ts`
