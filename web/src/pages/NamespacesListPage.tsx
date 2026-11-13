@@ -5,8 +5,8 @@ import { MetaPills } from '../components/MetaPills'
 import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
-import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
-import { canDeleteNamespace } from '../lib/namespaceActions'
+import { fetchAuthzMe, hasEffectivePermission, isAdminRole } from '../lib/auth'
+import { canDeleteNamespace, namespacesEmptyMessage } from '../lib/namespaceActions'
 import { confirmDelete } from '../lib/confirmDelete'
 import { deleteNamespaceAuthz, listAuthzNamespaces } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
@@ -46,7 +46,11 @@ export function NamespacesListPage() {
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
     if (!q) return merged
-    return merged.filter((ns) => ns.name.toLowerCase().includes(q))
+    return merged.filter((ns) => {
+      if (ns.name.toLowerCase().includes(q)) return true
+      const desc = ns.authz?.description?.toLowerCase() ?? ''
+      return desc.includes(q)
+    })
   }, [merged, filter])
 
   const sort = useListSort('namespaces', NAMESPACES_SORTS)
@@ -111,7 +115,7 @@ export function NamespacesListPage() {
         <div>
           <h1>Namespaces</h1>
           <p className="lede">
-            Organize repositories and manage access. Empty namespaces show until you create your first repository.
+            Organize repositories and manage access. Descriptions help people find the right namespace.
           </p>
         </div>
         {canCreate && (
@@ -152,7 +156,7 @@ export function NamespacesListPage() {
               type="search"
               value={filter}
               onChange={(e) => onFilterChange(e.target.value)}
-              placeholder="Filter by name"
+              placeholder="Filter by name or description"
               autoComplete="off"
             />
             {filter.trim() ? (
@@ -185,13 +189,11 @@ export function NamespacesListPage() {
           authzNs.reload()
         }}
         empty={!loading && !error && filtered.length === 0}
-        emptyMessage={
-          filter.trim()
-            ? `No namespaces match “${filter.trim()}”.`
-            : canCreate
-              ? 'No namespaces yet. Create a namespace to set access before adding repositories.'
-              : 'No namespaces yet. Ask an admin for access, or create a repository if you have permission.'
-        }
+        emptyMessage={namespacesEmptyMessage({
+          filter,
+          canCreate: Boolean(canCreate),
+          isInstanceAdmin: me.kind === 'ok' && !!me.data && isAdminRole(me.data),
+        })}
       >
         {!loading && !error && (
           <>
@@ -208,6 +210,13 @@ export function NamespacesListPage() {
                         >
                           {ns.name}
                         </Link>
+                        {ns.authz?.description?.trim() ? (
+                          <p className="ns-card-desc muted">{ns.authz.description.trim()}</p>
+                        ) : (
+                          <p className="ns-card-desc muted small ns-card-desc-empty">
+                            No description
+                          </p>
+                        )}
                         <div className="ns-card-info">
                         <p className="ns-card-meta muted small">
                           {ns.repoCount === 1

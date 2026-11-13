@@ -1,7 +1,11 @@
-import { FolderGit2 as ActionFolderGit2, FolderOpen as ActionFolderOpen, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
-import { MetaBody } from '../components/MetaPanel'
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  Pencil as ActionPencil,
+  Save as ActionSave,
+  Trash2 as ActionTrash2,
+  UserPlus as ActionUserPlus,
+} from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { CustomRolesSection } from '../components/CustomRolesSection'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { StateBlock } from '../components/StateBlock'
@@ -37,9 +41,15 @@ const BASE_HELP: Record<BasePermission, string> = {
   admin: 'Members have admin on every repository (use sparingly).',
 }
 
+const NS_NAME_RE = /^[a-zA-Z0-9._-]+$/
+
+type ChromeOutlet = { reloadChrome?: () => void }
+
+/** Settings tab under `/n/:namespace/settings` (chrome + left nav from layouts). */
 export function NamespaceSettingsPage() {
   const { namespace = '' } = useParams()
   const navigate = useNavigate()
+  const outlet = useOutletContext<ChromeOutlet | null>()
   const state = useAsync(
     (signal) => fetchNamespaceAuthz(namespace, signal),
     [namespace],
@@ -50,6 +60,9 @@ export function NamespaceSettingsPage() {
   )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [description, setDescription] = useState('')
+  const [savedDescription, setSavedDescription] = useState('')
+  const [newName, setNewName] = useState(namespace)
   const [principalKind, setPrincipalKind] = useState<'user' | 'group'>('user')
   const [sub, setSub] = useState('')
   const [iss, setIss] = useState('mice-dev')
@@ -57,7 +70,32 @@ export function NamespaceSettingsPage() {
   const [groupName, setGroupName] = useState('')
   const [role, setRole] = useState<MemberRoleRef>('member')
 
+  const serverDescription =
+    state.kind === 'ok' ? (state.data.description ?? '') : null
+
+  useEffect(() => {
+    setNewName(namespace)
+  }, [namespace])
+
+  useEffect(() => {
+    if (serverDescription === null) return
+    setDescription(serverDescription)
+    setSavedDescription(serverDescription)
+  }, [serverDescription])
+
+  useEffect(() => {
+    if (state.kind !== 'ok') return
+    const id = window.location.hash.replace(/^#/, '')
+    if (!id) return
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [state.kind])
+
+  const descriptionDirty = description.trim() !== savedDescription.trim()
+
   async function saveSettings(patch: {
+    description?: string
     basePermission?: BasePermission
     membersCanCreateRepos?: boolean
   }) {
@@ -65,10 +103,40 @@ export function NamespaceSettingsPage() {
     setError(null)
     try {
       await patchNamespaceAuthz(namespace, patch)
-      state.reload()
+      if (patch.description !== undefined) {
+        setSavedDescription(patch.description)
+        outlet?.reloadChrome?.()
+      }
+      await state.reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Update failed')
     } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveDescription(e: FormEvent) {
+    e.preventDefault()
+    if (!descriptionDirty) return
+    await saveSettings({ description: description.trim() })
+  }
+
+  async function onRename(e: FormEvent) {
+    e.preventDefault()
+    const next = newName.trim()
+    if (!next || next === namespace) return
+    if (!NS_NAME_RE.test(next)) {
+      setError('Invalid namespace name (letters, digits, ., _, - only)')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await patchNamespaceAuthz(namespace, { name: next })
+      const renamed = res.name ?? res.namespace?.name ?? next
+      navigate(`/n/${encodeURIComponent(renamed)}/settings`, { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rename failed')
       setBusy(false)
     }
   }
@@ -105,7 +173,7 @@ export function NamespaceSettingsPage() {
         })
         setSub('')
       }
-      state.reload()
+      await state.reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Add failed')
     } finally {
@@ -123,7 +191,7 @@ export function NamespaceSettingsPage() {
           ? { kind: 'group', group: m.group }
           : { kind: 'user', sub: m.sub, iss: m.iss },
       )
-      state.reload()
+      await state.reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Remove failed')
     } finally {
@@ -155,39 +223,12 @@ export function NamespaceSettingsPage() {
   }
 
   return (
-    <main className="page wide">
-      <div className="page-head">
-        <div>
-          <p className="crumb">
-            <Link to="/namespaces">Namespaces</Link>
-            <span aria-hidden> / </span>
-            <Link to={`/n/${encodeURIComponent(namespace)}`}>{namespace}</Link>
-            <span aria-hidden> / </span>
-            <span>Settings</span>
-          </p>
-          <h1>Settings</h1>
-          <p className="lede">
-            Membership, default repository access, and namespace lifecycle for{' '}
-            <code>{namespace}</code>.
-          </p>
-        </div>
-        <div className="btn-row">
-          <Link
-            className="btn ghost"
-            to={`/n/${encodeURIComponent(namespace)}`}
-          >
-            <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />View namespace
-          </Link>
-          <Link
-            className="btn primary"
-            to={`/repos/new?namespace=${encodeURIComponent(namespace)}`}
-          >
-            <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />New repository
-          </Link>
-        </div>
-      </div>
-
-      {error && <p className="flash flash-error" role="status">{error}</p>}
+    <>
+      {error && (
+        <p className="flash flash-error" role="status">
+          {error}
+        </p>
+      )}
 
       <StateBlock
         loading={state.kind === 'loading'}
@@ -197,15 +238,45 @@ export function NamespaceSettingsPage() {
         {state.kind === 'ok' && (
           <div className="ns-settings">
             <section
+              id="ns-general"
               className="settings-section"
               aria-labelledby="ns-general-heading"
             >
-              <h2 id="ns-general-heading">General</h2>
-              <p className="muted small">
-                Base permissions apply to every Member on repositories in this
-                namespace (GitHub-style org base role). Suggested default:{' '}
-                <code>none</code>.
-              </p>
+              <div className="ns-settings-section-head">
+                <div>
+                  <h2 id="ns-general-heading">General</h2>
+                  <p className="muted small">
+                    Namespace identity and base permissions for every Member on
+                    repositories in this namespace (GitHub-style org base role).
+                    Suggested default: <code>none</code>.
+                  </p>
+                </div>
+              </div>
+
+              <form className="ns-settings-grid" onSubmit={(e) => void saveDescription(e)}>
+                <label className="ns-settings-field ns-settings-field-wide">
+                  <span className="ns-settings-label">Description</span>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    maxLength={2000}
+                    placeholder="What this namespace is for"
+                    disabled={busy}
+                  />
+                  <span className="muted small">
+                    Shown on the namespace list and overview. Max 2000 characters.
+                  </span>
+                </label>
+                {descriptionDirty && (
+                  <div className="ns-settings-actions">
+                    <button type="submit" className="btn primary" disabled={busy}>
+                      <ActionSave size={14} aria-hidden="true" className="button-label-icon" />
+                      Save description
+                    </button>
+                  </div>
+                )}
+              </form>
 
               <div className="ns-settings-grid">
                 <label className="ns-settings-field">
@@ -246,8 +317,9 @@ export function NamespaceSettingsPage() {
                       Members can create repositories
                     </span>
                     <span className="muted small">
-                      When off, only Owners (and instance admins) can create
-                      repositories here.
+                      When off, only namespace Owners can create repositories
+                      here. Instance admins manage the platform and have no data
+                      access.
                     </span>
                   </span>
                 </label>
@@ -255,6 +327,49 @@ export function NamespaceSettingsPage() {
             </section>
 
             <section
+              id="ns-rename"
+              className="settings-section"
+              aria-labelledby="ns-rename-heading"
+            >
+              <div className="ns-settings-section-head">
+                <div>
+                  <h2 id="ns-rename-heading">Rename</h2>
+                  <p className="muted small">
+                    Change the namespace URL slug. Letters, digits, <code>.</code>,{' '}
+                    <code>_</code>, and <code>-</code> only. The old name is reserved
+                    after rename.
+                  </p>
+                </div>
+              </div>
+              <form
+                className="inline-form settings-inline-form"
+                onSubmit={(e) => void onRename(e)}
+              >
+                <label className="grow">
+                  <span className="visually-hidden">New namespace name</span>
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="New name"
+                    required
+                    disabled={busy}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </label>
+                <button
+                  className="btn"
+                  type="submit"
+                  disabled={busy || newName.trim() === '' || newName.trim() === namespace}
+                >
+                  <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />
+                  Rename
+                </button>
+              </form>
+            </section>
+
+            <section
+              id="ns-members"
               className="settings-section"
               aria-labelledby="ns-members-heading"
             >
@@ -319,9 +434,7 @@ export function NamespaceSettingsPage() {
                       </div>
                       <span
                         className={
-                          m.role === 'owner'
-                            ? 'ns-tag ns-tag-accent'
-                            : 'ns-tag'
+                          m.role === 'owner' ? 'ns-tag ns-tag-accent' : 'ns-tag'
                         }
                       >
                         {m.role}
@@ -332,14 +445,15 @@ export function NamespaceSettingsPage() {
                         disabled={busy}
                         onClick={() => void onRemoveMember(m)}
                       >
-                        <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
+                        <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />
+                        Remove
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
 
-              <form className="ns-member-form" onSubmit={onAddMember}>
+              <form className="ns-member-form" onSubmit={(e) => void onAddMember(e)}>
                 <h3 className="ns-settings-subhead">Add member</h3>
                 <div className="ns-member-form-fields">
                   <label>
@@ -384,9 +498,7 @@ export function NamespaceSettingsPage() {
                     <select
                       className="ns-select"
                       value={role}
-                      onChange={(e) =>
-                        setRole(e.target.value as MemberRoleRef)
-                      }
+                      onChange={(e) => setRole(e.target.value as MemberRoleRef)}
                     >
                       <optgroup label="Namespace roles">
                         <option value="member">Member</option>
@@ -406,12 +518,9 @@ export function NamespaceSettingsPage() {
                     </select>
                   </label>
                   <div className="ns-member-form-actions">
-                    <button
-                      className="btn primary"
-                      type="submit"
-                      disabled={busy}
-                    >
-                      <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add member
+                    <button className="btn primary" type="submit" disabled={busy}>
+                      <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />
+                      Add member
                     </button>
                   </div>
                 </div>
@@ -420,13 +529,9 @@ export function NamespaceSettingsPage() {
 
             <CustomRolesSection namespace={namespace} />
 
-            <section className="settings-section" aria-labelledby="ns-meta-heading">
-              <h2 id="ns-meta-heading">Metadata</h2>
-              <MetaBody type="namespace" id={namespace} />
-            </section>
-
             <section
-              className="danger-zone ns-danger-zone"
+              id="ns-danger"
+              className="danger-zone ns-danger-zone settings-section"
               aria-labelledby="ns-danger-heading"
             >
               <div className="ns-danger-copy">
@@ -442,12 +547,13 @@ export function NamespaceSettingsPage() {
                 disabled={busy}
                 onClick={() => void onDeleteNamespace()}
               >
-                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete namespace
+                <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />
+                Delete namespace
               </button>
             </section>
           </div>
         )}
       </StateBlock>
-    </main>
+    </>
   )
 }

@@ -18,3 +18,6 @@
 ## Comments
 
 **Deep-api Close (2026-11-13):** Audit found schema/mint/authz-by-id holding but proxied create responses omitted `repository_id`. Closed at seams `proxyEffects.seedRepoCreate` / `attachRepositoryId` + `proxy.ts` repo.create path. Unit: `proxyEffects.test.ts`. Integration: `proxyRepoCreateId.test.ts`.
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

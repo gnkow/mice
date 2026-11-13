@@ -129,8 +129,8 @@ export function NamespaceCreateSettings({
             Members can create repositories
           </span>
           <span className="muted small">
-            When off, only Owners (and instance admins) can create repositories
-            here.
+            When off, only namespace Owners can create repositories here.
+            Instance admins manage the platform and have no data access.
           </span>
         </span>
       </label>

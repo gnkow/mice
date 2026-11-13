@@ -26,3 +26,6 @@ Greenfield rewrite (no data backfill). Custom repo roles remain namespace-scoped
 ## Comments
 
 **Deep-api Close (2026-11-13):** Audit found favorites still name-path keyed while purge expected UUIDs. Closed via `favoritesCanonical.canonicalizeFavorite` + routes: PUT/DELETE/lookup/GET normalize to entity UUIDs (accept legacy `ns/repo@branch` clients). Unit: `favoritesCanonical.test.ts`. Integration: PUT `/auth/favorites` rewrite. Web `favoriteHref`/`favoriteLabel` prefer name fields when id is a UUID.
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

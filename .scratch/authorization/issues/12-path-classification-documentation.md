@@ -18,3 +18,6 @@
 ## Comments
 
 **Deep-api Close (2026-11-13):** Added `auth/src/fixtures/oxen-server-routes.pinned.json` (compose image `oxen/oxen-server:latest` + Mice web mutators) and contract coverage in `authzRoutesDocs.test.ts`. Classified `PATCH …/rename` and `…/transfer` as `repo.metadata` (admin). Docs Testing/Maintenance updated.
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

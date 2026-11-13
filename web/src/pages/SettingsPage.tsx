@@ -846,6 +846,7 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
               <p className="muted small">
                 Principals holding the Admin role. Grant or change the role under Users; the role cannot be taken from the last two admins.
                 A Bootstrap mark means this Principal is on AUTHZ_BOOTSTRAP_ADMINS and receives the Admin role again on the next login.
+                Admins manage the platform only — no namespace membership, repository data, or audit trail (separation of duties).
               </p>
             </div>
             <p className="muted small ns-settings-count">

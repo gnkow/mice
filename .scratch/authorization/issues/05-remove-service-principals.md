@@ -18,3 +18,6 @@
 ## Comments
 
 **Deep-api Deepen (2026-11-13):** Single seam `servicePrincipalsRemoved` documents removal + retired paths/issuer; cleaned stale SP/PAT route comments in `app.ts`. Unit+integration: `servicePrincipalsRemoved.test.ts` (no `decideServicePrincipalManage` / `servicePrincipals` table / `serviceprincipal.admin`; `decideInstanceAction` rejects the retired action; `decideServiceCallerAdmission` refuses `urn:mice:service`; GET/POST/DELETE on retired paths → 404).
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

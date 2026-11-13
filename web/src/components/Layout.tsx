@@ -3,7 +3,14 @@ import { AnnouncementBanner } from './AnnouncementBanner'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
 import { BookOpen, Box, ClipboardList, FolderGit2, Home, Layers, Menu, Monitor, Network, Search, Settings, Tags, Terminal, UserRound } from 'lucide-react'
-import { fetchAuthMe, logout, type AuthUser } from '../lib/auth'
+import {
+  fetchAuthMe,
+  fetchAuthzMe,
+  hasEffectivePermission,
+  logout,
+  type AuthUser,
+  type AuthzMe,
+} from '../lib/auth'
 import { fetchServerVersion } from '../lib/oxen/api'
 import { loadSettings, subscribeSettings } from '../lib/oxen/settings'
 import {
@@ -37,6 +44,7 @@ export function Layout() {
   const [connected, setConnected] = useState<boolean | null>(null)
   const [settings, setSettings] = useState(() => loadSettings())
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [authz, setAuthz] = useState<AuthzMe | null>(null)
   const [appearance, setAppearance] = useState<Appearance>(() => loadAppearance())
   const [query, setQuery] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -63,10 +71,19 @@ export function Layout() {
       .catch(() => {
         if (!cancelled) setUser(null)
       })
+    fetchAuthzMe()
+      .then((me) => {
+        if (!cancelled) setAuthz(me)
+      })
+      .catch(() => {
+        if (!cancelled) setAuthz(null)
+      })
     return () => {
       cancelled = true
     }
   }, [])
+
+  const canViewAudit = authz ? hasEffectivePermission(authz, 'audit:read') : false
 
   useEffect(() => {
     let cancelled = false
@@ -187,9 +204,11 @@ export function Layout() {
                 <NavLink to="/meta" end onClick={closeDrawer}>
                   <Tags size={18} aria-hidden="true" />Metadata
                 </NavLink>
-                <NavLink to="/audit" onClick={closeDrawer}>
-                  <ClipboardList size={18} aria-hidden="true" />Audit
-                </NavLink>
+                {canViewAudit && (
+                  <NavLink to="/audit" onClick={closeDrawer}>
+                    <ClipboardList size={18} aria-hidden="true" />Audit
+                  </NavLink>
+                )}
                 <NavLink to="/docs" onClick={closeDrawer}>
                   <BookOpen size={18} aria-hidden="true" />Docs
                 </NavLink>
