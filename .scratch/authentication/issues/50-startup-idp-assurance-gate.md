@@ -22,3 +22,13 @@
 ## Notes
 
 The gate reads `claims_supported` from discovery. Keycloak 26 may not advertise `amr` there, so verify against the shipped IdP before relying on it in a real deployment.
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (acceptance green at `assertIdpAssurance` / `idpAssuranceProblems`; proving tests in `idpAssuranceGate.test.ts`).
+
+**Deepen (auto-pick):** Collapse discovery fetch + required-claim check into deep `assessIdpAssurance(issuer, fetch)` (in-process). Non-array `claims_supported` treated as advertising nothing; `assertIdpAssurance` is a thin throw adapter. Did not touch `sessionIdleTimeoutProblems` / idle path.
+
+**Files:** `auth/src/authentication/session/idpAssuranceGate.ts`, `idpAssuranceGate.test.ts`
+
+**Tests:** `idpAssuranceGate.test.ts`
