@@ -27,3 +27,5 @@
 ## Comments
 
 **Deep-api Deepen (2026-11-13):** Holds at `groupBindingMode` / `checkGroupBindingMode`. Top: `groupBindingAssessment` owns `warning`; `assessGroupBindingMode` and status store reuse it. Unit: `groupBindingMode.test.ts`. Integration: store seam + `/auth/instance/group-binding` in `groupBindingMode.api.test.ts`.
+
+**Deep-ui Deepen (2026-11-13):** Holds at Settings → Group binding. Mode badge + status region, optional sample-id textarea, owner-warning hint on name-based. E2E thickened: `e2e/tests/group-binding.spec.ts` TC-GB-01/02/03.
