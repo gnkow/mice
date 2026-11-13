@@ -1,5 +1,10 @@
-import { Check as ActionCheck, Search as ActionSearch, X as ActionX } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import {
+  Check as ActionCheck,
+  Search as ActionSearch,
+  ShieldAlert,
+  X as ActionX,
+} from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
@@ -31,6 +36,21 @@ async function fetchDeviceStatus(
   return (await res.json()) as DeviceStatus
 }
 
+function formatDeviceActionError(
+  action: 'approve' | 'deny',
+  status: number,
+  body: { error?: string; limit?: number } | null,
+): string {
+  if (action === 'approve' && status === 429) {
+    const limit = body?.limit ?? 5
+    return (
+      body?.error ??
+      `Too many device approvals. Wait about 10 minutes, then try again (limit ${limit} per 10 minutes).`
+    )
+  }
+  return body?.error ?? `Failed to ${action}`
+}
+
 async function postDeviceAction(
   action: 'approve' | 'deny',
   userCode: string,
@@ -40,11 +60,18 @@ async function postDeviceAction(
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(action === 'approve' ? { user_code: userCode, confirmation } : { user_code: userCode }),
+    body: JSON.stringify(
+      action === 'approve'
+        ? { user_code: userCode, confirmation }
+        : { user_code: userCode },
+    ),
   })
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `Failed to ${action}`)
+    const body = (await res.json().catch(() => null)) as {
+      error?: string
+      limit?: number
+    } | null
+    throw new Error(formatDeviceActionError(action, res.status, body))
   }
 }
 
@@ -63,6 +90,7 @@ export function CliDevicePage() {
   const [done, setDone] = useState<'approved' | 'denied' | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmInput, setConfirmInput] = useState('')
+  const actionErrorRef = useRef<HTMLParagraphElement>(null)
   const authz = useAsync((signal) => fetchAuthzMe(signal), [])
   const canApprove =
     authz.kind === 'ok' &&
@@ -81,6 +109,10 @@ export function CliDevicePage() {
   useEffect(() => {
     if (preset) setCodeInput(preset)
   }, [preset])
+
+  useEffect(() => {
+    if (actionError) actionErrorRef.current?.focus()
+  }, [actionError])
 
   function onLookup(e: FormEvent) {
     e.preventDefault()
@@ -127,8 +159,13 @@ export function CliDevicePage() {
     !lookup.expired &&
     lookup.status === 'pending' &&
     done === null
-  
-  const canSubmitApprove = canAct && isApprovalConfirmation(confirmInput, lookup?.userCode)
+
+  const canSubmitApprove =
+    canAct && isApprovalConfirmation(confirmInput, lookup?.userCode)
+  const confirmHintId = 'cli-device-confirm-hint'
+  const confirmErrorId = 'cli-device-action-error'
+  const hashedIpLabelId = 'cli-hashed-ip-label'
+  const securityWarningId = 'cli-device-security-warning'
 
   return (
     <div className="login-shell">
@@ -187,30 +224,67 @@ export function CliDevicePage() {
                 ? `Requested access limited to: ${lookup.scopes.map(formatScope).join(', ')}`
                 : 'Requested access: your full account permissions.'}
             </p>
-            
-            {/* Ticket 25: Show hashed IP (last 4 chars) and device name */}
-            {canAct && (lookup.requestHashedIp || lookup.deviceName) && (
-              <div className="cli-device-info">
-                {lookup.requestHashedIp && (
-                  <p className="muted small">
-                    <strong>Request from:</strong> ...{lookup.requestHashedIp}
-                  </p>
-                )}
-                {lookup.deviceName && (
-                  <p className="muted small">
-                    <strong>Device:</strong> {lookup.deviceName}
-                  </p>
-                )}
+
+            {canAct && (
+              <div
+                id={securityWarningId}
+                className="flash flash-warn cli-device-security-warning"
+                role="status"
+                aria-live="polite"
+              >
+                <p className="cli-device-security-warning-title">
+                  <ShieldAlert
+                    size={16}
+                    aria-hidden="true"
+                    className="button-label-icon"
+                  />
+                  Security warning
+                </p>
+                <p>
+                  Only approve a code you started in your own terminal. Attackers
+                  may send codes by email or chat to steal CLI access. Approvals
+                  are limited to 5 per 10 minutes; exceeding that blocks further
+                  approvals until the window resets.
+                </p>
               </div>
             )}
-            
-            {/* Ticket 25: Require typing confirmation */}
+
+            {canAct && (lookup.requestHashedIp || lookup.deviceName) && (
+              <dl className="cli-device-info">
+                {lookup.requestHashedIp && (
+                  <div className="cli-device-info-row">
+                    <dt id={hashedIpLabelId}>Hashed IP suffix</dt>
+                    <dd>
+                      <code
+                        className="mono cli-hashed-ip-suffix"
+                        aria-labelledby={hashedIpLabelId}
+                        title={`Last 4 hex characters of the salted request IP hash: ${lookup.requestHashedIp}`}
+                      >
+                        {lookup.requestHashedIp}
+                      </code>
+                      <span className="muted small cli-hashed-ip-hint">
+                        Last 4 hex of the salted request fingerprint (not a raw
+                        IP). Compare with the machine that started this login.
+                      </span>
+                    </dd>
+                  </div>
+                )}
+                {lookup.deviceName && (
+                  <div className="cli-device-info-row">
+                    <dt>Device name</dt>
+                    <dd>{lookup.deviceName}</dd>
+                  </div>
+                )}
+              </dl>
+            )}
+
             {canAct && (
               <>
                 <label className="cli-confirm-label" htmlFor="cli-device-confirm">
                   <span>
-                    Type <strong>APPROVE</strong> or <strong>{lookup.userCode}</strong> to
-                    confirm:
+                    Type <strong>APPROVE</strong> or{' '}
+                    <strong className="mono">{lookup.userCode}</strong> to confirm
+                    this device:
                   </span>
                   <input
                     id="cli-device-confirm"
@@ -221,18 +295,41 @@ export function CliDevicePage() {
                     autoComplete="off"
                     autoCapitalize="characters"
                     spellCheck={false}
-                    aria-describedby={actionError ? 'cli-device-action-error' : undefined}
+                    aria-describedby={
+                      [
+                        confirmHintId,
+                        securityWarningId,
+                        actionError ? confirmErrorId : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' ') || undefined
+                    }
+                    aria-invalid={
+                      confirmInput.trim().length > 0 && !canSubmitApprove
+                        ? true
+                        : undefined
+                    }
                   />
                 </label>
+                <p id={confirmHintId} className="muted small cli-confirm-hint">
+                  {canSubmitApprove
+                    ? 'Confirmation matches. You can approve or deny.'
+                    : 'Approve stays disabled until the confirmation matches APPROVE or the device code exactly.'}
+                </p>
                 <div className="btn-row cli-device-actions">
                   <button
                     type="button"
                     className="btn primary"
                     disabled={!canSubmitApprove || busy}
                     aria-busy={busy || undefined}
+                    aria-describedby={confirmHintId}
                     onClick={() => void onApprove()}
                   >
-                    <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
+                    <ActionCheck
+                      size={14}
+                      aria-hidden="true"
+                      className="button-label-icon"
+                    />
                     {busy ? 'Approving…' : 'Approve'}
                   </button>
                   <button
@@ -241,7 +338,11 @@ export function CliDevicePage() {
                     disabled={busy}
                     onClick={() => void onDeny()}
                   >
-                    <ActionX size={14} aria-hidden="true" className="button-label-icon" />
+                    <ActionX
+                      size={14}
+                      aria-hidden="true"
+                      className="button-label-icon"
+                    />
                     Deny
                   </button>
                 </div>
@@ -263,7 +364,13 @@ export function CliDevicePage() {
         )}
 
         {actionError && (
-          <p id="cli-device-action-error" className="flash flash-error" role="alert">
+          <p
+            ref={actionErrorRef}
+            id={confirmErrorId}
+            className="flash flash-error"
+            role="alert"
+            tabIndex={-1}
+          >
             {actionError}
           </p>
         )}

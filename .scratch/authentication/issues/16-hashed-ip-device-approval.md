@@ -31,3 +31,5 @@ A daily salt is stored and rotated at midnight UTC. `hashIp` computes SHA-256 of
 - **Files:** `auth/src/ipHash.ts`, `auth/src/ipHash.test.ts`, `auth/src/authentication/credentials/cliDeviceRoutes.ts`, `auth/src/authentication/credentials/cliDeviceIpHash.api.test.ts`.
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13: **deep-ui Deepen (holds)** — Clarified hashed-IP suffix on `CliDevicePage`: labeled `Hashed IP suffix`, monospace 4-hex chip, hint that it is the salted fingerprint (not a raw IP). E2E `TC-CLI-16` in `e2e/tests/cli-device-ui.spec.ts` starts with `X-Forwarded-For` + `device_name`, asserts label + suffix match status API. No commit/push (operator request).

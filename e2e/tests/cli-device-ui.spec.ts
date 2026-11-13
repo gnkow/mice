@@ -20,9 +20,15 @@ async function sessionLogin(
   })
 }
 
-async function startDevice(request: import('@playwright/test').APIRequestContext) {
+async function startDevice(
+  request: import('@playwright/test').APIRequestContext,
+  opts?: { deviceName?: string; forwardedFor?: string },
+) {
   const start = await request.post(`${AUTH_URL}/auth/cli/device/start`, {
-    data: {},
+    data: opts?.deviceName ? { device_name: opts.deviceName } : {},
+    headers: opts?.forwardedFor
+      ? { 'X-Forwarded-For': opts.forwardedFor }
+      : undefined,
   })
   expect(start.ok()).toBeTruthy()
   return start.json() as Promise<{
@@ -148,5 +154,101 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     await page.goto('/cli/device?user_code=ZZZZ-ZZZZ')
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
     await expect(page.getByRole('alert')).toContainText(/Unknown user code/i)
+  })
+
+  test('TC-CLI-16: hashed IP suffix and device name are clearly labeled', async ({
+    page,
+  }) => {
+    const deviceName = 'e2e-cli-laptop'
+    const started = await startDevice(page.request, {
+      deviceName,
+      forwardedFor: '203.0.113.44',
+    })
+    await sessionLogin(page)
+
+    await page.goto(
+      `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
+    )
+    await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
+    await expect(
+      page.locator('code.mono', { hasText: started.user_code }),
+    ).toBeVisible()
+
+    const status = await page.request.get(
+      `${AUTH_URL}/auth/cli/device/status?user_code=${encodeURIComponent(started.user_code)}`,
+    )
+    expect(status.ok()).toBeTruthy()
+    const body = (await status.json()) as {
+      requestHashedIp?: string
+      deviceName?: string
+    }
+    expect(body.requestHashedIp).toMatch(/^[0-9a-f]{4}$/i)
+    expect(body.deviceName).toBe(deviceName)
+
+    await expect(page.getByText('Hashed IP suffix', { exact: true })).toBeVisible()
+    const suffix = page.locator('code.cli-hashed-ip-suffix')
+    await expect(suffix).toBeVisible()
+    await expect(suffix).toHaveText(body.requestHashedIp!)
+    await expect(
+      page.getByText(/Last 4 hex of the salted request fingerprint/i),
+    ).toBeVisible()
+    await expect(page.getByText('Device name', { exact: true })).toBeVisible()
+    await expect(page.getByText(deviceName, { exact: true })).toBeVisible()
+  })
+
+  test('TC-CLI-25: phishing security warning is visible before approve', async ({
+    page,
+  }) => {
+    const started = await startDevice(page.request, {
+      deviceName: 'e2e-phish-check',
+      forwardedFor: '198.51.100.10',
+    })
+    await sessionLogin(page)
+
+    await page.goto(
+      `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
+    )
+    await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
+    await expect(page.getByText(/waiting for approval/i)).toBeVisible()
+
+    const warning = page.locator('#cli-device-security-warning')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText(/Security warning/i)
+    await expect(warning).toContainText(/Only approve a code you started/i)
+    await expect(warning).toContainText(/5 per 10 minutes/i)
+  })
+
+  test('TC-CLI-43: Approve stays disabled until confirmation matches', async ({
+    page,
+  }) => {
+    const started = await startDevice(page.request)
+    await sessionLogin(page)
+
+    await page.goto(
+      `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
+    )
+    await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
+    await expect(page.getByText(/waiting for approval/i)).toBeVisible()
+
+    const approve = page.getByRole('button', { name: 'Approve' })
+    const confirm = page.getByLabel(/Type APPROVE/i)
+    await expect(approve).toBeDisabled()
+    await expect(
+      page.getByText(/Approve stays disabled until the confirmation matches/i),
+    ).toBeVisible()
+
+    await confirm.fill('NOPE')
+    await expect(approve).toBeDisabled()
+
+    await confirm.fill('APPROVE')
+    await expect(approve).toBeEnabled()
+    await expect(
+      page.getByText(/Confirmation matches\. You can approve or deny/i),
+    ).toBeVisible()
+
+    await approve.click()
+    await expect(
+      page.getByText(/Approved\. Return to your terminal/i),
+    ).toBeVisible()
   })
 })
