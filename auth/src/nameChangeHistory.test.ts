@@ -1,7 +1,15 @@
 import './db/testSchema.js'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { trackNameChange, getNameHistory, getCurrentName, getNameAtTime } from './authentication/session/nameChangeHistory.js'
+import {
+  trackNameChange,
+  getNameHistory,
+  getCurrentName,
+  getNameAtTime,
+  toAdminNameHistory,
+  decideNameHistoryWrite,
+  nameValidAt,
+} from './authentication/session/nameChangeHistory.js'
 import { ensurePrincipal } from './authentication/session/session.js'
 
 /**
@@ -21,6 +29,72 @@ import { ensurePrincipal } from './authentication/session/session.js'
  * - .scratch/authentication/issues/22-name-change-history.md
  * - Round 8 decision U11
  */
+
+describe('decideNameHistoryWrite', () => {
+  it('no-ops when the name is unchanged and history already exists', () => {
+    assert.deepEqual(
+      decideNameHistoryWrite({
+        currentName: 'Dr. Jane Smith',
+        hasHistory: true,
+        newName: 'Dr. Jane Smith',
+      }),
+      { kind: 'unchanged' },
+    )
+  })
+
+  it('writes a seed row when history is missing', () => {
+    assert.deepEqual(
+      decideNameHistoryWrite({
+        currentName: 'Dr. Jane Smith',
+        hasHistory: false,
+        newName: 'Dr. Jane Smith',
+      }),
+      {
+        kind: 'write',
+        closeOpenInterval: false,
+        previousName: 'Dr. Jane Smith',
+        name: 'Dr. Jane Smith',
+      },
+    )
+  })
+
+  it('closes the open interval when the name changes', () => {
+    assert.deepEqual(
+      decideNameHistoryWrite({
+        currentName: 'Dr. Jane Smith',
+        hasHistory: true,
+        newName: 'Dr. Jane Jones',
+      }),
+      {
+        kind: 'write',
+        closeOpenInterval: true,
+        previousName: 'Dr. Jane Smith',
+        name: 'Dr. Jane Jones',
+      },
+    )
+  })
+})
+
+describe('nameValidAt (Ticket 22)', () => {
+  it('uses validFrom ≤ t < validTo (open interval when validTo is null)', () => {
+    const records = [
+      {
+        name: 'Julia Smith',
+        validFrom: new Date('2021-03-15T00:00:00.000Z'),
+        validTo: new Date('2023-06-01T00:00:00.000Z'),
+      },
+      {
+        name: 'Julia Jones',
+        validFrom: new Date('2023-06-01T00:00:00.000Z'),
+        validTo: null,
+      },
+    ]
+    assert.equal(nameValidAt(records, new Date('2022-01-15T12:00:00.000Z')), 'Julia Smith')
+    assert.equal(nameValidAt(records, new Date('2023-06-01T00:00:00.000Z')), 'Julia Jones')
+    assert.equal(nameValidAt(records, new Date('2024-01-01T00:00:00.000Z')), 'Julia Jones')
+    assert.equal(nameValidAt(records, new Date('2020-01-01T00:00:00.000Z')), null)
+  })
+})
 
 describe('Name Change History (U11)', () => {
   it('tracks first name for a principal', async () => {
@@ -208,5 +282,51 @@ describe('Name Change History (U11)', () => {
     // Verify ordering by timestamp
     assert.ok(history[0].validFrom <= history[1].validFrom)
     assert.ok(history[1].validFrom <= history[2].validFrom)
+  })
+
+  it('getNameAtTime returns the name valid during an interval, not only at validFrom', async () => {
+    const principalId = await ensurePrincipal({
+      iss: 'https://idp.test',
+      sub: 'julia-name10',
+      email: 'julia@example.com',
+    })
+    const first = new Date('2021-03-15T00:00:00.000Z')
+    const married = new Date('2023-06-01T00:00:00.000Z')
+    await trackNameChange(principalId, 'Julia Smith', first)
+    await trackNameChange(principalId, 'Julia Jones', married)
+
+    const midFirst = await getNameAtTime(principalId, new Date('2022-01-15T12:00:00.000Z'))
+    const atChange = await getNameAtTime(principalId, married)
+    const afterChange = await getNameAtTime(principalId, new Date('2024-01-01T00:00:00.000Z'))
+
+    assert.equal(midFirst, 'Julia Smith')
+    assert.equal(atChange, 'Julia Jones')
+    assert.equal(afterChange, 'Julia Jones')
+  })
+
+  it('toAdminNameHistory derives currentName from the open interval', async () => {
+    const principalId = await ensurePrincipal({
+      iss: 'https://idp.test',
+      sub: 'kate-name11',
+      email: 'kate@example.com',
+    })
+    await trackNameChange(principalId, 'Kate Smith', new Date('2021-03-15T00:00:00.000Z'))
+    await trackNameChange(principalId, 'Kate Jones', new Date('2023-06-01T00:00:00.000Z'))
+
+    assert.deepEqual(toAdminNameHistory(await getNameHistory(principalId)), {
+      currentName: 'Kate Jones',
+      history: [
+        {
+          name: 'Kate Smith',
+          validFrom: '2021-03-15T00:00:00.000Z',
+          validTo: '2023-06-01T00:00:00.000Z',
+        },
+        {
+          name: 'Kate Jones',
+          validFrom: '2023-06-01T00:00:00.000Z',
+          validTo: null,
+        },
+      ],
+    })
   })
 })

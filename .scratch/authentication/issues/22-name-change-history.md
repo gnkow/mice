@@ -29,3 +29,7 @@ Showing the current name next to the name at signing, and an admin timeline, is 
 - **Audit:** holds (acceptance covered by `nameChangeHistory.test.ts` + `nameHistoryRoutes.test.ts`).
 - **Deepen:** Principal name timeline module owns interval `getNameAtTime` (`validFrom ≤ t < validTo`), `toAdminNameHistory` / `getAdminNameHistory`; route no longer re-derives current.
 - **Tests:** `auth/src/nameChangeHistory.test.ts`, `auth/src/authentication/compliance/nameHistoryRoutes.test.ts`.
+
+2026-11-13 — **Deepen #2 (auto-picked):** Pull write policy into `decideNameHistoryWrite` and interval resolution into `nameValidAt`; `trackNameChange` / `getNameAtTime` are adapters over those decisions.
+**Seams:** `nameChangeHistory.ts` (`decideNameHistoryWrite`, `nameValidAt`, `toAdminNameHistory`); `nameHistoryRoutes.ts` HTTP adapter.
+**Tests:** `nameChangeHistory.test.ts` (unit), `nameHistoryRoutes.test.ts` (integ).

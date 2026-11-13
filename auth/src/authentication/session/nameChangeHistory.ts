@@ -1,6 +1,6 @@
 import { getDb } from '../../db/database.js'
 import { principals, principalNameHistory } from '../../db/schema.js'
-import { eq, and, isNull, desc, lte, gt, or } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 
 /**
  * Principal name timeline (Ticket 22, U11).
@@ -56,6 +56,29 @@ export function toAdminNameHistory(records: NameHistoryRecord[]): AdminNameHisto
   }
 }
 
+/** Whether trackNameChange should write, and whether to close the open interval first. */
+export type NameHistoryWriteDecision =
+  | { kind: 'unchanged' }
+  | { kind: 'write'; closeOpenInterval: boolean; previousName?: string; name: string }
+
+/**
+ * Name-history write policy for Ticket 47 / U11.
+ * Same name with an existing timeline is a no-op; otherwise write (closing the open row when present).
+ */
+export function decideNameHistoryWrite(input: {
+  currentName: string | null
+  hasHistory: boolean
+  newName: string
+}): NameHistoryWriteDecision {
+  if (input.currentName === input.newName && input.hasHistory) return { kind: 'unchanged' }
+  return {
+    kind: 'write',
+    closeOpenInterval: Boolean(input.currentName && input.hasHistory),
+    previousName: input.currentName ?? undefined,
+    name: input.newName,
+  }
+}
+
 /**
  * Track name change for a Principal.
  *
@@ -88,13 +111,14 @@ export async function trackNameChange(
     .where(eq(principalNameHistory.principalId, principalId))
     .limit(1)
 
-  const hasHistory = existingHistory !== undefined
+  const decision = decideNameHistoryWrite({
+    currentName,
+    hasHistory: existingHistory !== undefined,
+    newName,
+  })
+  if (decision.kind === 'unchanged') return { changed: false }
 
-  if (currentName === newName && hasHistory) {
-    return { changed: false }
-  }
-
-  if (currentName && hasHistory) {
+  if (decision.closeOpenInterval) {
     await db
       .update(principalNameHistory)
       .set({ validTo: now })
@@ -108,12 +132,12 @@ export async function trackNameChange(
 
   await db
     .update(principals)
-    .set({ name: newName })
+    .set({ name: decision.name })
     .where(eq(principals.id, principalId))
 
   await db.insert(principalNameHistory).values({
     principalId,
-    name: newName,
+    name: decision.name,
     validFrom: now,
     validTo: null,
     createdAt: now,
@@ -121,7 +145,7 @@ export async function trackNameChange(
 
   return {
     changed: true,
-    previousName: currentName ?? undefined,
+    previousName: decision.previousName,
   }
 }
 
@@ -153,6 +177,25 @@ export async function getCurrentName(principalId: number): Promise<string | null
 }
 
 /**
+ * Name valid at `at` using half-open intervals: validFrom ≤ t < validTo
+ * (validTo null means still open).
+ */
+export function nameValidAt(
+  records: Array<{ name: string; validFrom: Date; validTo: Date | null }>,
+  at: Date,
+): string | null {
+  const atMs = at.getTime()
+  const matches = records
+    .filter((row) => {
+      const from = row.validFrom.getTime()
+      const to = row.validTo?.getTime()
+      return from <= atMs && (to === undefined || atMs < to)
+    })
+    .sort((a, b) => b.validFrom.getTime() - a.validFrom.getTime())
+  return matches[0]?.name ?? null
+}
+
+/**
  * Name valid at `timestamp` (validFrom ≤ t < validTo, or validTo null).
  * Used for “name at signing time” on historical signatures.
  */
@@ -160,20 +203,7 @@ export async function getNameAtTime(
   principalId: number,
   timestamp: Date,
 ): Promise<string | null> {
-  const [nameAtTime] = await getDb()
-    .select({ name: principalNameHistory.name })
-    .from(principalNameHistory)
-    .where(
-      and(
-        eq(principalNameHistory.principalId, principalId),
-        lte(principalNameHistory.validFrom, timestamp),
-        or(isNull(principalNameHistory.validTo), gt(principalNameHistory.validTo, timestamp)),
-      ),
-    )
-    .orderBy(desc(principalNameHistory.validFrom))
-    .limit(1)
-
-  return nameAtTime?.name ?? null
+  return nameValidAt(await getNameHistory(principalId), timestamp)
 }
 
 /** Full admin timeline for one Principal (history + derived current name). */
