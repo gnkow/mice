@@ -9,7 +9,7 @@ process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-clock-drift-'))
 process.env.SESSION_SECRET = 'test-session-secret-for-clock-drift'
 process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin1@test.com'
 
-const { ntpTimeFromPacket, startClockDriftSchedule } = await import('./clockDriftAlert.js')
+const { decideClockDriftAlert, ntpTimeFromPacket, startClockDriftSchedule } = await import('./clockDriftAlert.js')
 const { useNovu } = await import('../../novu.js')
 const { subscriberId } = await import('../../notifications.js')
 const { notificationUserKey } = await import('../../notificationsStore.js')
@@ -26,6 +26,19 @@ await maybeBootstrapInstanceAdmin({
 const server = Date.UTC(2026, 10, 2, 15, 0, 0)
 
 describe('Clock drift alert', () => {
+  it('decides an alert when drift is more than 1 second', () => {
+    const decision = decideClockDriftAlert(server, server + 2000)
+    assert.equal(decision.alert, true)
+    if (!decision.alert) return
+    assert.equal(decision.driftMs, 2000)
+    assert.match(decision.message, /2000/)
+  })
+
+  it('decides no alert when drift is 1 second or less', () => {
+    assert.equal(decideClockDriftAlert(server, server + 1000).alert, false)
+    assert.equal(decideClockDriftAlert(server, server + 500).alert, false)
+  })
+
   it('alerts instance admins when the server clock is more than 1 second from NTP', async () => {
     const triggered: Array<{ subscriberId: string; payload: { summary?: string; title?: string; category?: string } }> = []
     useNovu({

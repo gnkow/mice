@@ -22,3 +22,11 @@ The BFF compares its clock with an NTP reference. Drift above 1 second raises an
 - [x] Drift greater than 1 second raises an alert that includes the measured drift
 - [x] Drift of 1 second or less does not alert
 - [x] Authentication and signature event times come from the server clock
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (acceptance green at `startClockDriftSchedule` / `tick`).
+
+**Deepen (auto-pick):** Collapse shallow `checkClockDrift` + `generateClockDriftAlert` wiring into deep `decideClockDriftAlert(reference, system)` on the schedule hot path (in-process). Threshold and alert copy live behind that one decision; `tick` only emits when `alert: true`.
+
+**Files:** `auth/src/authentication/compliance/clockDriftAlert.ts`, `auth/src/authentication/compliance/clockDriftAlert.test.ts`

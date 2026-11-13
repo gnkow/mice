@@ -1,10 +1,34 @@
 import { createSocket } from 'node:dgram'
 import { emitNotification } from '../../notifications.js'
 import { listInstanceAdmins } from '../../authzInstanceStore.js'
-import { checkClockDrift, generateClockDriftAlert } from './validation.js'
 
 const pollMs = 60 * 1000
 const NTP_UNIX_OFFSET = 2_208_988_800
+const CLOCK_DRIFT_THRESHOLD_MS = 1000
+
+export type ClockDriftDecision =
+  | { alert: false; driftMs: number; thresholdMs: number }
+  | {
+      alert: true
+      driftMs: number
+      thresholdMs: number
+      severity: 'warning' | 'critical'
+      message: string
+    }
+
+/** Compares reference and system clocks; owns the 1s threshold and alert copy. */
+export function decideClockDriftAlert(referenceMs: number, systemMs: number): ClockDriftDecision {
+  const driftMs = Math.abs(systemMs - referenceMs)
+  const thresholdMs = CLOCK_DRIFT_THRESHOLD_MS
+  if (driftMs <= thresholdMs) return { alert: false, driftMs, thresholdMs }
+  return {
+    alert: true,
+    driftMs,
+    thresholdMs,
+    severity: driftMs > 5000 ? 'critical' : 'warning',
+    message: `Clock drift detected: ${driftMs}ms exceeds threshold of ${thresholdMs}ms`,
+  }
+}
 
 /** Transmit timestamp from an NTP/SNTP response, as Unix milliseconds. */
 export function ntpTimeFromPacket(packet: Buffer): number {
@@ -55,16 +79,15 @@ export function startClockDriftSchedule(opts: {
   const ntp = opts.ntp ?? (() => readNtpTime())
   const tick = async () => {
     const at = now()
-    const check = checkClockDrift(await ntp(), at)
-    const alert = generateClockDriftAlert(check)
-    if (!alert) return false
+    const decision = decideClockDriftAlert(await ntp(), at)
+    if (!decision.alert) return false
     const admins = await listInstanceAdmins()
     const day = new Date(at).toISOString().slice(0, 10)
     await emitNotification({
       id: `clock-drift:${day}`,
       category: 'security',
       title: 'Clock drift',
-      summary: alert.message,
+      summary: decision.message,
       audience: 'personal',
       recipients: admins.map((admin) => ({ iss: admin.iss, sub: admin.sub })),
       createdAt: new Date(at).toISOString(),
