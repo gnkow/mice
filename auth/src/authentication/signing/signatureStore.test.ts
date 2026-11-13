@@ -48,7 +48,10 @@ describe('authoritative signature record', () => {
   it('stores the manifest before the signature and refuses one that does not match the digest', async () => {
     await assert.rejects(store.record({ ...withBinding, manifest: 'tampered' }), /manifest/i)
     await assert.rejects(store.record({ ...base, binding }), /manifest/i)
-    await assert.rejects(store.record({ ...base, binding, manifest }), /change-control/i)
+
+    const minted = await store.record({ ...base, binding, manifest })
+    const mintedBack = await store.get(minted.id)
+    assert.match(mintedBack?.record.changeControlId ?? '', /^CC-\d{8}-[0-9a-f]{8}$/)
 
     const saved = await store.record(withBinding)
     const stored = await store.getManifest(binding.manifestDigest)

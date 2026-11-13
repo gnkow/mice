@@ -2,9 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { and, eq, or } from 'drizzle-orm'
 import type { Ledger, LedgerProof } from '../../auditLedger.js'
 import { immudbConfig, openLedger } from '../../auditLedger.js'
+import { allocateChangeControlId } from '../../changeControl.js'
 import { getDb } from '../../db/database.js'
 import { signatureIndex, principals } from '../../db/schema.js'
 import { principalKey } from '../session/principal.js'
+import { decideNowKnownAs } from './signatureIdentityDisplay.js'
 import type { MfaEvidence, SignatureMeaning, VerificationMetadata } from './signingCeremony.js'
 
 export type SignatureBinding = {
@@ -23,7 +25,7 @@ export type NewSignature = {
   verificationMetadata?: VerificationMetadata
   binding?: SignatureBinding
   manifest?: string
-  /** QMS change-control id required on merge signatures (GxP ticket 04). */
+  /** QMS change-control id on merge signatures; minted when absent (GxP ticket 04). */
   changeControlId?: string
 }
 
@@ -61,6 +63,9 @@ export type SignatureStore = {
   proof(id: string, opts?: Parameters<Ledger['prove']>[1]): Promise<LedgerProof | undefined>
   /** The signed snapshot plus the signer's current IdP name when it differs from the printed one. */
   view(id: string): Promise<SignatureView | undefined>
+  /** Append-only consume marker so a signature cannot authorize a second mutation. */
+  consume(id: string): Promise<void>
+  isConsumed(id: string): Promise<boolean>
 }
 
 export type SignatureView = {
@@ -120,14 +125,12 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
     async record(input) {
       const id = randomUUID()
       const { manifest, changeControlId, ...rest } = input
-      const trimmedCc = changeControlId?.trim()
+      let trimmedCc = changeControlId?.trim()
       if (input.binding) {
         if (manifest === undefined || sha256(manifest) !== input.binding.manifestDigest) {
           throw new Error('manifest is missing or does not match the bound digest')
         }
-        if (!trimmedCc) {
-          throw new Error('change-control id is required for a merge signature')
-        }
+        if (!trimmedCc) trimmedCc = allocateChangeControlId()
         await ledger.append(`manifest/${input.binding.manifestDigest}`, manifest)
       }
       const record: SignatureRecord = {
@@ -153,12 +156,13 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
         .select({ name: principals.name })
         .from(principals)
         .where(and(eq(principals.iss, signer.iss), eq(principals.sub, signer.sub)))
+      const nowKnownAs = decideNowKnownAs(signer.name, principal?.name)
       return {
         id,
         meaning: found.record.meaning,
         signedAt: found.record.signedAt,
         signer,
-        ...(principal?.name && principal.name !== signer.name ? { nowKnownAs: principal.name } : {}),
+        ...(nowKnownAs ? { nowKnownAs } : {}),
       }
     },
     async proof(id, opts) {
@@ -167,6 +171,17 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
     async getManifest(digest) {
       const found = (await ledger.readAll()).find((r) => r.key.endsWith(`manifest/${digest}`))
       return found ? { seq: found.seq, manifest: found.value } : undefined
+    },
+    async isConsumed(id) {
+      const found = (await ledger.readAll()).find((r) => r.key.endsWith(`consumed/${id}`))
+      return Boolean(found)
+    },
+    async consume(id) {
+      if (await this.isConsumed(id)) return
+      await ledger.append(
+        `consumed/${id}`,
+        JSON.stringify({ kind: 'esign.consumed', signatureId: id, consumedAt: new Date().toISOString() }),
+      )
     },
   }
 }

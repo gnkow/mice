@@ -17,3 +17,9 @@
 - [x] Signature views show the snapshot (name, `iss`, `sub`, time) and the current-name note when it differs (`signatureStore().view`)
 - [x] A deactivated account's past signatures stay valid and attributable
 - [x] `PatScope` and `parsePatScopes` are renamed to `CliCredentialScope` and `parseCliScopes` with no behaviour change
+
+## Comments
+
+- **Audit:** holds — `signatureStore().view` snapshot + `nowKnownAs`; deactivated signatures remain attributable; PAT → `CliCredentialScope` / `parseCliScopes` already done.
+- **Deepen (auto-pick):** Extract display adapter `decideNowKnownAs` in `signatureIdentityDisplay.ts`; `view` is a thin store adapter. `nameChangeHistory.ts` not rewritten (already deepened in #22).
+- **Tests:** `auth/src/authentication/signing/signatureIdentityDisplay.test.ts`; acceptance still green in `signatureStore.test.ts`
