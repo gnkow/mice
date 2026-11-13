@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { postgresConfig } from './connection.js'
@@ -10,7 +11,13 @@ import { useTestSchema } from './testDatabase.js'
  */
 // The audit ledger is append-only, so tests share one database and each file writes under a private key prefix.
 process.env.IMMUDB_DATABASE ??= 'audit_test'
-process.env.IMMUDB_KEY_PREFIX = `audit/${Date.now().toString(36)}-${process.pid}/`
+/** Private immudb key space for this test file (call again before openLedger when isolation=none). */
+export function isolateAuditKeyPrefix(): string {
+  const prefix = `audit/${randomUUID()}/`
+  process.env.IMMUDB_KEY_PREFIX = prefix
+  return prefix
+}
+isolateAuditKeyPrefix()
 await useTestSchema()
 const schema = process.env.MICE_TEST_SCHEMA!
 const config = { ...postgresConfig(), options: undefined }

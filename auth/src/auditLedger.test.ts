@@ -44,6 +44,30 @@ describe('audit ledger on immudb', () => {
     await ledger.close()
   })
 
+  it('verifies while another client appends to the same database', async () => {
+    const ledger = await open()
+    const sibling = await openLedger({
+      ...immudbConfig(),
+      prefix: `ledger-test/${randomBytes(4).toString('hex')}/`,
+    })
+    await ledger.append('concurrent-base', '{"ok":true}')
+    const failures: string[] = []
+    await Promise.all([
+      (async () => {
+        for (let i = 0; i < 40; i++) await sibling.append(`w-${i}`, `{"i":${i}}`)
+      })(),
+      (async () => {
+        for (let i = 0; i < 20; i++) {
+          const v = await ledger.verify()
+          if (!v.ok) failures.push(v.firstBreak.reason)
+        }
+      })(),
+    ])
+    assert.deepEqual(failures, [])
+    await sibling.close()
+    await ledger.close()
+  })
+
   it('detects a record whose stored value no longer matches its proof', async () => {
     const ledger = await open()
     await ledger.append('t1', '{"amount":1}')

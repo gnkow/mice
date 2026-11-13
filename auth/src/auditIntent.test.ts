@@ -48,9 +48,13 @@ type Row = {
   actor: { sub: string }
 }
 let since = 0
-/** Events written since the current test began, oldest first. */
+const ownActors = new Set([writer.sub, admin.sub])
+/** Events this file's principals wrote since the current test began, oldest first. */
 const rows = async () =>
-  (await real.readAll()).filter((r) => r.seq > since).map((r) => JSON.parse(r.value) as Row)
+  (await real.readAll())
+    .filter((r) => r.seq > since)
+    .map((r) => JSON.parse(r.value) as Row)
+    .filter((r) => ownActors.has(r.actor?.sub))
 const mutationRows = rows
 
 let upstreamCalls: string[]
@@ -92,18 +96,22 @@ describe('intent-first proxied mutations', () => {
   it('writes an intent before the request reaches upstream and an outcome after, linked by id', async () => {
     const res = await put()
     assert.equal(res.status, 200)
-    const [intent, outcome, ...rest] = await mutationRows()
-    assert.equal(rest.length, 0)
+    const mine = await mutationRows()
+    assert.equal(mine.length, 2)
+    const [intent, outcome] = mine
     assert.equal(intent!.phase, 'intent')
     assert.equal(intent!.action, 'file.write')
     assert.equal(outcome!.phase, 'outcome')
     assert.equal(outcome!.intent_id, intent!.id)
     assert.equal(outcome!.status, 200)
     assert.deepEqual(
-      auditSnapshotAtUpstream.filter((r) => r.phase === 'intent').map((r) => r.id),
+      auditSnapshotAtUpstream.filter((r) => r.phase === 'intent' && ownActors.has(r.actor?.sub)).map((r) => r.id),
       [intent!.id],
     )
-    assert.equal(auditSnapshotAtUpstream.some((r) => r.phase === 'outcome'), false)
+    assert.equal(
+      auditSnapshotAtUpstream.some((r) => r.phase === 'outcome' && ownActors.has(r.actor?.sub)),
+      false,
+    )
     assert.equal((await verifyAudit()).ok, true)
   })
 
@@ -154,8 +162,9 @@ describe('intent-first native mutations', () => {
   it('writes intent then outcome around the change', async () => {
     const res = await addAdmin()
     assert.equal(res.status, 200)
-    const [intent, outcome, ...rest] = await mutationRows()
-    assert.equal(rest.length, 0)
+    const mine = await mutationRows()
+    assert.equal(mine.length, 2)
+    const [intent, outcome] = mine
     assert.equal(intent!.phase, 'intent')
     assert.equal(outcome!.phase, 'outcome')
     assert.equal(outcome!.action, 'instance.permissions.update')

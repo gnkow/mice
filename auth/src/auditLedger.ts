@@ -198,6 +198,12 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
           const res = await c.txScan({ initialtx: next, limit: PAGE, desc: false })
           if (res.txsList.length === 0) return fail(next, 'transaction missing from the chain', seen)
           for (const raw of res.txsList) {
+            // txScan can return txs committed after we pinned `head`; ignore them so
+            // concurrent writers under other prefixes cannot fail this verification.
+            if (raw.metadata.id > head) {
+              next = head + 1
+              break
+            }
             const tx = opts.tamperTx ? opts.tamperTx(raw, index) : raw
             index++
             const m = tx.metadata
@@ -293,9 +299,9 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
       }
     },
     async close() {
-      const c = client
+      // Drop the client only. immudb logout is user-scoped and would invalidate
+      // concurrent clients (other test processes) that share the same credentials.
       client = undefined
-      await c?.logout().catch(() => undefined)
     },
   }
   return Promise.resolve(ledger)
