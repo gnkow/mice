@@ -18,12 +18,17 @@ import {
   eventSessionIds,
   eventWorkspaceIds,
 } from './auditQueryFilters.js'
-import { carryFromIntent, type TrackedReason } from './auditReasonFields.js'
+import { createAuditIntentOutcome } from './auditIntentOutcome.js'
 
 export type { AuditVerification } from './auditChainGate.js'
 export { AUDIT_UNAVAILABLE_MESSAGE } from './auditFailClosed.js'
 export { eventJobIds, eventSessionIds, eventWorkspaceIds, applyAuditQueryFilters } from './auditQueryFilters.js'
-export { carryFromIntent, intentReasonFields, type TrackedReason } from './auditReasonFields.js'
+export { intentReasonFields, type TrackedReason } from './auditReasonFields.js'
+export {
+  carryFromIntent,
+  orphanIntents,
+  type AuditIntentOutcome,
+} from './auditIntentOutcome.js'
 
 export type AuditVia = 'session' | 'pat'
 
@@ -516,51 +521,25 @@ export async function appendOutcome(intentId: string, partial: AuditInput): Prom
   }
 }
 
-const intents = new WeakMap<object, {
-  id: string
-  outcomes: number
-  reason?: TrackedReason
-}>()
+const intentOutcome = createAuditIntentOutcome<AuditEvent, AuditInput>({
+  appendIntent,
+  appendOutcome,
+  appendAudit,
+})
 
 /** Remembers the intent written for a request so native audit calls can link their outcome to it. */
-export function trackIntent(request: object, intent: AuditEvent): void {
-  const reason = carryFromIntent(intent)
-  intents.set(request, {
-    id: intent.id,
-    outcomes: 0,
-    ...(reason ? { reason } : {}),
-  })
-}
+export const trackIntent = intentOutcome.trackIntent
 
 /**
  * Intent before the effect, tracked on the request for {@link appendOutcomeFor}.
  * Throws when the ledger cannot store the Intent — callers must refuse the mutation.
  */
-export async function beginTrackedIntent(request: object, partial: AuditInput): Promise<AuditEvent> {
-  const intent = await appendIntent(partial)
-  trackIntent(request, intent)
-  return intent
-}
+export const beginTrackedIntent = intentOutcome.beginTrackedIntent
 
 /** Appends an outcome for the request's tracked intent, or a plain event when it has none. */
-export function appendOutcomeFor(request: object, partial: AuditInput): Promise<AuditEvent | null> {
-  const tracked = intents.get(request)
-  if (!tracked) return appendAudit(partial)
-  tracked.outcomes += 1
-  return appendOutcome(tracked.id, { ...tracked.reason, ...partial })
-}
+export const appendOutcomeFor = intentOutcome.appendOutcomeFor
 
-export function trackedIntent(request: object): { id: string; outcomes: number } | undefined {
-  return intents.get(request)
-}
-
-/** Intents with no matching Outcome — detectable orphans (ticket 12 reconciler is wontfix). */
-export function orphanIntents(events: AuditEvent[]): AuditEvent[] {
-  const resolved = new Set(
-    events.flatMap((e) => (e.phase === 'outcome' && e.intent_id ? [e.intent_id] : [])),
-  )
-  return events.filter((e) => e.phase === 'intent' && !resolved.has(e.id))
-}
+export const trackedIntent = intentOutcome.trackedIntent
 
 /** Events written after ledger position `seq`; `scannedTo` is the position to resume from. */
 export async function readAuditAfter(seq: number, limit?: number): Promise<{ events: AuditEvent[]; scannedTo: number }> {
