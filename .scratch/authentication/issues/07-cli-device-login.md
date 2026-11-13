@@ -35,3 +35,9 @@ Device approval issues an 8-hour access token and a rotating refresh token. It d
 - **deep-api Deepen** (auto-pick Top): Extracted pure `decideCliRefreshTokenState` (unknown/reuse/expired + markFamilyRevoked) and `decideCliRefreshIdpAccess` so refresh transaction only mutates after both gates allow. `cliRefreshReply` / `mintPair` kept. Unit: `cliCredentials.test.ts` (decision matrix + existing issue/rotate/reuse/family/IdP/logout).
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **/deep-ui Deepen (reclassified UI)** — supersedes the no-ui skip above.
+- **Board:** reclassified from no-ui → holds (Deepen). Surface: `ProfileCliAccessSection` + nested `DeviceSessionsList`.
+- **Deepen:** Clarify short-lived CLI device credentials (8-hour access + rotating refresh; no PAT mint). List/revoke UX aligned with web-sessions chrome (`data-testid="cli-device-credentials"`, empty/error/retry, aria-labels on Revoke).
+- **E2E:** `e2e/tests/profile-cli-credentials.spec.ts` — `TC-AUTH-CLI-07` (copy: short-lived / no PAT mint), `TC-AUTH-CLI-07b` (approve → list → revoke).
+- **Files:** `web/src/components/ProfileCliAccessSection.tsx`, `web/src/components/DeviceSessionsList.tsx`, `e2e/tests/profile-cli-credentials.spec.ts`.

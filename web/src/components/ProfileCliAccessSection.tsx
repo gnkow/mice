@@ -5,18 +5,22 @@ import { DeviceSessionsList } from './DeviceSessionsList'
 import { AuthEventLog } from './AuthEventLog'
 
 /**
- * Access Management section - Web and Device Sessions
- * 
- * Per authentication spec: "There are no PATs and no service principals"
- * CLI access is via `mice login` (RFC 8628 device flow) with short-lived credentials.
+ * Access Management — browser sessions and short-lived CLI device credentials.
+ * Device approval issues rotating CLI credentials; this surface does not mint PATs.
  */
 export function ProfileCliAccessSection() {
   const [signedOut, setSignedOut] = useState(false)
   const [revoking, setRevoking] = useState(false)
 
   async function signOutEverywhere() {
-    if (!window.confirm('Sign out of every browser session and CLI credential? You will need to log in again.')) return
-    
+    if (
+      !window.confirm(
+        'Sign out of every browser session and CLI device credential? You will need to log in again.',
+      )
+    ) {
+      return
+    }
+
     setRevoking(true)
     try {
       const res = await fetch('/auth/sessions/revoke-all', {
@@ -27,7 +31,6 @@ export function ProfileCliAccessSection() {
       })
       if (res.ok) {
         setSignedOut(true)
-        // Redirect to login after a delay
         setTimeout(() => {
           window.location.href = '/login'
         }, 2000)
@@ -38,7 +41,12 @@ export function ProfileCliAccessSection() {
   }
 
   return (
-    <section id="access-management" className="settings-section" aria-labelledby="access-heading">
+    <section
+      id="access-management"
+      className="settings-section"
+      data-testid="profile-cli-access"
+      aria-labelledby="access-heading"
+    >
       <div className="ns-settings-section-head">
         <div>
           <h2 id="access-heading">
@@ -46,7 +54,9 @@ export function ProfileCliAccessSection() {
             Access
           </h2>
           <p className="muted small">
-            Manage your browser sessions and CLI device credentials.
+            Manage browser sessions and short-lived CLI device credentials from{' '}
+            <code>mice login</code>. Personal access tokens are not minted here — use device
+            approval only, then list or revoke credentials below.
           </p>
         </div>
       </div>
@@ -63,11 +73,12 @@ export function ProfileCliAccessSection() {
           Sign Out Everywhere
         </h3>
         <p className="muted small">
-          Revoke all your browser sessions and CLI device credentials. You will be logged out immediately.
+          Revoke all browser sessions and CLI device credentials. You will be logged out
+          immediately.
         </p>
-        <button 
-          className="btn danger" 
-          type="button" 
+        <button
+          className="btn danger"
+          type="button"
           onClick={() => void signOutEverywhere()}
           disabled={revoking}
         >
