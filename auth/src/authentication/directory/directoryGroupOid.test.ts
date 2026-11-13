@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { mapKeycloakGroupRow } from './directoryGroupOid.js'
+import { directoryGroupGrantKey, mapKeycloakGroupRow } from './directoryGroupOid.js'
+
+describe('directoryGroupGrantKey', () => {
+  it('lowercases UUID object ids and normalizes display names', () => {
+    assert.equal(
+      directoryGroupGrantKey('AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE'),
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    )
+    assert.equal(directoryGroupGrantKey('Quality Assurance'), 'quality assurance')
+    assert.equal(directoryGroupGrantKey('  '), '')
+  })
+})
 
 describe('mapKeycloakGroupRow', () => {
   it('prefers the object id as the grant key and keeps the display name', () => {

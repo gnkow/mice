@@ -30,5 +30,6 @@ Namespace and repository group grants are stored as the IdP group object id. Dir
 ## Comments
 
 - **Audit:** holds — Keycloak group search/`getUserGroups` return object id + display name; session/grants/authz match on id; rename-safe.
-- **Deepen:** pulled Keycloak row→grant-key mapping into `directoryGroupOid.ts` (`mapKeycloakGroupRow` / `mapKeycloakDirectoryGroup`), including UUID lowercasing for OID matching; `directoryKeycloak` calls the helper; `loginFlow` untouched.
-- **Tests:** `directoryGroupOid.test.ts`, `directoryAdapters.test.ts`.
+- **Deepen (auto-pick Top):** `directoryGroupGrantKey` owns UUID lowercasing + name normalization; `mapKeycloakGroupRow` / `mapKeycloakDirectoryGroup` map rows through that seam; `directoryKeycloak` / `loginFlow` untouched.
+- **Tests:** `directoryGroupOid.test.ts` (unit); `directoryAdapters.test.ts` (integration).
+- **Seams:** `directoryGroupGrantKey` / `mapKeycloakGroupRow` (module); Keycloak adapter (package).
