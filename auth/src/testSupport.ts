@@ -2,11 +2,18 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
+/** Dev/test Ed25519 key for signed audit exports (IQP records the matching public key). */
+const TEST_AUDIT_EXPORT_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIOCIvPphIbExPF/VyCNyOVJ8WBJW/QV7HbCR0S7bwRSp
+-----END PRIVATE KEY-----
+`
+
 const BASE_ENV: Record<string, string> = {
   SESSION_SECRET: 'test-session-secret',
   OXEN_UPSTREAM: 'http://127.0.0.1:3001',
   AUTHZ_REQUIRE_TRAINING: 'false',
   AUTHZ_BOOTSTRAP_ADMINS: 'admin@mice.local',
+  AUDIT_EXPORT_PRIVATE_KEY: TEST_AUDIT_EXPORT_PRIVATE_KEY,
 }
 
 export type TestPerson = {

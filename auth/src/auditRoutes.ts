@@ -1,5 +1,6 @@
 import type { Context, Hono } from 'hono'
 import { acknowledgeAuditBreak, actorFromUser, appendAudit, auditEventsToCsv, auditFacets, buildAuditExportBundle, queryAudit, queryAuditForExport, type AuditQuery } from './audit.js'
+import { auditEventsToPdf, auditExportPrivateKeyPem } from './auditExport.js'
 import { instanceGate } from './decisionHttp.js'
 import { auditActionLabel, knownAuditActions } from './auditLabels.js'
 import { authorizeAuditQuery, authorizeLineageQuery, authorizeLineageRebuild } from './authz.js'
@@ -104,10 +105,32 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     return c.body(csv)
   }))
 
+  /** Human-readable PDF for the same filter scope as CSV / bundle (Part 11 §11.10). */
+  app.get('/auth/audit/export.pdf', guarded({}, async ({ c, user, audit }) => {
+    const r = await resolveAuditQuery(c, user)
+    if ('error' in r) return r.error
+    if (!auditExportPrivateKeyPem()) {
+      return c.json({ error: 'Audit export signing key is not configured (set AUDIT_EXPORT_PRIVATE_KEY)' }, 503)
+    }
+    const { events, truncated } = await queryAuditForExport(r.query)
+    const pdf = auditEventsToPdf(events)
+    await audit({
+      action: 'audit.export',
+      message: `Exported ${events.length} audit events to PDF`,
+      detail: { rows: events.length, truncated, format: 'pdf', filters: { ...r.query, allowedNamespaces: undefined } },
+    })
+    const day = new Date().toISOString().slice(0, 10)
+    c.header('Content-Type', 'application/pdf')
+    c.header('Content-Disposition', `attachment; filename="audit-${day}.pdf"`)
+    c.header('Cache-Control', 'no-store')
+    if (truncated) c.header('X-Audit-Truncated', 'true')
+    return c.body(pdf)
+  }))
+
   /**
-   * Signed evidence bundle: the events (chain order, with hashes), the checkpoints, a fresh
-   * verification result and the public keys. Same scope as the list; the export is audited
-   * first, and refused when that cannot be recorded.
+   * Signed evidence bundle: events (chain order), signed manifest (IQP pubkey), CSV, PDF,
+   * and a fresh verification. Same scope as the list; the export is audited first, and refused
+   * when that cannot be recorded or the signing key is missing.
    */
   app.get('/auth/audit/export.bundle', guarded({}, async ({ c, user, via }) => {
     const r = await resolveAuditQuery(c, user)
