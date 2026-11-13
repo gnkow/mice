@@ -39,3 +39,5 @@ The unattended 30-day schedule is issue 34. Cookie unseal during overlap is issu
 **Seams:** module `rotateSealKeyWithAudit` / `presentSealKey`; HTTP `/auth/admin/seal-keys`, `/rotate`, `/rotate/emergency`.
 
 **Files:** `sealKeys.ts`, `sealKeys.test.ts`, `sealKeyRoutes.ts`, `sealKeyRoutes.test.ts`, `rotateSealKey.ts`
+
+2026-11-13 — **deep-ui Deepen** (holds): Settings `SealKeyRotationSection` — flash `role=alert`/`role=status`, loading+Try again, empty key-ring state, dropped custom alert/card chrome for ns-settings. E2E: `e2e/tests/settings-auth-admin.spec.ts` · Seal keys.

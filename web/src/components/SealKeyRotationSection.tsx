@@ -4,7 +4,7 @@ import { useAsync } from '../hooks/useAsync'
 
 /**
  * Seal Key Rotation UI (Ticket 03, Ticket 17)
- * 
+ *
  * Allows instance admins to:
  * - View current seal key and key ring status
  * - Perform normal rotation (30-day schedule, 7-day overlap)
@@ -84,14 +84,14 @@ function formatTimestamp(epochSec: number): string {
 function formatRelativeTime(epochSec: number): string {
   const now = Date.now() / 1000
   const diff = epochSec - now
-  
+
   if (diff < 0) {
     return 'expired'
   }
-  
+
   const days = Math.floor(diff / 86400)
   const hours = Math.floor((diff % 86400) / 3600)
-  
+
   if (days > 0) {
     return `${days}d ${hours}h remaining`
   }
@@ -101,11 +101,11 @@ function formatRelativeTime(epochSec: number): string {
 function KeyStatusIcon({ status }: { status: 'valid' | 'expired' | 'current' }) {
   switch (status) {
     case 'current':
-      return <CheckCircle size={16} className="text-green-600" />
+      return <CheckCircle size={16} aria-hidden="true" />
     case 'valid':
-      return <Clock size={16} className="text-blue-600" />
+      return <Clock size={16} aria-hidden="true" />
     case 'expired':
-      return <XCircle size={16} className="text-gray-400" />
+      return <XCircle size={16} aria-hidden="true" />
   }
 }
 
@@ -115,18 +115,18 @@ export function SealKeyRotationSection() {
   const [busy, setBusy] = useState(false)
   const [emergencyReason, setEmergencyReason] = useState('')
   const [showEmergencyForm, setShowEmergencyForm] = useState(false)
-  
+
   const currentKey = useAsync(() => getCurrentSealKey(), [])
   const keyRing = useAsync(() => listSealKeys(), [])
 
   async function handleNormalRotation(e: FormEvent) {
     e.preventDefault()
     if (busy) return
-    
+
     setBusy(true)
     setError('')
     setSuccess('')
-    
+
     try {
       await performNormalRotation()
       setSuccess('Normal rotation completed. Old key valid for 7 more days.')
@@ -142,11 +142,11 @@ export function SealKeyRotationSection() {
   async function handleEmergencyRotation(e: FormEvent) {
     e.preventDefault()
     if (busy || !emergencyReason.trim()) return
-    
+
     setBusy(true)
     setError('')
     setSuccess('')
-    
+
     try {
       await performEmergencyRotation(emergencyReason)
       setSuccess('Emergency rotation completed. Old key revoked with 8-hour grace period.')
@@ -170,94 +170,95 @@ export function SealKeyRotationSection() {
             Session cookie keys
           </h2>
           <p className="muted small">
-            Seal keys encrypt session cookies using AES-256-GCM. Normal rotation happens on a 30-day schedule 
-            with 7-day overlap (no user logout). Emergency rotation revokes the current key immediately with 
+            Seal keys encrypt session cookies using AES-256-GCM. Normal rotation happens on a 30-day schedule
+            with 7-day overlap (no user logout). Emergency rotation revokes the current key immediately with
             8-hour grace period.
           </p>
         </div>
       </div>
 
       {error && (
-        <div className="alert alert-error" role="alert">
-          <AlertCircle size={16} />
-          <span>{error}</span>
-        </div>
+        <p className="flash flash-error" role="alert">{error}</p>
       )}
 
       {success && (
-        <div className="alert alert-success" role="status">
-          <CheckCircle size={16} />
-          <span>{success}</span>
-        </div>
+        <p className="flash flash-success" role="status">{success}</p>
       )}
 
-      {/* Current Key Status */}
-      <div className="card">
+      <div className="ns-settings-subsection">
         <h3>Current Primary Key</h3>
-        {currentKey.kind === 'loading' && <p>Loading...</p>}
+        {currentKey.kind === 'loading' && (
+          <p role="status" aria-live="polite">Loading current key…</p>
+        )}
         {currentKey.kind === 'error' && (
-          <p className="text-error">Failed to load current key</p>
+          <div className="flash flash-error" role="alert">
+            <p>Failed to load current key</p>
+            <button type="button" className="btn ghost" onClick={() => currentKey.reload()}>
+              Try again
+            </button>
+          </div>
         )}
         {currentKey.kind === 'ok' && currentKey.data && (
-          <div className="key-info">
-            <div className="key-row">
-              <span className="key-label">Key ID:</span>
-              <code>{currentKey.data.id}</code>
+          <div className="ns-settings-grid">
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Key ID</span>
+              <p className="muted small"><code className="inline-code">{currentKey.data.id}</code></p>
             </div>
-            <div className="key-row">
-              <span className="key-label">Type:</span>
-              <span className="badge">{currentKey.data.rotationType}</span>
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Type</span>
+              <p className="muted small">{currentKey.data.rotationType}</p>
             </div>
-            <div className="key-row">
-              <span className="key-label">Valid From:</span>
-              <span>{formatTimestamp(currentKey.data.validFrom)}</span>
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Valid From</span>
+              <p className="muted small">{formatTimestamp(currentKey.data.validFrom)}</p>
             </div>
-            <div className="key-row">
-              <span className="key-label">Created:</span>
-              <span>{new Date(currentKey.data.createdAt).toLocaleString()}</span>
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Created</span>
+              <p className="muted small">{new Date(currentKey.data.createdAt).toLocaleString()}</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Rotation Actions */}
-      <div className="card">
+      <div className="ns-settings-subsection">
         <h3>Key Rotation</h3>
-        
-        <form onSubmit={handleNormalRotation} className="rotation-form">
-          <p className="form-help">
-            <strong>Normal Rotation:</strong> Creates a new key and marks the current key to expire in 7 days. 
+
+        <form onSubmit={handleNormalRotation} className="ns-member-form">
+          <p className="muted small">
+            <strong>Normal Rotation:</strong> Creates a new key and marks the current key to expire in 7 days.
             Users are not logged out during the overlap period.
           </p>
-          <button 
-            type="submit" 
-            className="btn primary"
-            disabled={busy}
-          >
-            {busy ? 'Rotating...' : 'Perform Normal Rotation'}
-          </button>
+          <div className="btn-row ns-settings-actions">
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy}
+            >
+              {busy ? 'Rotating…' : 'Perform Normal Rotation'}
+            </button>
+          </div>
         </form>
 
-        <hr />
-
         {!showEmergencyForm ? (
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => setShowEmergencyForm(true)}
-          >
-            <AlertCircle size={16} />
-            Emergency Rotation
-          </button>
+          <div className="btn-row ns-settings-actions">
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setShowEmergencyForm(true)}
+            >
+              <AlertCircle size={16} aria-hidden="true" className="button-label-icon" />
+              Emergency Rotation
+            </button>
+          </div>
         ) : (
-          <form onSubmit={handleEmergencyRotation} className="rotation-form emergency">
-            <p className="form-help text-warning">
-              <AlertCircle size={16} />
-              <strong>Emergency Rotation:</strong> Immediately revokes the current key with an 8-hour grace period. 
+          <form onSubmit={handleEmergencyRotation} className="ns-member-form">
+            <p className="flash flash-warn" role="status">
+              <AlertCircle size={16} aria-hidden="true" className="button-label-icon" />
+              <strong>Emergency Rotation:</strong> Immediately revokes the current key with an 8-hour grace period.
               Use only if the current key is compromised.
             </p>
-            <label>
-              Reason for emergency rotation:
+            <label className="ns-settings-field">
+              <span className="ns-settings-label">Reason for emergency rotation</span>
               <textarea
                 value={emergencyReason}
                 onChange={(e) => setEmergencyReason(e.target.value)}
@@ -267,13 +268,13 @@ export function SealKeyRotationSection() {
                 disabled={busy}
               />
             </label>
-            <div className="button-group">
-              <button 
-                type="submit" 
+            <div className="btn-row ns-settings-actions">
+              <button
+                type="submit"
                 className="btn danger"
                 disabled={busy || !emergencyReason.trim()}
               >
-                {busy ? 'Rotating...' : 'Perform Emergency Rotation'}
+                {busy ? 'Rotating…' : 'Perform Emergency Rotation'}
               </button>
               <button
                 type="button"
@@ -291,16 +292,29 @@ export function SealKeyRotationSection() {
         )}
       </div>
 
-      {/* Key Ring Status */}
-      <div className="card">
-        <h3>Key Ring ({keyRing.kind === 'ok' ? keyRing.data.length : '...'} keys)</h3>
-        {keyRing.kind === 'loading' && <p>Loading key ring...</p>}
-        {keyRing.kind === 'error' && (
-          <p className="text-error">Failed to load key ring</p>
+      <div className="ns-settings-subsection">
+        <h3>Key Ring ({keyRing.kind === 'ok' ? keyRing.data.length : '…'} keys)</h3>
+        {keyRing.kind === 'loading' && (
+          <p role="status" aria-live="polite">Loading key ring…</p>
         )}
-        {keyRing.kind === 'ok' && (
-          <div className="key-ring-table">
-            <table>
+        {keyRing.kind === 'error' && (
+          <div className="flash flash-error" role="alert">
+            <p>Failed to load key ring</p>
+            <button type="button" className="btn ghost" onClick={() => keyRing.reload()}>
+              Try again
+            </button>
+          </div>
+        )}
+        {keyRing.kind === 'ok' && keyRing.data.length === 0 && (
+          <div className="empty-state" role="status">
+            <span className="empty-state-icon" aria-hidden="true" />
+            <p className="muted">No seal keys in the ring.</p>
+            <p className="muted small">Bootstrap or rotate a key to populate the ring.</p>
+          </div>
+        )}
+        {keyRing.kind === 'ok' && keyRing.data.length > 0 && (
+          <div className="table-container">
+            <table className="table">
               <thead>
                 <tr>
                   <th>Status</th>
@@ -312,29 +326,26 @@ export function SealKeyRotationSection() {
               </thead>
               <tbody>
                 {keyRing.data.map((key) => (
-                  <tr key={key.id} className={key.isCurrent ? 'current-key' : ''}>
+                  <tr key={key.id}>
                     <td>
                       <KeyStatusIcon status={key.status} />
+                      <span className="visually-hidden">{key.status}</span>
                     </td>
                     <td>
-                      <code className="key-id-short">{key.id.split('_').pop()}</code>
-                      {key.isCurrent && <span className="badge badge-primary">current</span>}
+                      <code className="inline-code">{key.id.split('_').pop()}</code>
+                      {key.isCurrent && <span className="pill">current</span>}
                     </td>
-                    <td>
-                      <span className={`badge ${key.rotationType === 'emergency' ? 'badge-danger' : ''}`}>
-                        {key.rotationType}
-                      </span>
-                    </td>
-                    <td className="text-sm">{formatTimestamp(key.validFrom)}</td>
-                    <td className="text-sm">
+                    <td>{key.rotationType}</td>
+                    <td className="muted small">{formatTimestamp(key.validFrom)}</td>
+                    <td className="muted small">
                       {key.validUntil ? (
                         <>
                           {formatTimestamp(key.validUntil)}
                           <br />
-                          <span className="text-muted">{formatRelativeTime(key.validUntil)}</span>
+                          {formatRelativeTime(key.validUntil)}
                         </>
                       ) : (
-                        <span className="text-muted">—</span>
+                        '—'
                       )}
                     </td>
                   </tr>
@@ -344,141 +355,6 @@ export function SealKeyRotationSection() {
           </div>
         )}
       </div>
-
-      <style>{`
-        .key-info {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-        
-        .key-row {
-          display: flex;
-          gap: 1rem;
-          align-items: center;
-        }
-        
-        .key-label {
-          font-weight: 500;
-          min-width: 100px;
-          color: var(--text-secondary);
-        }
-        
-        .rotation-form {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-        
-        .rotation-form.emergency {
-          padding: 1rem;
-          border: 2px solid var(--color-warning);
-          border-radius: 8px;
-          background: var(--bg-warning-subtle);
-        }
-        
-        .form-help {
-          margin: 0;
-          font-size: 0.9rem;
-          color: var(--text-secondary);
-          display: flex;
-          align-items: start;
-          gap: 0.5rem;
-        }
-        
-        .text-warning {
-          color: var(--color-warning);
-        }
-        
-        .button-group {
-          display: flex;
-          gap: 0.5rem;
-        }
-        
-        .key-ring-table {
-          overflow-x: auto;
-        }
-        
-        .key-ring-table table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-        
-        .key-ring-table th {
-          text-align: left;
-          padding: 0.75rem;
-          border-bottom: 2px solid var(--border-color);
-          font-weight: 600;
-        }
-        
-        .key-ring-table td {
-          padding: 0.75rem;
-          border-bottom: 1px solid var(--border-color);
-        }
-        
-        .key-ring-table tr.current-key {
-          background: var(--bg-success-subtle);
-        }
-        
-        .key-id-short {
-          font-family: monospace;
-          font-size: 0.85rem;
-          margin-right: 0.5rem;
-        }
-        
-        .badge {
-          display: inline-block;
-          padding: 0.25rem 0.5rem;
-          border-radius: 4px;
-          font-size: 0.75rem;
-          font-weight: 600;
-          text-transform: uppercase;
-          background: var(--bg-secondary);
-          color: var(--text-primary);
-        }
-        
-        .badge-primary {
-          background: var(--color-primary);
-          color: white;
-        }
-        
-        .badge-danger {
-          background: var(--color-danger);
-          color: white;
-        }
-        
-        .text-sm {
-          font-size: 0.875rem;
-        }
-        
-        .text-muted {
-          color: var(--text-secondary);
-        }
-        
-        .text-error {
-          color: var(--color-danger);
-        }
-        
-        .alert {
-          padding: 1rem;
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        
-        .alert-error {
-          background: var(--bg-error-subtle);
-          color: var(--color-danger);
-          border: 1px solid var(--color-danger);
-        }
-        
-        .alert-success {
-          background: var(--bg-success-subtle);
-          color: var(--color-success);
-          border: 1px solid var(--color-success);
-        }
-      `}</style>
     </section>
   )
 }
