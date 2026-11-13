@@ -10,6 +10,7 @@ import {
   namespaceApprovers,
   namespaceGroupMembers,
   namespaceMembers,
+  namespaceMembershipVersions,
   namespaces,
   namespaceSettingsVersions,
   namespaceTombstones,
@@ -53,6 +54,14 @@ export type NamespaceSettingsVersion = {
   description: string
   basePermission: BasePermission
   membersCanCreateRepos: boolean
+}
+
+export type MembershipSeat = { kind: 'user' | 'group'; key: string; role: string }
+
+export type NamespaceMembershipVersion = {
+  validFrom: string
+  validTo: string | null
+  members: MembershipSeat[]
 }
 
 type Result = { ok: true } | { ok: false; error: string }
@@ -227,6 +236,65 @@ export async function listNamespaceSettingsVersions(ns: string): Promise<Namespa
   }))
 }
 
+async function snapshotMembershipSeats(tx: Tx, namespaceId: string): Promise<MembershipSeat[]> {
+  const users = await tx.select().from(namespaceMembers).where(eq(namespaceMembers.namespaceId, namespaceId))
+  const groups = await tx
+    .select()
+    .from(namespaceGroupMembers)
+    .where(eq(namespaceGroupMembers.namespaceId, namespaceId))
+  const seats: MembershipSeat[] = [
+    ...users.map((r) => ({ kind: 'user' as const, key: r.userKey, role: r.role })),
+    ...groups.map((r) => ({ kind: 'group' as const, key: r.groupKey, role: r.role })),
+  ]
+  return seats.sort((a, b) =>
+    a.kind !== b.kind ? a.kind.localeCompare(b.kind) : a.key.localeCompare(b.key),
+  )
+}
+
+async function closeOpenMembershipVersion(tx: Tx, namespaceId: string, at: Date): Promise<void> {
+  await tx
+    .update(namespaceMembershipVersions)
+    .set({ validTo: at })
+    .where(
+      and(eq(namespaceMembershipVersions.namespaceId, namespaceId), isNull(namespaceMembershipVersions.validTo)),
+    )
+}
+
+async function openMembershipVersion(tx: Tx, namespaceId: string, at: Date): Promise<void> {
+  const members = await snapshotMembershipSeats(tx, namespaceId)
+  await tx.insert(namespaceMembershipVersions).values({
+    namespaceId,
+    members,
+    validFrom: at,
+    validTo: null,
+    createdAt: at,
+  })
+}
+
+/** Append a new membership-set version after a live membership mutation. */
+async function recordMembershipVersion(tx: Tx, namespaceId: string, at = new Date()): Promise<void> {
+  await closeOpenMembershipVersion(tx, namespaceId, at)
+  await openMembershipVersion(tx, namespaceId, at)
+}
+
+/** Chronological membership-set versions for a namespace (entity history, not audit). */
+export async function listNamespaceMembershipVersions(
+  ns: string,
+): Promise<NamespaceMembershipVersion[] | null> {
+  const settings = await readNamespace(ns)
+  if (!settings) return null
+  const rows = await getDb()
+    .select()
+    .from(namespaceMembershipVersions)
+    .where(eq(namespaceMembershipVersions.namespaceId, settings.id))
+    .orderBy(asc(namespaceMembershipVersions.validFrom))
+  return rows.map((r) => ({
+    validFrom: r.validFrom.toISOString(),
+    validTo: r.validTo ? r.validTo.toISOString() : null,
+    members: r.members,
+  }))
+}
+
 export async function namespaceIdByName(name: string, tx: Tx | ReturnType<typeof getDb> = getDb()): Promise<string | null> {
   const rows = await tx.select({ id: namespaces.id }).from(namespaces).where(eq(namespaces.name, name)).limit(1)
   return rows[0]?.id ?? null
@@ -299,6 +367,7 @@ async function insertOwnedNamespace(
     .values({ namespaceId: row.id, userKey: input.ownerKey, role: 'owner' })
     .onConflictDoNothing()
   await openNamespaceSettingsVersion(tx, row, at)
+  await openMembershipVersion(tx, row.id, at)
   return row
 }
 
@@ -675,6 +744,7 @@ export async function setMember(ns: string, key: string, role: MemberRoleRef): P
         .from(namespaceMembers)
         .where(and(eq(namespaceMembers.namespaceId, locked.id), eq(namespaceMembers.userKey, key)))
     )[0]?.role
+    if (prev === role) return { ok: true } as const
     await tx
       .insert(namespaceMembers)
       .values({ namespaceId: locked.id, userKey: key, role })
@@ -682,6 +752,7 @@ export async function setMember(ns: string, key: string, role: MemberRoleRef): P
     if (prev === 'owner' && role !== 'owner' && (await ownerCount(tx, locked.id)) === 0) {
       tx.rollback()
     }
+    await recordMembershipVersion(tx, locked.id)
     return { ok: true } as const
   }).catch((e: unknown) => rollbackAs(e, 'Cannot demote the last namespace Owner'))
 }
@@ -696,12 +767,14 @@ export async function removeMember(ns: string, key: string): Promise<Result> {
         .from(namespaceMembers)
         .where(and(eq(namespaceMembers.namespaceId, locked.id), eq(namespaceMembers.userKey, key)))
     )[0]
-    if (cur?.role === 'owner' && (await ownerCount(tx, locked.id)) <= 1) {
+    if (!cur) return { ok: true } as const
+    if (cur.role === 'owner' && (await ownerCount(tx, locked.id)) <= 1) {
       return { ok: false, error: 'Cannot remove the last namespace Owner' } as const
     }
     await tx
       .delete(namespaceMembers)
       .where(and(eq(namespaceMembers.namespaceId, locked.id), eq(namespaceMembers.userKey, key)))
+    await recordMembershipVersion(tx, locked.id)
     return { ok: true } as const
   })
 }
@@ -716,6 +789,7 @@ export async function setGroupMember(ns: string, group: string, role: MemberRole
         .from(namespaceGroupMembers)
         .where(and(eq(namespaceGroupMembers.namespaceId, locked.id), eq(namespaceGroupMembers.groupKey, group)))
     )[0]?.role
+    if (prev === role) return { ok: true } as const
     await tx
       .insert(namespaceGroupMembers)
       .values({ namespaceId: locked.id, groupKey: group, role })
@@ -726,6 +800,7 @@ export async function setGroupMember(ns: string, group: string, role: MemberRole
     if (prev === 'owner' && role !== 'owner' && (await ownerCount(tx, locked.id)) === 0) {
       tx.rollback()
     }
+    await recordMembershipVersion(tx, locked.id)
     return { ok: true } as const
   }).catch((e: unknown) => rollbackAs(e, 'Cannot demote the last namespace Owner'))
 }
@@ -747,6 +822,7 @@ export async function removeGroupMember(ns: string, group: string): Promise<Resu
     await tx
       .delete(namespaceGroupMembers)
       .where(and(eq(namespaceGroupMembers.namespaceId, locked.id), eq(namespaceGroupMembers.groupKey, group)))
+    await recordMembershipVersion(tx, locked.id)
     return { ok: true } as const
   })
 }

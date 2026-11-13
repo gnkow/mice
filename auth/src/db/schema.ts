@@ -46,14 +46,32 @@ export const namespaces = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    description: text('description').notNull().default(''),
     basePermission: text('base_permission').notNull(),
     membersCanCreateRepos: boolean('members_can_create_repos').notNull(),
-    /** RegExp source for required QMS change-control ids (GxP ticket 04). */
-    changeControlIdPattern: text('change_control_id_pattern').notNull().default('^[A-Za-z0-9][A-Za-z0-9._/-]{2,127}$'),
     createdAt: ts('created_at').notNull(),
     createdBy: text('created_by').notNull(),
   },
   (t) => [uniqueIndex('namespaces_name').on(t.name)],
+)
+
+/** Append-only successive states of namespace settings (GxP ticket 21). Keyed by stable namespace id. */
+export const namespaceSettingsVersions = pgTable(
+  'namespace_settings_versions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    basePermission: text('base_permission').notNull(),
+    membersCanCreateRepos: boolean('members_can_create_repos').notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('namespace_settings_versions_ns_from_idx').on(t.namespaceId, t.validFrom)],
 )
 
 export const repositories = pgTable(
@@ -92,6 +110,25 @@ export const namespaceGroupMembers = pgTable(
     role: text('role').notNull(),
   },
   (t) => [primaryKey({ columns: [t.namespaceId, t.groupKey] }), index('namespace_group_members_group').on(t.groupKey)],
+)
+
+/** Append-only successive membership sets for a namespace (GxP ticket 22). */
+export const namespaceMembershipVersions = pgTable(
+  'namespace_membership_versions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    /** Snapshot of user + group seats after the change. */
+    members: jsonb('members')
+      .$type<Array<{ kind: 'user' | 'group'; key: string; role: string }>>()
+      .notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('namespace_membership_versions_ns_from_idx').on(t.namespaceId, t.validFrom)],
 )
 
 export const repoCollaborators = pgTable(
