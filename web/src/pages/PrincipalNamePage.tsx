@@ -4,7 +4,10 @@ import { decideNameHistoryRowDisplay } from '../lib/signatureName'
 
 type NameRow = { name: string; validFrom: string; validTo: string | null }
 
-/** Stored name timeline for one Principal (Ticket 47). Oldest first; no IdP lookup. */
+/**
+ * Stored name timeline for one Principal (Ticket 22 write-path surface + Ticket 47 display).
+ * Oldest first; no IdP lookup. Login/session mint writes rows via ensurePrincipal → trackNameChange.
+ */
 export function PrincipalNamePage() {
   const [params] = useSearchParams()
   const iss = params.get('iss') ?? ''
@@ -54,11 +57,13 @@ export function PrincipalNamePage() {
     <section
       className="settings-section"
       aria-labelledby="principal-names-heading"
+      aria-busy={loading || undefined}
       data-testid="principal-name-history"
     >
       <h2 id="principal-names-heading">Name history</h2>
       <p className="muted small">
-        Stored timeline for this Principal (oldest first). Mice does not ask the IdP for this page.
+        Stored timeline for this Principal (oldest first). Rows appear when login records a name
+        (or a name change). Mice does not ask the IdP for this page.
       </p>
       <p className="muted small mono" aria-label="Principal identity">
         {iss} · {sub}
@@ -68,12 +73,12 @@ export function PrincipalNamePage() {
       </p>
 
       {error && (
-        <p className="error" role="alert">
+        <p className="flash flash-error" role="alert">
           {error}
         </p>
       )}
       {loading && !error && (
-        <p className="muted" aria-live="polite">
+        <p className="muted" role="status" aria-live="polite" data-testid="principal-name-loading">
           Loading name history…
         </p>
       )}
@@ -85,16 +90,21 @@ export function PrincipalNamePage() {
       )}
 
       {!loading && !error && rows.length === 0 && (
-        <p className="muted" role="status">
-          No name history recorded yet.
-        </p>
+        <div className="empty-state" role="status" data-testid="principal-name-empty">
+          <span className="empty-state-icon" aria-hidden="true" />
+          <p className="muted">No name history recorded yet.</p>
+          <p className="muted small">
+            History is written when this Principal signs in with a name from the IdP. An unchanged
+            name on later logins does not add a duplicate row.
+          </p>
+        </div>
       )}
 
       {!loading && !error && rows.length > 0 && (
         <div className="table-container">
           <table className="table" aria-describedby="principal-names-heading">
             <caption className="muted small">
-              Chronological name intervals (oldest first)
+              Chronological name intervals from login-driven writes (oldest first)
             </caption>
             <thead>
               <tr>

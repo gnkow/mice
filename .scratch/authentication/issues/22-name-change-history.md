@@ -37,3 +37,5 @@ Showing the current name next to the name at signing, and an admin timeline, is 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **/deep-ui Deepen (reclassified UI)** — supersedes prior no-ui skip. Coordinates with #47: `PrincipalNamePage` strengthens empty (`empty-state` + IdP login copy), loading (`role="status"` / `aria-busy`), and caption that history is login-driven. Write path remains `ensurePrincipal` → `trackNameChange`. E2E (not redundant with signature-name-history): `e2e/tests/name-change-history.spec.ts` (empty + live mintSession history). No commit/push.
