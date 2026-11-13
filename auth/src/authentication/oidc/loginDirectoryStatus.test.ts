@@ -21,6 +21,7 @@ describe('decideLoginDirectoryStatus', () => {
       message: 'Your account has been disabled by the administrator.',
       recordDisabled: true,
       idpCheck: 'reachable',
+      surface: 'disabled',
     })
   })
 
@@ -31,6 +32,7 @@ describe('decideLoginDirectoryStatus', () => {
       message: 'Your account was not found in the directory.',
       recordDisabled: false,
       idpCheck: 'reachable',
+      surface: 'missing',
     })
   })
 
@@ -41,6 +43,7 @@ describe('decideLoginDirectoryStatus', () => {
       message: 'IdP is unreachable. Login cannot be verified at this time.',
       recordDisabled: false,
       idpCheck: 'unreachable',
+      surface: 'unreachable',
     })
   })
 })
@@ -74,6 +77,7 @@ describe('applyLoginDirectoryDecision / gateLoginDirectoryStatus', () => {
       allow: false,
       httpStatus: 403,
       message: 'Your account has been disabled by the administrator.',
+      surface: 'disabled',
     })
     assert.deepEqual(events, ['reachable', 'disabled'])
   })
@@ -108,6 +112,7 @@ describe('applyLoginDirectoryDecision / gateLoginDirectoryStatus', () => {
       allow: false,
       httpStatus: 503,
       message: 'IdP is unreachable. Login cannot be verified at this time.',
+      surface: 'unreachable',
     })
     assert.deepEqual(events, ['unreachable'])
   })

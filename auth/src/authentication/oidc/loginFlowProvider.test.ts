@@ -69,6 +69,7 @@ describe('login flow over a fake OIDC provider', () => {
     assert.equal(res.ok, false)
     if (res.ok) return
     assert.equal(res.status, 503)
+    assert.equal(res.surface, 'unreachable')
     assert.match(res.html, /unreachable/)
     const { getDb } = await import('../../db/database.js')
     const { principals, webSessions } = await import('../../db/schema.js')
@@ -93,6 +94,7 @@ describe('login flow over a fake OIDC provider', () => {
     assert.equal(res.ok, false)
     if (res.ok) return
     assert.equal(res.status, 403)
+    assert.equal(res.surface, 'disabled')
     assert.match(res.html, /disabled by the administrator/)
   })
 
@@ -108,6 +110,7 @@ describe('login flow over a fake OIDC provider', () => {
     assert.equal(res.ok, false)
     if (res.ok) return
     assert.equal(res.status, 403)
+    assert.equal(res.surface, 'missing')
     assert.match(res.html, /not found in the directory/)
   })
 

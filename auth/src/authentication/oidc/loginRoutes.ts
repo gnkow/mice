@@ -55,7 +55,13 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
     if (result.reauth) {
       return handleReauthCallback(c, result)
     }
-    if (!result.ok) return c.html(result.html, result.status)
+    if (!result.ok) {
+      // Known refuse/outage codes land on LoginPage chrome (tickets 04, 32, 38).
+      if (result.surface) {
+        return c.redirect(`/login?status=${encodeURIComponent(result.surface)}`)
+      }
+      return c.html(result.html, result.status)
+    }
     const sessionUser = result.user
     await preparePrincipal(sessionUser)
     await rememberNotificationUser(sessionUser)

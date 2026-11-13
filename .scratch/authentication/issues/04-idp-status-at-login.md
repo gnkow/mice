@@ -33,3 +33,9 @@ Per-request checks are issue 19. Login status code when the directory is unreach
 - **Deepen (auto-pick Top):** Extracted pure `decideLoginDirectoryStatus` so allow/refuse HTTP/message/`recordDisabled` live in one module. `finishLogin` only records IdP reachability / IdP-disabled history then maps the decision; no rewrite of the rest of loginFlow. `idpOutage*` / `reenable*` / `miceSuspension*` untouched.
 - **Tests:** `auth/src/authentication/oidc/loginDirectoryStatus.test.ts`; acceptance still green in `loginFlowProvider.test.ts`
 - **deep-api Deepen** (auto-pick Top; share with 38): Added `applyLoginDirectoryDecision` / `gateLoginDirectoryStatus` so reachability recording then IdP-disabled history order live once; `finishLogin` only supplies hooks + maps the gate to fail/continue. Ticket 38 `error`→503/`unreachable` stays in the same decide table (no duplicate branching). Unit: `loginDirectoryStatus.test.ts` (effect order for enabled/disabled/missing/error). Integ: `loginFlowProvider.test.ts` still green.
+
+2026-11-13 — deep-ui Deepen (holds → UI surface):
+- **Surfaces:** `LoginPage` status alert for `disabled` / `missing`; BFF `/auth/callback` redirects `?status=` (via `surface` on directory gate).
+- **Deepen:** Titled `role=alert` region (no orphan error text); copy matches BFF messages; `decideLoginStatus` in `web/src/lib/loginStatus.ts`.
+- **E2E:** `e2e/tests/login-status.spec.ts` — disabled + missing cases. Run: `npm run test:e2e -- e2e/tests/login-status.spec.ts`
+- **Status:** done

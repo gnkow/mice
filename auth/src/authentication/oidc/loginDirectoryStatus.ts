@@ -8,6 +8,9 @@
 
 import type { DirectoryUserStatus } from '../directory/directoryTypes.js'
 
+/** Stable LoginPage `?status=` codes for directory refuses (tickets 04, 38). */
+export type LoginDirectoryRefuseSurface = 'disabled' | 'missing' | 'unreachable'
+
 export type LoginDirectoryDecision =
   | { allow: true; idpCheck: 'reachable' }
   | {
@@ -16,6 +19,7 @@ export type LoginDirectoryDecision =
       message: string
       recordDisabled: boolean
       idpCheck: 'reachable' | 'unreachable'
+      surface: LoginDirectoryRefuseSurface
     }
 
 export type LoginDirectoryEffects = {
@@ -25,7 +29,12 @@ export type LoginDirectoryEffects = {
 
 export type LoginDirectoryGate =
   | { allow: true }
-  | { allow: false; httpStatus: 403 | 503; message: string }
+  | {
+      allow: false
+      httpStatus: 403 | 503
+      message: string
+      surface: LoginDirectoryRefuseSurface
+    }
 
 /** Decide whether finishLogin may create a Session for this directory status. */
 export function decideLoginDirectoryStatus(
@@ -41,6 +50,7 @@ export function decideLoginDirectoryStatus(
         message: 'Your account has been disabled by the administrator.',
         recordDisabled: true,
         idpCheck: 'reachable',
+        surface: 'disabled',
       }
     case 'missing':
       return {
@@ -49,6 +59,7 @@ export function decideLoginDirectoryStatus(
         message: 'Your account was not found in the directory.',
         recordDisabled: false,
         idpCheck: 'reachable',
+        surface: 'missing',
       }
     case 'error':
       return {
@@ -57,6 +68,7 @@ export function decideLoginDirectoryStatus(
         message: 'IdP is unreachable. Login cannot be verified at this time.',
         recordDisabled: false,
         idpCheck: 'unreachable',
+        surface: 'unreachable',
       }
   }
 }
@@ -76,6 +88,7 @@ export async function applyLoginDirectoryDecision(
       allow: false,
       httpStatus: decision.httpStatus,
       message: decision.message,
+      surface: decision.surface,
     }
   }
   return { allow: true }

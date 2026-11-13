@@ -14,7 +14,10 @@ import { actorFromUser, appendAudit } from '../../audit.js'
 import { canonicalIssuer } from '../session/principal.js'
 import { recordIdpCheck } from '../compliance/idpOutage.js'
 import { decideIdpDisplayNameGate } from './idpDisplayName.js'
-import { gateLoginDirectoryStatus } from './loginDirectoryStatus.js'
+import {
+  gateLoginDirectoryStatus,
+  type LoginDirectoryRefuseSurface,
+} from './loginDirectoryStatus.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -87,15 +90,32 @@ async function beginLogin(provider: OidcProvider, clock: Clock,
   }
 }
 
+/** LoginPage `?status=` codes for refuse/outage surfaces (tickets 04, 32, 38). */
+export type LoginRefuseSurface = LoginDirectoryRefuseSurface | 'empty_name'
+
 export type LoginResult =
   | { ok: true; user: SessionUser; dest: string; reauth?: { maxAge: number; sub: string; iss: string } }
-  | { ok: false; status: 400 | 403 | 500 | 503; html: string; reauth?: boolean; reason?: string }
+  | {
+      ok: false
+      status: 400 | 403 | 500 | 503
+      html: string
+      reauth?: boolean
+      reason?: string
+      /** When set, `/auth/callback` redirects to LoginPage instead of bare HTML. */
+      surface?: LoginRefuseSurface
+    }
 
 const retry = '<a href="/auth/login">Retry</a>'
-const fail = (status: 400 | 403 | 500 | 503, msg: string, reauth = false): LoginResult => ({
+const fail = (
+  status: 400 | 403 | 500 | 503,
+  msg: string,
+  reauth = false,
+  surface?: LoginRefuseSurface,
+): LoginResult => ({
   ok: false,
   status,
   html: `<p>${msg}</p><p>${retry}</p>`,
+  ...(surface ? { surface } : {}),
   ...(reauth ? { reauth: true, reason: msg } : {}),
 })
 
@@ -155,7 +175,12 @@ async function finishLogin(
       recordDisabled: () => recordIdpDisabled(user),
     })
     if (!directoryGate.allow) {
-      return fail(directoryGate.httpStatus, directoryGate.message, isReauth)
+      return fail(
+        directoryGate.httpStatus,
+        directoryGate.message,
+        isReauth,
+        directoryGate.surface,
+      )
     }
     const nameGate = decideIdpDisplayNameGate(account.name)
     if (!nameGate.ok) {
@@ -169,7 +194,7 @@ async function finishLogin(
         action: 'auth.login.failed',
         message: `Refused login ${iss}|${user.sub}`,
       })
-      return fail(nameGate.status, nameGate.error, isReauth)
+      return fail(nameGate.status, nameGate.error, isReauth, 'empty_name')
     }
     const reenable = await considerReenable(user, async (event) => {
       const stored = await appendAudit({
