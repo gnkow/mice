@@ -18,3 +18,10 @@
 - [x] Outcome is written after the effect, including failed outcomes
 - [x] A mutation that never reaches an outcome is detectable as an orphan intent (no Outcome; reconciler 12 wontfix)
 - [x] HTTP tests cover success and failure outcome paths for a representative mutation
+
+## Comments
+
+- **Audit:** holds at proxy + guarded; unit thin at trackIntent/carry.
+- **Deepen (auto-pick Top):** extract `beginTrackedIntent`, `carryFromIntent`, `orphanIntents`; guarded uses beginTrackedIntent.
+- **Tests:** `auditIntentChain.test.ts` unit; existing `auditIntent.test.ts` HTTP remains.
+- **Seams:** module intent→outcome helpers; HTTP via `auditIntent.test.ts`.

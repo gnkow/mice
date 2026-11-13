@@ -48,6 +48,8 @@ export type AuditEvent = {
   category?: string
   /** QMS change-control id when required (GxP ticket 04). */
   change_control_id?: string
+  /** Electronic signature id when required on regulated mutations (GxP ticket 27). */
+  signature_id?: string
   /** Dataset commit ids before and after a dataset mutation. */
   dataset?: { base?: string; head?: string }
   /** The mutation succeeded but its resulting dataset version could not be determined. */
@@ -358,6 +360,7 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
         }
       : {}),
     ...(partial.change_control_id ? { change_control_id: partial.change_control_id } : {}),
+    ...(partial.signature_id ? { signature_id: partial.signature_id } : {}),
     ...(partial.dataset ? { dataset: partial.dataset } : {}),
     ...(partial.unverified ? { unverified: true as const } : {}),
     ...(partial.detail && Object.keys(partial.detail).length
@@ -427,32 +430,51 @@ export async function appendOutcome(intentId: string, partial: AuditInput): Prom
   }
 }
 
+type TrackedReason = Pick<
+  AuditEvent,
+  'reason' | 'reason_source' | 'category' | 'change_control_id' | 'signature_id'
+>
+
 const intents = new WeakMap<object, {
   id: string
   outcomes: number
-  reason?: Pick<AuditEvent, 'reason' | 'reason_source' | 'category' | 'change_control_id'>
+  reason?: TrackedReason
 }>()
+
+/** Fields from an Intent that must appear on its Outcome (reason / change-control / signature). */
+export function carryFromIntent(intent: AuditEvent): TrackedReason | undefined {
+  if (!intent.reason && !intent.change_control_id && !intent.signature_id) return undefined
+  return {
+    ...(intent.reason
+      ? {
+          reason: intent.reason,
+          reason_source: intent.reason_source,
+          ...(intent.category ? { category: intent.category } : {}),
+        }
+      : {}),
+    ...(intent.change_control_id ? { change_control_id: intent.change_control_id } : {}),
+    ...(intent.signature_id ? { signature_id: intent.signature_id } : {}),
+  }
+}
 
 /** Remembers the intent written for a request so native audit calls can link their outcome to it. */
 export function trackIntent(request: object, intent: AuditEvent): void {
+  const reason = carryFromIntent(intent)
   intents.set(request, {
     id: intent.id,
     outcomes: 0,
-    ...(intent.reason || intent.change_control_id
-      ? {
-          reason: {
-            ...(intent.reason
-              ? {
-                  reason: intent.reason,
-                  reason_source: intent.reason_source,
-                  ...(intent.category ? { category: intent.category } : {}),
-                }
-              : {}),
-            ...(intent.change_control_id ? { change_control_id: intent.change_control_id } : {}),
-          },
-        }
-      : {}),
+    ...(reason ? { reason } : {}),
   })
+}
+
+/**
+ * Intent before the effect, tracked on the request for {@link appendOutcomeFor}.
+ * Throws when the ledger cannot store the Intent — callers must refuse the mutation.
+ */
+export async function beginTrackedIntent(request: object, partial: AuditInput): Promise<AuditEvent> {
+  const intent = await appendIntent(partial)
+  trackIntent(request, intent)
+  return intent
 }
 
 /** Appends an outcome for the request's tracked intent, or a plain event when it has none. */
@@ -465,6 +487,14 @@ export function appendOutcomeFor(request: object, partial: AuditInput): Promise<
 
 export function trackedIntent(request: object): { id: string; outcomes: number } | undefined {
   return intents.get(request)
+}
+
+/** Intents with no matching Outcome — detectable orphans (ticket 12 reconciler is wontfix). */
+export function orphanIntents(events: AuditEvent[]): AuditEvent[] {
+  const resolved = new Set(
+    events.flatMap((e) => (e.phase === 'outcome' && e.intent_id ? [e.intent_id] : [])),
+  )
+  return events.filter((e) => e.phase === 'intent' && !resolved.has(e.id))
 }
 
 /** Events written after ledger position `seq`; `scannedTo` is the position to resume from. */
@@ -700,6 +730,7 @@ export const AUDIT_CSV_COLUMNS = [
   'reason_source',
   'category',
   'change_control_id',
+  'signature_id',
   'dataset_base',
   'dataset_head',
   'unverified',
@@ -742,6 +773,7 @@ export function auditEventsToCsv(events: AuditEvent[]): string {
         e.reason_source,
         e.category,
         e.change_control_id,
+        e.signature_id,
         e.dataset?.base,
         e.dataset?.head,
         e.unverified ? 'true' : '',
