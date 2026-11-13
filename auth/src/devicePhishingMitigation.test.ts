@@ -2,7 +2,12 @@ import './db/testSchema.js'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SessionUser } from './authentication/session/session.js'
-import { checkDeviceApprovalRateLimit, recordDeviceApproval, getRecentApprovals } from './authentication/credentials/deviceApprovalRateLimit.js'
+import {
+  checkDeviceApprovalRateLimit,
+  createDeviceApprovalRateLimit,
+  getRecentApprovals,
+  recordDeviceApproval,
+} from './authentication/credentials/deviceApprovalRateLimit.js'
 
 /**
  * Device Flow Phishing Mitigation Tests (Ticket 25)
@@ -130,39 +135,35 @@ describe('Device Approval Rate Limiting (U15)', () => {
   })
 })
 
-describe('Device Flow Phishing Mitigation - Integration', () => {
-  it('hashed IP display shows last 4 hex chars', () => {
-    const fullHash = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
-    const suffix = fullHash.slice(-4)
-    
-    assert.equal(suffix, '7890', 'Should extract last 4 hex chars')
-    assert.equal(suffix.length, 4, 'Suffix should be 4 characters')
-  })
+describe('Device approval rate-limit gate', () => {
+  it('begin blocks a sixth approval and commit builds the fifth-approval security warning', async () => {
+    const gate = createDeviceApprovalRateLimit()
+    const user = mkUser('iris-gate1')
 
-  it('typing confirmation requires exact match', () => {
-    const userCode = 'ABCDEFGH' // Normalized (no hyphen)
-    const validInputs = ['APPROVE', 'ABCDEFGH', 'abcdefgh', 'AbCd-EfGh']
-    const invalidInputs = ['APPROV', 'WRONG', '', 'ABCDEF']
-    
-    // Valid: uppercase APPROVE or exact code match (case-insensitive)
-    validInputs.forEach(input => {
-      const normalized = input.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
-      const matches = normalized === 'APPROVE' || normalized === userCode
-      assert.ok(matches, `"${input}" should be valid`)
-    })
-    
-    // Invalid: anything else
-    invalidInputs.forEach(input => {
-      const normalized = input.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
-      const matches = normalized === 'APPROVE' || normalized === userCode
-      assert.ok(!matches, `"${input}" should be invalid`)
-    })
-  })
+    for (let i = 1; i <= 4; i++) {
+      const open = await gate.begin(user)
+      assert.equal(open.allowed, true)
+      if (!open.allowed) return
+      const committed = await open.commit(`G${i}`, null)
+      assert.equal(committed.shouldAlert, false)
+      assert.equal(committed.securityWarning, null)
+    }
 
-  it('device name is captured and stored', () => {
-    const deviceName = 'mice-cli v1.2.3'
-    
-    assert.ok(deviceName.includes('mice-cli'), 'Device name should include CLI identifier')
-    assert.ok(/v\d+\.\d+\.\d+/.test(deviceName), 'Device name should include version')
+    const fifth = await gate.begin(user)
+    assert.equal(fifth.allowed, true)
+    if (!fifth.allowed) return
+    const alerted = await fifth.commit('G5', null)
+    assert.equal(alerted.shouldAlert, true)
+    assert.equal(alerted.count, 5)
+    assert.ok(alerted.securityWarning)
+    assert.match(alerted.securityWarning!, /iris-gate1/)
+    assert.match(alerted.securityWarning!, /iris-gate1@test\.io/)
+    assert.match(alerted.securityWarning!, /Investigation recommended/)
+
+    const sixth = await gate.begin(user)
+    assert.equal(sixth.allowed, false)
+    if (sixth.allowed) return
+    assert.equal(sixth.count, 5)
+    assert.equal(sixth.windowMinutes, 10)
   })
 })

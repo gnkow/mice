@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
+import { isApprovalConfirmation } from '../lib/cliDeviceApproval'
 import { formatScope, type CliCredentialScope } from '../lib/tokens'
 
 type DeviceStatus = {
@@ -127,9 +128,7 @@ export function CliDevicePage() {
     lookup.status === 'pending' &&
     done === null
   
-  // Ticket 25: Require typing "APPROVE" or the full device code
-  const confirmValid = confirmInput.trim().toUpperCase() === 'APPROVE' || confirmInput.trim().toUpperCase() === lookup?.userCode
-  const canSubmitApprove = canAct && confirmValid
+  const canSubmitApprove = canAct && isApprovalConfirmation(confirmInput, lookup?.userCode)
 
   return (
     <div className="login-shell">
@@ -194,7 +193,7 @@ export function CliDevicePage() {
               <div className="cli-device-info">
                 {lookup.requestHashedIp && (
                   <p className="muted small">
-                    <strong>Request from:</strong> ...{lookup.requestHashedIp.slice(-4)}
+                    <strong>Request from:</strong> ...{lookup.requestHashedIp}
                   </p>
                 )}
                 {lookup.deviceName && (
