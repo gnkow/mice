@@ -35,3 +35,5 @@ The device approval page shows the last 4 hex characters of the request's hashed
 **Tests:** `devicePhishingMitigation.test.ts` (unit), `deviceApprovalConfirmation.test.ts` + `cliDeviceFlow.test.ts` (integ/related).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13: **deep-ui Deepen (holds)** — Visible phishing/security warning (`#cli-device-security-warning`, `role="status"`) on pending approve; mentions own-terminal-only and 5/10 min rate limit. 429 approve errors keep API message and focus the alert. E2E `TC-CLI-25` asserts warning text visible. Surfaces: `CliDevicePage` + `App.css` (`.cli-device-security-warning`). No commit/push (operator request).
