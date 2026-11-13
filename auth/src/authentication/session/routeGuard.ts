@@ -2,11 +2,10 @@ import type { Context, Handler } from 'hono'
 import {
   actorFromUser,
   appendAudit,
-  appendIntent,
   appendOutcomeFor,
   AUDIT_UNAVAILABLE_MESSAGE,
+  beginTrackedIntent,
   trackedIntent,
-  trackIntent,
 } from '../../audit.js'
 import {
   declaredChangeControlId,
@@ -134,7 +133,7 @@ export function guarded(
     }
     if (mutates) {
       try {
-        trackIntent(c.req.raw, await appendIntent({ ...base, ...reasonFields, status: 0, action: 'bff.mutation' }))
+        await beginTrackedIntent(c.req.raw, { ...base, ...reasonFields, status: 0, action: 'bff.mutation' })
       } catch {
         return c.json({ error: AUDIT_UNAVAILABLE_MESSAGE }, 503)
       }
