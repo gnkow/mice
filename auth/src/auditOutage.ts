@@ -110,3 +110,17 @@ export async function listAuditOutages(limit = 50): Promise<AuditOutage[]> {
 export function immudbHaAttested(src: NodeJS.ProcessEnv = process.env): boolean {
   return src.IMMUDB_HA === 'true'
 }
+
+/** Operator-facing HA attestation for readiness / admin audit-health. */
+export function immudbHaStatus(src: NodeJS.ProcessEnv = process.env): {
+  attested: boolean
+  detail: string
+} {
+  const attested = immudbHaAttested(src)
+  return {
+    attested,
+    detail: attested
+      ? 'IMMUDB_HA=true (production requires a non-single-instance audit store)'
+      : 'IMMUDB_HA is not attested; production startup refuses a single immudb instance',
+  }
+}

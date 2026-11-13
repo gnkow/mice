@@ -14,6 +14,7 @@ const {
   closeAuditOutage,
   currentAuditOutage,
   immudbHaAttested,
+  immudbHaStatus,
   listAuditOutages,
   noteAuditOutage,
   reportAuditDegradation,
@@ -92,6 +93,8 @@ describe('audit outage incident', () => {
     assert.equal(immudbHaAttested({ IMMUDB_HA: 'true' }), true)
     assert.equal(immudbHaAttested({ IMMUDB_HA: 'false' }), false)
     assert.equal(immudbHaAttested({}), false)
+    assert.equal(immudbHaStatus({ IMMUDB_HA: 'true' }).attested, true)
+    assert.match(immudbHaStatus({}).detail, /not attested/)
   })
 })
 
