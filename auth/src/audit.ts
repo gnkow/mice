@@ -21,6 +21,7 @@ import {
 import { carryFromIntent, type TrackedReason } from './auditReasonFields.js'
 
 export type { AuditVerification } from './auditChainGate.js'
+export { AUDIT_UNAVAILABLE_MESSAGE } from './auditFailClosed.js'
 export { eventJobIds, eventSessionIds, eventWorkspaceIds, applyAuditQueryFilters } from './auditQueryFilters.js'
 export { carryFromIntent, intentReasonFields, type TrackedReason } from './auditReasonFields.js'
 
@@ -35,9 +36,6 @@ export type AuditActor = {
 
 /** `intent` is written before a mutation runs, `outcome` after. Other events carry no phase. */
 export type AuditPhase = 'intent' | 'outcome'
-
-/** User-facing copy when a mutation is refused because the audit store cannot accept an Intent. */
-export const AUDIT_UNAVAILABLE_MESSAGE = 'audit unavailable, nothing was saved'
 
 export type AuditEvent = {
   id: string

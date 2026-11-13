@@ -6,11 +6,11 @@ import {
   appendAudit,
   appendIntent,
   appendOutcome,
-  AUDIT_UNAVAILABLE_MESSAGE,
   auditChainBlocked,
   type AuditEvent,
   type AuditVia,
 } from './audit.js'
+import { auditUnavailableResponse } from './auditFailClosed.js'
 import { AuditDetailPolicyError } from './auditDetailPolicy.js'
 import {
   declaredChangeControlId,
@@ -174,17 +174,6 @@ function auditChainBroken(): Response {
       error: { detail: 'Audit chain verification failed; dataset changes are blocked until an instance admin acknowledges it' },
     }),
     { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '300' } },
-  )
-}
-
-function auditUnavailable(): Response {
-  return new Response(
-    JSON.stringify({
-      status: 'error',
-      status_message: 'audit_unavailable',
-      error: { detail: AUDIT_UNAVAILABLE_MESSAGE },
-    }),
-    { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '30' } },
   )
 }
 
@@ -408,7 +397,7 @@ export async function proxyToOxen(
           { status: 400, headers: { 'content-type': 'application/json' } },
         )
       }
-      return auditUnavailable()
+      return auditUnavailableResponse()
     }
   }
 

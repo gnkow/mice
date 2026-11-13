@@ -3,10 +3,10 @@ import {
   actorFromUser,
   appendAudit,
   appendOutcomeFor,
-  AUDIT_UNAVAILABLE_MESSAGE,
   beginTrackedIntent,
   trackedIntent,
 } from '../../audit.js'
+import { auditUnavailableJson } from '../../auditFailClosed.js'
 import { AuditDetailPolicyError } from '../../auditDetailPolicy.js'
 import {
   declaredChangeControlId,
@@ -172,7 +172,7 @@ export function guarded(
         if (err instanceof AuditDetailPolicyError) {
           return c.json({ error: err.message, code: err.code }, 400)
         }
-        return c.json({ error: AUDIT_UNAVAILABLE_MESSAGE }, 503)
+        return c.json(auditUnavailableJson(), 503)
       }
     }
     const ctx = c as unknown as GuardContext

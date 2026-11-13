@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('./app.js')
@@ -124,6 +124,7 @@ describe('intent-first proxied mutations', () => {
   })
 
   it('refuses with 503 and reaches nothing upstream when the intent cannot be written', async () => {
+    const { AUDIT_UNAVAILABLE_MESSAGE, auditUnavailablePayload } = await import('./auditFailClosed.js')
     const headers = await iso.sessionHeaders(writer)
     const restore = breakAuditStore()
     try {
@@ -133,6 +134,9 @@ describe('intent-first proxied mutations', () => {
         body: '{"message":"fix a"}',
       })
       assert.equal(res.status, 503)
+      assert.equal(res.headers.get('retry-after'), '30')
+      assert.deepEqual(await res.json(), auditUnavailablePayload())
+      assert.equal(auditUnavailablePayload().error.detail, AUDIT_UNAVAILABLE_MESSAGE)
       assert.equal(upstreamCalls.length, 0)
     } finally {
       restore()
@@ -152,12 +156,16 @@ describe('intent-first proxied mutations', () => {
 })
 
 describe('intent-first native mutations', () => {
-  const addAdmin = async (user = admin) =>
-    app.request('/auth/instance/permissions', {
+  const addAdmin = async (user = admin) => {
+    const path = '/auth/instance/permissions'
+    const body = { sub: 'new-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }
+    const regulated = await regulatedMutationHeaders(user, { method: 'PUT', path, body })
+    return app.request(path, {
       method: 'PUT',
-      headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
-      body: JSON.stringify({ sub: 'new-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }),
+      headers: { ...(await iso.sessionHeaders(user)), ...regulated, 'x-mice-change-control-id': 'CC-2026-114' },
+      body: JSON.stringify(body),
     })
+  }
 
   it('writes intent then outcome around the change', async () => {
     const res = await addAdmin()
@@ -172,15 +180,19 @@ describe('intent-first native mutations', () => {
   })
 
   it('refuses with 503 and changes nothing when the intent cannot be written', async () => {
-    const headers = await iso.sessionHeaders(admin)
+    const { auditUnavailableJson } = await import('./auditFailClosed.js')
+    const path = '/auth/instance/permissions'
+    const body = { sub: 'blocked-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }
+    const regulated = await regulatedMutationHeaders(admin, { method: 'PUT', path, body })
     const restore = breakAuditStore()
     try {
-      const res = await app.request('/auth/instance/permissions', {
+      const res = await app.request(path, {
         method: 'PUT',
-        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
-        body: JSON.stringify({ sub: 'blocked-admin', iss: 'test', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }),
+        headers: { ...(await iso.sessionHeaders(admin)), ...regulated, 'x-mice-change-control-id': 'CC-2026-114' },
+        body: JSON.stringify(body),
       })
       assert.equal(res.status, 503)
+      assert.deepEqual(await res.json(), auditUnavailableJson())
     } finally {
       restore()
     }
