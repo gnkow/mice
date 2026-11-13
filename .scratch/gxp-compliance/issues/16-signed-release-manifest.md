@@ -4,8 +4,19 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Release ships a signed manifest of IdP configuration, search index and custom verifiers
-- [ ] Manifest is verified at start
-- [ ] Mismatch is audited and visible in the admin overview
+- [x] Release ships a signed manifest of IdP configuration, search index and custom verifiers
+- [x] Manifest is verified at start
+- [x] Mismatch is audited and visible in the admin overview
+
+## Notes
+
+- `auth/release-manifest.json` is signed via `scripts/sign-release-manifest.mjs` (Ed25519).
+- Boot calls `verifyAndRecordReleaseManifest`; admin `GET/POST /auth/admin/release-manifest/*` surfaces status.
+
+## Comments
+
+- **Audit:** holds (module + routes + tests existed as WIP). Unit+integration present.
+- **Deepen (auto-pick Top):** export `buildReleaseManifestBody` + `verifyReleaseManifestSignature`; signing script imports the same seam (no duplicated live digests).
+- **Seams:** `buildReleaseManifestBody` / `signReleaseManifest` / `verifyReleaseManifestSignature` (module); boot verify+audit; admin release-manifest routes.
