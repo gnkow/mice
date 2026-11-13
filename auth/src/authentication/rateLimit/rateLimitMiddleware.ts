@@ -2,8 +2,7 @@ import type { Context } from 'hono'
 import type { SessionUser } from '../session/session.js'
 import { principalKey } from '../session/principal.js'
 import {
-  checkRateLimit,
-  recordRateLimitRequest,
+  consumeRateLimit,
   ipRateLimitKey,
   principalRateLimitKey,
   type RateLimitConfig,
@@ -12,56 +11,35 @@ import {
 
 /**
  * Rate Limit Middleware (Ticket 24, U22)
- * 
+ *
  * Guards routes with rate limiting. Returns 429 when limit exceeded,
  * 503 when storage is unavailable (fail-closed).
- * 
+ *
  * Usage:
  * ```
  * app.post('/auth/oidc/callback', async (c) => {
- *   const ip = c.req.header('x-forwarded-for') ?? c.req.raw.headers.get('cf-connecting-ip') ?? 'unknown'
- *   const limitResult = await rateLimitByIp(ip, RATE_LIMIT_CONFIG.login)
- *   if (!limitResult.allowed) {
- *     return handleRateLimitError(c, limitResult)
- *   }
+ *   const limited = await enforceIpRateLimit(c, RATE_LIMIT_CONFIG.login)
+ *   if (limited) return limited
  *   // ... rest of handler
  * })
  * ```
  */
 
-/**
- * Check rate limit for an IP address.
- * Call this at the start of a route handler.
- */
+/** Consume one IP-keyed slot through the counter module seam. */
 export async function rateLimitByIp(
   ip: string,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
-  const limitKey = await ipRateLimitKey(ip)
-  const result = await checkRateLimit(limitKey, config)
-  if ('error' in result || !result.allowed) return result
-
-  const recorded = await recordRateLimitRequest(limitKey, config.endpoint)
-  if (!recorded) return { error: true, message: 'Rate limit storage unavailable' }
-  return result
+  return consumeRateLimit(await ipRateLimitKey(ip), config)
 }
 
-/**
- * Check rate limit for a Principal (authenticated user).
- * Call this at the start of a route handler.
- */
+/** Consume one Principal-keyed slot through the counter module seam. */
 export async function rateLimitByPrincipal(
   user: SessionUser,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
-  const key = principalKey(user)
-  const limitKey = principalRateLimitKey(key)
-  const result = await checkRateLimit(limitKey, config)
-  if ('error' in result || !result.allowed) return result
-
-  const recorded = await recordRateLimitRequest(limitKey, config.endpoint)
-  if (!recorded) return { error: true, message: 'Rate limit storage unavailable' }
-  return result
+  const limitKey = principalRateLimitKey(principalKey(user))
+  return consumeRateLimit(limitKey, config)
 }
 
 /**

@@ -25,3 +25,16 @@ There is no live token-mint route. PAT mint is unregistered, and device approval
 - [x] A store error returns 503 and is logged
 - [x] A count over the limit returns 429 with `Retry-After`
 - [x] Two BFF instances share one counter for the same key
+
+## Code
+
+- `auth/src/authentication/rateLimit/rateLimit.ts`
+- `auth/src/authentication/rateLimit/rateLimitMiddleware.ts`
+- `auth/src/authentication/rateLimit/rateLimit.test.ts`
+- `auth/src/authentication/rateLimit/authRateLimitRoutes.test.ts`
+
+## Comments
+
+- **Audit:** holds — shared Postgres limiter, thresholds, 429 + Retry-After, 503 fail-closed, and cross-instance sharing proven by `rateLimit.test.ts` and `authRateLimitRoutes.test.ts`.
+- **Deepen:** Collapsed the shallow `checkRateLimit` + `recordRateLimitRequest` pair into one deeper `consumeRateLimit(limitKey, config)` interface. Read/decide/write stay behind that seam; middleware (`rateLimitByIp` / `rateLimitByPrincipal`) is a thin keying adapter over it. Check/record are private implementation details.
+- **Files:** `rateLimit.ts`, `rateLimitMiddleware.ts`, `rateLimit.test.ts`.

@@ -52,20 +52,31 @@ export const RATE_LIMIT_CONFIG = {
 } as const
 
 /**
- * Check rate limit for a key (IP or Principal).
- * Returns error=true when storage is unavailable (fail-closed).
- * 
+ * Counter module seam: decide allow/deny and, when allowed, record the hit.
+ * Callers learn one interface — check + write stay behind the implementation.
+ *
  * @param limitKey - "ip:<hashed_ip>" or "principal:<iss|sub>"
- * @param config - Rate limit configuration
  */
-export async function checkRateLimit(
+export async function consumeRateLimit(
+  limitKey: string,
+  config: RateLimitConfig,
+): Promise<RateLimitResult> {
+  const checked = await checkRateLimit(limitKey, config)
+  if ('error' in checked || !checked.allowed) return checked
+
+  const recorded = await recordRateLimitRequest(limitKey, config.endpoint)
+  if (!recorded) return { error: true, message: 'Rate limit storage unavailable' }
+  return checked
+}
+
+/** Read the window counter. Fail-closed on store errors. */
+async function checkRateLimit(
   limitKey: string,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
   try {
     const windowStart = new Date(Date.now() - config.windowMs)
-    
-    // Count requests in the window
+
     const recentRequests = await getDb()
       .select({ id: rateLimits.id })
       .from(rateLimits)
@@ -76,9 +87,9 @@ export async function checkRateLimit(
           gte(rateLimits.requestedAt, windowStart)
         )
       )
-    
+
     const count = recentRequests.length
-    
+
     if (count >= config.limit) {
       return {
         allowed: false,
@@ -88,10 +99,9 @@ export async function checkRateLimit(
         retryAfter: Math.floor(config.windowMs / 1000),
       }
     }
-    
+
     return { allowed: true, count, limit: config.limit }
   } catch (error) {
-    // Fail-closed: storage unavailable = deny request
     return {
       error: true,
       message: error instanceof Error ? error.message : 'Rate limit storage unavailable',
@@ -99,12 +109,8 @@ export async function checkRateLimit(
   }
 }
 
-/**
- * Record a request for rate limiting.
- * Fails silently if storage is unavailable (check happens before record).
- */
 /** Writes one hit. Returns false when the counter store cannot be written. */
-export async function recordRateLimitRequest(
+async function recordRateLimitRequest(
   limitKey: string,
   endpoint: string
 ): Promise<boolean> {
