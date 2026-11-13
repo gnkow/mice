@@ -35,3 +35,9 @@ Status: done
 **Files:** `sessionCap.ts`, `sessionCap.test.ts`, `sessionCap.integration.test.ts`, `session.ts` (call site only)
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **/deep-ui Deepen (reclassified UI)** — supersedes the no-ui skip above.
+- **Board:** reclassified from no-ui → holds (Deepen). Surface: `WebSessionsList` on Profile Access.
+- **Deepen:** Surface concurrent cap (`WEB_SESSION_CAP = 5`) in heading count (`N of 5 active`) and helper copy; at-cap note explains oldest-session eviction (`data-testid="web-sessions-cap-note"`).
+- **E2E:** `e2e/tests/profile-web-sessions.spec.ts` — updated WS-01/WS-02 counts; `TC-AUTH-WS-15` mints five sessions and asserts cap + eviction note.
+- **Files:** `web/src/components/WebSessionsList.tsx`, `e2e/tests/profile-web-sessions.spec.ts`.

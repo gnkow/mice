@@ -6,7 +6,11 @@ import { useEffect, useId, useState } from 'react'
  *
  * Displays user's active browser sessions with ability to revoke individual sessions.
  * Backend: GET /auth/sessions/web, DELETE /auth/sessions/web/:id
+ * Cap: five concurrent web sessions; a sixth sign-in evicts the oldest.
  */
+
+/** Matches auth `WEB_SESSION_CAP` — surface the limit in profile chrome. */
+export const WEB_SESSION_CAP = 5
 
 export type WebSession = {
   id: string
@@ -97,8 +101,8 @@ export function WebSessionsList({ currentSessionId }: { currentSessionId?: strin
       : sessions.length > 1
         ? sessions
         : []
-  const activeLabel =
-    sessions.length === 1 ? '1 active' : `${sessions.length} active`
+  const activeLabel = `${sessions.length} of ${WEB_SESSION_CAP} active`
+  const nearCap = !loading && !error && sessions.length >= WEB_SESSION_CAP
 
   return (
     <div
@@ -116,7 +120,9 @@ export function WebSessionsList({ currentSessionId }: { currentSessionId?: strin
           ) : null}
         </h3>
         <p id={descId} className="muted small">
-          Active browser sessions on your account. You can revoke individual sessions.
+          Active browser sessions on your account (maximum {WEB_SESSION_CAP}). You can revoke
+          individual sessions. When you are at the cap, signing in from another browser may
+          sign out the oldest session automatically.
         </p>
       </div>
 
@@ -191,10 +197,17 @@ export function WebSessionsList({ currentSessionId }: { currentSessionId?: strin
         </ul>
       )}
 
+      {nearCap && (
+        <p className="muted small" role="status" data-testid="web-sessions-cap-note">
+          You are at the {WEB_SESSION_CAP}-session limit. A new sign-in may evict the oldest
+          browser session (reason: cap exceeded).
+        </p>
+      )}
+
       {!loading && !error && otherSessions.length > 0 && (
         <p className="muted small">
           Tip: Use &quot;Sign out everywhere&quot; below to revoke all sessions including CLI
-          credentials.
+          device credentials.
         </p>
       )}
     </div>
