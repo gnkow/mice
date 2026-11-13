@@ -38,7 +38,7 @@ async function resolveAuditQuery(c: Context, session: SessionUser): Promise<{ er
 /** Audit log query, facets, CSV export, and the file lineage graph and its rebuild. */
 export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
   /** Query append-only audit log (session required). */
-  app.get('/auth/audit', guarded({}, async ({ c, user }) => {
+  app.get('/auth/audit', guarded({}, async ({ c, user, via }) => {
     const r = await resolveAuditQuery(c, user)
     if ('error' in r) return r.error
     const limitRaw = c.req.query('limit')
@@ -47,6 +47,21 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
       ...r.query,
       cursor: c.req.query('cursor') || undefined,
       limit: Number.isFinite(limit) ? limit : undefined,
+    })
+    // Best-effort audit-of-audit summary; a failed append must not break the read.
+    await appendAudit({
+      actor: actorFromUser(user),
+      via,
+      method: c.req.method,
+      path: c.req.path,
+      status: 200,
+      action: 'audit.browse',
+      message: `Browsed ${events.length} audit events`,
+      detail: {
+        rows: events.length,
+        has_more: Boolean(nextCursor),
+        filters: { ...r.query, allowedNamespaces: undefined },
+      },
     })
     return c.json({
       events: events.map((e) => ({ ...e, action_label: auditActionLabel(e.action) })),

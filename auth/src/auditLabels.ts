@@ -97,6 +97,7 @@ const CATALOGUE: Array<[string, string, string]> = [
   ['auth.logout', 'Signed out', 'Account'],
   ['lineage.rebuild', 'Lineage rebuilt', 'Data lineage'],
   ['audit.export', 'Audit log exported', 'Audit'],
+  ['audit.browse', 'Audit log browsed', 'Audit'],
   ['audit.checkpoint', 'Audit checkpoint signed', 'Audit'],
   ['audit.break.acknowledge', 'Audit chain break acknowledged', 'Audit'],
   ['acl_bypass_read', 'Auditor ACL bypass read', 'Audit'],

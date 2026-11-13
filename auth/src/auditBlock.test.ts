@@ -155,3 +155,17 @@ describe('export bundle', () => {
     assert.equal(res.status, 403)
   })
 })
+
+describe('audit browse summary', () => {
+  it('records a best-effort audit.browse summary when listing the trail', async () => {
+    const res = await auditorCall('GET', '/auth/audit?namespace=bk&limit=10')
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as { events: unknown[] }
+    assert.ok(Array.isArray(body.events))
+    const ev = (await rows()).find((r) => r.action === 'audit.browse')
+    assert.ok(ev, 'expected an audit.browse summary event')
+    assert.equal(ev.actor.sub, 'block-auditor')
+    assert.equal(typeof ev.detail?.rows, 'number')
+    assert.equal((ev.detail?.filters as { namespace?: string } | undefined)?.namespace, 'bk')
+  })
+})
