@@ -6,6 +6,7 @@ import { auditActionLabel } from './auditLabels.js'
 import { immudbConfig, openLedger, type Ledger, type LedgerVerification } from './auditLedger.js'
 import { type SessionUser } from './authentication/index.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
+import { AuditDetailPolicyError, validateAuditDetail } from './auditDetailPolicy.js'
 
 export type AuditVia = 'session' | 'pat'
 
@@ -395,8 +396,19 @@ function observe(event: AuditEvent): void {
 }
 
 async function appendStored(partial: AuditInput, extra: Pick<AuditEvent, 'phase' | 'intent_id'> | object): Promise<AuditEvent> {
+  const policy = validateAuditDetail({
+    action: partial.action,
+    reason: partial.reason,
+    message: partial.message,
+    detail: partial.detail,
+  })
+  if (!policy.ok) throw new AuditDetailPolicyError(policy.rejection)
+
   try {
-    const event = await buildEvent(partial, extra)
+    const event = await buildEvent(
+      policy.detail !== undefined ? { ...partial, detail: policy.detail } : partial,
+      extra,
+    )
     await (await ledgerOrOpen()).append(event.id, JSON.stringify(event))
     lastAppendError = null
     void closeAuditOutage(currentClock.now()).catch((err) =>
@@ -404,6 +416,7 @@ async function appendStored(partial: AuditInput, extra: Pick<AuditEvent, 'phase'
     )
     return event
   } catch (err) {
+    if (err instanceof AuditDetailPolicyError) throw err
     lastAppendError = String(err)
     console.error('[mice-auth] audit append failed', err)
     void reportAuditDegradation({

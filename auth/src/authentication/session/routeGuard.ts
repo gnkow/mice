@@ -7,6 +7,7 @@ import {
   beginTrackedIntent,
   trackedIntent,
 } from '../../audit.js'
+import { AuditDetailPolicyError } from '../../auditDetailPolicy.js'
 import {
   declaredChangeControlId,
   REASON_CATEGORY_HEADER,
@@ -166,7 +167,10 @@ export function guarded(
     if (mutates) {
       try {
         await beginTrackedIntent(c.req.raw, { ...base, ...reasonFields, status: 0, action: 'bff.mutation' })
-      } catch {
+      } catch (err) {
+        if (err instanceof AuditDetailPolicyError) {
+          return c.json({ error: err.message, code: err.code }, 400)
+        }
         return c.json({ error: AUDIT_UNAVAILABLE_MESSAGE }, 503)
       }
     }
