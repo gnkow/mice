@@ -1,4 +1,4 @@
-Status: deferred
+Status: wontfix
 
 # 13: Authentication validation pack
 
@@ -28,3 +28,5 @@ Ship the authentication validation pack: a requirement-to-test traceability matr
 2026-11-05: spec 04 requires this pack before regulated release (traceability matrix, release evidence), so it is a release gate. Stays deferred until the owner sets it back to `ready-for-agent`.
 
 Owner deferred this on 2026-11-01. Leave it until it is set back to `ready-for-agent`. The running clock-drift alert stays issue 45. The IdP outage incident stays issue 46.
+
+2026-11-13: Checkmate board — owner set to wontfix (not a working item). Validation pack remains out of scope until explicitly reopened.
