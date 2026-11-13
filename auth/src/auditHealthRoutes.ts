@@ -3,7 +3,7 @@ import { auditReadiness, verifyAudit } from './audit.js'
 import {
   closeAuditOutage,
   currentAuditOutage,
-  immudbHaAttested,
+  immudbHaStatus,
   listAuditOutages,
   reportAuditDegradation,
 } from './auditOutage.js'
@@ -16,16 +16,6 @@ const adminGate = async (u: { principalId?: number; sub: string; iss: string }) 
   return (await isInstanceAdmin(u)) ? null : 'Instance admin required'
 }
 
-function haStatus() {
-  const attested = immudbHaAttested()
-  return {
-    attested,
-    detail: attested
-      ? 'IMMUDB_HA=true (production requires a non-single-instance audit store)'
-      : 'IMMUDB_HA is not attested; production startup refuses a single immudb instance',
-  }
-}
-
 async function statusPayload() {
   const [readiness, outage, recentOutages] = await Promise.all([
     auditReadiness(),
@@ -34,7 +24,7 @@ async function statusPayload() {
   ])
   return {
     readiness,
-    ha: haStatus(),
+    ha: immudbHaStatus(),
     currentOutage: outage,
     recentOutages,
   }

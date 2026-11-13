@@ -1,4 +1,5 @@
 import { accessSync, constants, mkdirSync } from 'node:fs'
+import { immudbHaAttested } from '../../auditOutage.js'
 import { backupTargetProblems } from '../../backupTarget.js'
 
 const DEV_SESSION_SECRET = 'dev-only-change-me-mice-session-secret'
@@ -89,7 +90,7 @@ export function productionStartupProblems(
   if (e.AUTH_DEV_MODE === 'true') {
     problems.push('AUTH_DEV_MODE must not be set in production')
   }
-  if (e.IMMUDB_HA !== 'true') {
+  if (!immudbHaAttested(e as NodeJS.ProcessEnv)) {
     problems.push('IMMUDB_HA must be "true"; a single immudb instance is unsupported for production')
   }
   problems.push(...backupTargetProblems(e.BACKUP_TARGET))
