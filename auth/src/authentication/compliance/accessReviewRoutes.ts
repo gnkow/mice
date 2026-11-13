@@ -1,7 +1,7 @@
 import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
 import {
-  displayedAccessReview,
+  accessReviewAdminView,
   getStoredAccessReview,
   openOrGenerateAccessReview,
   saveSignedAccessReview,
@@ -9,7 +9,7 @@ import {
 import { applyAccessReviewSign } from './accessReviewSign.js'
 import { listOverdueAccessReviews } from './accessReviewAlert.js'
 import { reauthenticate } from '../oidc/stepUp.js'
-import { createSignature, prepareForSigning, type SessionInfo } from '../signing/signingCeremony.js'
+import { createSignature, type SessionInfo } from '../signing/signingCeremony.js'
 import { extractMfaEvidence } from '../signing/mfaEvidence.js'
 import { decodeJwtPayload } from '../oidc/oidcClaims.js'
 import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.js'
@@ -51,10 +51,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
       detail: { reportId: result.report.reportId, principalCount: result.report.principals.length },
     })
 
-    return c.json({
-      report: result.report,
-      contentHash: prepareForSigning(displayedAccessReview(result.report)).hash,
-    })
+    return c.json(accessReviewAdminView(result.report))
   }))
 
   app.get('/auth/admin/access-review/overdue', guarded({
@@ -74,10 +71,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
       message: `Opened access review report for ${quarter}`,
       detail: { reportId: report.reportId, quarter },
     })
-    return c.json({
-      report,
-      contentHash: prepareForSigning(displayedAccessReview(report)).hash,
-    })
+    return c.json(accessReviewAdminView(report))
   }))
 
   app.post('/auth/admin/access-review/sign', guarded({

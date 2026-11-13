@@ -4,7 +4,7 @@ import { accessReviewReports, principals } from '../../db/schema.js'
 import { instancePermissions } from '../../authzInstanceStore.js'
 import { namespaceRolesFor } from '../../authzMembershipStore.js'
 import type { PrincipalId } from '../session/principal.js'
-import type { SignatureRecord } from '../signing/signingCeremony.js'
+import { prepareForSigning, type SignatureRecord } from '../signing/signingCeremony.js'
 
 /**
  * Quarterly access review report.
@@ -70,6 +70,26 @@ export function displayedAccessReview(report: AccessReviewReport): string {
   const displayed = { ...report }
   delete displayed.reviewerSignature
   return JSON.stringify(sorted(displayed))
+}
+
+/** Displayed document + hash shared by admin view and the sign gate (Ticket 40). */
+export function prepareAccessReviewDocument(report: AccessReviewReport): {
+  content: string
+  contentHash: string
+} {
+  const content = displayedAccessReview(report)
+  return { content, contentHash: prepareForSigning(content).hash }
+}
+
+/** Admin GET/generate response shape: stored report + hash of the displayed document. */
+export function accessReviewAdminView(report: AccessReviewReport): {
+  report: AccessReviewReport
+  contentHash: string
+} {
+  return {
+    report,
+    contentHash: prepareAccessReviewDocument(report).contentHash,
+  }
 }
 
 /**

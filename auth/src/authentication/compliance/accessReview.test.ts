@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  accessReviewAdminView,
+  displayedAccessReview,
   generateAccessReviewReport,
   openOrGenerateAccessReview,
   signAccessReviewReport,
@@ -8,7 +10,7 @@ import {
   type AccessReviewReport,
   type PrincipalAccessRecord,
 } from './accessReview.js'
-import type { SignatureRecord } from '../signing/signingCeremony.js'
+import { prepareForSigning, type SignatureRecord } from '../signing/signingCeremony.js'
 
 /**
  * Quarterly access review report.
@@ -87,6 +89,29 @@ describe('Quarterly Access Review', () => {
     }
     const signedReport = signAccessReviewReport(report, signature)
     assert.deepEqual(signedReport.reviewerSignature, signature)
+  })
+
+  describe('accessReviewAdminView', () => {
+    it('pairs the report with the content hash an admin sees before signing', () => {
+      const report = generateAccessReviewReport(
+        [
+          {
+            principal: { iss: 'https://idp.example.com', sub: 'alice', name: 'Alice' },
+            roles: ['ns:admin'],
+            grants: [],
+            lastLogin: 1_700_000_000_000,
+          },
+        ],
+        '2026-Q1',
+        () => 1_700_000_000_000,
+      )
+      const view = accessReviewAdminView(report)
+      assert.equal(view.report, report)
+      assert.equal(
+        view.contentHash,
+        prepareForSigning(displayedAccessReview(report)).hash,
+      )
+    })
   })
 
   describe('openOrGenerateAccessReview', () => {

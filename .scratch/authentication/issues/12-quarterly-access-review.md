@@ -33,3 +33,7 @@ An admin generates one report per quarter. It lists every Principal with namespa
 2026-11-13 — Checkmate audit: **holds** (store-once quarter, principals/roles/grants/last login, audits via `accessReviewRoutes.test.ts` + `accessReview.test.ts`).
 
 **Deepen (auto-picked):** Pull store-once generate/read into deep `openOrGenerateAccessReview(quarter)` (collect + findStored + store ports). Routes are HTTP/audit adapters over that seam.
+
+2026-11-13 — **Deepen #2 (auto-picked):** Collapse duplicate admin `report` + `contentHash` assembly into `accessReviewAdminView(report)`. Generate/GET routes return that view; hash of `displayedAccessReview` stays behind the seam.
+**Seams:** `accessReview.ts` (`accessReviewAdminView`, `openOrGenerateAccessReview`); HTTP/audit in `accessReviewRoutes.ts`.
+**Tests:** `accessReview.test.ts` (unit), `accessReviewRoutes.test.ts` (integ).
