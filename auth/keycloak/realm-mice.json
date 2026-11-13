@@ -34,7 +34,29 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
-      "frontchannelLogout": false
+      "frontchannelLogout": false,
+      "protocolMappers": [
+        {
+          "name": "acr",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-acr-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "amr",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-amr-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "groups": [
@@ -72,6 +94,29 @@
           "type": "password",
           "value": "admin123",
           "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000010",
+      "username": "mice_mfa",
+      "enabled": true,
+      "email": "mice_mfa@mice.com",
+      "emailVerified": true,
+      "firstName": "Mfa",
+      "lastName": "Signer",
+      "totp": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mfa123",
+          "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "e2e-totp",
+          "secretData": "{\"value\":\"JBSWY3DPEHPK3PXP\"}",
+          "credentialData": "{\"subType\":\"totp\",\"algorithm\":\"HmacSHA1\",\"digits\":6,\"period\":30}"
         }
       ]
     },

@@ -60,6 +60,15 @@ const ACCOUNTS: readonly DevAccount[] = [
     bootstrapAdmin: true,
   },
   {
+    username: 'mice_mfa',
+    email: 'mice_mfa@mice.com',
+    name: 'Mfa Signer',
+    password: 'mfa123',
+    stableSub: 'a0000000-0000-4000-8000-000000000010',
+    role: 'admin',
+    bootstrapAdmin: true,
+  },
+  {
     username: 'mice_manager',
     email: 'mice_manager@mice.com',
     name: 'Manager User',
