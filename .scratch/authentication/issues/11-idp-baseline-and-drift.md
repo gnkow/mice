@@ -21,3 +21,9 @@ The daily drift job also runs `checkDisabledPrincipalsWithSigningRights`. A Prin
 - `auth/src/authentication/compliance/idpDriftSchedule.ts`
 - `auth/src/authentication/compliance/disabledSignerRoutes.ts` (`GET /auth/admin/disabled-signers`)
 - `web/src/components/DisabledSignersSection.tsx`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (disabled-in-IdP + signing-rights alarm via `principalAccessMonitoring.test.ts`; admin list via `disabledSignerRoutes`).
+
+**Deepen (auto-picked):** Collapse check/run/`getIdpStatus` into deep `alarmsFromAccessSnapshots` + `createPrincipalAccessMonitor({ listPrincipals, idpEnabled, hasSigningRights })`. Live wrappers keep the public seam; routes/schedule stay thin.

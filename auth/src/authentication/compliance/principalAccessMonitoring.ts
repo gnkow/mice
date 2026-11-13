@@ -1,16 +1,13 @@
 /**
  * Principal Access State Monitoring (Ticket 11 - U4, U5)
- * 
- * Monitors and alerts when Principals have inappropriate access:
- * - Disabled in IdP but still have signing rights in Mice
- * - Principal state drift between IdP and Mice
+ *
+ * Alarms when a Principal is disabled in the IdP and still holds signing rights in Mice.
  */
 
 import { getDb } from '../../db/database.js'
 import { principals } from '../../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { directoryNow } from '../directory/directory.js'
-import type { DirectoryUserStatus } from '../directory/directoryTypes.js'
 
 export type PrincipalAccessState = {
   principalId: number
@@ -31,137 +28,163 @@ export type DisabledPrincipalAlarm = {
   reason: string
 }
 
-/**
- * Check if a Principal has signing rights in Mice.
- * This is a simplified check - in production, this would query the authz system.
- */
-async function hasSigningRights(principalId: number): Promise<boolean> {
-  // For now, assume all active Principals can potentially sign
-  // In production, this would check specific roles/permissions
-  const [principal] = await getDb()
-    .select()
-    .from(principals)
-    .where(eq(principals.id, principalId))
-    .limit(1)
-  
-  return !!principal
+/** One Principal's IdP + Mice access facts used to decide alarms. */
+export type AccessSnapshot = {
+  principalId: number
+  sub: string
+  iss: string
+  name: string
+  /** `null` when the directory could not answer. */
+  idpEnabled: boolean | null
+  hasSigningRights: boolean
 }
 
-/**
- * Get IdP status for a Principal.
- */
-async function getIdpStatus(sub: string): Promise<{ enabled: boolean } | null> {
-  const directory = directoryNow()
-  
-  if (!directory.configured) {
-    return null
+export type PrincipalRow = {
+  id: number
+  sub: string
+  iss: string
+  name: string | null
+}
+
+export type PrincipalAccessMonitorDeps = {
+  listPrincipals?: () => Promise<PrincipalRow[]>
+  idpEnabled?: (sub: string) => Promise<boolean | null>
+  hasSigningRights?: (principalId: number) => Promise<boolean>
+  logCritical?: (alarms: DisabledPrincipalAlarm[]) => void
+}
+
+export type PrincipalAccessMonitor = {
+  check(): Promise<DisabledPrincipalAlarm[]>
+  run(): Promise<{ alarmsFound: number; alarms: DisabledPrincipalAlarm[] }>
+  state(principalId: number): Promise<PrincipalAccessState | null>
+}
+
+const CRITICAL_REASON =
+  'Principal is disabled in IdP but still has signing rights in Mice'
+
+/** Pure classification: disabled-in-IdP + signing rights → critical alarm. */
+export function alarmsFromAccessSnapshots(
+  snapshots: AccessSnapshot[],
+): DisabledPrincipalAlarm[] {
+  const alarms: DisabledPrincipalAlarm[] = []
+  for (const s of snapshots) {
+    if (s.idpEnabled === null || s.idpEnabled || !s.hasSigningRights) continue
+    alarms.push({
+      principalId: s.principalId,
+      sub: s.sub,
+      iss: s.iss,
+      name: s.name,
+      severity: 'critical',
+      reason: CRITICAL_REASON,
+    })
   }
-  
+  return alarms
+}
+
+async function defaultListPrincipals(): Promise<PrincipalRow[]> {
+  return getDb().select().from(principals)
+}
+
+async function defaultIdpEnabled(sub: string): Promise<boolean | null> {
+  const directory = directoryNow()
+  if (!directory.configured) return null
   try {
     const account = await directory.userStatus(sub)
     if (account.status === 'error') return null
-    return { enabled: account.status !== 'disabled' }
+    return account.status !== 'disabled'
   } catch (error) {
     console.error(`[mice-auth] Failed to check IdP status for ${sub}:`, error)
     return null
   }
 }
 
-/**
- * Check all Principals for disabled-in-IdP with signing rights.
- * Returns list of Principals that should trigger alarms.
- */
-export async function checkDisabledPrincipalsWithSigningRights(): Promise<DisabledPrincipalAlarm[]> {
-  const alarms: DisabledPrincipalAlarm[] = []
-  
-  // Get all Principals
-  const allPrincipals = await getDb()
-    .select()
-    .from(principals)
-  
-  for (const principal of allPrincipals) {
-    // Check if has signing rights
-    const canSign = await hasSigningRights(principal.id)
-    if (!canSign) {
-      continue
-    }
-    
-    // Check IdP status
-    const idpStatus = await getIdpStatus(principal.sub)
-    if (!idpStatus) {
-      // IdP unavailable - skip this check
-      continue
-    }
-    
-    // Alarm if disabled in IdP but has signing rights in Mice
-    if (!idpStatus.enabled) {
-      alarms.push({
-        principalId: principal.id,
-        sub: principal.sub,
-        iss: principal.iss,
-        name: principal.name ?? principal.sub,
-        severity: 'critical',
-        reason: 'Principal is disabled in IdP but still has signing rights in Mice',
-      })
-    }
-  }
-  
-  return alarms
-}
-
-/**
- * Get detailed access state for a Principal.
- */
-export async function getPrincipalAccessState(
-  principalId: number
-): Promise<PrincipalAccessState | null> {
+/** Signing rights: Principal exists in Mice (port; replace when authz exposes a tighter check). */
+async function defaultHasSigningRights(principalId: number): Promise<boolean> {
   const [principal] = await getDb()
     .select()
     .from(principals)
     .where(eq(principals.id, principalId))
     .limit(1)
-  
-  if (!principal) {
-    return null
-  }
-  
-  const idpStatus = await getIdpStatus(principal.sub)
-  const canSign = await hasSigningRights(principal.id)
-  
-  return {
-    principalId: principal.id,
-    sub: principal.sub,
-    iss: principal.iss,
-    name: principal.name ?? principal.sub,
-    idpEnabled: idpStatus?.enabled ?? false,
-    miceActive: true, // Would check actual active status
-    hasSigningRights: canSign,
+  return !!principal
+}
+
+function defaultLogCritical(alarms: DisabledPrincipalAlarm[]): void {
+  console.error(
+    `[mice-auth] CRITICAL: ${alarms.length} disabled Principal(s) with signing rights detected:`,
+  )
+  for (const alarm of alarms) {
+    console.error(`  - ${alarm.name} (${alarm.sub}): ${alarm.reason}`)
   }
 }
 
 /**
- * Run the daily check for disabled Principals with signing rights.
- * Logs alarms and returns the count.
+ * Deep monitor: load Principals, ask IdP + signing ports, classify alarms.
+ * Callers only learn `check` / `run` / `state`.
  */
-export async function runDisabledPrincipalCheck(): Promise<{
-  alarmsFound: number
-  alarms: DisabledPrincipalAlarm[]
-}> {
-  const alarms = await checkDisabledPrincipalsWithSigningRights()
-  
-  if (alarms.length > 0) {
-    console.error(
-      `[mice-auth] CRITICAL: ${alarms.length} disabled Principal(s) with signing rights detected:`
+export function createPrincipalAccessMonitor(
+  deps: PrincipalAccessMonitorDeps = {},
+): PrincipalAccessMonitor {
+  const listPrincipals = deps.listPrincipals ?? defaultListPrincipals
+  const idpEnabled = deps.idpEnabled ?? defaultIdpEnabled
+  const hasSigningRights = deps.hasSigningRights ?? defaultHasSigningRights
+  const logCritical = deps.logCritical ?? defaultLogCritical
+
+  async function snapshotsFor(rows: PrincipalRow[]): Promise<AccessSnapshot[]> {
+    return Promise.all(
+      rows.map(async (p) => ({
+        principalId: p.id,
+        sub: p.sub,
+        iss: p.iss,
+        name: p.name ?? p.sub,
+        idpEnabled: await idpEnabled(p.sub),
+        hasSigningRights: await hasSigningRights(p.id),
+      })),
     )
-    for (const alarm of alarms) {
-      console.error(
-        `  - ${alarm.name} (${alarm.sub}): ${alarm.reason}`
-      )
+  }
+
+  async function check(): Promise<DisabledPrincipalAlarm[]> {
+    return alarmsFromAccessSnapshots(await snapshotsFor(await listPrincipals()))
+  }
+
+  async function run(): Promise<{ alarmsFound: number; alarms: DisabledPrincipalAlarm[] }> {
+    const alarms = await check()
+    if (alarms.length > 0) logCritical(alarms)
+    return { alarmsFound: alarms.length, alarms }
+  }
+
+  async function state(principalId: number): Promise<PrincipalAccessState | null> {
+    const [principal] = await getDb()
+      .select()
+      .from(principals)
+      .where(eq(principals.id, principalId))
+      .limit(1)
+    if (!principal) return null
+
+    const [snapshot] = await snapshotsFor([
+      {
+        id: principal.id,
+        sub: principal.sub,
+        iss: principal.iss,
+        name: principal.name,
+      },
+    ])
+
+    return {
+      principalId: principal.id,
+      sub: principal.sub,
+      iss: principal.iss,
+      name: principal.name ?? principal.sub,
+      idpEnabled: snapshot.idpEnabled ?? false,
+      miceActive: true,
+      hasSigningRights: snapshot.hasSigningRights,
     }
   }
-  
-  return {
-    alarmsFound: alarms.length,
-    alarms,
-  }
+
+  return { check, run, state }
 }
+
+const live = createPrincipalAccessMonitor()
+
+export const checkDisabledPrincipalsWithSigningRights = live.check
+export const runDisabledPrincipalCheck = live.run
+export const getPrincipalAccessState = live.state

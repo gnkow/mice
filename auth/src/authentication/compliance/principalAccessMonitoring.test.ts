@@ -9,7 +9,13 @@ import { getDb } from '../../db/database.js'
 import { principals } from '../../db/schema.js'
 import { setDirectoryFetchForTests } from '../directory/directory.js'
 import { overrideEnv } from '../../env.js'
-import { checkDisabledPrincipalsWithSigningRights, getPrincipalAccessState } from './principalAccessMonitoring.js'
+import {
+  alarmsFromAccessSnapshots,
+  checkDisabledPrincipalsWithSigningRights,
+  createPrincipalAccessMonitor,
+  getPrincipalAccessState,
+  type AccessSnapshot,
+} from './principalAccessMonitoring.js'
 
 function directoryFetch(disabled: (url: string) => boolean): (url: string) => Promise<Response> {
   return async (url) => {
@@ -37,6 +43,53 @@ describe('Principal Access Monitoring (Ticket 11)', () => {
       oidcClientSecret: 'test-secret',
     })
     setDirectoryFetchForTests(directoryFetch((url) => url.includes('/users/disabled-user')))
+  })
+
+  describe('alarmsFromAccessSnapshots', () => {
+    const base: Omit<AccessSnapshot, 'idpEnabled' | 'hasSigningRights'> = {
+      principalId: 1,
+      sub: 'alice',
+      iss: 'https://idp.example',
+      name: 'Alice',
+    }
+
+    it('alarms when IdP-disabled and has signing rights', () => {
+      const alarms = alarmsFromAccessSnapshots([
+        { ...base, idpEnabled: false, hasSigningRights: true },
+      ])
+      assert.equal(alarms.length, 1)
+      assert.equal(alarms[0].sub, 'alice')
+      assert.equal(alarms[0].severity, 'critical')
+      assert.ok(alarms[0].reason.includes('disabled in IdP'))
+    })
+
+    it('skips when IdP-enabled, no signing rights, or IdP unavailable', () => {
+      const alarms = alarmsFromAccessSnapshots([
+        { ...base, principalId: 1, sub: 'a', idpEnabled: true, hasSigningRights: true },
+        { ...base, principalId: 2, sub: 'b', idpEnabled: false, hasSigningRights: false },
+        { ...base, principalId: 3, sub: 'c', idpEnabled: null, hasSigningRights: true },
+      ])
+      assert.equal(alarms.length, 0)
+    })
+  })
+
+  describe('createPrincipalAccessMonitor', () => {
+    it('loads snapshots through ports and classifies alarms', async () => {
+      const monitor = createPrincipalAccessMonitor({
+        listPrincipals: async () => [
+          { id: 10, sub: 'disabled', iss: 'iss', name: 'Disabled' },
+          { id: 11, sub: 'enabled', iss: 'iss', name: 'Enabled' },
+          { id: 12, sub: 'nosign', iss: 'iss', name: 'NoSign' },
+        ],
+        idpEnabled: async (sub) => (sub === 'disabled' || sub === 'nosign' ? false : true),
+        hasSigningRights: async (id) => id !== 12,
+      })
+      const alarms = await monitor.check()
+      assert.equal(alarms.length, 1)
+      assert.equal(alarms[0].sub, 'disabled')
+      const run = await monitor.run()
+      assert.equal(run.alarmsFound, 1)
+    })
   })
 
   describe('Disabled Principal Alarm', () => {
