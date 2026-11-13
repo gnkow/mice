@@ -21,9 +21,14 @@ Login, refresh, logout, step-up, failure, and revocation append an audit entry w
 
 - `auth/src/authentication/audit/authEvents.ts`
 - `auth/src/authentication/audit/authEvents.test.ts`
+- `auth/src/authentication/audit/authEventRoutes.ts`
+- `auth/src/authentication/audit/authEventRoutes.test.ts`
+- `auth/src/authentication/oidc/loginRoutes.ts` (recordAuthEvent on login/logout)
 
 ## Comments
 
 - **Audit:** holds — event types, redaction, principal query, and 5-in-10-minute alert proven by `authEvents.test.ts` at the `recordAuthEvent` / `queryAuthEventsByPrincipal` seam.
 - **Deepen:** Collapsed the shallow two-step `recordAuthEvent` + `checkFailureRate` hot path into one deeper `recordAuthEvent` interface. On `outcome: 'failure'`, the module evaluates the threshold and optionally invokes `onAlert`, returning `{ alerted }`. Threshold evaluation is an internal implementation detail (`evaluateFailureRate`), not a second public seam callers must learn.
-- **Files:** `authEvents.ts`, `authEvents.test.ts`.
+- **deep-api Deepen (2026-11-13):** Auto-picked Top — HTTP surface through authEvents module. Added `listAuthEventsForPrincipal` (limit/offset); `/auth/me/events` queries via that seam (no raw table read). Wired `recordAuthEvent` from `loginRoutes` on login success and logout. Integration: `authEventRoutes.test.ts` posts `/auth/logout` then asserts logout appears on `/auth/me/events`.
+- **Seams:** module `recordAuthEvent` / `listAuthEventsForPrincipal`; HTTP `/auth/logout`, `/auth/me/events`.
+- **Files:** `authEvents.ts`, `authEvents.test.ts`, `authEventRoutes.ts`, `authEventRoutes.test.ts`, `loginRoutes.ts`.

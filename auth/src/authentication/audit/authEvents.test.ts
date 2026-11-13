@@ -5,6 +5,7 @@ import {
   prepareAuthEventForStore,
   recordAuthEvent,
   queryAuthEventsByPrincipal,
+  listAuthEventsForPrincipal,
   type AuthEventType,
 } from './authEvents.js'
 import { principalKey } from '../session/principal.js'
@@ -469,6 +470,21 @@ describe('Authentication Event Audit (Ticket 05)', () => {
       assert.ok(types.includes('refresh'))
       assert.ok(types.includes('step-up'))
       assert.ok(types.includes('logout'))
+    })
+
+    it('lists recent events for a Principal with limit', async () => {
+      const testUser = { iss: 'https://idp.example.com', sub: `list-user-${Date.now()}` }
+      for (let i = 0; i < 3; i++) {
+        await recordAuthEvent({
+          type: 'login',
+          principal: testUser,
+          requestId: `list-req-${i}`,
+          outcome: 'success',
+        })
+      }
+      const listed = await listAuthEventsForPrincipal(testUser, { limit: 2 })
+      assert.equal(listed.length, 2)
+      assert.ok(listed.every((e) => e.principalKey.includes(testUser.sub)))
     })
   })
 })

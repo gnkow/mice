@@ -3,13 +3,14 @@ import type { Context, Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { preparePrincipal } from '../../authz.js'
 import { env, oidcConfigured } from '../../env.js'
+import { recordAuthEvent } from '../audit/authEvents.js'
 import { PKCE_COOKIE, completeLogin, startLogin } from './loginFlow.js'
 import { buildEndSessionUrl } from './oidc.js'
 import { rememberNotificationUser } from '../../notifications.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { clearSessionCookie, destroySession, getSession, setSessionCookie } from '../session/session.js'
 import { handleReauthCallback } from './stepUp.js'
-import { enforceIpRateLimit } from '../rateLimit/rateLimitMiddleware.js'
+import { enforceIpRateLimit, getClientIp } from '../rateLimit/rateLimitMiddleware.js'
 import { RATE_LIMIT_CONFIG } from '../rateLimit/rateLimit.js'
 
 /** After Mice logout, next /auth/login must show IdP credentials (no silent SSO). */
@@ -43,12 +44,13 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
       secure: env.cookieSecure,
       sameSite: 'Lax',
     })
+    const requestId = c.req.header('x-request-id') ?? randomUUID()
     const result = await completeLogin({
       code: c.req.query('code'),
       state: c.req.query('state'),
       error: c.req.query('error'),
       pkceCookie,
-      requestId: c.req.header('x-request-id') ?? randomUUID(),
+      requestId,
     })
     if (result.reauth) {
       return handleReauthCallback(c, result)
@@ -58,6 +60,13 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
     await preparePrincipal(sessionUser)
     await rememberNotificationUser(sessionUser)
     await setSessionCookie(c, sessionUser)
+    await recordAuthEvent({
+      type: 'login',
+      principal: { iss: sessionUser.iss, sub: sessionUser.sub },
+      requestId,
+      outcome: 'success',
+      clientIp: getClientIp(c),
+    })
     await auditMutation(c, sessionUser, 'session', {
       action: 'auth.login',
       message: 'Signed in via SSO',
@@ -68,6 +77,13 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
   async function finishLogout(c: Context) {
     const session = await getSession(c)
     if (session) {
+      await recordAuthEvent({
+        type: 'logout',
+        principal: { iss: session.iss, sub: session.sub },
+        requestId: c.req.header('x-request-id') ?? randomUUID(),
+        outcome: 'success',
+        clientIp: getClientIp(c),
+      })
       await auditMutation(c, session, 'session', {
         action: 'auth.logout',
         message: 'Signed out',

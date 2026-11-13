@@ -100,6 +100,28 @@ export async function recordAuthEvent(input: AuthEventInput): Promise<RecordAuth
   return { alerted }
 }
 
+function mapAuthEventRow(row: {
+  id: number
+  type: string
+  principalKey: string
+  requestId: string
+  outcome: string
+  reason: string | null
+  hashedIp: string | null
+  timestamp: Date
+}): AuthEvent {
+  return {
+    id: row.id,
+    type: row.type as AuthEventType,
+    principalKey: row.principalKey,
+    requestId: row.requestId,
+    outcome: row.outcome as 'success' | 'failure',
+    reason: row.reason ?? undefined,
+    ...(row.hashedIp ? { hashedIp: row.hashedIp } : {}),
+    timestamp: row.timestamp,
+  }
+}
+
 /**
  * Queries authentication events for a Principal within a specific month.
  * Returns all events (login, logout, refresh, step-up, failure, revocation).
@@ -127,16 +149,30 @@ export async function queryAuthEventsByPrincipal(
     )
     .orderBy(desc(authEvents.timestamp))
 
-  return results.map((row) => ({
-    id: row.id,
-    type: row.type as AuthEventType,
-    principalKey: row.principalKey,
-    requestId: row.requestId,
-    outcome: row.outcome as 'success' | 'failure',
-    reason: row.reason ?? undefined,
-    ...(row.hashedIp ? { hashedIp: row.hashedIp } : {}),
-    timestamp: row.timestamp,
-  }))
+  return results.map(mapAuthEventRow)
+}
+
+/**
+ * Recent auth events for a Principal (HTTP list seam for `/auth/me/events`).
+ * Callers do not learn the table shape or ordering rules.
+ */
+export async function listAuthEventsForPrincipal(
+  principal: PrincipalId,
+  options: { limit?: number; offset?: number } = {},
+): Promise<AuthEvent[]> {
+  const key = principalKey(principal)
+  const limit = Math.min(Math.max(options.limit ?? 20, 1), 100)
+  const offset = Math.max(options.offset ?? 0, 0)
+
+  const results = await getDb()
+    .select()
+    .from(authEvents)
+    .where(sql`${authEvents.principalKey} = ${key}`)
+    .orderBy(desc(authEvents.timestamp))
+    .limit(limit)
+    .offset(offset)
+
+  return results.map(mapAuthEventRow)
 }
 
 /**
