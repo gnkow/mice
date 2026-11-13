@@ -462,11 +462,18 @@ async function appendStored(partial: AuditInput, extra: Pick<AuditEvent, 'phase'
       policy.detail !== undefined ? { ...partial, detail: policy.detail } : partial,
       extra,
     )
-    await (await ledgerOrOpen()).append(event.id, JSON.stringify(event))
+    const seq = await (await ledgerOrOpen()).append(event.id, JSON.stringify(event))
     lastAppendError = null
     void closeAuditOutage(currentClock.now()).catch((err) =>
       console.error('[mice-auth] audit outage close failed', err),
     )
+    // Derived Postgres query index (not evidence); failures must not block the ledger write.
+    try {
+      const { projectAuditQueryIndex } = await import('./auditQueryIndex.js')
+      await projectAuditQueryIndex(event, seq)
+    } catch (err) {
+      console.error('[mice-auth] audit query index project failed', err)
+    }
     return event
   } catch (err) {
     if (err instanceof AuditDetailPolicyError) throw err
@@ -590,6 +597,23 @@ export async function readAuditAfter(seq: number, limit?: number): Promise<{ eve
   return { events, scannedTo }
 }
 
+/** Like {@link readAuditAfter} but keeps ledger sequence numbers for index projection. */
+export async function readAuditAfterWithSeq(
+  seq: number,
+  limit?: number,
+): Promise<{ rows: Array<{ event: AuditEvent; seq: number }>; scannedTo: number }> {
+  const { records, scannedTo } = await (await ledgerOrOpen()).readAfter(seq, limit)
+  const rows: Array<{ event: AuditEvent; seq: number }> = []
+  for (const record of records) {
+    try {
+      rows.push({ event: upcastAuditEvent(JSON.parse(record.value)), seq: record.seq })
+    } catch {
+      /* surfaced by verifyAudit */
+    }
+  }
+  return { rows, scannedTo }
+}
+
 async function readAllEvents(): Promise<AuditEvent[]> {
   const out: AuditEvent[] = []
   for (const record of await (await ledgerOrOpen()).readAll()) {
@@ -648,7 +672,7 @@ export function eventWorkspaceIds(e: AuditEvent): string[] {
   return ids
 }
 
-async function filterEvents(q: AuditQuery): Promise<AuditEvent[]> {
+async function filterEventsFromLedger(q: AuditQuery): Promise<AuditEvent[]> {
   let events = await readAllEvents()
 
   if (!q.includeChain) {
@@ -706,6 +730,18 @@ async function filterEvents(q: AuditQuery): Promise<AuditEvent[]> {
     events = events.filter((e) => e.ts <= until)
   }
   return events
+}
+
+/** Prefer the derived Postgres index when healthy; evidence path still uses immudb only. */
+async function filterEvents(q: AuditQuery): Promise<AuditEvent[]> {
+  try {
+    const { queryAuditQueryIndex } = await import('./auditQueryIndex.js')
+    const fromIndex = await queryAuditQueryIndex(q)
+    if (fromIndex !== null) return fromIndex
+  } catch (err) {
+    console.error('[mice-auth] audit query index read failed; falling back to ledger', err)
+  }
+  return filterEventsFromLedger(q)
 }
 
 export async function queryAudit(q: AuditQuery): Promise<{

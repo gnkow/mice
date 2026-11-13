@@ -840,6 +840,51 @@ export const auditOutages = pgTable('audit_outages', {
   paperProcedure: text('paper_procedure').notNull(),
 })
 
+/**
+ * Derived Postgres index over immudb audit events for filtered reads (not evidence).
+ * Rebuildable from the ledger; verify schedule detects drift.
+ */
+export const auditQueryIndex = pgTable(
+  'audit_query_index',
+  {
+    eventId: text('event_id').primaryKey(),
+    ledgerSeq: bigint('ledger_seq', { mode: 'number' }).notNull(),
+    ts: text('ts').notNull(),
+    action: text('action').notNull(),
+    actorSub: text('actor_sub').notNull(),
+    actorEmail: text('actor_email').notNull(),
+    actorName: text('actor_name').notNull(),
+    via: text('via').notNull(),
+    namespace: text('namespace'),
+    repo: text('repo'),
+    phase: text('phase'),
+    intentId: text('intent_id'),
+    event: jsonb('event').notNull(),
+  },
+  (t) => [
+    index('audit_query_index_ts').on(t.ts),
+    index('audit_query_index_action').on(t.action),
+    index('audit_query_index_namespace').on(t.namespace),
+    index('audit_query_index_repo').on(t.repo),
+    index('audit_query_index_actor_sub').on(t.actorSub),
+    index('audit_query_index_ledger_seq').on(t.ledgerSeq),
+  ],
+)
+
+/** Position in the audit ledger the query-index projector has reached. */
+export const auditQueryIndexCursor = pgTable(
+  'audit_query_index_cursor',
+  {
+    id: smallint('id').primaryKey().default(1),
+    auditSeq: integer('audit_seq').notNull().default(0),
+    /** ok | drift — drift forces query path back to immudb until rebuilt. */
+    status: text('status').notNull().default('ok'),
+    checkedAt: ts('checked_at'),
+    detail: text('detail'),
+  },
+  (t) => [check('audit_query_index_cursor_singleton', sql`${t.id} = 1`)],
+)
+
 /** IdP baseline validation checks (ticket 14). Stores results of MFA capability checks. */
 export const idpBaselineChecks = pgTable(
   'idp_baseline_checks',

@@ -38,7 +38,17 @@ export async function boot(): Promise<void> {
   const verification = await initAudit()
   if (!verification.ok) console.error('[mice-auth] audit verification FAILED at boot', verification.firstBreak)
   startAuditVerifySchedule({
-    afterTick: () => runOrphanAgingAlert({ loadEvents: listAllAuditEvents }),
+    afterTick: async () => {
+      await runOrphanAgingAlert({ loadEvents: listAllAuditEvents })
+      const { readAuditAfterWithSeq } = await import('./audit.js')
+      const { replayAuditQueryIndex, verifyAuditQueryIndex } = await import('./auditQueryIndex.js')
+      await replayAuditQueryIndex(readAuditAfterWithSeq).catch((err) =>
+        console.error('[mice-auth] audit query index replay failed', err),
+      )
+      await verifyAuditQueryIndex({
+        ledgerEventIds: async () => (await listAllAuditEvents()).map((e) => e.id),
+      }).catch((err) => console.error('[mice-auth] audit query index verify failed', err))
+    },
   })
   if (process.env.NODE_ENV === 'production' && process.env.BACKUP_TARGET) {
     const { recordBackupTargetCheck } = await import('./backupTarget.js')
