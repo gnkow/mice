@@ -274,4 +274,60 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
     assert.equal(success, true)
     assert.deepEqual(claims.groups, ['eng'])
   })
+
+  it('returns false when directory getUserGroups throws', async () => {
+    const claims: OidcClaims = {
+      sub: 'erin111',
+      iss: 'https://idp.example.com',
+      email: 'erin@example.com',
+      name: 'Erin Lee',
+      idToken: 'fake-token',
+      groups: [],
+      emailVerified: true,
+      groupsOverage: true,
+    }
+    const base = createFakeDirectory({
+      configured: true,
+      issuer: 'https://idp.example.com',
+    })
+    const directory = {
+      ...base,
+      async getUserGroups() {
+        throw new Error('directory unavailable')
+      },
+    }
+
+    assert.equal(await resolveGroupOverage(claims, directory), false)
+    assert.equal(claims.groupsOverage, true)
+    assert.deepEqual(claims.groups, [])
+  })
+
+  it('does not call the directory when groups are already in the token', async () => {
+    let directoryCalls = 0
+    const claims: OidcClaims = {
+      sub: 'dave999',
+      iss: 'https://idp.example.com',
+      email: 'dave@example.com',
+      name: 'Dave Wilson',
+      idToken: 'fake-token',
+      groups: ['https://idp.example.com|eng'],
+      emailVerified: true,
+    }
+    const base = createFakeDirectory({
+      configured: true,
+      issuer: 'https://idp.example.com',
+      userGroups: { dave999: ['should-not-be-fetched'] },
+    })
+    const directory = {
+      ...base,
+      async getUserGroups(sub: string) {
+        directoryCalls += 1
+        return base.getUserGroups(sub)
+      },
+    }
+
+    assert.equal(await resolveGroupOverage(claims, directory), true)
+    assert.equal(directoryCalls, 0)
+    assert.deepEqual(claims.groups, ['https://idp.example.com|eng'])
+  })
 })

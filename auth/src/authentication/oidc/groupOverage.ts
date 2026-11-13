@@ -1,49 +1,45 @@
+import { groupBindingKey } from '../../groupBinding.js'
 import type { Directory } from '../directory/directoryTypes.js'
 import type { OidcClaims } from './oidcClaims.js'
 
 /**
  * Group Overage Handling (Ticket 18, Round 8 U17)
- * 
+ *
  * When an IdP returns a group overage indicator (user has too many groups
  * to fit in the id_token), fetch groups from the directory API instead
  * of failing login.
- * 
- * Entra ID sends `_claim_names.groups` when overage occurs. This function
- * fetches the full group list from Microsoft Graph (or equivalent directory API).
+ *
+ * Entra ID sends `_claim_names.groups` when overage occurs. This module
+ * fetches the full group list from the directory and binds them for the session.
  */
+
+type DirectoryGroupFetch =
+  | { ok: true; groups: string[] }
+  | { ok: false; reason: 'unconfigured' | 'empty' | 'error' }
 
 /**
- * Fetch groups from directory API when IdP indicates overage.
- * Returns populated groups array on success, empty array on failure.
- * 
- * Only call this when claims.groupsOverage === true.
+ * Fetch group binding keys from the directory for an overage claim.
+ * Callers that only need success/failure should use `resolveGroupOverage`.
  */
-export async function fetchGroupsOnOverage(
+async function fetchDirectoryGroupBindings(
   claims: OidcClaims,
   directory: Directory,
-): Promise<string[]> {
-  // Only fetch if overage was detected
-  if (!claims.groupsOverage) {
-    return claims.groups
-  }
-
-  // Directory must be configured to fetch groups
+): Promise<DirectoryGroupFetch> {
   if (!directory.configured) {
-    console.error('[mice-auth] Group overage detected but directory not configured. Login will fail.')
-    return []
+    console.error(
+      '[mice-auth] Group overage detected but directory not configured. Login will fail.',
+    )
+    return { ok: false, reason: 'unconfigured' }
   }
 
-  // Verify directory issuer matches claims issuer
   if (directory.issuer !== claims.iss) {
     console.warn(
       `[mice-auth] Directory issuer (${directory.issuer}) does not match claims issuer (${claims.iss}). ` +
-      'Group fetch may fail or return incorrect groups.'
+        'Group fetch may fail or return incorrect groups.',
     )
   }
 
-  // Fetch groups from directory API as binding keys
   try {
-    const { groupBindingKey } = await import('../../groupBinding.js')
     const iss = directory.issuer || claims.iss
     const groups = (await directory.getUserGroups(claims.sub))
       .map((group) => group.id)
@@ -53,28 +49,46 @@ export async function fetchGroupsOnOverage(
     if (groups.length === 0) {
       console.warn(
         `[mice-auth] Group overage for user ${claims.sub} but directory returned no groups. ` +
-        'User may have lost group memberships or directory fetch failed.'
+          'User may have lost group memberships or directory fetch failed.',
       )
-    } else {
-      console.info(
-        `[mice-auth] Fetched ${groups.length} groups from directory for user ${claims.sub} (overage recovery)`
-      )
+      return { ok: false, reason: 'empty' }
     }
 
-    return groups
+    console.info(
+      `[mice-auth] Fetched ${groups.length} groups from directory for user ${claims.sub} (overage recovery)`,
+    )
+    return { ok: true, groups }
   } catch (error) {
     console.error(
       `[mice-auth] Failed to fetch groups from directory for user ${claims.sub}:`,
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     )
-    return []
+    return { ok: false, reason: 'error' }
   }
+}
+
+/**
+ * Fetch groups from directory API when IdP indicates overage.
+ * Returns populated groups array on success, empty array on failure / no overage path
+ * that leaves existing claims groups when overage is not set.
+ *
+ * Prefer `resolveGroupOverage` at the login seam.
+ */
+export async function fetchGroupsOnOverage(
+  claims: OidcClaims,
+  directory: Directory,
+): Promise<string[]> {
+  if (!claims.groupsOverage) {
+    return claims.groups
+  }
+  const fetched = await fetchDirectoryGroupBindings(claims, directory)
+  return fetched.ok ? fetched.groups : []
 }
 
 /**
  * Complete the claims by fetching groups if overage was detected.
  * Modifies claims.groups in place and removes the groupsOverage flag.
- * 
+ *
  * Returns true if groups were successfully populated (or no overage),
  * false if overage was detected but groups could not be fetched.
  */
@@ -83,20 +97,15 @@ export async function resolveGroupOverage(
   directory: Directory,
 ): Promise<boolean> {
   if (!claims.groupsOverage) {
-    // No overage, groups are already in claims
     return true
   }
 
-  const groups = await fetchGroupsOnOverage(claims, directory)
-  
-  if (groups.length === 0) {
-    // Overage detected but couldn't fetch groups
+  const fetched = await fetchDirectoryGroupBindings(claims, directory)
+  if (!fetched.ok) {
     return false
   }
 
-  // Update claims with fetched groups
-  claims.groups = groups
+  claims.groups = fetched.groups
   delete claims.groupsOverage
-
   return true
 }

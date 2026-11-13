@@ -24,3 +24,11 @@ When the id_token carries an Entra-style group overage indicator, login fetches 
 - `auth/src/authentication/oidc/loginFlow.ts`
 - `auth/src/authentication/directory/directoryKeycloak.ts`
 - `docs/group-overage-handling.md`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (acceptance covered by `groupOverage.test.ts`; loginFlow still calls `resolveGroupOverage` boolean).
+
+**Deepen (auto-picked):** Internal `DirectoryGroupFetch` result + `fetchDirectoryGroupBindings` owns configure/empty/error paths; static `groupBindingKey` import (no dynamic import). `resolveGroupOverage` / `fetchGroupsOnOverage` stay the public seams — no loginFlow edits.
+
+**Files:** `auth/src/authentication/oidc/groupOverage.ts`, `groupOverage.test.ts`
