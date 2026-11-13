@@ -18,9 +18,11 @@ import {
   eventSessionIds,
   eventWorkspaceIds,
 } from './auditQueryFilters.js'
+import { carryFromIntent, type TrackedReason } from './auditReasonFields.js'
 
 export type { AuditVerification } from './auditChainGate.js'
 export { eventJobIds, eventSessionIds, eventWorkspaceIds, applyAuditQueryFilters } from './auditQueryFilters.js'
+export { carryFromIntent, intentReasonFields, type TrackedReason } from './auditReasonFields.js'
 
 export type AuditVia = 'session' | 'pat'
 
@@ -516,32 +518,11 @@ export async function appendOutcome(intentId: string, partial: AuditInput): Prom
   }
 }
 
-type TrackedReason = Pick<
-  AuditEvent,
-  'reason' | 'reason_source' | 'category' | 'change_control_id' | 'signature_id'
->
-
 const intents = new WeakMap<object, {
   id: string
   outcomes: number
   reason?: TrackedReason
 }>()
-
-/** Fields from an Intent that must appear on its Outcome (reason / change-control / signature). */
-export function carryFromIntent(intent: AuditEvent): TrackedReason | undefined {
-  if (!intent.reason && !intent.change_control_id && !intent.signature_id) return undefined
-  return {
-    ...(intent.reason
-      ? {
-          reason: intent.reason,
-          reason_source: intent.reason_source,
-          ...(intent.category ? { category: intent.category } : {}),
-        }
-      : {}),
-    ...(intent.change_control_id ? { change_control_id: intent.change_control_id } : {}),
-    ...(intent.signature_id ? { signature_id: intent.signature_id } : {}),
-  }
-}
 
 /** Remembers the intent written for a request so native audit calls can link their outcome to it. */
 export function trackIntent(request: object, intent: AuditEvent): void {

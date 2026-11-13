@@ -15,6 +15,7 @@ import {
   resolveReason,
   type ResolvedReason,
 } from '../../auditReason.js'
+import { intentReasonFields } from '../../auditReasonFields.js'
 import {
   allocateChangeControlId,
   CHANGE_CONTROL_HEADER,
@@ -159,11 +160,11 @@ export function guarded(
       changeControlId =
         changeControlId || signed.record.changeControlId || allocateChangeControlId()
     }
-    const reasonFields = {
-      ...reason,
-      ...(changeControlId ? { change_control_id: changeControlId } : {}),
-      ...(signatureId ? { signature_id: signatureId } : {}),
-    }
+    const reasonFields = intentReasonFields({
+      reason,
+      changeControlId,
+      signatureId,
+    })
     if (mutates) {
       try {
         await beginTrackedIntent(c.req.raw, { ...base, ...reasonFields, status: 0, action: 'bff.mutation' })

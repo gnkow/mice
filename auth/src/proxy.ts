@@ -22,6 +22,7 @@ import {
   type ReasonRejection,
   type ResolvedReason,
 } from './auditReason.js'
+import { intentReasonFields } from './auditReasonFields.js'
 import {
   allocateChangeControlId,
   CHANGE_CONTROL_HEADER,
@@ -379,9 +380,7 @@ export async function proxyToOxen(
     namespace: ns,
     repo,
     message,
-    ...reason,
-    ...(changeControlId ? { change_control_id: changeControlId } : {}),
-    ...(signatureId ? { signature_id: signatureId } : {}),
+    ...intentReasonFields({ reason, changeControlId, signatureId }),
     ...versions,
     detail: {
       ...(bodyWorkspaceId ? { workspace_id: bodyWorkspaceId } : {}),
