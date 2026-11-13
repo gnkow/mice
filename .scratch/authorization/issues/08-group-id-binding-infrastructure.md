@@ -28,3 +28,5 @@
 ## Comments
 
 **Deep-api Deepen (2026-11-13):** Holds at `groupBinding` / `extractGroupsFromClaims`. Top: single claim→binding seam `resolveGroupClaim`; `toGroupBindingKey` and `extractGroupsFromClaims` reuse it. Unit: `groupBinding.test.ts` (resolve + extract + toKey). Integration remains `authzGroupId.test.ts`.
+
+**Deep-ui Deepen (2026-11-13):** Holds for display-name surface. Shared `GroupPrincipalLabel` prefers cached IdP name with object id + binding-mode chip secondary; DirectoryPicker manual entry separates object id vs display name; name-based warning uses `flash-warn`. E2E: `e2e/tests/group-display-names.spec.ts` (TC-GROUP-DN-01/02).

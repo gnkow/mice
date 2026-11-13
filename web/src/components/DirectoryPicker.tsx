@@ -108,7 +108,7 @@ export function DirectoryPicker(props: Props) {
           placeholder={
             props.kind === 'user'
               ? 'Name, email, or username'
-              : 'Group name'
+              : 'Group display name or object id'
           }
           autoComplete="off"
           aria-autocomplete="list"
@@ -125,7 +125,16 @@ export function DirectoryPicker(props: Props) {
       </label>
       {selectedLabel ? (
         <p className="muted small directory-picker-selected">
-          Selected: <code>{selectedLabel}</code>
+          Selected:{' '}
+          {props.kind === 'group' && props.label && props.label !== props.group ? (
+            <>
+              <span className="group-principal-name">{props.label}</span>
+              {' '}
+              <code className="group-principal-id">{props.group}</code>
+            </>
+          ) : (
+            <code>{selectedLabel}</code>
+          )}
         </p>
       ) : null}
       {loading && <p className="muted small">Searching…</p>}
@@ -169,8 +178,20 @@ export function DirectoryPicker(props: Props) {
                   setOpen(false)
                 }}
               >
-                <span className="directory-picker-option-name"><ActionUsers size={14} aria-hidden="true" className="button-label-icon" />{g.name}</span>
-                <span className="muted small">IdP group</span>
+                <span className="directory-picker-option-name">
+                  <ActionUsers size={14} aria-hidden="true" className="button-label-icon" />
+                  {g.name || g.group}
+                </span>
+                <span className="muted small">
+                  {g.name && g.name !== g.group ? (
+                    <>
+                      <code className="group-principal-id">{g.group}</code>
+                      {' · IdP group'}
+                    </>
+                  ) : (
+                    'IdP group'
+                  )}
+                </span>
               </button>
             </li>
           ))}
@@ -227,18 +248,42 @@ export function DirectoryPicker(props: Props) {
         </div>
       )}
       {showManual && props.kind === 'group' && (
-        <div className="directory-picker-manual">
+        <div className="directory-picker-manual ns-member-form-fields cols-2">
           <label>
-            Group name
+            Group object id
             <input
               required
               value={props.group}
               disabled={props.disabled}
-              onChange={(e) => props.onChange({ group: e.target.value, name: e.target.value })}
-              placeholder="engineering"
+              onChange={(e) =>
+                props.onChange({
+                  group: e.target.value,
+                  name: props.label?.trim() || e.target.value,
+                })
+              }
+              placeholder="11111111-1111-4111-8111-111111111111"
               autoComplete="off"
             />
           </label>
+          <label>
+            Display name
+            <input
+              value={props.label ?? ''}
+              disabled={props.disabled}
+              onChange={(e) =>
+                props.onChange({
+                  group: props.group,
+                  name: e.target.value,
+                })
+              }
+              placeholder="Quality Assurance"
+              autoComplete="off"
+            />
+          </label>
+          <p className="muted small directory-picker-manual-hint">
+            Grants bind to the object id. The display name is cached for the UI
+            and can change in the IdP without breaking access.
+          </p>
         </div>
       )}
     </div>

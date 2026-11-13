@@ -3,6 +3,7 @@ import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DirectoryPicker } from '../components/DirectoryPicker'
+import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import {
   deleteRepository,
   renameRepository,
@@ -226,12 +227,7 @@ export function RepoSettingsPage() {
                   >
                     <div className="ns-member-main">
                       {c.kind === 'group' ? (
-                        <>
-                          <code className="ns-member-sub">{c.name || c.group}</code>
-                          <span className="muted small">
-                            {c.name && c.name !== c.group ? c.group : 'Group'}
-                          </span>
-                        </>
+                        <GroupPrincipalLabel group={c.group} name={c.name} />
                       ) : (
                         <>
                           <code className="ns-member-sub">{c.sub}</code>

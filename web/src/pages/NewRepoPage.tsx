@@ -2,6 +2,7 @@ import { ChevronUp as ActionChevronUp, FolderGit2 as ActionFolderGit2, Plus as A
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DirectoryPicker } from '../components/DirectoryPicker'
+import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import {
   NamespaceCreateSettings,
   type NamespaceCreateSettingsValue,
@@ -323,14 +324,11 @@ export function NewRepoPage() {
                         }
                       >
                         {c.kind === 'group' ? (
-                          <>
-                            <code>{c.name || c.group}</code>
-                            <span className="muted small">
-                              {c.name && c.name !== c.group
-                                ? `· ${c.group}`
-                                : '· IdP group'}
-                            </span>
-                          </>
+                          <GroupPrincipalLabel
+                            group={c.group}
+                            name={c.name}
+                            inline
+                          />
                         ) : (
                           <>
                             <code>{c.sub}</code>
