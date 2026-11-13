@@ -148,13 +148,29 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     await page.goto('/login')
     await expect(page.getByText('MICE', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
-    await expect(
-      page.getByRole('link', { name: 'Sign in with SSO' }),
-    ).toBeVisible()
+    const sso = page.getByRole('link', { name: 'Sign in with SSO' })
+    await expect(sso).toBeVisible()
+    await expect(sso).toHaveAttribute('href', '/auth/login?prompt=login')
     await expect(page.getByRole('button', { name: 'Dev login' })).toHaveCount(0)
     await expect(page.locator('header.topbar')).toHaveCount(0)
     await expect(page.locator('.login-shell')).toBeVisible()
     await expect(page.locator('main.login-page')).toBeVisible()
+    await expect(page.locator('main.login-page')).toHaveAttribute(
+      'aria-labelledby',
+      'login-heading',
+    )
+    await expect(page.getByTestId('login-status')).toHaveCount(0)
+  })
+
+  test('TC-AUTH-06b: login?next= keeps return path on SSO href', async ({
+    page,
+  }) => {
+    await page.goto('/login?next=%2Fnamespaces')
+    const sso = page.getByRole('link', { name: 'Sign in with SSO' })
+    await expect(sso).toHaveAttribute(
+      'href',
+      '/auth/login?prompt=login&next=%2Fnamespaces',
+    )
   })
 
   test('TC-AUTH-08: UI session shows identity in account menu', async ({

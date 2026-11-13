@@ -34,3 +34,9 @@ A user logs in through the IdP and receives an opaque server-side session cookie
 - **Tests:** `web/src/lib/loginNavigation.test.ts`
 - **Deep-API deepen (2026-11-13):** Collapsed page + gate into `decideLoginNavigation({ next, location })` → `{ returnPath, ssoHref, redirectSearch }`. Thin wrappers kept; LoginPage/RequireAuth call the deep seam; `loginFlow` untouched.
 - **Tests:** `web/src/lib/loginNavigation.test.ts` (green)
+
+2026-11-13 — deep-ui Deepen (holds):
+- **Surfaces:** `LoginPage` (`/login`) + `RequireAuth` gate; existing chrome/tokens; SSO href via `decideLoginNavigation`.
+- **Deepen:** Accessible login chrome — `main aria-labelledby`, status-free path has no orphan alert; SSO `href` asserts `prompt=login` (+ `next` when present).
+- **E2E:** `e2e/tests/login-status.spec.ts` (SSO href + aria-labelledby; no BFF required) and `e2e/tests/auth.spec.ts` TC-AUTH-06 / TC-AUTH-06b when stack is up. Run: `npm run test:e2e -- e2e/tests/login-status.spec.ts`
+- **Status:** done
