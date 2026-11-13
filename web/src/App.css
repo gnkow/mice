@@ -2763,6 +2763,59 @@ p.ok {
   color: color-mix(in srgb, var(--warn, #b45309) 85%, var(--text));
 }
 
+.group-binding-chip-ok {
+  border-color: color-mix(in srgb, var(--ok, #15803d) 45%, var(--line));
+  background: color-mix(in srgb, var(--ok, #15803d) 10%, transparent);
+  color: color-mix(in srgb, var(--ok, #15803d) 80%, var(--text));
+}
+
+.group-binding-empty {
+  margin: 0.75rem 0 1rem;
+}
+
+.group-binding-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.group-binding-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.group-binding-status-message {
+  margin: 0;
+  font-weight: 600;
+}
+
+.group-binding-status-hint {
+  margin: 0;
+}
+
+.group-binding-form {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.5rem;
+}
+
+.group-binding-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.group-binding-samples {
+  width: 100%;
+  min-height: 3.5rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
 .directory-picker-manual-hint {
   grid-column: 1 / -1;
   margin: 0;
