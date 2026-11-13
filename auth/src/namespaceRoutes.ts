@@ -32,6 +32,7 @@ import {
   deleteCustomRepoRole,
   listCustomNamespaceRoles,
   listCustomRepoRoles,
+  listCustomRoleVersions,
   updateCustomNamespaceRole,
   updateCustomRepoRole,
 } from './customRoles.js'
@@ -505,6 +506,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       namespaceRoles: await listCustomNamespaceRoles(ns),
       repoRoles: await listCustomRepoRoles(ns),
     })
+  }))
+
+  app.get('/auth/namespaces/:ns/custom-roles/history', guarded({}, async ({ c, user: session }) => {
+    const ns = c.req.param('ns')
+    const denied = denialResponse(c, await decideNamespaceAction(session, ns, 'namespace.roles.manage'))
+    if (denied) return denied
+    const versions = await listCustomRoleVersions(ns)
+    if (!versions) return c.json({ error: 'Not found' }, 404)
+    return c.json({ versions })
   }))
 
   app.post('/auth/namespaces/:ns/custom-roles/namespace', guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {
