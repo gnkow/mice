@@ -218,6 +218,33 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     await expect(warning).toContainText(/5 per 10 minutes/i)
   })
 
+  test('TC-CLI-24: approve 429 shows too-many-attempts alert', async ({
+    page,
+  }) => {
+    const started = await startDevice(page.request)
+    await sessionLogin(page)
+
+    await page.route('**/auth/cli/device/approve', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue()
+      await route.fulfill({
+        status: 429,
+        contentType: 'application/json',
+        json: { error: 'Too many attempts. Wait about 10 minutes, then try again.', limit: 5 },
+      })
+    })
+
+    await page.goto(
+      `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
+    )
+    await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
+    await page.getByLabel(/Type APPROVE/i).fill('APPROVE')
+    await page.getByRole('button', { name: 'Approve' }).click()
+
+    const alert = page.getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText(/too many attempts/i)
+  })
+
   test('TC-CLI-43: Approve stays disabled until confirmation matches', async ({
     page,
   }) => {

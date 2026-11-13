@@ -10,6 +10,7 @@ export const LOGIN_STATUS_CODES = [
   'missing',
   'empty_name',
   'unreachable',
+  'rate_limited',
 ] as const
 
 export type LoginStatusCode = (typeof LOGIN_STATUS_CODES)[number]
@@ -42,6 +43,12 @@ const SURFACES: Record<LoginStatusCode, Omit<LoginStatusSurface, 'code'>> = {
   unreachable: {
     title: 'Identity provider unavailable',
     message: 'IdP is unreachable. Login cannot be verified at this time.',
+    tone: 'warn',
+  },
+  rate_limited: {
+    title: 'Too many attempts',
+    message:
+      'Too many sign-in attempts from this network. Wait about a minute, then try again.',
     tone: 'warn',
   },
 }

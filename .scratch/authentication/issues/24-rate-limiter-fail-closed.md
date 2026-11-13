@@ -46,3 +46,5 @@ There is no live token-mint route. PAT mint is unregistered, and device approval
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **deep-ui reclassified (UI)** — Deepen: LoginPage `?status=rate_limited` titled alert (“Too many attempts”, `role=alert`); SSO callback redirects there on IP limit; CliDevicePage 429 copy uses “too many attempts”. E2E: `login-status.spec.ts` + `cli-device-ui.spec.ts` TC-CLI-24. No commit/push (operator request).

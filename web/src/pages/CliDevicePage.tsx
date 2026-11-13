@@ -43,10 +43,9 @@ function formatDeviceActionError(
 ): string {
   if (action === 'approve' && status === 429) {
     const limit = body?.limit ?? 5
-    return (
-      body?.error ??
-      `Too many device approvals. Wait about 10 minutes, then try again (limit ${limit} per 10 minutes).`
-    )
+    // Prefer explicit API copy; otherwise a clear "too many attempts" alert (ticket 24).
+    if (body?.error?.trim()) return body.error
+    return `Too many attempts: device approvals are limited to ${limit} per 10 minutes. Wait, then try again.`
   }
   return body?.error ?? `Failed to ${action}`
 }

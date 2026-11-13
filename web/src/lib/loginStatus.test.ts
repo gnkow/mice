@@ -40,10 +40,16 @@ describe('decideLoginStatus', () => {
       decideLoginStatus('unreachable')?.message,
       'IdP is unreachable. Login cannot be verified at this time.',
     )
+    assert.equal(decideLoginStatus('rate_limited')?.title, 'Too many attempts')
+    assert.match(
+      decideLoginStatus('rate_limited')?.message ?? '',
+      /Too many sign-in attempts/i,
+    )
   })
 
-  it('marks unreachable as warn and account refuses as error', () => {
+  it('marks unreachable and rate_limited as warn and account refuses as error', () => {
     assert.equal(decideLoginStatus('unreachable')?.tone, 'warn')
+    assert.equal(decideLoginStatus('rate_limited')?.tone, 'warn')
     assert.equal(decideLoginStatus('disabled')?.tone, 'error')
   })
 })

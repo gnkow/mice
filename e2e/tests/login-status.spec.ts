@@ -27,6 +27,12 @@ const SURFACES = [
     title: 'Identity provider unavailable',
     message: 'IdP is unreachable. Login cannot be verified at this time.',
   },
+  {
+    code: 'rate_limited',
+    title: 'Too many attempts',
+    message:
+      'Too many sign-in attempts from this network. Wait about a minute, then try again.',
+  },
 ] as const
 
 test.describe('login status surfaces', () => {
