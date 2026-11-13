@@ -1,5 +1,9 @@
 import { randomBytes } from 'node:crypto'
 import { auditChainGate, type AuditVerification } from './auditChainGate.js'
+import {
+  auditReadiness as runAuditReadiness,
+  type AuditReadiness,
+} from './auditReadiness.js'
 import { closeAuditOutage, reportAuditDegradation } from './auditOutage.js'
 import { currentClock, systemClock, type Clock } from './clock.js'
 import { env } from './env.js'
@@ -21,6 +25,7 @@ import {
 import { createAuditIntentOutcome } from './auditIntentOutcome.js'
 
 export type { AuditVerification } from './auditChainGate.js'
+export type { AuditReadiness } from './auditReadiness.js'
 export { AUDIT_UNAVAILABLE_MESSAGE } from './auditFailClosed.js'
 export { eventJobIds, eventSessionIds, eventWorkspaceIds, applyAuditQueryFilters } from './auditQueryFilters.js'
 export { intentReasonFields, type TrackedReason } from './auditReasonFields.js'
@@ -230,44 +235,14 @@ export async function verifyAudit(): Promise<AuditVerification> {
 
 let lastAppendError: string | null = null
 
-export type AuditReadiness = {
-  ok: boolean
-  store: 'ok' | 'error'
-  chain: 'ok' | 'broken' | 'acknowledged' | 'unverified'
-  events?: number
-  verifiedAt?: string
-  /** Tip tx id from the last successful verify — for IQP / change-control filing. */
-  head?: number
-  /** Tip root (base64 ALH) from the last successful verify. */
-  root?: string
-  firstBreak?: { seq: number; reason: string }
-  detail?: string
-}
-
 /** Cheap: pings the ledger and reads the last verification; never walks the proofs. */
-export async function auditReadiness(): Promise<AuditReadiness> {
-  let store: 'ok' | 'error' = lastAppendError ? 'error' : 'ok'
-  let detail = lastAppendError ?? undefined
-  const health = await (await ledgerOrOpen()).health().catch((err: unknown) => ({ ok: false as const, detail: String(err) }))
-  if (!health.ok) {
-    store = 'error'
-    detail = health.detail
-  } else {
-    // The ledger answers again; do not stay red on a stale append error.
-    store = 'ok'
-    detail = undefined
-  }
-  const v = auditChainGate.current()
-  const chainState = !v ? 'unverified' : v.ok ? 'ok' : auditChainBlocked() ? 'broken' : 'acknowledged'
-  return {
-    ok: store === 'ok' && chainState !== 'broken',
-    store,
-    chain: chainState,
-    ...(v ? { events: v.events, verifiedAt: v.verifiedAt } : {}),
-    ...(v && v.ok ? { head: v.head, root: v.root } : {}),
-    ...(v && !v.ok ? { firstBreak: v.firstBreak } : {}),
-    ...(detail ? { detail } : {}),
-  }
+export function auditReadiness(): Promise<AuditReadiness> {
+  return runAuditReadiness({
+    lastAppendError: () => lastAppendError,
+    health: async () => (await ledgerOrOpen()).health(),
+    currentVerification: () => auditChainGate.current(),
+    isChainBlocked: () => auditChainBlocked(),
+  })
 }
 
 /** Boot check: connects to the ledger (creating its database on first use) and verifies it. */
