@@ -62,9 +62,10 @@ describe('audit health admin routes', () => {
     assert.equal(body.ha.attested, true)
     assert.equal(body.currentOutage, null)
     assert.ok(Array.isArray(body.recentOutages))
+    assert.ok(body.chainTip === null || typeof body.chainTip?.root === 'string')
   })
 
-  it('check closes a recovered outage and reports verification', async () => {
+  it('check closes a recovered outage and reports verification with IQP tip fields', async () => {
     await noteAuditOutage({ at: Date.now() - 1000, check: 'append', requestId: 'stale' })
     assert.ok(await currentAuditOutage())
     const res = await app.request('/auth/admin/audit-health/check', {
@@ -73,11 +74,16 @@ describe('audit health admin routes', () => {
     })
     assert.equal(res.status, 200)
     const body = await res.json() as {
-      verification: { ok: boolean }
+      verification: { ok: boolean; head?: number; root?: string }
+      chainTip: { txid: number; root: string } | null
       currentOutage: null | object
       checkedAt: string
     }
     assert.equal(body.verification.ok, true)
+    assert.equal(typeof body.verification.head, 'number')
+    assert.equal(typeof body.verification.root, 'string')
+    assert.ok(body.chainTip)
+    assert.equal(body.chainTip.root, body.verification.root)
     assert.equal(body.currentOutage, null)
     assert.ok(body.checkedAt)
   })

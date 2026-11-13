@@ -40,3 +40,5 @@ Recreate Keycloak after realm changes: `docker compose rm -sf keycloak && docker
 # After Keycloak reimport, OTP challenge appears for mice_mfa and accepts totpCode('JBSWY3DPEHPK3PXP')
 cd e2e && npx playwright test tests/auditor-signature-evidence.spec.ts -g 'TC-AUDITOR-00'
 ```
+
+**Deep-ui (2026-11-13):** Queued behind SSO/MFA live signing — blocked; not implemented in this lane.

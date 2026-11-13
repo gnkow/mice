@@ -24,6 +24,11 @@ async function statusPayload() {
   ])
   return {
     readiness,
+    /** Chain tip for IQP / change-control: record genesis `head`+`root` at install; re-file after restore. */
+    chainTip:
+      readiness.head != null && readiness.root != null
+        ? { txid: readiness.head, root: readiness.root, verifiedAt: readiness.verifiedAt }
+        : null,
     ha: immudbHaStatus(),
     currentOutage: outage,
     recentOutages,
@@ -78,7 +83,9 @@ export function registerAuditHealthRoutes(app: Hono, _deps: AuditDep): void {
           ok: verification.ok,
           events: verification.events,
           verifiedAt: verification.verifiedAt,
-          ...(verification.ok ? {} : { firstBreak: verification.firstBreak }),
+          ...(verification.ok
+            ? { head: verification.head, root: verification.root }
+            : { firstBreak: verification.firstBreak }),
         },
         checkedAt: new Date(at).toISOString(),
       })

@@ -185,6 +185,10 @@ export type AuditReadiness = {
   chain: 'ok' | 'broken' | 'acknowledged' | 'unverified'
   events?: number
   verifiedAt?: string
+  /** Tip tx id from the last successful verify — for IQP / change-control filing. */
+  head?: number
+  /** Tip root (base64 ALH) from the last successful verify. */
+  root?: string
   firstBreak?: { seq: number; reason: string }
   detail?: string
 }
@@ -209,6 +213,7 @@ export async function auditReadiness(): Promise<AuditReadiness> {
     store,
     chain: chainState,
     ...(v ? { events: v.events, verifiedAt: v.verifiedAt } : {}),
+    ...(v && v.ok ? { head: v.head, root: v.root } : {}),
     ...(v && !v.ok ? { firstBreak: v.firstBreak } : {}),
     ...(detail ? { detail } : {}),
   }
