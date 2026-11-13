@@ -31,3 +31,5 @@ A scheduled check finds a quarterly access review that is still unsigned 14 days
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **/deep-ui Deepen (reclassified UI)** — supersedes prior no-ui skip. `AccessReviewSection` overdue banner: `role="alert"`, titled “Unsigned for 14+ days”, icon + copy, per-row Open report control. E2E: `e2e/tests/access-review-overdue-alert.spec.ts`. No commit/push.
