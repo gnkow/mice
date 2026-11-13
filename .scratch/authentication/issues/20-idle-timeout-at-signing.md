@@ -36,3 +36,5 @@ Refusing a zero idle timeout at startup is issue 33.
 **Files:** `idleTimeout.ts`, `signingAccess.ts`, `signingRoutes.ts` (adapter), `signingAccess.test.ts`, `signingRoutes.integration.test.ts`
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13 — Deep-UI **Deepen** (reclassified from no-ui by user). Surfaces: `ReasonPromptProvider` + `AccessReviewSection`. When API returns `session_idle`, show titled interstitial **Session idle** with announced alert + Continue → `/auth/reauth`. Shared classifier/interstitial with 09/52. E2E: `e2e/tests/idle-timeout-signing.spec.ts`. Supersedes prior deep-ui skipped — no-ui note.
