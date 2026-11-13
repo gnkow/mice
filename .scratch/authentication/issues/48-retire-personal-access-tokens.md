@@ -15,3 +15,9 @@ No route mints a personal access token. Bearer authentication does not accept a 
 - [x] Device approval no longer calls `createPat` (issue 07)
 - [x] The profile page lists and revokes CLI credentials
 - [x] Tests that used `createPat` as a session stand-in use a web session or the issue 07 credential
+
+## Comments
+
+- **Audit:** holds — no PAT mint routes; `mice_pat_*` bearer → 401; CLI credentials minted as `mice_cli_*` (`authenticate.test.ts`, `cliCredentials.test.ts`).
+- **Deepen (auto-pick):** Extracted `isRetiredPersonalAccessToken` / `RETIRED_PAT_PREFIX`; `resolveCliCredential` refuses that prefix before DB lookup so retirement locality lives with credential resolve (requireAuth untouched beyond existing resolveBearer path).
+- **Files:** `retiredPersonalAccessToken.ts`, `retiredPersonalAccessToken.test.ts`, `cliCredentials.ts`, `cliCredentials.test.ts`, `authenticate.test.ts`.
