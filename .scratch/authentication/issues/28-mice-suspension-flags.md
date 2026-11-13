@@ -41,3 +41,5 @@ Issue 06's pending two-admin suspend is a different route and is unchanged.
 - [x] Setting the flag ends current sessions and leaves instance permissions and namespace memberships unchanged
 - [x] Lifting the flag restores access on the next login without recreating grants
 - [x] Set, lift, and refusal are audited
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

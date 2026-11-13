@@ -42,3 +42,5 @@ There is no live token-mint route. PAT mint is unregistered, and device approval
 2026-11-13 — **Deepen #2 (auto-picked):** Inject `RateLimitStore` port into `consumeRateLimit` so fail-closed count/record paths are unit-testable without breaking Postgres; default store remains the shared table.
 **Seams:** `rateLimit.ts` (`consumeRateLimit` + `RateLimitStore`); middleware HTTP adapter unchanged.
 **Tests:** `rateLimit.test.ts` (unit, injected store), `authRateLimitRoutes.test.ts` (integ).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

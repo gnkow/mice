@@ -33,3 +33,5 @@ Showing the current name next to the name at signing, and an admin timeline, is 
 2026-11-13 — **Deepen #2 (auto-picked):** Pull write policy into `decideNameHistoryWrite` and interval resolution into `nameValidAt`; `trackNameChange` / `getNameAtTime` are adapters over those decisions.
 **Seams:** `nameChangeHistory.ts` (`decideNameHistoryWrite`, `nameValidAt`, `toAdminNameHistory`); `nameHistoryRoutes.ts` HTTP adapter.
 **Tests:** `nameChangeHistory.test.ts` (unit), `nameHistoryRoutes.test.ts` (integ).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

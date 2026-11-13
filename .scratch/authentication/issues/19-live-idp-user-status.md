@@ -35,3 +35,5 @@ Group refresh on privileged operations is issue 37. The login status code when t
 2026-11-13 — **Deepen #2 (auto-picked):** Collapse evaluate + outage/disabled recording into `settleLiveIdpAccess`; `requireAuth` only maps deny. Removed unused shallow `verifyIdpAccess` / `checkUserIdpStatus`. Did not change `idpDisplayName` / decision body of `evaluateLiveIdpAccess`.
 **Seams:** `idpCheck.ts` (`evaluateLiveIdpAccess`, `settleLiveIdpAccess`); `requireAuth.ts` adapter.
 **Tests:** `liveIdpAccess.test.ts` (unit), `idpCheck.test.ts` + `emptyName.integration.test.ts` (integ).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

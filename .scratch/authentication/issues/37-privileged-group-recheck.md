@@ -32,3 +32,5 @@ Every mutating repository or namespace authorization asks the directory for the 
 - **Deepen (auto-pick Top):** `directoryLiveGroupKeys` owns live id/name/binding-key indexing; `intersectSessionWithDirectoryGroups` filters Session∩directory through that set; `withDirectoryGroups` / `confirmPrivilegedGroups` unchanged; did not touch `signingRoutes`.
 - **Tests:** `privilegedGroups.unit.test.ts` (unit); `privilegedGroups.test.ts` (integration).
 - **Seams:** `directoryLiveGroupKeys` / `intersectSessionWithDirectoryGroups` (module); `withDirectoryGroups` via authz (package).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

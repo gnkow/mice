@@ -27,3 +27,5 @@ Replaces recovery-token persistence. A one-hour two-person token is not needed w
 - **Files:** `adminMinimum.ts`, `rbacStore.ts` (load + call).
 - **Tests:** `adminMinimum.test.ts` (unit); `rbacAdminMinimum.test.ts` (integration).
 - **Seams:** `decideAdminMinimum` / `remainingAdminIdsAfterRemoval` (module); `assignRole` / `revokeRole` (package).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

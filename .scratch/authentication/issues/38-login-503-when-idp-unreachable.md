@@ -29,3 +29,5 @@ When `directory.userStatus` returns `error` during login, the response is 503. T
 - **Files:** `loginDirectoryStatus.ts`, `loginFlow.ts` (thin adapter).
 - **Tests:** `loginDirectoryStatus.test.ts` (unit); `idpAccessCheck.test.ts`, `loginFlowProvider.test.ts`, `idpOutage.test.ts` (integration).
 - **Seams:** `decideLoginDirectoryStatus` (module); `finishLogin` (package).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

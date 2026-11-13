@@ -28,3 +28,5 @@ Boot starts a normal-rotation schedule after the bootstrap key exists. A tick ro
 - **Deepen (auto-pick Top):** Due-check + rotate + audit live in `isSealKeyRotationDue` / `runScheduledSealKeyRotation`; `startSealKeyRotationSchedule` owns the timer and delegates tick. Collaborators (`now`, `getCurrent`, `rotate`, `audit`) are injectable via `SealKeyRotationScheduleDeps` — does not rewrite `sealKeys` core (ticket 17).
 - **Integration:** injectable-deps suite in `sealKeyRotationSchedule.test.ts` — `tick` invokes `rotate` when due and skips when young; DB suite still proves 30-day / 7-day / audit with live seal keys.
 - **Files:** `auth/src/authentication/session/sealKeyRotationSchedule.ts`, `sealKeyRotationSchedule.test.ts`
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

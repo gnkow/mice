@@ -30,3 +30,5 @@ A Session or bearer credential whose issuer is `urn:mice:service` is not a calle
 - **Files:** `principal.ts`, `requireAuth.ts` (two call sites).
 - **Tests:** `principalKind.test.ts` (unit); `serviceCaller.test.ts` (integration).
 - **Seams:** `decideServiceCallerAdmission` / `isServiceCaller` (module); `authenticate` (package).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

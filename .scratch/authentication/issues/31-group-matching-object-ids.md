@@ -33,3 +33,5 @@ Namespace and repository group grants are stored as the IdP group object id. Dir
 - **Deepen (auto-pick Top):** `directoryGroupGrantKey` owns UUID lowercasing + name normalization; `mapKeycloakGroupRow` / `mapKeycloakDirectoryGroup` map rows through that seam; `directoryKeycloak` / `loginFlow` untouched.
 - **Tests:** `directoryGroupOid.test.ts` (unit); `directoryAdapters.test.ts` (integration).
 - **Seams:** `directoryGroupGrantKey` / `mapKeycloakGroupRow` (module); Keycloak adapter (package).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

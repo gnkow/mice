@@ -35,3 +35,5 @@ Signing reads `acr` and `amr` from the step-up id_token. Missing MFA evidence re
 2026-11-13 — **Deepen #2 (auto-picked):** Collapse decode → evaluate → persist into `recordIdpBaselineCheck`; admin POST is an HTTP/audit adapter. Did not touch signingRoutes.
 **Seams:** `admin/idpBaselineCheck.ts` (`recordIdpBaselineCheck`); `evaluateIdpMfaBaseline` remains the pure claims decision.
 **Tests:** `idpBaselineCheck.test.ts` + `mfaEvidence.test.ts` (unit), `idpBaselineRoutes.test.ts` (integ, stores MFA-available check).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

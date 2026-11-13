@@ -33,3 +33,5 @@ The device approval page shows the last 4 hex characters of the request's hashed
 2026-11-13 — **Deepen #2 (auto-picked):** Narrow public interface to `begin` only; remove exported `check`/`record`/`recent`. Tests exercise acceptance through begin→commit. No UI changes.
 **Seams:** `deviceApprovalRateLimit.ts` (`createDeviceApprovalRateLimit().begin` / `beginDeviceApproval`); `cliDeviceRoutes.ts` HTTP adapter.
 **Tests:** `devicePhishingMitigation.test.ts` (unit), `deviceApprovalConfirmation.test.ts` + `cliDeviceFlow.test.ts` (integ/related).
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.

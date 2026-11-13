@@ -29,3 +29,5 @@ A daily salt is stored and rotated at midnight UTC. `hashIp` computes SHA-256 of
 - **Deepen (auto-pick Top):** Collapsed extract/hash/suffix/salt into `createIpHash({ utcDay })` (injectable day key proves rotation). Callers use `hashFromHeaders`; device status returns only the 4-hex display suffix. Routes left thin (minimize churn).
 - **Integration:** `cliDeviceIpHash.api.test.ts` — `POST /auth/cli/device/start` with `X-Forwarded-For` then `GET /auth/cli/device/status` returns only the 4-hex suffix matching `createIpHash().hashIp(ip).slice(-4)`.
 - **Files:** `auth/src/ipHash.ts`, `auth/src/ipHash.test.ts`, `auth/src/authentication/credentials/cliDeviceRoutes.ts`, `auth/src/authentication/credentials/cliDeviceIpHash.api.test.ts`.
+
+2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
