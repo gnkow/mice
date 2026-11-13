@@ -28,3 +28,8 @@ Signing decodes the stored token and treats MFA heuristically; a missing `auth_t
 **Files:** `auth/src/authentication/signing/signingEvidence.ts`, `signingEvidence.test.ts` (`assembleSignatureEvidence` unchanged interface)
 
 **Tests:** `signingEvidence.test.ts` (completeness + verify + assemble)
+
+2026-11-13 Deep-API (integ): **holds**. Added execute-path refusals for incomplete evidence (missing `auth_time`/`acr`/`amr`, stale token claim) without undoing 09/20/26 cases.
+- **Seams:** `assessSigningEvidenceCompleteness` / `verifySigningEvidence` (unit) → `POST /auth/sign/execute` (route integ)
+- **Integ:** `auth/src/authentication/signing/signingRoutes.integration.test.ts` (Ticket 52 describe)
+- **No commit/push** this pass.

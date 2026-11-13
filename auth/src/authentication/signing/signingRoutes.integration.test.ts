@@ -5,7 +5,7 @@ import { after, describe, it } from 'node:test'
 import { isolatedAuth } from '../../testSupport.js'
 
 /**
- * Signing-route integration seams for Deep-API tickets 09, 20, 26.
+ * Signing-route integration seams for Deep-API tickets 09, 20, 26, 52.
  */
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
@@ -189,5 +189,88 @@ describe('Ticket 26 — signature evidence on execute', () => {
       (created.detail?.verificationMetadata as { jwks_key_id?: string } | undefined)?.jwks_key_id,
       'kid-integ',
     )
+  })
+})
+
+describe('Ticket 52 — incomplete signing evidence refused on execute', () => {
+  async function prepareAndExecute(
+    claims: object,
+    sessionAuthTime = nowSec() - 5,
+  ) {
+    const headers = await sessionJson({
+      ...alice,
+      idToken: idToken(claims),
+      authTime: sessionAuthTime,
+      lastActive: nowSec() - 10,
+    })
+    const app = createApp()
+    const content = 'Incomplete evidence refuse'
+    const preparedRes = await app.request('/auth/sign/prepare', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ content }),
+    })
+    assert.equal(preparedRes.status, 200, 'session step-up must pass so execute owns evidence refusal')
+    const prepared = (await preparedRes.json()) as { hash: string }
+    const res = await app.request('/auth/sign/execute', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ content, meaning: 'Approved', expectedHash: prepared.hash }),
+    })
+    return {
+      status: res.status,
+      body: (await res.json()) as { error?: string; reason?: string },
+    }
+  }
+
+  it('POST /auth/sign/execute refuses a missing auth_time', async () => {
+    const result = await prepareAndExecute({
+      iss: 'https://idp.test',
+      sub: alice.sub,
+      acr: 'mfa',
+      amr: ['pwd', 'otp'],
+    })
+    assert.equal(result.status, 403)
+    assert.equal(result.body.reason, 'auth_time_missing')
+    assert.match(result.body.error ?? '', /MFA required/)
+  })
+
+  it('POST /auth/sign/execute refuses a missing acr', async () => {
+    const result = await prepareAndExecute({
+      iss: 'https://idp.test',
+      sub: alice.sub,
+      auth_time: nowSec() - 5,
+      amr: ['pwd', 'otp'],
+    })
+    assert.equal(result.status, 403)
+    assert.equal(result.body.reason, 'acr_missing')
+  })
+
+  it('POST /auth/sign/execute refuses empty amr', async () => {
+    const result = await prepareAndExecute({
+      iss: 'https://idp.test',
+      sub: alice.sub,
+      auth_time: nowSec() - 5,
+      acr: 'mfa',
+      amr: [],
+    })
+    assert.equal(result.status, 403)
+    assert.equal(result.body.reason, 'amr_missing')
+  })
+
+  it('POST /auth/sign/execute refuses a stale auth_time in the id_token', async () => {
+    // Session auth_time stays fresh so prepare passes; token claim is stale for evidence.
+    const result = await prepareAndExecute(
+      {
+        iss: 'https://idp.test',
+        sub: alice.sub,
+        auth_time: nowSec() - 90,
+        acr: 'mfa',
+        amr: ['pwd', 'otp'],
+      },
+      nowSec() - 5,
+    )
+    assert.equal(result.status, 403)
+    assert.equal(result.body.reason, 'auth_time_stale')
   })
 })
