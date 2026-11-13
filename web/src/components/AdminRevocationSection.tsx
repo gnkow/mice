@@ -4,7 +4,7 @@ import { useAsync } from '../hooks/useAsync'
 
 /**
  * Feature 5: Admin Revocation UI
- * 
+ *
  * Allows admins to revoke user access and manage suspensions.
  * Backend: /auth/admin/revoke, /auth/admin/suspend, /auth/admin/suspensions/pending
  */
@@ -105,9 +105,9 @@ export function AdminRevocationSection() {
     setMessage(null)
     try {
       const result = await suspendUser(suspendPrincipal.trim(), suspendReason.trim())
-      setMessage({ 
-        type: 'success', 
-        text: `Suspension initiated for ${suspendPrincipal}. Request ID: ${result.requestId}. Requires confirmation within 24h.` 
+      setMessage({
+        type: 'success',
+        text: `Suspension initiated for ${suspendPrincipal}. Request ID: ${result.requestId}. Requires confirmation within 24h.`,
       })
       setSuspendPrincipal('')
       setSuspendReason('')
@@ -141,16 +141,23 @@ export function AdminRevocationSection() {
 
   return (
     <section id="user-revocation" className="settings-section" aria-labelledby="user-revocation-heading">
-      <h2 id="user-revocation-heading">
-        <Shield size={18} className="button-label-icon" aria-hidden="true" />
-        User Revocation
-      </h2>
-      <p className="muted small">
-        Manage user access revocation and emergency suspensions. All actions are audited.
-      </p>
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="user-revocation-heading">
+            <Shield size={18} className="button-label-icon" aria-hidden="true" />
+            User Revocation
+          </h2>
+          <p className="muted small">
+            Manage user access revocation and emergency suspensions. All actions are audited.
+          </p>
+        </div>
+      </div>
 
       {message && (
-        <div className={`flash ${message.type === 'error' ? 'flash-error' : 'flash-success'}`} role="alert">
+        <div
+          className={`flash ${message.type === 'error' ? 'flash-error' : 'flash-success'}`}
+          role={message.type === 'error' ? 'alert' : 'status'}
+        >
           {message.text}
         </div>
       )}
@@ -184,9 +191,9 @@ export function AdminRevocationSection() {
             </label>
           </div>
           <div className="ns-member-form-actions">
-            <button 
-              className="btn danger" 
-              type="submit" 
+            <button
+              className="btn danger"
+              type="submit"
               disabled={busy || !revokePrincipal.trim() || !revokeReason.trim()}
             >
               {busy ? 'Revoking...' : 'Revoke All Sessions'}
@@ -201,7 +208,7 @@ export function AdminRevocationSection() {
           Emergency Suspension
         </h3>
         <p className="muted small">
-          Initiate a security suspension requiring second-admin confirmation within 24 hours. 
+          Initiate a security suspension requiring second-admin confirmation within 24 hours.
           Access is revoked immediately, pending confirmation.
         </p>
         <form className="ns-member-form" onSubmit={handleSuspend}>
@@ -228,9 +235,9 @@ export function AdminRevocationSection() {
             </label>
           </div>
           <div className="ns-member-form-actions">
-            <button 
-              className="btn danger" 
-              type="submit" 
+            <button
+              className="btn danger"
+              type="submit"
               disabled={busy || !suspendPrincipal.trim() || !suspendReason.trim()}
             >
               {busy ? 'Suspending...' : 'Initiate Suspension'}
@@ -241,14 +248,25 @@ export function AdminRevocationSection() {
 
       <div className="ns-settings-subsection">
         <h3>Pending Confirmations</h3>
-        {pending.kind === 'loading' && <p role="status">Loading pending suspensions...</p>}
+        {pending.kind === 'loading' && (
+          <p role="status" aria-live="polite">Loading pending suspensions…</p>
+        )}
         {pending.kind === 'error' && (
           <div className="flash flash-error" role="alert">
-            {pending.message}
+            <p>{pending.message}</p>
+            <button type="button" className="btn ghost" onClick={() => pending.reload()}>
+              Try again
+            </button>
           </div>
         )}
         {pending.kind === 'ok' && pending.data.length === 0 && (
-          <p className="muted small">No pending suspensions.</p>
+          <div className="empty-state" role="status">
+            <span className="empty-state-icon" aria-hidden="true" />
+            <p className="muted">No pending suspensions.</p>
+            <p className="muted small">
+              Emergency suspensions awaiting second-admin confirmation will appear here.
+            </p>
+          </div>
         )}
         {pending.kind === 'ok' && pending.data.length > 0 && (
           <>
