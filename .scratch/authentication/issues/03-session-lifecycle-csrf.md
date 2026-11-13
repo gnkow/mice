@@ -22,6 +22,12 @@ Sessions expire after 15 minutes idle (`SESSION_IDLE_SEC` default 900) and 8 hou
 
 - `auth/src/authentication/session/session.ts`
 - `auth/src/authentication/session/cookieSeal.ts`
-- `auth/src/authentication/session/csrf.ts`
+- `auth/src/authentication/session/csrf.ts` (`evaluateCookieCsrf` + thin `sameOriginGuard`)
 - `auth/src/authentication/session/webSessionRoutes.ts`
 - `web/src/components/WebSessionsList.tsx`
+
+## Comments
+
+- **Audit:** holds — idle/absolute TTL, list/revoke own sessions, logout + relative return, seal key ring unseal, Origin CSRF on cookie mutations.
+- **Deepen (auto-pick Top):** Collapsed CSRF allow/reject + audit action into deep `evaluateCookieCsrf` (injectable `publicWebOrigin`). `sameOriginGuard` is a thin Hono/audit adapter. `session.ts` / `sealKeys*` untouched; cookieSeal left as alternate candidate.
+- **Tests:** `auth/src/authentication/session/csrf.test.ts` (`evaluateCookieCsrf` + existing middleware suite)

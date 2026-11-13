@@ -10,9 +10,97 @@ process.env.SESSION_SECRET = 'test-session-secret-for-csrf'
 process.env.PUBLIC_WEB_ORIGIN = 'https://mice.example.com'
 
 const { Hono } = await import('hono')
-const { sameOriginGuard } = await import('./csrf.js')
+const { evaluateCookieCsrf, sameOriginGuard } = await import('./csrf.js')
 const { sealedSessionCookie } = await import('../../testSupport.js')
 const { queryAudit } = await import('../../audit.js')
+
+const WEB = 'https://mice.example.com'
+
+describe('evaluateCookieCsrf', () => {
+  it('allows safe methods and requests without a session', () => {
+    assert.deepEqual(
+      evaluateCookieCsrf({
+        method: 'GET',
+        hasSession: true,
+        headers: new Headers({ 'sec-fetch-site': 'cross-site' }),
+        publicWebOrigin: WEB,
+      }),
+      { allow: true },
+    )
+    assert.deepEqual(
+      evaluateCookieCsrf({
+        method: 'POST',
+        hasSession: false,
+        headers: new Headers({ 'sec-fetch-site': 'cross-site' }),
+        publicWebOrigin: WEB,
+      }),
+      { allow: true },
+    )
+  })
+
+  it('rejects a session mutation with no Origin', () => {
+    assert.deepEqual(
+      evaluateCookieCsrf({
+        method: 'POST',
+        hasSession: true,
+        headers: new Headers(),
+        publicWebOrigin: WEB,
+      }),
+      {
+        allow: false,
+        action: 'request.missing_origin',
+        detail: 'Origin header required',
+      },
+    )
+  })
+
+  it('rejects cross-site and foreign-origin session mutations', () => {
+    assert.deepEqual(
+      evaluateCookieCsrf({
+        method: 'POST',
+        hasSession: true,
+        headers: new Headers({
+          origin: WEB,
+          'sec-fetch-site': 'cross-site',
+        }),
+        publicWebOrigin: WEB,
+      }),
+      {
+        allow: false,
+        action: 'request.cross_site_rejected',
+        detail: 'Cross-site request rejected',
+      },
+    )
+    assert.deepEqual(
+      evaluateCookieCsrf({
+        method: 'PUT',
+        hasSession: true,
+        headers: new Headers({ origin: 'https://evil.example' }),
+        publicWebOrigin: WEB,
+      }),
+      {
+        allow: false,
+        action: 'request.cross_site_rejected',
+        detail: 'Cross-site request rejected',
+      },
+    )
+  })
+
+  it('allows same-origin session mutations', () => {
+    assert.deepEqual(
+      evaluateCookieCsrf({
+        method: 'POST',
+        hasSession: true,
+        headers: new Headers({
+          origin: WEB,
+          'sec-fetch-site': 'same-origin',
+        }),
+        publicWebOrigin: WEB,
+      }),
+      { allow: true },
+    )
+  })
+})
 
 const cookie = await sealedSessionCookie({
   sub: 'alice',
