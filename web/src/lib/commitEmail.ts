@@ -1,7 +1,25 @@
-/** The email a commit view shows. The commit itself keeps the submission-time address. */
+/** Which address a commit view should show. The oxen commit keeps the stored value. */
+export type CommitEmailDisplay = {
+  email: string
+  source: 'stored' | 'current'
+}
+
+/**
+ * Display decision for a commit author email.
+ * Prefer the Principal's current email when it differs; otherwise the submission-time address.
+ */
+export function decideCommitEmailDisplay(
+  stored: string | undefined,
+  current: string | undefined,
+): CommitEmailDisplay | undefined {
+  if (current && current !== stored) return { email: current, source: 'current' }
+  if (stored) return { email: stored, source: 'stored' }
+  return undefined
+}
+
+/** String form of {@link decideCommitEmailDisplay} for mono `&lt;email&gt;` rendering. */
 export function shownCommitEmail(stored: string | undefined, current: string | undefined): string | undefined {
-  if (current && current !== stored) return current
-  return stored || undefined
+  return decideCommitEmailDisplay(stored, current)?.email
 }
 
 export async function fetchCurrentEmails(authors: string[], signal?: AbortSignal): Promise<Record<string, string>> {
@@ -18,4 +36,3 @@ export async function fetchCurrentEmails(authors: string[], signal?: AbortSignal
   const data = (await res.json()) as { emails?: Record<string, string> }
   return data.emails ?? {}
 }
-

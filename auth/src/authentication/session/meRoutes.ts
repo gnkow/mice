@@ -8,6 +8,7 @@ import { canSearchDirectory, searchDirectory } from '../directory/directory.js'
 import { setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from '../../authzInstanceStore.js'
 import { rememberNotificationUser } from '../../notifications.js'
 import { listCliCredentials, revokeCliCredentialFamily } from '../credentials/cliCredentials.js'
+import { parseEmailLookupAuthors } from './emailLookupRequest.js'
 import { currentEmailsByAuthor } from './session.js'
 import {
   approveAccessRequest,
@@ -277,8 +278,6 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
 
   /** Current emails for commit authors. The oxen commit is left unchanged. */
   app.post('/auth/principals/emails', guarded({ body: 'json' }, async ({ c, body }) => {
-    const raw = body && typeof body === 'object' ? body.authors : undefined
-    const authors = Array.isArray(raw) ? raw.filter((a): a is string => typeof a === 'string') : []
-    return c.json({ emails: await currentEmailsByAuthor(authors.slice(0, 500)) })
+    return c.json({ emails: await currentEmailsByAuthor(parseEmailLookupAuthors(body)) })
   }))
 }

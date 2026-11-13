@@ -1,5 +1,5 @@
 import { useAsync } from '../hooks/useAsync'
-import { fetchCurrentEmails, shownCommitEmail } from '../lib/commitEmail'
+import { decideCommitEmailDisplay, fetchCurrentEmails } from '../lib/commitEmail'
 
 export function useCurrentEmails(authors: string[]): Record<string, string> {
   const key = [...new Set(authors.map((a) => a.trim()).filter(Boolean))].sort().join('\n')
@@ -22,12 +22,12 @@ export function CommitEmail({
   separator?: boolean
 }) {
   const fetched = useCurrentEmails(emails ? [] : author ? [author] : [])
-  const shown = shownCommitEmail(stored ?? undefined, (emails ?? fetched)[author.trim()])
+  const shown = decideCommitEmailDisplay(stored ?? undefined, (emails ?? fetched)[author.trim()])
   if (!shown) return null
   return (
     <>
       {separator ? ' · ' : null}
-      <span className="mono">&lt;{shown}&gt;</span>
+      <span className="mono">&lt;{shown.email}&gt;</span>
     </>
   )
 }

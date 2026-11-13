@@ -25,6 +25,13 @@ Login stores one current email on the Principal. A later login with a different 
 
 - `auth/src/authentication/session/session.ts` (`ensurePrincipal`, `getCurrentEmail`, `currentEmailsByAuthor`)
 - `auth/src/authentication/session/meRoutes.ts`
+- `auth/src/authentication/session/emailLookupRequest.ts` (`parseEmailLookupAuthors`)
 - `auth/drizzle/0003_principal_email.sql`
 - `web/src/lib/commitEmail.ts`
 - `web/src/components/CommitEmail.tsx`
+
+## Comments
+
+- **Audit:** holds — login email replace-once; `POST /auth/principals/emails`; commit views prefer current when it differs, else stored; oxen email unchanged.
+- **Deepen (auto-pick):** Own display decision in `decideCommitEmailDisplay` (`web/src/lib/commitEmail.ts`); `CommitEmail` renders through that seam. meRoutes carefully: extract `parseEmailLookupAuthors` only — no `session.ts` / `ensurePrincipal` rewrite.
+- **Tests:** `web/src/lib/commitEmail.test.ts`, `auth/src/authentication/session/emailLookupRequest.test.ts` (session email still covered by `principalEmail.test.ts`)
