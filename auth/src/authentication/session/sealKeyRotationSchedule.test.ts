@@ -90,3 +90,51 @@ describe('scheduled seal-key rotation', () => {
     assert.equal(event?.detail?.validFrom, at)
   })
 })
+
+describe('scheduled seal-key rotation integ (injectable deps)', () => {
+  it('tick invokes rotate when due, with injectable clock and collaborators', async () => {
+    const validFrom = 1_700_000_000
+    const at = validFrom + SEAL_KEY_ROTATION_SEC
+    let rotatedAt: number | undefined
+    const audits: Array<{ action?: string; detail?: Record<string, unknown> }> = []
+
+    const schedule = startSealKeyRotationSchedule({
+      now: () => at,
+      poll: false,
+      getCurrent: async () => ({ id: 'key-old', validFrom }),
+      rotate: async (when) => {
+        rotatedAt = when
+        return { id: 'key-new', validFrom: when }
+      },
+      audit: async (event) => {
+        audits.push(event)
+      },
+    })
+
+    assert.equal(await schedule.tick(), true)
+    assert.equal(rotatedAt, at)
+    assert.equal(audits.length, 1)
+    assert.equal(audits[0]?.action, 'seal_key.rotated')
+    assert.equal(audits[0]?.detail?.newKeyId, 'key-new')
+    assert.equal(audits[0]?.detail?.rotationType, 'normal')
+    schedule.stop()
+  })
+
+  it('tick does not invoke rotate when the key is younger than 30 days', async () => {
+    const validFrom = 1_700_000_000
+    let rotateCalls = 0
+    const schedule = startSealKeyRotationSchedule({
+      now: () => validFrom + SEAL_KEY_ROTATION_SEC - 1,
+      poll: false,
+      getCurrent: async () => ({ id: 'key-young', validFrom }),
+      rotate: async (when) => {
+        rotateCalls += 1
+        return { id: 'key-new', validFrom: when }
+      },
+      audit: async () => {},
+    })
+    assert.equal(await schedule.tick(), false)
+    assert.equal(rotateCalls, 0)
+    schedule.stop()
+  })
+})

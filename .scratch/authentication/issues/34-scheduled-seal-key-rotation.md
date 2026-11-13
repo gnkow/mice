@@ -24,8 +24,7 @@ Boot starts a normal-rotation schedule after the bootstrap key exists. A tick ro
 
 ## Comments
 
-2026-11-13 — Checkmate audit: **holds** (acceptance covered by `sealKeyRotationSchedule.test.ts`; boot still only calls `startSealKeyRotationSchedule()` after bootstrap).
-
-**Deepen (auto-picked):** Pull due-check + rotate + audit into `isSealKeyRotationDue` / `runScheduledSealKeyRotation`; `startSealKeyRotationSchedule` only owns the timer and delegates tick. Boot hook untouched.
-
-**Files:** `auth/src/authentication/session/sealKeyRotationSchedule.ts`, `sealKeyRotationSchedule.test.ts`
+- **Audit:** holds — acceptance covered by `sealKeyRotationSchedule.test.ts` (DB path); boot still only calls `startSealKeyRotationSchedule()` after bootstrap.
+- **Deepen (auto-pick Top):** Due-check + rotate + audit live in `isSealKeyRotationDue` / `runScheduledSealKeyRotation`; `startSealKeyRotationSchedule` owns the timer and delegates tick. Collaborators (`now`, `getCurrent`, `rotate`, `audit`) are injectable via `SealKeyRotationScheduleDeps` — does not rewrite `sealKeys` core (ticket 17).
+- **Integration:** injectable-deps suite in `sealKeyRotationSchedule.test.ts` — `tick` invokes `rotate` when due and skips when young; DB suite still proves 30-day / 7-day / audit with live seal keys.
+- **Files:** `auth/src/authentication/session/sealKeyRotationSchedule.ts`, `sealKeyRotationSchedule.test.ts`
