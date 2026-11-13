@@ -364,6 +364,17 @@ export function AuditPage() {
   )
 }
 
+function evidenceTestId(label: string): string | undefined {
+  if (label === 'Now known as') return 'signature-now-known-as'
+  if (label === 'Auth context (acr)') return 'signature-evidence-acr'
+  if (label === 'Auth methods (amr)') return 'signature-evidence-amr'
+  if (label === 'Authenticated at') return 'signature-evidence-auth-time'
+  if (label === 'JWKS key id') return 'signature-evidence-jwks-kid'
+  if (label === 'Verified at') return 'signature-evidence-verified-at'
+  if (label === 'Issuer') return 'signature-evidence-issuer'
+  return undefined
+}
+
 function SignatureEvidence({ event }: { event: AuditEvent }) {
   const rows = signatureEvidenceRows(event.action, event.detail)
   if (rows.length === 0) return null
@@ -374,10 +385,7 @@ function SignatureEvidence({ event }: { event: AuditEvent }) {
         {rows.map((r) => (
           <div key={r.label} data-evidence-label={r.label}>
             <dt className="muted">{r.label}</dt>
-            <dd
-              className="mono"
-              data-testid={r.label === 'Now known as' ? 'signature-now-known-as' : undefined}
-            >
+            <dd className="mono" data-testid={evidenceTestId(r.label)}>
               {r.value}
             </dd>
           </div>

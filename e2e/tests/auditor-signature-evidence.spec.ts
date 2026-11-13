@@ -12,7 +12,7 @@ const signatureEvent = {
   method: 'POST',
   path: '/auth/sign/execute',
   status: 200,
-  action: 'signature.created',
+  action: 'esign.created',
   action_label: 'Signature created',
   message: 'Electronic signature created: Approved',
   detail: {
@@ -34,10 +34,11 @@ test.describe('Auditor signature evidence (#13)', () => {
     await page.goto('/audit')
     const evidence = page.getByTestId('signature-evidence').first()
     await evidence.getByText('Signature evidence').click()
-    await expect(evidence).toContainText('mfa')
-    await expect(evidence).toContainText('pwd, otp')
-    await expect(evidence).toContainText('kid-e2e')
-    await expect(evidence).toContainText('https://idp.e2e')
+    await expect(evidence.getByTestId('signature-evidence-acr')).toHaveText('mfa')
+    await expect(evidence.getByTestId('signature-evidence-amr')).toHaveText('pwd, otp')
+    await expect(evidence.getByTestId('signature-evidence-auth-time')).toBeVisible()
+    await expect(evidence.getByTestId('signature-evidence-jwks-kid')).toHaveText('kid-e2e')
+    await expect(evidence.getByTestId('signature-evidence-issuer')).toHaveText('https://idp.e2e')
   })
 
   test('TC-AUDITOR-02: an Auditor session without MFA cannot read the audit log', async ({ page }) => {

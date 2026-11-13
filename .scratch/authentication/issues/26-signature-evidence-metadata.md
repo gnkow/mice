@@ -35,3 +35,5 @@ The signing ceremony extracts `acr`, `amr`, and `auth_time` from the step-up id_
 **Files:** `signingCeremony.ts` (`assembleSignatureEvidence`, `buildSigningSessionInfo`), `signingRoutes.ts` (adapter), `signingEvidence.test.ts`, `signingRoutes.integration.test.ts`
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **deep-ui reclassified (UI)** — Deepen: AuditPage `SignatureEvidence` exposes acr/amr/auth_time/JWKS via labelled `data-testid`s; accepts `esign.created` + `signature.created`. E2E: `signature-evidence-metadata.spec.ts` + hardened `auditor-signature-evidence.spec.ts`. No commit/push (operator request).
