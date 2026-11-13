@@ -90,6 +90,21 @@ describe('Principal Access Monitoring (Ticket 11)', () => {
       const run = await monitor.run()
       assert.equal(run.alarmsFound, 1)
     })
+
+    it('resolves state through findPrincipal and the same snapshot ports', async () => {
+      const monitor = createPrincipalAccessMonitor({
+        findPrincipal: async (id) =>
+          id === 7 ? { id: 7, sub: 'solo', iss: 'iss', name: 'Solo' } : null,
+        idpEnabled: async () => false,
+        hasSigningRights: async () => true,
+      })
+      const state = await monitor.state(7)
+      assert.ok(state)
+      assert.equal(state.sub, 'solo')
+      assert.equal(state.idpEnabled, false)
+      assert.equal(state.hasSigningRights, true)
+      assert.equal(await monitor.state(99), null)
+    })
   })
 
   describe('Disabled Principal Alarm', () => {

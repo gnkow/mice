@@ -48,6 +48,8 @@ export type PrincipalRow = {
 
 export type PrincipalAccessMonitorDeps = {
   listPrincipals?: () => Promise<PrincipalRow[]>
+  /** Load one Principal for `state`; defaults to a DB lookup. */
+  findPrincipal?: (principalId: number) => Promise<PrincipalRow | null>
   idpEnabled?: (sub: string) => Promise<boolean | null>
   hasSigningRights?: (principalId: number) => Promise<boolean>
   logCritical?: (alarms: DisabledPrincipalAlarm[]) => void
@@ -85,6 +87,15 @@ async function defaultListPrincipals(): Promise<PrincipalRow[]> {
   return getDb().select().from(principals)
 }
 
+async function defaultFindPrincipal(principalId: number): Promise<PrincipalRow | null> {
+  const [principal] = await getDb()
+    .select()
+    .from(principals)
+    .where(eq(principals.id, principalId))
+    .limit(1)
+  return principal ?? null
+}
+
 async function defaultIdpEnabled(sub: string): Promise<boolean | null> {
   const directory = directoryNow()
   if (!directory.configured) return null
@@ -100,12 +111,7 @@ async function defaultIdpEnabled(sub: string): Promise<boolean | null> {
 
 /** Signing rights: Principal exists in Mice (port; replace when authz exposes a tighter check). */
 async function defaultHasSigningRights(principalId: number): Promise<boolean> {
-  const [principal] = await getDb()
-    .select()
-    .from(principals)
-    .where(eq(principals.id, principalId))
-    .limit(1)
-  return !!principal
+  return (await defaultFindPrincipal(principalId)) !== null
 }
 
 function defaultLogCritical(alarms: DisabledPrincipalAlarm[]): void {
@@ -125,6 +131,7 @@ export function createPrincipalAccessMonitor(
   deps: PrincipalAccessMonitorDeps = {},
 ): PrincipalAccessMonitor {
   const listPrincipals = deps.listPrincipals ?? defaultListPrincipals
+  const findPrincipal = deps.findPrincipal ?? defaultFindPrincipal
   const idpEnabled = deps.idpEnabled ?? defaultIdpEnabled
   const hasSigningRights = deps.hasSigningRights ?? defaultHasSigningRights
   const logCritical = deps.logCritical ?? defaultLogCritical
@@ -153,21 +160,10 @@ export function createPrincipalAccessMonitor(
   }
 
   async function state(principalId: number): Promise<PrincipalAccessState | null> {
-    const [principal] = await getDb()
-      .select()
-      .from(principals)
-      .where(eq(principals.id, principalId))
-      .limit(1)
+    const principal = await findPrincipal(principalId)
     if (!principal) return null
 
-    const [snapshot] = await snapshotsFor([
-      {
-        id: principal.id,
-        sub: principal.sub,
-        iss: principal.iss,
-        name: principal.name,
-      },
-    ])
+    const [snapshot] = await snapshotsFor([principal])
 
     return {
       principalId: principal.id,

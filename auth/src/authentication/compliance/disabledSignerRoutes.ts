@@ -5,7 +5,10 @@
 import type { Hono } from 'hono'
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { guarded } from '../session/routeGuard.js'
-import { checkDisabledPrincipalsWithSigningRights } from './principalAccessMonitoring.js'
+import {
+  checkDisabledPrincipalsWithSigningRights,
+  type DisabledPrincipalAlarm,
+} from './principalAccessMonitoring.js'
 
 const requireInstanceAdmin = {
   gate: async (user: { sub: string; iss: string }) =>
@@ -13,10 +16,19 @@ const requireInstanceAdmin = {
   originCheck: true,
 } as const
 
-export function registerDisabledSignerRoutes(app: Hono): void {
+/** Optional check port; production uses the live principal-access monitor. */
+export type DisabledSignerRouteDeps = {
+  check?: () => Promise<DisabledPrincipalAlarm[]>
+}
+
+export function registerDisabledSignerRoutes(
+  app: Hono,
+  deps: DisabledSignerRouteDeps = {},
+): void {
+  const check = deps.check ?? checkDisabledPrincipalsWithSigningRights
   app.get('/auth/admin/disabled-signers', guarded(requireInstanceAdmin, async ({ c }) => {
     try {
-      const alarms = await checkDisabledPrincipalsWithSigningRights()
+      const alarms = await check()
       return c.json({ alarms })
     } catch (err) {
       return c.json({

@@ -27,3 +27,9 @@ The daily drift job also runs `checkDisabledPrincipalsWithSigningRights`. A Prin
 2026-11-13 — Checkmate audit: **holds** (disabled-in-IdP + signing-rights alarm via `principalAccessMonitoring.test.ts`; admin list via `disabledSignerRoutes`).
 
 **Deepen (auto-picked):** Collapse check/run/`getIdpStatus` into deep `alarmsFromAccessSnapshots` + `createPrincipalAccessMonitor({ listPrincipals, idpEnabled, hasSigningRights })`. Live wrappers keep the public seam; routes/schedule stay thin.
+
+2026-11-13 — deep-api Deepen (auto-pick Top): **holds** + integration gap closed.
+- **Seams:** `createPrincipalAccessMonitor` / `alarmsFromAccessSnapshots`; `registerDisabledSignerRoutes` (`GET /auth/admin/disabled-signers`).
+- **Deepen:** `findPrincipal` port so `state` shares snapshot ports; routes accept optional `check` deps (live default).
+- **Integ:** `disabledSignerRoutes.test.ts` (401, alarm list, omit enabled, injected check).
+- **Files:** `principalAccessMonitoring.ts`, `disabledSignerRoutes.ts`, `*.test.ts` above.
