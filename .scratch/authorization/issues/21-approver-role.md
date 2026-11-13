@@ -8,10 +8,6 @@
 
 **Status:** done
 
-## In code today
-
-`approver` is absent from `auth/src/authzContract.ts` and `auth/src/rbacCatalog.ts`. Merge still requires `maintain` (`authzPathMap.ts`, `customRoles.ts`).
-
 ## Acceptance
 
 - [x] `approver` exists in the role catalog (`APPROVER_ROLE` in `authzContract.ts`, an orthogonal grant, not a rank), assignable at namespace and repository scope by an Owner only. Users only for now; group approvers are not supported
@@ -20,3 +16,15 @@
 - [x] `maintain` alone cannot sign; no code path requires two mergers or approvers (the signing check itself lands in gxp-compliance 05)
 - [x] Bootstrap and admin grants never confer `approver` implicitly
 - [x] `docs/authorization-routes.md` lists the new decision and routes (the path map covers only `/api` proxy routes, so it is unchanged)
+
+## Code
+
+- `auth/src/authzContract.ts` (`APPROVER_ROLE`)
+- `auth/src/authzApproverStore.ts` (grant / revoke / list / `isApprover` / `decideIsApprover`)
+- `auth/src/authz.ts` (re-exports `decideIsApprover`; `decideManageApprovers`)
+- `auth/src/namespaceRoutes.ts` (approver HTTP routes)
+- Tests: `authzApproverStore.test.ts`, `approvers.test.ts`
+
+## Comments
+
+**Deep-api Deepen (2026-11-13):** Holds — approver catalog, Owner-only assign/revoke, audit events, and `decideIsApprover` already shipped. Auto-picked Top: co-locate `decideIsApprover` in `authzApproverStore` (grant/decision locality); `authz.ts` re-exports. Unit: `authzApproverStore.test.ts`. Integration: `approvers.test.ts` (HTTP Owner gate + audit). Removed stale “In code today” blurb claiming approver absent.
