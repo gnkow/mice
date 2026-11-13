@@ -1,20 +1,31 @@
 /**
  * IdP directory status at login (Ticket 38; disabled/missing from Ticket 04).
  *
- * Maps a directory userStatus result to allow / refuse. Side effects
- * (outage recording via recordIdpCheck, IdP-disabled history) stay in the loginFlow caller.
+ * `decideLoginDirectoryStatus` is pure allow/refuse + which IdP check to record.
+ * `applyLoginDirectoryDecision` owns the side-effect order (reachability first,
+ * then IdP-disabled history) so finishLogin does not re-branch on those flags.
  */
 
 import type { DirectoryUserStatus } from '../directory/directoryTypes.js'
 
 export type LoginDirectoryDecision =
-  | { allow: true }
+  | { allow: true; idpCheck: 'reachable' }
   | {
       allow: false
       httpStatus: 403 | 503
       message: string
       recordDisabled: boolean
+      idpCheck: 'reachable' | 'unreachable'
     }
+
+export type LoginDirectoryEffects = {
+  recordIdpCheck: (reachable: boolean) => Promise<void>
+  recordDisabled: () => Promise<void>
+}
+
+export type LoginDirectoryGate =
+  | { allow: true }
+  | { allow: false; httpStatus: 403 | 503; message: string }
 
 /** Decide whether finishLogin may create a Session for this directory status. */
 export function decideLoginDirectoryStatus(
@@ -22,13 +33,14 @@ export function decideLoginDirectoryStatus(
 ): LoginDirectoryDecision {
   switch (status) {
     case 'enabled':
-      return { allow: true }
+      return { allow: true, idpCheck: 'reachable' }
     case 'disabled':
       return {
         allow: false,
         httpStatus: 403,
         message: 'Your account has been disabled by the administrator.',
         recordDisabled: true,
+        idpCheck: 'reachable',
       }
     case 'missing':
       return {
@@ -36,6 +48,7 @@ export function decideLoginDirectoryStatus(
         httpStatus: 403,
         message: 'Your account was not found in the directory.',
         recordDisabled: false,
+        idpCheck: 'reachable',
       }
     case 'error':
       return {
@@ -43,6 +56,35 @@ export function decideLoginDirectoryStatus(
         httpStatus: 503,
         message: 'IdP is unreachable. Login cannot be verified at this time.',
         recordDisabled: false,
+        idpCheck: 'unreachable',
       }
   }
+}
+
+/**
+ * Apply a directory decision: record reachability, then IdP-disabled history when
+ * needed, then return the gate finishLogin maps to Session-or-fail.
+ */
+export async function applyLoginDirectoryDecision(
+  decision: LoginDirectoryDecision,
+  effects: LoginDirectoryEffects,
+): Promise<LoginDirectoryGate> {
+  await effects.recordIdpCheck(decision.idpCheck === 'reachable')
+  if (!decision.allow) {
+    if (decision.recordDisabled) await effects.recordDisabled()
+    return {
+      allow: false,
+      httpStatus: decision.httpStatus,
+      message: decision.message,
+    }
+  }
+  return { allow: true }
+}
+
+/** Decide and apply in one call — the finishLogin directory gate seam. */
+export async function gateLoginDirectoryStatus(
+  status: DirectoryUserStatus,
+  effects: LoginDirectoryEffects,
+): Promise<LoginDirectoryGate> {
+  return applyLoginDirectoryDecision(decideLoginDirectoryStatus(status), effects)
 }

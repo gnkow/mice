@@ -14,7 +14,7 @@ import { actorFromUser, appendAudit } from '../../audit.js'
 import { canonicalIssuer } from '../session/principal.js'
 import { recordIdpCheck } from '../compliance/idpOutage.js'
 import { decideIdpDisplayNameGate } from './idpDisplayName.js'
-import { decideLoginDirectoryStatus } from './loginDirectoryStatus.js'
+import { gateLoginDirectoryStatus } from './loginDirectoryStatus.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -139,20 +139,23 @@ async function finishLogin(
       nonce: pkce.nonce,
     })
     const account = await directory.userStatus(user.sub)
-    const directoryDecision = decideLoginDirectoryStatus(account.status)
-    if (!directoryDecision.allow && directoryDecision.httpStatus === 503) {
-      await recordIdpCheck({
-        reachable: false,
-        at: clock.now(),
-        check: 'login',
-        requestId: input.requestId ?? 'login',
-      })
-      return fail(503, directoryDecision.message, isReauth)
-    }
-    await recordIdpCheck({ reachable: true, at: clock.now() })
-    if (!directoryDecision.allow) {
-      if (directoryDecision.recordDisabled) await recordIdpDisabled(user)
-      return fail(directoryDecision.httpStatus, directoryDecision.message, isReauth)
+    const directoryGate = await gateLoginDirectoryStatus(account.status, {
+      recordIdpCheck: async (reachable) => {
+        if (reachable) {
+          await recordIdpCheck({ reachable: true, at: clock.now() })
+        } else {
+          await recordIdpCheck({
+            reachable: false,
+            at: clock.now(),
+            check: 'login',
+            requestId: input.requestId ?? 'login',
+          })
+        }
+      },
+      recordDisabled: () => recordIdpDisabled(user),
+    })
+    if (!directoryGate.allow) {
+      return fail(directoryGate.httpStatus, directoryGate.message, isReauth)
     }
     const nameGate = decideIdpDisplayNameGate(account.name)
     if (!nameGate.ok) {
