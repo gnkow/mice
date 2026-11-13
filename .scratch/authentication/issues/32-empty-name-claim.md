@@ -36,3 +36,9 @@ The display name comes from the IdP user record read during the status check (`f
 - **Deepen:** Collapse refuse copy/status into `decideIdpDisplayNameGate` (in-process). `loginFlow` empty-name line + live IdP access call it; no wholesale requireAuth rewrite.
 - **Integ:** `emptyName.integration.test.ts` — login refuses blank directory name; `evaluateLiveIdpAccess` returns 403; named IdP still signs in.
 - **Files:** `idpDisplayName.ts`, `idpDisplayName.test.ts`, `idpCheck.ts`, `loginFlow.ts` (gate line), `emptyName.integration.test.ts`.
+
+2026-11-13 — deep-ui Deepen (holds → UI surface):
+- **Surfaces:** `LoginPage` `?status=empty_name` alert; callback sets `surface: 'empty_name'` on refuse.
+- **Deepen:** Titled alert with EMPTY_IDP_DISPLAY_NAME copy; focusable `role=alert`.
+- **E2E:** `e2e/tests/login-status.spec.ts` — empty_name case. Run: `npm run test:e2e -- e2e/tests/login-status.spec.ts`
+- **Status:** done

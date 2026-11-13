@@ -77,6 +77,7 @@ await describe('IdP name on the status check', async () => {
     assert.equal(result.ok, false)
     if (result.ok) return
     assert.equal(result.status, 403)
+    assert.equal(result.surface, 'empty_name')
     assert.match(result.html, /no name in the identity provider/)
 
     const events = (await queryAudit({ action: 'auth.login.failed', limit: 20 })).events
