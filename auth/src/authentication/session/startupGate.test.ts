@@ -4,7 +4,12 @@ import { chmodSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { assertProductionStartup, productionStartupProblems } from './startupGate.js'
+import {
+  assertProductionStartup,
+  productionStartupProblems,
+  sessionAbsoluteLifetimeProblems,
+  sessionIdleTimeoutProblems,
+} from './startupGate.js'
 
 const good = {
   NODE_ENV: 'production',
@@ -16,6 +21,7 @@ const good = {
   AUTH_DATA_DIR: mkdtempSync(join(tmpdir(), 'mice-gate-')),
   SESSION_IDLE_SEC: '900',
   IMMUDB_HA: 'true',
+  BACKUP_TARGET: mkdtempSync(join(tmpdir(), 'mice-backup-gate-')),
 }
 
 describe('production startup gate', () => {
@@ -59,6 +65,16 @@ describe('production startup gate', () => {
     }
   })
 
+  it('sessionIdleTimeoutProblems owns unset, zero, and negative refusal', () => {
+    for (const raw of [undefined, '0', '-1', 'abc']) {
+      const p = sessionIdleTimeoutProblems(raw)
+      assert.equal(p.length, 1, String(raw))
+      assert.match(p[0]!, /SESSION_IDLE_SEC must be greater than 0/)
+    }
+    assert.deepEqual(sessionIdleTimeoutProblems('900'), [])
+    assert.match(sessionIdleTimeoutProblems('901')[0]!, /at most 900/)
+  })
+
   it('starts when the idle timeout is positive', () => {
     assert.deepEqual(productionStartupProblems({ SESSION_IDLE_SEC: '900' }), [])
   })
@@ -74,7 +90,17 @@ describe('production startup gate', () => {
     for (const SESSION_TTL_SEC of ['28801', '0', '-1', 'abc']) {
       const p = productionStartupProblems({ SESSION_IDLE_SEC: '900', SESSION_TTL_SEC })
       assert.equal(p.length, 1, SESSION_TTL_SEC)
-      assert.match(p[0], /SESSION_TTL_SEC/)
+      assert.match(p[0]!, /SESSION_TTL_SEC/)
+    }
+  })
+
+  it('sessionAbsoluteLifetimeProblems owns absolute ceiling; unset passes', () => {
+    assert.deepEqual(sessionAbsoluteLifetimeProblems(undefined), [])
+    assert.deepEqual(sessionAbsoluteLifetimeProblems('28800'), [])
+    for (const raw of ['28801', '0', '-1', 'abc']) {
+      const p = sessionAbsoluteLifetimeProblems(raw)
+      assert.equal(p.length, 1, raw)
+      assert.match(p[0]!, /SESSION_TTL_SEC must be between 1 and 28800/)
     }
   })
 
@@ -145,6 +171,18 @@ describe('production startup gate', () => {
       const p = productionStartupProblems({ ...good, IMMUDB_HA })
       assert.equal(p.length, 1, String(IMMUDB_HA))
       assert.match(p[0]!, /IMMUDB_HA/)
+    }
+    assert.deepEqual(
+      productionStartupProblems({ NODE_ENV: 'development', SESSION_IDLE_SEC: '900' }),
+      [],
+    )
+  })
+
+  it('rejects production without a reachable backup target', () => {
+    for (const BACKUP_TARGET of [undefined, '', '  ']) {
+      const p = productionStartupProblems({ ...good, BACKUP_TARGET })
+      assert.equal(p.length, 1, String(BACKUP_TARGET))
+      assert.match(p[0]!, /BACKUP_TARGET/)
     }
     assert.deepEqual(
       productionStartupProblems({ NODE_ENV: 'development', SESSION_IDLE_SEC: '900' }),

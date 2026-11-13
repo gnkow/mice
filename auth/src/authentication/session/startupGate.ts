@@ -1,4 +1,5 @@
 import { accessSync, constants, mkdirSync } from 'node:fs'
+import { backupTargetProblems } from '../../backupTarget.js'
 
 const DEV_SESSION_SECRET = 'dev-only-change-me-mice-session-secret'
 const SHIPPED_CLIENT_SECRET = 'mice-auth-secret'
@@ -28,23 +29,43 @@ function oxenUpstreamProblem(raw: string): string | null {
 const MAX_IDLE_SEC = 900
 const MAX_ABSOLUTE_SEC = 8 * 60 * 60
 
+/**
+ * Session idle timeout refusal (Ticket 33, U2/U22).
+ * Unset, zero, negative, or non-numeric values refuse start; positive values
+ * must also stay within the 15-minute ceiling. Separate from IdP assurance gate.
+ */
+export function sessionIdleTimeoutProblems(raw: string | undefined): string[] {
+  const idle = Number(raw ?? 0)
+  if (!(idle > 0)) {
+    return ['SESSION_IDLE_SEC must be greater than 0 (idle timeout is off)']
+  }
+  if (idle > MAX_IDLE_SEC) {
+    return [`SESSION_IDLE_SEC must be at most ${MAX_IDLE_SEC} (15 minutes)`]
+  }
+  return []
+}
+
+/**
+ * Absolute session lifetime ceiling (Ticket 51).
+ * Unset uses the 8 h default and passes; when set, value must be 1..8 h.
+ * Separate from idle timeout (Ticket 33) and IdP assurance gate.
+ */
+export function sessionAbsoluteLifetimeProblems(raw: string | undefined): string[] {
+  if (raw === undefined) return []
+  const ttl = Number(raw)
+  if (!(ttl > 0 && ttl <= MAX_ABSOLUTE_SEC)) {
+    return [`SESSION_TTL_SEC must be between 1 and ${MAX_ABSOLUTE_SEC} (8 hours)`]
+  }
+  return []
+}
+
 /** Returns the reasons the deployment must not start (production hardening, GxP-strict). */
 export function productionStartupProblems(
   e: Record<string, string | undefined>,
 ): string[] {
   const problems: string[] = []
-  const idle = Number(e.SESSION_IDLE_SEC ?? 0)
-  if (!(idle > 0)) {
-    problems.push('SESSION_IDLE_SEC must be greater than 0 (idle timeout is off)')
-  } else if (idle > MAX_IDLE_SEC) {
-    problems.push(`SESSION_IDLE_SEC must be at most ${MAX_IDLE_SEC} (15 minutes)`)
-  }
-  if (e.SESSION_TTL_SEC !== undefined) {
-    const ttl = Number(e.SESSION_TTL_SEC)
-    if (!(ttl > 0 && ttl <= MAX_ABSOLUTE_SEC)) {
-      problems.push(`SESSION_TTL_SEC must be between 1 and ${MAX_ABSOLUTE_SEC} (8 hours)`)
-    }
-  }
+  problems.push(...sessionIdleTimeoutProblems(e.SESSION_IDLE_SEC))
+  problems.push(...sessionAbsoluteLifetimeProblems(e.SESSION_TTL_SEC))
   if (e.NODE_ENV !== 'production') return problems
   if (!e.SESSION_SECRET || e.SESSION_SECRET === DEV_SESSION_SECRET) {
     problems.push('SESSION_SECRET must be set to a private value (missing or dev default)')
@@ -71,6 +92,7 @@ export function productionStartupProblems(
   if (e.IMMUDB_HA !== 'true') {
     problems.push('IMMUDB_HA must be "true"; a single immudb instance is unsupported for production')
   }
+  problems.push(...backupTargetProblems(e.BACKUP_TARGET))
   const upstreamProblem = oxenUpstreamProblem(e.OXEN_UPSTREAM ?? 'http://127.0.0.1:3001')
   if (upstreamProblem) problems.push(upstreamProblem)
   const dataDir = e.AUTH_DATA_DIR ?? './data'

@@ -19,3 +19,13 @@ Defaults are 15 min / 8 h (`env.ts`), but startup only rejects zero or negative 
 - [x] README states the real values
 
 An unset `SESSION_TTL_SEC` uses the 8 h default and passes.
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (idle ≤900s / absolute ≤8h ceilings; unset TTL passes; proving tests in `startupGate.test.ts`).
+
+**Deepen (auto-pick):** Extract `sessionAbsoluteLifetimeProblems` for the absolute lifetime path only (mirror idle extract). `productionStartupProblems` delegates; idle extract left intact.
+
+**Files:** `auth/src/authentication/session/startupGate.ts`, `startupGate.test.ts`
+
+**Tests:** `startupGate.test.ts` (`sessionAbsoluteLifetimeProblems` + existing TTL boundary cases)
