@@ -22,3 +22,7 @@
 ## Notes
 
 Greenfield rewrite (no data backfill). Custom repo roles remain namespace-scoped templates keyed by `namespace_id` (matching prior behavior). Favorites for namespace/repo use entity UUIDs; branch/stage embed `repository_id`. Audit keeps `namespace`/`repo` as name snapshots alongside `namespace_id`/`repository_id`.
+
+## Comments
+
+**Deep-api Close (2026-11-13):** Audit found favorites still name-path keyed while purge expected UUIDs. Closed via `favoritesCanonical.canonicalizeFavorite` + routes: PUT/DELETE/lookup/GET normalize to entity UUIDs (accept legacy `ns/repo@branch` clients). Unit: `favoritesCanonical.test.ts`. Integration: PUT `/auth/favorites` rewrite. Web `favoriteHref`/`favoriteLabel` prefer name fields when id is a UUID.

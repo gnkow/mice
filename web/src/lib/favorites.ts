@@ -8,7 +8,10 @@ export type Favorite = { type: FavoriteType; id: string; at: string; namespace?:
 export function favoriteHref(f: Favorite): string | null {
   const enc = encodeURIComponent
   switch (f.type) {
-    case 'namespace': return `/n/${enc(f.id)}`
+    case 'namespace': {
+      const name = f.namespace ?? f.id
+      return `/n/${enc(name)}`
+    }
     case 'session': return `/sessions/${enc(f.id)}`
     case 'job': return f.namespace && f.repo ? `/n/${enc(f.namespace)}/r/${enc(f.repo)}/jobs/${enc(f.id)}` : null
     default: {
@@ -23,6 +26,8 @@ export function favoriteHref(f: Favorite): string | null {
 
 export function favoriteLabel(f: Favorite): string {
   if (f.name) return f.name
+  if (f.type === 'namespace') return f.namespace ?? f.id
+  if (f.type === 'repo') return f.repo ? `${f.namespace}/${f.repo}` : f.id
   return f.type === 'branch' || f.type === 'stage' ? f.id.slice(f.id.search(/[@!]/) + 1) : f.id
 }
 

@@ -10,6 +10,7 @@ import {
   type FavoriteRow,
   type FavoriteType,
 } from './favoritesStore.js'
+import { canonicalizeFavorite } from './favoritesCanonical.js'
 import { getJob } from './jobsStore.js'
 import { canReadEntity } from './metaAuthz.js'
 import { lookup, resolveRef } from './metaRoutes.js'
@@ -33,22 +34,37 @@ function parseTarget(type: unknown, id: unknown): { type: FavoriteType; id: stri
   return { type: norm, id: id.trim() }
 }
 
+type CanonicalFavoriteTarget = NonNullable<Awaited<ReturnType<typeof canonicalizeFavorite>>>
+
+/** Resolve a client id (name path or UUID) to the stored UUID key + meta lookup id. */
+async function resolveFavoriteTarget(
+  type: FavoriteType,
+  rawId: string,
+): Promise<CanonicalFavoriteTarget> {
+  const canonical = await canonicalizeFavorite(type, rawId)
+  if (!canonical) throw new HttpError('Entity not found', 404)
+  return canonical
+}
+
 /** "gone" means the entity no longer exists (safe to drop); anything else keeps the row. */
 async function check(
   user: SessionUser,
   row: { type: FavoriteType; id: string },
-  out?: { ref?: EntityRef },
+  out?: { ref?: EntityRef; canonical?: CanonicalFavoriteTarget },
 ): Promise<'ok' | 'gone' | 'hidden'> {
+  const canonical = await canonicalizeFavorite(row.type, row.id)
+  if (!canonical) return 'gone'
+  if (out) out.canonical = canonical
   let ref: EntityRef
   try {
     // Oxen stages are `workspace` entities in the meta layer.
-    ref = await resolveRef(row.type === 'stage' ? 'workspace' : row.type, row.id)
+    ref = await resolveRef(row.type === 'stage' ? 'workspace' : row.type, canonical.metaId)
   } catch (err) {
     if (err instanceof MetaError && (err.status === 404 || err.status === 400)) return 'gone'
     return 'hidden'
   }
   if (out) out.ref = ref
-  return await canReadEntity(user, ref, lookup) ? 'ok' : 'hidden'
+  return (await canReadEntity(user, ref, lookup)) ? 'ok' : 'hidden'
 }
 
 /** Route-family error shape: `{ error }` with the error's own status. */
@@ -71,14 +87,19 @@ export function registerFavoritesRoutes(app: Hono): void {
     const wantType = want ? parseTarget(want, 'x').type : undefined
     const visible: Array<FavoriteRow & { namespace?: string; repo?: string; name?: string }> = []
     for (const row of await listFavorites(key)) {
-      const out: { ref?: EntityRef } = {}
+      const out: { ref?: EntityRef; canonical?: CanonicalFavoriteTarget } = {}
       const s = await check(user, row, out)
       if (s === 'ok') {
         const job = row.type === 'job' ? await getJob(row.id) : null
         visible.push({
           ...row,
-          ...(out.ref?.namespace ? { namespace: out.ref.namespace } : {}),
-          ...(out.ref?.repo ? { repo: out.ref.repo } : {}),
+          id: out.canonical?.id ?? row.id,
+          ...(out.canonical?.namespace || out.ref?.namespace
+            ? { namespace: out.canonical?.namespace ?? out.ref?.namespace }
+            : {}),
+          ...(out.canonical?.repo || out.ref?.repo
+            ? { repo: out.canonical?.repo ?? out.ref?.repo }
+            : {}),
           ...(job?.name ? { name: job.name } : {}),
         })
       }
@@ -90,17 +111,29 @@ export function registerFavoritesRoutes(app: Hono): void {
 
   app.put('/auth/favorites', guarded({ ...policy, body: 'optional' }, async ({ c, user, body }) => {
     const t = parseTarget(body.type, body.id)
-    const s = await check(user, t)
+    const canonical = await resolveFavoriteTarget(t.type, t.id)
+    const s = await check(user, { type: t.type, id: canonical.id })
     if (s === 'gone') throw new HttpError('Entity not found', 404)
     if (s === 'hidden') throw new HttpError('Forbidden', 403)
-    const created = await addFavorite(favoriteUserKey(user), t.type, t.id)
-    return c.json({ ok: true, favorite: true, ...t }, created ? 201 : 200)
+    const created = await addFavorite(favoriteUserKey(user), t.type, canonical.id)
+    return c.json(
+      {
+        ok: true,
+        favorite: true,
+        type: t.type,
+        id: canonical.id,
+        ...(canonical.namespace ? { namespace: canonical.namespace } : {}),
+        ...(canonical.repo ? { repo: canonical.repo } : {}),
+      },
+      created ? 201 : 200,
+    )
   }))
 
   app.delete('/auth/favorites', guarded(policy, async ({ c, user }) => {
     const t = parseTarget(c.req.query('type'), c.req.query('id'))
-    await removeFavorite(favoriteUserKey(user), t.type, t.id)
-    return c.json({ ok: true, favorite: false, ...t })
+    const canonical = await resolveFavoriteTarget(t.type, t.id)
+    await removeFavorite(favoriteUserKey(user), t.type, canonical.id)
+    return c.json({ ok: true, favorite: false, type: t.type, id: canonical.id })
   }))
 
   // Bulk membership for list views: the subset of requested entities that are favorites.
@@ -108,9 +141,14 @@ export function registerFavoritesRoutes(app: Hono): void {
     if (!Array.isArray(body.items)) throw new HttpError('items must be an array', 400)
     if (body.items.length > MAX_LOOKUP) throw new HttpError(`At most ${MAX_LOOKUP} items`, 400)
     const mine = new Set((await listFavorites(favoriteUserKey(user))).map((r) => `${r.type}\0${r.id}`))
-    const favorites = (body.items as Array<{ type?: unknown; id?: unknown }>)
-      .map((i) => parseTarget(i?.type, i?.id))
-      .filter((i) => mine.has(`${i.type}\0${i.id}`))
+    const favorites: Array<{ type: FavoriteType; id: string }> = []
+    for (const item of body.items as Array<{ type?: unknown; id?: unknown }>) {
+      const t = parseTarget(item?.type, item?.id)
+      const canonical = await canonicalizeFavorite(t.type, t.id)
+      if (canonical && mine.has(`${t.type}\0${canonical.id}`)) {
+        favorites.push({ type: t.type, id: canonical.id })
+      }
+    }
     return c.json({ favorites })
   }))
 }
