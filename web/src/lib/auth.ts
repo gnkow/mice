@@ -1,4 +1,5 @@
 import { parseAuthzMe, type AuthzMe } from './authzContract'
+import { decideIdpAccessGate, type IdpAccessGate } from './idpAccessGate'
 
 export type AuthUser = {
   sub: string
@@ -9,7 +10,7 @@ export type AuthUser = {
 
 export type AuthMe =
   | { authenticated: true; user: AuthUser }
-  | { authenticated: false }
+  | { authenticated: false; gate?: IdpAccessGate }
 
 export type LogoutResult = {
   ok: boolean
@@ -23,7 +24,11 @@ export async function fetchAuthMe(signal?: AbortSignal): Promise<AuthMe> {
     signal,
   })
   if (res.status === 401) return { authenticated: false }
-  if (!res.ok) return { authenticated: false }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    const gate = decideIdpAccessGate(res.status, body?.error)
+    return gate ? { authenticated: false, gate } : { authenticated: false }
+  }
   return (await res.json()) as AuthMe
 }
 

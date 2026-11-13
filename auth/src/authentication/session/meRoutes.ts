@@ -2,7 +2,7 @@ import type { Hono } from 'hono'
 import { env } from '../../env.js'
 import { guarded } from './routeGuard.js'
 import type { AuditDep } from '../../routeDeps.js'
-import { authenticateUser } from './requireAuth.js'
+import { authenticate } from './requireAuth.js'
 import { isPendingUser } from '../../authz.js'
 import { canSearchDirectory, searchDirectory } from '../directory/directory.js'
 import { setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } from '../../authzInstanceStore.js'
@@ -25,8 +25,15 @@ import { authzEnforceReport } from '../../authzAlwaysOn.js'
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
   app.get('/auth/me', async (c) => {
-    const session = await authenticateUser(c, { allowAuditorWithoutMfa: true })
-    if (!session) return c.json({ authenticated: false }, 401)
+    // Preserve 503/403 IdP denials so RequireAuth can show a gate alert (ticket 19).
+    const outcome = await authenticate(c, { allowAuditorWithoutMfa: true })
+    if (!outcome.ok) {
+      if (outcome.status === 503 || outcome.status === 403) {
+        return c.json({ authenticated: false, error: outcome.error }, outcome.status)
+      }
+      return c.json({ authenticated: false }, 401)
+    }
+    const session = outcome.user
     await rememberNotificationUser(session)
     return c.json({
       authenticated: true,

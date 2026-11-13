@@ -39,3 +39,5 @@ Group refresh on privileged operations is issue 37. The login status code when t
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **deep-ui reclassified (UI)** — Close: RequireAuth shows titled `role=alert` gate for `/auth/me` 503/403 IdP denials (no blank shell). `fetchAuthMe` + `decideIdpAccessGate`; `/auth/me` preserves 503/403 from `authenticate`. E2E: `e2e/tests/idp-access-gate.spec.ts` (mocked `/auth/me`). No commit/push (operator request).
