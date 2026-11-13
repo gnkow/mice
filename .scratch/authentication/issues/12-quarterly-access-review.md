@@ -21,8 +21,15 @@ An admin generates one report per quarter. It lists every Principal with namespa
 
 ## Code
 
+- `auth/src/authentication/compliance/accessReview.ts`
 - `auth/src/authentication/compliance/accessReviewRoutes.ts`
 - `auth/src/authentication/session/session.ts` (`sealSession` records last login)
 - `auth/drizzle/0004_principal_last_login.sql`
 - `auth/drizzle/0005_access_review_reports.sql`
 - `web/src/components/AccessReviewSection.tsx`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (store-once quarter, principals/roles/grants/last login, audits via `accessReviewRoutes.test.ts` + `accessReview.test.ts`).
+
+**Deepen (auto-picked):** Pull store-once generate/read into deep `openOrGenerateAccessReview(quarter)` (collect + findStored + store ports). Routes are HTTP/audit adapters over that seam.

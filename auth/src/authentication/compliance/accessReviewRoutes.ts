@@ -1,9 +1,12 @@
 import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
-import { getDb } from '../../db/database.js'
-import { accessReviewReports, principals } from '../../db/schema.js'
-import { eq } from 'drizzle-orm'
-import { displayedAccessReview, generateAccessReviewReport, signAccessReviewReport } from './accessReview.js'
+import {
+  displayedAccessReview,
+  getStoredAccessReview,
+  openOrGenerateAccessReview,
+  saveSignedAccessReview,
+} from './accessReview.js'
+import { applyAccessReviewSign } from './accessReviewSign.js'
 import { listOverdueAccessReviews } from './accessReviewAlert.js'
 import { reauthenticate } from '../oidc/stepUp.js'
 import { createSignature, prepareForSigning, type SessionInfo } from '../signing/signingCeremony.js'
@@ -13,8 +16,7 @@ import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.j
 import { isSigningBlockedByDrift } from './idpDriftDetection.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
 import { env } from '../../env.js'
-import { instancePermissions, isInstanceAdmin } from '../../authzInstanceStore.js'
-import { namespaceRolesFor } from '../../authzMembershipStore.js'
+import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import type { AuditDep } from '../../routeDeps.js'
 import type { SessionUser } from '../session/session.js'
 
@@ -32,60 +34,27 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
     body: { required: ['quarter'] },
   }, async ({ c, body, audit }) => {
     const quarter = body.quarter as string
-    const [stored] = await getDb()
-      .select()
-      .from(accessReviewReports)
-      .where(eq(accessReviewReports.quarter, quarter))
-      .limit(1)
-    if (stored) {
+    const result = await openOrGenerateAccessReview(quarter)
+
+    if (result.outcome === 'read') {
       await audit({
         action: 'access-review.read',
         message: `Opened access review report for ${quarter}`,
-        detail: { reportId: stored.report.reportId, quarter },
+        detail: { reportId: result.report.reportId, quarter },
       })
-      return c.json({ report: stored.report })
+      return c.json({ report: result.report })
     }
-
-    // Fetch all principals from database
-    const allPrincipals = await getDb()
-      .select()
-      .from(principals)
-    
-    // Build report data for each principal
-    const principalRecords = await Promise.all(
-      allPrincipals.map(async (p) => {
-        const principal = { iss: p.iss, sub: p.sub, name: p.name || 'Unknown' }
-        
-        // Get instance permissions
-        const perms = await instancePermissions(principal)
-        
-        // Get namespace roles
-        const roles = await namespaceRolesFor(principal)
-        const rolesList = Array.from(roles.entries()).map(([ns, role]) => `${ns}:${role}`)
-        
-        return {
-          principal,
-          roles: rolesList,
-          grants: perms,
-          ...(p.lastLoginAt ? { lastLogin: p.lastLoginAt.getTime() } : {}),
-        }
-      })
-    )
-    
-    const report = generateAccessReviewReport(principalRecords, quarter)
-    await getDb().insert(accessReviewReports).values({
-      quarter,
-      report,
-      createdAt: new Date(report.generatedAt),
-    })
 
     await audit({
       action: 'access-review.generate',
       message: `Generated access review report for ${quarter}`,
-      detail: { reportId: report.reportId, principalCount: principalRecords.length },
+      detail: { reportId: result.report.reportId, principalCount: result.report.principals.length },
     })
 
-    return c.json({ report, contentHash: prepareForSigning(displayedAccessReview(report)).hash })
+    return c.json({
+      report: result.report,
+      contentHash: prepareForSigning(displayedAccessReview(result.report)).hash,
+    })
   }))
 
   app.get('/auth/admin/access-review/overdue', guarded({
@@ -98,20 +67,16 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
     gate: adminGate,
   }, async ({ c, audit }) => {
     const quarter = c.req.param('quarter')
-    const [stored] = await getDb()
-      .select()
-      .from(accessReviewReports)
-      .where(eq(accessReviewReports.quarter, quarter))
-      .limit(1)
-    if (!stored) return c.json({ error: 'Access review report not found' }, 404)
+    const report = await getStoredAccessReview(quarter)
+    if (!report) return c.json({ error: 'Access review report not found' }, 404)
     await audit({
       action: 'access-review.read',
       message: `Opened access review report for ${quarter}`,
-      detail: { reportId: stored.report.reportId, quarter },
+      detail: { reportId: report.reportId, quarter },
     })
     return c.json({
-      report: stored.report,
-      contentHash: prepareForSigning(displayedAccessReview(stored.report)).hash,
+      report,
+      contentHash: prepareForSigning(displayedAccessReview(report)).hash,
     })
   }))
 
@@ -139,18 +104,8 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
 
     const quarter = body.quarter as string
     const expectedHash = body.expectedHash as string
-    const [stored] = await getDb()
-      .select()
-      .from(accessReviewReports)
-      .where(eq(accessReviewReports.quarter, quarter))
-      .limit(1)
+    const stored = await getStoredAccessReview(quarter)
     if (!stored) return c.json({ error: 'Access review report not found' }, 404)
-
-    const content = displayedAccessReview(stored.report)
-    const prepared = prepareForSigning(content)
-    if (prepared.hash !== expectedHash) {
-      return c.json({ error: 'Content changed after display; signature invalidated' }, 400)
-    }
 
     let mfaVerified = false
     let mfaEvidenceData: SessionInfo['mfaEvidence']
@@ -177,17 +132,16 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
       ...(mfaEvidenceData ? { mfaEvidence: mfaEvidenceData } : {}),
       ...(verificationMetadataData ? { verificationMetadata: verificationMetadataData } : {}),
     }
-    const signature = createSignature(content, 'Reviewed', session)
-    const signed = signAccessReviewReport(stored.report, signature)
-    await getDb()
-      .update(accessReviewReports)
-      .set({ report: signed })
-      .where(eq(accessReviewReports.quarter, quarter))
+    const sealed = applyAccessReviewSign(stored, expectedHash, (content) =>
+      createSignature(content, 'Reviewed', session),
+    )
+    if (!sealed.ok) return c.json({ error: sealed.error }, 400)
+    await saveSignedAccessReview(quarter, sealed.report)
     await audit({
       action: 'access-review.sign',
-      message: `Signed access review ${signed.reportId}`,
-      detail: { reportId: signed.reportId, reviewer: `${user.iss}|${user.sub}` },
+      message: `Signed access review ${sealed.report.reportId}`,
+      detail: { reportId: sealed.report.reportId, reviewer: `${user.iss}|${user.sub}` },
     })
-    return c.json({ report: signed, contentHash: prepared.hash })
+    return c.json({ report: sealed.report, contentHash: sealed.contentHash })
   }))
 }
