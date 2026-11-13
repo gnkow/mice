@@ -1,66 +1,57 @@
-import { test, expect, openAccountMenu } from '../fixtures'
+import { test, expect, openSettings } from '../fixtures'
 import { mintSession } from '../helpers/session'
 
 test.describe('IdP MFA Baseline (Admin)', () => {
   test('admin can view and trigger IdP baseline check', async ({ page }) => {
     await mintSession(page, { sub: 'e2e-admin', role: 'admin' })
-    // Navigate to Settings
     await page.goto('/')
-    await openAccountMenu(page)
-    await page
-      .locator('.profile-menu-panel')
-      .getByRole('link', { name: 'Settings' })
-      .click()
+    await openSettings(page)
 
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 
-    // Navigate to IdP MFA Baseline section
-    await page.getByRole('link', { name: 'Baseline', exact: true }).click()
+    await page.getByRole('link', { name: 'IdP baseline', exact: true }).click()
 
-    // Verify section is visible
     await expect(page.getByRole('heading', { name: /IdP MFA Baseline/i })).toBeVisible()
     await expect(page.getByText(/Part 11.*requires two distinct identification/i)).toBeVisible()
 
-    // Verify "Check Now" button exists
-    const checkButton = page.locator('#idp-baseline').getByRole('button', { name: /Check Now|Checking/i })
+    const section = page.locator('#idp-baseline')
+    await expect(
+      section.getByText(/Last Check|No baseline checks have been performed yet|Loading baseline status/i).first(),
+    ).toBeVisible({ timeout: 10_000 })
+
+    const checkButton = section.getByRole('button', { name: /Check Now|Checking/i })
     await expect(checkButton).toBeVisible()
 
-    // Trigger baseline check
     await checkButton.click()
 
-    // Wait for check to complete (button changes to "Checking..." and back)
     await expect(checkButton).toBeDisabled()
     await expect(checkButton).toHaveText(/Checking/i, { timeout: 2000 })
-    
-    // Wait for result (either success or error message)
-    await expect(
-      page.locator('.flash-success, .flash-error, .flash-warning').first()
-    ).toBeVisible({ timeout: 10000 })
 
-    // Verify status section shows last check information
-    await expect(page.getByText(/Last Check/i)).toBeVisible()
+    await expect(
+      section.locator('.flash-success, .flash-error, .flash-warn').first(),
+    ).toBeVisible({ timeout: 10_000 })
+
+    await expect(section.getByText(/Last Check|MFA Available/i).first()).toBeVisible()
   })
 
-  test('baseline status shows MFA availability', async ({ page }) => {
+  test('baseline status shows MFA availability after a check', async ({ page }) => {
     await mintSession(page, { sub: 'e2e-admin', role: 'admin' })
     await page.goto('/')
-    await openAccountMenu(page)
-    await page
-      .locator('.profile-menu-panel')
-      .getByRole('link', { name: 'Settings' })
-      .click()
+    await openSettings(page)
 
-    // Navigate to IdP baseline section
-    await page.getByRole('link', { name: 'Baseline', exact: true }).click()
+    await page.getByRole('link', { name: 'IdP baseline', exact: true }).click()
 
-    // If a check has been performed, verify the status display
-    const lastCheckText = page.getByText(/Last Check/i)
-    if (await lastCheckText.isVisible()) {
-      // Verify MFA Available status is shown
-      await expect(page.getByText(/MFA Available/i)).toBeVisible()
-      
-      // Status should be either Yes or No
-      const statusText = await page.locator('.flash-success, .flash-warning').textContent()
+    const section = page.locator('#idp-baseline')
+    const checkButton = section.getByRole('button', { name: /Check Now|Checking/i })
+    await checkButton.click()
+    await expect(
+      section.locator('.flash-success, .flash-error, .flash-warn').first(),
+    ).toBeVisible({ timeout: 10_000 })
+
+    const lastCheckLabel = section.getByText('Last Check', { exact: true })
+    if (await lastCheckLabel.isVisible()) {
+      await expect(section.getByText('MFA Available', { exact: true })).toBeVisible()
+      const statusText = await section.locator('.flash-success, .flash-warn').first().textContent()
       expect(statusText).toMatch(/(Yes|No)/)
     }
   })

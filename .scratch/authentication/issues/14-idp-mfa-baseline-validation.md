@@ -37,3 +37,5 @@ Signing reads `acr` and `amr` from the step-up id_token. Missing MFA evidence re
 **Tests:** `idpBaselineCheck.test.ts` + `mfaEvidence.test.ts` (unit), `idpBaselineRoutes.test.ts` (integ, stores MFA-available check).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13 — **deep-ui Deepen** (holds): Settings `IdpBaselineSection` — loading/`role=alert`+Try again, empty-state when no checks, MFA status `role=status`. E2E: `e2e/tests/idp-baseline.spec.ts` deepened (nav label `IdP baseline`, empty/status asserts); green.

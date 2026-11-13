@@ -1,4 +1,4 @@
-import { ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound } from 'lucide-react'
+import { ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound, Package, Scale } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
@@ -33,6 +33,7 @@ import {
   buildDenyBody,
   filterAccessRequests,
   formatRequestedAccess,
+  isAdminFloorError,
   isAuthorityError,
   type AccessRequestStatusFilter,
 } from '../lib/accessRequestReview'
@@ -132,6 +133,8 @@ export function SettingsPage() {
           {
             title: 'Instance',
             items: [
+              { id: 'regulated-config', label: 'Regulated config', Icon: Scale },
+              { id: 'release-manifest', label: 'Release manifest', Icon: Package },
               { id: 'instance-administrators', label: 'Administrators', Icon: ShieldUser },
               { id: 'announcements', label: 'Announcements', Icon: Megaphone },
             ],
@@ -199,6 +202,8 @@ export function SettingsPage() {
             <GroupBindingSection />
             <AuditHealthSection />
             <SealKeyRotationSection />
+            <RegulatedConfigSection />
+            <ReleaseManifestSection />
             <InstanceAdminSection signedInIss={signedInIss} />
             <AnnouncementsSection />
           </>}
@@ -529,8 +534,10 @@ function UsersGrantSection({
   signedInIss: string
 }) {
   const state = useAsync((signal) => listRbacUsers(signal), [])
+  const instance = useAsync((signal) => fetchInstance(signal), [])
   const [error, setError] = useState<string | null>(null)
   const [authorityError, setAuthorityError] = useState(false)
+  const [adminFloorError, setAdminFloorError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [grantOpen, setGrantOpen] = useState(false)
   const [targetSub, setTargetSub] = useState('')
@@ -539,9 +546,20 @@ function UsersGrantSection({
   const [grantPerms, setGrantPerms] = useState<string[]>([])
   const [expiresLocal, setExpiresLocal] = useState(defaultExpiryLocalValue)
   const [reason, setReason] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
 
   const users = state.kind === 'ok' ? state.data.users : []
   const roleChoices = approvableRoles(authz.role)
+  const admins = instance.kind === 'ok' ? instance.data.admins : []
+  const adminCount = admins.length
+  const targetIsAdmin = admins.some(
+    (a) => a.sub === targetSub.trim() && a.iss === (targetIss.trim() || signedInIss),
+  )
+  const demotingAdmin =
+    Boolean(grantRoleValue) &&
+    grantRoleValue !== 'admin' &&
+    targetIsAdmin
+  const floorBlocksDemotion = demotingAdmin && adminCount <= 2
 
   function openGrant(user?: RbacUserRow) {
     setGrantOpen(true)
@@ -553,10 +571,18 @@ function UsersGrantSection({
     setReason('')
     setError(null)
     setAuthorityError(false)
+    setAdminFloorError(false)
+    setNotice(null)
   }
 
   async function onGrant(e: FormEvent) {
     e.preventDefault()
+    if (floorBlocksDemotion) {
+      setAdminFloorError(true)
+      setAuthorityError(false)
+      setError('At least two instance admins must remain')
+      return
+    }
     const expiresAt = new Date(expiresLocal).getTime()
     const built = buildDirectGrantBodies({
       sub: targetSub,
@@ -569,22 +595,28 @@ function UsersGrantSection({
     if (!built.ok) {
       setError(built.error)
       setAuthorityError(false)
+      setAdminFloorError(false)
       return
     }
     setBusy(true)
     setError(null)
     setAuthorityError(false)
+    setAdminFloorError(false)
+    setNotice(null)
     try {
       for (const item of built.bodies) {
         if (item.kind === 'role') await grantRole(item.body)
         else await grantPermissions(item.body)
       }
+      setNotice(`Granted access to ${targetSub.trim() || 'principal'}`)
       setGrantOpen(false)
       state.reload()
+      instance.reload()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Grant failed'
       setError(message)
       setAuthorityError(isAuthorityError(message))
+      setAdminFloorError(isAdminFloorError(message))
     } finally {
       setBusy(false)
     }
@@ -604,6 +636,7 @@ function UsersGrantSection({
           </h2>
           <p className="muted small">
             Grant a formal role and/or custom permissions directly (no access request).
+            Changing an Admin to another role is refused while two or fewer instance admins remain.
           </p>
         </div>
         <button type="button" className="btn primary small" onClick={() => openGrant()}>
@@ -613,11 +646,16 @@ function UsersGrantSection({
       </div>
 
       {error && (
-        <p className={`flash ${authorityError ? 'flash-warn' : 'flash-error'}`} role="alert">
-          {authorityError ? <strong>Authority: </strong> : null}
+        <p
+          className={`flash ${authorityError || adminFloorError ? 'flash-warn' : 'flash-error'}`}
+          role="alert"
+        >
+          {adminFloorError ? <strong>Admin floor: </strong> : null}
+          {authorityError && !adminFloorError ? <strong>Authority: </strong> : null}
           {error}
         </p>
       )}
+      {notice && <p className="flash flash-success" role="status">{notice}</p>}
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {state.kind === 'error' && (
         <p className="flash flash-error" role="alert">
@@ -625,7 +663,7 @@ function UsersGrantSection({
         </p>
       )}
       {state.kind === 'ok' && users.length === 0 && (
-        <p className="muted small">No principals yet.</p>
+        <p className="muted small" role="status">No principals yet.</p>
       )}
       {users.length > 0 && (
         <ul className="ns-member-list">
@@ -668,6 +706,7 @@ function UsersGrantSection({
             onChange={(next) => {
               setTargetSub(next.sub)
               setTargetIss(next.iss)
+              setAdminFloorError(false)
             }}
           />
           <div className="ns-settings-grid">
@@ -675,7 +714,10 @@ function UsersGrantSection({
               <span className="ns-settings-label">Role</span>
               <select
                 value={grantRoleValue ?? ''}
-                onChange={(e) => setGrantRoleValue(e.target.value || null)}
+                onChange={(e) => {
+                  setGrantRoleValue(e.target.value || null)
+                  setAdminFloorError(false)
+                }}
               >
                 <option value="">No role change</option>
                 {roleChoices.map((role) => (
@@ -695,6 +737,12 @@ function UsersGrantSection({
               />
             </label>
           </div>
+          {floorBlocksDemotion && (
+            <p className="flash flash-warn" role="status">
+              Remove is refused while two or fewer instance admins remain
+              {adminCount > 0 ? ` (${adminCount} now)` : ''}. Grant a non-Admin role only when at least three Admins are listed.
+            </p>
+          )}
           <fieldset>
             <legend>Custom permissions</legend>
             <div className="perm-multiselect perm-multiselect-compact">
@@ -725,10 +773,10 @@ function UsersGrantSection({
             <button
               className="btn primary"
               type="submit"
-              disabled={busy}
+              disabled={busy || floorBlocksDemotion}
               aria-busy={busy || undefined}
             >
-              {busy ? 'Granting…' : 'Grant'}
+              {busy ? 'Granting…' : floorBlocksDemotion ? 'Remove blocked' : 'Grant'}
             </button>
             <button
               className="btn ghost"
@@ -1060,6 +1108,275 @@ type AuditHealthStatus = {
   checkedAt?: string
 }
 
+type RegulatedConfigPayload = {
+  config: {
+    gxpStrict: true
+    session: { idleSec: number; absoluteSec: number; cookieSecure: boolean }
+    reason: { minLength: number; categories: string[]; requiredActions: string[] }
+    changeControl: {
+      requiredActions: string[]
+      alsoRequiredOn: string[]
+      allocation: 'server'
+    }
+    signature: {
+      requiredActions: string[]
+      meaning: 'Approved'
+      allocation: 'ceremony'
+    }
+    audit: { immudbHaAttested: boolean; verifyIntervalSec: number }
+    backup: { targetConfigured: boolean }
+    authz: { requireTraining: boolean }
+  }
+  digest: string
+  recordedAt: string | null
+  changedFromPrevious: boolean | null
+}
+
+function RegulatedConfigSection() {
+  const status = useAsync(async (signal) => {
+    try {
+      const res = await fetch('/auth/admin/regulated-config', { signal })
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return await res.json() as RegulatedConfigPayload
+    } catch (err) {
+      console.error('Failed to fetch regulated config:', err)
+      return null
+    }
+  }, [])
+
+  const data = status.kind === 'ok' ? status.data : null
+
+  return (
+    <section id="regulated-config" className="settings-section" aria-labelledby="regulated-config-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="regulated-config-heading">
+            <Scale size={18} className="button-label-icon" aria-hidden="true" />
+            Regulated config
+          </h2>
+          <p className="muted small">
+            Effective GxP controls for this instance. Written to the audit trail at each start
+            and whenever regulated settings change.
+          </p>
+        </div>
+      </div>
+
+      {data && (
+        <div className="ns-settings-grid">
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">GxP strict</span>
+            <p className="flash flash-success">
+              <ActionCheck size={14} aria-hidden="true" /> Always on
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Session</span>
+            <p className="muted small">
+              Idle {data.config.session.idleSec}s · absolute {data.config.session.absoluteSec}s ·
+              cookie Secure {data.config.session.cookieSecure ? 'yes' : 'no'}
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Reason policy</span>
+            <p className="muted small">
+              Min length {data.config.reason.minLength} · categories{' '}
+              {data.config.reason.categories.join(', ')}
+            </p>
+            <p className="muted small">
+              Required on {data.config.reason.requiredActions.length} mutation classes
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Change-control</span>
+            <p className="muted small">
+              Ids minted server-side ({data.config.changeControl.allocation}) on{' '}
+              {data.config.changeControl.requiredActions.length} mutation classes
+            </p>
+            <p className="muted small">
+              Also on {data.config.changeControl.alsoRequiredOn.join(', ')}
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Electronic signature</span>
+            <p className="muted small">
+              Meaning {data.config.signature.meaning} via {data.config.signature.allocation} on{' '}
+              {data.config.signature.requiredActions.length} mutation classes
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Audit / backup</span>
+            <p className="muted small">
+              IMMUDB_HA {data.config.audit.immudbHaAttested ? 'attested' : 'not attested'} ·
+              verify every {data.config.audit.verifyIntervalSec}s ·
+              backup target {data.config.backup.targetConfigured ? 'configured' : 'not configured'}
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Digest</span>
+            <p className="muted small"><code className="inline-code">{data.digest}</code></p>
+            {data.recordedAt && (
+              <p className="muted small">
+                Recorded {new Date(data.recordedAt).toLocaleString()}
+                {data.changedFromPrevious === true ? ' · changed since previous start' : ''}
+                {data.changedFromPrevious === false ? ' · unchanged since previous start' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {status.kind === 'ok' && !data && (
+        <p className="flash flash-warning" role="status">Could not load regulated configuration.</p>
+      )}
+    </section>
+  )
+}
+
+type ReleaseManifestStatus = {
+  present: boolean
+  path?: string
+  releaseVersion?: string
+  signatureValid: boolean | null
+  match: boolean | null
+  mismatches: string[]
+  components: Record<string, { expected?: string; actual: string; version: string }> | null
+  checkedAt: string | null
+  reason?: string
+}
+
+function ReleaseManifestSection() {
+  const [checking, setChecking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  const status = useAsync(async (signal) => {
+    try {
+      const res = await fetch('/auth/admin/release-manifest/status', { signal })
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return await res.json() as ReleaseManifestStatus
+    } catch (err) {
+      console.error('Failed to fetch release manifest status:', err)
+      return null
+    }
+  }, [])
+
+  async function triggerCheck() {
+    setChecking(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const res = await fetch('/auth/admin/release-manifest/check', { method: 'POST' })
+      const data = await res.json() as ReleaseManifestStatus & { error?: string }
+      if (!res.ok) {
+        setError(data.error || 'Check failed')
+      } else {
+        setSuccess(data.match ? 'Release manifest matches this build' : 'Release manifest mismatch — see details')
+        status.reload()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const data = status.kind === 'ok' ? status.data : null
+
+  return (
+    <section id="release-manifest" className="settings-section" aria-labelledby="release-manifest-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="release-manifest-heading">
+            <Package size={18} className="button-label-icon" aria-hidden="true" />
+            Release manifest
+          </h2>
+          <p className="muted small">
+            Signed digests of IdP configuration, search index, and custom verifiers verified at start.
+            A mismatch is audited and shown here; it does not refuse boot by itself.
+          </p>
+        </div>
+      </div>
+
+      {data && (
+        <div className="ns-settings-grid">
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Result</span>
+            <p className={data.match ? 'flash flash-success' : 'flash flash-warning'}>
+              {data.match ? (
+                <><ActionCheck size={14} aria-hidden="true" /> Match{data.releaseVersion ? ` · release ${data.releaseVersion}` : ''}</>
+              ) : (
+                <><ActionX size={14} aria-hidden="true" /> {data.present ? 'Mismatch' : 'Missing or invalid'}{data.reason ? `: ${data.reason}` : ''}</>
+              )}
+            </p>
+          </div>
+
+          <div className="ns-settings-field">
+            <span className="ns-settings-label">Signature</span>
+            <p className="muted small">
+              {data.signatureValid === true ? 'Valid' : data.signatureValid === false ? 'Invalid' : 'Not checked'}
+            </p>
+          </div>
+
+          {data.checkedAt && (
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Checked</span>
+              <p className="muted small">{new Date(data.checkedAt).toLocaleString()}</p>
+            </div>
+          )}
+
+          {data.mismatches.length > 0 && (
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Mismatches</span>
+              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                {data.mismatches.map((m) => (
+                  <li key={m}><code className="inline-code">{m}</code></li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {data.components && (
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Components</span>
+              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                {Object.entries(data.components).map(([id, c]) => (
+                  <li key={id}>
+                    <code className="inline-code">{id}</code>
+                    {' · v'}
+                    {c.version}
+                    {c.expected && c.expected !== c.actual ? ' · digests differ' : ' · ok'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="btn-row ns-settings-actions">
+        <button
+          className="btn primary"
+          type="button"
+          onClick={triggerCheck}
+          disabled={checking}
+        >
+          <Package size={14} aria-hidden="true" className="button-label-icon" />
+          {checking ? 'Checking…' : 'Check now'}
+        </button>
+      </div>
+
+      {error && <p className="flash flash-error" role="alert">{error}</p>}
+      {success && <p className="flash flash-success" role="status">{success}</p>}
+    </section>
+  )
+}
+
 function AuditHealthSection() {
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1201,24 +1518,19 @@ function IdpBaselineSection() {
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  
+
   const status = useAsync(async (signal) => {
-    try {
-      const res = await fetch('/auth/admin/idp-baseline/status', { signal })
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-      return await res.json() as {
-        lastCheck: {
-          id: number
-          checkedAt: string
-          checkedBy: string
-          mfaAvailable: boolean
-          claimsFound: { acr?: string; amr: string[] } | null
-          error: string | null
-        } | null
-      }
-    } catch (err) {
-      console.error('Failed to fetch IdP baseline status:', err)
-      return null
+    const res = await fetch('/auth/admin/idp-baseline/status', { signal })
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return await res.json() as {
+      lastCheck: {
+        id: number
+        checkedAt: string
+        checkedBy: string
+        mfaAvailable: boolean
+        claimsFound: { acr?: string; amr: string[] } | null
+        error: string | null
+      } | null
     }
   }, [])
 
@@ -1226,16 +1538,15 @@ function IdpBaselineSection() {
     setChecking(true)
     setError(null)
     setSuccess(null)
-    
+
     try {
       const res = await fetch('/auth/admin/idp-baseline/check', { method: 'POST' })
       const data = await res.json()
-      
+
       if (!res.ok) {
         setError(data.error || 'Check failed')
       } else {
         setSuccess('Baseline check completed')
-        // Refresh status
         status.reload()
       }
     } catch (err) {
@@ -1260,6 +1571,19 @@ function IdpBaselineSection() {
         </div>
       </div>
 
+      {status.kind === 'loading' && (
+        <p role="status" aria-live="polite">Loading baseline status…</p>
+      )}
+
+      {status.kind === 'error' && (
+        <div className="flash flash-error" role="alert">
+          <p>Could not load IdP baseline status.</p>
+          <button type="button" className="btn ghost" onClick={() => status.reload()}>
+            Try again
+          </button>
+        </div>
+      )}
+
       {status.kind === 'ok' && status.data && (
         <div className="ns-settings-grid">
           {status.data.lastCheck ? (
@@ -1272,10 +1596,13 @@ function IdpBaselineSection() {
                   <code className="inline-code">{status.data.lastCheck.checkedBy}</code>
                 </p>
               </div>
-              
+
               <div className="ns-settings-field">
                 <span className="ns-settings-label">MFA Available</span>
-                <p className={status.data.lastCheck.mfaAvailable ? 'flash flash-success' : 'flash flash-warning'}>
+                <p
+                  className={status.data.lastCheck.mfaAvailable ? 'flash flash-success' : 'flash flash-warn'}
+                  role="status"
+                >
                   {status.data.lastCheck.mfaAvailable ? (
                     <>
                       <ActionCheck size={14} aria-hidden="true" /> Yes
@@ -1294,7 +1621,7 @@ function IdpBaselineSection() {
                   <p className="muted small">
                     <strong>acr:</strong> {status.data.lastCheck.claimsFound.acr || '(none)'}
                     <br />
-                    <strong>amr:</strong> {status.data.lastCheck.claimsFound.amr.length > 0 
+                    <strong>amr:</strong> {status.data.lastCheck.claimsFound.amr.length > 0
                       ? status.data.lastCheck.claimsFound.amr.join(', ')
                       : '(none)'}
                   </p>
@@ -1303,24 +1630,26 @@ function IdpBaselineSection() {
 
               {status.data.lastCheck.error && (
                 <div className="ns-settings-field">
-                  <span className="ns-settings-label">Error</span>
-                  <p className="flash flash-warning">{status.data.lastCheck.error}</p>
+                  <span className="ns-settings-label">Last check error</span>
+                  <p className="flash flash-warn" role="status">{status.data.lastCheck.error}</p>
                 </div>
               )}
             </>
           ) : (
-            <div className="ns-settings-field">
+            <div className="empty-state" role="status">
+              <span className="empty-state-icon" aria-hidden="true" />
               <p className="muted">No baseline checks have been performed yet.</p>
+              <p className="muted small">Run Check Now to record whether the IdP presents MFA claims.</p>
             </div>
           )}
         </div>
       )}
 
       <div className="btn-row ns-settings-actions">
-        <button 
-          className="btn primary" 
-          type="button" 
-          onClick={triggerCheck}
+        <button
+          className="btn primary"
+          type="button"
+          onClick={() => void triggerCheck()}
           disabled={checking}
         >
           <ShieldAlert size={14} aria-hidden="true" className="button-label-icon" />
