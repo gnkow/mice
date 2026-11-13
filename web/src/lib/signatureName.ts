@@ -4,6 +4,13 @@ export type SignatureNameDisplay = {
   currently?: string
 }
 
+/** One Principal name-history row as shown on the admin timeline (Ticket 47). */
+export type NameHistoryRowDisplay = {
+  name: string
+  fromDay: string
+  toDay: string
+}
+
 /**
  * Display decision for a signature's printed name.
  * The signed snapshot stays primary; a different current name is a side note.
@@ -30,4 +37,20 @@ export function shownSignature(
 /** Calendar-day label for a Principal name-history bound; open end is "current". */
 export function nameHistoryDayLabel(iso: string | null): string {
   return iso ? iso.slice(0, 10) : 'current'
+}
+
+/**
+ * Display decision for one stored name-history interval (no IdP).
+ * Callers render; this owns day-bound labeling for the admin timeline.
+ */
+export function decideNameHistoryRowDisplay(row: {
+  name: string
+  validFrom: string
+  validTo: string | null
+}): NameHistoryRowDisplay {
+  return {
+    name: row.name,
+    fromDay: nameHistoryDayLabel(row.validFrom),
+    toDay: nameHistoryDayLabel(row.validTo),
+  }
 }

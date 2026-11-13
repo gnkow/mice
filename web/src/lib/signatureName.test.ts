@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  decideNameHistoryRowDisplay,
   decideSignatureNameDisplay,
   nameHistoryDayLabel,
   shownSignature,
@@ -47,5 +48,24 @@ describe('signature name display', () => {
   it('labels history bounds as a calendar day or current', () => {
     assert.equal(nameHistoryDayLabel('2021-03-15T12:00:00.000Z'), '2021-03-15')
     assert.equal(nameHistoryDayLabel(null), 'current')
+  })
+
+  it('formats one name-history row for the admin timeline', () => {
+    assert.deepEqual(
+      decideNameHistoryRowDisplay({
+        name: 'Dr. Jane Smith',
+        validFrom: '2021-03-15T12:00:00.000Z',
+        validTo: '2023-01-01T00:00:00.000Z',
+      }),
+      { name: 'Dr. Jane Smith', fromDay: '2021-03-15', toDay: '2023-01-01' },
+    )
+    assert.deepEqual(
+      decideNameHistoryRowDisplay({
+        name: 'Dr. Jane Jones',
+        validFrom: '2023-01-01T00:00:00.000Z',
+        validTo: null,
+      }),
+      { name: 'Dr. Jane Jones', fromDay: '2023-01-01', toDay: 'current' },
+    )
   })
 })

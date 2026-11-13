@@ -28,3 +28,5 @@ A signature displays the name captured at signing and the date: `Signed by: Dr. 
 - **Audit:** holds — `shownSignature` + Principal name-history page + admin names route (no IdP).
 - **Deepen (auto-pick):** Collapsed string formatting into deep `decideSignatureNameDisplay` (+ `nameHistoryDayLabel`) in `web/src/lib/signatureName.ts`. `shownSignature` / `PrincipalNamePage` stay thin UI adapters on existing chrome; `nameChangeHistory.ts` untouched.
 - **Tests:** `web/src/lib/signatureName.test.ts`
+- **Deep-API deepen (2026-11-13):** Auth `decideNameHistoryWrite` owns track write policy (noop / seed / close+change); web `decideNameHistoryRowDisplay` owns timeline day labels. No React redesign.
+- **Tests:** `nameChangeHistory.test.ts`, `signatureName.test.ts`, `nameHistoryRoutes.test.ts` (green)
