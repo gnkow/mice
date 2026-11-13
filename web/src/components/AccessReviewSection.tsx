@@ -1,7 +1,13 @@
-import { FileText, Download, Shield } from 'lucide-react'
+import { AlertTriangle, FileText, Download, Shield } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { formatPrivilegedActionError } from '../lib/privilegedActionError'
 import { decideSignatureNameDisplay } from '../lib/signatureName'
+import {
+  classifySigningChallenge,
+  type SigningChallenge,
+} from '../lib/signingChallenge'
+import { SigningChallengeInterstitial } from './SigningChallengeInterstitial'
 
 type AccessReviewReport = {
   reportId: string
@@ -40,6 +46,7 @@ export function AccessReviewSection() {
   const [signing, setSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [challenge, setChallenge] = useState<SigningChallenge | null>(null)
   const [currentName, setCurrentName] = useState<string | null>(null)
 
   async function loadOverdue() {
@@ -66,23 +73,28 @@ export function AccessReviewSection() {
       .catch(() => setCurrentName(null))
   }
 
-  async function openReport() {
+  async function openReport(forQuarter = quarter) {
     setLoading(true)
     setError(null)
     setNotice(null)
     try {
-      const res = await fetch(`/auth/admin/access-review/${encodeURIComponent(quarter)}`, {
+      const res = await fetch(`/auth/admin/access-review/${encodeURIComponent(forQuarter)}`, {
         credentials: 'same-origin',
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to open report')
       showReport(body)
-      setNotice(`Opened stored report for ${quarter}`)
+      setNotice(`Opened stored report for ${forQuarter}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open report')
     } finally {
       setLoading(false)
     }
+  }
+
+  function openOverdueReport(row: { quarter: string; reportId: string }) {
+    setQuarter(row.quarter)
+    void openReport(row.quarter)
   }
 
   async function generateReport() {
@@ -117,6 +129,7 @@ export function AccessReviewSection() {
     setSigning(true)
     setError(null)
     setNotice(null)
+    setChallenge(null)
     try {
       const res = await fetch('/auth/admin/access-review/sign', {
         method: 'POST',
@@ -124,14 +137,21 @@ export function AccessReviewSection() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quarter, expectedHash: contentHash }),
       })
-      const body = await res.json()
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
       if (!res.ok) {
-        if (body.error === 'reauthentication_required') {
-          throw new Error('Sign in again. A signature needs authentication from the last minute.')
+        const next = classifySigningChallenge(res.status, body, {
+          resumePath: window.location.pathname + window.location.search,
+        })
+        if (next) {
+          setChallenge(next)
+          return
         }
-        throw new Error(body.error || 'Failed to sign report')
+        const apiError =
+          typeof body.error === 'string' ? body.error : 'Failed to sign report'
+        // Privileged path: deepen directory / group recheck failures (ticket 37).
+        throw new Error(formatPrivilegedActionError(apiError, res.status).message)
       }
-      showReport(body)
+      showReport(body as { report: AccessReviewReport; contentHash?: string })
       setNotice('Signed as Reviewed.')
       await loadOverdue()
     } catch (err) {
@@ -156,6 +176,17 @@ export function AccessReviewSection() {
 
   return (
     <section id="access-review" className="settings-section" aria-labelledby="access-review-heading">
+      {challenge ? (
+        <SigningChallengeInterstitial
+          challenge={challenge}
+          onDismiss={() => setChallenge(null)}
+          onContinue={() => {
+            if (challenge.continueUrl) {
+              window.location.assign(challenge.continueUrl)
+            }
+          }}
+        />
+      ) : null}
       <div className="ns-settings-section-head">
         <div>
           <h2 id="access-review-heading">
@@ -170,11 +201,33 @@ export function AccessReviewSection() {
       </div>
 
       {overdue.length > 0 && (
-        <div className="flash flash-warn" role="status">
-          <p>These quarterly access reviews are unsigned after 14 days.</p>
+        <div
+          className="flash flash-warn"
+          role="alert"
+          aria-labelledby="access-review-overdue-title"
+          data-testid="access-review-overdue-alert"
+        >
+          <p id="access-review-overdue-title">
+            <AlertTriangle size={16} aria-hidden="true" className="button-label-icon" />
+            Unsigned for 14+ days
+          </p>
+          <p className="muted small">
+            These quarterly access reviews were generated at least 14 days ago and still have no
+            reviewer signature. Open a report to review and sign it.
+          </p>
           <ul>
             {overdue.map((row) => (
-              <li key={row.reportId}>{row.quarter} ({row.reportId})</li>
+              <li key={row.reportId}>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  data-testid={`access-review-overdue-link-${row.quarter}`}
+                  onClick={() => openOverdueReport(row)}
+                >
+                  Open {row.quarter}
+                </button>
+                <span className="muted small"> ({row.reportId})</span>
+              </li>
             ))}
           </ul>
         </div>
@@ -219,7 +272,13 @@ export function AccessReviewSection() {
           <p role="status" aria-live="polite">Working on access review…</p>
         )}
         {error && (
-          <p className="flash flash-error" role="alert">{error}</p>
+          <p
+            className="flash flash-error"
+            role="alert"
+            data-testid="access-review-privileged-error"
+          >
+            {error}
+          </p>
         )}
         {notice && (
           <p className="flash flash-success" role="status">{notice}</p>

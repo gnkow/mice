@@ -79,11 +79,7 @@ export function createApp(deps: AppDeps = {}): Hono {
 
   app.post('/auth/backchannel-logout', backChannelLogout)
   app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())
-  // Service principals removed per spec: "There are no PATs and no service principals"
   app.post('/auth/sessions/revoke-all', signOutEverywhere)
-  // PAT routes removed per spec: "There are no PATs and no service principals"
-  // Use device flow (mice login) for CLI access instead
-  // registerTokenRoutes removed with personal access tokens.
   registerInstanceRoutes(app, { audit })
   registerRbacGrantRoutes(app, { audit })
   registerRevocationRoutes(app)

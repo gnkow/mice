@@ -14,3 +14,7 @@
 - [x] Remove service principal UI components
 - [x] Remove service principal types and interfaces
 - [x] Tests verify no service principal routes are reachable
+
+## Comments
+
+**Deep-api Deepen (2026-11-13):** Single seam `servicePrincipalsRemoved` documents removal + retired paths/issuer; cleaned stale SP/PAT route comments in `app.ts`. Unit+integration: `servicePrincipalsRemoved.test.ts` (no `decideServicePrincipalManage` / `servicePrincipals` table / `serviceprincipal.admin`; `decideServiceCallerAdmission` refuses `urn:mice:service`; GET/POST/DELETE on retired paths → 404).

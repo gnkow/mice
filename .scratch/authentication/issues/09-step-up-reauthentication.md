@@ -37,3 +37,5 @@ Sensitive browser actions call `reauthenticate`. The IdP request uses `prompt=lo
 **Files:** `signingAccess.ts`, `signingAccess.test.ts`, `signingRoutes.ts` (thin adapter), `signingRoutes.integration.test.ts`
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13 — Deep-UI **Deepen** (reclassified from no-ui by user). Surfaces: `ReasonPromptProvider` + `AccessReviewSection` signing ceremony. When prepare/sign returns `reauthentication_required` / `reauthUrl`, show titled interstitial **Confirm it's you** with `role=alert` message and **Continue** (no silent redirect). Shared: `web/src/lib/signingChallenge.ts`, `SigningChallengeInterstitial`. E2E: `e2e/tests/step-up-reauthentication.spec.ts` (+ updated `access-review-sign.spec.ts`). Supersedes prior deep-ui skipped — no-ui note.

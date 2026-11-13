@@ -1,4 +1,5 @@
-import { test, expect, openAccountMenu } from '../fixtures'
+import { expect, openAccountMenu } from '../fixtures'
+import { cleanTest as test } from '../fixtures'
 import { uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 
@@ -29,6 +30,22 @@ test.describe('Access review sign (#40)', () => {
 
     const quarter = `2099-Q${(Date.now() % 4) + 1}`
     await section.getByLabel('Quarter').fill(quarter)
+
+    await page.route('**/auth/admin/access-review/generate', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          report: {
+            reportId: `e2e-${quarter}`,
+            quarter,
+            generatedAt: Date.now(),
+            principals: [],
+          },
+          contentHash: 'e2e-hash-ready',
+        }),
+      })
+    })
     await section.getByRole('button', { name: /Generate Report/i }).click()
 
     await expect(section.getByRole('heading', { name: `Report: ${quarter}` })).toBeVisible({
@@ -114,10 +131,17 @@ test.describe('Access review sign (#40)', () => {
       await route.fulfill({
         status: 401,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'reauthentication_required', reauthUrl: '/auth/reauth' }),
+        body: JSON.stringify({
+          error: 'reauthentication_required',
+          reauthUrl: '/auth/reauth?max_age=60&next=%2Fsettings',
+        }),
       })
     })
     await section.getByRole('button', { name: /Sign report/i }).click()
-    await expect(section.getByRole('alert')).toContainText(/Sign in again/i)
+    const interstitial = page.getByTestId('signing-challenge-interstitial')
+    await expect(interstitial).toBeVisible()
+    await expect(interstitial.getByRole('heading', { name: /Confirm it's you/i })).toBeVisible()
+    await expect(interstitial.getByRole('alert')).toContainText(/fresh sign-in/i)
+    await expect(interstitial.getByTestId('signing-challenge-continue')).toBeVisible()
   })
 })
