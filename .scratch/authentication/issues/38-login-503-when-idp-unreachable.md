@@ -31,3 +31,9 @@ When `directory.userStatus` returns `error` during login, the response is 503. T
 - **Seams:** `decideLoginDirectoryStatus` (module); `finishLogin` (package).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13 — deep-ui Deepen (holds → UI surface):
+- **Surfaces:** `LoginPage` `?status=unreachable` (warn tone); callback redirects when directory `error` → `surface: 'unreachable'`.
+- **Deepen:** Titled “Identity provider unavailable” alert (`role=alert`); SSO retry stays on same chrome.
+- **E2E:** `e2e/tests/login-status.spec.ts` — unreachable case. Run: `npm run test:e2e -- e2e/tests/login-status.spec.ts`
+- **Status:** done
