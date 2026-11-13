@@ -20,3 +20,10 @@
 - [x] New data creation is accepted without a reason
 - [x] Reason (and category) are stored on the audit event
 - [x] HTTP tests: a mutation in each class is refused without them and accepted with them
+
+## Comments
+
+- **Audit:** holds at `mutationNeedsReason` / `resolveReason` + proxy/guarded HTTP.
+- **Deepen (auto-pick Top):** extract `requireReasonCategory` + export `createExemptActions` / `isReasonCategory`.
+- **Tests:** `auditReasonPolicy.test.ts` category seam + create-exempt list; existing proxy HTTP remains.
+- **Seams:** module `requireReasonCategory`; `mutationNeedsReason` / `createExemptActions`.
