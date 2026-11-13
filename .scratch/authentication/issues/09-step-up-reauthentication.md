@@ -31,3 +31,7 @@ Sensitive browser actions call `reauthenticate`. The IdP request uses `prompt=lo
 **Deepen (auto-picked):** Collapse freshness + bearer/HTML/API challenge branching into deep `decideStepUp(...)`; clamp via `resolveMaxAgeSec`. `reauthenticate` is a thin Context adapter over that decision. No signingRoutes rewrite.
 
 **Files:** `auth/src/authentication/oidc/stepUp.ts`, `stepUp.test.ts`
+
+2026-11-13 — Deep-API deepen (auto-pick Top) + integ: **holds**. Prior `decideStepUp` kept. Signing routes now call deep `requireSigningAccess` (`signingAccess.ts`) which demands the 60s step-up then idle. Seams: `decideStepUp` / `reauthenticate` (unit), `requireSigningAccess` (unit), `POST /auth/sign/prepare` reauth challenge (integ).
+
+**Files:** `signingAccess.ts`, `signingAccess.test.ts`, `signingRoutes.ts` (thin adapter), `signingRoutes.integration.test.ts`

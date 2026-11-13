@@ -1,11 +1,10 @@
 import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
-import { reauthenticate } from '../oidc/stepUp.js'
 import {
+  buildSigningSessionInfo,
   createSignature,
   prepareForSigning,
   type SignatureMeaning,
-  type SessionInfo,
 } from './signingCeremony.js'
 import { verifySigningEvidence } from './signingEvidence.js'
 import { verifyIdpJwt } from '../oidc/oidc.js'
@@ -14,11 +13,10 @@ import { isSigningBlockedByDrift } from '../compliance/idpDriftDetection.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
 import type { SessionUser } from '../session/session.js'
-import { env } from '../../env.js'
 import { allocateChangeControlId } from '../../changeControl.js'
 import { prepareMutationDocument } from '../../mutationSignature.js'
 import { REASON_CATEGORIES } from '../../auditReason.js'
-import { checkSigningIdleTimeout } from './idleTimeout.js'
+import { requireSigningAccess, SIGNING_STEP_UP_MAX_AGE_SEC } from './signingAccess.js'
 
 /**
  * Signing Ceremony Routes - Authentication Domain
@@ -44,19 +42,11 @@ import { checkSigningIdleTimeout } from './idleTimeout.js'
  * - .scratch/gxp-compliance/issues/05-sign-validated-branch-merge.md
  */
 
-const SIGNING_FRESHNESS_SEC = 60 // 60 seconds per spec requirement
-
-const nowSec = () => Math.floor(Date.now() / 1000)
-
 let verifyJwt: (token: string) => Promise<Record<string, unknown>> = verifyIdpJwt
 
 /** Replaces the id_token verifier so route tests need no live IdP keys. */
 export function setSigningJwtVerifierForTests(next: typeof verifyJwt): void {
   verifyJwt = next
-}
-
-function checkIdleTimeout(user: SessionUser): Response | null {
-  return checkSigningIdleTimeout(user, env.sessionIdleSec, nowSec())
 }
 
 async function directoryFailure(user: SessionUser): Promise<Response | null> {
@@ -79,10 +69,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
   }, async ({ c, user, body }) => {
     const unavailable = await directoryFailure(user)
     if (unavailable) return unavailable
-    const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
-    if (!stepUp.ok) return stepUp.response
-    const idleError = checkIdleTimeout(user)
-    if (idleError) return idleError
+    const access = await requireSigningAccess(c, user)
+    if (!access.ok) return access.response
 
     const method = String(body.method)
     const path = String(body.path)
@@ -121,13 +109,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
   app.post('/auth/sign/prepare', guarded({ mutates: false }, async ({ c, user }) => {
     const unavailable = await directoryFailure(user)
     if (unavailable) return unavailable
-    // Check for fresh authentication
-    const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
-    if (!stepUp.ok) return stepUp.response
-
-    // Check idle timeout (Round 8 U2: 15 minutes)
-    const idleError = checkIdleTimeout(user)
-    if (idleError) return idleError
+    const access = await requireSigningAccess(c, user)
+    if (!access.ok) return access.response
 
     const body = await c.req.json()
     const content = String(body.content ?? '')
@@ -173,13 +156,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       }, 503)
     }
 
-    // Verify fresh authentication again
-    const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
-    if (!stepUp.ok) return stepUp.response
-
-    // Check idle timeout (Round 8 U2: 15 minutes)
-    const idleError = checkIdleTimeout(user)
-    if (idleError) return idleError
+    const access = await requireSigningAccess(c, user)
+    if (!access.ok) return access.response
 
     const content = String(body.content)
     const meaning = String(body.meaning) as SignatureMeaning
@@ -209,11 +187,11 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     try {
       // Ticket 26: Extract MFA evidence AND verification metadata from id_token
       // Ticket 52: the step-up token is re-verified now; missing or stale claims refuse.
-      const evidence = stepUp.user.idToken
-        ? await verifySigningEvidence(stepUp.user.idToken, {
+      const evidence = access.user.idToken
+        ? await verifySigningEvidence(access.user.idToken, {
             verifyJwt,
             nowSec: Math.floor(Date.now() / 1000),
-            maxAgeSec: SIGNING_FRESHNESS_SEC,
+            maxAgeSec: SIGNING_STEP_UP_MAX_AGE_SEC,
           })
         : ({ ok: false, reason: 'unverifiable', detail: 'no id_token in session' } as const)
 
@@ -227,22 +205,15 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
         })
         return c.json({ error: 'MFA required for electronic signature', reason: evidence.reason }, 403)
       }
-      const mfaVerified = true
-      const mfaEvidenceData = evidence.mfaEvidence
-      const verificationMetadataData = evidence.verificationMetadata
 
-      const session: SessionInfo = {
-        authenticatedAt: (mfaEvidenceData.auth_time ?? 0) * 1000, // Convert to ms
-        mfaVerified,
-        principal: {
+      const session = buildSigningSessionInfo(
+        {
           iss: user.iss,
           sub: user.sub,
           name: user.name ?? `${user.iss}|${user.sub}`,
         },
-        // Ticket 26: Include MFA evidence and verification metadata
-        ...(mfaEvidenceData ? { mfaEvidence: mfaEvidenceData } : {}),
-        ...(verificationMetadataData ? { verificationMetadata: verificationMetadataData } : {}),
-      }
+        evidence,
+      )
 
       const signature = createSignature(content, meaning, session)
       const changeControlId =
