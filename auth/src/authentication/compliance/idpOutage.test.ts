@@ -7,7 +7,7 @@ import { overrideEnv } from '../../env.js'
 import { createLoginFlow } from '../oidc/loginFlow.js'
 import { createFakeOidcProvider } from '../oidc/oidcFake.js'
 import { createFakeDirectory } from '../directory/directoryFake.js'
-import { currentIdpOutage, listIdpOutages } from './idpOutage.js'
+import { currentIdpOutage, listIdpOutages, recordIdpCheck } from './idpOutage.js'
 
 const startedAt = Date.UTC(2026, 5, 1)
 
@@ -286,5 +286,34 @@ describe('IdP outage incident', () => {
       setDirectoryFetchForTests(null)
       restore()
     }
+  })
+})
+
+describe('recordIdpCheck', () => {
+  it('opens one incident on the first unreachable check and closes it when reachable', async () => {
+    if (await currentIdpOutage()) {
+      await recordIdpCheck({ reachable: true, at: startedAt })
+    }
+    const at = Date.UTC(2026, 11, 1)
+    await recordIdpCheck({
+      reachable: false,
+      at,
+      check: 'login',
+      requestId: 'req-record-1',
+    })
+    await recordIdpCheck({
+      reachable: false,
+      at: at + 1000,
+      check: 'login',
+      requestId: 'req-record-2',
+    })
+    const open = await currentIdpOutage()
+    assert.ok(open)
+    assert.equal(open.requestId, 'req-record-1')
+    assert.equal(open.paperProcedure, 'validation-pack:idp-outage')
+    await recordIdpCheck({ reachable: true, at: at + 5000 })
+    assert.equal(await currentIdpOutage(), null)
+    const closed = (await listIdpOutages()).find((row) => row.requestId === 'req-record-1')
+    assert.equal(closed?.endedAt, at + 5000)
   })
 })

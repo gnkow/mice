@@ -12,13 +12,19 @@ export type IdpOutage = {
   paperProcedure: string
 }
 
-/** Closes the open incident when the IdP answers. */
-export async function closeIdpOutage(at: number): Promise<void> {
-  await getDb().update(idpOutages).set({ endedAt: new Date(at) }).where(isNull(idpOutages.endedAt))
-}
+export type IdpCheckRecord =
+  | { reachable: false; at: number; check: string; requestId: string }
+  | { reachable: true; at: number }
 
-/** Opens an incident for an unreachable IdP. A second failure in the same outage keeps the first. */
-export async function noteIdpOutage(input: { at: number; check: string; requestId: string }): Promise<void> {
+/**
+ * Records one IdP reachability observation.
+ * Unreachable opens a single open incident (first failure wins); reachable closes it.
+ */
+export async function recordIdpCheck(input: IdpCheckRecord): Promise<void> {
+  if (input.reachable) {
+    await getDb().update(idpOutages).set({ endedAt: new Date(input.at) }).where(isNull(idpOutages.endedAt))
+    return
+  }
   if (await currentIdpOutage()) return
   await getDb().insert(idpOutages).values({
     startedAt: new Date(input.at),

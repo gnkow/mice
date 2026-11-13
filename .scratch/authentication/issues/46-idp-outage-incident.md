@@ -23,3 +23,11 @@ An unreachable directory on login or on an authenticated request opens one `idp_
 - [x] Further 503s in the same outage do not open a second incident
 - [x] The next successful IdP check closes the incident
 - [x] No route creates a local account because the IdP is down
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (acceptance green via login flow + `authenticate` 503/recovery paths).
+
+**Deepen (auto-pick):** Replace dual `noteIdpOutage` / `closeIdpOutage` caller protocol with deep `recordIdpCheck({ reachable, … })` (local-substitutable DB). Open-once / close-on-answer locality stays in one module; `loginFlow` and `requireAuth` each make one call.
+
+**Files:** `auth/src/authentication/compliance/idpOutage.ts`, `auth/src/authentication/compliance/idpOutage.test.ts`, `auth/src/authentication/oidc/loginFlow.ts`, `auth/src/authentication/session/requireAuth.ts`

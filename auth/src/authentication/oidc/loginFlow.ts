@@ -12,7 +12,9 @@ import { isSuspended } from '../access/miceSuspension.js'
 import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
 import { actorFromUser, appendAudit } from '../../audit.js'
 import { canonicalIssuer } from '../session/principal.js'
-import { closeIdpOutage, noteIdpOutage } from '../compliance/idpOutage.js'
+import { recordIdpCheck } from '../compliance/idpOutage.js'
+import { hasIdpDisplayName } from './idpDisplayName.js'
+import { decideLoginDirectoryStatus } from './loginDirectoryStatus.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
@@ -137,36 +139,22 @@ async function finishLogin(
       nonce: pkce.nonce,
     })
     const account = await directory.userStatus(user.sub)
-    const idpStatus = account.status
-    if (idpStatus === 'error') {
-      await noteIdpOutage({
+    const directoryDecision = decideLoginDirectoryStatus(account.status)
+    if (!directoryDecision.allow && directoryDecision.httpStatus === 503) {
+      await recordIdpCheck({
+        reachable: false,
         at: clock.now(),
         check: 'login',
         requestId: input.requestId ?? 'login',
       })
-      return fail(
-        503,
-        'IdP is unreachable. Login cannot be verified at this time.',
-        isReauth
-      )
+      return fail(503, directoryDecision.message, isReauth)
     }
-    await closeIdpOutage(clock.now())
-    if (idpStatus === 'disabled') {
-      await recordIdpDisabled(user)
-      return fail(
-        403,
-        'Your account has been disabled by the administrator.',
-        isReauth
-      )
+    await recordIdpCheck({ reachable: true, at: clock.now() })
+    if (!directoryDecision.allow) {
+      if (directoryDecision.recordDisabled) await recordIdpDisabled(user)
+      return fail(directoryDecision.httpStatus, directoryDecision.message, isReauth)
     }
-    if (idpStatus === 'missing') {
-      return fail(
-        403,
-        'Your account was not found in the directory.',
-        isReauth
-      )
-    }
-    if (!account.name.trim()) {
+    if (!hasIdpDisplayName(account.name)) {
       const iss = canonicalIssuer(user.iss)
       await appendAudit({
         actor: { sub: user.sub, iss, email: user.email, name: '' },

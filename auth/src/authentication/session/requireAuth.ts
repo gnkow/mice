@@ -4,10 +4,10 @@ import { sameOriginGuard } from './csrf.js'
 import { auditorMfaRefusal, preparePrincipal } from '../../authz.js'
 import { env } from '../../env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
-import { can, canonicalIssuer, isScopedCredential, type Capability } from './principal.js'
+import { can, canonicalIssuer, isScopedCredential, isServiceCaller, type Capability } from './principal.js'
 import { resolveCliCredential } from '../credentials/cliCredentials.js'
-import { checkUserIdpStatus } from '../access/idpCheck.js'
-import { closeIdpOutage, noteIdpOutage } from '../compliance/idpOutage.js'
+import { evaluateLiveIdpAccess } from '../access/idpCheck.js'
+import { recordIdpCheck } from '../compliance/idpOutage.js'
 import { isSuspended } from '../access/miceSuspension.js'
 import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
 
@@ -36,7 +36,7 @@ export function bearerToken(c: Context): string {
   return auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
 }
 
-/** The CLI credential's owner for a bearer token, or null when it is expired, revoked or unknown. */
+/** The CLI credential's owner for a bearer token, or null when it is expired, revoked, retired PAT, or unknown. */
 export async function resolveBearer(c: Context): Promise<SessionUser | null> {
   const token = bearerToken(c)
   if (!token) return null
@@ -149,7 +149,7 @@ async function refuseSuspended(c: Context, user: SessionUser, via: 'session' | '
 export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise<AuthOutcome> {
   const session = policy.credential === 'pat' ? null : await getSession(c)
   if (session) {
-    if (canonicalIssuer(session.iss) === 'urn:mice:service') return deny(401, 'Authentication required')
+    if (isServiceCaller(session)) return deny(401, 'Authentication required')
     if (!['GET', 'HEAD'].includes(c.req.method)) {
       if (policy.originCheck) {
         const origin = c.req.header('origin')
@@ -166,25 +166,20 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
     // Synthetic Playwright issuer: skip live IdP when AUTH_DEV_MODE is on.
     const skipIdp = env.authDevMode && canonicalIssuer(session.iss) === 'mice-e2e'
     if (!skipIdp) {
-      let account: Awaited<ReturnType<typeof checkUserIdpStatus>>
-      try {
-        account = await checkUserIdpStatus(session)
-      } catch {
-        await noteIdpOutage({
+      const live = await evaluateLiveIdpAccess(session)
+      if (live.reachable) {
+        await recordIdpCheck({ reachable: true, at: Date.now() })
+      } else {
+        await recordIdpCheck({
+          reachable: false,
           at: Date.now(),
           check: 'authenticated-request',
           requestId: c.req.header('x-request-id') ?? 'authenticated-request',
         })
-        return deny(503, 'Service Unavailable - IdP check failed')
       }
-      await closeIdpOutage(Date.now())
-      const idpStatus = account.status
-      if (idpStatus === 'disabled') await recordIdpDisabled(session)
-      if (idpStatus !== 'enabled') {
-        return deny(503, 'Service Unavailable - IdP check failed')
-      }
-      if (!account.name.trim()) {
-        return deny(403, 'Your account has no name in the identity provider.')
+      if (!live.ok) {
+        if (live.disabled) await recordIdpDisabled(session)
+        return deny(live.status, live.error)
       }
     }
     const reenable = await considerReenable(session, async (event) => {
@@ -211,7 +206,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 
   const pat = await resolveBearer(c)
-  if (!pat || canonicalIssuer(pat.iss) === 'urn:mice:service' || (!policy.allowScoped && isScopedCredential(pat))) {
+  if (!pat || isServiceCaller(pat) || (!policy.allowScoped && isScopedCredential(pat))) {
     return deny(401, 'Authentication required')
   }
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
