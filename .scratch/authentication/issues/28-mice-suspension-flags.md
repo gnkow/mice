@@ -22,6 +22,16 @@ Set is audited as `admin.mice_suspension.set` (`Suspended iss|sub`). Lift is aud
 
 Issue 06's pending two-admin suspend is a different route and is unchanged.
 
+## Code
+
+- `auth/src/authentication/access/miceSuspension.ts`
+- `auth/src/authentication/access/miceSuspensionRoutes.ts`
+
+## Comments
+
+- **Audit:** holds — set/lift history, session wipe with grants preserved, login/`authenticate` refusal while IdP-enabled, and audits proven by `miceSuspension.test.ts`.
+- **Deepen (auto-pick Top):** Collapsed set/lift into one deep transactional `applyFlagChange('set'|'lift')` in `miceSuspension.ts` (flag write + session wipe + history in one `inTransaction`). `suspendPrincipal` / `liftSuspension` / `isSuspended` / `suspensionHistory` remain the public seams; routes stay thin adapters. Tests use `regulatedMutationHeaders` for admin POSTs.
+
 ## Acceptance
 
 - [x] `principals` stores Mice flags, and a history table records set and lift with reason, actor, and time

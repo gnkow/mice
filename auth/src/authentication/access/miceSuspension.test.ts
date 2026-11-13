@@ -28,6 +28,7 @@ const { ensureNamespace, membershipRefs, setMember } = await import('../../authz
 const { createLoginFlow } = await import('../oidc/loginFlow.js')
 const { principalKey } = await import('../session/principal.js')
 const { queryAudit } = await import('../../audit.js')
+const { regulatedMutationHeaders } = await import('../../testSupport.js')
 
 setDirectoryFetchForTests(async (url) => {
   const urlStr = String(url)
@@ -56,7 +57,22 @@ const cookie = async (user: ReturnType<typeof mk>) => {
   return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
 }
 
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Investigation hold', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
+async function signedAdmin(
+  path: string,
+  body: Record<string, unknown>,
+  reason = 'Investigation hold',
+) {
+  return {
+    cookie: await cookie(admin),
+    ...(await regulatedMutationHeaders(admin, {
+      method: 'POST',
+      path,
+      body,
+      reason,
+      category: 'privileged_settings',
+    })),
+  }
+}
 
 function app() {
   const app = new Hono()
@@ -73,11 +89,12 @@ await describe('Mice suspension flags', async () => {
     const scientist = mk('held')
     await cookie(scientist)
     const api = app()
+    const body = { principal: 'idp|held', reason: 'Investigation hold' }
 
     const set = await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers: { cookie: await cookie(admin), ...json },
-      body: JSON.stringify({ principal: 'idp|held', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', body),
+      body: JSON.stringify(body),
     })
     assert.equal(set.status, 200, await set.text())
 
@@ -96,10 +113,11 @@ await describe('Mice suspension flags', async () => {
     assert.equal((await setMember('lab-hold', scientistKey, 'read')).ok, true)
 
     const api = app()
+    const body = { principal: 'idp|paused', reason: 'Investigation hold' }
     const set = await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers: { cookie: await cookie(admin), ...json },
-      body: JSON.stringify({ principal: 'idp|paused', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', body),
+      body: JSON.stringify(body),
     })
     assert.equal(set.status, 200, await set.text())
 
@@ -116,18 +134,19 @@ await describe('Mice suspension flags', async () => {
     await cookie(scientist)
     await writeInstancePermissions(scientist, ['view_audit'])
     const api = app()
-    const headers = { cookie: await cookie(admin), ...json }
+    const setBody = { principal: 'idp|returned', reason: 'Investigation hold' }
     const set = await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ principal: 'idp|returned', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', setBody),
+      body: JSON.stringify(setBody),
     })
     assert.equal(set.status, 200, await set.text())
 
+    const liftBody = { principal: 'idp|returned', reason: 'Investigation closed' }
     const lift = await api.request('/auth/admin/mice-suspension/lift', {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ principal: 'idp|returned', reason: 'Investigation closed' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension/lift', liftBody, 'Investigation closed'),
+      body: JSON.stringify(liftBody),
     })
     assert.equal(lift.status, 200, await lift.text())
 
@@ -140,10 +159,11 @@ await describe('Mice suspension flags', async () => {
     const scientist = mk('blocked-login')
     await cookie(scientist)
     const api = app()
+    const body = { principal: 'idp|blocked-login', reason: 'Investigation hold' }
     const set = await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers: { cookie: await cookie(admin), ...json },
-      body: JSON.stringify({ principal: 'idp|blocked-login', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', body),
+      body: JSON.stringify(body),
     })
     assert.equal(set.status, 200, await set.text())
 
@@ -188,16 +208,17 @@ await describe('Mice suspension flags', async () => {
     const scientist = mk('recorded')
     await cookie(scientist)
     const api = app()
-    const headers = { cookie: await cookie(admin), ...json }
+    const setBody = { principal: 'idp|recorded', reason: 'Investigation hold' }
     assert.equal((await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ principal: 'idp|recorded', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', setBody),
+      body: JSON.stringify(setBody),
     })).status, 200)
+    const liftBody = { principal: 'idp|recorded', reason: 'Investigation closed' }
     assert.equal((await api.request('/auth/admin/mice-suspension/lift', {
       method: 'POST',
-      headers: { ...headers, 'x-mice-reason': 'Investigation closed', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
-      body: JSON.stringify({ principal: 'idp|recorded', reason: 'Investigation closed' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension/lift', liftBody, 'Investigation closed'),
+      body: JSON.stringify(liftBody),
     })).status, 200)
 
     const res = await api.request('/auth/admin/mice-suspension?principal=idp|recorded', {
@@ -216,35 +237,36 @@ await describe('Mice suspension flags', async () => {
       { flag: 'suspended', action: 'set', reason: 'Investigation hold', actor: 'idp|admin1' },
       { flag: 'suspended', action: 'lift', reason: 'Investigation closed', actor: 'idp|admin1' },
     ])
-    assert.equal(Number.isNaN(Date.parse(body.history[0].at)), false)
-    assert.equal(Number.isNaN(Date.parse(body.history[1].at)), false)
+    assert.equal(Number.isNaN(Date.parse(body.history[0]!.at)), false)
+    assert.equal(Number.isNaN(Date.parse(body.history[1]!.at)), false)
   })
 
   await it('audits set, lift, and a refused request', async () => {
     const scientist = mk('audited')
     const api = app()
-    const headers = { cookie: await cookie(admin), ...json }
+    const missingBody = { principal: 'idp|audited', reason: 'Investigation hold' }
     assert.equal((await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ principal: 'idp|audited', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', missingBody),
+      body: JSON.stringify(missingBody),
     })).status, 404)
 
     await cookie(scientist)
     assert.equal((await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ principal: 'idp|audited', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', missingBody),
+      body: JSON.stringify(missingBody),
     })).status, 200)
+    const liftBody = { principal: 'idp|audited', reason: 'Investigation closed' }
     assert.equal((await api.request('/auth/admin/mice-suspension/lift', {
       method: 'POST',
-      headers: { ...headers, 'x-mice-reason': 'Investigation closed', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
-      body: JSON.stringify({ principal: 'idp|audited', reason: 'Investigation closed' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension/lift', liftBody, 'Investigation closed'),
+      body: JSON.stringify(liftBody),
     })).status, 200)
     assert.equal((await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ principal: 'idp|audited', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', missingBody),
+      body: JSON.stringify(missingBody),
     })).status, 200)
 
     const denied = await api.request('/x', { headers: { cookie: await cookie(scientist) } })
@@ -262,10 +284,11 @@ await describe('Mice suspension flags', async () => {
     const scientist = mk('login-audit')
     await cookie(scientist)
     const api = app()
+    const body = { principal: 'idp|login-audit', reason: 'Investigation hold' }
     assert.equal((await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers: { cookie: await cookie(admin), ...json },
-      body: JSON.stringify({ principal: 'idp|login-audit', reason: 'Investigation hold' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', body),
+      body: JSON.stringify(body),
     })).status, 200)
 
     const flow = createLoginFlow({
