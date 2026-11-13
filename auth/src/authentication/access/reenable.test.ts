@@ -33,6 +33,7 @@ const { ensureNamespace, membershipRefs, setMember } = await import('../../authz
 const { principalKey } = await import('../session/principal.js')
 const { queryAudit } = await import('../../audit.js')
 const { createLoginFlow } = await import('../oidc/loginFlow.js')
+const { regulatedMutationHeaders } = await import('../../testSupport.js')
 
 const idp = new Map<string, 'enabled' | 'disabled'>()
 
@@ -67,11 +68,26 @@ const admin = { ...mk('admin1'), emailVerified: true }
 await maybeBootstrapInstanceAdmin(admin)
 await ensureBootstrapKey()
 
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Absence exceeded thirty days', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
-
 const cookie = async (user: ReturnType<typeof mk>) => {
   const sessionId = await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 30 })
   return `${env.cookieName}=${await sealSessionCookie(sessionId)}`
+}
+
+async function signedAdmin(
+  path: string,
+  body: Record<string, unknown>,
+  reason = 'Absence exceeded thirty days',
+) {
+  return {
+    cookie: await cookie(admin),
+    ...(await regulatedMutationHeaders(admin, {
+      method: 'POST',
+      path,
+      body,
+      reason,
+      category: 'privileged_settings',
+    })),
+  }
 }
 
 function app() {
@@ -174,10 +190,11 @@ await describe('Principal re-enable after IdP disable', async () => {
     idp.set('overdue', 'enabled')
     assert.equal((await api.request('/x', { headers: { cookie: scientistCookie } })).status, 403)
 
+    const confirmBody = { principal: 'idp|overdue' }
     const confirmed = await api.request('/auth/admin/re-enable', {
       method: 'POST',
-      headers: { cookie: await cookie(admin), ...json },
-      body: JSON.stringify({ principal: 'idp|overdue' }),
+      headers: await signedAdmin('/auth/admin/re-enable', confirmBody),
+      body: JSON.stringify(confirmBody),
     })
     assert.equal(confirmed.status, 200, await confirmed.clone().text())
 
@@ -202,10 +219,11 @@ await describe('Principal re-enable after IdP disable', async () => {
     const api = app()
     assert.equal((await api.request('/x', { headers: { cookie: scientistCookie } })).status, 503)
 
+    const suspendBody = { principal: 'idp|flagged', reason: 'Absence exceeded thirty days' }
     const suspended = await api.request('/auth/admin/mice-suspension', {
       method: 'POST',
-      headers: { cookie: await cookie(admin), ...json },
-      body: JSON.stringify({ principal: 'idp|flagged', reason: 'Absence exceeded thirty days' }),
+      headers: await signedAdmin('/auth/admin/mice-suspension', suspendBody),
+      body: JSON.stringify(suspendBody),
     })
     assert.equal(suspended.status, 200, await suspended.clone().text())
 

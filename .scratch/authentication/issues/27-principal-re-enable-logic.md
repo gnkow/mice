@@ -25,3 +25,8 @@ The first time a Principal is seen IdP-disabled, `principal_disabled_periods` re
 - `auth/src/authentication/session/requireAuth.ts`
 - `auth/src/authentication/oidc/loginFlow.ts`
 - `web/src/components/ReenableSection.tsx`
+
+## Comments
+
+- **Audit:** holds — first `disabled_at`, automatic restore within 30 days, admin confirm past window, and Mice-blocked automatic restore proven by `reenable.test.ts` at the re-enable / authenticate seams.
+- **Deepen (auto-pick Top):** Introduced internal `decideRestoration` + shared open-period load/`closePeriod` in `reenable.ts`. Window / Mice / IdP eligibility live in one decision table; `considerReenable` and `confirmReenable` stay the public seams (no `requireAuth` / `loginFlow` edits). Tests use `regulatedMutationHeaders` for admin POSTs.

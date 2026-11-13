@@ -18,7 +18,19 @@ export type ReenablePeriod = {
   awaitingConfirmation: boolean
 }
 
-async function principalRow(principal: PrincipalId) {
+type PrincipalRow = { id: number; iss: string; sub: string }
+
+type OpenPeriod = { id: number; disabledAt: Date }
+
+type RestorationDecision =
+  | { kind: 'no-open-period' }
+  | { kind: 'awaiting-confirmation'; period: OpenPeriod; disabledDurationMs: number }
+  | { kind: 'blocked-by-mice'; period: OpenPeriod; disabledDurationMs: number }
+  | { kind: 'automatic'; period: OpenPeriod; disabledDurationMs: number }
+  | { kind: 'admin-eligible'; period: OpenPeriod; disabledDurationMs: number }
+  | { kind: 'not-due' }
+
+async function principalRow(principal: PrincipalId): Promise<PrincipalRow | null> {
   const [row] = await getDb()
     .select({ id: principals.id, iss: principals.iss, sub: principals.sub })
     .from(principals)
@@ -27,17 +39,77 @@ async function principalRow(principal: PrincipalId) {
   return row ?? null
 }
 
+async function loadOpenPeriod(principalId: number): Promise<OpenPeriod | null> {
+  const [open] = await getDb()
+    .select({ id: principalDisabledPeriods.id, disabledAt: principalDisabledPeriods.disabledAt })
+    .from(principalDisabledPeriods)
+    .where(and(eq(principalDisabledPeriods.principalId, principalId), isNull(principalDisabledPeriods.reEnabledAt)))
+    .limit(1)
+  return open ?? null
+}
+
+/**
+ * Deep decision for an open disable: window elapsed?, Mice flag?, IdP enabled?
+ * Callers only learn the kind — close/audit stay on the public restore paths.
+ */
+async function decideRestoration(
+  principal: PrincipalId,
+  options: { requireIdpEnabled?: boolean } = {},
+): Promise<RestorationDecision> {
+  const row = await principalRow(principal)
+  if (!row) return { kind: 'no-open-period' }
+  const period = await loadOpenPeriod(row.id)
+  if (!period) return { kind: 'no-open-period' }
+
+  const disabledDurationMs = currentClock.now() - period.disabledAt.getTime()
+  if (disabledDurationMs > REENABLE_WINDOW_MS) {
+    if (options.requireIdpEnabled) {
+      if (await lookupKeycloakUserStatus(row.sub) !== 'enabled') return { kind: 'not-due' }
+      return { kind: 'admin-eligible', period, disabledDurationMs }
+    }
+    return { kind: 'awaiting-confirmation', period, disabledDurationMs }
+  }
+  if (await isSuspended(principal)) {
+    return { kind: 'blocked-by-mice', period, disabledDurationMs }
+  }
+  return { kind: 'automatic', period, disabledDurationMs }
+}
+
+async function remainingGrants(user: { iss: string; sub: string; groups?: string[] }) {
+  const grants = await instancePermissions(user)
+  const memberships = (await membershipRefs({ key: principalKey(user), groups: user.groups ?? [] }))
+    .map((membership) => `${membership.namespace}:${membership.role}`)
+  return { grants, memberships }
+}
+
+async function closePeriod(
+  periodId: number,
+  fields: {
+    reEnabledAt: Date
+    restorationType: 'automatic' | 'admin-confirmed'
+    auditEventId?: string | null
+    confirmedBy?: string | null
+  },
+): Promise<void> {
+  await getDb()
+    .update(principalDisabledPeriods)
+    .set(fields)
+    .where(eq(principalDisabledPeriods.id, periodId))
+}
+
+async function markPendingConfirmation(periodId: number): Promise<void> {
+  await getDb()
+    .update(principalDisabledPeriods)
+    .set({ restorationType: 'pending' })
+    .where(eq(principalDisabledPeriods.id, periodId))
+}
+
 /** Records the first time this Principal is seen IdP-disabled. A later detection keeps the original time. */
 export async function recordIdpDisabled(principal: PrincipalId & { name?: string; email?: string }): Promise<void> {
   await ensurePrincipal(principal)
   const row = await principalRow(principal)
   if (!row) return
-  const [open] = await getDb()
-    .select({ id: principalDisabledPeriods.id })
-    .from(principalDisabledPeriods)
-    .where(and(eq(principalDisabledPeriods.principalId, row.id), isNull(principalDisabledPeriods.reEnabledAt)))
-    .limit(1)
-  if (open) return
+  if (await loadOpenPeriod(row.id)) return
   await getDb().insert(principalDisabledPeriods).values({
     principalId: row.id,
     disabledAt: new Date(currentClock.now()),
@@ -82,56 +154,38 @@ export type RestorationAudit = {
   }
 }
 
-async function remainingGrants(user: { iss: string; sub: string; groups?: string[] }) {
-  const grants = await instancePermissions(user)
-  const memberships = (await membershipRefs({ key: principalKey(user), groups: user.groups ?? [] }))
-    .map((membership) => `${membership.namespace}:${membership.role}`)
-  return { grants, memberships }
-}
-
 /** Closes an open disable that is still inside the window. A longer one stays blocked for an admin. */
 export async function considerReenable(
   user: SessionUser,
   audit: (event: RestorationAudit) => Promise<string | null>,
 ): Promise<'allow' | 'awaiting-confirmation'> {
-  const row = await principalRow(user)
-  if (!row) return 'allow'
-  const [open] = await getDb()
-    .select({ id: principalDisabledPeriods.id, disabledAt: principalDisabledPeriods.disabledAt })
-    .from(principalDisabledPeriods)
-    .where(and(eq(principalDisabledPeriods.principalId, row.id), isNull(principalDisabledPeriods.reEnabledAt)))
-    .limit(1)
-  if (!open) return 'allow'
-  const now = currentClock.now()
-  const disabledDurationMs = now - open.disabledAt.getTime()
-  if (disabledDurationMs > REENABLE_WINDOW_MS) {
-    await getDb()
-      .update(principalDisabledPeriods)
-      .set({ restorationType: 'pending' })
-      .where(eq(principalDisabledPeriods.id, open.id))
+  const decision = await decideRestoration(user)
+  if (decision.kind === 'no-open-period' || decision.kind === 'blocked-by-mice') return 'allow'
+  if (decision.kind === 'awaiting-confirmation') {
+    await markPendingConfirmation(decision.period.id)
     return 'awaiting-confirmation'
   }
-  if (await isSuspended(user)) return 'allow'
+  if (decision.kind !== 'automatic') return 'allow'
+
+  const row = await principalRow(user)
+  if (!row) return 'allow'
   const principal = `${row.iss}|${row.sub}`
   const { grants, memberships } = await remainingGrants(user)
   const auditEventId = await audit({
     message: `Restored ${principal}`,
     detail: {
       principal,
-      disabledDurationMs,
+      disabledDurationMs: decision.disabledDurationMs,
       restoration: 'automatic',
       grants,
       memberships,
     },
   })
-  await getDb()
-    .update(principalDisabledPeriods)
-    .set({
-      reEnabledAt: new Date(now),
-      restorationType: 'automatic',
-      auditEventId,
-    })
-    .where(eq(principalDisabledPeriods.id, open.id))
+  await closePeriod(decision.period.id, {
+    reEnabledAt: new Date(currentClock.now()),
+    restorationType: 'automatic',
+    auditEventId,
+  })
   return 'allow'
 }
 
@@ -140,34 +194,24 @@ export async function confirmReenable(
   principal: PrincipalId,
   confirmedBy: PrincipalId,
 ): Promise<RestorationAudit | null> {
+  const decision = await decideRestoration(principal, { requireIdpEnabled: true })
+  if (decision.kind !== 'admin-eligible') return null
+
   const row = await principalRow(principal)
   if (!row) return null
-  const [open] = await getDb()
-    .select({ id: principalDisabledPeriods.id, disabledAt: principalDisabledPeriods.disabledAt })
-    .from(principalDisabledPeriods)
-    .where(and(eq(principalDisabledPeriods.principalId, row.id), isNull(principalDisabledPeriods.reEnabledAt)))
-    .limit(1)
-  if (!open) return null
-  const now = currentClock.now()
-  const disabledDurationMs = now - open.disabledAt.getTime()
-  if (disabledDurationMs <= REENABLE_WINDOW_MS) return null
-  if (await lookupKeycloakUserStatus(row.sub) !== 'enabled') return null
   const label = `${row.iss}|${row.sub}`
   const confirmer = `${canonicalIssuer(confirmedBy.iss)}|${confirmedBy.sub}`
   const { grants, memberships } = await remainingGrants(row)
-  await getDb()
-    .update(principalDisabledPeriods)
-    .set({
-      reEnabledAt: new Date(now),
-      restorationType: 'admin-confirmed',
-      confirmedBy: confirmer,
-    })
-    .where(eq(principalDisabledPeriods.id, open.id))
+  await closePeriod(decision.period.id, {
+    reEnabledAt: new Date(currentClock.now()),
+    restorationType: 'admin-confirmed',
+    confirmedBy: confirmer,
+  })
   return {
     message: `Confirmed restore of ${label}`,
     detail: {
       principal: label,
-      disabledDurationMs,
+      disabledDurationMs: decision.disabledDurationMs,
       restoration: 'admin-confirmed',
       confirmedBy: confirmer,
       grants,
