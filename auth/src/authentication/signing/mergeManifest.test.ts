@@ -5,6 +5,7 @@ import {
   buildMergeManifest,
   createManifestCache,
   manifestForCommit,
+  mergeResultBinding,
   type ManifestEntry,
   type TreeLister,
 } from './mergeManifest.js'
@@ -62,5 +63,24 @@ describe('manifestForCommit', () => {
     ])
     assert.equal(digest, sha(manifest))
     assert.match(digest, /^[0-9a-f]{64}$/)
+  })
+})
+
+describe('mergeResultBinding', () => {
+  it('binds the digest as content evidence and keeps heads informational only', () => {
+    const merge = buildMergeManifest([{ path: 'a.csv', contentHash: '11aa' }])
+    const { binding, manifest } = mergeResultBinding({
+      repo: 'ns/data',
+      sourceHead: 'src-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      targetHead: 'tgt-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      merge,
+    })
+    assert.equal(manifest, merge.manifest)
+    assert.equal(binding.manifestDigest, merge.digest)
+    assert.equal(binding.manifestDigest, sha(manifest))
+    assert.notEqual(binding.manifestDigest, binding.sourceHead)
+    assert.notEqual(binding.manifestDigest, binding.targetHead)
+    assert.ok(!manifest.includes(binding.sourceHead))
+    assert.ok(!manifest.includes(binding.targetHead))
   })
 })

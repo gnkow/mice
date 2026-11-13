@@ -104,3 +104,32 @@ export async function manifestForCommit(
   cache.set(key, built)
   return built
 }
+
+export type MergeResultBinding = {
+  repo: string
+  sourceHead: string
+  targetHead: string
+  /** SHA-256 of the merge-result manifest text — the binding content evidence. */
+  manifestDigest: string
+}
+
+/**
+ * Pair a computed merge manifest with tip ids for signature binding.
+ * Heads identify the merge; only `manifestDigest` is authoritative content evidence.
+ */
+export function mergeResultBinding(input: {
+  repo: string
+  sourceHead: string
+  targetHead: string
+  merge: MergeManifest
+}): { binding: MergeResultBinding; manifest: string } {
+  return {
+    binding: {
+      repo: input.repo,
+      sourceHead: input.sourceHead,
+      targetHead: input.targetHead,
+      manifestDigest: input.merge.digest,
+    },
+    manifest: input.merge.manifest,
+  }
+}

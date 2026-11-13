@@ -19,3 +19,10 @@
 - [x] Manifest is stored before the signature becomes final
 - [x] Digest matches the stored manifest; a mismatch refuses the signature
 - [x] Signing uses the manifest digest in the binding, not oxen commit ids as the authoritative content evidence
+
+## Comments
+
+- **Audit:** holds at `buildMergeManifest` / `manifestForCommit` / store record; integration thin until ticket 05 wires merge HTTP.
+- **Deepen (auto-pick Top):** extract `mergeResultBinding` so digest-first binding is one seam for ticket 05.
+- **Tests:** `mergeManifest.test.ts` binding unit; `signatureStore.test.ts` records via that helper (manifest before signature).
+- **Seams:** module `mergeResultBinding` + `signatureStore.record`.
