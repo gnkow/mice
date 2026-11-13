@@ -3,7 +3,15 @@ import { env } from './env.js'
 import { decideInstanceAction, decideManageApprovers, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
 import { grantApprover, listApprovers, revokeApprover } from './authzApproverStore.js'
 import { denialResponse } from './decisionHttp.js'
-import { isCustomRepoRoleAssigned, listRepoCollaborators, removeRepoCollaborator, removeRepoGroupCollaborator, setRepoCollaborator, setRepoGroupCollaborator } from './authzCollaboratorStore.js'
+import {
+  isCustomRepoRoleAssigned,
+  listRepoCollaboratorHistory,
+  listRepoCollaborators,
+  removeRepoCollaborator,
+  removeRepoGroupCollaborator,
+  setRepoCollaborator,
+  setRepoGroupCollaborator,
+} from './authzCollaboratorStore.js'
 import { isCustomNamespaceRoleAssigned, listNamespaceMembers, namespaceGroupBindingWarning, reconcileNamespaceGroupIds, removeNamespaceGroupMember, removeNamespaceMember, setNamespaceGroupMember, setNamespaceMember } from './authzMembershipStore.js'
 import {
   createNamespaceAuthz,
@@ -343,6 +351,16 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const denied = denialResponse(c, await decideManageRepoCollaborators(session, ns, repo))
     if (denied) return denied
     return c.json({ collaborators: await listRepoCollaborators(ns, repo) })
+  }))
+
+  app.get('/auth/namespaces/:ns/repos/:repo/collaborators/history', guarded({}, async ({ c, user: session }) => {
+    const ns = c.req.param('ns')
+    const repo = c.req.param('repo')
+    const denied = denialResponse(c, await decideManageRepoCollaborators(session, ns, repo))
+    if (denied) return denied
+    const versions = await listRepoCollaboratorHistory(ns, repo)
+    if (!versions) return c.json({ error: 'Not found' }, 404)
+    return c.json({ versions })
   }))
 
   app.put('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {

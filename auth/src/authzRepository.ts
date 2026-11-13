@@ -16,6 +16,7 @@ import {
   namespaceTombstones,
   repoApprovers,
   repoCollaborators,
+  repoCollaboratorVersions,
   repoGroupCollaborators,
   repositories,
   repositoryTombstones,
@@ -835,12 +836,70 @@ function rollbackAs(e: unknown, error: string): Result {
 
 // ── Collaborators ───────────────────────────────────────────────────────────
 
+export type CollaboratorSeat = { kind: 'user' | 'group'; key: string; role: string }
+
+export type RepoCollaboratorVersion = {
+  validFrom: string
+  validTo: string | null
+  collaborators: CollaboratorSeat[]
+}
+
 async function existingRepositoryId(ns: string, repo: string): Promise<string | null> {
   return (await readRepository(ns, repo))?.id ?? null
 }
 
 async function requireRepositoryId(ns: string, repo: string): Promise<string | null> {
   return (await ensureRepository(ns, repo))?.id ?? null
+}
+
+async function snapshotCollaboratorSeats(tx: Tx, repositoryId: string): Promise<CollaboratorSeat[]> {
+  const users = await tx.select().from(repoCollaborators).where(eq(repoCollaborators.repositoryId, repositoryId))
+  const groups = await tx
+    .select()
+    .from(repoGroupCollaborators)
+    .where(eq(repoGroupCollaborators.repositoryId, repositoryId))
+  const seats: CollaboratorSeat[] = [
+    ...users.map((r) => ({ kind: 'user' as const, key: r.userKey, role: r.role })),
+    ...groups.map((r) => ({ kind: 'group' as const, key: r.groupKey, role: r.role })),
+  ]
+  return seats.sort((a, b) =>
+    a.kind !== b.kind ? a.kind.localeCompare(b.kind) : a.key.localeCompare(b.key),
+  )
+}
+
+async function recordCollaboratorVersion(tx: Tx, repositoryId: string, at = new Date()): Promise<void> {
+  await tx
+    .update(repoCollaboratorVersions)
+    .set({ validTo: at })
+    .where(
+      and(eq(repoCollaboratorVersions.repositoryId, repositoryId), isNull(repoCollaboratorVersions.validTo)),
+    )
+  await tx.insert(repoCollaboratorVersions).values({
+    repositoryId,
+    collaborators: await snapshotCollaboratorSeats(tx, repositoryId),
+    validFrom: at,
+    validTo: null,
+    createdAt: at,
+  })
+}
+
+/** Chronological collaborator-set versions for a repository (entity history, not audit). */
+export async function listRepoCollaboratorVersions(
+  ns: string,
+  repo: string,
+): Promise<RepoCollaboratorVersion[] | null> {
+  const repositoryId = await existingRepositoryId(ns, repo)
+  if (!repositoryId) return null
+  const rows = await getDb()
+    .select()
+    .from(repoCollaboratorVersions)
+    .where(eq(repoCollaboratorVersions.repositoryId, repositoryId))
+    .orderBy(asc(repoCollaboratorVersions.validFrom))
+  return rows.map((r) => ({
+    validFrom: r.validFrom.toISOString(),
+    validTo: r.validTo ? r.validTo.toISOString() : null,
+    collaborators: r.collaborators,
+  }))
 }
 
 export async function directCollaboratorRole(ns: string, repo: string, key: string): Promise<CollaboratorRoleRef | null> {
@@ -987,47 +1046,77 @@ export async function hasAnyCollaboratorGrant(user: { key: string; groups: strin
 export async function setCollaborator(ns: string, repo: string, key: string, role: CollaboratorRoleRef): Promise<void> {
   const repositoryId = await requireRepositoryId(ns, repo)
   if (!repositoryId) throw new Error('Repository not found')
-  await getDb()
-    .insert(repoCollaborators)
-    .values({ repositoryId, userKey: key, role })
-    .onConflictDoUpdate({
-      target: [repoCollaborators.repositoryId, repoCollaborators.userKey],
-      set: { role },
-    })
+  await inTransaction(async (tx) => {
+    const prev = (
+      await tx
+        .select()
+        .from(repoCollaborators)
+        .where(and(eq(repoCollaborators.repositoryId, repositoryId), eq(repoCollaborators.userKey, key)))
+    )[0]?.role
+    if (prev === role) return
+    await tx
+      .insert(repoCollaborators)
+      .values({ repositoryId, userKey: key, role })
+      .onConflictDoUpdate({
+        target: [repoCollaborators.repositoryId, repoCollaborators.userKey],
+        set: { role },
+      })
+    await recordCollaboratorVersion(tx, repositoryId)
+  })
 }
 
 export async function removeCollaborator(ns: string, repo: string, key: string): Promise<boolean> {
   const repositoryId = await existingRepositoryId(ns, repo)
   if (!repositoryId) return false
-  const rows = await getDb()
-    .delete(repoCollaborators)
-    .where(and(eq(repoCollaborators.repositoryId, repositoryId), eq(repoCollaborators.userKey, key)))
-    .returning({ k: repoCollaborators.userKey })
-  return rows.length > 0
+  return inTransaction(async (tx) => {
+    const rows = await tx
+      .delete(repoCollaborators)
+      .where(and(eq(repoCollaborators.repositoryId, repositoryId), eq(repoCollaborators.userKey, key)))
+      .returning({ k: repoCollaborators.userKey })
+    if (!rows.length) return false
+    await recordCollaboratorVersion(tx, repositoryId)
+    return true
+  })
 }
 
 export async function setGroupCollaborator(ns: string, repo: string, group: string, role: CollaboratorRoleRef): Promise<void> {
   const repositoryId = await requireRepositoryId(ns, repo)
   if (!repositoryId) throw new Error('Repository not found')
-  await getDb()
-    .insert(repoGroupCollaborators)
-    .values({ repositoryId, groupKey: group, role })
-    .onConflictDoUpdate({
-      target: [repoGroupCollaborators.repositoryId, repoGroupCollaborators.groupKey],
-      set: { role },
-    })
+  await inTransaction(async (tx) => {
+    const prev = (
+      await tx
+        .select()
+        .from(repoGroupCollaborators)
+        .where(
+          and(eq(repoGroupCollaborators.repositoryId, repositoryId), eq(repoGroupCollaborators.groupKey, group)),
+        )
+    )[0]?.role
+    if (prev === role) return
+    await tx
+      .insert(repoGroupCollaborators)
+      .values({ repositoryId, groupKey: group, role })
+      .onConflictDoUpdate({
+        target: [repoGroupCollaborators.repositoryId, repoGroupCollaborators.groupKey],
+        set: { role },
+      })
+    await recordCollaboratorVersion(tx, repositoryId)
+  })
 }
 
 export async function removeGroupCollaborator(ns: string, repo: string, group: string): Promise<boolean> {
   const repositoryId = await existingRepositoryId(ns, repo)
   if (!repositoryId) return false
-  const rows = await getDb()
-    .delete(repoGroupCollaborators)
-    .where(
-      and(eq(repoGroupCollaborators.repositoryId, repositoryId), eq(repoGroupCollaborators.groupKey, group)),
-    )
-    .returning({ k: repoGroupCollaborators.groupKey })
-  return rows.length > 0
+  return inTransaction(async (tx) => {
+    const rows = await tx
+      .delete(repoGroupCollaborators)
+      .where(
+        and(eq(repoGroupCollaborators.repositoryId, repositoryId), eq(repoGroupCollaborators.groupKey, group)),
+      )
+      .returning({ k: repoGroupCollaborators.groupKey })
+    if (!rows.length) return false
+    await recordCollaboratorVersion(tx, repositoryId)
+    return true
+  })
 }
 
 // ── Approvers ───────────────────────────────────────────────────────────────

@@ -43,6 +43,13 @@
       "when": 1794500000000,
       "tag": "0005_namespace_membership_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794510000000,
+      "tag": "0006_repo_collaborator_versions",
+      "breakpoints": true
     }
   ]
 }

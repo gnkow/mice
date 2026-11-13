@@ -155,6 +155,24 @@ export const repoGroupCollaborators = pgTable(
   (t) => [primaryKey({ columns: [t.repositoryId, t.groupKey] }), index('repo_group_collaborators_group').on(t.groupKey)],
 )
 
+/** Append-only successive collaborator sets for a repository (GxP ticket 23). */
+export const repoCollaboratorVersions = pgTable(
+  'repo_collaborator_versions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    collaborators: jsonb('collaborators')
+      .$type<Array<{ kind: 'user' | 'group'; key: string; role: string }>>()
+      .notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('repo_collaborator_versions_repo_from_idx').on(t.repositoryId, t.validFrom)],
+)
+
 /**
  * Non-authoritative lookup index over the signature records in the ledger. Holds no evidence;
  * `rebuildIndex` can recreate every row from the ledger.
