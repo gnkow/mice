@@ -37,6 +37,17 @@ export type RateLimitResult =
   | { allowed: false; count: number; limit: number; windowSeconds: number; retryAfter: number }
   | { error: true; message: string }
 
+/** Counter store port: production uses Postgres; tests inject failing or in-memory adapters. */
+export type RateLimitStore = {
+  countInWindow(limitKey: string, endpoint: string, windowStart: Date): Promise<number>
+  record(limitKey: string, endpoint: string, at: Date): Promise<void>
+}
+
+export type ConsumeRateLimitDeps = {
+  store?: RateLimitStore
+  now?: () => number
+}
+
 /**
  * Configuration for standard authentication endpoints.
  */
@@ -51,6 +62,29 @@ export const RATE_LIMIT_CONFIG = {
   tokenMint: { limit: 10, windowMs: 3600_000, endpoint: 'token_mint' },
 } as const
 
+const postgresRateLimitStore: RateLimitStore = {
+  async countInWindow(limitKey, endpoint, windowStart) {
+    const recentRequests = await getDb()
+      .select({ id: rateLimits.id })
+      .from(rateLimits)
+      .where(
+        and(
+          eq(rateLimits.limitKey, limitKey),
+          eq(rateLimits.endpoint, endpoint),
+          gte(rateLimits.requestedAt, windowStart),
+        ),
+      )
+    return recentRequests.length
+  },
+  async record(limitKey, endpoint, at) {
+    await getDb().insert(rateLimits).values({
+      limitKey,
+      endpoint,
+      requestedAt: at,
+    })
+  },
+}
+
 /**
  * Counter module seam: decide allow/deny and, when allowed, record the hit.
  * Callers learn one interface — check + write stay behind the implementation.
@@ -60,71 +94,46 @@ export const RATE_LIMIT_CONFIG = {
 export async function consumeRateLimit(
   limitKey: string,
   config: RateLimitConfig,
+  deps: ConsumeRateLimitDeps = {},
 ): Promise<RateLimitResult> {
-  const checked = await checkRateLimit(limitKey, config)
-  if ('error' in checked || !checked.allowed) return checked
+  const store = deps.store ?? postgresRateLimitStore
+  const now = deps.now ?? Date.now
 
-  const recorded = await recordRateLimitRequest(limitKey, config.endpoint)
-  if (!recorded) return { error: true, message: 'Rate limit storage unavailable' }
-  return checked
-}
-
-/** Read the window counter. Fail-closed on store errors. */
-async function checkRateLimit(
-  limitKey: string,
-  config: RateLimitConfig
-): Promise<RateLimitResult> {
+  let count: number
   try {
-    const windowStart = new Date(Date.now() - config.windowMs)
-
-    const recentRequests = await getDb()
-      .select({ id: rateLimits.id })
-      .from(rateLimits)
-      .where(
-        and(
-          eq(rateLimits.limitKey, limitKey),
-          eq(rateLimits.endpoint, config.endpoint),
-          gte(rateLimits.requestedAt, windowStart)
-        )
-      )
-
-    const count = recentRequests.length
-
-    if (count >= config.limit) {
-      return {
-        allowed: false,
-        count,
-        limit: config.limit,
-        windowSeconds: Math.floor(config.windowMs / 1000),
-        retryAfter: Math.floor(config.windowMs / 1000),
-      }
-    }
-
-    return { allowed: true, count, limit: config.limit }
+    count = await store.countInWindow(
+      limitKey,
+      config.endpoint,
+      new Date(now() - config.windowMs),
+    )
   } catch (error) {
     return {
       error: true,
       message: error instanceof Error ? error.message : 'Rate limit storage unavailable',
     }
   }
-}
 
-/** Writes one hit. Returns false when the counter store cannot be written. */
-async function recordRateLimitRequest(
-  limitKey: string,
-  endpoint: string
-): Promise<boolean> {
+  if (count >= config.limit) {
+    return {
+      allowed: false,
+      count,
+      limit: config.limit,
+      windowSeconds: Math.floor(config.windowMs / 1000),
+      retryAfter: Math.floor(config.windowMs / 1000),
+    }
+  }
+
   try {
-    await getDb().insert(rateLimits).values({
-      limitKey,
-      endpoint,
-      requestedAt: new Date(),
-    })
-    return true
+    await store.record(limitKey, config.endpoint, new Date(now()))
   } catch (error) {
     console.error('Failed to record rate limit request:', error)
-    return false
+    return {
+      error: true,
+      message: error instanceof Error ? error.message : 'Rate limit storage unavailable',
+    }
   }
+
+  return { allowed: true, count, limit: config.limit }
 }
 
 /**

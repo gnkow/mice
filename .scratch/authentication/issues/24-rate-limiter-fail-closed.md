@@ -38,3 +38,7 @@ There is no live token-mint route. PAT mint is unregistered, and device approval
 - **Audit:** holds — shared Postgres limiter, thresholds, 429 + Retry-After, 503 fail-closed, and cross-instance sharing proven by `rateLimit.test.ts` and `authRateLimitRoutes.test.ts`.
 - **Deepen:** Collapsed the shallow `checkRateLimit` + `recordRateLimitRequest` pair into one deeper `consumeRateLimit(limitKey, config)` interface. Read/decide/write stay behind that seam; middleware (`rateLimitByIp` / `rateLimitByPrincipal`) is a thin keying adapter over it. Check/record are private implementation details.
 - **Files:** `rateLimit.ts`, `rateLimitMiddleware.ts`, `rateLimit.test.ts`.
+
+2026-11-13 — **Deepen #2 (auto-picked):** Inject `RateLimitStore` port into `consumeRateLimit` so fail-closed count/record paths are unit-testable without breaking Postgres; default store remains the shared table.
+**Seams:** `rateLimit.ts` (`consumeRateLimit` + `RateLimitStore`); middleware HTTP adapter unchanged.
+**Tests:** `rateLimit.test.ts` (unit, injected store), `authRateLimitRoutes.test.ts` (integ).

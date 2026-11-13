@@ -8,6 +8,7 @@ import {
   cleanupOldRateLimitRecords,
   RATE_LIMIT_CONFIG,
   type RateLimitConfig,
+  type RateLimitStore,
 } from './rateLimit.js'
 import { breakTable } from '../../db/testDatabase.js'
 
@@ -133,6 +134,36 @@ describe('Rate Limiting (Ticket 24, U22)', () => {
   })
 
   describe('Fail-closed behavior', () => {
+    it('returns error when the injected store cannot count', async () => {
+      const store: RateLimitStore = {
+        countInWindow: async () => {
+          throw new Error('counter down')
+        },
+        record: async () => {
+          throw new Error('should not record')
+        },
+      }
+      const result = await consumeRateLimit('ip:fake', { limit: 10, windowMs: 60_000, endpoint: 'inj' }, { store })
+      assert.equal('error' in result, true)
+      if ('error' in result) {
+        assert.match(result.message, /counter down/)
+      }
+    })
+
+    it('returns error when the injected store cannot record', async () => {
+      const store: RateLimitStore = {
+        countInWindow: async () => 0,
+        record: async () => {
+          throw new Error('write down')
+        },
+      }
+      const result = await consumeRateLimit('ip:fake-write', { limit: 10, windowMs: 60_000, endpoint: 'inj' }, { store })
+      assert.equal('error' in result, true)
+      if ('error' in result) {
+        assert.match(result.message, /write down|unavailable/i)
+      }
+    })
+
     it('returns error when storage is unavailable', async () => {
       const repair = await breakTable('rate_limits')
 
