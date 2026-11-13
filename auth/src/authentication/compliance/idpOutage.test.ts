@@ -7,7 +7,12 @@ import { overrideEnv } from '../../env.js'
 import { createLoginFlow } from '../oidc/loginFlow.js'
 import { createFakeOidcProvider } from '../oidc/oidcFake.js'
 import { createFakeDirectory } from '../directory/directoryFake.js'
-import { currentIdpOutage, listIdpOutages, recordIdpCheck } from './idpOutage.js'
+import {
+  currentIdpOutage,
+  decideIdpOutageMutation,
+  listIdpOutages,
+  recordIdpCheck,
+} from './idpOutage.js'
 
 const startedAt = Date.UTC(2026, 5, 1)
 
@@ -286,6 +291,36 @@ describe('IdP outage incident', () => {
       setDirectoryFetchForTests(null)
       restore()
     }
+  })
+})
+
+describe('decideIdpOutageMutation', () => {
+  it('opens on first unreachable, keeps open on further failures, closes on answer', () => {
+    assert.deepEqual(
+      decideIdpOutageMutation(false, {
+        reachable: false,
+        at: startedAt,
+        check: 'login',
+        requestId: 'req-1',
+      }),
+      { action: 'open', at: startedAt, check: 'login', requestId: 'req-1' },
+    )
+    assert.deepEqual(
+      decideIdpOutageMutation(true, {
+        reachable: false,
+        at: startedAt + 1,
+        check: 'login',
+        requestId: 'req-2',
+      }),
+      { action: 'noop' },
+    )
+    assert.deepEqual(decideIdpOutageMutation(true, { reachable: true, at: startedAt + 5 }), {
+      action: 'close',
+      at: startedAt + 5,
+    })
+    assert.deepEqual(decideIdpOutageMutation(false, { reachable: true, at: startedAt }), {
+      action: 'noop',
+    })
   })
 })
 

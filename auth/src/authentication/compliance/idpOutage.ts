@@ -16,20 +16,50 @@ export type IdpCheckRecord =
   | { reachable: false; at: number; check: string; requestId: string }
   | { reachable: true; at: number }
 
+/** What `recordIdpCheck` must write given whether an incident is already open. */
+export type IdpOutageMutation =
+  | { action: 'noop' }
+  | { action: 'open'; at: number; check: string; requestId: string }
+  | { action: 'close'; at: number }
+
+/**
+ * Open-once / close-on-answer policy for IdP outage incidents (Ticket 46).
+ * Reachable with no open row is a no-op; unreachable with an open row stays open.
+ */
+export function decideIdpOutageMutation(
+  hasOpenIncident: boolean,
+  input: IdpCheckRecord,
+): IdpOutageMutation {
+  if (input.reachable) {
+    return hasOpenIncident ? { action: 'close', at: input.at } : { action: 'noop' }
+  }
+  if (hasOpenIncident) return { action: 'noop' }
+  return {
+    action: 'open',
+    at: input.at,
+    check: input.check,
+    requestId: input.requestId,
+  }
+}
+
 /**
  * Records one IdP reachability observation.
  * Unreachable opens a single open incident (first failure wins); reachable closes it.
  */
 export async function recordIdpCheck(input: IdpCheckRecord): Promise<void> {
-  if (input.reachable) {
-    await getDb().update(idpOutages).set({ endedAt: new Date(input.at) }).where(isNull(idpOutages.endedAt))
+  const mutation = decideIdpOutageMutation(Boolean(await currentIdpOutage()), input)
+  if (mutation.action === 'noop') return
+  if (mutation.action === 'close') {
+    await getDb()
+      .update(idpOutages)
+      .set({ endedAt: new Date(mutation.at) })
+      .where(isNull(idpOutages.endedAt))
     return
   }
-  if (await currentIdpOutage()) return
   await getDb().insert(idpOutages).values({
-    startedAt: new Date(input.at),
-    check: input.check,
-    requestId: input.requestId,
+    startedAt: new Date(mutation.at),
+    check: mutation.check,
+    requestId: mutation.requestId,
     paperProcedure,
   })
 }

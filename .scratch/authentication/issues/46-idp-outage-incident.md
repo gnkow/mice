@@ -31,3 +31,6 @@ An unreachable directory on login or on an authenticated request opens one `idp_
 **Deepen (auto-pick):** Replace dual `noteIdpOutage` / `closeIdpOutage` caller protocol with deep `recordIdpCheck({ reachable, … })` (local-substitutable DB). Open-once / close-on-answer locality stays in one module; `loginFlow` and `requireAuth` each make one call.
 
 **Files:** `auth/src/authentication/compliance/idpOutage.ts`, `auth/src/authentication/compliance/idpOutage.test.ts`, `auth/src/authentication/oidc/loginFlow.ts`, `auth/src/authentication/session/requireAuth.ts`
+
+- **Deep-API deepen (2026-11-13):** Extracted pure `decideIdpOutageMutation(hasOpen, check)` (open-once / close-on-answer / noop); `recordIdpCheck` applies it. No `loginFlow` / `idpCheck` edits.
+- **Tests:** `idpOutage.test.ts` unit + integration (green)
