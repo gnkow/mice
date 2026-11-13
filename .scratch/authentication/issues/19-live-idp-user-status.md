@@ -19,5 +19,15 @@ Group refresh on privileged operations is issue 37. The login status code when t
 
 ## Code
 
-- `auth/src/authentication/access/idpCheck.ts`
-- `auth/src/authentication/session/requireAuth.ts`
+- `auth/src/authentication/access/idpCheck.ts` (`evaluateLiveIdpAccess`)
+- `auth/src/authentication/access/liveIdpAccess.test.ts`
+- `auth/src/authentication/access/idpCheck.test.ts`
+- `auth/src/authentication/session/requireAuth.ts` (thin adapter over `evaluateLiveIdpAccess`)
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (acceptance covered by `idpCheck.test.ts` + `liveIdpAccess.test.ts`).
+
+**Deepen (auto-picked):** Collapse live IdP status/name decision into deep `evaluateLiveIdpAccess` (injectable lookup); `verifyIdpAccess` / `checkUserIdpStatus` wrap it. `requireAuth` only maps the result + IdP outage/disabled side effects — no wholesale rewrite.
+
+**Files:** `idpCheck.ts`, `liveIdpAccess.test.ts`, `idpCheck.test.ts`, `requireAuth.ts` (adapter only)

@@ -1,53 +1,81 @@
 /**
- * Live IdP status checking for access control.
- * 
- * Ticket #19 (U3): Removed all cache tolerance for IdP availability.
- * Every authenticated operation requires a live IdP check.
- * IdP unreachable = 503 for all requests (including reads).
- * 
- * Rules:
- * - IdP is checked on every authenticated request (login, refresh, all API calls)
- * - If IdP is unreachable, deny access with 503 (no cache fallback, no grace period)
- * - If user is disabled in IdP, deny access immediately
- * - Groups checked at: login, refresh, privileged operations
- * - Ordinary reads use session-cached groups (bounded by 8h session lifetime)
+ * Live IdP status checking for access control (Ticket 19 / U3).
+ *
+ * Every authenticated request evaluates IdP user status with no throttle and
+ * no last-check cache. Unreachable directory or disabled user → 503.
+ * Ordinary reads keep groups captured on the Session (bounded by session TTL).
  */
 
 import type { SessionUser } from '../session/session.js'
 import { directoryNow, type DirectoryUserState } from '../directory/directory.js'
+import { hasIdpDisplayName } from '../oidc/idpDisplayName.js'
+
+export type LiveIdpLookup = (sub: string) => Promise<DirectoryUserState>
+
+export type LiveIdpAccessResult =
+  | { ok: true; reachable: true; account: DirectoryUserState }
+  | {
+      ok: false
+      reachable: boolean
+      status: 503 | 403
+      error: string
+      account?: DirectoryUserState
+      disabled?: boolean
+    }
+
+const UNAVAILABLE = 'Service Unavailable - IdP check failed'
+const NO_NAME = 'Your account has no name in the identity provider.'
 
 /**
- * Checks the user's status with the IdP.
- * 
- * @param user - The session user
- * @returns The IdP status
- * @throws Error if IdP is unreachable (error status)
+ * Live IdP access decision for an authenticated request.
+ * Lookup is injectable for tests; production uses the configured directory.
  */
-export async function checkUserIdpStatus(user: SessionUser): Promise<DirectoryUserState> {
-  const account = await directoryNow().userStatus(user.sub)
-
-  // If IdP returned 'error', it means the directory is unreachable
-  if (account.status === 'error') {
-    throw new Error('IdP is unreachable - cannot verify user status')
+export async function evaluateLiveIdpAccess(
+  user: Pick<SessionUser, 'sub'>,
+  lookup: LiveIdpLookup = (sub) => directoryNow().userStatus(sub),
+): Promise<LiveIdpAccessResult> {
+  let account: DirectoryUserState
+  try {
+    account = await lookup(user.sub)
+  } catch {
+    return { ok: false, reachable: false, status: 503, error: UNAVAILABLE }
   }
 
-  return account
+  if (account.status === 'error') {
+    return { ok: false, reachable: false, status: 503, error: UNAVAILABLE }
+  }
+
+  if (account.status !== 'enabled') {
+    return {
+      ok: false,
+      reachable: true,
+      status: 503,
+      error: UNAVAILABLE,
+      account,
+      disabled: account.status === 'disabled',
+    }
+  }
+
+  if (!hasIdpDisplayName(account.name)) {
+    return { ok: false, reachable: true, status: 403, error: NO_NAME, account }
+  }
+
+  return { ok: true, reachable: true, account }
 }
 
 /**
- * Verifies that a user is enabled in the IdP.
- * Always performs a live check (no throttling).
- * 
- * @param user - The session user
- * @returns true if user is enabled, false if disabled/missing/unreachable
+ * Raw IdP account state. Throws when the directory cannot answer.
+ * Prefer `evaluateLiveIdpAccess` for authenticated-request gates.
  */
-export async function verifyIdpAccess(user: SessionUser): Promise<boolean> {
-  try {
-    const account = await checkUserIdpStatus(user)
-
-    return account.status === 'enabled' && account.name.trim().length > 0
-  } catch (error) {
-    // IdP unreachable - deny access (no cache fallback)
-    return false
+export async function checkUserIdpStatus(user: SessionUser): Promise<DirectoryUserState> {
+  const account = await directoryNow().userStatus(user.sub)
+  if (account.status === 'error') {
+    throw new Error('IdP is unreachable - cannot verify user status')
   }
+  return account
+}
+
+/** True when a live IdP check allows access (enabled + named). */
+export async function verifyIdpAccess(user: SessionUser): Promise<boolean> {
+  return (await evaluateLiveIdpAccess(user)).ok
 }
