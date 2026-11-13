@@ -28,3 +28,6 @@
 ## Comments
 
 **Deep-api Deepen (2026-11-13):** Holds — approver catalog, Owner-only assign/revoke, audit events, and `decideIsApprover` already shipped. Auto-picked Top: co-locate `decideIsApprover` in `authzApproverStore` (grant/decision locality); `authz.ts` re-exports. Unit: `authzApproverStore.test.ts`. Integration: `approvers.test.ts` (HTTP Owner gate + audit). Removed stale “In code today” blurb claiming approver absent.
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

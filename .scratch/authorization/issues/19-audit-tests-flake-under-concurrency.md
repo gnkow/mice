@@ -41,3 +41,6 @@ cd auth && node --import tsx --test --test-concurrency=4 \
 ```
 
 Note: some neighboring audit tests (native instance-permission mutations, branch update/delete in `auditDataset`) currently return `signature_required` from unrelated dirty GxP work in the tree; those fail alone as well and are outside this ticket's harness fix.
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

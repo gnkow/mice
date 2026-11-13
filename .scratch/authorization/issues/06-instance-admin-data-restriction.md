@@ -22,3 +22,5 @@
 **Deep-api Deepen (holds).** Audit: SoD membership check and bootstrap gate held; unit present; dead `addInstanceAdmin` import in `instanceAdminSeparation.test.ts`; SoD string inline.
 
 **Deepen:** `refuseInstanceAdminMembership` + `INSTANCE_ADMIN_MEMBERSHIP_REFUSAL` in `authzMembershipStore.ts`; `refuseNamespaceCreateBootstrap` + `NAMESPACE_CREATE_BOOTSTRAP_REFUSAL` in `authz.ts`. Removed dead import. Strengthened unit (self-grant + SoD gate) and thin route integration (manager cannot add instance admin as member).
+
+**Deep-ui Deepen (2026-11-13):** Holds — Owner-only delete already gated. Deepened SoD copy (no “instance admins create repos”), Admin empty namespaces message (`namespacesEmptyMessage`), Settings Administrators SoD note, Audit nav gated on `audit:read`. E2E: `instance-admin-separation.spec.ts` TC-SOD-01–03.

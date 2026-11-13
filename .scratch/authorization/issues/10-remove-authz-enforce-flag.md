@@ -24,3 +24,6 @@ Decisions always run. `GET /auth/instance` and `/auth/me/authz` still report `en
 ## Comments
 
 **Deep-api Deepen (2026-11-13):** Single seam `authzAlwaysOn` (`authzEnforceReport`) feeds `/auth/me/authz` and `/auth/instance`; removed stale “enforce flag” comments in `authz.ts`. Unit: `authzAlwaysOn.test.ts`.
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

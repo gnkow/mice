@@ -22,3 +22,6 @@
 **Deep-api Deepen (holds).** Audit: acceptance holds at `authzRepository` / `authzNamespaceStore` / namespace routes. Unit was present but thin on ensure-mint and membership-after-rename; route integration thin on create/rename id.
 
 **Deepen:** collapsed create+ensure into `insertOwnedNamespace` with an explicit `randomUUID()` mint; rename still updates by stable id. Strengthened unit (`authzRepository.test.ts` stable namespace ids) and thin integration (`namespaceRoutes.test.ts` create returns id; rename preserves id).
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.

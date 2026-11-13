@@ -26,3 +26,6 @@
 ## Comments
 
 **Deep-api Deepen (2026-11-13):** Added `evaluateSelfMergeFromCommits` as the single commits→decision seam; unit coverage for extract+decide. Proxy still loads authors; decision locality stays in `selfMerge.ts`.
+
+
+**Deep-ui (2026-11-13):** Skipped as **no-ui** with user acknowledgment on implement. Acceptance has no UI surface to deepen under `/deep-ui`.
