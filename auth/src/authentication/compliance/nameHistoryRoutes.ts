@@ -6,7 +6,7 @@ import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { guarded } from '../session/routeGuard.js'
 import { canonicalIssuer } from '../session/principal.js'
 import type { SessionUser } from '../session/session.js'
-import { getNameHistory } from '../session/nameChangeHistory.js'
+import { getAdminNameHistory } from '../session/nameChangeHistory.js'
 
 const adminGate = async (user: SessionUser) => (await isInstanceAdmin(user) ? null : 'Admin required')
 
@@ -22,15 +22,6 @@ export function registerNameHistoryRoutes(app: Hono): void {
       .where(and(eq(principals.iss, iss), eq(principals.sub, sub)))
       .limit(1)
     if (!principal) return c.json({ error: 'Principal not found' }, 404)
-    const history = await getNameHistory(principal.id)
-    const current = history.find((row) => row.validTo === null)
-    return c.json({
-      currentName: current?.name ?? null,
-      history: history.map((row) => ({
-        name: row.name,
-        validFrom: row.validFrom.toISOString(),
-        validTo: row.validTo ? row.validTo.toISOString() : null,
-      })),
-    })
+    return c.json(await getAdminNameHistory(principal.id))
   }))
 }

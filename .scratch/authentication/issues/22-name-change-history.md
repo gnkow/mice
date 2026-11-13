@@ -22,3 +22,10 @@ Showing the current name next to the name at signing, and an admin timeline, is 
 - `auth/src/authentication/session/nameChangeHistory.ts`
 - `auth/src/authentication/session/session.ts` (`ensurePrincipal`)
 - `auth/src/db/schema.ts` (`principalNameHistory`)
+- `auth/src/authentication/compliance/nameHistoryRoutes.ts`
+
+## Comments
+
+- **Audit:** holds (acceptance covered by `nameChangeHistory.test.ts` + `nameHistoryRoutes.test.ts`).
+- **Deepen:** Principal name timeline module owns interval `getNameAtTime` (`validFrom ≤ t < validTo`), `toAdminNameHistory` / `getAdminNameHistory`; route no longer re-derives current.
+- **Tests:** `auth/src/nameChangeHistory.test.ts`, `auth/src/authentication/compliance/nameHistoryRoutes.test.ts`.
