@@ -23,10 +23,8 @@ import {
 } from './auditReason.js'
 import {
   CHANGE_CONTROL_HEADER,
-  changeControlPatternFor,
   mutationNeedsChangeControl,
   resolveChangeControl,
-  type ChangeControlRejection,
 } from './changeControl.js'
 import { createDatasetCapture, createLineageCapture, type DatasetVersions } from './proxyLineage.js'
 import { authorizeApiRequest } from './authz.js'
@@ -105,7 +103,7 @@ async function rejectReason(
   via: AuditVia,
   method: string,
   pathname: string,
-  rejection: ReasonRejection | ChangeControlRejection,
+  rejection: ReasonRejection,
   scope: { namespace?: string; repo?: string },
 ): Promise<Response> {
   await appendAudit({
@@ -276,15 +274,10 @@ export async function proxyToOxen(
     reason = resolved.value
   }
   if (mutating && mutationNeedsChangeControl(classified.action)) {
-    const cc = resolveChangeControl({
+    changeControlId = resolveChangeControl({
       id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
-      pattern: await changeControlPatternFor(ns),
       required: true,
     })
-    if (!cc.ok) {
-      return rejectReason(user, via, method, pathname, cc.rejection, { namespace: ns, repo })
-    }
-    changeControlId = cc.value
   }
 
   if (decision.aclBypass) {

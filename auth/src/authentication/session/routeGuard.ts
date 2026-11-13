@@ -17,7 +17,6 @@ import {
 } from '../../auditReason.js'
 import {
   CHANGE_CONTROL_HEADER,
-  changeControlPatternFor,
   resolveChangeControl,
 } from '../../changeControl.js'
 import { denialResponse } from '../../decisionHttp.js'
@@ -124,28 +123,10 @@ export function guarded(
         return c.json({ error: resolved.rejection.detail, code: resolved.rejection.code }, 400)
       }
       reason = resolved.value
-      const nsParam = (() => {
-        try {
-          return c.req.param('ns')
-        } catch {
-          return undefined
-        }
-      })()
-      const cc = resolveChangeControl({
+      changeControlId = resolveChangeControl({
         id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
-        pattern: await changeControlPatternFor(nsParam),
         required: true,
       })
-      if (!cc.ok) {
-        await appendAudit({
-          ...base,
-          status: 400,
-          action: 'request.rejected',
-          detail: { reason: cc.rejection.code },
-        })
-        return c.json({ error: cc.rejection.detail, code: cc.rejection.code }, 400)
-      }
-      changeControlId = cc.value
     }
     const reasonFields = {
       ...reason,
