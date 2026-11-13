@@ -47,8 +47,11 @@ export { sealSession, getSession, setSessionCookie, destroySession, clearSession
 export type { CliCredentialScope, SessionUser } from './session/session.js'
 export type { AuthOutcome, AuthPolicy } from './session/requireAuth.js'
 export type Principal = import('./session/session.js').SessionUser
-export { assertProductionStartup } from './session/startupGate.js'
-export { assertIdpAssurance } from './session/idpAssuranceGate.js'
+export {
+  assertProductionStartup,
+  productionStartupProblems,
+} from './session/startupGate.js'
+export { assertIdpAssurance, assessIdpAssurance } from './session/idpAssuranceGate.js'
 export { registerWebSessionRoutes } from './session/webSessionRoutes.js'
 
 // REMOVED (per spec):

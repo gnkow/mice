@@ -27,3 +27,8 @@ Split from issues 03 and 20. U22 says strict behaviour is always on.
 - **Audit:** holds (`startupGate.test.ts` refuses unset/zero/negative; positive starts).
 - **Deepen:** extracted `sessionIdleTimeoutProblems` for the idle refusal path only; `idpAssuranceGate` untouched and still green beside it.
 - **Tests:** `auth/src/authentication/session/startupGate.test.ts` (+ coexistence `idpAssuranceGate.test.ts`).
+
+2026-11-13 Deep-API (integ): **holds** + package-seam integ. `productionStartupProblems` / `assertProductionStartup` exported from `authentication/index`; integ refuses zero idle through those exports.
+- **Seams:** `sessionIdleTimeoutProblems` (unit) → `productionStartupProblems` / `assertProductionStartup` (package integ)
+- **Integ:** `auth/src/authentication/session/startupGate.integration.test.ts` (Ticket 33 describe)
+- **No commit/push** this pass.
