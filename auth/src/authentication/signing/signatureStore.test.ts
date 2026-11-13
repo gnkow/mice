@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { immudbConfig, openLedger } from '../../auditLedger.js'
 import { getDb } from '../../db/database.js'
 import { signatureIndex, principals } from '../../db/schema.js'
+import { buildMergeManifest, mergeResultBinding } from './mergeManifest.js'
 import { openSignatureStore, type NewSignature } from './signatureStore.js'
 
 const db = getDb()
@@ -69,6 +70,24 @@ describe('authoritative signature record', () => {
     assert.equal(back?.record.binding?.targetHead, 'tgt222')
     assert.notEqual(back?.record.binding?.manifestDigest, 'src111')
     assert.notEqual(back?.record.binding?.manifestDigest, 'tgt222')
+  })
+
+  it('accepts a binding built by mergeResultBinding (digest-first seam)', async () => {
+    const merge = buildMergeManifest([
+      { path: 'a.csv', contentHash: '11aa' },
+      { path: 'b.csv', contentHash: '22bb' },
+    ])
+    const { binding: bound, manifest: text } = mergeResultBinding({
+      repo: `ns/bound-${randomBytes(3).toString('hex')}`,
+      sourceHead: 'src-tip',
+      targetHead: 'tgt-tip',
+      merge,
+    })
+    const saved = await store.record({ ...base, binding: bound, manifest: text, changeControlId })
+    const back = await store.get(saved.id)
+    assert.equal(back?.record.binding?.manifestDigest, merge.digest)
+    assert.equal((await store.getManifest(merge.digest))?.manifest, text)
+    assert.ok((await store.getManifest(merge.digest))!.seq < saved.seq)
   })
 
   it('retrieves a verification proof that fails when the stored value is altered', async () => {
