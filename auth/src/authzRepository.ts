@@ -218,6 +218,16 @@ async function closeOpenNamespaceSettingsVersion(tx: Tx, namespaceId: string, at
     )
 }
 
+/** Close the open settings version and open the next from the live namespace row. */
+async function recordNamespaceSettingsVersion(
+  tx: Tx,
+  row: typeof namespaces.$inferSelect,
+  at = new Date(),
+): Promise<void> {
+  await closeOpenNamespaceSettingsVersion(tx, row.id, at)
+  await openNamespaceSettingsVersion(tx, row, at)
+}
+
 /** Chronological settings versions for a namespace (by current name → stable id). */
 export async function listNamespaceSettingsVersions(ns: string): Promise<NamespaceSettingsVersion[] | null> {
   const settings = await readNamespace(ns)
@@ -453,8 +463,7 @@ export async function updateNamespaceSettings(
         .returning()
       const next = updated[0]
       if (!next) return { ok: false, error: 'Namespace not found' } as const
-      await closeOpenNamespaceSettingsVersion(tx, row.id, at)
-      await openNamespaceSettingsVersion(tx, next, at)
+      await recordNamespaceSettingsVersion(tx, next, at)
       return { ok: true } as const
     } catch (e) {
       if (isUniqueViolation(e)) return { ok: false, error: 'Namespace already exists' } as const
