@@ -1,17 +1,28 @@
 import { createHash } from 'node:crypto'
-import { type PrincipalId } from '../session/principal.js'
+import { canonicalIssuer, type PrincipalId } from '../session/principal.js'
+
+export type { PrincipalId }
 
 /**
- * TICKET 08: Commit Identity and Job Tokens
- * 
- * Ensures commit attribution is cryptographically trustworthy:
- * - Strips client-supplied identity trailers
- * - BFF appends authoritative iss+sub + name snapshot
- * - Jobs use BFF-internal tokens, not user credentials
- * - Electronic signatures restricted to humans only
+ * Commit identity: how a Principal is stamped onto a human commit (Ticket 08)
+ * and how job attribution trailers are formed.
+ *
+ * Human commit `author` is always canonical `iss|sub`; email is the Principal's
+ * email at commit time. Client-supplied author/email fields are overwritten by
+ * the BFF (see `author.ts`).
  */
 
 const IDENTITY_TRAILER_KEYS = ['Performed-by', 'Submitted-by', 'Signed-by', 'Job']
+
+/** Canonical commit `author` for a human Principal: `iss|sub` (trailing slash on iss removed). */
+export function humanCommitAuthor(principal: PrincipalId): string {
+  return `${canonicalIssuer(principal.iss)}|${principal.sub}`
+}
+
+/** Email stamped on a human commit: Principal email at commit time. */
+export function humanCommitEmail(principal: { email: string }): string {
+  return principal.email
+}
 
 /**
  * Strip any identity trailers from client-supplied commit message.
@@ -40,7 +51,7 @@ export function stripIdentityTrailers(message: string): string {
  * Format: iss|sub (Name)
  */
 export function formatIdentityTrailer(principal: PrincipalId & { name: string }): string {
-  return `${principal.iss}|${principal.sub} (${principal.name})`
+  return `${humanCommitAuthor(principal)} (${principal.name})`
 }
 
 /**

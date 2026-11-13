@@ -23,6 +23,17 @@ A human commit written through the BFF has `author` set to the Principal's canon
 ## Code
 
 - `auth/src/authentication/author.ts` (`commitAuthor`)
+- `auth/src/authentication/commits/commitIdentity.ts` (`humanCommitAuthor`, `humanCommitEmail`)
 - `auth/src/authentication/session/principal.ts` (`canonicalIssuer`)
 - `auth/src/audit.ts` (`actorFromUser`)
 - `auth/src/proxyAuthor.test.ts`
+- `auth/src/authentication/author.test.ts`
+- `auth/src/authentication/commits/commitIdentity.test.ts`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (acceptance covered by `proxyAuthor.test.ts` + author/commitIdentity unit tests).
+
+**Deepen (auto-picked):** Own human commit `author`/`email` identity in `commitIdentity` (`humanCommitAuthor` / `humanCommitEmail`); `author.ts` `commitAuthor` + inject paths and `formatIdentityTrailer` call that seam. No session.ts rewrite.
+
+**Files:** `commitIdentity.ts`, `author.ts`, `author.test.ts`, `commitIdentity.test.ts`

@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  humanCommitAuthor,
+  humanCommitEmail,
   stripIdentityTrailers,
   appendIdentityTrailer,
   formatIdentityTrailer,
@@ -24,6 +26,29 @@ import {
  * - Human commits have iss|sub trailer only (no Job marker)
  * - Only humans can electronically sign
  */
+
+describe('Human commit author (Ticket 08)', () => {
+  it('formats author as canonical iss|sub', () => {
+    assert.equal(
+      humanCommitAuthor({ iss: 'https://idp.example.com', sub: 'alice123' }),
+      'https://idp.example.com|alice123',
+    )
+  })
+
+  it('strips a trailing slash on iss', () => {
+    assert.equal(
+      humanCommitAuthor({ iss: 'https://idp.example.com/', sub: 'alice123' }),
+      'https://idp.example.com|alice123',
+    )
+  })
+
+  it('snapshots email at commit time', () => {
+    assert.equal(
+      humanCommitEmail({ email: 'alice@example.com' }),
+      'alice@example.com',
+    )
+  })
+})
 
 describe('Commit Identity - Strip Client Trailers', () => {
   it('strips identity trailers from client-supplied commits', () => {
