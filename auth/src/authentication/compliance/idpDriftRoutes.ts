@@ -13,6 +13,7 @@ import {
   getRecentDriftReports,
   establishBaseline,
   assessDrift,
+  type IdpDriftFetchDeps,
 } from '../compliance/idpDriftDetection.js'
 import { appendAudit } from '../../audit.js'
 
@@ -23,7 +24,10 @@ const requireInstanceAdmin = {
   jsonOnly: true,
 } as const
 
-export function registerIdpDriftRoutes(app: Hono): void {
+/** Discovery/issuer ports for current/compare/check; production uses live fetch. */
+export type IdpDriftRouteDeps = IdpDriftFetchDeps
+
+export function registerIdpDriftRoutes(app: Hono, deps: IdpDriftRouteDeps = {}): void {
   /**
    * GET /auth/admin/idp-drift/baseline
    * Get current active baseline configuration
@@ -48,7 +52,7 @@ export function registerIdpDriftRoutes(app: Hono): void {
     await authorizeInstanceAction(user, 'instance.admin')
 
     try {
-      const current = await getCurrentIdpConfig()
+      const current = await getCurrentIdpConfig(deps)
       return c.json({ current })
     } catch (err) {
       return c.json({
@@ -71,7 +75,7 @@ export function registerIdpDriftRoutes(app: Hono): void {
     }
 
     try {
-      const report = await assessDrift({ persist: false })
+      const report = await assessDrift({ ...deps, persist: false })
       if (report.error) {
         return c.json({
           error: 'Failed to compare configurations',
@@ -103,7 +107,7 @@ export function registerIdpDriftRoutes(app: Hono): void {
     await authorizeInstanceAction(user, 'instance.admin')
 
     try {
-      const report = await performDriftCheck()
+      const report = await performDriftCheck(deps)
 
       await appendAudit({
         actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
