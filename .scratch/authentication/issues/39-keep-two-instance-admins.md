@@ -19,3 +19,13 @@ Replaces recovery-token persistence. A one-hour two-person token is not needed w
 - [x] Removing an instance admin while two or fewer remain is refused
 - [x] Removing one admin while three or more remain still succeeds
 - [x] Recovery-token routes and the settings Recovery section are gone
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (acceptance green at `assignRole` / `revokeRole` via `breaksAdminMinimum`; proving test `rbacAdminMinimum.test.ts`).
+
+**Deepen (auto-pick):** Collapse floor arithmetic into deep `decideAdminMinimum({ activeAdminIds, targetPrincipalId })` (in-process). `rbacStore` loads active Admin ids; the decision owns the ≤2 refuse / ≥3 allow. Error string stays behind that seam.
+
+**Files:** `auth/src/adminMinimum.ts`, `auth/src/adminMinimum.test.ts`, `auth/src/rbacStore.ts`
+
+**Tests:** `adminMinimum.test.ts`; regression `rbacAdminMinimum.test.ts`

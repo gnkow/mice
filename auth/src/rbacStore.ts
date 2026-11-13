@@ -14,6 +14,9 @@ import {
 import { isInstancePermission, type InstancePermission } from './rbacCatalog.js'
 import { mergeEffectivePermissions } from './rbacEffective.js'
 import { isInstanceRole, type InstanceRole } from './rbacRoles.js'
+import { ADMIN_MINIMUM_ERROR, decideAdminMinimum } from './adminMinimum.js'
+
+export { ADMIN_MINIMUM_ERROR }
 
 type UserKey = { sub: string; iss: string }
 type Result = { ok: true } | { ok: false; error: string }
@@ -170,16 +173,20 @@ export async function listAdminPrincipals(now = Date.now()): Promise<Array<{ sub
     .orderBy(asc(principals.iss), asc(principals.sub))
 }
 
-export const ADMIN_MINIMUM_ERROR = 'At least two admins must remain'
-
-/** True when taking `role` away from this principal would leave fewer than two active Admins. */
-async function breaksAdminMinimum(principalId: number, existing: { role: string; expiresAt: Date } | undefined): Promise<boolean> {
+/** True when taking Admin away from this principal would break the two-admin floor. */
+async function breaksAdminMinimum(
+  principalId: number,
+  existing: { role: string; expiresAt: Date } | undefined,
+): Promise<boolean> {
   if (!existing || existing.role !== 'admin' || existing.expiresAt.getTime() <= Date.now()) return false
   const active = await getDb()
     .select({ id: principalRoles.principalId })
     .from(principalRoles)
     .where(and(eq(principalRoles.role, 'admin'), gt(principalRoles.expiresAt, new Date())))
-  return active.length <= 2 && active.some((r) => r.id === principalId)
+  return !decideAdminMinimum({
+    activeAdminIds: active.map((r) => r.id),
+    targetPrincipalId: principalId,
+  }).allow
 }
 
 export async function assignRole(input: {
