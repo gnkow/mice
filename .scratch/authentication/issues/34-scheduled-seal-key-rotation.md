@@ -21,3 +21,11 @@ Boot starts a normal-rotation schedule after the bootstrap key exists. A tick ro
 
 - `auth/src/authentication/session/sealKeyRotationSchedule.ts`
 - `auth/src/boot.ts`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (acceptance covered by `sealKeyRotationSchedule.test.ts`; boot still only calls `startSealKeyRotationSchedule()` after bootstrap).
+
+**Deepen (auto-picked):** Pull due-check + rotate + audit into `isSealKeyRotationDue` / `runScheduledSealKeyRotation`; `startSealKeyRotationSchedule` only owns the timer and delegates tick. Boot hook untouched.
+
+**Files:** `auth/src/authentication/session/sealKeyRotationSchedule.ts`, `sealKeyRotationSchedule.test.ts`

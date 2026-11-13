@@ -6,13 +6,32 @@ import { getDb } from '../../db/database.js'
 import { queryAudit } from '../../audit.js'
 import { sealKeys } from '../../db/schema.js'
 import { ensureBootstrapKey, getCurrentSealKey, getSealKeyById } from './sealKeys.js'
-import { startSealKeyRotationSchedule } from './sealKeyRotationSchedule.js'
+import {
+  isSealKeyRotationDue,
+  runScheduledSealKeyRotation,
+  startSealKeyRotationSchedule,
+  SEAL_KEY_ROTATION_SEC,
+} from './sealKeyRotationSchedule.js'
 
 const DAY = 24 * 60 * 60
 const THIRTY_DAYS = 30 * DAY
 const SEVEN_DAYS = 7 * DAY
 
 describe('scheduled seal-key rotation', () => {
+  it('is due only when the current key is at least 30 days old', () => {
+    const validFrom = 1_700_000_000
+    assert.equal(isSealKeyRotationDue(validFrom, validFrom + SEAL_KEY_ROTATION_SEC - 1), false)
+    assert.equal(isSealKeyRotationDue(validFrom, validFrom + SEAL_KEY_ROTATION_SEC), true)
+  })
+
+  it('runScheduledSealKeyRotation is a no-op when not due', async () => {
+    await getDb().delete(sealKeys)
+    await ensureBootstrapKey()
+    const before = await getCurrentSealKey()
+    assert.equal(await runScheduledSealKeyRotation(before!.validFrom), false)
+    assert.equal((await getCurrentSealKey())!.id, before!.id)
+  })
+
   it('does not rotate a seal key younger than 30 days', async () => {
     await getDb().delete(sealKeys)
     await ensureBootstrapKey()
