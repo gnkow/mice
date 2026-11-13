@@ -24,10 +24,8 @@ When `directory.userStatus` returns `error` during login, the response is 503. T
 
 ## Comments
 
-2026-11-13: Checkmate audit — **holds** (acceptance green at `finishLogin` / `completeLogin`; proving tests in `idpAccessCheck.test.ts`, `loginFlowProvider.test.ts`, `idpOutage.test.ts`).
-
-**Deepen (auto-pick):** Collapse directory `userStatus` → HTTP refuse mapping into deep `decideLoginDirectoryStatus(status)` (in-process). `recordIdpCheck` API unchanged — loginFlow still records reachability; decision owns 503 unreachable / 403 disabled|missing / allow. Disabled side-effect flag (`recordDisabled`) stays behind the decision.
-
-**Files:** `auth/src/authentication/oidc/loginDirectoryStatus.ts`, `auth/src/authentication/oidc/loginDirectoryStatus.test.ts`, `auth/src/authentication/oidc/loginFlow.ts`
-
-**Tests:** `loginDirectoryStatus.test.ts`; regression `idpAccessCheck.test.ts`, `loginFlowProvider.test.ts`, `idpOutage.test.ts`
+- **Audit:** holds — directory `error` → 503, no Session; disabled/missing stay 403 (ticket 04).
+- **Deepen (auto-pick Top, alongside `loginDirectoryStatus`, no fight with 04):** decision now owns `idpCheck: 'reachable' | 'unreachable'` so `finishLogin` records outage vs reachable without special-casing `httpStatus === 503`. Ticket 04’s 403 messages / `recordDisabled` unchanged.
+- **Files:** `loginDirectoryStatus.ts`, `loginFlow.ts` (thin adapter).
+- **Tests:** `loginDirectoryStatus.test.ts` (unit); `idpAccessCheck.test.ts`, `loginFlowProvider.test.ts`, `idpOutage.test.ts` (integration).
+- **Seams:** `decideLoginDirectoryStatus` (module); `finishLogin` (package).
