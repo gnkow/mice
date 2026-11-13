@@ -30,3 +30,4 @@ A signature displays the name captured at signing and the date: `Signed by: Dr. 
 - **Tests:** `web/src/lib/signatureName.test.ts`
 - **Deep-API deepen (2026-11-13):** Auth `decideNameHistoryWrite` owns track write policy (noop / seed / close+change); web `decideNameHistoryRowDisplay` owns timeline day labels. No React redesign.
 - **Tests:** `nameChangeHistory.test.ts`, `signatureName.test.ts`, `nameHistoryRoutes.test.ts` (green)
+- **Deep-UI (2026-11-13):** Deepen — `PrincipalNamePage` chronological table (caption, `time`, current row, empty/loading a11y); AccessReview uses structured signature display. `decideNameHistoryRowDisplay` adds `isCurrent`. E2E: `e2e/tests/signature-name-history.spec.ts`. No commit/push.
