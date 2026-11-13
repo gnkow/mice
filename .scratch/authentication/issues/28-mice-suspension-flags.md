@@ -43,3 +43,5 @@ Issue 06's pending two-admin suspend is a different route and is unchanged.
 - [x] Set, lift, and refusal are audited
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13 — deep-ui Deepen (holds): **MiceSuspensionSection** empty guidance, focused `role=alert` errors with `aria-invalid`/`aria-describedby`, confirm success flash, disabled actions until a user is chosen; E2E `e2e/tests/mice-suspension.spec.ts` (Settings → Suspension). No commit/push (requested).

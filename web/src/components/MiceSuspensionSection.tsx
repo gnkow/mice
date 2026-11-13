@@ -1,5 +1,5 @@
 import { Ban } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { DirectoryPicker } from './DirectoryPicker'
 import {
   fetchMiceSuspension,
@@ -17,12 +17,22 @@ export function MiceSuspensionSection({ signedInIss }: { signedInIss: string }) 
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [history, setHistory] = useState<SuspensionHistoryEntry[] | null>(null)
+  const errorRef = useRef<HTMLParagraphElement>(null)
+  const errorId = useId()
+  const reasonId = useId()
 
   const principal = sub.trim() && iss.trim() ? `${iss.trim()}|${sub.trim()}` : ''
   const suspended = history?.at(-1)?.action === 'set'
 
+  useEffect(() => {
+    if (error) errorRef.current?.focus()
+  }, [error])
+
   async function loadHistory(target = principal) {
-    if (!target) return
+    if (!target) {
+      setError('Choose a user before loading history')
+      return
+    }
     const body = await fetchMiceSuspension(target)
     setHistory(body.history)
   }
@@ -67,6 +77,20 @@ export function MiceSuspensionSection({ signedInIss }: { signedInIss: string }) 
           </p>
         </div>
       </div>
+
+      {error && (
+        <p
+          id={errorId}
+          ref={errorRef}
+          className="flash flash-error"
+          role="alert"
+          tabIndex={-1}
+        >
+          {error}
+        </p>
+      )}
+      {notice && <p className="flash flash-success" role="status">{notice}</p>}
+
       <form className="ns-member-form" onSubmit={(e) => void run('set', e)}>
         <div className="ns-member-form-fields">
           <DirectoryPicker
@@ -79,24 +103,38 @@ export function MiceSuspensionSection({ signedInIss }: { signedInIss: string }) 
               setSub(next.sub)
               setIss(next.iss)
               setHistory(null)
+              setError(null)
+              setNotice(null)
             }}
           />
         </div>
-        <label className="ns-settings-field">
+        <label className="ns-settings-field" htmlFor={reasonId}>
           <span className="ns-settings-label">Reason</span>
           <input
+            id={reasonId}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Why this suspension is changing"
             disabled={busy}
             aria-invalid={error ? true : undefined}
-            aria-describedby={error ? 'mice-suspension-error' : undefined}
+            aria-describedby={error ? errorId : undefined}
           />
         </label>
-        {error && <p id="mice-suspension-error" className="flash flash-error" role="alert">{error}</p>}
         <div className="btn-row ns-settings-actions">
-          <button className="btn danger" type="submit" disabled={busy}>Suspend</button>
-          <button className="btn ghost" type="button" disabled={busy} onClick={(e) => void run('lift', e)}>
+          <button
+            className="btn danger"
+            type="submit"
+            disabled={busy || !principal}
+            aria-busy={busy || undefined}
+          >
+            {busy ? 'Working…' : 'Suspend'}
+          </button>
+          <button
+            className="btn ghost"
+            type="button"
+            disabled={busy || !principal}
+            onClick={(e) => void run('lift', e)}
+          >
             Lift suspension
           </button>
           <button
@@ -114,12 +152,18 @@ export function MiceSuspensionSection({ signedInIss }: { signedInIss: string }) 
           </button>
         </div>
       </form>
-      {notice && <p className="flash flash-success" role="status">{notice}</p>}
+
+      {!principal && history === null && (
+        <p className="muted small" role="status">
+          Choose a user to suspend, lift, or review Mice suspension history.
+        </p>
+      )}
+
       {history && (
         <>
-          <p className="muted small">
+          <p className="muted small" role="status">
             {history.length === 0
-              ? 'No Mice suspension history.'
+              ? 'No Mice suspension history for this Principal.'
               : suspended
                 ? 'Currently suspended.'
                 : 'Not suspended.'}
