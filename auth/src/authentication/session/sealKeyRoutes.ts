@@ -3,19 +3,20 @@
  */
 
 import type { Hono } from 'hono'
-import { authorizeInstanceAction } from '../../authz.js'
+import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { guarded } from '../index.js'
 import {
   getAllSealKeys,
   getCurrentSealKey,
-  normalRotation,
-  emergencyRotation,
-  isKeyValidForVerification,
+  presentSealKey,
+  rotateSealKeyWithAudit,
 } from './sealKeys.js'
-import { appendAudit } from '../../audit.js'
+
+const adminGate = async (u: { sub: string; iss: string }) =>
+  (await isInstanceAdmin(u)) ? null : 'Instance admin required'
 
 const requireInstanceAdmin = {
-  requires: { capability: 'isInstanceAdmin', message: 'Instance admin required' },
+  gate: adminGate,
   originCheck: true,
   jsonOnly: true,
 } as const
@@ -25,77 +26,63 @@ export function registerSealKeyRoutes(app: Hono): void {
    * GET /auth/admin/seal-keys
    * List all seal keys (admin only)
    */
-  app.get('/auth/admin/seal-keys', guarded(requireInstanceAdmin, async ({ c, user }) => {
-    await authorizeInstanceAction(user, 'instance.admin')
-    
-    const keys = await getAllSealKeys()
+  app.get('/auth/admin/seal-keys', guarded({ gate: adminGate }, async ({ c }) => {
     const now = Math.floor(Date.now() / 1000)
-    
-    // Don't expose key material in list
-    const keyList = keys.map(key => ({
-      id: key.id,
-      validFrom: key.validFrom,
-      validUntil: key.validUntil,
-      revokedAt: key.revokedAt,
-      rotationType: key.rotationType,
-      createdAt: key.createdAt.toISOString(),
-      status: isKeyValidForVerification(key, now) ? 'valid' : 'expired',
-      isCurrent: key.validUntil === null && key.revokedAt === null,
-    }))
-    
-    return c.json({ keys: keyList })
+    const keys = await getAllSealKeys()
+    return c.json({
+      keys: keys.map((key) => {
+        const view = presentSealKey(key, now)
+        return {
+          id: view.id,
+          validFrom: view.validFrom,
+          validUntil: view.validUntil,
+          revokedAt: view.revokedAt,
+          rotationType: view.rotationType,
+          createdAt: view.createdAt,
+          // List uses valid|expired; isCurrent marks the primary.
+          status: view.isCurrent || view.status === 'valid' ? 'valid' : 'expired',
+          isCurrent: view.isCurrent,
+        }
+      }),
+    })
   }))
-  
+
   /**
    * GET /auth/admin/seal-keys/current
    * Get current primary seal key info (admin only)
    */
-  app.get('/auth/admin/seal-keys/current', guarded(requireInstanceAdmin, async ({ c, user }) => {
-    await authorizeInstanceAction(user, 'instance.admin')
-    
+  app.get('/auth/admin/seal-keys/current', guarded({ gate: adminGate }, async ({ c }) => {
     const currentKey = await getCurrentSealKey()
-    
+
     if (!currentKey) {
       return c.json({ error: 'No current seal key found' }, 404)
     }
-    
+
+    const view = presentSealKey(currentKey)
     return c.json({
       key: {
-        id: currentKey.id,
-        validFrom: currentKey.validFrom,
-        validUntil: currentKey.validUntil,
-        revokedAt: currentKey.revokedAt,
-        rotationType: currentKey.rotationType,
-        createdAt: currentKey.createdAt.toISOString(),
+        id: view.id,
+        validFrom: view.validFrom,
+        validUntil: view.validUntil,
+        revokedAt: view.revokedAt,
+        rotationType: view.rotationType,
+        createdAt: view.createdAt,
         status: 'current',
       },
     })
   }))
-  
+
   /**
    * POST /auth/admin/seal-keys/rotate
    * Perform normal rotation (30-day schedule, 7-day overlap)
    */
   app.post('/auth/admin/seal-keys/rotate', guarded(requireInstanceAdmin, async ({ c, user }) => {
-    await authorizeInstanceAction(user, 'instance.admin')
-    
-    const newKey = await normalRotation()
-    
-    await appendAudit({
+    const { newKey } = await rotateSealKeyWithAudit({
+      kind: 'normal',
       actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
       via: 'session',
-      method: 'POST',
-      path: '/auth/admin/seal-keys/rotate',
-      status: 200,
-      action: 'seal_key.rotated',
-      message: `Normal seal key rotation completed`,
-      detail: {
-        newKeyId: newKey.id,
-        rotationType: 'normal',
-        validFrom: newKey.validFrom,
-      },
     })
-    
+
     return c.json({
       success: true,
       key: {
@@ -107,49 +94,42 @@ export function registerSealKeyRoutes(app: Hono): void {
       },
     })
   }))
-  
+
   /**
    * POST /auth/admin/seal-keys/rotate/emergency
    * Perform emergency rotation (immediate revocation, 8-hour grace)
    */
-  app.post('/auth/admin/seal-keys/rotate/emergency', guarded(requireInstanceAdmin, async ({ c, user, body }) => {
-    await authorizeInstanceAction(user, 'instance.admin')
-    
-    const reason = body?.reason ?? 'Emergency rotation requested'
-    
-    const { oldKey, newKey } = await emergencyRotation()
-    
-    await appendAudit({
-      actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
-      via: 'session',
-      method: 'POST',
-      path: '/auth/admin/seal-keys/rotate/emergency',
-      status: 200,
-      action: 'seal_key.emergency_rotation',
-      message: `Emergency seal key rotation: ${reason}`,
-      detail: {
-        oldKeyId: oldKey.id,
-        oldKeyRevokedAt: oldKey.revokedAt,
-        oldKeyGraceUntil: oldKey.validUntil,
-        newKeyId: newKey.id,
-        rotationType: 'emergency',
+  app.post(
+    '/auth/admin/seal-keys/rotate/emergency',
+    guarded({ ...requireInstanceAdmin, body: 'optional' }, async ({ c, user, body }) => {
+      const reason =
+        typeof body?.reason === 'string' ? body.reason : 'Emergency rotation requested'
+
+      const result = await rotateSealKeyWithAudit({
+        kind: 'emergency',
+        actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+        via: 'session',
         reason,
-      },
-    })
-    
-    return c.json({
-      success: true,
-      oldKey: {
-        id: oldKey.id,
-        revokedAt: oldKey.revokedAt,
-        gracePeriodUntil: oldKey.validUntil,
-      },
-      newKey: {
-        id: newKey.id,
-        validFrom: newKey.validFrom,
-        rotationType: newKey.rotationType,
-        createdAt: newKey.createdAt.toISOString(),
-      },
-    })
-  }))
+      })
+      if (result.kind !== 'emergency') {
+        throw new Error('expected emergency rotation result')
+      }
+      const { oldKey, newKey } = result
+
+      return c.json({
+        success: true,
+        oldKey: {
+          id: oldKey.id,
+          revokedAt: oldKey.revokedAt,
+          gracePeriodUntil: oldKey.validUntil,
+        },
+        newKey: {
+          id: newKey.id,
+          validFrom: newKey.validFrom,
+          rotationType: newKey.rotationType,
+          createdAt: newKey.createdAt.toISOString(),
+        },
+      })
+    }),
+  )
 }

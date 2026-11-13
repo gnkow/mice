@@ -16,7 +16,10 @@ import {
   ensureBootstrapKey,
   isKeyValidForVerification,
   getAllSealKeys,
+  rotateSealKeyWithAudit,
+  presentSealKey,
 } from './sealKeys.js'
+import { queryAudit } from '../../audit.js'
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 
@@ -306,6 +309,37 @@ describe('Seal Key Rotation (Ticket 17)', () => {
       // Should decode to 32 bytes (AES-256-GCM)
       const decoded = Buffer.from(key.keyMaterial, 'base64')
       assert.equal(decoded.length, 32, 'Key material should be 32 bytes')
+    })
+  })
+
+  describe('rotateSealKeyWithAudit', () => {
+    const actor = {
+      sub: 'admin',
+      iss: 'https://idp.test',
+      email: 'admin@test.io',
+      name: 'Admin',
+    }
+
+    it('normal rotation audits seal_key.rotated', async () => {
+      await ensureBootstrapKey()
+      const result = await rotateSealKeyWithAudit({
+        kind: 'normal',
+        actor,
+        via: 'session',
+      })
+      assert.equal(result.kind, 'normal')
+      const { events } = await queryAudit({ action: 'seal_key.rotated', limit: 5 })
+      assert.ok(events.some((e) => e.detail?.newKeyId === result.newKey.id))
+    })
+
+    it('presentSealKey omits key material and marks current', async () => {
+      await ensureBootstrapKey()
+      const key = await getCurrentSealKey()
+      assert.ok(key)
+      const view = presentSealKey(key)
+      assert.equal(view.isCurrent, true)
+      assert.equal(view.status, 'current')
+      assert.equal('keyMaterial' in view, false)
     })
   })
 })

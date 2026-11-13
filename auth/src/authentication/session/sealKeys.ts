@@ -9,6 +9,7 @@
  */
 
 import { randomBytes } from 'node:crypto'
+import { appendAudit } from '../../audit.js'
 import { getDb } from '../../db/database.js'
 import { sealKeys } from '../../db/schema.js'
 import { eq, and, or, isNull, lte, gte, sql } from 'drizzle-orm'
@@ -203,6 +204,101 @@ export async function emergencyRotation(
     throw new Error('No current seal key found for emergency rotation')
   }
   return { oldKey, newKey }
+}
+
+export type SealKeyRotationActor = {
+  sub: string
+  iss: string
+  email: string
+  name: string
+}
+
+export type RotateSealKeyWithAuditInput = {
+  kind: RotationKind
+  actor: SealKeyRotationActor
+  via: 'session' | 'cli' | 'system'
+  reason?: string
+  at?: number
+}
+
+export type RotateSealKeyWithAuditResult =
+  | { kind: 'normal'; newKey: SealKey }
+  | { kind: 'emergency'; oldKey: SealKey; newKey: SealKey }
+
+/**
+ * Admin/CLI rotation seam: retire-and-issue plus the matching audit event.
+ * Routes and the CLI script share this so audit wording cannot drift.
+ */
+export async function rotateSealKeyWithAudit(
+  input: RotateSealKeyWithAuditInput,
+): Promise<RotateSealKeyWithAuditResult> {
+  const at = input.at ?? nowSec()
+  if (input.kind === 'normal') {
+    const newKey = await normalRotation(at)
+    await appendAudit({
+      actor: input.actor,
+      via: input.via,
+      method: 'POST',
+      path: '/auth/admin/seal-keys/rotate',
+      status: 200,
+      action: 'seal_key.rotated',
+      message: 'Normal seal key rotation completed',
+      detail: {
+        newKeyId: newKey.id,
+        rotationType: 'normal',
+        validFrom: newKey.validFrom,
+      },
+    })
+    return { kind: 'normal', newKey }
+  }
+
+  const reason = input.reason ?? 'Emergency rotation requested'
+  const { oldKey, newKey } = await emergencyRotation(at)
+  await appendAudit({
+    actor: input.actor,
+    via: input.via,
+    method: 'POST',
+    path: '/auth/admin/seal-keys/rotate/emergency',
+    status: 200,
+    action: 'seal_key.emergency_rotation',
+    message: `Emergency seal key rotation: ${reason}`,
+    detail: {
+      oldKeyId: oldKey.id,
+      oldKeyRevokedAt: oldKey.revokedAt,
+      oldKeyGraceUntil: oldKey.validUntil,
+      newKeyId: newKey.id,
+      rotationType: 'emergency',
+      reason,
+    },
+  })
+  return { kind: 'emergency', oldKey, newKey }
+}
+
+/** Public list/current view: status flags without key material. */
+export function presentSealKey(
+  key: SealKey,
+  now = nowSec(),
+): {
+  id: string
+  validFrom: number
+  validUntil: number | null
+  revokedAt: number | null
+  rotationType: RotationKind
+  createdAt: string
+  status: 'valid' | 'expired' | 'current'
+  isCurrent: boolean
+} {
+  const isCurrent = key.validUntil === null && key.revokedAt === null
+  return {
+    id: key.id,
+    validFrom: key.validFrom,
+    validUntil: key.validUntil,
+    revokedAt: key.revokedAt,
+    rotationType: key.rotationType,
+    createdAt: key.createdAt.toISOString(),
+    status: isCurrent ? 'current' : isKeyValidForVerification(key, now) ? 'valid' : 'expired',
+    isCurrent,
+  }
 }
 
 /**

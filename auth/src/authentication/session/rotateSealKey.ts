@@ -8,7 +8,19 @@
  */
 
 import { openMainDatabase, closeMainDatabase } from '../../db/database.js'
-import { normalRotation, emergencyRotation, getCurrentSealKey, getAllSealKeys } from './sealKeys.js'
+import {
+  getCurrentSealKey,
+  getAllSealKeys,
+  rotateSealKeyWithAudit,
+} from './sealKeys.js'
+
+/** CLI actor for audited rotations (no interactive Principal). */
+const CLI_ACTOR = {
+  sub: 'seal-key-cli',
+  iss: 'urn:mice:cli',
+  email: 'seal-key-cli@mice.local',
+  name: 'Seal key CLI',
+}
 
 const USAGE = `
 Usage: npx tsx src/authentication/session/rotateSealKey.ts <command> [reason]
@@ -39,7 +51,12 @@ async function main() {
     switch (command) {
       case 'normal': {
         console.log('Performing normal seal key rotation...')
-        const newKey = await normalRotation()
+        const result = await rotateSealKeyWithAudit({
+          kind: 'normal',
+          actor: CLI_ACTOR,
+          via: 'cli',
+        })
+        const newKey = result.newKey
         console.log('✓ Normal rotation completed')
         console.log(`  New key ID: ${newKey.id}`)
         console.log(`  Valid from: ${new Date(newKey.validFrom * 1000).toISOString()}`)
@@ -53,7 +70,14 @@ async function main() {
         console.log(`   Reason: ${reason}`)
         console.log()
         
-        const { oldKey, newKey } = await emergencyRotation()
+        const result = await rotateSealKeyWithAudit({
+          kind: 'emergency',
+          actor: CLI_ACTOR,
+          via: 'cli',
+          reason,
+        })
+        if (result.kind !== 'emergency') throw new Error('expected emergency rotation')
+        const { oldKey, newKey } = result
         console.log('✓ Emergency rotation completed')
         console.log()
         console.log('Old key (revoked):')
