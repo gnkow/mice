@@ -5,6 +5,7 @@ import { getDb } from '../../db/database.js'
 import { cliCredentialFamilies, cliCredentialTokens, principals, webSessions } from '../../db/schema.js'
 import { directoryNow } from '../directory/directory.js'
 import type { CliCredentialScope, SessionUser } from '../session/session.js'
+import { isRetiredPersonalAccessToken } from './retiredPersonalAccessToken.js'
 
 /** Access tokens last 8 hours. The refresh family lasts 30 days. */
 export const CLI_ACCESS_TTL_SEC = 8 * 60 * 60
@@ -21,6 +22,13 @@ export type IssuedCliCredential = {
 export type RefreshResult =
   | IssuedCliCredential
   | { error: 'unknown' | 'reuse' | 'expired' | 'idp_disabled' | 'idp_unreachable' }
+
+export type CliRefreshReply =
+  | {
+      status: 200
+      body: { access_token: string; refresh_token: string; expires_in: number }
+    }
+  | { status: 401 | 503; body: { error: string } }
 
 type Holder = Pick<SessionUser, 'sub' | 'iss' | 'email' | 'name'>
 
@@ -39,17 +47,52 @@ function newSecret(): string {
   return `mice_cli_${randomBytes(24).toString('base64url')}`
 }
 
+/** Wire body for an issued/rotated CLI credential pair. */
+export function cliCredentialTokensBody(issued: IssuedCliCredential) {
+  return {
+    access_token: issued.accessToken,
+    refresh_token: issued.refreshToken,
+    expires_in: issued.expiresIn,
+  }
+}
+
+/**
+ * Maps a refresh result onto the CLI refresh wire contract.
+ * IdP outage is 503; every other failure is 401 — callers need not know the matrix.
+ */
+export function cliRefreshReply(result: RefreshResult): CliRefreshReply {
+  if ('error' in result) {
+    return {
+      status: result.error === 'idp_unreachable' ? 503 : 401,
+      body: { error: result.error },
+    }
+  }
+  return { status: 200, body: cliCredentialTokensBody(result) }
+}
+
 /** Short-lived CLI credentials. Raw tokens are returned once; only their hashes are stored. */
 export function createCliCredentials(deps: CliCredentialDeps) {
   const { clock } = deps
 
+  function mintPair(familyId: string, accessExpires: Date, refreshExpires: Date) {
+    const accessToken = newSecret()
+    const refreshToken = newSecret()
+    return {
+      accessToken,
+      refreshToken,
+      rows: [
+        { tokenHash: hashToken(accessToken), familyId, kind: 'access' as const, expiresAt: accessExpires },
+        { tokenHash: hashToken(refreshToken), familyId, kind: 'refresh' as const, expiresAt: refreshExpires },
+      ],
+    }
+  }
+
   async function issue(user: Holder, scopes?: CliCredentialScope[]): Promise<IssuedCliCredential> {
     const now = clock.now()
     const familyId = randomBytes(16).toString('hex')
-    const accessToken = newSecret()
-    const refreshToken = newSecret()
     const accessExpires = new Date(now + CLI_ACCESS_TTL_SEC * 1000)
     const familyExpires = new Date(now + FAMILY_TTL_MS)
+    const pair = mintPair(familyId, accessExpires, familyExpires)
     await getDb().transaction(async (tx) => {
       await tx.insert(cliCredentialFamilies).values({
         id: familyId,
@@ -61,15 +104,13 @@ export function createCliCredentials(deps: CliCredentialDeps) {
         createdAt: new Date(now),
         expiresAt: familyExpires,
       })
-      await tx.insert(cliCredentialTokens).values([
-        { tokenHash: hashToken(accessToken), familyId, kind: 'access', expiresAt: accessExpires },
-        { tokenHash: hashToken(refreshToken), familyId, kind: 'refresh', expiresAt: familyExpires },
-      ])
+      await tx.insert(cliCredentialTokens).values(pair.rows)
     })
-    return { accessToken, refreshToken, expiresIn: CLI_ACCESS_TTL_SEC }
+    return { accessToken: pair.accessToken, refreshToken: pair.refreshToken, expiresIn: CLI_ACCESS_TTL_SEC }
   }
 
   async function resolve(accessToken: string): Promise<SessionUser | null> {
+    if (isRetiredPersonalAccessToken(accessToken)) return null
     const now = clock.now()
     const [row] = await getDb()
       .select({
@@ -133,23 +174,17 @@ export function createCliCredentials(deps: CliCredentialDeps) {
         .update(cliCredentialTokens)
         .set({ usedAt: new Date(now) })
         .where(eq(cliCredentialTokens.tokenHash, hash))
-      const accessToken = newSecret()
-      const nextRefresh = newSecret()
-      await tx.insert(cliCredentialTokens).values([
-        {
-          tokenHash: hashToken(accessToken),
-          familyId: row.familyId,
-          kind: 'access',
-          expiresAt: new Date(now + CLI_ACCESS_TTL_SEC * 1000),
-        },
-        {
-          tokenHash: hashToken(nextRefresh),
-          familyId: row.familyId,
-          kind: 'refresh',
-          expiresAt: row.tokenExpires,
-        },
-      ])
-      return { accessToken, refreshToken: nextRefresh, expiresIn: CLI_ACCESS_TTL_SEC }
+      const pair = mintPair(
+        row.familyId,
+        new Date(now + CLI_ACCESS_TTL_SEC * 1000),
+        row.tokenExpires,
+      )
+      await tx.insert(cliCredentialTokens).values(pair.rows)
+      return {
+        accessToken: pair.accessToken,
+        refreshToken: pair.refreshToken,
+        expiresIn: CLI_ACCESS_TTL_SEC,
+      }
     })
   }
 

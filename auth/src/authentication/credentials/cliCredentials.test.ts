@@ -2,7 +2,11 @@ import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { fakeClock } from '../../clock.js'
-import { createCliCredentials, type IdpAccess } from './cliCredentials.js'
+import {
+  cliRefreshReply,
+  createCliCredentials,
+  type IdpAccess,
+} from './cliCredentials.js'
 
 const alice = {
   sub: 'alice',
@@ -34,6 +38,10 @@ await describe('CLI credential', async () => {
 
     clock.advance(8 * HOUR)
     assert.equal(await creds.resolve(issued.accessToken), null)
+  })
+
+  await it('refuses a retired personal access token without looking it up', async () => {
+    assert.equal(await credentials().resolve('mice_pat_retired'), null)
   })
 
   await it('refresh replaces the access token and the refresh token', async () => {
@@ -109,5 +117,46 @@ await describe('CLI credential', async () => {
     assert.deepEqual(ended, [`${alice.iss}|${alice.sub}`])
     assert.equal(await creds.logout('mice_cli_missing'), false)
     assert.deepEqual(ended, [`${alice.iss}|${alice.sub}`])
+  })
+
+  await it('cliRefreshReply maps rotation and IdP failures to the wire contract', async () => {
+    const clock = fakeClock()
+    let status: IdpAccess = 'enabled'
+    const creds = createCliCredentials({ clock, idp: async () => status })
+    const issued = await creds.issue(alice)
+    const rotated = await creds.refresh(issued.refreshToken)
+    assert.equal('accessToken' in rotated, true)
+    if (!('accessToken' in rotated)) return
+
+    assert.deepEqual(cliRefreshReply(rotated), {
+      status: 200,
+      body: {
+        access_token: rotated.accessToken,
+        refresh_token: rotated.refreshToken,
+        expires_in: 8 * 60 * 60,
+      },
+    })
+    assert.deepEqual(cliRefreshReply({ error: 'reuse' }), {
+      status: 401,
+      body: { error: 'reuse' },
+    })
+    assert.deepEqual(cliRefreshReply({ error: 'expired' }), {
+      status: 401,
+      body: { error: 'expired' },
+    })
+    assert.deepEqual(cliRefreshReply({ error: 'idp_disabled' }), {
+      status: 401,
+      body: { error: 'idp_disabled' },
+    })
+    assert.deepEqual(cliRefreshReply({ error: 'idp_unreachable' }), {
+      status: 503,
+      body: { error: 'idp_unreachable' },
+    })
+
+    status = 'unreachable'
+    assert.deepEqual(cliRefreshReply(await creds.refresh(rotated.refreshToken)), {
+      status: 503,
+      body: { error: 'idp_unreachable' },
+    })
   })
 })
