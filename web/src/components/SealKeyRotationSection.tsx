@@ -1,12 +1,17 @@
 import { Key, AlertCircle, Clock, CheckCircle, XCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
+import {
+  SEAL_KEY_ROTATION_DAYS,
+  decideSealKeyScheduleStatus,
+} from '../lib/sealKeySchedule'
 
 /**
- * Seal Key Rotation UI (Ticket 03, Ticket 17)
+ * Seal Key Rotation UI (Ticket 03, Ticket 17, Ticket 34)
  *
  * Allows instance admins to:
  * - View current seal key and key ring status
+ * - See automatic 30-day schedule status (derived from key validFrom; no schedule API)
  * - Perform normal rotation (30-day schedule, 7-day overlap)
  * - Perform emergency rotation (immediate with 8-hour grace)
  */
@@ -118,6 +123,10 @@ export function SealKeyRotationSection() {
 
   const currentKey = useAsync(() => getCurrentSealKey(), [])
   const keyRing = useAsync(() => listSealKeys(), [])
+  const schedule =
+    currentKey.kind === 'ok' && currentKey.data
+      ? decideSealKeyScheduleStatus(currentKey.data.validFrom)
+      : null
 
   async function handleNormalRotation(e: FormEvent) {
     e.preventDefault()
@@ -170,9 +179,9 @@ export function SealKeyRotationSection() {
             Session cookie keys
           </h2>
           <p className="muted small">
-            Seal keys encrypt session cookies using AES-256-GCM. Normal rotation happens on a 30-day schedule
-            with 7-day overlap (no user logout). Emergency rotation revokes the current key immediately with
-            8-hour grace period.
+            Seal keys encrypt session cookies using AES-256-GCM. Normal rotation happens on a{' '}
+            {SEAL_KEY_ROTATION_DAYS}-day schedule with 7-day overlap (no user logout). Emergency rotation
+            revokes the current key immediately with 8-hour grace period.
           </p>
         </div>
       </div>
@@ -217,6 +226,52 @@ export function SealKeyRotationSection() {
               <p className="muted small">{new Date(currentKey.data.createdAt).toLocaleString()}</p>
             </div>
           </div>
+        )}
+      </div>
+
+      <div className="ns-settings-subsection">
+        <h3>Automatic rotation schedule</h3>
+        {schedule ? (
+          <div
+            className={schedule.due ? 'flash flash-warn' : 'flash flash-info'}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-testid="seal-key-schedule-status"
+          >
+            <p>
+              <Clock size={16} aria-hidden="true" className="button-label-icon" />
+              {schedule.summary}
+            </p>
+            <dl className="ns-settings-grid">
+              <div className="ns-settings-field">
+                <dt className="ns-settings-label">Schedule basis (key issued)</dt>
+                <dd className="muted small">
+                  <time dateTime={new Date(schedule.lastScheduledFrom * 1000).toISOString()}>
+                    {formatTimestamp(schedule.lastScheduledFrom)}
+                  </time>
+                </dd>
+              </div>
+              <div className="ns-settings-field">
+                <dt className="ns-settings-label">Next eligible automatic run</dt>
+                <dd className="muted small">
+                  <time dateTime={new Date(schedule.nextEligibleAt * 1000).toISOString()}>
+                    {formatTimestamp(schedule.nextEligibleAt)}
+                  </time>
+                  {schedule.due ? ' (due now)' : null}
+                </dd>
+              </div>
+            </dl>
+            <p className="muted small">
+              The process checks about once a minute. A restart does not reset the{' '}
+              {SEAL_KEY_ROTATION_DAYS}-day wait. Manual normal rotation is always available below.
+            </p>
+          </div>
+        ) : (
+          <p className="muted small" role="status" aria-live="polite">
+            Load the current primary key to see the {SEAL_KEY_ROTATION_DAYS}-day automatic rotation
+            schedule.
+          </p>
         )}
       </div>
 

@@ -32,3 +32,5 @@ Boot starts a normal-rotation schedule after the bootstrap key exists. A tick ro
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **/deep-ui Deepen (reclassified UI)** — supersedes prior no-ui skip. No schedule next-run/last-tick API; UI derives status from current key `validFrom` via `decideSealKeyScheduleStatus` (`web/src/lib/sealKeySchedule.ts`). `SealKeyRotationSection` accessible `role="status"` region shows 30-day schedule basis + next eligible. E2E: `e2e/tests/seal-key-rotation-schedule.spec.ts`. No commit/push.
