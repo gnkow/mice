@@ -15,6 +15,10 @@ import type { AuditDep } from '../../routeDeps.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
 import type { SessionUser } from '../session/session.js'
 import { env } from '../../env.js'
+import { allocateChangeControlId } from '../../changeControl.js'
+import { prepareMutationDocument } from '../../mutationSignature.js'
+import { REASON_CATEGORIES } from '../../auditReason.js'
+import { checkSigningIdleTimeout } from './idleTimeout.js'
 
 /**
  * Signing Ceremony Routes - Authentication Domain
@@ -51,29 +55,8 @@ export function setSigningJwtVerifierForTests(next: typeof verifyJwt): void {
   verifyJwt = next
 }
 
-/**
- * Check if session has been idle too long for signing (Round 8 U2).
- * Idle timeout = 15 minutes (900 seconds) since last HTTP request.
- * Returns error response if idle, null if OK.
- */
 function checkIdleTimeout(user: SessionUser): Response | null {
-  if (env.sessionIdleSec <= 0) return null // Idle check disabled
-  if (!user.lastActive) return null // No lastActive tracking
-  
-  const idleSec = nowSec() - user.lastActive
-  if (idleSec > env.sessionIdleSec) {
-    const idleMin = Math.floor(idleSec / 60)
-    return Response.json(
-      {
-        error: 'session_idle',
-        message: `Session idle for ${idleMin}+ minutes, re-authenticate required`,
-        idleMinutes: idleMin,
-        maxIdleMinutes: Math.floor(env.sessionIdleSec / 60),
-      },
-      { status: 401 }
-    )
-  }
-  return null
+  return checkSigningIdleTimeout(user, env.sessionIdleSec, nowSec())
 }
 
 async function directoryFailure(user: SessionUser): Promise<Response | null> {
@@ -89,6 +72,51 @@ async function directoryFailure(user: SessionUser): Promise<Response | null> {
 }
 
 export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
+  // Prepare a regulated mutation for signing (canonical document + hash).
+  app.post('/auth/sign/prepare-mutation', guarded({
+    mutates: false,
+    body: { required: ['method', 'path', 'reason', 'category'] },
+  }, async ({ c, user, body }) => {
+    const unavailable = await directoryFailure(user)
+    if (unavailable) return unavailable
+    const stepUp = await reauthenticate(c, SIGNING_FRESHNESS_SEC)
+    if (!stepUp.ok) return stepUp.response
+    const idleError = checkIdleTimeout(user)
+    if (idleError) return idleError
+
+    const method = String(body.method)
+    const path = String(body.path)
+    const reason = String(body.reason)
+    const category = String(body.category)
+    if (!(REASON_CATEGORIES as readonly string[]).includes(category)) {
+      return c.json({ error: 'Invalid reason category', code: 'reason_category_invalid' }, 400)
+    }
+    if (!reason.trim()) {
+      return c.json({ error: 'Reason required', code: 'reason_required' }, 400)
+    }
+
+    const prepared = prepareMutationDocument({
+      method,
+      path,
+      reason,
+      category,
+      body: body.body,
+    })
+
+    return c.json({
+      content: prepared.content,
+      hash: prepared.hash,
+      action: prepared.action,
+      meaning: 'Approved' as const,
+      principal: {
+        iss: user.iss,
+        sub: user.sub,
+        name: user.name ?? `${user.iss}|${user.sub}`,
+      },
+      preparedAt: Date.now(),
+    })
+  }))
+
   // Prepare content for signing (shows hash, requires step-up)
   app.post('/auth/sign/prepare', guarded({ mutates: false }, async ({ c, user }) => {
     const unavailable = await directoryFailure(user)
@@ -217,12 +245,19 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       }
 
       const signature = createSignature(content, meaning, session)
+      const changeControlId =
+        typeof body.changeControlId === 'string' && body.changeControlId.trim()
+          ? body.changeControlId.trim()
+          : typeof body.change_control_id === 'string' && body.change_control_id.trim()
+            ? body.change_control_id.trim()
+            : allocateChangeControlId()
       let saved: { id: string; seq: number }
       try {
         saved = await (await signatureStore()).record({
           signer: signature.principal,
           meaning,
           contentHash: signature.hash,
+          changeControlId,
           ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
           ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
         })
@@ -247,6 +282,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           meaning,
           hash: signature.hash,
           signedAt: signature.signedAt,
+          changeControlId,
           // Ticket 26: Include evidence in audit detail
           ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
           ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
@@ -259,6 +295,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           hash: signature.hash,
           meaning: signature.meaning,
           signedAt: signature.signedAt,
+          changeControlId,
           principal: signature.principal,
           // Ticket 26: Return evidence in response for display/storage
           ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),

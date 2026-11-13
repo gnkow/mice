@@ -19,5 +19,14 @@ Refusing a zero idle timeout at startup is issue 33.
 ## Code
 
 - `auth/src/env.ts`
-- `auth/src/authentication/signing/signingRoutes.ts` (`checkIdleTimeout`)
+- `auth/src/authentication/signing/idleTimeout.ts`
+- `auth/src/authentication/signing/signingRoutes.ts` (thin `checkIdleTimeout` adapter)
 - `auth/src/authentication/signing/idleTimeout.test.ts`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (default 900 + idle refuse/allow at signing).
+
+**Deepen (auto-picked):** Extract inlined idle logic from `signingRoutes` into deep `evaluateSigningIdle` / `checkSigningIdleTimeout` in `idleTimeout.ts`. Routes stay a one-line adapter; tautological tests replaced with real seam tests.
+
+**Files:** `idleTimeout.ts`, `idleTimeout.test.ts`, `signingRoutes.ts` (minimal)
