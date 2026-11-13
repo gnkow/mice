@@ -32,3 +32,8 @@ The gate reads `claims_supported` from discovery. Keycloak 26 may not advertise 
 **Files:** `auth/src/authentication/session/idpAssuranceGate.ts`, `idpAssuranceGate.test.ts`
 
 **Tests:** `idpAssuranceGate.test.ts`
+
+2026-11-13 Deep-API (integ): **holds**. Package exports `assertIdpAssurance` / `assessIdpAssurance`; integ with fake discovery plus boot-gate pattern (production-only).
+- **Seams:** `assessIdpAssurance` (unit) → `assertIdpAssurance` / boot gate (package integ, fake discovery)
+- **Integ:** `auth/src/authentication/session/idpAssuranceGate.integration.test.ts`
+- **No commit/push** this pass.
