@@ -191,7 +191,7 @@ export function AuditPage() {
           <h1>Audit</h1>
           <p className="lede">
             Append-only log of mutations through the auth BFF (who / what / when
-            / which repo).
+            / which repo). Signature rows expand to show IdP MFA evidence for auditors.
           </p>
         </div>
         <button
@@ -379,8 +379,12 @@ function SignatureEvidence({ event }: { event: AuditEvent }) {
   const rows = signatureEvidenceRows(event.action, event.detail)
   if (rows.length === 0) return null
   return (
-    <details className="small" data-testid="signature-evidence">
+    <details className="signature-evidence small" data-testid="signature-evidence">
       <summary>Signature evidence</summary>
+      <p className="muted small signature-evidence-lede">
+        IdP MFA assertion and verification metadata recorded at signing. Auditors use
+        this to prove who signed and that Mice verified the token.
+      </p>
       <dl aria-label="Signature identity and evidence">
         {rows.map((r) => (
           <div key={r.label} data-evidence-label={r.label}>

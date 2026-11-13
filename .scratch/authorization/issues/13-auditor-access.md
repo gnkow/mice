@@ -32,3 +32,5 @@ Expiry, read-only enforcement, MFA gating (session id_token `acr`/`amr`) and per
 ## Comments
 
 **Deep-api Close (2026-11-13):** Audit found `/auth/sign/*` allowed MFA Auditors. Closed in `requireSigningAccess` (`AUDITOR_CANNOT_SIGN`). Unit: `signingAccess.test.ts`. Integration: `auditorMfaEveryRoute.test.ts` signing case.
+
+**Deep-ui Deepen (2026-11-13):** Grant access Auditor hint (required expiry + MFA + read-only); Audit signature evidence panel lede + layout. E2E: `auditor-access-ui.spec.ts` TC-AUDITOR-UI-01/02 (alongside existing auditor-signature-evidence).
