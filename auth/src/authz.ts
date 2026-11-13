@@ -606,7 +606,7 @@ const NAMESPACE_ACTION_POLICY: Record<NamespaceAction, NamespacePolicy> = {
   'namespace.access.review': { capability: 'review_access_requests', reason: 'Not allowed to approve into that namespace' },
 }
 
-/** Namespace management decisions; not gated by the enforce flag. */
+/** Namespace management decisions. */
 export async function decideNamespaceAction(user: SessionUser, ns: string, action: NamespaceAction): Promise<Decision> {
   const policy = NAMESPACE_ACTION_POLICY[action]
   if (policy.unscopedOnly && isScopedCredential(user)) return denied(policy.reason)
@@ -633,12 +633,12 @@ export async function decideAccessReview(user: SessionUser): Promise<Decision> {
   return denied('Forbidden')
 }
 
-/** Own PAT mint/list/revoke when enforce is on. */
+/** Own PAT mint/list/revoke. */
 export async function authorizeManageOwnTokens(user: SessionUser) {
   return await authorizeInstanceAction(user, 'tokens.manage')
 }
 
-/** Approve / deny CLI device codes when enforce is on. */
+/** Approve / deny CLI device codes. */
 export async function authorizeCliDeviceApprove(user: SessionUser) {
   return await authorizeInstanceAction(user, 'cli.device.approve')
 }

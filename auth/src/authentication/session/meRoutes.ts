@@ -20,6 +20,7 @@ import {
 import { INSTANCE_PERMISSION_CATALOG, isInstancePermission } from '../../rbacCatalog.js'
 import { isInstanceRole } from '../../rbacRoles.js'
 import { getEffectivePermissions, getUserRole, hasPermission } from '../../rbacStore.js'
+import { authzEnforceReport } from '../../authzAlwaysOn.js'
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -43,7 +44,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     const pending = await isPendingUser(session)
     const role = await getUserRole(session)
     return c.json({
-      enforce: true,
+      ...authzEnforceReport(),
       pending,
       role,
       effectivePermissions: await getEffectivePermissions(session),

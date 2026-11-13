@@ -10,6 +10,7 @@ import { getDb } from './db/database.js'
 import { principals } from './db/schema.js'
 import type { AuditDep } from './routeDeps.js'
 import { checkGroupBindingMode, getGroupBindingStatus } from './groupBindingStatusStore.js'
+import { authzEnforceReport } from './authzAlwaysOn.js'
 
 async function adminViews() {
   const admins = await listInstanceAdmins()
@@ -45,7 +46,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
     '/auth/instance',
     guarded({ gate: adminOnly }, async ({ c }) =>
       c.json({
-        enforce: true,
+        ...authzEnforceReport(),
         admins: await adminViews(),
         permissions: await listInstancePermissionGrants(),
       }),

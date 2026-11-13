@@ -20,3 +20,7 @@ Decisions always run. `GET /auth/instance` and `/auth/me/authz` still report `en
 - [x] Update deployment guides to remove AUTHZ_ENFORCE references
 - [x] Tests verify authorization cannot be disabled
 - [x] Tests verify unauthenticated requests are denied
+
+## Comments
+
+**Deep-api Deepen (2026-11-13):** Single seam `authzAlwaysOn` (`authzEnforceReport`) feeds `/auth/me/authz` and `/auth/instance`; removed stale “enforce flag” comments in `authz.ts`. Unit: `authzAlwaysOn.test.ts`.
