@@ -28,3 +28,9 @@ Every authentication audit event (login, refresh, logout, step-up, failure, revo
 - **Audit:** holds — `recordAuthEvent` stores hashed_ip for login/refresh/logout/step-up/failure/revocation; raw IP absent (`authEvents.test.ts`).
 - **Deepen (auto-pick):** Extracted audit attachment seam `prepareAuthEventForStore` (redact + attach hashed_ip via injectable `hash`); `recordAuthEvent` persists through that seam. `createIpHash` / `ipHash.ts` API untouched.
 - **Files:** `authEvents.ts`, `authEvents.test.ts`.
+
+2026-11-13 — deep-api Deepen (auto-pick Top): **holds** + integration gap closed.
+- **Seams:** `prepareAuthEventForStore` / `recordAuthEvent` (hash port).
+- **Deepen:** `recordAuthEvent(input, { hash })` passes the injectable hash through prepare→persist so write-path integ can prove `hashed_ip` without salt fixtures.
+- **Integ:** `authEvents.hashedIp.integration.test.ts` — write→query stores `hashed_ip` matching `hashIp`; injectable hash port; missing IP leaves field unset.
+- **Files:** `authEvents.ts`, `authEvents.test.ts`, `authEvents.hashedIp.integration.test.ts`.

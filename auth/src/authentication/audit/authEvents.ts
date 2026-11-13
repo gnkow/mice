@@ -84,14 +84,23 @@ export async function prepareAuthEventForStore(
   }
 }
 
+export type RecordAuthEventDeps = {
+  /** Hash port for clientIp → hashed_ip; defaults to today's `hashIp`. */
+  hash?: AuthEventHashIp
+}
+
 /**
  * Auth-event module seam: redact sensitive fields, persist the event, and
  * (on failure) evaluate the 5-in-10-minute alert threshold. Callers do not
- * need a separate checkFailureRate hop.
+ * need a separate checkFailureRate hop. Hash is injectable so write-path integ
+ * can prove hashed_ip attachment without depending on salt fixtures.
  */
-export async function recordAuthEvent(input: AuthEventInput): Promise<RecordAuthEventResult> {
+export async function recordAuthEvent(
+  input: AuthEventInput,
+  deps: RecordAuthEventDeps = {},
+): Promise<RecordAuthEventResult> {
   const { onAlert, ...rest } = input
-  const safeEvent = await prepareAuthEventForStore(rest)
+  const safeEvent = await prepareAuthEventForStore(rest, deps.hash)
 
   await getDb().insert(authEvents).values(safeEvent)
 
