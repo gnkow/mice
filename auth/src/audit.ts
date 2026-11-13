@@ -224,7 +224,13 @@ export async function initAudit(): Promise<AuditVerification> {
  * with `poll` (default) a timer calls it every `min(intervalMs, 60s)`.
  */
 export function startAuditVerifySchedule(
-  opts: { clock?: Clock; intervalMs?: number; poll?: boolean } = {},
+  opts: {
+    clock?: Clock
+    intervalMs?: number
+    poll?: boolean
+    /** Extra work after each verify tick (e.g. orphan-aging alert). */
+    afterTick?: () => void | Promise<void>
+  } = {},
 ): { tick(): Promise<boolean>; stop(): void } {
   const clock = opts.clock ?? systemClock
   const intervalMs = opts.intervalMs ?? env.auditVerifyIntervalSec * 1000
@@ -245,6 +251,13 @@ export function startAuditVerifySchedule(
       void closeAuditOutage(clock.now()).catch((err) =>
         console.error('[mice-auth] audit outage close failed', err),
       )
+    }
+    if (opts.afterTick) {
+      try {
+        await opts.afterTick()
+      } catch (err) {
+        console.error('[mice-auth] audit schedule afterTick failed', err)
+      }
     }
     return true
   }
@@ -521,6 +534,11 @@ async function readAllEvents(): Promise<AuditEvent[]> {
     }
   }
   return out
+}
+
+/** Full trail for orphan scans and projections; not a filtered query API. */
+export function listAllAuditEvents(): Promise<AuditEvent[]> {
+  return readAllEvents()
 }
 
 function detailStrings(

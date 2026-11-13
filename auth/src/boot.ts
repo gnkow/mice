@@ -1,7 +1,8 @@
 import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { closeMainDatabase, openMainDatabase } from './db/database.js'
-import { appendAudit, initAudit, setAuditObserver, startAuditVerifySchedule } from './audit.js'
+import { appendAudit, initAudit, listAllAuditEvents, setAuditObserver, startAuditVerifySchedule } from './audit.js'
+import { runOrphanAgingAlert } from './auditOrphanAlert.js'
 import { acquireDataDirLock } from './dataDirLock.js'
 import { assertIdpAssurance, assertProductionStartup, setAuthenticationObserver, startAccessReviewAlertSchedule, startClockDriftSchedule, startDirectorySyncSchedule, startIdpDriftSchedule, startSealKeyRotationSchedule } from './authentication/index.js'
 import { env, oidcConfigured } from './env.js'
@@ -36,7 +37,9 @@ export async function boot(): Promise<void> {
   // Connects to immudb (creating the audit database on first use) and verifies the trail.
   const verification = await initAudit()
   if (!verification.ok) console.error('[mice-auth] audit verification FAILED at boot', verification.firstBreak)
-  startAuditVerifySchedule()
+  startAuditVerifySchedule({
+    afterTick: () => runOrphanAgingAlert({ loadEvents: listAllAuditEvents }),
+  })
   if (process.env.NODE_ENV === 'production' && process.env.BACKUP_TARGET) {
     const { recordBackupTargetCheck } = await import('./backupTarget.js')
     await recordBackupTargetCheck(process.env.BACKUP_TARGET)

@@ -43,6 +43,8 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     directorySyncIntervalSec: Number(src.DIRECTORY_SYNC_INTERVAL_SEC ?? 900),
     /** Audit ledger re-verification interval (seconds). */
     auditVerifyIntervalSec: Number(src.AUDIT_VERIFY_INTERVAL_SEC ?? 3600),
+    /** Unpaired Intent older than this many seconds triggers an admin orphan alert (grill lock Q9). */
+    auditOrphanAlertSec: Number(src.AUDIT_ORPHAN_ALERT_SEC ?? 15 * 60),
     /** Minimum length of a mutation reason (and of a commit message used as one). */
     auditReasonMinLength: Number(src.AUDIT_REASON_MIN_LENGTH ?? 10),
     cookieName: src.SESSION_COOKIE_NAME ?? '__Host-mice_session',
