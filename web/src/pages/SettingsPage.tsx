@@ -38,6 +38,7 @@ import {
   type AccessRequestStatusFilter,
 } from '../lib/accessRequestReview'
 import { buildDirectGrantBodies } from '../lib/directGrantForm'
+import { delegatedExpiryLabel, delegatedExpiryTone } from '../lib/delegatedExpiry'
 import { profileRoleBadge } from '../lib/profileRoleBadge'
 import { togglePermission } from '../lib/requestAccessForm'
 import { fetchServerVersion } from '../lib/oxen/api'
@@ -1012,7 +1013,8 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
                 Delegated permissions
               </h2>
               <p className="muted small">
-                Delegate individual instance permissions to non-admins. Every grant needs an expiry.
+                Delegate individual instance permissions to non-admins. Every grant needs a
+                future expiry; a daily job revokes expired grants and writes an audit event.
               </p>
             </div>
             <p className="muted small ns-settings-count">
@@ -1020,36 +1022,56 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
             </p>
           </div>
           {data.permissions.length === 0 ? (
-            <p className="muted small">No delegated grants.</p>
+            <div className="grant-access-empty" role="status" data-testid="delegated-empty">
+              <p className="muted small">No delegated grants.</p>
+              <p className="muted small">
+                Pick a principal, choose permissions, and set a required expiry below.
+              </p>
+            </div>
           ) : (
             <ul className="ns-member-list">
-              {data.permissions.map((p) => (
-                <li key={`${p.iss}\0${p.sub}`} className="ns-member-row">
-                  <div className="ns-member-main">
-                    <code className="ns-member-sub">{p.sub}</code>
-                    <span className="muted small">
-                      {p.iss}
-                      {' · '}
-                      {p.permissions.join(', ')}
-                      {' · expires '}
-                      {new Date(p.expiresAt).toLocaleString()}
+              {data.permissions.map((p) => {
+                const tone = delegatedExpiryTone(p.expiresAt)
+                return (
+                  <li key={`${p.iss}\0${p.sub}`} className="ns-member-row">
+                    <div className="ns-member-main">
+                      <code className="ns-member-sub">{p.sub}</code>
+                      <span className="muted small">
+                        {p.iss}
+                        {' · '}
+                        {p.permissions.join(', ')}
+                      </span>
+                    </div>
+                    <span
+                      className={
+                        tone === 'expired'
+                          ? 'group-binding-chip group-binding-chip-warn'
+                          : tone === 'soon'
+                            ? 'group-binding-chip group-binding-chip-warn'
+                            : 'group-binding-chip group-binding-chip-ok'
+                      }
+                      data-testid="delegated-expiry-chip"
+                      data-expiry-tone={tone}
+                      title={new Date(p.expiresAt).toLocaleString()}
+                    >
+                      {delegatedExpiryLabel(p.expiresAt)}
                     </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn ghost small"
-                    disabled={busy}
-                    onClick={() =>
-                      void setInstancePermissions(
-                        { sub: p.sub, iss: p.iss },
-                        [],
-                      ).then(() => state.reload())
-                    }
-                  >
-                    <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
-                  </button>
-                </li>
-              ))}
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      disabled={busy}
+                      onClick={() =>
+                        void setInstancePermissions(
+                          { sub: p.sub, iss: p.iss },
+                          [],
+                        ).then(() => state.reload())
+                      }
+                    >
+                      <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
           <form className="ns-member-form" onSubmit={onSetPerms}>
@@ -1067,7 +1089,7 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
                 }}
               />
               <label>
-                Expires
+                Expires (required)
                 <input
                   type="datetime-local"
                   value={expiresLocal}
@@ -1076,6 +1098,10 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
                   required={permChecks.length > 0}
                 />
               </label>
+              <p className="muted small" data-testid="delegated-expiry-hint">
+                Grants without a future expiry are rejected. Clearing permissions removes the
+                grant immediately.
+              </p>
             </div>
             <fieldset className="ns-check-fieldset">
               <legend>Permissions</legend>

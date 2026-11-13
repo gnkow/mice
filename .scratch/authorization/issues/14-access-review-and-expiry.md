@@ -36,3 +36,5 @@ Outside collaborator `expires_at` is explicitly out of scope.
 - 2026-11-03: Implemented with TDD (store → revoke schedule → HTTP → UI).
 
 **Deep-api Deepen (2026-11-13):** Holds — revoke schedule + store already shipped. Auto-picked Top: deepen `runInstancePermissionExpiry` as the single revoke+audit seam (`instancePermissionExpiry.ts`); schedule only times it; store keeps persistence. Unit: injected revoke/audit in `instancePermissionExpiry.test.ts`. Integration: store revoke + schedule tick still covered there.
+
+**Deep-ui Deepen (2026-11-13):** Delegated permissions: required-expiry label, auto-revoke copy, expiry chips (ok/soon/expired). Helpers in `delegatedExpiry.ts`. E2E: `delegated-expiry.spec.ts` TC-DEL-01/02.
