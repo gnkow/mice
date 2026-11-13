@@ -138,6 +138,9 @@ describe('export bundle', () => {
     assert.ok(bundle.events.length >= 2)
     assert.ok(bundle.events.every((e: any) => e.namespace === 'bk'))
     assert.equal(bundle.verification.ok, true)
+    assert.equal(typeof bundle.verification.head, 'number')
+    assert.equal(typeof bundle.verification.root, 'string')
+    assert.ok(bundle.verification.root.length > 0)
     assert.equal(bundle.signing, undefined)
   })
 

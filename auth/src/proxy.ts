@@ -11,6 +11,7 @@ import {
   type AuditEvent,
   type AuditVia,
 } from './audit.js'
+import { AuditDetailPolicyError } from './auditDetailPolicy.js'
 import {
   declaredChangeControlId,
   isDatasetMutation,
@@ -397,7 +398,17 @@ export async function proxyToOxen(
   if (mutating) {
     try {
       intent = await appendIntent(auditFields(0))
-    } catch {
+    } catch (err) {
+      if (err instanceof AuditDetailPolicyError) {
+        return new Response(
+          JSON.stringify({
+            status: 'error',
+            status_message: 'bad_request',
+            error: { detail: err.message, code: err.code },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        )
+      }
       return auditUnavailable()
     }
   }

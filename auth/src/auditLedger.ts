@@ -43,7 +43,15 @@ export function immudbConfig(src: NodeJS.ProcessEnv = process.env): ImmudbConfig
 export type LedgerRecord = { seq: number; key: string; value: string }
 
 export type LedgerVerification =
-  | { ok: true; events: number; head: number; verifiedAt: string }
+  | {
+      ok: true
+      events: number
+      /** Immudb transaction id at the verified tip (file this as IQP genesis / change-control pin). */
+      head: number
+      /** Accumulated linear hash (base64) of the tip — the chain root for IQP filing. */
+      root: string
+      verifiedAt: string
+    }
   | { ok: false; events: number; verifiedAt: string; firstBreak: { seq: number; reason: string } }
 
 export type LedgerHealth = { ok: true } | { ok: false; detail: string }
@@ -186,7 +194,7 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
       return await run(async (c) => {
         const state = await c.currentState()
         const head = state.txid
-        if (head === 0) return { ok: true, events: 0, head: 0, verifiedAt }
+        if (head === 0) return { ok: true, events: 0, head: 0, root: '', verifiedAt }
         const values = new Map<number, LedgerRecord>()
         for (const r of await readAll()) values.set(r.seq, opts.tamper ? opts.tamper(r) : r)
         const from = Math.max(1, opts.window ? head - opts.window + 1 : 1)
@@ -227,8 +235,9 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
         }
         const reported = typeof state.txhash === 'string' ? b64(state.txhash) : Buffer.from(state.txhash)
         if (!last || !last.equals(reported)) return fail(head, 'chain head does not match the server state', seen)
-        pinned = { seq: head, alh: last.toString('base64') }
-        return { ok: true, events: seen, head, verifiedAt }
+        const root = last.toString('base64')
+        pinned = { seq: head, alh: root }
+        return { ok: true, events: seen, head, root, verifiedAt }
       })
     } catch (err) {
       return fail(0, `audit ledger unreachable: ${String((err as Error)?.message ?? err)}`, 0)
