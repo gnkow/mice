@@ -11,7 +11,7 @@ import { runPrincipalBootstrap } from './principalBootstrap.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
 export { decideIsApprover } from './authzApproverStore.js'
-import { ownedNamespaces, userCanSeeNamespace } from './authzVisibility.js'
+import { userCanSeeNamespace } from './authzVisibility.js'
 import { getUserRole, hasPermission, listRbacUsers } from './rbacStore.js'
 import type { InstancePermission as RbacPermission } from './rbacCatalog.js'
 import {
@@ -376,39 +376,7 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
   })
 }
 
-export async function authorizeAuditQuery(
-  user: SessionUser,
-  requestedNamespace?: string,
-): Promise<{
-  allow: boolean
-  forceNamespace?: string
-  ownedOnly?: string[]
-  reason?: string
-}> {
-  if ((await authorizeInstanceAction(user, 'audit.view')).allow) return { allow: true }
-  const scoped = [
-    ...new Set([
-      ...await ownedNamespaces(user),
-      ...await namespacesWithCapability(user, 'view_audit'),
-    ]),
-  ]
-  if (scoped.length === 0) {
-    return { allow: false, reason: 'Missing permission view_audit' }
-  }
-  if (requestedNamespace) {
-    if (!scoped.includes(requestedNamespace)) {
-      return { allow: false, reason: 'Not allowed to audit that namespace' }
-    }
-    return { allow: true, forceNamespace: requestedNamespace }
-  }
-  if (scoped.length === 1) {
-    return { allow: true, forceNamespace: scoped[0] }
-  }
-  return {
-    allow: true,
-    ownedOnly: scoped,
-  }
-}
+export { authorizeAuditQuery, type AuditQueryAuthorization } from './authzAudit.js'
 
 /**
  * Lineage read: repo `lineage_read` (implied by read), ns `view_lineage`,
