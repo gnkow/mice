@@ -4,8 +4,7 @@ import { guarded } from '../session/routeGuard.js'
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { getDb } from '../../db/database.js'
 import { idpBaselineChecks } from '../../db/schema.js'
-import { evaluateIdpMfaBaseline } from '../signing/mfaEvidence.js'
-import { decodeJwtPayload } from '../oidc/oidcClaims.js'
+import { recordIdpBaselineCheck } from './idpBaselineCheck.js'
 import { env } from '../../env.js'
 import type { AuditDep } from '../../routeDeps.js'
 
@@ -23,16 +22,6 @@ import type { AuditDep } from '../../routeDeps.js'
 
 const adminGate = async (u: { principalId?: number; sub: string; iss: string }) => {
   return (await isInstanceAdmin(u)) ? null : 'Instance admin required'
-}
-
-function claimsFromSessionIdToken(idToken: string | undefined) {
-  if (!idToken) return { payload: null as Record<string, unknown> | null, decodeError: null as string | null }
-  try {
-    return { payload: decodeJwtPayload(idToken), decodeError: null }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Malformed id_token'
-    return { payload: null, decodeError: message }
-  }
 }
 
 export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void {
@@ -61,22 +50,10 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
         }, 500)
       }
 
-      const { payload, decodeError } = claimsFromSessionIdToken(user.idToken)
-      const evaluation = decodeError
-        ? { mfaAvailable: false, claimsFound: null, error: decodeError }
-        : evaluateIdpMfaBaseline(payload)
-
-      const principalKey = `${user.iss}|${user.sub}`
-
-      const [check] = await getDb()
-        .insert(idpBaselineChecks)
-        .values({
-          checkedBy: principalKey,
-          mfaAvailable: evaluation.mfaAvailable,
-          claimsFound: evaluation.claimsFound,
-          error: evaluation.error,
-        })
-        .returning()
+      const check = await recordIdpBaselineCheck({
+        idToken: user.idToken,
+        checkedBy: `${user.iss}|${user.sub}`,
+      })
 
       await audit(c, user, 'session', {
         action: 'admin.idp_baseline_check',

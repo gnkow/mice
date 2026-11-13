@@ -31,3 +31,7 @@ Signing reads `acr` and `amr` from the step-up id_token. Missing MFA evidence re
 **Deepen (auto-picked):** Collapse claim extract → storeable baseline result into `evaluateIdpMfaBaseline`; admin check evaluates the Session id_token through that seam. `checkIdpBaselineFromClaims` folds MFA evidence into the compliance checklist.
 
 **Files:** `mfaEvidence.ts`, `mfaEvidence.test.ts`, `admin/idpBaselineRoutes.ts`, `compliance/idpBaseline.ts`, `idpBaseline.test.ts`
+
+2026-11-13 — **Deepen #2 (auto-picked):** Collapse decode → evaluate → persist into `recordIdpBaselineCheck`; admin POST is an HTTP/audit adapter. Did not touch signingRoutes.
+**Seams:** `admin/idpBaselineCheck.ts` (`recordIdpBaselineCheck`); `evaluateIdpMfaBaseline` remains the pure claims decision.
+**Tests:** `idpBaselineCheck.test.ts` + `mfaEvidence.test.ts` (unit), `idpBaselineRoutes.test.ts` (integ, stores MFA-available check).
