@@ -87,6 +87,16 @@ export function isDatasetMutation(action: string): boolean {
   return DATASET_MUTATIONS.has(action)
 }
 
+/** Sorted list of mutation classes that require category + free text (GxP ticket 03 / 17). */
+export function reasonRequiredActions(): string[] {
+  return [...REASON_REQUIRED_ACTIONS].sort()
+}
+
+/** Sorted create-shaped actions that never require a reason. */
+export function createExemptActions(): string[] {
+  return [...CREATE_ACTIONS].sort()
+}
+
 /**
  * Whether this mutation class requires a reason (category + free text).
  * Creating new resources never requires one; updates, deletes, privileged settings,
@@ -167,8 +177,37 @@ export function declaredChangeControlId(actor: { sub: string; iss: string }): st
 
 const clean = (v: string | null | undefined): string => (v ?? '').trim().slice(0, MAX_REASON_LENGTH)
 
-function isReasonCategory(v: string): v is ReasonCategory {
+export function isReasonCategory(v: string): v is ReasonCategory {
   return (REASON_CATEGORIES as readonly string[]).includes(v)
+}
+
+/**
+ * GxP pick-list category for a required reason (ticket 03).
+ * Call after free text has already been accepted.
+ */
+export function requireReasonCategory(
+  raw: string | null | undefined,
+): { ok: true; category: ReasonCategory } | { ok: false; rejection: ReasonRejection } {
+  const category = clean(raw)
+  if (!category) {
+    return {
+      ok: false,
+      rejection: {
+        code: 'reason_category_required',
+        detail: `A reason category is required: send one of ${REASON_CATEGORIES.join(', ')} in the X-Mice-Reason-Category header`,
+      },
+    }
+  }
+  if (!isReasonCategory(category)) {
+    return {
+      ok: false,
+      rejection: {
+        code: 'reason_category_invalid',
+        detail: `Reason category must be one of: ${REASON_CATEGORIES.join(', ')}`,
+      },
+    }
+  }
+  return { ok: true, category }
 }
 
 /**
@@ -216,26 +255,9 @@ export function resolveReason(input: {
   }
 
   if (input.required) {
-    const rawCategory = clean(input.category) || declared?.category || ''
-    if (!rawCategory) {
-      return {
-        ok: false,
-        rejection: {
-          code: 'reason_category_required',
-          detail: `A reason category is required: send one of ${REASON_CATEGORIES.join(', ')} in the X-Mice-Reason-Category header`,
-        },
-      }
-    }
-    if (!isReasonCategory(rawCategory)) {
-      return {
-        ok: false,
-        rejection: {
-          code: 'reason_category_invalid',
-          detail: `Reason category must be one of: ${REASON_CATEGORIES.join(', ')}`,
-        },
-      }
-    }
-    picked = { ...picked, category: rawCategory }
+    const category = requireReasonCategory(clean(input.category) || declared?.category || '')
+    if (!category.ok) return category
+    picked = { ...picked, category: category.category }
   }
 
   return { ok: true, value: picked }

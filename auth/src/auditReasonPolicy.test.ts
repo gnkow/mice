@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { overrideEnv } from './env.js'
 import {
+  createExemptActions,
+  isReasonCategory,
   mutationNeedsReason,
   REASON_CATEGORIES,
+  requireReasonCategory,
   resolveReason,
 } from './auditReason.js'
 
@@ -17,6 +20,12 @@ await describe('mutationNeedsReason', async () => {
     ]) {
       assert.equal(mutationNeedsReason(action), false, action)
     }
+    assert.deepEqual(createExemptActions(), [
+      'branch.create',
+      'file.write',
+      'namespace.create',
+      'repo.create',
+    ])
   })
 
   await it('requires a reason for updates, deletes, privileged settings, destructive actions and revocation', () => {
@@ -37,6 +46,23 @@ await describe('mutationNeedsReason', async () => {
     ]) {
       assert.equal(mutationNeedsReason(action), true, action)
     }
+  })
+})
+
+await describe('requireReasonCategory (module seam)', async () => {
+  await it('accepts each pick-list category and refuses missing or unknown', () => {
+    for (const category of REASON_CATEGORIES) {
+      assert.equal(isReasonCategory(category), true)
+      const ok = requireReasonCategory(category)
+      assert.equal(ok.ok, true)
+      if (ok.ok) assert.equal(ok.category, category)
+    }
+    const missing = requireReasonCategory('')
+    assert.equal(missing.ok, false)
+    if (!missing.ok) assert.equal(missing.rejection.code, 'reason_category_required')
+    const bad = requireReasonCategory('not_a_category')
+    assert.equal(bad.ok, false)
+    if (!bad.ok) assert.equal(bad.rejection.code, 'reason_category_invalid')
   })
 })
 
