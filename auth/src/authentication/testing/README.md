@@ -25,6 +25,12 @@ const app = createAuthTestApp({
 // Complete a login through the harness seam (code/PKCE stay inside)
 const { sessionCookie } = await app.signIn('alice')
 
+// Session sat/act are stamped from the harness clock (not wall time)
+app.clock.advance(60 * 60 * 1000)
+const later = await app.signIn('bob')
+const sessionClaims = await app.readSession(later.sessionCookie)
+console.log(sessionClaims.sat) // epoch seconds of harness clock at seal
+
 // Issue a token for a user
 const token = await app.idp.issueToken('alice')
 

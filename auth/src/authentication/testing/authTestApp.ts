@@ -26,6 +26,17 @@ export type SignInResult = {
   pkceCookie: string
 }
 
+/** Claims readable from a harness-sealed session cookie (clock-stamped). */
+export type TestSessionClaims = {
+  sub: string
+  email: string
+  name: string
+  /** Session start (epoch seconds) stamped from the harness clock. */
+  sat: number
+  /** Last activity (epoch seconds) stamped from the harness clock. */
+  act: number
+}
+
 /**
  * Test harness module: fake IdP + controllable clock + minimal BFF.
  * Callers exercise login through `signIn` — code/state/PKCE stay behind the seam.
@@ -36,6 +47,8 @@ export interface AuthTestApp {
   bff: Hono
   /** Completes OIDC login for `sub` and returns the sealed session cookie. */
   signIn(sub: string, opts?: SignInOptions): Promise<SignInResult>
+  /** Reads a session cookie sealed by this harness (uses the same secret + clock semantics). */
+  readSession(sessionCookieHeader: string): Promise<TestSessionClaims>
 }
 
 interface PkceState {
@@ -49,8 +62,8 @@ interface PkceState {
 const TEST_SESSION_SECRET = 'test-session-secret-key-for-testing-only-32-chars!'
 const testSecretKey = () => createHash('sha256').update(TEST_SESSION_SECRET).digest()
 
-async function sealTestSession(user: SessionUser): Promise<string> {
-  const nowSec = Math.floor(Date.now() / 1000)
+async function sealTestSession(user: SessionUser, nowMs: number): Promise<string> {
+  const nowSec = Math.floor(nowMs / 1000)
   return new EncryptJWT({
     sub: user.sub,
     iss: user.iss,
@@ -61,9 +74,35 @@ async function sealTestSession(user: SessionUser): Promise<string> {
     act: nowSec,
   })
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
-    .setIssuedAt()
+    .setIssuedAt(nowSec)
     .setExpirationTime(nowSec + 28800) // 8 hours
     .encrypt(testSecretKey())
+}
+
+function sessionTokenFromCookieHeader(cookieHeader: string): string {
+  const match = /__Host-Session=([^;]+)/.exec(cookieHeader)
+  if (!match) throw new Error('session cookie header missing __Host-Session')
+  return match[1]!
+}
+
+async function readTestSession(
+  sessionCookieHeader: string,
+  nowMs: number,
+): Promise<TestSessionClaims> {
+  const token = sessionTokenFromCookieHeader(sessionCookieHeader)
+  // Evaluate exp against the harness clock, not wall time.
+  const { payload } = await jwtDecrypt(token, testSecretKey(), {
+    currentDate: new Date(nowMs),
+  })
+  const sat = payload.sat
+  const act = payload.act
+  if (typeof payload.sub !== 'string' || typeof payload.email !== 'string' || typeof payload.name !== 'string') {
+    throw new Error('session claims missing identity')
+  }
+  if (typeof sat !== 'number' || typeof act !== 'number') {
+    throw new Error('session claims missing sat/act')
+  }
+  return { sub: payload.sub, email: payload.email, name: payload.name, sat, act }
 }
 
 export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
@@ -155,8 +194,8 @@ export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
       name: user.name,
     }
     
-    // Seal and set session cookie
-    const sessionToken = await sealTestSession(sessionUser)
+    // Seal and set session cookie (stamped from the harness clock, not wall time)
+    const sessionToken = await sealTestSession(sessionUser, clock.now())
     setCookie(c, '__Host-Session', sessionToken, {
       httpOnly: true,
       secure: true,
@@ -178,9 +217,11 @@ export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
       return c.json({ error: 'Not authenticated' }, 401)
     }
     
-    // Decode the session to get user info
+    // Decode the session to get user info (exp checked against harness clock)
     try {
-      const { payload } = await jwtDecrypt(sessionCookie, testSecretKey())
+      const { payload } = await jwtDecrypt(sessionCookie, testSecretKey(), {
+        currentDate: new Date(clock.now()),
+      })
       
       return c.json({
         sub: payload.sub,
@@ -228,5 +269,6 @@ export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
     clock,
     bff,
     signIn,
+    readSession: (sessionCookieHeader) => readTestSession(sessionCookieHeader, clock.now()),
   }
 }

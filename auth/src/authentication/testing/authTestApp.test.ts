@@ -130,6 +130,23 @@ await describe('authTestApp', async () => {
     assert.equal(identity.name, 'Alice')
   })
 
+  await it('signIn seals the session against the harness clock', async () => {
+    const app = createAuthTestApp({
+      users: [{ sub: 'dana', email: 'dana@example.com', name: 'Dana' }],
+    })
+
+    const offsetMs = 3 * 60 * 60 * 1000
+    app.clock.advance(offsetMs)
+    const expectedSat = Math.floor(app.clock.now() / 1000)
+
+    const { sessionCookie } = await app.signIn('dana')
+    const claims = await app.readSession(sessionCookie)
+
+    assert.equal(claims.sub, 'dana')
+    assert.equal(claims.sat, expectedSat)
+    assert.equal(claims.act, expectedSat)
+  })
+
   await it('signIn fails when login state expires after 10 minutes', async () => {
     const app = createAuthTestApp({
       users: [{ sub: 'bob', email: 'bob@example.com', name: 'Bob' }],
