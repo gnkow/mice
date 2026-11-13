@@ -17,5 +17,14 @@ Status: done
 
 ## Code
 
-- `auth/src/authentication/session/session.ts` (`sealSession`)
+- `auth/src/authentication/session/sessionCap.ts` (`enforceWebSessionCap`, `sessionToEvictForCap`)
+- `auth/src/authentication/session/session.ts` (`sealSession` → one call to enforce)
 - `auth/src/authentication/session/sessionCap.test.ts`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (acceptance covered by `sessionCap.test.ts`).
+
+**Deepen (auto-picked):** Extract cap/evict + `session.evict` audit into deep `sessionCap` module (`sessionToEvictForCap` + `enforceWebSessionCap`); `sealSession` only delegates. No wholesale session.ts rewrite.
+
+**Files:** `sessionCap.ts`, `sessionCap.test.ts`, `session.ts` (call site only)

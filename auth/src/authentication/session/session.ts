@@ -1,15 +1,15 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { eq, asc, and } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import type { Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { getDb } from '../../db/database.js'
 import { principals, webSessions } from '../../db/schema.js'
 import { env } from '../../env.js'
 import { isCredentialRevoked } from '../credentials/credentialRevocation.js'
-import { appendAudit } from '../../audit.js'
 import { trackNameChange } from './nameChangeHistory.js'
 import { sealSessionCookie, unsealSessionCookie } from './cookieSeal.js'
 import { canonicalIssuer } from './principal.js'
+import { enforceWebSessionCap } from './sessionCap.js'
 
 export { canonicalIssuer }
 
@@ -112,9 +112,7 @@ export async function currentEmailsByAuthor(authors: string[]): Promise<Record<s
 
 /**
  * Creates the server-side Session row for a user and returns the opaque id that goes into the cookie.
- * 
- * Enforces 5-session cap per Principal (Round 8 U4). When cap exceeded, evicts
- * oldest session by sessionStart timestamp (Part 11 §11.300(b) authority checks).
+ * Cap/eviction lives in `enforceWebSessionCap` (Ticket 15 / Round 8 U4).
  */
 export async function sealSession(user: SessionUser): Promise<string> {
   const id = randomBytes(32).toString('base64url')
@@ -125,40 +123,10 @@ export async function sealSession(user: SessionUser): Promise<string> {
     .set({ lastLoginAt: new Date(start * 1000) })
     .where(eq(principals.id, principalId))
 
-  // Enforce 5-session cap: count existing sessions for this Principal
-  const existingSessions = await getDb()
-    .select({
-      idHash: webSessions.idHash,
-      sessionStart: webSessions.sessionStart,
-    })
-    .from(webSessions)
-    .where(eq(webSessions.principalId, principalId))
-    .orderBy(asc(webSessions.sessionStart)) // Oldest first
-
-  // If at cap (5 sessions), evict the oldest before creating new one
-  if (existingSessions.length >= 5) {
-    const oldestSession = existingSessions[0]
-    await getDb()
-      .delete(webSessions)
-      .where(eq(webSessions.idHash, oldestSession.idHash))
-    
-    // Audit event for automatic session eviction (Ticket 15, U4)
-    await appendAudit({
-      actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
-      via: 'system',
-      method: 'POST',
-      path: '/auth/session/seal',
-      status: 200,
-      action: 'session.evict',
-      message: `Session evicted: cap exceeded (5 concurrent sessions max)`,
-      detail: {
-        evictedSessionHash: oldestSession.idHash,
-        evictedSessionStart: oldestSession.sessionStart,
-        reason: 'cap-exceeded',
-        cap: 5,
-      },
-    })
-  }
+  await enforceWebSessionCap({
+    principalId,
+    actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+  })
 
   await getDb().insert(webSessions).values({
     idHash: hashId(id),

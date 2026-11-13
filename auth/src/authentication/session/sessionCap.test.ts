@@ -2,21 +2,23 @@ import '../../db/testSchema.js'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { sealSession, getSession, type SessionUser } from './session.js'
+import { sealSession, type SessionUser } from './session.js'
+import { sessionToEvictForCap, WEB_SESSION_CAP } from './sessionCap.js'
 import { getDb } from '../../db/database.js'
 import { webSessions } from '../../db/schema.js'
 import { eq } from 'drizzle-orm'
+import { queryAudit } from '../../audit.js'
 
 const hashId = (id: string) => createHash('sha256').update(id).digest('hex')
 
 /**
  * Session Cap and Eviction Tests (Ticket 15)
- * 
+ *
  * Part 11 §11.300(b) requires authority checks. Unlimited sessions create
  * enforcement problems (stolen cookies, concurrent access from impossible locations).
- * 
+ *
  * Round 8 decision U4: Cap at 5 concurrent sessions per Principal.
- * 
+ *
  * Related:
  * - .scratch/authentication/issues/15-session-cap-and-eviction.md
  * - Round 8 decision U4
@@ -29,6 +31,27 @@ const mk = (sub: string, opts?: Partial<SessionUser>): SessionUser => ({
   name: sub,
   sessionStart: Math.floor(Date.now() / 1000) - 30,
   ...opts,
+})
+
+describe('sessionToEvictForCap', () => {
+  it('returns null when under the cap', () => {
+    const rows = [
+      { idHash: 'a', sessionStart: 1 },
+      { idHash: 'b', sessionStart: 2 },
+    ]
+    assert.equal(sessionToEvictForCap(rows, WEB_SESSION_CAP), null)
+    assert.equal(sessionToEvictForCap(rows, 5), null)
+  })
+
+  it('returns the oldest row when at the cap', () => {
+    const rows = [1, 2, 3, 4, 5].map((n) => ({ idHash: `h${n}`, sessionStart: n }))
+    assert.deepEqual(sessionToEvictForCap(rows, 5), { idHash: 'h1', sessionStart: 1 })
+  })
+
+  it('returns the oldest row when over the cap', () => {
+    const rows = [1, 2, 3, 4, 5, 6].map((n) => ({ idHash: `h${n}`, sessionStart: n }))
+    assert.deepEqual(sessionToEvictForCap(rows, 5), { idHash: 'h1', sessionStart: 1 })
+  })
 })
 
 describe('Session Cap and Eviction', () => {
@@ -150,5 +173,27 @@ describe('Session Cap and Eviction', () => {
     const sessionStarts = remaining.map(s => s.sessionStart).sort()
     assert.ok(!sessionStarts.includes(now - 100))
     assert.ok(sessionStarts.includes(now - 5))
+  })
+
+  it('writes session.evict with evicted hash and reason cap-exceeded', async () => {
+    const user = mk('diana')
+    const sessions: string[] = []
+    for (let i = 0; i < 5; i++) {
+      sessions.push(
+        await sealSession({
+          ...user,
+          sessionStart: Math.floor(Date.now() / 1000) - (100 - i * 10),
+        }),
+      )
+    }
+    await sealSession({ ...user, sessionStart: Math.floor(Date.now() / 1000) - 5 })
+
+    const { events } = await queryAudit({ action: 'session.evict', limit: 20 })
+    const eviction = events.find(
+      (e) => e.detail?.evictedSessionHash === hashId(sessions[0]!),
+    )
+    assert.ok(eviction, 'expected session.evict for oldest session')
+    assert.equal(eviction.detail?.reason, 'cap-exceeded')
+    assert.equal(eviction.detail?.cap, WEB_SESSION_CAP)
   })
 })
