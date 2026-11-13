@@ -129,6 +129,13 @@ export function ProfilePage() {
               </div>
             )}
 
+            {!pending && authz.data.role === 'admin' && (
+              <p className="flash flash-warn" role="status" data-testid="admin-sod-profile-note">
+                Admin is platform-only (separation of duties): no namespace data or audit
+                trail access.
+              </p>
+            )}
+
             {!pending && (
               <div className="ns-settings-subsection">
                 <h3 className="muted small">

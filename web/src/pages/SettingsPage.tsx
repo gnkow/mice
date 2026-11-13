@@ -433,6 +433,10 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
             {selected.name} ({selected.email}) · requested{' '}
             {formatRequestedAccess(selected)}
           </p>
+          <p className="muted small" data-testid="access-request-authority-hint">
+            You can only approve grants within your authority. Expiry is required for
+            delegated roles and custom permissions.
+          </p>
           <div className="ns-settings-grid">
             <label className="ns-settings-field">
               <span className="ns-settings-label">Grant role</span>

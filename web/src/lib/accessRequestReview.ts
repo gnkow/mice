@@ -109,5 +109,15 @@ export function buildDenyBody(input: { reason: string }): DenyBodyResult {
 /** True when the API rejected because the reviewer lacks authority. */
 export function isAuthorityError(message: string): boolean {
   const m = message.toLowerCase()
-  return m.includes('insufficient approval authority') || m.includes('forbidden')
+  return (
+    m.includes('insufficient approval authority') ||
+    m.includes('insufficient authority') ||
+    m.includes('forbidden')
+  )
+}
+
+/** True when demoting/removing an Admin would leave fewer than two instance admins (ADR 0007). */
+export function isAdminFloorError(message: string): boolean {
+  const m = message.toLowerCase()
+  return m.includes('at least two') && m.includes('admin')
 }
