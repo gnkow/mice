@@ -20,6 +20,7 @@ Status: done
 - `auth/src/authentication/session/sessionCap.ts` (`enforceWebSessionCap`, `sessionToEvictForCap`)
 - `auth/src/authentication/session/session.ts` (`sealSession` → one call to enforce)
 - `auth/src/authentication/session/sessionCap.test.ts`
+- `auth/src/authentication/session/sessionCap.integration.test.ts`
 
 ## Comments
 
@@ -27,4 +28,8 @@ Status: done
 
 **Deepen (auto-picked):** Extract cap/evict + `session.evict` audit into deep `sessionCap` module (`sessionToEvictForCap` + `enforceWebSessionCap`); `sealSession` only delegates. No wholesale session.ts rewrite.
 
-**Files:** `sessionCap.ts`, `sessionCap.test.ts`, `session.ts` (call site only)
+**deep-api Deepen (2026-11-13):** Auto-picked Top — `enforceWebSessionCap` returns `{ evicted }` so callers observe eviction without an audit side-channel. Integration: `sessionCap.integration.test.ts` mints six sessions via `/auth/dev/session` and asserts `/auth/sessions/web` stays at the cap with `session.evict` / `cap-exceeded`.
+
+**Seams:** module `enforceWebSessionCap` / `sealSession`; HTTP `/auth/dev/session`, `/auth/sessions/web`.
+
+**Files:** `sessionCap.ts`, `sessionCap.test.ts`, `sessionCap.integration.test.ts`, `session.ts` (call site only)

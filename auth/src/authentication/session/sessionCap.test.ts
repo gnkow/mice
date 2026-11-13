@@ -2,8 +2,12 @@ import '../../db/testSchema.js'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { sealSession, type SessionUser } from './session.js'
-import { sessionToEvictForCap, WEB_SESSION_CAP } from './sessionCap.js'
+import { sealSession, ensurePrincipal, type SessionUser } from './session.js'
+import {
+  enforceWebSessionCap,
+  sessionToEvictForCap,
+  WEB_SESSION_CAP,
+} from './sessionCap.js'
 import { getDb } from '../../db/database.js'
 import { webSessions } from '../../db/schema.js'
 import { eq } from 'drizzle-orm'
@@ -195,5 +199,35 @@ describe('Session Cap and Eviction', () => {
     assert.ok(eviction, 'expected session.evict for oldest session')
     assert.equal(eviction.detail?.reason, 'cap-exceeded')
     assert.equal(eviction.detail?.cap, WEB_SESSION_CAP)
+  })
+
+  it('enforceWebSessionCap returns the evicted row (no audit side-channel required)', async () => {
+    const user = mk('evan-return')
+    const principalId = await ensurePrincipal(user)
+    const sessions: string[] = []
+    for (let i = 0; i < WEB_SESSION_CAP; i++) {
+      sessions.push(
+        await sealSession({
+          ...user,
+          sessionStart: Math.floor(Date.now() / 1000) - (100 - i * 10),
+        }),
+      )
+    }
+    const result = await enforceWebSessionCap({
+      principalId,
+      actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+    })
+    assert.ok(result.evicted, 'expected an eviction at the cap')
+    assert.equal(result.evicted.idHash, hashId(sessions[0]!))
+    assert.equal(
+      (
+        await enforceWebSessionCap({
+          principalId,
+          actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+        })
+      ).evicted,
+      null,
+      'under cap after one eviction',
+    )
   })
 })

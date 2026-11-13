@@ -27,14 +27,20 @@ export function sessionToEvictForCap(
   return existingOldestFirst[0] ?? null
 }
 
+export type EnforceWebSessionCapResult = {
+  /** Oldest session removed to make room, or null when under the cap. */
+  evicted: CapSessionRow | null
+}
+
 /**
  * Enforce the per-Principal web Session cap: if at cap, delete the oldest
  * Session and append `session.evict` with reason `cap-exceeded`.
+ * Callers learn the eviction outcome from the return value — no audit side-channel.
  */
 export async function enforceWebSessionCap(input: {
   principalId: number
   actor: SessionCapActor
-}): Promise<void> {
+}): Promise<EnforceWebSessionCapResult> {
   const existingSessions = await getDb()
     .select({
       idHash: webSessions.idHash,
@@ -45,7 +51,7 @@ export async function enforceWebSessionCap(input: {
     .orderBy(asc(webSessions.sessionStart))
 
   const oldest = sessionToEvictForCap(existingSessions)
-  if (!oldest) return
+  if (!oldest) return { evicted: null }
 
   await getDb().delete(webSessions).where(eq(webSessions.idHash, oldest.idHash))
 
@@ -69,4 +75,6 @@ export async function enforceWebSessionCap(input: {
       cap: WEB_SESSION_CAP,
     },
   })
+
+  return { evicted: oldest }
 }
