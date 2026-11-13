@@ -13,10 +13,23 @@ function toExpiryDate(expiresAt: Date | number): Date {
   return expiresAt instanceof Date ? expiresAt : new Date(expiresAt)
 }
 
+/**
+ * Pure Admin-role-only decision: no boolean flag, no delegated permissions.
+ * `isInstanceAdmin` loads role + capability then calls this seam.
+ */
+export function decideIsInstanceAdmin(input: {
+  role: string | null
+  canBeAdmin: boolean
+}): boolean {
+  return input.canBeAdmin && input.role === 'admin'
+}
+
 /** Instance admin is the Admin role; there is no separate flag. */
 export async function isInstanceAdmin(user: UserKey): Promise<boolean> {
-  if (!can(user, 'canBeAdmin')) return false
-  return (await getUserRole(user)) === 'admin'
+  return decideIsInstanceAdmin({
+    canBeAdmin: can(user, 'canBeAdmin'),
+    role: await getUserRole(user),
+  })
 }
 
 export async function listInstanceAdmins(): Promise<UserKey[]> {

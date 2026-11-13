@@ -28,3 +28,5 @@ The two models can disagree: a Manager with the flag gets all instance permissio
 ## Comments
 
 **Done.** `isInstanceAdmin` is now "holds the Admin role"; `instancePermissions` returns only delegated grants (no implicit "all"). `maybeBootstrapInstanceAdmin` assigns the Admin role. `assignRole`/`revokeRole` refuse to take the role from the last two admins (`rbacAdminMinimum.test.ts`). The `instance_admins` table, `add/removeInstanceAdmin`, the `/auth/instance/admins` routes, the Settings add/remove form, the CLI `instance admin` command and the dev-session `instanceAdmin` flag are gone; the single baseline migration was regenerated. e2e cleanup mints an `admin`-role identity.
+
+**Deep-api Deepen (2026-11-13):** Holds at Admin-role-only `isInstanceAdmin`. Top: pure `decideIsInstanceAdmin({ role, canBeAdmin })`; store loads then decides. Dead `addInstanceAdmin` import already gone from `instanceAdminSeparation.test.ts`. Unit: `decideIsInstanceAdmin` + delegated-perms-are-not-admin. Integration: SoD suite asserts Admin-role holders via `isInstanceAdmin`.

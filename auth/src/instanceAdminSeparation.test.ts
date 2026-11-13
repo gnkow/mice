@@ -14,10 +14,21 @@ process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
-const { authorizeApiRequest, authorizeInstanceAction, authorizeLineageRebuild, canManageRepoCollaborators, preparePrincipal } = await import('./authz.js')
-const { addInstanceAdmin } = await import('./authzInstanceStore.js')
+const {
+  authorizeApiRequest,
+  authorizeInstanceAction,
+  authorizeLineageRebuild,
+  canManageRepoCollaborators,
+  preparePrincipal,
+} = await import('./authz.js')
+const { isInstanceAdmin } = await import('./authzInstanceStore.js')
 const { createNamespaceAuthz, listNamespacesForUser } = await import('./authzNamespaceStore.js')
-const { hasNamespaceCapability, setNamespaceMember } = await import('./authzMembershipStore.js')
+const {
+  hasNamespaceCapability,
+  INSTANCE_ADMIN_MEMBERSHIP_REFUSAL,
+  refuseInstanceAdminMembership,
+  setNamespaceMember,
+} = await import('./authzMembershipStore.js')
 const { assignRole } = await import('./rbacStore.js')
 
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', emailVerified: true, name: 'Admin' }
@@ -36,12 +47,21 @@ after(() => {
 })
 
 await describe('instance admin separation of duties', async () => {
+  await it('treats Admin-role holders as instance admins and managers as not', async () => {
+    assert.equal(await isInstanceAdmin(admin), true)
+    assert.equal(await isInstanceAdmin(manager), false)
+  })
+
   await it('refuses namespace membership for an instance admin', async () => {
+    assert.equal(await refuseInstanceAdminMembership(admin), INSTANCE_ADMIN_MEMBERSHIP_REFUSAL)
+    assert.equal(await refuseInstanceAdminMembership(manager), null)
     const r = await setNamespaceMember('sod-ns', admin, 'owner')
-    assert.deepEqual(r, {
-      ok: false,
-      error: 'Instance admins cannot be granted namespace membership (separation of duties)',
-    })
+    assert.deepEqual(r, { ok: false, error: INSTANCE_ADMIN_MEMBERSHIP_REFUSAL })
+  })
+
+  await it('refuses self-grant when the instance admin is the membership target', async () => {
+    const r = await setNamespaceMember('sod-ns', admin, 'member')
+    assert.deepEqual(r, { ok: false, error: INSTANCE_ADMIN_MEMBERSHIP_REFUSAL })
   })
 
   for (const [label, method, pathname] of [
