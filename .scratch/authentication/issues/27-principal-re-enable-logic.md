@@ -36,3 +36,5 @@ The first time a Principal is seen IdP-disabled, `principal_disabled_periods` re
 - **Deepen:** `listReenablePeriods` uses `decideRestoration({ requireIdpEnabled: true })` for `awaitingConfirmation` (same table as admin confirm).
 - **Integ:** `reenableRoutes.test.ts` (401, list + flag past window, confirm + audit, 400/409) — no requireAuth / loginFlow / miceSuspension.
 - **Files:** `reenable.ts`, `reenableRoutes.ts`, `reenableRoutes.test.ts`.
+
+2026-11-13 — deep-ui Deepen (holds): **ReenableSection** accessible errors (`role=alert` + focus), empty-queue copy, confirm busy/success flash; E2E `e2e/tests/reenable.spec.ts` (mintSession admin → Settings → Re-enable; empty state + short-reason validation). No commit/push (requested).
