@@ -30,7 +30,9 @@ Issue 06's pending two-admin suspend is a different route and is unchanged.
 ## Comments
 
 - **Audit:** holds — set/lift history, session wipe with grants preserved, login/`authenticate` refusal while IdP-enabled, and audits proven by `miceSuspension.test.ts`.
-- **Deepen (auto-pick Top):** Collapsed set/lift into one deep transactional `applyFlagChange('set'|'lift')` in `miceSuspension.ts` (flag write + session wipe + history in one `inTransaction`). `suspendPrincipal` / `liftSuspension` / `isSuspended` / `suspensionHistory` remain the public seams; routes stay thin adapters. Tests use `regulatedMutationHeaders` for admin POSTs.
+- **Deepen (auto-pick Top):** Collapsed set/lift into one deep transactional `applyFlagChange('set'|'lift')` in `miceSuspension.ts` (flag write + session wipe + history in one `inTransaction`). `suspendPrincipal` / `liftSuspension` / `isSuspended` / `suspensionHistory` remain the public seams; routes stay thin adapters. No further deepen (already deep).
+- **Integration:** `miceSuspensionRoutes.api.test.ts` — HTTP set → history → lift → history, authenticate 403 while suspended, 404 missing principal, 400 bad format; uses `regulatedMutationHeaders` (no loginFlow).
+- **Files:** `auth/src/authentication/access/miceSuspension.ts`, `miceSuspensionRoutes.ts`, `miceSuspension.test.ts`, `miceSuspensionRoutes.api.test.ts`.
 
 ## Acceptance
 
