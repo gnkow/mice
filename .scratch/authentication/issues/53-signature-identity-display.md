@@ -23,3 +23,5 @@
 - **Audit:** holds — `signatureStore().view` snapshot + `nowKnownAs`; deactivated signatures remain attributable; PAT → `CliCredentialScope` / `parseCliScopes` already done.
 - **Deepen (auto-pick):** Extract display adapter `decideNowKnownAs` in `signatureIdentityDisplay.ts`; `view` is a thin store adapter. `nameChangeHistory.ts` not rewritten (already deepened in #22).
 - **Tests:** `auth/src/authentication/signing/signatureIdentityDisplay.test.ts`; acceptance still green in `signatureStore.test.ts`
+- **Deep-API deepen (2026-11-13):** `buildSignatureView(snapshot, currentName)` owns full identity view assembly; store `view` only fetches ledger + principal name. No UI chrome.
+- **Tests:** `signatureIdentityDisplay.test.ts`, `signatureStore.test.ts` (green)

@@ -6,7 +6,7 @@ import { allocateChangeControlId } from '../../changeControl.js'
 import { getDb } from '../../db/database.js'
 import { signatureIndex, principals } from '../../db/schema.js'
 import { principalKey } from '../session/principal.js'
-import { decideNowKnownAs } from './signatureIdentityDisplay.js'
+import { buildSignatureView } from './signatureIdentityDisplay.js'
 import type { MfaEvidence, SignatureMeaning, VerificationMetadata } from './signingCeremony.js'
 
 export type SignatureBinding = {
@@ -156,14 +156,15 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
         .select({ name: principals.name })
         .from(principals)
         .where(and(eq(principals.iss, signer.iss), eq(principals.sub, signer.sub)))
-      const nowKnownAs = decideNowKnownAs(signer.name, principal?.name)
-      return {
-        id,
-        meaning: found.record.meaning,
-        signedAt: found.record.signedAt,
-        signer,
-        ...(nowKnownAs ? { nowKnownAs } : {}),
-      }
+      return buildSignatureView(
+        {
+          id,
+          meaning: found.record.meaning,
+          signedAt: found.record.signedAt,
+          signer,
+        },
+        principal?.name,
+      )
     },
     async proof(id, opts) {
       return ledger.prove(`signature/${id}`, opts)
