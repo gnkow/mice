@@ -7,6 +7,7 @@ import {
   buildDenyBody,
   filterAccessRequests,
   formatRequestedAccess,
+  isAdminFloorError,
   isAuthorityError,
 } from './accessRequestReview'
 
@@ -141,6 +142,10 @@ describe('RBAC S35 access request review helpers', () => {
       body: { action: 'deny', reason: 'not yet' },
     })
     assert.equal(isAuthorityError('Forbidden: insufficient approval authority'), true)
+    assert.equal(isAuthorityError('Insufficient authority to grant this permission'), true)
     assert.equal(isAuthorityError('Already resolved'), false)
+    assert.equal(isAdminFloorError('At least two admins must remain'), true)
+    assert.equal(isAdminFloorError('At least two instance admins must remain'), true)
+    assert.equal(isAdminFloorError('Grant failed'), false)
   })
 })

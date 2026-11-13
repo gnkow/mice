@@ -34,6 +34,7 @@ import {
 import { groupPermissions } from '../lib/permissionPicker'
 import {
   REQUESTABLE_ROLES,
+  REQUESTABLE_ROLES_FOOTNOTE,
   buildAccessRequestPayload,
   togglePermission,
   type RequestAccessFormState,
@@ -349,7 +350,7 @@ export function PendingAccessPage() {
               <p className="lede">
                 {replacing
                   ? 'Submit a new request to replace the one currently awaiting review.'
-                  : 'You are signed in without a formal role. Complete the steps below to request access.'}
+                  : 'You are signed in without a formal role. Complete the steps below to request access. Admin and Auditor are grant-only (separation of duties) — ask a manager to assign those.'}
               </p>
             </div>
 
@@ -482,6 +483,9 @@ export function PendingAccessPage() {
                       </label>
                     ))}
                   </div>
+                  <p className="muted small" data-testid="requestable-roles-footnote">
+                    {REQUESTABLE_ROLES_FOOTNOTE}
+                  </p>
                 </fieldset>
               )}
 

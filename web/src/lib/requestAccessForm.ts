@@ -15,7 +15,11 @@ export const REQUESTABLE_ROLES = [
     label: 'Manager',
     description: 'User access plus reviewing access requests up to Manager.',
   },
-]
+] as const
+
+/** Shown under the formal-role picker — Admin/Auditor stay out of self-serve. */
+export const REQUESTABLE_ROLES_FOOTNOTE =
+  'Admin (platform only, no data/audit) and Auditor (MFA, time-boxed read) are assigned by an admin — they are not self-service.'
 
 export type RequestableRoleId = (typeof REQUESTABLE_ROLES)[number]['id']
 
