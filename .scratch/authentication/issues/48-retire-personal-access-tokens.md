@@ -21,3 +21,5 @@ No route mints a personal access token. Bearer authentication does not accept a 
 - **Audit:** holds — no PAT mint routes; `mice_pat_*` bearer → 401; CLI credentials minted as `mice_cli_*` (`authenticate.test.ts`, `cliCredentials.test.ts`).
 - **Deepen (auto-pick):** Extracted `isRetiredPersonalAccessToken` / `RETIRED_PAT_PREFIX`; `resolveCliCredential` refuses that prefix before DB lookup so retirement locality lives with credential resolve (requireAuth untouched beyond existing resolveBearer path).
 - **Files:** `retiredPersonalAccessToken.ts`, `retiredPersonalAccessToken.test.ts`, `cliCredentials.ts`, `cliCredentials.test.ts`, `authenticate.test.ts`.
+- **Deep-API deepen (2026-11-13):** `classifyBearerCredential` → `retired_pat` | `cli` | `unknown`; resolve + refresh refuse retired PAT before DB. `isRetiredPersonalAccessToken` is a thin wrapper.
+- **Tests:** `retiredPersonalAccessToken.test.ts`, `cliCredentials.test.ts`, `authenticate.test.ts` (green)
