@@ -549,8 +549,7 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
   if (policy.credential === 'unscoped' && isScopedCredential(user)) {
     return denied(policy.reason)
   }
-  const mfaRefusal = await auditorMfaRefusal(user)
-  if (mfaRefusal) return denied(mfaRefusal)
+  // Auditor MFA is gated once in authenticate() via auditorMfaRefusal — not repeated here.
   for (const p of policy.permissions) {
     if (await hasPermission(user, p)) return ALLOWED
   }

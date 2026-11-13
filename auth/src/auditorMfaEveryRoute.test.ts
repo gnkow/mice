@@ -66,4 +66,14 @@ describe('Auditor MFA on every decision path (#17)', () => {
   it('still lets an Auditor without MFA read /auth/me so the UI can explain', async () => {
     assert.equal((await app.request('/auth/me', { headers: await iso.sessionHeaders(auditor) })).status, 200)
   })
+
+  it('refuses an Auditor PAT without MFA on an instance path with the same reason', async () => {
+    const { issueCliCredential } = await import('./authentication/credentials/cliCredentials.js')
+    const { accessToken } = await issueCliCredential(auditor)
+    const refused = await app.request('/auth/audit', {
+      headers: { authorization: `Bearer ${accessToken}` },
+    })
+    assert.equal(refused.status, 403)
+    assert.match(await refused.text(), new RegExp(REASON))
+  })
 })

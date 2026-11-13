@@ -193,10 +193,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
     if (reenable === 'awaiting-confirmation') return deny(403, 'Re-enable confirmation required')
     if (await isSuspended(session)) return refuseSuspended(c, session, 'session')
 
-    await preparePrincipal(session)
-    const mfaRefusal = policy.allowAuditorWithoutMfa ? null : await auditorMfaRefusal(session)
-    if (mfaRefusal) return deny(403, mfaRefusal)
-    return { ok: true, user: session, via: 'session' }
+    return admitPrincipal(session, 'session', policy)
   }
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 
@@ -209,8 +206,19 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   }
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)
   if (await isSuspended(pat)) return refuseSuspended(c, pat, 'pat')
-  await preparePrincipal(pat)
-  const patMfaRefusal = policy.allowAuditorWithoutMfa ? null : await auditorMfaRefusal(pat)
-  if (patMfaRefusal) return deny(403, patMfaRefusal)
-  return { ok: true, user: pat, via: 'pat' }
+  return admitPrincipal(pat, 'pat', policy)
+}
+
+/** Single Auditor-MFA gate after principal bootstrap (session and PAT share this locality). */
+async function admitPrincipal(
+  user: SessionUser,
+  via: 'session' | 'pat',
+  policy: AuthPolicy,
+): Promise<AuthOutcome> {
+  await preparePrincipal(user)
+  if (!policy.allowAuditorWithoutMfa) {
+    const mfaRefusal = await auditorMfaRefusal(user)
+    if (mfaRefusal) return deny(403, mfaRefusal)
+  }
+  return { ok: true, user, via }
 }

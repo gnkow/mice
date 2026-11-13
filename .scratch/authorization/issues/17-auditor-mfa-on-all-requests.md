@@ -21,8 +21,12 @@ Gate the Auditor role at one place that every authorization decision passes thro
 
 ## Comments
 
-**Done.** `authenticate()` (`requireAuth.ts`) is the single gate: after the principal is prepared, `auditorMfaRefusal(user)` in `authz.ts` refuses an Auditor-role principal without MFA evidence with 403 "Auditor access requires MFA evidence". It covers cookie sessions and CLI credentials, and therefore every route that authenticates: instance, namespace, repo (`/api/*`), lineage and signing. `decideInstanceAction` reuses the same function.
+**Done.** `authenticate()` (`requireAuth.ts`) is the single gate: after the principal is prepared, `auditorMfaRefusal(user)` in `authz.ts` refuses an Auditor-role principal without MFA evidence with 403 "Auditor access requires MFA evidence". It covers cookie sessions and CLI credentials, and therefore every route that authenticates: instance, namespace, repo (`/api/*`), lineage and signing.
 
 - `/auth/me` is the only exemption (`allowAuditorWithoutMfa`), so the UI can still identify the user; logout reads the session directly.
 - `/api/*` now returns the authentication outcome's real status and message instead of a blanket 401.
 - Tests: `authentication/session/authenticate.test.ts` (gate) and `auditorMfaEveryRoute.test.ts` (one test per decision path, plus `/auth/me`).
+
+**Deep-api Deepen (holds).** Audit: rule held; duplication — `decideInstanceAction` also called `auditorMfaRefusal`; session/PAT paths duplicated the gate inline.
+
+**Deepen:** removed MFA from `decideInstanceAction` so `authenticate`/`admitPrincipal` is the sole gate; session+PAT share `admitPrincipal`. Unit: `auditorMfaRefusal.test.ts`. Integration: every-path suite + PAT instance path; #13 Auditor-cannot-sign left intact.
