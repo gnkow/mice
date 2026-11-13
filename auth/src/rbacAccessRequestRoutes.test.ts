@@ -1,5 +1,6 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,8 +15,12 @@ const { registerMeRoutes } = await import('./authentication/session/meRoutes.js'
 const { sealSession, ensurePrincipal } = await import('./authentication/session/session.js')
 const { sealSessionCookie } = await import('./authentication/session/cookieSeal.js')
 const { ensureBootstrapKey } = await import('./authentication/session/sealKeys.js')
-const { assignRole } = await import('./rbacStore.js')
+const { assignRole, getCustomPermissions, getUserRole } = await import('./rbacStore.js')
 const { env, overrideEnv } = await import('./env.js')
+const { regulatedMutationHeaders } = await import('./testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('./auditLedger.js')
+
 overrideEnv({
   directoryProvider: 'keycloak',
   keycloakAdminUrl: 'http://localhost:8180',
@@ -34,6 +39,11 @@ setDirectoryFetchForTests(async (url) => {
 })
 
 await ensureBootstrapKey()
+useSignatureStore(
+  openSignatureStore(
+    await openLedger({ ...immudbConfig(), prefix: `rbac-ar/${randomBytes(4).toString('hex')}/` }),
+  ),
+)
 
 const audited: string[] = []
 const app = new Hono()
@@ -57,7 +67,15 @@ const cookie = async (sub: string) => {
   return { cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}` }
 }
 
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
+const json = { 'content-type': 'application/json' }
+
+const signed = async (
+  sub: string,
+  mutation: { method: string; path: string; body: unknown; reason?: string },
+) => ({
+  ...(await cookie(sub)),
+  ...(await regulatedMutationHeaders(person(sub), mutation)),
+})
 
 describe('RBAC S29 Access-request routes', () => {
   it('submits a role request and lists it for a manager', async () => {
@@ -122,21 +140,24 @@ describe('RBAC S29 Access-request routes', () => {
     })
     assert.equal(submit.status, 200)
     const { request } = (await submit.json()) as { request: { id: string } }
+    const path = `/auth/access-requests/${request.id}`
 
-    const missingExpiry = await app.request(`/auth/access-requests/${request.id}`, {
+    const missingBody = { action: 'approve' }
+    const missingExpiry = await app.request(path, {
       method: 'POST',
-      headers: { ...(await cookie(manager)), ...json },
-      body: JSON.stringify({ action: 'approve' }),
+      headers: await signed(manager, { method: 'POST', path, body: missingBody }),
+      body: JSON.stringify(missingBody),
     })
     assert.equal(missingExpiry.status, 400)
 
-    const approve = await app.request(`/auth/access-requests/${request.id}`, {
+    const approveBody = {
+      action: 'approve',
+      expiresAt: Date.now() + 86_400_000,
+    }
+    const approve = await app.request(path, {
       method: 'POST',
-      headers: { ...(await cookie(manager)), ...json },
-      body: JSON.stringify({
-        action: 'approve',
-        expiresAt: Date.now() + 86_400_000,
-      }),
+      headers: await signed(manager, { method: 'POST', path, body: approveBody }),
+      body: JSON.stringify(approveBody),
     })
     assert.equal(approve.status, 200)
     const approved = (await approve.json()) as { ok: boolean; request: { status: string } }
@@ -151,18 +172,21 @@ describe('RBAC S29 Access-request routes', () => {
     })
     assert.equal(submit2.status, 200)
     const { request: req2 } = (await submit2.json()) as { request: { id: string } }
+    const path2 = `/auth/access-requests/${req2.id}`
 
-    const denyMissing = await app.request(`/auth/access-requests/${req2.id}`, {
+    const denyMissingBody = { action: 'deny' }
+    const denyMissing = await app.request(path2, {
       method: 'POST',
-      headers: { ...(await cookie(manager)), ...json },
-      body: JSON.stringify({ action: 'deny' }),
+      headers: await signed(manager, { method: 'POST', path: path2, body: denyMissingBody }),
+      body: JSON.stringify(denyMissingBody),
     })
     assert.equal(denyMissing.status, 400)
 
-    const deny = await app.request(`/auth/access-requests/${req2.id}`, {
+    const denyBody = { action: 'deny', reason: 'not yet' }
+    const deny = await app.request(path2, {
       method: 'POST',
-      headers: { ...(await cookie(manager)), ...json },
-      body: JSON.stringify({ action: 'deny', reason: 'not yet' }),
+      headers: await signed(manager, { method: 'POST', path: path2, body: denyBody }),
+      body: JSON.stringify(denyBody),
     })
     assert.equal(deny.status, 200)
     const denied = (await deny.json()) as { request: { status: string } }
@@ -187,5 +211,52 @@ describe('RBAC S29 Access-request routes', () => {
       (await app.request('/auth/access-requests', { headers: await cookie(user) })).status,
       403,
     )
+  })
+
+  it('approves a modified role and permissions bundle', async () => {
+    const manager = 'ar-mgr-modify'
+    const applicant = 'ar-applicant-modify'
+    await ensurePrincipal(person(manager))
+    assert.equal(
+      (await assignRole({
+        actor: null,
+        target: person(manager),
+        role: 'manager',
+        reason: 'boot',
+        bootstrap: true,
+      })).ok,
+      true,
+    )
+
+    const submit = await app.request('/auth/access-requests', {
+      method: 'POST',
+      headers: { ...(await cookie(applicant)), ...json },
+      body: JSON.stringify({ message: 'want manager', requestedRole: 'manager' }),
+    })
+    assert.equal(submit.status, 200)
+    const { request } = (await submit.json()) as { request: { id: string } }
+    const path = `/auth/access-requests/${request.id}`
+
+    const approveBody = {
+      action: 'approve',
+      expiresAt: Date.now() + 86_400_000,
+      grantedRole: 'user',
+      grantedPermissions: ['namespace:create'],
+      reason: 'subset',
+    }
+    const approve = await app.request(path, {
+      method: 'POST',
+      headers: await signed(manager, { method: 'POST', path, body: approveBody }),
+      body: JSON.stringify(approveBody),
+    })
+    assert.equal(approve.status, 200)
+    const body = (await approve.json()) as {
+      ok: boolean
+      request: { status: string; grantedRole?: string | null; grantedPermissions?: string[] }
+    }
+    assert.equal(body.ok, true)
+    assert.equal(body.request.status, 'approved')
+    assert.equal(await getUserRole(person(applicant)), 'user')
+    assert.ok((await getCustomPermissions(person(applicant))).includes('namespace:create'))
   })
 })

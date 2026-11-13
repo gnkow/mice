@@ -1,5 +1,6 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,6 +17,10 @@ const { sealSessionCookie } = await import('./authentication/session/cookieSeal.
 const { ensureBootstrapKey } = await import('./authentication/session/sealKeys.js')
 const { assignRole, getCustomPermissions, getUserRole } = await import('./rbacStore.js')
 const { env, overrideEnv } = await import('./env.js')
+const { regulatedMutationHeaders } = await import('./testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('./auditLedger.js')
+
 overrideEnv({
   directoryProvider: 'keycloak',
   keycloakAdminUrl: 'http://localhost:8180',
@@ -34,6 +39,11 @@ setDirectoryFetchForTests(async (url) => {
 })
 
 await ensureBootstrapKey()
+useSignatureStore(
+  openSignatureStore(
+    await openLedger({ ...immudbConfig(), prefix: `rbac-grant/${randomBytes(4).toString('hex')}/` }),
+  ),
+)
 
 const audited: string[] = []
 const app = new Hono()
@@ -58,7 +68,13 @@ const cookie = async (sub: string) => {
   return { cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}` }
 }
 
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
+const signed = async (
+  sub: string,
+  mutation: { method: string; path: string; body: unknown; reason?: string },
+) => ({
+  ...(await cookie(sub)),
+  ...(await regulatedMutationHeaders(person(sub), mutation)),
+})
 
 describe('RBAC S30 Direct-grant routes', () => {
   it('lets a manager grant a role with expiry', async () => {
@@ -77,23 +93,33 @@ describe('RBAC S30 Direct-grant routes', () => {
       true,
     )
 
+    const missingBody = { sub: target, iss: 'https://idp.test', role: 'user' }
     const missing = await app.request('/auth/grants/role', {
       method: 'POST',
-      headers: { ...(await cookie(manager)), ...json },
-      body: JSON.stringify({ sub: target, iss: 'https://idp.test', role: 'user' }),
+      headers: await signed(manager, {
+        method: 'POST',
+        path: '/auth/grants/role',
+        body: missingBody,
+      }),
+      body: JSON.stringify(missingBody),
     })
     assert.equal(missing.status, 400)
 
+    const okBody = {
+      sub: target,
+      iss: 'https://idp.test',
+      role: 'user',
+      expiresAt: Date.now() + 86_400_000,
+      reason: 'onboard',
+    }
     const ok = await app.request('/auth/grants/role', {
       method: 'POST',
-      headers: { ...(await cookie(manager)), ...json },
-      body: JSON.stringify({
-        sub: target,
-        iss: 'https://idp.test',
-        role: 'user',
-        expiresAt: Date.now() + 86_400_000,
-        reason: 'onboard',
+      headers: await signed(manager, {
+        method: 'POST',
+        path: '/auth/grants/role',
+        body: okBody,
       }),
+      body: JSON.stringify(okBody),
     })
     assert.equal(ok.status, 200)
     assert.equal(await getUserRole(person(target)), 'user')
@@ -126,16 +152,21 @@ describe('RBAC S30 Direct-grant routes', () => {
       true,
     )
 
+    const okBody = {
+      sub: target,
+      iss: 'https://idp.test',
+      permissions: ['namespace:create'],
+      expiresAt: Date.now() + 86_400_000,
+      reason: 'temp create',
+    }
     const ok = await app.request('/auth/grants/permissions', {
       method: 'POST',
-      headers: { ...(await cookie(manager)), ...json },
-      body: JSON.stringify({
-        sub: target,
-        iss: 'https://idp.test',
-        permissions: ['namespace:create'],
-        expiresAt: Date.now() + 86_400_000,
-        reason: 'temp create',
+      headers: await signed(manager, {
+        method: 'POST',
+        path: '/auth/grants/permissions',
+        body: okBody,
       }),
+      body: JSON.stringify(okBody),
     })
     assert.equal(ok.status, 200)
     assert.ok((await getCustomPermissions(person(target))).includes('namespace:create'))
@@ -154,15 +185,21 @@ describe('RBAC S30 Direct-grant routes', () => {
       })).ok,
       true,
     )
+    const deniedBody = {
+      sub: 'someone',
+      iss: 'https://idp.test',
+      role: 'external',
+      expiresAt: Date.now() + 86_400_000,
+    }
     const denied = await app.request('/auth/grants/role', {
       method: 'POST',
-      headers: { ...(await cookie(user)), ...json },
-      body: JSON.stringify({
-        sub: 'someone',
-        iss: 'https://idp.test',
-        role: 'external',
-        expiresAt: Date.now() + 86_400_000,
-      }),
+      headers: {
+        ...(await cookie(user)),
+        'content-type': 'application/json',
+        'x-mice-reason': 'Routine test change',
+        'x-mice-reason-category': 'privileged_settings',
+      },
+      body: JSON.stringify(deniedBody),
     })
     assert.equal(denied.status, 403)
   })

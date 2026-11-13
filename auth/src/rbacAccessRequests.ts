@@ -2,15 +2,11 @@ import { randomBytes } from 'node:crypto'
 import { and, desc, eq } from 'drizzle-orm'
 import { getDb } from './db/database.js'
 import { accessRequests } from './db/schema.js'
-import { canApproveModifiedGrant, canApproveRole, canGrantPermissions } from './rbacAuthority.js'
+import { canApproveRole, canGrantPermissions } from './rbacAuthority.js'
 import { isInstancePermission, type InstancePermission } from './rbacCatalog.js'
+import { applyAuthorizedGrant } from './rbacDirectGrant.js'
 import { isInstanceRole, type InstanceRole } from './rbacRoles.js'
-import {
-  assignRole,
-  getEffectivePermissions,
-  getUserRole,
-  grantCustomPermissions,
-} from './rbacStore.js'
+import { getEffectivePermissions, getUserRole } from './rbacStore.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { userKey } from './authzTypes.js'
 
@@ -190,10 +186,6 @@ export async function approveAccessRequest(input: {
   grantedPermissions?: readonly string[]
   reason?: string
 }): Promise<Result> {
-  const reviewerRole = await getUserRole(input.reviewer)
-  if (!reviewerRole) return { ok: false, error: 'Forbidden: no reviewer role' }
-  const reviewerPerms = await getEffectivePermissions(input.reviewer)
-
   const [found] = await getDb()
     .select()
     .from(accessRequests)
@@ -205,42 +197,23 @@ export async function approveAccessRequest(input: {
 
   const grantedRole = input.grantedRole !== undefined ? input.grantedRole : req.requestedRole
   const grantedPermissions = [...(input.grantedPermissions ?? req.requestedPermissions)]
-
-  if (
-    !canApproveModifiedGrant({
-      reviewerRole,
-      reviewerEffective: reviewerPerms,
-      grantedRole,
-      grantedPermissions,
-    })
-  ) {
-    return { ok: false, error: 'Forbidden: insufficient approval authority' }
-  }
-
-  const target = { sub: req.sub, iss: req.iss }
   const reason = input.reason?.trim() || `Approved access request ${req.id}`
 
-  if (grantedRole) {
-    const roleResult = await assignRole({
-      actor: input.reviewer,
-      target,
-      role: grantedRole,
-      reason,
-      expiresAt: input.expiresAt,
-      accessRequestId: req.id,
-    })
-    if (!roleResult.ok) return roleResult
-  }
-  if (grantedPermissions.length > 0) {
-    const permResult = await grantCustomPermissions({
-      actor: input.reviewer,
-      target,
-      permissions: grantedPermissions,
-      reason,
-      expiresAt: input.expiresAt,
-      accessRequestId: req.id,
-    })
-    if (!permResult.ok) return permResult
+  const grantResult = await applyAuthorizedGrant({
+    actor: input.reviewer,
+    target: { sub: req.sub, iss: req.iss },
+    role: grantedRole,
+    permissions: grantedPermissions,
+    reason,
+    expiresAt: input.expiresAt,
+    accessRequestId: req.id,
+  })
+  if (!grantResult.ok) {
+    // Preserve prior approve wording when the actor has no role.
+    if (grantResult.error === 'Forbidden: no actor role') {
+      return { ok: false, error: 'Forbidden: no reviewer role' }
+    }
+    return grantResult
   }
 
   const [updated] = await getDb()

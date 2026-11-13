@@ -6,9 +6,14 @@ import {
   assignRole,
   getCustomPermissions,
   getUserRole,
+  listPermissionHistory,
   listRoleHistory,
 } from './rbacStore.js'
-import { directGrantPermissions, directGrantRole } from './rbacDirectGrant.js'
+import {
+  applyAuthorizedGrant,
+  directGrantPermissions,
+  directGrantRole,
+} from './rbacDirectGrant.js'
 
 const dayMs = 24 * 60 * 60 * 1000
 
@@ -127,5 +132,60 @@ describe('RBAC S22 direct custom permission grant', () => {
     if (result.ok) throw new Error('expected failure')
     assert.match(result.error, /authority|forbidden/i)
     assert.deepEqual(await getCustomPermissions(target), [])
+  })
+})
+
+describe('Authorized Grant seam — applyAuthorizedGrant', () => {
+  it('grants role and custom permissions in one authorized call', async () => {
+    const manager = person('authz-grant-mgr')
+    const target = person('authz-grant-target')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(target)
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const expiresAt = Date.now() + 30 * dayMs
+    const result = await applyAuthorizedGrant({
+      actor: manager,
+      target,
+      role: 'user',
+      permissions: ['namespace:create'],
+      reason: 'onboard with extra',
+      expiresAt,
+      accessRequestId: 'req-authz-1',
+    })
+    assert.equal(result.ok, true)
+    assert.equal(await getUserRole(target), 'user')
+    assert.deepEqual(await getCustomPermissions(target), ['namespace:create'])
+    const roleGrant = (await listRoleHistory(target)).find(
+      (h) => h.action === 'granted' && h.role === 'user',
+    )
+    assert.equal(roleGrant?.accessRequestId, 'req-authz-1')
+  })
+
+  it('rejects when the actor lacks authority for any part of the grant', async () => {
+    const manager = person('authz-grant-mgr2')
+    const target = person('authz-grant-blocked')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(target)
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const result = await applyAuthorizedGrant({
+      actor: manager,
+      target,
+      role: 'user',
+      permissions: ['store:gc'],
+      reason: 'nope',
+      expiresAt: Date.now() + dayMs,
+    })
+    assert.equal(result.ok, false)
+    if (result.ok) throw new Error('expected failure')
+    assert.match(result.error, /authority|forbidden/i)
+    assert.equal(await getUserRole(target), null)
+    assert.deepEqual(await getCustomPermissions(target), [])
+    assert.equal((await listPermissionHistory(target)).length, 0)
   })
 })

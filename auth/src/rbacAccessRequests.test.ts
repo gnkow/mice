@@ -2,7 +2,12 @@ import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { ensurePrincipal } from './authentication/session/session.js'
-import { assignRole, getUserRole, listRoleHistory } from './rbacStore.js'
+import {
+  assignRole,
+  getCustomPermissions,
+  getUserRole,
+  listRoleHistory,
+} from './rbacStore.js'
 import {
   approveAccessRequest,
   denyAccessRequest,
@@ -201,6 +206,41 @@ describe('RBAC S19 approve access request', () => {
     if (approved.ok) throw new Error('expected failure')
     assert.match(approved.error, /authority|forbidden|cannot/i)
     assert.equal(await getUserRole(applicant), null)
+  })
+
+  it('applies modified role and custom permissions through the authorized grant seam', async () => {
+    const manager = person('approver-modify-mgr')
+    const applicant = person('applicant-modify')
+    await ensurePrincipal(manager)
+    await ensurePrincipal(applicant)
+    const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
+    assert.equal(
+      (await assignRole({ actor: null, target: manager, role: 'manager', reason: 'boot', bootstrap: true })).ok,
+      true,
+    )
+    const submitted = await submitAccessRequest({
+      user: applicant,
+      message: 'need manager',
+      requestedRole: 'manager',
+    })
+    assert.equal(submitted.ok, true)
+    if (!submitted.ok) throw new Error('submit failed')
+
+    const approved = await approveAccessRequest({
+      reviewer: manager,
+      requestId: submitted.request.id,
+      expiresAt,
+      grantedRole: 'user',
+      grantedPermissions: ['namespace:create'],
+      reason: 'subset with create',
+    })
+    assert.equal(approved.ok, true)
+    assert.equal(await getUserRole(applicant), 'user')
+    assert.deepEqual(await getCustomPermissions(applicant), ['namespace:create'])
+    const grant = (await listRoleHistory(applicant)).find(
+      (h) => h.action === 'granted' && h.role === 'user',
+    )
+    assert.equal(grant?.accessRequestId, submitted.request.id)
   })
 })
 
