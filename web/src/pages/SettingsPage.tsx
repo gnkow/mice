@@ -327,10 +327,14 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
             Access requests
           </h2>
           <p className="muted small">
-            Review role and permission requests. You can modify the grant before approving.
+            IdP groups never auto-grant instance roles. Review requests here, or{' '}
+            <a href="#users-grant">assign a role directly</a>. You can modify the grant
+            before approving.
           </p>
         </div>
-        <p className="muted small ns-settings-count">{pendingCount} pending</p>
+        <p className="muted small ns-settings-count" data-testid="access-requests-pending-count">
+          {pendingCount} pending
+        </p>
       </div>
 
       <fieldset className="appearance-fieldset auth-panel-stack">
@@ -365,7 +369,17 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
         </p>
       )}
       {state.kind === 'ok' && requests.length === 0 && (
-        <p className="muted small">No {statusFilter === 'all' ? '' : `${statusFilter} `}requests.</p>
+        <div className="grant-access-empty" role="status" data-testid="access-requests-empty">
+          <p className="muted small">
+            No {statusFilter === 'all' ? '' : `${statusFilter} `}requests.
+          </p>
+          {statusFilter === 'pending' ? (
+            <p className="muted small">
+              New principals stay pending until a manager approves a request or grants
+              access manually — group membership alone does not unlock the app.
+            </p>
+          ) : null}
+        </div>
       )}
 
       {requests.length > 0 && (
@@ -632,11 +646,13 @@ function UsersGrantSection({
         <div>
           <h2 id="users-grant-heading">
             <UsersRound size={18} className="button-label-icon" aria-hidden="true" />
-            Users
+            Grant access
           </h2>
           <p className="muted small">
-            Grant a formal role and/or custom permissions directly (no access request).
-            Changing an Admin to another role is refused while two or fewer instance admins remain.
+            Managers assign roles and permissions explicitly. IdP groups do not bootstrap
+            instance access — only the bootstrap admin allowlist and grants you make here
+            (or via <a href="#access-requests">pending access requests</a>). Changing an
+            Admin to another role is refused while two or fewer instance admins remain.
           </p>
         </div>
         <button type="button" className="btn primary small" onClick={() => openGrant()}>
@@ -663,7 +679,13 @@ function UsersGrantSection({
         </p>
       )}
       {state.kind === 'ok' && users.length === 0 && (
-        <p className="muted small" role="status">No principals yet.</p>
+        <div className="grant-access-empty" role="status" data-testid="users-grant-empty">
+          <p className="muted small">No principals yet.</p>
+          <p className="muted small">
+            After someone signs in they appear here. Grant a role manually — belonging to
+            an IdP group never auto-provisions access.
+          </p>
+        </div>
       )}
       {users.length > 0 && (
         <ul className="ns-member-list">

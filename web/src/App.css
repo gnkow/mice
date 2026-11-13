@@ -2816,6 +2816,16 @@ p.ok {
   font-size: 0.85rem;
 }
 
+.grant-access-empty {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.grant-access-empty p {
+  margin: 0;
+}
+
 .directory-picker-manual-hint {
   grid-column: 1 / -1;
   margin: 0;
