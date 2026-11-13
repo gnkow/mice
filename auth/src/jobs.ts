@@ -7,6 +7,8 @@ import {
   appendIntent,
   appendOutcome,
   AUDIT_UNAVAILABLE_MESSAGE,
+  type AuditActor,
+  type AuditEvent,
   type AuditVia,
 } from './audit.js'
 import { env } from './env.js'
@@ -260,6 +262,35 @@ export type JobCompleteBody = {
 type JobErr = { ok: false; error: string; status: number }
 type JobOk = { ok: true; job: JobRun }
 
+/**
+ * Intent before a Job persists `result_commit`. Throws when the audit store cannot
+ * accept it — callers must refuse the mutation (no outbox / held output).
+ */
+export async function appendJobResultCommitIntent(input: {
+  actor: AuditActor
+  via: AuditVia
+  path: string
+  namespace: string
+  repo: string
+  jobId: string
+  resultCommit?: string
+}): Promise<AuditEvent> {
+  return appendIntent({
+    actor: input.actor,
+    via: input.via,
+    method: 'POST',
+    path: input.path,
+    status: 0,
+    action: 'job.result_commit',
+    namespace: input.namespace,
+    repo: input.repo,
+    detail: {
+      job_id: input.jobId,
+      ...(input.resultCommit ? { result_commit: input.resultCommit } : {}),
+    },
+  })
+}
+
 /** CLI runner reports terminal state after local Docker + oxen commit. */
 export async function completeCliJob(
   user: SessionUser,
@@ -295,19 +326,17 @@ export async function completeCliJob(
   }
 
   // Persisting a result commit is a mutation: refuse when audit cannot take an Intent.
-  let resultIntent: Awaited<ReturnType<typeof appendIntent>> | undefined
+  let resultIntent: AuditEvent | undefined
   if (body.result_commit) {
     try {
-      resultIntent = await appendIntent({
+      resultIntent = await appendJobResultCommitIntent({
         actor: actorFromUser(user),
         via,
-        method: 'POST',
         path: `/auth/jobs/${id}/complete`,
-        status: 0,
-        action: 'job.result_commit',
         namespace: job.namespace,
         repo: job.repo,
-        detail: { job_id: id, result_commit: body.result_commit },
+        jobId: id,
+        resultCommit: body.result_commit,
       })
     } catch {
       return { ok: false, error: AUDIT_UNAVAILABLE_MESSAGE, status: 503 }
@@ -760,20 +789,17 @@ async function executeJob(id: string) {
     const outputRefs: { path: string; hash: string }[] = []
     let terminal: JobStatus = 'succeeded'
     let terminalError: string | null = job.error
-    let resultIntent: Awaited<ReturnType<typeof appendIntent>> | undefined
+    let resultIntent: AuditEvent | undefined
 
     if (changed.length) {
       try {
-        resultIntent = await appendIntent({
+        resultIntent = await appendJobResultCommitIntent({
           actor: job.actor,
           via: job.via,
-          method: 'POST',
           path: `/auth/jobs/${id}`,
-          status: 0,
-          action: 'job.result_commit',
           namespace: job.namespace,
           repo: job.repo,
-          detail: { job_id: id },
+          jobId: id,
         })
       } catch {
         job = {
