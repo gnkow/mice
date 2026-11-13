@@ -24,3 +24,5 @@ Status: done
 ## Comments
 
 **Deep-api Deepen (2026-11-13):** Single seam `principalBootstrap` (`runPrincipalBootstrap`) owns allowlist-only Admin bootstrap at `preparePrincipal`; IdP groups never write instance/namespace grants. Removed group-bootstrap surface from the prepare path. Unit: `principalBootstrap.test.ts` (no `AUTHZ_GROUP_BOOTSTRAP` on env; groups leave Principal pending; no user membership created; `AUTHZ_BOOTSTRAP_ADMINS` still works).
+
+**Deep-ui Deepen (2026-11-13):** Settings Access requests + Grant access copy/empty states state that IdP groups never bootstrap instance roles; cross-links between sections. E2E: `e2e/tests/grant-access.spec.ts` TC-GRANT-01/02/03.

@@ -29,10 +29,13 @@ test.describe('Two instance admins (#39)', () => {
       .click()
 
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-    await page.getByRole('link', { name: 'Grant access', exact: true }).click()
+    await page
+      .getByRole('list', { name: 'Access' })
+      .getByRole('link', { name: 'Grant access', exact: true })
+      .click()
 
     const users = page.locator('#users-grant')
-    await expect(users.getByRole('heading', { name: 'Users' })).toBeVisible()
+    await expect(users.getByRole('heading', { name: 'Grant access' })).toBeVisible()
     await expect(
       users.getByText(/two or fewer instance admins/i),
     ).toBeVisible()
@@ -57,7 +60,10 @@ test.describe('Two instance admins (#39)', () => {
       })
     })
     await page.reload()
-    await page.getByRole('link', { name: 'Grant access', exact: true }).click()
+    await page
+      .getByRole('list', { name: 'Access' })
+      .getByRole('link', { name: 'Grant access', exact: true })
+      .click()
 
     const row = users.locator('li', { hasText: targetName })
     await row.getByRole('button', { name: 'Grant Access' }).click()
@@ -80,7 +86,10 @@ test.describe('Two instance admins (#39)', () => {
       .locator('.profile-menu-panel')
       .getByRole('link', { name: 'Settings' })
       .click()
-    await page.getByRole('link', { name: 'Grant access', exact: true }).click()
+    await page
+      .getByRole('list', { name: 'Access' })
+      .getByRole('link', { name: 'Grant access', exact: true })
+      .click()
 
     const users = page.locator('#users-grant')
     await page.route('**/auth/grants/role', async (route) => {
