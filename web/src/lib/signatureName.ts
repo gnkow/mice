@@ -1,7 +1,33 @@
-/** The name on a signature, as of the day it was signed. A different current name is shown beside it. */
-export function shownSignature(signature: { name: string; signedAt: number }, currentName?: string): string {
+/** One signature line as shown to reviewers: name at signing, optional current name. */
+export type SignatureNameDisplay = {
+  signedLine: string
+  currently?: string
+}
+
+/**
+ * Display decision for a signature's printed name.
+ * The signed snapshot stays primary; a different current name is a side note.
+ */
+export function decideSignatureNameDisplay(
+  signature: { name: string; signedAt: number },
+  currentName?: string,
+): SignatureNameDisplay {
   const date = new Date(signature.signedAt).toISOString().slice(0, 10)
-  const line = `Signed by: ${signature.name} (${date})`
-  if (currentName && currentName !== signature.name) return `${line} (currently: ${currentName})`
-  return line
+  const signedLine = `Signed by: ${signature.name} (${date})`
+  if (currentName && currentName !== signature.name) return { signedLine, currently: currentName }
+  return { signedLine }
+}
+
+/** Access-review string form of {@link decideSignatureNameDisplay}. */
+export function shownSignature(
+  signature: { name: string; signedAt: number },
+  currentName?: string,
+): string {
+  const { signedLine, currently } = decideSignatureNameDisplay(signature, currentName)
+  return currently ? `${signedLine} (currently: ${currently})` : signedLine
+}
+
+/** Calendar-day label for a Principal name-history bound; open end is "current". */
+export function nameHistoryDayLabel(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : 'current'
 }

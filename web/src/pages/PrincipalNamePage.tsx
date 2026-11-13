@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { nameHistoryDayLabel } from '../lib/signatureName'
 
 type NameRow = { name: string; validFrom: string; validTo: string | null }
-
-const day = (iso: string | null) => (iso ? iso.slice(0, 10) : 'current')
 
 /** Stored name timeline for one Principal. */
 export function PrincipalNamePage() {
@@ -51,8 +50,8 @@ export function PrincipalNamePage() {
             {history.map((row) => (
               <tr key={`${row.validFrom}-${row.name}`}>
                 <td>{row.name}</td>
-                <td>{day(row.validFrom)}</td>
-                <td>{day(row.validTo)}</td>
+                <td>{nameHistoryDayLabel(row.validFrom)}</td>
+                <td>{nameHistoryDayLabel(row.validTo)}</td>
               </tr>
             ))}
           </tbody>

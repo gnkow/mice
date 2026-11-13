@@ -22,3 +22,9 @@ A signature displays the name captured at signing and the date: `Signed by: Dr. 
 - [x] When the current name differs, the view can show that current name
 - [x] The Principal detail page lists the history in chronological order
 - [x] The view reads the stored history and does not ask the IdP
+
+## Comments
+
+- **Audit:** holds — `shownSignature` + Principal name-history page + admin names route (no IdP).
+- **Deepen (auto-pick):** Collapsed string formatting into deep `decideSignatureNameDisplay` (+ `nameHistoryDayLabel`) in `web/src/lib/signatureName.ts`. `shownSignature` / `PrincipalNamePage` stay thin UI adapters on existing chrome; `nameChangeHistory.ts` untouched.
+- **Tests:** `web/src/lib/signatureName.test.ts`
