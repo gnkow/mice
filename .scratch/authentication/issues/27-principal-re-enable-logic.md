@@ -30,3 +30,9 @@ The first time a Principal is seen IdP-disabled, `principal_disabled_periods` re
 
 - **Audit:** holds — first `disabled_at`, automatic restore within 30 days, admin confirm past window, and Mice-blocked automatic restore proven by `reenable.test.ts` at the re-enable / authenticate seams.
 - **Deepen (auto-pick Top):** Introduced internal `decideRestoration` + shared open-period load/`closePeriod` in `reenable.ts`. Window / Mice / IdP eligibility live in one decision table; `considerReenable` and `confirmReenable` stay the public seams (no `requireAuth` / `loginFlow` edits). Tests use `regulatedMutationHeaders` for admin POSTs.
+
+2026-11-13 — deep-api Deepen (auto-pick Top): **holds** + dedicated route integration.
+- **Seams:** `recordIdpDisabled` / `listReenablePeriods` / `confirmReenable` / `decideRestoration`; `registerReenableRoutes` (`GET|POST /auth/admin/re-enable`).
+- **Deepen:** `listReenablePeriods` uses `decideRestoration({ requireIdpEnabled: true })` for `awaitingConfirmation` (same table as admin confirm).
+- **Integ:** `reenableRoutes.test.ts` (401, list + flag past window, confirm + audit, 400/409) — no requireAuth / loginFlow / miceSuspension.
+- **Files:** `reenable.ts`, `reenableRoutes.ts`, `reenableRoutes.test.ts`.

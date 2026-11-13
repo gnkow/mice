@@ -127,15 +127,17 @@ export async function listReenablePeriods(): Promise<ReenablePeriod[]> {
     .from(principalDisabledPeriods)
     .innerJoin(principals, eq(principals.id, principalDisabledPeriods.principalId))
     .where(isNull(principalDisabledPeriods.reEnabledAt))
-  const now = currentClock.now()
   const periods: ReenablePeriod[] = []
   for (const row of rows) {
-    const elapsed = now - row.disabledAt.getTime()
-    const idpStatus = await lookupKeycloakUserStatus(row.sub)
+    // Same decision table as confirm: past window + IdP enabled → awaiting admin.
+    const decision = await decideRestoration(
+      { iss: row.iss, sub: row.sub },
+      { requireIdpEnabled: true },
+    )
     periods.push({
       principal: `${row.iss}|${row.sub}`,
       disabledAt: row.disabledAt.toISOString(),
-      awaitingConfirmation: idpStatus === 'enabled' && elapsed > REENABLE_WINDOW_MS,
+      awaitingConfirmation: decision.kind === 'admin-eligible',
     })
   }
   periods.sort((a, b) => a.principal.localeCompare(b.principal))
