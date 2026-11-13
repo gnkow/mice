@@ -22,3 +22,7 @@
 - Decision: `auth/src/selfMerge.ts` (`decideSelfMerge`)
 - Gate: `auth/src/proxy.ts` on `action === 'merge'` (GET mergeable authors, then POST or 403)
 - Authz role floor unchanged (`maintain` / fine `merge` via path map)
+
+## Comments
+
+**Deep-api Deepen (2026-11-13):** Added `evaluateSelfMergeFromCommits` as the single commits→decision seam; unit coverage for extract+decide. Proxy still loads authors; decision locality stays in `selfMerge.ts`.

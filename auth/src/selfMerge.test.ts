@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { decideSelfMerge, SELF_MERGE_FORBIDDEN } from './selfMerge.js'
+import {
+  authorsFromCommits,
+  decideSelfMerge,
+  evaluateSelfMergeFromCommits,
+  SELF_MERGE_FORBIDDEN,
+} from './selfMerge.js'
 
 describe('decideSelfMerge', () => {
   const alice = { iss: 'https://idp.example/', sub: 'alice' }
@@ -34,5 +39,27 @@ describe('decideSelfMerge', () => {
 
   it('allows merge when the author list is empty', () => {
     assert.equal(decideSelfMerge(alice, []).allow, true)
+  })
+})
+
+describe('evaluateSelfMergeFromCommits', () => {
+  const alice = { iss: 'https://idp.example/', sub: 'alice' }
+
+  it('extracts authors from commits and decides in one step', () => {
+    assert.equal(
+      evaluateSelfMergeFromCommits(alice, [
+        { author: 'https://idp.example|bob' },
+        { author: 'https://idp.example|alice' },
+      ]).allow,
+      false,
+    )
+    assert.equal(
+      evaluateSelfMergeFromCommits(alice, [{ author: 'https://idp.example|bob' }]).allow,
+      true,
+    )
+  })
+
+  it('ignores non-string author fields when extracting', () => {
+    assert.deepEqual(authorsFromCommits([{ author: 1 }, { author: '  x  ' }, {}]), ['x'])
   })
 })

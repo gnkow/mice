@@ -41,3 +41,13 @@ export function authorsFromCommits(commits: readonly { author?: unknown }[]): st
   }
   return out
 }
+
+/**
+ * Single seam for the 4-eyes check over an oxen mergeable payload's commits list.
+ */
+export function evaluateSelfMergeFromCommits(
+  signer: { iss: string; sub: string },
+  commits: readonly { author?: unknown }[],
+): SelfMergeDecision {
+  return decideSelfMerge(signer, authorsFromCommits(commits))
+}
