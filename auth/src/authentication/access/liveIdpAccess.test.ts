@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { evaluateLiveIdpAccess } from './idpCheck.js'
+import { evaluateLiveIdpAccess, settleLiveIdpAccess } from './idpCheck.js'
 import type { DirectoryUserState } from '../directory/directory.js'
 
 const user = {
@@ -71,5 +71,44 @@ describe('evaluateLiveIdpAccess (Ticket 19)', () => {
     if (result.ok) return
     assert.equal(result.reachable, false)
     assert.equal(result.status, 503)
+  })
+})
+
+describe('settleLiveIdpAccess (Ticket 19)', () => {
+  it('records reachability and disabled side effects for the authenticated-request gate', async () => {
+    const checks: Array<{ reachable: boolean }> = []
+    const disabled: string[] = []
+
+    const unreachable = await settleLiveIdpAccess(user, {
+      lookup: async () => ({ status: 'error', name: '' }),
+      now: () => 1_700_000_000_000,
+      requestId: 'req-1',
+      recordCheck: async (input) => {
+        checks.push({ reachable: input.reachable })
+      },
+      recordDisabled: async (principal) => {
+        disabled.push(principal.sub)
+      },
+    })
+    assert.equal(unreachable.ok, false)
+    assert.deepEqual(checks, [{ reachable: false }])
+    assert.deepEqual(disabled, [])
+
+    checks.length = 0
+    const disabledUser = await settleLiveIdpAccess(user, {
+      lookup: async () => ({ status: 'disabled', name: 'Ada' }),
+      now: () => 1_700_000_000_001,
+      recordCheck: async (input) => {
+        checks.push({ reachable: input.reachable })
+      },
+      recordDisabled: async (principal) => {
+        disabled.push(principal.sub)
+      },
+    })
+    assert.equal(disabledUser.ok, false)
+    if (disabledUser.ok) return
+    assert.equal(disabledUser.disabled, true)
+    assert.deepEqual(checks, [{ reachable: true }])
+    assert.deepEqual(disabled, ['alice'])
   })
 })

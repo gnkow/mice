@@ -4,12 +4,17 @@ import { sameOriginGuard } from './csrf.js'
 import { auditorMfaRefusal, preparePrincipal } from '../../authz.js'
 import { env } from '../../env.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
-import { can, canonicalIssuer, isScopedCredential, isServiceCaller, type Capability } from './principal.js'
+import {
+  can,
+  canonicalIssuer,
+  decideServiceCallerAdmission,
+  isScopedCredential,
+  type Capability,
+} from './principal.js'
 import { resolveCliCredential } from '../credentials/cliCredentials.js'
-import { evaluateLiveIdpAccess } from '../access/idpCheck.js'
-import { recordIdpCheck } from '../compliance/idpOutage.js'
+import { settleLiveIdpAccess } from '../access/idpCheck.js'
 import { isSuspended } from '../access/miceSuspension.js'
-import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
+import { considerReenable } from '../access/reenable.js'
 
 /** Unattended page polls must not keep an idle Session alive. */
 const BACKGROUND_POLL = /^\/auth\/(notifications|announcements)(\/|$)/
@@ -149,7 +154,8 @@ async function refuseSuspended(c: Context, user: SessionUser, via: 'session' | '
 export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise<AuthOutcome> {
   const session = policy.credential === 'pat' ? null : await getSession(c)
   if (session) {
-    if (isServiceCaller(session)) return deny(401, 'Authentication required')
+    const serviceAdmission = decideServiceCallerAdmission(session)
+    if (!serviceAdmission.allow) return deny(serviceAdmission.status, serviceAdmission.error)
     if (!['GET', 'HEAD'].includes(c.req.method)) {
       if (policy.originCheck) {
         const origin = c.req.header('origin')
@@ -166,21 +172,10 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
     // Synthetic Playwright issuer: skip live IdP when AUTH_DEV_MODE is on.
     const skipIdp = env.authDevMode && canonicalIssuer(session.iss) === 'mice-e2e'
     if (!skipIdp) {
-      const live = await evaluateLiveIdpAccess(session)
-      if (live.reachable) {
-        await recordIdpCheck({ reachable: true, at: Date.now() })
-      } else {
-        await recordIdpCheck({
-          reachable: false,
-          at: Date.now(),
-          check: 'authenticated-request',
-          requestId: c.req.header('x-request-id') ?? 'authenticated-request',
-        })
-      }
-      if (!live.ok) {
-        if (live.disabled) await recordIdpDisabled(session)
-        return deny(live.status, live.error)
-      }
+      const live = await settleLiveIdpAccess(session, {
+        requestId: c.req.header('x-request-id') ?? 'authenticated-request',
+      })
+      if (!live.ok) return deny(live.status, live.error)
     }
     const reenable = await considerReenable(session, async (event) => {
       const stored = await appendAudit({
@@ -206,7 +201,10 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
   if (policy.credential === 'session') return deny(401, 'Authentication required')
 
   const pat = await resolveBearer(c)
-  if (!pat || isServiceCaller(pat) || (!policy.allowScoped && isScopedCredential(pat))) {
+  if (!pat) return deny(401, 'Authentication required')
+  const patAdmission = decideServiceCallerAdmission(pat)
+  if (!patAdmission.allow) return deny(patAdmission.status, patAdmission.error)
+  if (!policy.allowScoped && isScopedCredential(pat)) {
     return deny(401, 'Authentication required')
   }
   if (policy.requires && !can(pat, policy.requires.capability)) return deny(403, policy.requires.message)

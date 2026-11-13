@@ -9,6 +9,9 @@
 import type { SessionUser } from '../session/session.js'
 import { directoryNow, type DirectoryUserState } from '../directory/directory.js'
 import { decideIdpDisplayNameGate } from '../oidc/idpDisplayName.js'
+import { recordIdpCheck, type IdpCheckRecord } from '../compliance/idpOutage.js'
+import { recordIdpDisabled } from './reenable.js'
+import type { PrincipalId } from '../session/principal.js'
 
 export type LiveIdpLookup = (sub: string) => Promise<DirectoryUserState>
 
@@ -22,6 +25,14 @@ export type LiveIdpAccessResult =
       account?: DirectoryUserState
       disabled?: boolean
     }
+
+export type SettleLiveIdpAccessDeps = {
+  lookup?: LiveIdpLookup
+  now?: () => number
+  requestId?: string
+  recordCheck?: (input: IdpCheckRecord) => Promise<void>
+  recordDisabled?: (principal: PrincipalId & { name?: string; email?: string }) => Promise<void>
+}
 
 const UNAVAILABLE = 'Service Unavailable - IdP check failed'
 
@@ -64,18 +75,31 @@ export async function evaluateLiveIdpAccess(
 }
 
 /**
- * Raw IdP account state. Throws when the directory cannot answer.
- * Prefer `evaluateLiveIdpAccess` for authenticated-request gates.
+ * Authenticated-request gate: evaluate live IdP access, then record outage /
+ * disabled side effects. Callers only map the result to HTTP.
  */
-export async function checkUserIdpStatus(user: SessionUser): Promise<DirectoryUserState> {
-  const account = await directoryNow().userStatus(user.sub)
-  if (account.status === 'error') {
-    throw new Error('IdP is unreachable - cannot verify user status')
-  }
-  return account
-}
+export async function settleLiveIdpAccess(
+  user: SessionUser,
+  deps: SettleLiveIdpAccessDeps = {},
+): Promise<LiveIdpAccessResult> {
+  const lookup = deps.lookup ?? ((sub) => directoryNow().userStatus(sub))
+  const now = deps.now ?? Date.now
+  const recordCheck = deps.recordCheck ?? recordIdpCheck
+  const recordDisabled = deps.recordDisabled ?? recordIdpDisabled
 
-/** True when a live IdP check allows access (enabled + named). */
-export async function verifyIdpAccess(user: SessionUser): Promise<boolean> {
-  return (await evaluateLiveIdpAccess(user)).ok
+  const live = await evaluateLiveIdpAccess(user, lookup)
+  if (live.reachable) {
+    await recordCheck({ reachable: true, at: now() })
+  } else {
+    await recordCheck({
+      reachable: false,
+      at: now(),
+      check: 'authenticated-request',
+      requestId: deps.requestId ?? 'authenticated-request',
+    })
+  }
+  if (!live.ok && live.disabled) {
+    await recordDisabled(user)
+  }
+  return live
 }
