@@ -35,3 +35,5 @@ Signing decodes the stored token and treats MFA heuristically; a missing `auth_t
 - **No commit/push** this pass.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13 — Deep-UI **Deepen** (reclassified from no-ui by user). Surfaces: `ReasonPromptProvider` execute + `AccessReviewSection` sign. Incomplete MFA evidence (`MFA required…` / `acr_missing` / `amr_missing` / …) shows titled interstitial **MFA required** with `role=alert` + Continue. Shared: `signingChallenge.ts`, `SigningChallengeInterstitial`. E2E: `e2e/tests/verified-signing-evidence.spec.ts`. Supersedes prior deep-ui skipped — no-ui note.
