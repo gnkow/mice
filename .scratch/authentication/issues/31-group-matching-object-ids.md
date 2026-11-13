@@ -35,3 +35,5 @@ Namespace and repository group grants are stored as the IdP group object id. Dir
 - **Seams:** `directoryGroupGrantKey` / `mapKeycloakGroupRow` (module); Keycloak adapter (package).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13 — deep-ui Deepen (holds): **GroupBindingSection** empty “no check yet” state, Check confirm flash, warn vs success status, accessible error focus; E2E `e2e/tests/group-binding.spec.ts` (Settings → Group binding → Check). No commit/push (requested).
