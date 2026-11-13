@@ -42,6 +42,19 @@ export function decideUnsignedAccessReviewAlert(
   }
 }
 
+/** Map a stored report row into the alert decision candidate shape. */
+export function accessReviewAlertCandidateFromRow(row: {
+  quarter: string
+  report: { reportId: string; generatedAt: number; reviewerSignature?: unknown }
+}): AccessReviewAlertCandidate {
+  return {
+    quarter: row.quarter,
+    reportId: row.report.reportId,
+    generatedAt: row.report.generatedAt,
+    signed: !!row.report.reviewerSignature,
+  }
+}
+
 /** Pure filter: overdue unsigned reports from in-memory candidates. */
 export function overdueAccessReviews(
   reports: AccessReviewAlertCandidate[],
@@ -56,15 +69,7 @@ export function overdueAccessReviews(
 /** Unsigned quarterly reports whose generation is at least 14 days ago. */
 export async function listOverdueAccessReviews(now = Date.now()): Promise<OverdueAccessReview[]> {
   const rows = await getDb().select().from(accessReviewReports)
-  return overdueAccessReviews(
-    rows.map((row) => ({
-      quarter: row.quarter,
-      reportId: row.report.reportId,
-      generatedAt: row.report.generatedAt,
-      signed: !!row.report.reviewerSignature,
-    })),
-    now,
-  )
+  return overdueAccessReviews(rows.map(accessReviewAlertCandidateFromRow), now)
 }
 
 /** Tells each instance admin, once per day, that a quarterly access review is still unsigned. */
@@ -74,17 +79,7 @@ export function startAccessReviewAlertSchedule(opts: { now?: () => number; poll?
     const at = now()
     const rows = await getDb().select().from(accessReviewReports)
     const decisions = rows
-      .map((row) =>
-        decideUnsignedAccessReviewAlert(
-          {
-            quarter: row.quarter,
-            reportId: row.report.reportId,
-            generatedAt: row.report.generatedAt,
-            signed: !!row.report.reviewerSignature,
-          },
-          at,
-        ),
-      )
+      .map((row) => decideUnsignedAccessReviewAlert(accessReviewAlertCandidateFromRow(row), at))
       .filter((d): d is Extract<UnsignedAccessReviewDecision, { alert: true }> => d.alert)
     if (decisions.length === 0) return false
     const admins = await listInstanceAdmins()

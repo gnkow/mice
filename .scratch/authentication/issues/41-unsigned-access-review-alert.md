@@ -22,10 +22,8 @@ A scheduled check finds a quarterly access review that is still unsigned 14 days
 
 ## Comments
 
-2026-11-13: Checkmate audit — **holds** (acceptance green at `listOverdueAccessReviews` / `startAccessReviewAlertSchedule`; proving tests in `accessReviewRoutes.test.ts`).
-
-**Deepen (auto-pick):** Collapse overdue filter + alert copy into deep `decideUnsignedAccessReviewAlert(report, now)` (in-process). `overdueAccessReviews` / `listOverdueAccessReviews` / schedule `tick` all decide through that seam; 14-day threshold and summary live once.
-
-**Files:** `auth/src/authentication/compliance/accessReviewAlert.ts`, `auth/src/authentication/compliance/accessReviewAlert.test.ts`
-
-**Tests:** `accessReviewAlert.test.ts`; regression `accessReviewRoutes.test.ts` (overdue list + notify)
+- **Audit:** holds — unsigned >14d alerts admins; signed skipped; daily schedule.
+- **Deepen (auto-pick Top):** `accessReviewAlertCandidateFromRow` maps stored rows once; `listOverdueAccessReviews` and schedule `tick` both use it with `decideUnsignedAccessReviewAlert` (14-day threshold + summary).
+- **Files:** `accessReviewAlert.ts`.
+- **Tests:** `accessReviewAlert.test.ts` (unit); `accessReviewRoutes.test.ts` overdue + notify (integration).
+- **Seams:** `decideUnsignedAccessReviewAlert` / `accessReviewAlertCandidateFromRow` (module); overdue route + schedule (package).

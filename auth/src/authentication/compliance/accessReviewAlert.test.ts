@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  accessReviewAlertCandidateFromRow,
   decideUnsignedAccessReviewAlert,
   overdueAccessReviews,
   UNSIGNED_ACCESS_REVIEW_MS,
@@ -53,5 +54,31 @@ describe('accessReviewAlert decisions (#41)', () => {
       now,
     )
     assert.deepEqual(overdue, [{ quarter: '2020-Q1', reportId: 'old-unsigned' }])
+  })
+
+  it('maps a stored row into an alert candidate once', () => {
+    assert.deepEqual(
+      accessReviewAlertCandidateFromRow({
+        quarter: '2026-Q1',
+        report: {
+          reportId: 'access-review-2026-Q1',
+          generatedAt: 100,
+          reviewerSignature: { hash: 'x' },
+        },
+      }),
+      {
+        quarter: '2026-Q1',
+        reportId: 'access-review-2026-Q1',
+        generatedAt: 100,
+        signed: true,
+      },
+    )
+    assert.equal(
+      accessReviewAlertCandidateFromRow({
+        quarter: '2026-Q2',
+        report: { reportId: 'r2', generatedAt: 200 },
+      }).signed,
+      false,
+    )
   })
 })
