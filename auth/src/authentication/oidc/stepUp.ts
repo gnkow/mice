@@ -10,8 +10,60 @@ const MAX_ALLOWED_AGE_SEC = 24 * 60 * 60
 
 const nowSec = () => Math.floor(Date.now() / 1000)
 
-export function isFreshlyAuthenticated(user: SessionUser, maxAgeSec: number): boolean {
-  return user.authTime !== undefined && nowSec() - user.authTime <= maxAgeSec
+/** Clamp a caller-supplied max_age into the step-up window (0 … 24h; default 300). */
+export function resolveMaxAgeSec(raw: unknown): number {
+  const asked = Number(raw ?? DEFAULT_MAX_AGE_SEC)
+  return Number.isFinite(asked)
+    ? Math.min(Math.max(0, Math.floor(asked)), MAX_ALLOWED_AGE_SEC)
+    : DEFAULT_MAX_AGE_SEC
+}
+
+export function isFreshlyAuthenticated(
+  user: SessionUser,
+  maxAgeSec: number,
+  atSec: number = nowSec(),
+): boolean {
+  return user.authTime !== undefined && atSec - user.authTime <= maxAgeSec
+}
+
+export type StepUpDecision =
+  | { kind: 'ok'; user: SessionUser }
+  | { kind: 'need_browser_session'; status: 401 | 403 }
+  | { kind: 'challenge'; delivery: 'redirect' | 'json'; reauthUrl: string; maxAgeSec: number }
+
+/**
+ * Pure step-up decision: bearer vs browser Session, freshness from auth_time, and
+ * redirect vs JSON challenge. HTTP adapters map this to Response shapes.
+ */
+export function decideStepUp(input: {
+  session: SessionUser | null
+  hasAuthorizationHeader: boolean
+  method: string
+  acceptHeader: string
+  resumePathAndQuery: string
+  maxAgeSec: number
+  nowSec: number
+}): StepUpDecision {
+  if (!input.session) {
+    return {
+      kind: 'need_browser_session',
+      status: input.hasAuthorizationHeader ? 403 : 401,
+    }
+  }
+  if (isFreshlyAuthenticated(input.session, input.maxAgeSec, input.nowSec)) {
+    return { kind: 'ok', user: input.session }
+  }
+  const reauthUrl =
+    `/auth/reauth?max_age=${input.maxAgeSec}` +
+    `&next=${encodeURIComponent(input.resumePathAndQuery)}`
+  const wantsHtml =
+    input.method === 'GET' && input.acceptHeader.includes('text/html')
+  return {
+    kind: 'challenge',
+    delivery: wantsHtml ? 'redirect' : 'json',
+    reauthUrl,
+    maxAgeSec: input.maxAgeSec,
+  }
 }
 
 export type StepUpOutcome = { ok: true; user: SessionUser } | { ok: false; response: Response }
@@ -23,19 +75,36 @@ export type StepUpOutcome = { ok: true; user: SessionUser } | { ok: false; respo
  */
 export async function reauthenticate(c: Context, maxAgeSec: number): Promise<StepUpOutcome> {
   const session = await getSession(c)
-  if (!session) {
-    const status = c.req.header('authorization') ? 403 : 401
-    return { ok: false, response: c.json({ error: 'Step-up requires a browser Session' }, status) }
-  }
-  if (isFreshlyAuthenticated(session, maxAgeSec)) return { ok: true, user: session }
   const resume = new URL(c.req.url)
-  const reauthUrl = `/auth/reauth?max_age=${maxAgeSec}&next=${encodeURIComponent(resume.pathname + resume.search)}`
-  if (c.req.method === 'GET' && (c.req.header('accept') ?? '').includes('text/html')) {
-    return { ok: false, response: c.redirect(reauthUrl) }
+  const decision = decideStepUp({
+    session,
+    hasAuthorizationHeader: Boolean(c.req.header('authorization')),
+    method: c.req.method,
+    acceptHeader: c.req.header('accept') ?? '',
+    resumePathAndQuery: resume.pathname + resume.search,
+    maxAgeSec,
+    nowSec: nowSec(),
+  })
+  if (decision.kind === 'ok') return { ok: true, user: decision.user }
+  if (decision.kind === 'need_browser_session') {
+    return {
+      ok: false,
+      response: c.json({ error: 'Step-up requires a browser Session' }, decision.status),
+    }
+  }
+  if (decision.delivery === 'redirect') {
+    return { ok: false, response: c.redirect(decision.reauthUrl) }
   }
   return {
     ok: false,
-    response: c.json({ error: 'reauthentication_required', maxAge: maxAgeSec, reauthUrl }, 401),
+    response: c.json(
+      {
+        error: 'reauthentication_required',
+        maxAge: decision.maxAgeSec,
+        reauthUrl: decision.reauthUrl,
+      },
+      401,
+    ),
   }
 }
 
@@ -43,8 +112,7 @@ export function registerStepUp(app: Hono): void {
   app.get('/auth/reauth', async (c) => {
     const session = await getSession(c)
     if (!session) return c.json({ error: 'Authentication required' }, 401)
-    const asked = Number(c.req.query('max_age') ?? DEFAULT_MAX_AGE_SEC)
-    const maxAge = Number.isFinite(asked) ? Math.min(Math.max(0, Math.floor(asked)), MAX_ALLOWED_AGE_SEC) : DEFAULT_MAX_AGE_SEC
+    const maxAge = resolveMaxAgeSec(c.req.query('max_age'))
     const { pkceCookie, authorizeUrl } = await startLogin(c.req.query('next'), {
       maxAge,
       sub: session.sub,

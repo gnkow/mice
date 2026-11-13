@@ -57,7 +57,12 @@ process.env.SESSION_SECRET = 'test-session-secret-for-stepup'
 const { Hono } = await import('hono')
 const { applyGlobalGuards } = await import('../session/requireAuth.js')
 const { completeLogin } = await import('./loginFlow.js')
-const { registerStepUp, handleReauthCallback } = await import('./stepUp.js')
+const {
+  registerStepUp,
+  handleReauthCallback,
+  decideStepUp,
+  resolveMaxAgeSec,
+} = await import('./stepUp.js')
 const { sealSession, getSession } = await import('../session/session.js')
 const { sealSessionCookie } = await import('../session/cookieSeal.js')
 const { ensureBootstrapKey } = await import('../session/sealKeys.js')
@@ -85,6 +90,84 @@ setDirectoryFetchForTests(async (url) => {
 await ensureBootstrapKey()
 
 const now = () => Math.floor(Date.now() / 1000)
+
+await describe('decideStepUp', async () => {
+  const baseSession = {
+    sub: 'u1',
+    iss: issuer,
+    email: 'u1@x.io',
+    name: 'u1',
+    authTime: now() - 10,
+  }
+
+  await it('allows a Session whose auth_time is inside the window', () => {
+    const decision = decideStepUp({
+      session: baseSession,
+      hasAuthorizationHeader: false,
+      method: 'POST',
+      acceptHeader: 'application/json',
+      resumePathAndQuery: '/auth/sign/prepare',
+      maxAgeSec: 60,
+      nowSec: now(),
+    })
+    assert.equal(decision.kind, 'ok')
+    if (decision.kind === 'ok') assert.equal(decision.user.sub, 'u1')
+  })
+
+  await it('refuses bearer-only callers with need_browser_session 403', () => {
+    const decision = decideStepUp({
+      session: null,
+      hasAuthorizationHeader: true,
+      method: 'GET',
+      acceptHeader: 'application/json',
+      resumePathAndQuery: '/auth/step-up/demo',
+      maxAgeSec: 300,
+      nowSec: now(),
+    })
+    assert.deepEqual(decision, { kind: 'need_browser_session', status: 403 })
+  })
+
+  await it('challenges a stale Session with a json reauthUrl for API callers', () => {
+    const decision = decideStepUp({
+      session: { ...baseSession, authTime: now() - 3600 },
+      hasAuthorizationHeader: false,
+      method: 'POST',
+      acceptHeader: 'application/json',
+      resumePathAndQuery: '/auth/sign/execute?x=1',
+      maxAgeSec: 60,
+      nowSec: now(),
+    })
+    assert.equal(decision.kind, 'challenge')
+    if (decision.kind !== 'challenge') return
+    assert.equal(decision.delivery, 'json')
+    assert.equal(decision.maxAgeSec, 60)
+    assert.match(decision.reauthUrl, /^\/auth\/reauth\?max_age=60&next=/)
+    assert.match(decision.reauthUrl, /execute/)
+  })
+
+  await it('challenges a stale Session with a redirect for HTML navigations', () => {
+    const decision = decideStepUp({
+      session: { ...baseSession, authTime: now() - 3600 },
+      hasAuthorizationHeader: false,
+      method: 'GET',
+      acceptHeader: 'text/html',
+      resumePathAndQuery: '/auth/step-up/demo',
+      maxAgeSec: 300,
+      nowSec: now(),
+    })
+    assert.equal(decision.kind, 'challenge')
+    if (decision.kind !== 'challenge') return
+    assert.equal(decision.delivery, 'redirect')
+  })
+
+  await it('clamps asked max_age into the allowed window', () => {
+    assert.equal(resolveMaxAgeSec(undefined), 300)
+    assert.equal(resolveMaxAgeSec('60'), 60)
+    assert.equal(resolveMaxAgeSec('-5'), 0)
+    assert.equal(resolveMaxAgeSec('999999'), 24 * 60 * 60)
+    assert.equal(resolveMaxAgeSec('nope'), 300)
+  })
+})
 const app = new Hono()
 applyGlobalGuards(app)
 registerStepUp(app)

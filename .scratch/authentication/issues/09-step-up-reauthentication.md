@@ -23,3 +23,11 @@ Sensitive browser actions call `reauthenticate`. The IdP request uses `prompt=lo
 - `auth/src/authentication/oidc/stepUp.ts`
 - `auth/src/authentication/oidc/loginFlow.ts` (reauth branch)
 - `auth/src/authentication/signing/signingRoutes.ts`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (acceptance covered by `stepUp.test.ts`; signing still calls `reauthenticate` with 60s).
+
+**Deepen (auto-picked):** Collapse freshness + bearer/HTML/API challenge branching into deep `decideStepUp(...)`; clamp via `resolveMaxAgeSec`. `reauthenticate` is a thin Context adapter over that decision. No signingRoutes rewrite.
+
+**Files:** `auth/src/authentication/oidc/stepUp.ts`, `stepUp.test.ts`
