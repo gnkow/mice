@@ -29,3 +29,7 @@ The device approval page shows the last 4 hex characters of the request's hashed
 - **Audit:** holds — rate limit 5/10min → 429, fifth-approval security warning, confirmation gate, hashed-IP/device-name display covered by `devicePhishingMitigation.test.ts`, `deviceApprovalConfirmation.test.ts`, and CliDevicePage.
 - **Deepen:** Collapsed check/record/recent/warning orchestration into `createDeviceApprovalRateLimit().begin()` → `commit()` (one small interface; security warning built behind the seam). CliDevicePage confirmation matching extracted to `isApprovalConfirmation` with real unit tests (replaced tautological inline checks).
 - **Files:** `auth/src/authentication/credentials/deviceApprovalRateLimit.ts`, `cliDeviceRoutes.ts`, `auth/src/devicePhishingMitigation.test.ts`, `web/src/lib/cliDeviceApproval.ts`, `web/src/lib/cliDeviceApproval.test.ts`, `web/src/pages/CliDevicePage.tsx`.
+
+2026-11-13 — **Deepen #2 (auto-picked):** Narrow public interface to `begin` only; remove exported `check`/`record`/`recent`. Tests exercise acceptance through begin→commit. No UI changes.
+**Seams:** `deviceApprovalRateLimit.ts` (`createDeviceApprovalRateLimit().begin` / `beginDeviceApproval`); `cliDeviceRoutes.ts` HTTP adapter.
+**Tests:** `devicePhishingMitigation.test.ts` (unit), `deviceApprovalConfirmation.test.ts` + `cliDeviceFlow.test.ts` (integ/related).

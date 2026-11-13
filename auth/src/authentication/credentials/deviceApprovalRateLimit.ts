@@ -44,19 +44,10 @@ export type DeviceApprovalRateLimitDeps = {
 }
 
 export type DeviceApprovalRateLimit = {
-  check(user: SessionUser): Promise<ApprovalRateLimitResult>
-  record(
-    user: SessionUser,
-    userCode: string,
-    approverHashedIp?: string | null,
-  ): Promise<{ shouldAlert: boolean; count: number }>
-  recent(
-    user: SessionUser,
-    limit?: number,
-  ): Promise<Array<{ userCode: string; approvedAt: Date }>>
   /**
    * Small interface for the approve route: deny with 429 context, or return a
    * commit handle that records the approval and builds the security warning.
+   * Check / record / recent stay behind this seam.
    */
   begin(user: SessionUser): Promise<DeviceApprovalBegin>
 }
@@ -162,12 +153,9 @@ export function createDeviceApprovalRateLimit(
     }
   }
 
-  return { check, record, recent, begin }
+  return { begin }
 }
 
 const live = createDeviceApprovalRateLimit()
 
-export const checkDeviceApprovalRateLimit = live.check
-export const recordDeviceApproval = live.record
-export const getRecentApprovals = live.recent
 export const beginDeviceApproval = live.begin
