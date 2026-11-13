@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 
 const ctx = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 after(() => ctx.restore())
@@ -39,10 +39,23 @@ function fakeOxen(opts: { entries: Array<unknown | null>; write: () => Response 
 
 const app = new Hono()
 app.all('/api/*', (c) => proxyToOxen(c, { user: admin, via: 'session' }))
-const put = (repo: string) => {
+const put = async (repo: string) => {
+  const path = `/api/repos/lin/${repo}/file/main/data.csv`
   const form = new FormData()
   form.append('file', new Blob(['a,b\n1,2\n']), 'data.csv')
-  return app.request(`/api/repos/lin/${repo}/file/main/data.csv`, { method: 'PUT', body: form, headers: { 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' } })
+  const signed = await regulatedMutationHeaders(admin, {
+    method: 'PUT',
+    path,
+    body: {},
+    reason: 'Routine test change',
+    category: 'privileged_settings',
+    jsonContentType: false,
+  })
+  return app.request(path, {
+    method: 'PUT',
+    body: form,
+    headers: { ...signed, 'x-mice-change-control-id': 'CC-2026-114' },
+  })
 }
 
 await describe('proxy lineage capture', async () => {
