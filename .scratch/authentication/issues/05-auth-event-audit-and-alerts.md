@@ -21,3 +21,9 @@ Login, refresh, logout, step-up, failure, and revocation append an audit entry w
 
 - `auth/src/authentication/audit/authEvents.ts`
 - `auth/src/authentication/audit/authEvents.test.ts`
+
+## Comments
+
+- **Audit:** holds — event types, redaction, principal query, and 5-in-10-minute alert proven by `authEvents.test.ts` at the `recordAuthEvent` / `queryAuthEventsByPrincipal` seam.
+- **Deepen:** Collapsed the shallow two-step `recordAuthEvent` + `checkFailureRate` hot path into one deeper `recordAuthEvent` interface. On `outcome: 'failure'`, the module evaluates the threshold and optionally invokes `onAlert`, returning `{ alerted }`. Threshold evaluation is an internal implementation detail (`evaluateFailureRate`), not a second public seam callers must learn.
+- **Files:** `authEvents.ts`, `authEvents.test.ts`.

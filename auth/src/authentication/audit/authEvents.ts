@@ -17,6 +17,13 @@ export type AuthEvent = {
   timestamp?: Date
 }
 
+export type FailureAlert = {
+  principal: string
+  failureCount: number
+  windowMinutes: number
+  events: AuthEvent[]
+}
+
 type AuthEventInput = {
   type: AuthEventType
   principal: PrincipalId
@@ -25,6 +32,11 @@ type AuthEventInput = {
   reason?: string
   /** Client address. Stored only as today's hash. */
   clientIp?: string
+  /**
+   * Invoked when this failure pushes the Principal over 5 failures in 10 minutes.
+   * Ignored for successful outcomes.
+   */
+  onAlert?: (alert: FailureAlert) => void
   // These fields should be stripped if present
   token?: unknown
   accessToken?: unknown
@@ -34,24 +46,58 @@ type AuthEventInput = {
   ipAddress?: unknown
 }
 
+export type RecordAuthEventResult = {
+  /** True when this write triggered the in-process failure-rate alert. */
+  alerted: boolean
+}
+
+export type StoredAuthEvent = {
+  type: AuthEventType
+  principalKey: string
+  requestId: string
+  outcome: 'success' | 'failure'
+  reason?: string
+  hashedIp: string | null
+  timestamp: Date
+}
+
+export type AuthEventHashIp = (ip: string | null | undefined) => Promise<string | null>
+
 /**
- * Records an authentication event with redaction of sensitive data.
- * Never logs tokens, cookies, codes, or IP addresses per ticket 05 requirements.
+ * Audit attachment seam (issue 44): redact secrets, hash clientIp with today's
+ * salt, and omit the raw address from the stored shape. `createIpHash` stays
+ * the hash implementation; this module owns when hashed_ip is attached.
  */
-export async function recordAuthEvent(input: AuthEventInput): Promise<void> {
-  // Strip all sensitive fields - only record type, principal, requestId, outcome, reason
-  const hashedIp = await hashIp(input.clientIp)
-  const safeEvent = {
-    type: input.type,
-    principalKey: principalKey(input.principal),
-    requestId: input.requestId,
-    outcome: input.outcome,
-    reason: input.reason,
-    hashedIp,
+export async function prepareAuthEventForStore(
+  input: Omit<AuthEventInput, 'onAlert'>,
+  hash: AuthEventHashIp = hashIp,
+): Promise<StoredAuthEvent> {
+  const { principal, clientIp, type, requestId, outcome, reason } = input
+  return {
+    type,
+    principalKey: principalKey(principal),
+    requestId,
+    outcome,
+    reason,
+    hashedIp: await hash(clientIp),
     timestamp: new Date(Date.now()), // Use Date.now() to allow test mocking
   }
+}
+
+/**
+ * Auth-event module seam: redact sensitive fields, persist the event, and
+ * (on failure) evaluate the 5-in-10-minute alert threshold. Callers do not
+ * need a separate checkFailureRate hop.
+ */
+export async function recordAuthEvent(input: AuthEventInput): Promise<RecordAuthEventResult> {
+  const { onAlert, ...rest } = input
+  const safeEvent = await prepareAuthEventForStore(rest)
 
   await getDb().insert(authEvents).values(safeEvent)
+
+  if (rest.outcome !== 'failure') return { alerted: false }
+  const alerted = await evaluateFailureRate(rest.principal, { onAlert })
+  return { alerted }
 }
 
 /**
@@ -93,28 +139,20 @@ export async function queryAuthEventsByPrincipal(
   }))
 }
 
-export type FailureAlert = {
-  principal: string
-  failureCount: number
-  windowMinutes: number
-  events: AuthEvent[]
-}
-
 /**
- * Checks if a Principal has exceeded the failure threshold (5 failures in 10 minutes).
- * Triggers an alert callback if the threshold is exceeded.
+ * Internal: evaluate the failure-rate threshold after a failure is recorded.
+ * Kept off the public interface so callers use recordAuthEvent's deeper seam.
  */
-export async function checkFailureRate(
+async function evaluateFailureRate(
   principal: PrincipalId,
   options: { onAlert?: (alert: FailureAlert) => void } = {},
 ): Promise<boolean> {
   const key = principalKey(principal)
   const windowMinutes = 10
   const threshold = 5
-  
-  // Get failures in the last 10 minutes
+
   const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000)
-  
+
   const failures = await getDb()
     .select()
     .from(authEvents)
@@ -144,7 +182,7 @@ export async function checkFailureRate(
         timestamp: row.timestamp,
       })),
     }
-    
+
     options.onAlert?.(alert)
     return true
   }

@@ -1,7 +1,12 @@
 import '../../db/testSchema.js'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert'
-import { recordAuthEvent, queryAuthEventsByPrincipal, checkFailureRate, type AuthEventType } from './authEvents.js'
+import {
+  prepareAuthEventForStore,
+  recordAuthEvent,
+  queryAuthEventsByPrincipal,
+  type AuthEventType,
+} from './authEvents.js'
 import { principalKey } from '../session/principal.js'
 import { hashIp } from '../../ipHash.js'
 
@@ -38,6 +43,44 @@ describe('Authentication Event Audit (Ticket 05)', () => {
       assert.strictEqual(loginEvent.principalKey, principalKey(testPrincipal))
       assert.strictEqual(loginEvent.requestId, requestId)
       assert.strictEqual(loginEvent.outcome, 'success')
+    })
+
+    it('prepareAuthEventForStore attaches hashed_ip and drops the raw address', async () => {
+      const ip = '203.0.113.10'
+      const expected = 'sha256-of-ip-for-test'
+      const stored = await prepareAuthEventForStore(
+        {
+          type: 'login',
+          principal: testPrincipal,
+          requestId: 'req-prepare-ip',
+          outcome: 'success',
+          clientIp: ip,
+          token: 'secret-token',
+          ipAddress: ip,
+        },
+        async (clientIp) => {
+          assert.strictEqual(clientIp, ip)
+          return expected
+        },
+      )
+      assert.strictEqual(stored.hashedIp, expected)
+      assert.ok(!('clientIp' in stored))
+      assert.ok(!('token' in stored))
+      assert.ok(!('ipAddress' in stored))
+      assert.ok(!JSON.stringify(stored).includes(ip))
+    })
+
+    it('prepareAuthEventForStore leaves hashedIp null when the client address is missing', async () => {
+      const stored = await prepareAuthEventForStore(
+        {
+          type: 'logout',
+          principal: testPrincipal,
+          requestId: 'req-prepare-no-ip',
+          outcome: 'success',
+        },
+        async () => null,
+      )
+      assert.strictEqual(stored.hashedIp, null)
     })
 
     it('stores hashed_ip for a login and leaves the raw address out', async () => {
@@ -312,30 +355,26 @@ describe('Authentication Event Audit (Ticket 05)', () => {
 
       let alertCalled = false
       let alertData: any = null
-      
-      // Record 5 failures within 10 minutes
+      const onAlert = (alert: any) => {
+        alertCalled = true
+        alertData = alert
+      }
+
+      // recordAuthEvent owns the threshold check — no separate checkFailureRate call
       for (let i = 0; i < 5; i++) {
-        currentTime = now.getTime() + i * 60 * 1000 // 1 minute apart
-        await recordAuthEvent({
+        currentTime = now.getTime() + i * 60 * 1000
+        const result = await recordAuthEvent({
           type: 'login',
           principal: testUser,
           requestId: `req-fail-${i}`,
           outcome: 'failure',
           reason: 'invalid_credentials',
+          onAlert,
         })
+        if (i < 4) assert.strictEqual(result.alerted, false)
+        else assert.strictEqual(result.alerted, true)
       }
 
-      // Reset time for check
-      currentTime = now.getTime() + 5 * 60 * 1000
-      
-      const shouldAlert = await checkFailureRate(testUser, { 
-        onAlert: (alert) => {
-          alertCalled = true
-          alertData = alert
-        }
-      })
-      
-      assert.strictEqual(shouldAlert, true)
       assert.strictEqual(alertCalled, true)
       assert.ok(alertData)
       assert.strictEqual(alertData.principal, principalKey(testUser))
@@ -349,26 +388,21 @@ describe('Authentication Event Audit (Ticket 05)', () => {
       currentTime = now.getTime()
 
       let alertCalled = false
-      
-      // Record 4 failures
+      const onAlert = () => { alertCalled = true }
+
       for (let i = 0; i < 4; i++) {
         currentTime = now.getTime() + i * 60 * 1000
-        await recordAuthEvent({
+        const result = await recordAuthEvent({
           type: 'login',
           principal: testUser,
           requestId: `req-fail-${i}`,
           outcome: 'failure',
           reason: 'invalid_credentials',
+          onAlert,
         })
+        assert.strictEqual(result.alerted, false)
       }
 
-      currentTime = now.getTime() + 4 * 60 * 1000
-      
-      const shouldAlert = await checkFailureRate(testUser, { 
-        onAlert: () => { alertCalled = true }
-      })
-      
-      assert.strictEqual(shouldAlert, false)
       assert.strictEqual(alertCalled, false)
     })
 
@@ -378,37 +412,34 @@ describe('Authentication Event Audit (Ticket 05)', () => {
       currentTime = now.getTime()
 
       let alertCalled = false
-      
-      // Record 3 failures in first window
+      const onAlert = () => { alertCalled = true }
+
       for (let i = 0; i < 3; i++) {
-        await recordAuthEvent({
+        const result = await recordAuthEvent({
           type: 'login',
           principal: testUser,
           requestId: `req-old-${i}`,
           outcome: 'failure',
           reason: 'invalid_credentials',
+          onAlert,
         })
+        assert.strictEqual(result.alerted, false)
       }
 
-      // Move time forward 12 minutes (outside window)
       currentTime = now.getTime() + 12 * 60 * 1000
 
-      // Record 2 more failures
       for (let i = 0; i < 2; i++) {
-        await recordAuthEvent({
+        const result = await recordAuthEvent({
           type: 'login',
           principal: testUser,
           requestId: `req-new-${i}`,
           outcome: 'failure',
           reason: 'invalid_credentials',
+          onAlert,
         })
+        assert.strictEqual(result.alerted, false)
       }
 
-      const shouldAlert = await checkFailureRate(testUser, { 
-        onAlert: () => { alertCalled = true }
-      })
-      
-      assert.strictEqual(shouldAlert, false)
       assert.strictEqual(alertCalled, false)
     })
   })
