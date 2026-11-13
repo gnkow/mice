@@ -25,6 +25,8 @@ A Session or bearer credential whose issuer is `urn:mice:service` is not a calle
 
 ## Comments
 
-- **Audit:** holds — `kindOf` is human-only; `authenticate` refuses `urn:mice:service` session/bearer; offboarding does not cascade to SPs (`principalKind.test.ts`, `serviceCaller.test.ts`, `offboarding.test.ts`).
-- **Deepen (auto-pick):** Extracted `isServiceCaller` / `SERVICE_ISSUER` in `principal.ts` so kind stays human and caller refusal lives once; `authenticate` only calls the helper (no wholesale requireAuth rewrite).
-- **Files:** `principal.ts`, `principalKind.test.ts`, `requireAuth.ts` (two call sites), `serviceCaller.test.ts`.
+- **Audit:** holds — `kindOf` human-only; `authenticate` refuses `urn:mice:service` session/bearer; no SP create route; offboarding does not cascade.
+- **Deepen (auto-pick Top):** `decideServiceCallerAdmission` owns allow / 401 refusal; session + bearer paths in `authenticate` share it (no wholesale requireAuth rewrite).
+- **Files:** `principal.ts`, `requireAuth.ts` (two call sites).
+- **Tests:** `principalKind.test.ts` (unit); `serviceCaller.test.ts` (integration).
+- **Seams:** `decideServiceCallerAdmission` / `isServiceCaller` (module); `authenticate` (package).

@@ -35,6 +35,21 @@ export function isServiceCaller(p: { iss: string }): boolean {
   return canonicalIssuer(p.iss) === SERVICE_ISSUER
 }
 
+export type ServiceCallerAdmission =
+  | { allow: true }
+  | { allow: false; status: 401; error: 'Authentication required' }
+
+/**
+ * Deep seam for authenticate: admit a human caller, or refuse `urn:mice:service`.
+ * Session and bearer paths share this decision so issuer refusal lives once.
+ */
+export function decideServiceCallerAdmission(p: { iss: string }): ServiceCallerAdmission {
+  if (isServiceCaller(p)) {
+    return { allow: false, status: 401, error: 'Authentication required' }
+  }
+  return { allow: true }
+}
+
 export function can(p: { iss: string }, capability: Capability): boolean {
   return CAPABILITIES[kindOf(p)][capability]
 }
