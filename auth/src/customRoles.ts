@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { getDb, inTransaction, type Tx } from './db/database.js'
-import { customNamespaceRoles, customRepoRoles, namespaces } from './db/schema.js'
+import { customNamespaceRoles, customRepoRoles, customRoleVersions, namespaces } from './db/schema.js'
 import {
   REPO_ROLE_RANK,
   isPredefinedNsRole,
@@ -196,6 +196,105 @@ async function lockNamespaceRow(tx: Tx, ns: string): Promise<{ id: string } | nu
   return rows[0] ?? null
 }
 
+export type CustomRoleKind = 'namespace' | 'repo'
+
+export type CustomRoleVersion = {
+  validFrom: string
+  validTo: string | null
+  kind: CustomRoleKind
+  roleId: string
+  definition: Record<string, unknown>
+}
+
+async function closeOpenCustomRoleVersion(
+  tx: Tx,
+  namespaceId: string,
+  kind: CustomRoleKind,
+  roleId: string,
+  at: Date,
+): Promise<void> {
+  await tx
+    .update(customRoleVersions)
+    .set({ validTo: at })
+    .where(
+      and(
+        eq(customRoleVersions.namespaceId, namespaceId),
+        eq(customRoleVersions.kind, kind),
+        eq(customRoleVersions.roleId, roleId),
+        isNull(customRoleVersions.validTo),
+      ),
+    )
+}
+
+async function openCustomRoleVersion(
+  tx: Tx,
+  namespaceId: string,
+  kind: CustomRoleKind,
+  roleId: string,
+  definition: Record<string, unknown>,
+  at: Date,
+): Promise<void> {
+  await tx.insert(customRoleVersions).values({
+    namespaceId,
+    kind,
+    roleId,
+    definition,
+    validFrom: at,
+    validTo: null,
+    createdAt: at,
+  })
+}
+
+async function recordCustomRoleVersion(
+  tx: Tx,
+  namespaceId: string,
+  kind: CustomRoleKind,
+  roleId: string,
+  definition: Record<string, unknown>,
+  at = new Date(),
+): Promise<void> {
+  await closeOpenCustomRoleVersion(tx, namespaceId, kind, roleId, at)
+  await openCustomRoleVersion(tx, namespaceId, kind, roleId, definition, at)
+}
+
+function nsRoleDefinition(role: CustomNamespaceRole): Record<string, unknown> {
+  return {
+    id: role.id,
+    name: role.name,
+    ...(role.description ? { description: role.description } : {}),
+    permissions: role.permissions,
+    ...(role.baseRepositoryRole !== undefined ? { baseRepositoryRole: role.baseRepositoryRole } : {}),
+  }
+}
+
+function repoRoleDefinition(role: CustomRepoRole): Record<string, unknown> {
+  return {
+    id: role.id,
+    name: role.name,
+    ...(role.description ? { description: role.description } : {}),
+    base: role.base,
+    permissions: role.permissions,
+  }
+}
+
+/** Chronological custom-role definition versions for a namespace (entity history, not audit). */
+export async function listCustomRoleVersions(ns: string): Promise<CustomRoleVersion[] | null> {
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return null
+  const rows = await getDb()
+    .select()
+    .from(customRoleVersions)
+    .where(eq(customRoleVersions.namespaceId, nsId))
+    .orderBy(asc(customRoleVersions.validFrom), asc(customRoleVersions.id))
+  return rows.map((r) => ({
+    validFrom: r.validFrom.toISOString(),
+    validTo: r.validTo ? r.validTo.toISOString() : null,
+    kind: r.kind as CustomRoleKind,
+    roleId: r.roleId,
+    definition: r.definition,
+  }))
+}
+
 export async function createCustomNamespaceRole(
   ns: string,
   input: {
@@ -239,6 +338,7 @@ export async function createCustomNamespaceRole(
         permissions: perms,
         baseRepositoryRole: base ?? null,
       })
+      await recordCustomRoleVersion(tx, locked.id, 'namespace', role.id, nsRoleDefinition(role))
       return { ok: true, role } as const
     })
   } catch (e) {
@@ -282,20 +382,31 @@ export async function updateCustomNamespaceRole(
     set.baseRepositoryRole = b
   }
   try {
-    const nsId = await namespaceIdByName(ns)
-    if (!nsId) return { ok: false, error: 'Not found' }
-    if (Object.keys(set).length) {
-      await getDb()
-        .update(customNamespaceRoles)
-        .set(set)
-        .where(and(eq(customNamespaceRoles.namespaceId, nsId), eq(customNamespaceRoles.id, id)))
-    }
+    return await inTransaction(async (tx) => {
+      const locked = await lockNamespaceRow(tx, ns)
+      if (!locked) return { ok: false, error: 'Not found' } as const
+      if (Object.keys(set).length) {
+        await tx
+          .update(customNamespaceRoles)
+          .set(set)
+          .where(and(eq(customNamespaceRoles.namespaceId, locked.id), eq(customNamespaceRoles.id, id)))
+      }
+      const rows = await tx
+        .select()
+        .from(customNamespaceRoles)
+        .where(and(eq(customNamespaceRoles.namespaceId, locked.id), eq(customNamespaceRoles.id, id)))
+        .limit(1)
+      if (!rows[0]) return { ok: false, error: 'Not found' } as const
+      const role = toNsRole(rows[0])
+      if (Object.keys(set).length) {
+        await recordCustomRoleVersion(tx, locked.id, 'namespace', id, nsRoleDefinition(role))
+      }
+      return { ok: true, role } as const
+    })
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
     throw e
   }
-  const role = await getCustomNamespaceRole(ns, id)
-  return role ? { ok: true, role } : { ok: false, error: 'Not found' }
 }
 
 export async function deleteCustomNamespaceRole(
@@ -304,13 +415,18 @@ export async function deleteCustomNamespaceRole(
   assigned: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (assigned) return { ok: false, error: 'Role is still assigned to members' }
-  const nsId = await namespaceIdByName(ns)
-  if (!nsId) return { ok: false, error: 'Not found' }
-  const rows = await getDb()
-    .delete(customNamespaceRoles)
-    .where(and(eq(customNamespaceRoles.namespaceId, nsId), eq(customNamespaceRoles.id, id)))
-    .returning({ id: customNamespaceRoles.id })
-  return rows.length ? { ok: true } : { ok: false, error: 'Not found' }
+  return inTransaction(async (tx) => {
+    const locked = await lockNamespaceRow(tx, ns)
+    if (!locked) return { ok: false, error: 'Not found' } as const
+    const at = new Date()
+    const rows = await tx
+      .delete(customNamespaceRoles)
+      .where(and(eq(customNamespaceRoles.namespaceId, locked.id), eq(customNamespaceRoles.id, id)))
+      .returning({ id: customNamespaceRoles.id })
+    if (!rows.length) return { ok: false, error: 'Not found' } as const
+    await closeOpenCustomRoleVersion(tx, locked.id, 'namespace', id, at)
+    return { ok: true } as const
+  })
 }
 
 export async function createCustomRepoRole(
@@ -355,6 +471,7 @@ export async function createCustomRepoRole(
         base: role.base,
         permissions: role.permissions,
       })
+      await recordCustomRoleVersion(tx, locked.id, 'repo', role.id, repoRoleDefinition(role))
       return { ok: true, role } as const
     })
   } catch (e) {
@@ -401,20 +518,31 @@ export async function updateCustomRepoRole(
     set.permissions = filterRedundantRepoFines(base, cur.permissions)
   }
   try {
-    const nsId = await namespaceIdByName(ns)
-    if (!nsId) return { ok: false, error: 'Not found' }
-    if (Object.keys(set).length) {
-      await getDb()
-        .update(customRepoRoles)
-        .set(set)
-        .where(and(eq(customRepoRoles.namespaceId, nsId), eq(customRepoRoles.id, id)))
-    }
+    return await inTransaction(async (tx) => {
+      const locked = await lockNamespaceRow(tx, ns)
+      if (!locked) return { ok: false, error: 'Not found' } as const
+      if (Object.keys(set).length) {
+        await tx
+          .update(customRepoRoles)
+          .set(set)
+          .where(and(eq(customRepoRoles.namespaceId, locked.id), eq(customRepoRoles.id, id)))
+      }
+      const rows = await tx
+        .select()
+        .from(customRepoRoles)
+        .where(and(eq(customRepoRoles.namespaceId, locked.id), eq(customRepoRoles.id, id)))
+        .limit(1)
+      if (!rows[0]) return { ok: false, error: 'Not found' } as const
+      const role = toRepoRole(rows[0])
+      if (Object.keys(set).length) {
+        await recordCustomRoleVersion(tx, locked.id, 'repo', id, repoRoleDefinition(role))
+      }
+      return { ok: true, role } as const
+    })
   } catch (e) {
     if (isUniqueViolation(e)) return { ok: false, error: 'Name already in use' }
     throw e
   }
-  const role = await getCustomRepoRole(ns, id)
-  return role ? { ok: true, role } : { ok: false, error: 'Not found' }
 }
 
 export async function deleteCustomRepoRole(
@@ -423,13 +551,18 @@ export async function deleteCustomRepoRole(
   assigned: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (assigned) return { ok: false, error: 'Role is still assigned to collaborators' }
-  const nsId = await namespaceIdByName(ns)
-  if (!nsId) return { ok: false, error: 'Not found' }
-  const rows = await getDb()
-    .delete(customRepoRoles)
-    .where(and(eq(customRepoRoles.namespaceId, nsId), eq(customRepoRoles.id, id)))
-    .returning({ id: customRepoRoles.id })
-  return rows.length ? { ok: true } : { ok: false, error: 'Not found' }
+  return inTransaction(async (tx) => {
+    const locked = await lockNamespaceRow(tx, ns)
+    if (!locked) return { ok: false, error: 'Not found' } as const
+    const at = new Date()
+    const rows = await tx
+      .delete(customRepoRoles)
+      .where(and(eq(customRepoRoles.namespaceId, locked.id), eq(customRepoRoles.id, id)))
+      .returning({ id: customRepoRoles.id })
+    if (!rows.length) return { ok: false, error: 'Not found' } as const
+    await closeOpenCustomRoleVersion(tx, locked.id, 'repo', id, at)
+    return { ok: true } as const
+  })
 }
 
 export async function isValidMemberRole(ns: string, role: string): Promise<boolean> {

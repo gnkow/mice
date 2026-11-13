@@ -270,6 +270,27 @@ export const customRepoRoles = pgTable(
   (t) => [uniqueIndex('custom_repo_roles_name').on(t.namespaceId, sql`lower(${t.name})`)],
 )
 
+/** Append-only custom-role definitions (GxP ticket 24). Survives live-role delete. */
+export const customRoleVersions = pgTable(
+  'custom_role_versions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'namespace' | 'repo'
+    roleId: text('role_id').notNull(),
+    definition: jsonb('definition').$type<Record<string, unknown>>().notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('custom_role_versions_ns_from_idx').on(t.namespaceId, t.validFrom),
+    index('custom_role_versions_role_idx').on(t.namespaceId, t.kind, t.roleId),
+  ],
+)
+
 export const namespaceTombstones = pgTable(
   'namespace_tombstones',
   {
