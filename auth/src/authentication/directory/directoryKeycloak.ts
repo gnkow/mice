@@ -1,6 +1,7 @@
 import { currentClock, type Clock } from '../../clock.js'
 import { env } from '../../env.js'
-import { normalizeGroup } from '../../authzTypes.js'
+import { composeIdpDisplayName } from '../oidc/idpDisplayName.js'
+import { mapKeycloakDirectoryGroup, mapKeycloakGroupRow } from './directoryGroupOid.js'
 import type {
   Directory,
   DirectoryGroupHit,
@@ -16,17 +17,6 @@ export type KeycloakDirectoryConfig = {
   clientSecret: string
   /** Issuer stamped on user hits. */
   issuer: string
-}
-
-/** Object id is the grant key. Without an id, the normalized leaf name stays the key. */
-function groupHit(g: { id?: string; name?: string; path?: string }): DirectoryGroupHit | null {
-  const leaf = (g.name || g.path || '').replace(/^\//, '').split('/').pop() ?? ''
-  const display = (g.name || leaf).trim()
-  const id = g.id?.trim()
-  if (id) return { kind: 'group', group: id, name: display || id }
-  const name = normalizeGroup(leaf)
-  if (!name) return null
-  return { kind: 'group', group: name, name }
 }
 
 /** Keycloak Admin API adapter. Owns the HTTP calls and its own token cache. */
@@ -140,7 +130,7 @@ export function createKeycloakDirectory(
         const rows = (await res.json()) as Array<{ id?: string; name?: string; path?: string }>
         const out: DirectoryGroupHit[] = []
         for (const g of rows) {
-          const hit = groupHit(g)
+          const hit = mapKeycloakGroupRow(g)
           if (!hit) continue
           out.push(hit)
           if (out.length >= limit) break
@@ -162,7 +152,7 @@ export function createKeycloakDirectory(
         if (res.status === 404) return { status: 'missing', name: '' }
         if (!res.ok) return { status: 'error', name: '' }
         const user = (await res.json()) as { enabled?: boolean; firstName?: string; lastName?: string }
-        const name = [user.firstName, user.lastName].map((part) => part?.trim() ?? '').filter(Boolean).join(' ')
+        const name = composeIdpDisplayName(user)
         return { status: user.enabled === false ? 'disabled' : 'enabled', name }
       } catch {
         return { status: 'error', name: '' }
@@ -178,8 +168,7 @@ export function createKeycloakDirectory(
         })
         if (!res.ok) return null
         const row = (await res.json()) as { id?: string; name?: string; path?: string }
-        const hit = groupHit({ ...row, id: row.id || id })
-        return hit ? { id: hit.group, name: hit.name } : null
+        return mapKeycloakDirectoryGroup({ ...row, id: row.id || id })
       } catch (err) {
         console.error('[mice-auth] Keycloak group fetch error', err)
         return null
@@ -202,8 +191,8 @@ export function createKeycloakDirectory(
         const rows = (await res.json()) as Array<{ id?: string; name?: string; path?: string }>
         const groups: Array<{ id: string; name: string }> = []
         for (const g of rows) {
-          const hit = groupHit(g)
-          if (hit) groups.push({ id: hit.group, name: hit.name })
+          const mapped = mapKeycloakDirectoryGroup(g)
+          if (mapped) groups.push(mapped)
         }
         return groups
       } catch (err) {
