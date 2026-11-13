@@ -33,3 +33,5 @@ The daily drift job also runs `checkDisabledPrincipalsWithSigningRights`. A Prin
 - **Deepen:** `findPrincipal` port so `state` shares snapshot ports; routes accept optional `check` deps (live default).
 - **Integ:** `disabledSignerRoutes.test.ts` (401, alarm list, omit enabled, injected check).
 - **Files:** `principalAccessMonitoring.ts`, `disabledSignerRoutes.ts`, `*.test.ts` above.
+
+2026-11-13 — **deep-ui Deepen** (holds): Settings `DisabledSignersSection` — loading/error/empty discriminated state, `role=alert` + Try again, empty-state copy. E2E: `e2e/tests/settings-auth-admin.spec.ts` · Disabled signers.

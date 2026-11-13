@@ -1,5 +1,5 @@
-import { ShieldAlert } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { RefreshCw, ShieldAlert } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 type DisabledSignerAlarm = {
@@ -11,29 +11,38 @@ type DisabledSignerAlarm = {
   reason: string
 }
 
+type LoadState =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ok'; alarms: DisabledSignerAlarm[] }
+
 export function DisabledSignersSection() {
-  const [alarms, setAlarms] = useState<DisabledSignerAlarm[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [state, setState] = useState<LoadState>({ kind: 'loading' })
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    setState({ kind: 'loading' })
+    try {
+      const res = await fetch('/auth/admin/disabled-signers', {
+        credentials: 'same-origin',
+        signal,
+      })
+      const body = await res.json() as { alarms?: DisabledSignerAlarm[]; error?: string }
+      if (!res.ok) throw new Error(body.error || 'Failed to load disabled signers')
+      setState({ kind: 'ok', alarms: body.alarms ?? [] })
+    } catch (err) {
+      if (signal?.aborted) return
+      setState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Failed to load disabled signers',
+      })
+    }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
-    void (async () => {
-      try {
-        const res = await fetch('/auth/admin/disabled-signers', {
-          credentials: 'same-origin',
-          signal: controller.signal,
-        })
-        const body = await res.json() as { alarms?: DisabledSignerAlarm[]; error?: string }
-        if (!res.ok) throw new Error(body.error || 'Failed to load disabled signers')
-        setAlarms(body.alarms ?? [])
-      } catch (err) {
-        if (controller.signal.aborted) return
-        setError(err instanceof Error ? err.message : 'Failed to load disabled signers')
-        setAlarms([])
-      }
-    })()
+    void load(controller.signal)
     return () => controller.abort()
-  }, [])
+  }, [load])
 
   return (
     <section id="disabled-signers" className="settings-section" aria-labelledby="disabled-signers-heading">
@@ -49,13 +58,33 @@ export function DisabledSignersSection() {
         </div>
       </div>
 
-      {alarms === null ? (
-        <p className="muted">Loading…</p>
-      ) : alarms.length === 0 ? (
-        <p className="muted">No disabled Principal holds signing rights.</p>
-      ) : (
+      {state.kind === 'loading' && (
+        <p role="status" aria-live="polite">Loading disabled signers…</p>
+      )}
+
+      {state.kind === 'error' && (
+        <div className="flash flash-error" role="alert">
+          <p>{state.message}</p>
+          <button type="button" className="btn ghost" onClick={() => void load()}>
+            <RefreshCw size={14} className="button-label-icon" aria-hidden="true" />
+            Try again
+          </button>
+        </div>
+      )}
+
+      {state.kind === 'ok' && state.alarms.length === 0 && (
+        <div className="empty-state" role="status">
+          <span className="empty-state-icon" aria-hidden="true" />
+          <p className="muted">No disabled Principal holds signing rights.</p>
+          <p className="muted small">
+            Critical alarms appear here when the directory disables a Principal who can still sign.
+          </p>
+        </div>
+      )}
+
+      {state.kind === 'ok' && state.alarms.length > 0 && (
         <ul className="ns-member-list">
-          {alarms.map((alarm) => {
+          {state.alarms.map((alarm) => {
             const href = `/settings/principal?${new URLSearchParams({ iss: alarm.iss, sub: alarm.sub }).toString()}`
             return (
               <li key={alarm.principalId} className="ns-member-row">
@@ -69,8 +98,6 @@ export function DisabledSignersSection() {
           })}
         </ul>
       )}
-
-      {error && <p className="flash flash-error" role="alert">{error}</p>}
     </section>
   )
 }
