@@ -32,3 +32,9 @@ When the id_token carries an Entra-style group overage indicator, login fetches 
 **Deepen (auto-picked):** Internal `DirectoryGroupFetch` result + `fetchDirectoryGroupBindings` owns configure/empty/error paths; static `groupBindingKey` import (no dynamic import). `resolveGroupOverage` / `fetchGroupsOnOverage` stay the public seams — no loginFlow edits.
 
 **Files:** `auth/src/authentication/oidc/groupOverage.ts`, `groupOverage.test.ts`
+
+2026-11-13 — deep-api Deepen (auto-pick Top): **holds** + integration gap closed.
+- **Seams:** `fetchDirectoryGroupBindings` / `resolveGroupOverage` / `claimsFromPayload` overage flag.
+- **Deepen:** Export typed `DirectoryGroupFetch` + `fetchDirectoryGroupBindings` as the package directory-fetch seam; `resolveGroupOverage` stays the login adapter — no loginFlow edits.
+- **Integ:** `groupOverage.integration.test.ts` — claims overage → bind groups; unconfigured/empty refuse; token groups skip directory.
+- **Files:** `groupOverage.ts`, `groupOverage.test.ts`, `groupOverage.integration.test.ts`.

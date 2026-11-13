@@ -13,15 +13,16 @@ import type { OidcClaims } from './oidcClaims.js'
  * fetches the full group list from the directory and binds them for the session.
  */
 
-type DirectoryGroupFetch =
+export type DirectoryGroupFetch =
   | { ok: true; groups: string[] }
   | { ok: false; reason: 'unconfigured' | 'empty' | 'error' }
 
 /**
  * Fetch group binding keys from the directory for an overage claim.
- * Callers that only need success/failure should use `resolveGroupOverage`.
+ * Package seam for configure / empty / error paths; login adapts via
+ * `resolveGroupOverage`.
  */
-async function fetchDirectoryGroupBindings(
+export async function fetchDirectoryGroupBindings(
   claims: OidcClaims,
   directory: Directory,
 ): Promise<DirectoryGroupFetch> {
