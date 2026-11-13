@@ -25,3 +25,4 @@
 - **Tests:** `auth/src/authentication/signing/signatureIdentityDisplay.test.ts`; acceptance still green in `signatureStore.test.ts`
 - **Deep-API deepen (2026-11-13):** `buildSignatureView(snapshot, currentName)` owns full identity view assembly; store `view` only fetches ledger + principal name. No UI chrome.
 - **Tests:** `signatureIdentityDisplay.test.ts`, `signatureStore.test.ts` (green)
+- **Deep-UI (2026-11-13):** Deepen — web signature views use `nowKnownAs` wording (`signatureName`, AccessReviewSection); audit `signatureEvidenceRows` + `SignatureEvidence` show signed snapshot + Now known as when present in detail. E2E: `e2e/tests/signature-identity-display.spec.ts`. No commit/push.

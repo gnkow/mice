@@ -370,11 +370,16 @@ function SignatureEvidence({ event }: { event: AuditEvent }) {
   return (
     <details className="small" data-testid="signature-evidence">
       <summary>Signature evidence</summary>
-      <dl>
+      <dl aria-label="Signature identity and evidence">
         {rows.map((r) => (
-          <div key={r.label}>
+          <div key={r.label} data-evidence-label={r.label}>
             <dt className="muted">{r.label}</dt>
-            <dd className="mono">{r.value}</dd>
+            <dd
+              className="mono"
+              data-testid={r.label === 'Now known as' ? 'signature-now-known-as' : undefined}
+            >
+              {r.value}
+            </dd>
           </div>
         ))}
       </dl>
