@@ -92,10 +92,9 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   const deviceBody: GuardPolicy = { credential: 'session', gate: approverGate, body: { required: ['user_code'] } }
 
   app.post('/auth/cli/device/approve', guarded({ ...deviceBody, mutates: true }, async ({ c, user: session, body }) => {
-    const userCode = String(body.user_code)
-    if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
-    const confirmation = decideDeviceApprovalConfirmation(body.confirmation, userCode)
+    const confirmation = decideDeviceApprovalConfirmation(body.confirmation, body.user_code)
     if (!confirmation.ok) return c.json({ error: confirmation.error }, confirmation.status)
+    const userCode = confirmation.userCode
 
     // Ticket 25: Rate limiting (5 approvals per 10 minutes)
     const gate = await beginDeviceApproval(session)

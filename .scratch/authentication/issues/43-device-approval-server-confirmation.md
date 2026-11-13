@@ -25,6 +25,8 @@ Split from issue 25. The approval page already requires the phrase. This issue i
 
 ## Comments
 
-- **Audit:** holds — `POST /auth/cli/device/approve` gated by confirmation; route tests in `deviceApprovalConfirmation.test.ts`; page uses `isApprovalConfirmation` (issue 25).
-- **Deepen (auto-pick):** Pulled APPROVE / user-code matrix into `deviceApprovalConfirmation.ts` (`isDeviceApprovalConfirmation` / `decideDeviceApprovalConfirmation`); approve route is a one-call adapter. Did not deepen `cliDeviceRoutes` beyond that wire-up.
-- **Files:** `deviceApprovalConfirmation.ts`, `deviceApprovalConfirmation.test.ts`, `cliDeviceRoutes.ts` (confirmation call only).
+- **Audit:** holds — approve succeeds for `APPROVE` or user code; other confirmation → 400, device stays pending.
+- **Deepen (auto-pick Top):** `normalizeDeviceApprovalText` + `decideDeviceApprovalConfirmation` own blank `user_code` and APPROVE/user-code matrix (returns `{ ok, userCode }` or 400); approve route is a one-call adapter. No UI; page confirmation stays issue 25.
+- **Files:** `deviceApprovalConfirmation.ts`, `cliDeviceRoutes.ts` (wire-up only).
+- **Tests:** `deviceApprovalConfirmation.test.ts` (unit + route integration).
+- **Seams:** `decideDeviceApprovalConfirmation` (module); `POST /auth/cli/device/approve` (package).

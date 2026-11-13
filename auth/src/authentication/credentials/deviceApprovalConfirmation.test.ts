@@ -7,10 +7,17 @@ import { describe, it } from 'node:test'
 import {
   decideDeviceApprovalConfirmation,
   DEVICE_APPROVAL_CONFIRM_ERROR,
+  DEVICE_APPROVAL_USER_CODE_ERROR,
   isDeviceApprovalConfirmation,
+  normalizeDeviceApprovalText,
 } from './deviceApprovalConfirmation.js'
 
 describe('deviceApprovalConfirmation', () => {
+  it('normalizes confirmation text for case-insensitive compare', () => {
+    assert.equal(normalizeDeviceApprovalText('  approve  '), 'APPROVE')
+    assert.equal(normalizeDeviceApprovalText(null), '')
+  })
+
   it('accepts APPROVE or the full user code, ignoring case and space', () => {
     assert.equal(isDeviceApprovalConfirmation('APPROVE', 'ABCD-EFGH'), true)
     assert.equal(isDeviceApprovalConfirmation('  approve  ', 'ABCD-EFGH'), true)
@@ -21,11 +28,19 @@ describe('deviceApprovalConfirmation', () => {
   })
 
   it('decide returns 400 with the typed-confirmation message when refused', () => {
-    assert.deepEqual(decideDeviceApprovalConfirmation('APPROVE', 'ABCD-EFGH'), { ok: true })
+    assert.deepEqual(decideDeviceApprovalConfirmation('APPROVE', 'ABCD-EFGH'), {
+      ok: true,
+      userCode: 'ABCD-EFGH',
+    })
     assert.deepEqual(decideDeviceApprovalConfirmation('nope', 'ABCD-EFGH'), {
       ok: false,
       status: 400,
       error: DEVICE_APPROVAL_CONFIRM_ERROR,
+    })
+    assert.deepEqual(decideDeviceApprovalConfirmation('APPROVE', '  '), {
+      ok: false,
+      status: 400,
+      error: DEVICE_APPROVAL_USER_CODE_ERROR,
     })
   })
 })
