@@ -34,3 +34,5 @@ Outside collaborator `expires_at` is explicitly out of scope.
 
 - 2026-11-03: Access review delivered via auth #12/#40/#41. Scope narrowed to instance permission grant expiry only.
 - 2026-11-03: Implemented with TDD (store → revoke schedule → HTTP → UI).
+
+**Deep-api Deepen (2026-11-13):** Holds — revoke schedule + store already shipped. Auto-picked Top: deepen `runInstancePermissionExpiry` as the single revoke+audit seam (`instancePermissionExpiry.ts`); schedule only times it; store keeps persistence. Unit: injected revoke/audit in `instancePermissionExpiry.test.ts`. Integration: store revoke + schedule tick still covered there.

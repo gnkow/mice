@@ -15,7 +15,63 @@ const {
   setInstancePermissions,
   writeInstancePermissions,
 } = await import('./authzInstanceStore.js')
-const { startInstancePermissionExpirySchedule } = await import('./instancePermissionExpiry.js')
+const {
+  runInstancePermissionExpiry,
+  startInstancePermissionExpirySchedule,
+} = await import('./instancePermissionExpiry.js')
+
+await describe('runInstancePermissionExpiry', async () => {
+  await it('audits each revoked grant through the expiry seam', async () => {
+    const audited: Array<{ action: string; message: string; detail: Record<string, unknown> }> = []
+    const revoked = await runInstancePermissionExpiry({
+      now: 1_700_000_000_000,
+      revoke: async () => [
+        {
+          sub: 'expired-user',
+          iss: 'test',
+          permissions: ['view_audit'],
+          expiresAt: 1_699_999_999_000,
+        },
+      ],
+      audit: async (event) => {
+        audited.push(event)
+      },
+    })
+    assert.equal(revoked.length, 1)
+    assert.equal(revoked[0]!.sub, 'expired-user')
+    assert.equal(audited.length, 1)
+    assert.equal(audited[0]!.action, 'instance.permissions.expire')
+    assert.match(audited[0]!.message, /expired-user/)
+    assert.deepEqual(audited[0]!.detail.target, { sub: 'expired-user', iss: 'test' })
+    assert.deepEqual(audited[0]!.detail.permissions, ['view_audit'])
+    assert.equal(audited[0]!.detail.expiresAt, 1_699_999_999_000)
+  })
+
+  await it('skips audit when nothing was revoked', async () => {
+    let calls = 0
+    const revoked = await runInstancePermissionExpiry({
+      now: 1,
+      revoke: async () => [],
+      audit: async () => {
+        calls += 1
+      },
+    })
+    assert.equal(revoked.length, 0)
+    assert.equal(calls, 0)
+  })
+
+  await it('passes now into the revoke adapter', async () => {
+    const seen: number[] = []
+    await runInstancePermissionExpiry({
+      now: 42,
+      revoke: async (at) => {
+        seen.push(at)
+        return []
+      },
+    })
+    assert.deepEqual(seen, [42])
+  })
+})
 
 const admin = {
   sub: 'admin',
