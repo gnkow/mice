@@ -49,11 +49,27 @@ const audit = async (_c: unknown, _u: unknown, _v: unknown, f: { action: string 
 registerInstanceRoutes(app, { audit })
 registerRevocationRoutes(app)
 
+const { regulatedMutationHeaders } = await import('./testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('./auditLedger.js')
+const { randomBytes } = await import('node:crypto')
+useSignatureStore(
+  openSignatureStore(
+    await openLedger({ ...immudbConfig(), prefix: `topic/${randomBytes(4).toString('hex')}/` }),
+  ),
+)
+
 const cookie = async (sub: string) => {
   const sessionId = await sealSession({ ...mk(sub), sessionStart: Math.floor(Date.now() / 1000) - 30 })
   return { cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}` }
 }
-const json = { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
+const signed = async (
+  sub: string,
+  mutation: { method: string; path: string; body?: unknown },
+) => ({
+  ...(await cookie(sub)),
+  ...(await regulatedMutationHeaders(mk(sub), mutation)),
+})
 
 await describe('instance routes', async () => {
   await it('refuses non-admins and reports enforcement as on', async () => {
@@ -64,35 +80,45 @@ await describe('instance routes', async () => {
   })
 
   await it('validates and audits instance permission changes', async () => {
-    const h = { ...(await cookie('root')), ...json }
-    const bad = await app.request('/auth/instance/permissions', { method: 'PUT', headers: h, body: '{}' })
+    const badBody = {}
+    const bad = await app.request('/auth/instance/permissions', {
+      method: 'PUT',
+      headers: await signed('root', { method: 'PUT', path: '/auth/instance/permissions', body: badBody }),
+      body: '{}',
+    })
     assert.equal(bad.status, 400)
-    const denied = await app.request('/auth/instance/permissions', { method: 'PUT', headers: { ...(await cookie('nobody')), ...json }, body: JSON.stringify({ sub: 'x', iss: 'idp', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }) })
+    const deniedBody = { sub: 'x', iss: 'idp', permissions: ['view_audit'], expiresAt: Date.now() + 86_400_000 }
+    const denied = await app.request('/auth/instance/permissions', {
+      method: 'PUT',
+      headers: await signed('nobody', { method: 'PUT', path: '/auth/instance/permissions', body: deniedBody }),
+      body: JSON.stringify(deniedBody),
+    })
     assert.equal(denied.status, 403)
     assert.ok(audited.includes('instance.permissions.update'))
   })
 
   await it('requires expiresAt when setting delegated permissions and returns it on GET', async () => {
-    const h = { ...(await cookie('root')), ...json }
+    const missingBody = { sub: 'delegatee', iss: 'idp', permissions: ['view_audit'] }
     const missing = await app.request('/auth/instance/permissions', {
       method: 'PUT',
-      headers: h,
-      body: JSON.stringify({ sub: 'delegatee', iss: 'idp', permissions: ['view_audit'] }),
+      headers: await signed('root', { method: 'PUT', path: '/auth/instance/permissions', body: missingBody }),
+      body: JSON.stringify(missingBody),
     })
     assert.equal(missing.status, 403)
-    const missingBody = (await missing.json()) as { error: string }
-    assert.match(missingBody.error, /expir/i)
+    const missingJson = (await missing.json()) as { error: string }
+    assert.match(missingJson.error, /expir/i)
 
     const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000
+    const okBody = {
+      sub: 'delegatee',
+      iss: 'idp',
+      permissions: ['view_audit'],
+      expiresAt,
+    }
     const ok = await app.request('/auth/instance/permissions', {
       method: 'PUT',
-      headers: h,
-      body: JSON.stringify({
-        sub: 'delegatee',
-        iss: 'idp',
-        permissions: ['view_audit'],
-        expiresAt,
-      }),
+      headers: await signed('root', { method: 'PUT', path: '/auth/instance/permissions', body: okBody }),
+      body: JSON.stringify(okBody),
     })
     assert.equal(ok.status, 200)
 
@@ -109,11 +135,28 @@ await describe('instance routes', async () => {
 await describe('revocation routes', async () => {
   await it('lets an admin cut off a Principal and refuses others', async () => {
     const { accessToken } = await issueCliCredential(mk('victim'))
-    const body = JSON.stringify({ sub: 'victim', iss: 'idp' })
-    const denied = await app.request('/auth/instance/revoke-sessions', { method: 'POST', headers: { ...(await cookie('nobody')), ...json }, body })
+    const payload = { sub: 'victim', iss: 'idp' }
+    const body = JSON.stringify(payload)
+    const denied = await app.request('/auth/instance/revoke-sessions', {
+      method: 'POST',
+      headers: await signed('nobody', {
+        method: 'POST',
+        path: '/auth/instance/revoke-sessions',
+        body: payload,
+      }),
+      body,
+    })
     assert.equal(denied.status, 403)
     assert.ok(await resolveCliCredential(accessToken))
-    const ok = await app.request('/auth/instance/revoke-sessions', { method: 'POST', headers: { ...(await cookie('root')), ...json }, body })
+    const ok = await app.request('/auth/instance/revoke-sessions', {
+      method: 'POST',
+      headers: await signed('root', {
+        method: 'POST',
+        path: '/auth/instance/revoke-sessions',
+        body: payload,
+      }),
+      body,
+    })
     assert.equal(ok.status, 200)
     assert.equal(await resolveCliCredential(accessToken), null)
   })

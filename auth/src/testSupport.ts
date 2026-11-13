@@ -137,6 +137,48 @@ export async function sealedSessionCookie(
 }
 
 /**
+ * Headers for a regulated mutation: reason + category + a freshly recorded signature
+ * bound to this exact method/path/body (GxP ticket 27).
+ */
+export async function regulatedMutationHeaders(
+  user: Pick<TestPerson, 'iss' | 'sub' | 'name'>,
+  mutation: {
+    method: string
+    path: string
+    body?: unknown
+    reason?: string
+    category?: string
+    /** When false, omit content-type so multipart/binary requests keep their own. Default true. */
+    jsonContentType?: boolean
+  },
+): Promise<Record<string, string>> {
+  const reason = mutation.reason ?? 'Routine settings correction for assay batch'
+  const category = mutation.category ?? 'privileged_settings'
+  const { prepareMutationDocument } = await import('./mutationSignature.js')
+  const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+  const prepared = prepareMutationDocument({
+    method: mutation.method,
+    path: mutation.path,
+    reason,
+    category,
+    body: mutation.body ?? {},
+  })
+  const { id } = await (
+    await signatureStore()
+  ).record({
+    signer: { iss: user.iss, sub: user.sub, name: user.name },
+    meaning: 'Approved',
+    contentHash: prepared.hash,
+  })
+  return {
+    ...(mutation.jsonContentType === false ? {} : { 'content-type': 'application/json' }),
+    'x-mice-reason': reason,
+    'x-mice-reason-category': category,
+    'x-mice-signature-id': id,
+  }
+}
+
+/**
  * The stored notification events a user's Novu feed holds. Novu creates messages asynchronously, so when
  * `expect` is given this waits (by attempts, since tests may freeze `Date.now`) until that many exist.
  */

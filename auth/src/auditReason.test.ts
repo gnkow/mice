@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, afterEach, beforeEach, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('./app.js')
@@ -106,12 +106,20 @@ await describe('mandatory reason on proxied dataset mutations', async () => {
   })
 
   await it('accepts a branch delete with category and free text and records both', async () => {
-    const ok = await app.request('/api/repos/rs/r/branches/old', {
+    const path = '/api/repos/rs/r/branches/old'
+    const signed = await regulatedMutationHeaders(admin, {
+      method: 'DELETE',
+      path,
+      body: {},
+      reason: 'Branch merged and obsolete',
+      category: 'destructive',
+    })
+    const ok = await app.request(path, {
       method: 'DELETE',
       headers: {
         ...(await iso.sessionHeaders(admin)),
-        'x-mice-reason': 'Branch merged and obsolete',
-        'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+        ...signed,
+        'x-mice-change-control-id': 'CC-2026-114',
       },
     })
     assert.equal(ok.status, 200)
@@ -152,12 +160,20 @@ await describe('mandatory reason on proxied dataset mutations', async () => {
     } finally {
       restore()
     }
-    const ok = await app.request('/api/repos/rs/r/branches/old', {
+    const path = '/api/repos/rs/r/branches/old'
+    const signed = await regulatedMutationHeaders(admin, {
+      method: 'DELETE',
+      path,
+      body: {},
+      reason: 'Branch merged and obsolete',
+      category: 'destructive',
+    })
+    const ok = await app.request(path, {
       method: 'DELETE',
       headers: {
         ...(await iso.sessionHeaders(admin)),
-        'x-mice-reason': 'Branch merged and obsolete',
-        'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+        ...signed,
+        'x-mice-change-control-id': 'CC-2026-114',
       },
     })
     assert.equal(ok.status, 200)
@@ -222,15 +238,23 @@ await describe('mandatory reason on admin and permission changes', async () => {
     assert.equal(noCat.status, 400)
     assert.equal(((await noCat.json()) as { code: string }).code, 'reason_category_required')
 
-    const ok = await app.request('/auth/namespaces/upd-mgr', {
+    const path = '/auth/namespaces/upd-mgr'
+    const body = { basePermission: 'read' }
+    const signed = await regulatedMutationHeaders(manager, {
+      method: 'PATCH',
+      path,
+      body,
+      reason: 'Tighten default access after review',
+      category: 'privileged_settings',
+    })
+    const ok = await app.request(path, {
       method: 'PATCH',
       headers: {
         ...(await iso.sessionHeaders(manager)),
-        'content-type': 'application/json',
-        'x-mice-reason': 'Tighten default access after review',
-        'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+        ...signed,
+        'x-mice-change-control-id': 'CC-2026-114',
       },
-      body: JSON.stringify({ basePermission: 'read' }),
+      body: JSON.stringify(body),
     })
     assert.equal(ok.status, 200)
     const o = (await outcomes()).find((r) => r.action === 'namespace.settings.update')!
@@ -285,11 +309,30 @@ await describe('declared reason for clients that cannot send a header', async ()
       headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json' },
       body: JSON.stringify({ reason, ttlSec, category, changeControlId }),
     })
-  const pushLike = async () =>
-    app.request('/api/repos/rs/r/commits/abc123/complete', {
+  const pushLike = async (opts?: { reason?: string; category?: string; withSignature?: boolean }) => {
+    const path = '/api/repos/rs/r/commits/abc123/complete'
+    const reason = opts?.reason ?? 'Upload of plate run 42'
+    const category = opts?.category ?? 'data_correction'
+    const session = await iso.sessionHeaders(writer)
+    if (!opts?.withSignature) {
+      return app.request(path, { method: 'POST', headers: session })
+    }
+    const signed = await regulatedMutationHeaders(writer, {
       method: 'POST',
-      headers: await iso.sessionHeaders(writer),
+      path,
+      body: {},
+      reason,
+      category,
     })
+    // Signature only — reason comes from the prior /auth/reason declaration.
+    return app.request(path, {
+      method: 'POST',
+      headers: {
+        ...session,
+        'x-mice-signature-id': signed['x-mice-signature-id']!,
+      },
+    })
+  }
 
   await it('applies to the caller\'s next mutations until it expires', async () => {
     const clock = fakeClock()
@@ -297,11 +340,11 @@ await describe('declared reason for clients that cannot send a header', async ()
     try {
       assert.equal((await pushLike()).status, 400)
       assert.equal((await declare('Upload of plate run 42', 60)).status, 200)
-      assert.equal((await pushLike()).status, 200)
+      assert.equal((await pushLike({ withSignature: true })).status, 200)
       const o = (await outcomes()).at(-1)!
       assert.deepEqual([o.reason, o.reason_source, o.category], ['Upload of plate run 42', 'explicit', 'data_correction'])
       clock.advance(61_000)
-      assert.equal((await pushLike()).status, 400)
+      assert.equal((await pushLike({ withSignature: true })).status, 400)
     } finally {
       restoreClock()
     }
@@ -327,12 +370,20 @@ await describe('declared reason for clients that cannot send a header', async ()
 
 await describe('reason in the audit views', async () => {
   await it('shows reason, source and category in the CSV export', async () => {
-    await app.request('/api/repos/rs/r/branches/old', {
+    const path = '/api/repos/rs/r/branches/old'
+    const signed = await regulatedMutationHeaders(admin, {
+      method: 'DELETE',
+      path,
+      body: {},
+      reason: 'Correct the plate layout',
+      category: 'data_correction',
+    })
+    await app.request(path, {
       method: 'DELETE',
       headers: {
         ...(await iso.sessionHeaders(admin)),
-        'x-mice-reason': 'Correct the plate layout',
-        'x-mice-reason-category': 'data_correction', 'x-mice-change-control-id': 'CC-2026-114',
+        ...signed,
+        'x-mice-change-control-id': 'CC-2026-114',
       },
     })
     const csv = await (await app.request('/auth/audit/export.csv', { headers: await iso.sessionHeaders(admin) })).text()

@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('./app.js')
@@ -62,16 +62,25 @@ beforeEach(async () => {
 })
 afterEach(() => restoreUpstream())
 
-const send = async (method: string, path: string, body?: unknown) =>
-  app.request(path, {
+const send = async (method: string, path: string, body?: unknown) => {
+  const payload = body === undefined ? {} : body
+  const signed = await regulatedMutationHeaders(writer, {
+    method,
+    path,
+    body: payload,
+    reason: 'Routine dataset change',
+    category: 'privileged_settings',
+  })
+  return app.request(path, {
     method,
     headers: {
       ...(await iso.sessionHeaders(writer)),
-      'content-type': 'application/json',
-      'x-mice-reason': 'Routine dataset change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+      ...signed,
+      'x-mice-change-control-id': 'CC-2026-114',
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+}
 
 describe('dataset versions on dataset mutations', () => {
   it('records the branch head before and the resulting commit after a file write', async () => {

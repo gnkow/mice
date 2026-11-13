@@ -37,6 +37,15 @@ const { queryAudit } = await import('./audit.js')
 const { ensurePrincipal } = await import('./authentication/session/session.js')
 const { assignRole } = await import('./rbacStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
+const { regulatedMutationHeaders } = await import('./testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('./auditLedger.js')
+const { randomBytes } = await import('node:crypto')
+useSignatureStore(
+  openSignatureStore(
+    await openLedger({ ...immudbConfig(), prefix: `proxy-author/${randomBytes(4).toString('hex')}/` }),
+  ),
+)
 
 const alice = {
   sub: 'alice',
@@ -63,13 +72,35 @@ assert.equal((await createNamespaceAuthz(alice, 'acme', 'none')).ok, true)
 const app = new Hono()
 app.all('/api/*', (c) => proxyToOxen(c, { user: actor, via: 'session' }))
 
-function send(
+async function send(
   path: string,
-  init: { method?: string; contentType?: string; body?: BodyInit },
+  init: { method?: string; contentType?: string; body?: BodyInit; signatureBody?: unknown },
 ) {
+  const method = init.method ?? 'POST'
+  const ct = (init.contentType ?? '').toLowerCase()
+  let signatureBody: unknown = init.signatureBody ?? {}
+  if (init.signatureBody === undefined && ct.includes('json') && typeof init.body === 'string') {
+    try {
+      signatureBody = JSON.parse(init.body) as unknown
+    } catch {
+      signatureBody = {}
+    }
+  }
+  const signed = await regulatedMutationHeaders(actor, {
+    method,
+    path,
+    body: signatureBody,
+    reason: 'Routine test change',
+    category: 'privileged_settings',
+    jsonContentType: false,
+  })
   return app.request(path, {
-    method: init.method ?? 'POST',
-    headers: { ...(init.contentType ? { 'content-type': init.contentType } : {}), 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+    method,
+    headers: {
+      ...signed,
+      ...(init.contentType ? { 'content-type': init.contentType } : {}),
+      'x-mice-change-control-id': 'CC-2026-114',
+    },
     body: init.body,
   })
 }
@@ -102,10 +133,19 @@ describe('proxy author injection fails closed', () => {
     form.set('name', 'forged')
     form.set('email', 'forged@x.io')
     form.set('file', new Blob(['x']), 'a.txt')
-    const res = await app.request('/api/repos/a/b/file/main/a.txt', {
+    const path = '/api/repos/a/b/file/main/a.txt'
+    const signed = await regulatedMutationHeaders(actor, {
+      method: 'PUT',
+      path,
+      body: {},
+      reason: 'Routine test change',
+      category: 'privileged_settings',
+      jsonContentType: false,
+    })
+    const res = await app.request(path, {
       method: 'PUT',
       body: form,
-      headers: { 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+      headers: { ...signed, 'x-mice-change-control-id': 'CC-2026-114' },
     })
     assert.equal(res.status, 200)
     // The proxy first GETs the prior file entry for lineage; the PUT is the write.

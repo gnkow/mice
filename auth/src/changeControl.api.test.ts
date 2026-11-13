@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
-import { isolatedAuth } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 import { queryAudit } from './audit.js'
 
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
@@ -12,6 +12,14 @@ const { registerNamespaceRoutes } = await import('./namespaceRoutes.js')
 const { auditMutation } = await import('./auditMutation.js')
 const { preparePrincipal } = await import('./authz.js')
 const { sealedSessionCookie } = await import('./testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('./auditLedger.js')
+const { randomBytes } = await import('node:crypto')
+
+const store = openSignatureStore(
+  await openLedger({ ...immudbConfig(), prefix: `cc-api/${randomBytes(4).toString('hex')}/` }),
+)
+useSignatureStore(store)
 
 const manager = t.person('manager')
 await preparePrincipal(manager)
@@ -23,12 +31,6 @@ registerNamespaceRoutes(app, { audit: auditMutation })
 const cookie = async () =>
   sealedSessionCookie({ ...manager, sessionStart: Math.floor(Date.now() / 1000) })
 
-const reasonHeaders = {
-  'content-type': 'application/json',
-  'x-mice-reason': 'Routine settings correction for assay batch',
-  'x-mice-reason-category': 'privileged_settings',
-}
-
 describe('change-control id on namespace mutations', () => {
   it('creates without a change-control id; updates mint or keep a client id', async () => {
     const ns = `cc-${Date.now().toString(36)}`
@@ -39,23 +41,36 @@ describe('change-control id on namespace mutations', () => {
     })
     assert.equal(created.status, 200)
 
-    const minted = await app.request(`/auth/namespaces/${ns}`, {
+    const path = `/auth/namespaces/${ns}`
+    const body1 = { membersCanCreateRepos: false }
+    const mintedHeaders = await regulatedMutationHeaders(manager, {
       method: 'PATCH',
-      headers: { ...reasonHeaders, cookie: await cookie() },
-      body: JSON.stringify({ membersCanCreateRepos: false }),
+      path,
+      body: body1,
+    })
+    const minted = await app.request(path, {
+      method: 'PATCH',
+      headers: { ...mintedHeaders, cookie: await cookie() },
+      body: JSON.stringify(body1),
     })
     assert.equal(minted.status, 200)
     const mintedEvents = (await queryAudit({ namespace: ns, action: 'namespace.settings.update', limit: 10 })).events
     assert.ok(mintedEvents.some((e) => /^CC-\d{8}-[0-9a-f]{8}$/.test(e.change_control_id ?? '')))
 
-    const ok = await app.request(`/auth/namespaces/${ns}`, {
+    const body2 = { membersCanCreateRepos: true }
+    const clientHeaders = await regulatedMutationHeaders(manager, {
+      method: 'PATCH',
+      path,
+      body: body2,
+    })
+    const ok = await app.request(path, {
       method: 'PATCH',
       headers: {
-        ...reasonHeaders,
+        ...clientHeaders,
         'x-mice-change-control-id': 'CC-2026-114',
         cookie: await cookie(),
       },
-      body: JSON.stringify({ membersCanCreateRepos: true }),
+      body: JSON.stringify(body2),
     })
     assert.equal(ok.status, 200)
 

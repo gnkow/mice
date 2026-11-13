@@ -137,14 +137,32 @@ await describe('group grants bind to iss|group_id', async () => {
       },
     })
     const sessionId = await sealSession({ ...admin, sessionStart: Math.floor(Date.now() / 1000) })
-    const res = await app.request(`/auth/namespaces/${ns}/members`, {
+    const { regulatedMutationHeaders } = await import('./testSupport.js')
+    const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
+    const { immudbConfig, openLedger } = await import('./auditLedger.js')
+    const { randomBytes } = await import('node:crypto')
+    useSignatureStore(
+      openSignatureStore(
+        await openLedger({ ...immudbConfig(), prefix: `group-id/${randomBytes(4).toString('hex')}/` }),
+      ),
+    )
+    const path = `/auth/namespaces/${ns}/members`
+    const body = { kind: 'group', group: GROUP, name: 'Quality Assurance', role: 'member' }
+    const signed = await regulatedMutationHeaders(admin, {
+      method: 'PUT',
+      path,
+      body,
+      reason: 'Grant the quality group',
+      category: 'privileged_settings',
+    })
+    const res = await app.request(path, {
       method: 'PUT',
       headers: {
-        'content-type': 'application/json',
-        'x-mice-reason': 'Grant the quality group', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+        ...signed,
+        'x-mice-change-control-id': 'CC-2026-114',
         cookie: `${env.cookieName}=${await sealSessionCookie(sessionId)}`,
       },
-      body: JSON.stringify({ kind: 'group', group: GROUP, name: 'Quality Assurance', role: 'member' }),
+      body: JSON.stringify(body),
     })
     assert.equal(res.status, 200)
     assert.deepEqual(details, [

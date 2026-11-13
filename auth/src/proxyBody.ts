@@ -9,6 +9,11 @@ import {
 /** What the proxy learned from the request body, with author fields forced to the Principal. */
 export type InterpretedBody = {
   body: BodyInit | undefined
+  /**
+   * Body as hashed for the electronic signature: JSON before author injection;
+   * non-JSON mutations use `{}` (path/method/reason bind the write; author fields are server-forced).
+   */
+  signatureBody: unknown
   message?: string
   createNs?: string
   createRepo?: string
@@ -29,6 +34,7 @@ export async function interpretRequestBody(
   reqHeaders: Headers,
 ): Promise<InterpretedBody> {
   let body: BodyInit | undefined
+  let signatureBody: unknown = {}
   const contentType = (c.req.header('content-type') ?? '')
     .split(';')[0]!
     .trim()
@@ -63,6 +69,8 @@ export async function interpretRequestBody(
         // Mice-only hints for lineage; oxen-server must not see them.
         form.delete('copy_from')
         form.delete('restore_from')
+        // Author fields are server-forced; ceremony binds method/path/reason, not multipart bytes.
+        signatureBody = {}
         body = injectAuthorFormData(form, user)
         // Let fetch set multipart boundary
         reqHeaders.delete('content-type')
@@ -83,6 +91,7 @@ export async function interpretRequestBody(
           ) {
             // Unstage sends an all-string path array, which cannot carry author fields.
             body = text
+            signatureBody = value
             reqHeaders.set('content-type', 'application/json')
           } else {
             rejection = 'json_not_object'
@@ -101,16 +110,19 @@ export async function interpretRequestBody(
           if (typeof parsed.new_path === 'string' && parsed.new_path.trim()) {
             moveNewPath = parsed.new_path.trim()
           }
+          signatureBody = parsed
           body = JSON.stringify(injectAuthorJson(parsed, user))
           reqHeaders.set('content-type', 'application/json')
         }
       }
     } else if (contentType === 'application/octet-stream') {
       body = await c.req.arrayBuffer()
+      signatureBody = {}
       if (!isAuthorFreeBinaryRoute(method, pathname)) rejection = 'binary_on_unlisted_route'
       reqHeaders.set('content-type', 'application/octet-stream')
     } else if (contentType === 'application/gzip') {
       body = await c.req.arrayBuffer()
+      signatureBody = {}
       if (!isAuthorFreeBinaryRoute(method, pathname)) rejection = 'binary_on_unlisted_route'
       reqHeaders.set('content-type', 'application/gzip')
     } else {
@@ -134,6 +146,7 @@ export async function interpretRequestBody(
 
   return {
     body,
+    signatureBody,
     message,
     createNs,
     createRepo,

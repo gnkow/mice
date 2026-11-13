@@ -15,9 +15,14 @@ import {
   type ResolvedReason,
 } from '../../auditReason.js'
 import {
+  allocateChangeControlId,
   CHANGE_CONTROL_HEADER,
   resolveChangeControl,
 } from '../../changeControl.js'
+import {
+  resolveMutationSignature,
+  SIGNATURE_HEADER,
+} from '../../mutationSignature.js'
 import { denialResponse } from '../../decisionHttp.js'
 import type { Decision } from '../../authz.js'
 import type { AuditFields } from '../../routeDeps.js'
@@ -106,10 +111,15 @@ export function guarded(
       const parsed = await parseBody(c, bodyPolicy, invalidBody)
       if (!parsed.ok) return parsed.res
       body = parsed.body
+    } else if (needsReason) {
+      // Need the body for the signed mutation document; handlers must use args.body.
+      const parsed = await parseBody(c, 'optional')
+      body = parsed.body
     }
     const base = { actor: actorFromUser(user), via, method: c.req.method, path: c.req.path }
     let reason: ResolvedReason | undefined
     let changeControlId: string | undefined
+    let signatureId: string | undefined
     if (needsReason) {
       const resolved = resolveReason({
         actor: user,
@@ -124,12 +134,34 @@ export function guarded(
       reason = resolved.value
       changeControlId = resolveChangeControl({
         id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
-        required: true,
+        required: false,
       })
+      const signed = await resolveMutationSignature({
+        id: c.req.header(SIGNATURE_HEADER),
+        signer: user,
+        method: c.req.method,
+        path: c.req.path,
+        reason: reason.reason,
+        category: reason.category ?? '',
+        body,
+      })
+      if (!signed.ok) {
+        await appendAudit({
+          ...base,
+          status: 400,
+          action: 'request.rejected',
+          detail: { reason: signed.rejection.code },
+        })
+        return c.json({ error: signed.rejection.detail, code: signed.rejection.code }, 400)
+      }
+      signatureId = signed.signatureId
+      changeControlId =
+        changeControlId || signed.record.changeControlId || allocateChangeControlId()
     }
     const reasonFields = {
       ...reason,
       ...(changeControlId ? { change_control_id: changeControlId } : {}),
+      ...(signatureId ? { signature_id: signatureId } : {}),
     }
     if (mutates) {
       try {

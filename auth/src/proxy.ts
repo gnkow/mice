@@ -22,10 +22,16 @@ import {
   type ResolvedReason,
 } from './auditReason.js'
 import {
+  allocateChangeControlId,
   CHANGE_CONTROL_HEADER,
   mutationNeedsChangeControl,
   resolveChangeControl,
 } from './changeControl.js'
+import {
+  resolveMutationSignature,
+  SIGNATURE_HEADER,
+  type MutationSignatureRejection,
+} from './mutationSignature.js'
 import { createDatasetCapture, createLineageCapture, type DatasetVersions } from './proxyLineage.js'
 import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
@@ -58,6 +64,7 @@ const HOP_BY_HOP = new Set([
   REASON_HEADER,
   REASON_CATEGORY_HEADER,
   CHANGE_CONTROL_HEADER,
+  SIGNATURE_HEADER,
 ])
 
 function filterRequestHeaders(headers: Headers): Headers {
@@ -122,6 +129,36 @@ async function rejectReason(
       status: 'error',
       status_message: rejection.code,
       error: { detail: rejection.detail },
+    }),
+    { status: 400, headers: { 'content-type': 'application/json' } },
+  )
+}
+
+async function rejectSignature(
+  user: SessionUser,
+  via: AuditVia,
+  method: string,
+  pathname: string,
+  rejection: MutationSignatureRejection,
+  scope: { namespace?: string; repo?: string },
+): Promise<Response> {
+  await appendAudit({
+    actor: actorFromUser(user),
+    via,
+    method,
+    path: pathname,
+    status: 400,
+    action: 'request.rejected',
+    ...(scope.namespace ? { namespace: scope.namespace } : {}),
+    ...(scope.repo ? { repo: scope.repo } : {}),
+    detail: { reason: rejection.code },
+  })
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: rejection.code,
+      error: { detail: rejection.detail },
+      code: rejection.code,
     }),
     { status: 400, headers: { 'content-type': 'application/json' } },
   )
@@ -211,6 +248,7 @@ export async function proxyToOxen(
 
   const {
     body,
+    signatureBody,
     message,
     createNs,
     createRepo,
@@ -260,6 +298,7 @@ export async function proxyToOxen(
 
   let reason: ResolvedReason | undefined
   let changeControlId: string | undefined
+  let signatureId: string | undefined
   if (mutating && mutationNeedsReason(classified.action)) {
     const resolved = resolveReason({
       actor: user,
@@ -272,8 +311,26 @@ export async function proxyToOxen(
       return rejectReason(user, via, method, pathname, resolved.rejection, { namespace: ns, repo })
     }
     reason = resolved.value
-  }
-  if (mutating && mutationNeedsChangeControl(classified.action)) {
+    changeControlId = resolveChangeControl({
+      id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
+      required: false,
+    })
+    const signed = await resolveMutationSignature({
+      id: c.req.header(SIGNATURE_HEADER),
+      signer: user,
+      method,
+      path: pathname,
+      reason: reason.reason,
+      category: reason.category ?? '',
+      body: signatureBody,
+    })
+    if (!signed.ok) {
+      return rejectSignature(user, via, method, pathname, signed.rejection, { namespace: ns, repo })
+    }
+    signatureId = signed.signatureId
+    changeControlId =
+      changeControlId || signed.record.changeControlId || allocateChangeControlId()
+  } else if (mutating && mutationNeedsChangeControl(classified.action)) {
     changeControlId = resolveChangeControl({
       id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
       required: true,
@@ -323,6 +380,7 @@ export async function proxyToOxen(
     message,
     ...reason,
     ...(changeControlId ? { change_control_id: changeControlId } : {}),
+    ...(signatureId ? { signature_id: signatureId } : {}),
     ...versions,
     detail: {
       ...(bodyWorkspaceId ? { workspace_id: bodyWorkspaceId } : {}),
