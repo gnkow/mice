@@ -13,7 +13,7 @@ import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
 import { actorFromUser, appendAudit } from '../../audit.js'
 import { canonicalIssuer } from '../session/principal.js'
 import { recordIdpCheck } from '../compliance/idpOutage.js'
-import { hasIdpDisplayName } from './idpDisplayName.js'
+import { decideIdpDisplayNameGate } from './idpDisplayName.js'
 import { decideLoginDirectoryStatus } from './loginDirectoryStatus.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
@@ -154,18 +154,19 @@ async function finishLogin(
       if (directoryDecision.recordDisabled) await recordIdpDisabled(user)
       return fail(directoryDecision.httpStatus, directoryDecision.message, isReauth)
     }
-    if (!hasIdpDisplayName(account.name)) {
+    const nameGate = decideIdpDisplayNameGate(account.name)
+    if (!nameGate.ok) {
       const iss = canonicalIssuer(user.iss)
       await appendAudit({
         actor: { sub: user.sub, iss, email: user.email, name: '' },
         via: 'session',
         method: 'GET',
         path: '/auth/callback',
-        status: 403,
+        status: nameGate.status,
         action: 'auth.login.failed',
         message: `Refused login ${iss}|${user.sub}`,
       })
-      return fail(403, 'Your account has no name in the identity provider.', isReauth)
+      return fail(nameGate.status, nameGate.error, isReauth)
     }
     const reenable = await considerReenable(user, async (event) => {
       const stored = await appendAudit({

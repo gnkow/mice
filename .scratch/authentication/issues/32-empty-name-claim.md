@@ -30,3 +30,9 @@ The display name comes from the IdP user record read during the status check (`f
 - **Audit:** holds (`emptyName.test.ts`, IdP status-check refusal).
 - **Deepen:** extracted `composeIdpDisplayName` / `hasIdpDisplayName` helper; directory compose + login/requireAuth gates call it; loginFlow touched only on the empty-name line.
 - **Tests:** `auth/src/authentication/oidc/idpDisplayName.test.ts`, `auth/src/authentication/oidc/emptyName.test.ts`.
+
+2026-11-13 — deep-api Deepen (auto-pick Top): **holds** + integration gap closed.
+- **Seams:** `decideIdpDisplayNameGate` / `composeIdpDisplayName`; login + `evaluateLiveIdpAccess` adapters.
+- **Deepen:** Collapse refuse copy/status into `decideIdpDisplayNameGate` (in-process). `loginFlow` empty-name line + live IdP access call it; no wholesale requireAuth rewrite.
+- **Integ:** `emptyName.integration.test.ts` — login refuses blank directory name; `evaluateLiveIdpAccess` returns 403; named IdP still signs in.
+- **Files:** `idpDisplayName.ts`, `idpDisplayName.test.ts`, `idpCheck.ts`, `loginFlow.ts` (gate line), `emptyName.integration.test.ts`.
