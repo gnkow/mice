@@ -18,3 +18,13 @@ Signing decodes the stored token and treats MFA heuristically; a missing `auth_t
 - [x] Missing `auth_time`, `acr` or `amr` refuses the signature, audited
 - [x] Evidence stored: `auth_time`, `acr`, `amr`, key id, verification time, issuer, IdP session and token ids
 - [x] Tests for stale, missing and weak claims (`signing/signingEvidence.test.ts`, local signing key rather than the compose IdP)
+
+## Comments
+
+2026-11-13: Checkmate audit — **holds** (re-verify + refuse missing/stale/weak; full evidence stored; proving tests in `signingEvidence.test.ts`).
+
+**Deepen (auto-pick):** Collapse claim completeness into deep `assessSigningEvidenceCompleteness(payload, age)` (in-process). `verifySigningEvidence` verifies JWT then completeness, then `assembleSignatureEvidence` only on ok — assembly stays storage-shaped; completeness owns refusal.
+
+**Files:** `auth/src/authentication/signing/signingEvidence.ts`, `signingEvidence.test.ts` (`assembleSignatureEvidence` unchanged interface)
+
+**Tests:** `signingEvidence.test.ts` (completeness + verify + assemble)
