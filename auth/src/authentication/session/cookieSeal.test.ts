@@ -3,6 +3,7 @@
  */
 
 import '../../db/testSchema.js'
+import { randomBytes } from 'node:crypto'
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { isolatedAuth } from '../../testSupport.js'
@@ -10,10 +11,44 @@ import { isolatedAuth } from '../../testSupport.js'
 const ctx = isolatedAuth()
 after(() => ctx.restore())
 
-const { sealSessionCookie, unsealSessionCookie } = await import('./cookieSeal.js')
+const { sealSessionCookie, unsealSessionCookie, sealWithKey, unsealWithKeys } = await import('./cookieSeal.js')
 const { normalRotation, emergencyRotation, ensureBootstrapKey } = await import('./sealKeys.js')
 const { getDb } = await import('../../db/database.js')
 const { sealKeys } = await import('../../db/schema.js')
+
+describe('sealWithKey / unsealWithKeys (pure crypto seam)', () => {
+  const keyA = {
+    id: 'key-a',
+    keyMaterial: randomBytes(32).toString('base64'),
+  }
+  const keyB = {
+    id: 'key-b',
+    keyMaterial: randomBytes(32).toString('base64'),
+  }
+
+  it('seals and unseals with an injected key', () => {
+    const sealed = sealWithKey('session-abc', keyA)
+    assert.equal(sealed.split('.').length, 4)
+    assert.equal(unsealWithKeys(sealed, [keyA]), 'session-abc')
+  })
+
+  it('unseals with a rotated key still in the ring', () => {
+    const sealed = sealWithKey('session-abc', keyA)
+    assert.equal(unsealWithKeys(sealed, [keyB, keyA]), 'session-abc')
+  })
+
+  it('rejects when no key in the ring can decrypt', () => {
+    const sealed = sealWithKey('session-abc', keyA)
+    assert.equal(unsealWithKeys(sealed, [keyB]), null)
+  })
+
+  it('rejects a tampered ciphertext', () => {
+    const sealed = sealWithKey('session-abc', keyA)
+    const parts = sealed.split('.')
+    parts[2] = parts[2]!.slice(0, -1) + (parts[2]!.endsWith('A') ? 'B' : 'A')
+    assert.equal(unsealWithKeys(parts.join('.'), [keyA]), null)
+  })
+})
 
 describe('Cookie Sealing with Key Ring', async () => {
   // Clean up and bootstrap key before each test
