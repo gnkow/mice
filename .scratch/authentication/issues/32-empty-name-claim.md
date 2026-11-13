@@ -19,7 +19,14 @@ The display name comes from the IdP user record read during the status check (`f
 
 ## Code
 
+- `auth/src/authentication/oidc/idpDisplayName.ts`
 - `auth/src/authentication/directory/directoryKeycloak.ts`
-- `auth/src/authentication/oidc/loginFlow.ts`
+- `auth/src/authentication/oidc/loginFlow.ts` (empty-name gate line only)
 - `auth/src/authentication/session/requireAuth.ts`
 - `auth/src/authentication/oidc/oidcClaims.ts`
+
+## Comments
+
+- **Audit:** holds (`emptyName.test.ts`, IdP status-check refusal).
+- **Deepen:** extracted `composeIdpDisplayName` / `hasIdpDisplayName` helper; directory compose + login/requireAuth gates call it; loginFlow touched only on the empty-name line.
+- **Tests:** `auth/src/authentication/oidc/idpDisplayName.test.ts`, `auth/src/authentication/oidc/emptyName.test.ts`.
