@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CustomRolesSection } from '../components/CustomRolesSection'
 import { DirectoryPicker } from '../components/DirectoryPicker'
+import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { confirmDelete } from '../lib/confirmDelete'
@@ -272,7 +273,7 @@ export function NamespaceSettingsPage() {
                     </p>
                   )}
                   {state.data.groupBindingWarning && (
-                    <p className="flash flash-error" role="status">
+                    <p className="flash flash-warn" role="status">
                       {state.data.groupBindingWarning}
                     </p>
                   )}
@@ -298,18 +299,11 @@ export function NamespaceSettingsPage() {
                     >
                       <div className="ns-member-main">
                         {m.kind === 'group' ? (
-                          <>
-                            <code className="ns-member-sub">{m.name || m.group}</code>
-                            <span className="muted small">
-                              {m.bindingMode === 'name-based'
-                                ? 'Name-based binding'
-                                : m.bindingMode === 'id-based'
-                                  ? 'ID-based binding'
-                                  : m.name && m.name !== m.group
-                                    ? m.group
-                                    : 'Group'}
-                            </span>
-                          </>
+                          <GroupPrincipalLabel
+                            group={m.group}
+                            name={m.name}
+                            bindingMode={m.bindingMode}
+                          />
                         ) : (
                           <>
                             <code className="ns-member-sub">{m.sub}</code>
