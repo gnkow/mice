@@ -1,4 +1,4 @@
-Status: needs-info
+Status: ready-for-agent
 Blocked on: nothing from lease renewals (strict, no exemption).
 
 # 03 — Audit (PLAT-AUDIT)
@@ -9,7 +9,7 @@ Regulated users need proof of who changed what, when, and with what result, that
 
 ## Solution
 
-An Audit module over immudb with append, read range and verify. Every mutation writes an Intent event before it takes effect, then the effect, then an Outcome event (success or failure), linked by `intent_id`. Append failure refuses the mutation with 503. Events are appended to immudb directly (no outbox). A reconciler flags intents without outcome.
+An Audit module over immudb with append, read range and verify. Every mutation writes an Intent event before it takes effect, then the effect, then an Outcome event (success or failure), linked by `intent_id`. Intent append failure refuses the mutation with 503. Events are appended to immudb directly (no outbox). Outcome append is best-effort after the effect; unpaired Intents remain visible and queryable. An orphan-aging alert notifies operators; no reconciler invents Outcomes.
 
 ## User Stories
 
@@ -17,7 +17,7 @@ An Audit module over immudb with append, read range and verify. Every mutation w
 2. As an auditor, I want to verify the trail with immudb proofs, so that tamper evidence is demonstrable.
 3. As a compliance lead, I want every mutation refused when the audit store is down, so that no unrecorded change happens.
 4. As an auditor, I want each Intent linked to its Outcome, so that I see whether a mutation completed.
-5. As an auditor, I want orphaned intents resolved to a real outcome, so that crashes leave no ambiguity.
+5. As an auditor, I want unpaired Intents to stay visible and alertable, so that crashes leave an honest gap for investigation (not a software-invented Outcome).
 6. As an auditor, I want the dataset head before and after each mutation, so that I know which data version was affected.
 7. As an auditor, I want reason and change-control id on the event, so that changes are justified.
 8. As an auditor, I want to export events in a readable form, so that inspectors can review.
@@ -29,10 +29,10 @@ An Audit module over immudb with append, read range and verify. Every mutation w
 
 ## Implementation Decisions
 
-- immudb is the only audit store; there is no home-grown hash chain (ADR 0005).
-- Intent failure returns 503 for every mutation (no exceptions, including lease renewals). Reads continue; there is no outbox and no held output ("audit unavailable, nothing was saved"). Failed outcomes are audited.
+- immudb is the only audit **evidence** store; there is no home-grown hash chain (ADR 0005). A derived Postgres query index may exist for filter performance; it is not evidence.
+- Intent failure returns 503 for every mutation (no exceptions, including lease renewals). Reads continue; there is no outbox and no held output ("audit unavailable, nothing was saved"). Failed outcomes are audited when the Outcome append succeeds.
 - A health probe and operator alert on audit degradation are required; a single immudb instance is unsupported for production.
-- The reconciler runs as one leader (PostgreSQL advisory lock) and flags intents without outcome with its own audit record; it never repairs or infers results.
+- There is no Outcome reconciler and no inferred Outcomes (GxP `#98` wontfix). An Intent without an Outcome is the flag. An orphan-aging alert (default 15 minutes, env-configurable) notifies instance admins; it does not append a ledger flag event or repair the mutation.
 - The full e-signature record lives in immudb with `esign.*` events; PostgreSQL holds only an index (04).
 - The dataset content digest and oxen commit id are recorded before and after each proxied mutation as `{base, head}`; locks are used only where oxen is not atomic.
 - Reason and change-control id are first-class event fields; ownership split with GxP is that this spec stores them and 04 decides when they are required.
@@ -40,84 +40,93 @@ An Audit module over immudb with append, read range and verify. Every mutation w
 - Events reference repositories by stable id plus the name at event time.
 - Every export is audited (filters and row count); browsing reads are recorded as summary events.
 - Multi-instance safe: no instance-local queues.
+- Chain anchor (no new platform infra): the IQP records the genesis immudb root (and the audit-export **public** key). Verify/export/admin health expose `{txid, root}` for IQ evidence and change-control filings. No WORM bucket or HSM required.
+- Export bundle: signed manifest (dedicated export key; pubkey in IQP) + CSV + PDF + verification/proofs.
 
 ## Testing Decisions
 
 - HTTP-level tests: perform a mutation, read the Intent and Outcome through the read API, kill the audit store and expect 503.
-- Reconciliation tested by simulating a crash between proxying and the Outcome append.
-- Prior art: existing audit API tests on the immudb container.
+- Orphan visibility tested by suppressing Outcome append; alert tested when unpaired Intent age exceeds the threshold.
+- Prior art: existing audit API tests on the immudb container. Destructive immudb-fault tests run in a serial suite (no parallel CI workers sharing one immudb for those cases).
 
 ## Out of Scope
 
-Retention and purge, WORM storage beyond immudb.
+Retention and purge, WORM storage beyond immudb, Outcome reconciler / inferred Outcomes, Postgres outbox / "audit pending" header.
 
 ## Further Notes
 
 The extra oxen read adds latency to every mutation; the budget is p95 overhead of 250 ms, tested.
 
-Open grilling questions: see questions.md in this folder.
-
 ## Alignment with 04 (2026-11-05)
 
 04 is authoritative. Changed here:
-- Order is intent, effect, outcome; failed outcomes are audited.
+- Order is intent, effect, outcome; failed outcomes are audited when recorded.
 - Audit outage: all mutations refused, reads continue. No outbox, no "audit pending" header, no held output or finalizing state. Health probe and alert required; single immudb unsupported in production.
-- The reconciler only flags intents without outcome (own audit record, no repair or inference).
+- No reconciler invents or flags Outcomes in the ledger; unpaired Intents are the control (alert only).
 - Signature records live in immudb (`esign.*`), PostgreSQL index non-authoritative.
 
-Superseded where conflicting: Q1 and Q9 (outbox and relay, compensating Outcome via outbox), Q3/Q4/Q5 (inferred outcomes, "result being confirmed"), Q21 ("audit pending" header, bounded retry then real result), 04-Q12 held output, 09-Q9 finalizing state.
+Superseded where conflicting: Q1 and Q9 (outbox and relay, compensating Outcome via outbox), Q3/Q4/Q5 (inferred outcomes, "result being confirmed", ledger flag reconciler), Q21 ("audit pending" header, bounded retry then real result), 04-Q12 held output, 09-Q9 finalizing state.
 
-## Decisions from grilling
+## Deep-api grill lock (2026-11-13)
 
-Write path and reconciliation
-- A central audit-writer path uses the Postgres outbox with batching; single-writer contention is spiked against a latency SLO (Q1).
-- The outbox row is written in the same transaction as the domain change and relayed to immudb; the Intent precedes the mutation; a compensating Outcome is written if the database commit fails (Q9).
-- One reconciler leader via PostgreSQL advisory lock; the Outcome is idempotent by intent id (Q4).
-- An Intent is orphaned after 2 minutes (configurable); the UI shows "result being confirmed"; a QA alert fires after 15 minutes (Q5).
-- Outcome append uses bounded inline retry, then returns the real result with an "audit pending" header and the reconciler completes it (Q21).
-- Event ids are deterministic and client-supplied; a conflict means already stored (Q22).
-- Inherited: absolute fail-closed (Q2), digest-verifiable inference else unknown (Q3), oxen commit id or optimistic base-verify (Q6), database time ordering (Q18), successes to immudb and failures to the operational log (Q20), no service principals (Q24).
+Authoritative over older "Decisions from grilling" bullets that conflict.
+
+| Topic | Lock |
+| --- | --- |
+| Write model | No outbox; Intent fail-closed; Outcome best-effort after effect |
+| Orphans (US5) | Visible/queryable; `#98` wontfix; 15‑min orphan-aging **alert** (env); no ledger flag event |
+| External anchor (Q10) | **(g′)** IQP genesis root + export pubkey; expose root on verify/export/health; no WORM/HSM |
+| Export (US8/Q16) | Signed manifest + CSV + **PDF** |
+| Query scale (Q14) | Derived Postgres index (not evidence); immudb remains proof store |
+| Secrets (Q25) | Allowlist schema per action + secret scanner rejecting token patterns |
+| Schema (Q19) | Schema version per event + upcasters; action names never renamed (aliases only) |
+| Browse audit (Q15/US13) | Export audited; browsing reads as summary events |
+| Holds deepen | Auto-pick `improve-codebase-architecture` Top recommendation, then `tdd` |
+| Board scope | Full: gaps + deepen holds + IQP root expose + PG index |
+| Process | Clear `#4` needs-info, mint `area:audit` sub-issues, one commit per ticket |
+
+## Decisions from grilling (historical — superseded where conflicting)
+
+The following bullets are retained for archaeology. Where they conflict with **Alignment with 04** or **Deep-api grill lock**, the lock wins.
+
+Write path and reconciliation — **SUPERSEDED** (outbox, audit-pending, ledger reconciler): see grill lock.
+- ~~Postgres outbox + batching~~ → direct immudb append.
+- ~~Compensating Outcome via outbox~~ → none.
+- ~~Reconciler completes Outcome / ledger flag~~ → `#98` wontfix; alert only.
+- Event ids deterministic/client-supplied where used; conflict means already stored (Q22) — still valid if implemented.
+- Inherited: absolute fail-closed on Intent (Q2), oxen commit id / observed base-head (Q6), database time ordering (Q18), no service principals (Q24).
 
 Evidence and integrity
-- The dataset content digest plus oxen commit id are recorded before and after (Q7).
-- The immudb root hash is published externally at intervals and verified on schedule (Q10).
-- immudb is pinned; CI cross-checks against immudb tooling; the official auditor runs in production (Q11).
-- Scheduled verify raises an alert and an integrity-incident event; GXP_STRICT flips to read-only on failure (Q12).
-- A derived Postgres query index (not evidence) is monthly partitioned and verified (Q14).
-- immudb follower replication plus scheduled snapshots are in scope now, exempt from the earlier backup deferral (Q17).
-- Overhead budget: p95 mutation overhead at most 250 ms, tested; uploads check at start and publish (Q8).
+- Dataset content digest plus oxen commit id before/after (Q7) — still in scope.
+- External root: **grill lock (g′)** replaces "publish to external sink" (Q10).
+- immudb pinned; CI cross-check; official auditor in production (Q11).
+- Scheduled verify + alert + integrity-incident; GXP_STRICT read-only option (Q12) — residual interaction with no break-glass remains a RISK.
+- Derived Postgres query index + verification (Q14) — **in scope** per grill lock.
+- immudb follower replication + snapshots (Q17); p95 ≤250 ms (Q8).
 
 Schema, export and access
-- Each event carries a schema version with upcasters; action names are never renamed, aliases only (Q19).
-- An allowlist schema per action plus a secret scanner that rejects token patterns (Q25).
-- Every export is audited with filters and row count; browsing reads become summary events (Q15).
-- The export bundle holds proofs, a signed manifest and human-readable CSV/PDF (Q16).
-- A distinct Auditor role; no self-assignment without a second admin; QA alert; audit-of-audit by others (Q23).
-- Legal-retention stance inherited (Q13).
-- No parallel CI workers share immudb; the destructive suite is serial (Q26, interpretation).
+- Schema version + upcasters; aliases not renames (Q19) — in scope.
+- Allowlist + secret scanner (Q25) — in scope.
+- Export audited; browse summaries (Q15) — in scope.
+- Export: signed manifest + CSV + PDF (Q16) — in scope per grill lock.
+- Auditor role / SoD (Q23); legal retention inherited (Q13); serial destructive CI (Q26) — CONFIRM interpreted as serial suite.
 
 ## Conflicts and open risks
 
 - Lease renewals: audited per renewal (08 Q18 revised); RESOLVED. Event volume must be capacity-planned.
-- Q26: the answer was truncated; the interpretation (serial destructive suite, no parallel CI workers) needs CONFIRM.
-- Q17 contradicts the former "backup of immudb out of scope"; the spec is corrected, and 04 Q16 and 16 Q2 make backup and restore a hard start gate.
-- Q15 versus 02 Q9: browsing reads are summarized per page or session; sensitive reads and bypass mutations are individual events. Align the summary granularity.
-- Q15 contradicts the earlier "export reads are not audited" line; fixed.
-- Q12: the read-only flip on integrity failure is itself a mutation freeze; it interacts with 15 Q7 where break-glass is declined (incident-response RISK).
-- Q21: the "audit pending" header lets a user see a result before its Outcome is stored; the reconciler must guarantee completion.
-- Q5: a QA alert after 15 minutes depends on 16 Q4/Q5 availability targets; unresolved until set.
-- Q1: single-writer contention is only spiked; a failed spike would force a redesign.
-- Q10: external publication of the root hash needs a destination chosen by the owner; not decided.
-- Q23 and 04 Q8: signature records live in immudb with a Postgres index only; keep the index non-authoritative.
-- Q9: the compensating Outcome after a failed database commit is an exception to "Outcome follows the mutation" and must be documented in the event schema.
+- Q26: serial destructive suite interpretation — accepted for this board; revisit if CI topology changes.
+- Q17 vs former backup deferral: OVERRODE; backup/restore remain a start gate (04/16).
+- Q15 vs 02 Q9: summary granularity for routine vs sensitive reads — implement page/session summaries; refine per endpoint if AuthZ disagrees.
+- Q12 read-only flip vs no break-glass (15 Q7): incident-response RISK unchanged.
+- Q23 and 04 Q8: signature records in immudb; Postgres index non-authoritative.
+- Outcome after successful mutation can still be missing under immudb fault: accepted under GxP (honest orphan + alert), not an outbox redesign.
 
 ---
 
 # Open Questions
 
-
-Status: spec ready-for-agent, but it rests on unproven assumptions: fail-closed on every mutation, an oxen-inferring reconciler, and a head read-plus-lock oxen does not provide. Code today has Intent/Outcome and a self-written immudb transaction verifier (ADR 0005 note), but no reconciler, no locking and no strict mode.
-Biggest risks: immudb becomes a single point of failure for the whole platform; "inferred" outcomes are not evidence; tamper evidence has no external anchor; "forever" retention collides with privacy and cost.
+Status: grill-locked 2026-11-13 (see **Deep-api grill lock**). Historical Q1–Q26 below; answers that conflict with the lock are superseded (notably outbox Q1/Q9/Q21, inferred/reconciler Q3–Q5, external WORM sink Q10 → IQP (g′)).
+Biggest residual risks: immudb is still a write SPOF for mutations; forever retention vs privacy; Q12 integrity→read-only with no break-glass.
 
 ## Q1 [Impl] immudb is a single writer, yet N BFF instances and fail-closed-on-everything depend on it
 Every mutation on every BFF instance needs a synchronous immudb append before it proceeds, and the cross-cutting decision removes all exemptions. immudb replicates read-only; there is one write node. A node restart, disk-full or upgrade therefore stops all writes platform-wide, including favorites, notification read-marks and lineage. Having N instances buys no write availability at all.
