@@ -30,7 +30,6 @@ const PATHS: Array<[string, string, string, BodyInit?]> = [
   ['namespace', 'GET', '/auth/namespaces'],
   ['repo', 'GET', '/api/repos/mfa-ns/data'],
   ['lineage', 'GET', '/auth/lineage?namespace=mfa-ns&repo=data&path=a.csv'],
-  ['signing', 'POST', '/auth/sign/prepare', '{}'],
 ]
 
 describe('Auditor MFA on every decision path (#17)', () => {
@@ -48,6 +47,21 @@ describe('Auditor MFA on every decision path (#17)', () => {
       assert.notEqual((await call(withMfa(auditor))).status, 403)
     })
   }
+
+  it('refuses signing for an Auditor with or without MFA (#13)', async () => {
+    const call = async (user: typeof auditor) =>
+      app.request('/auth/sign/prepare', {
+        method: 'POST',
+        headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json' },
+        body: '{}',
+      })
+    const noMfa = await call(auditor)
+    assert.equal(noMfa.status, 403)
+    assert.match(await noMfa.text(), new RegExp(REASON))
+    const withEvidence = await call(withMfa(auditor))
+    assert.equal(withEvidence.status, 403)
+    assert.match(await withEvidence.text(), /Auditor role cannot sign/)
+  })
 
   it('still lets an Auditor without MFA read /auth/me so the UI can explain', async () => {
     assert.equal((await app.request('/auth/me', { headers: await iso.sessionHeaders(auditor) })).status, 200)

@@ -28,3 +28,7 @@ Expiry, read-only enforcement, MFA gating (session id_token `acr`/`amr`) and per
 - [x] Every Auditor read appends an audit event with that Principal
 - [x] No impersonation or support-login route exists
 - [x] The auditor view can open the signature evidence stored by authentication issue 26
+
+## Comments
+
+**Deep-api Close (2026-11-13):** Audit found `/auth/sign/*` allowed MFA Auditors. Closed in `requireSigningAccess` (`AUDITOR_CANNOT_SIGN`). Unit: `signingAccess.test.ts`. Integration: `auditorMfaEveryRoute.test.ts` signing case.

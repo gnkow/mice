@@ -79,6 +79,37 @@ describe('requireSigningAccess', () => {
     assert.match(body.message, /re-authenticate/)
   })
 
+  it('refuses an Auditor role even with MFA evidence', async () => {
+    const auditor = { ...iso.person('access-auditor'), name: 'Access Auditor' }
+    await iso.grantRole(auditor, 'auditor')
+    const { withMfa } = await import('../../testSupport.js')
+    const app = new Hono()
+    app.post('/probe', async (c) => {
+      const { getSession } = await import('../session/session.js')
+      const user = await getSession(c)
+      assert.ok(user)
+      const result = await requireSigningAccess(c, user, {
+        freshnessSec: 60,
+        sessionIdleSec: 900,
+        nowSec: now(),
+      })
+      if (!result.ok) return result.response
+      return c.json({ ok: true })
+    })
+    const headers = {
+      ...(await iso.sessionHeaders({
+        ...withMfa(auditor),
+        authTime: now() - 5,
+        lastActive: now() - 10,
+      } as typeof auditor)),
+      'content-type': 'application/json',
+    }
+    const res = await app.request('/probe', { method: 'POST', headers })
+    assert.equal(res.status, 403)
+    const body = (await res.json()) as { error: string }
+    assert.match(body.error, /Auditor/i)
+  })
+
   it('allows when step-up is fresh and lastActive is inside the idle window', async () => {
     const app = new Hono()
     app.post('/probe', async (c) => {
