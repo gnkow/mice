@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { ADMIN_MINIMUM_ERROR, decideAdminMinimum } from './adminMinimum.js'
+import {
+  ADMIN_MINIMUM_ERROR,
+  decideAdminMinimum,
+  remainingAdminIdsAfterRemoval,
+} from './adminMinimum.js'
 
 describe('decideAdminMinimum (#39)', () => {
+  it('counts remaining admins after the target is removed', () => {
+    assert.deepEqual(remainingAdminIdsAfterRemoval([1, 2, 3], 2), [1, 3])
+    assert.deepEqual(remainingAdminIdsAfterRemoval([1, 2], 1), [2])
+  })
+
   it('refuses removing an active admin when two or fewer remain', () => {
     assert.deepEqual(decideAdminMinimum({ activeAdminIds: [1, 2], targetPrincipalId: 1 }), {
       allow: false,
