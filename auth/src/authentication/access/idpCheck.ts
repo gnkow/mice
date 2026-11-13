@@ -8,7 +8,7 @@
 
 import type { SessionUser } from '../session/session.js'
 import { directoryNow, type DirectoryUserState } from '../directory/directory.js'
-import { hasIdpDisplayName } from '../oidc/idpDisplayName.js'
+import { decideIdpDisplayNameGate } from '../oidc/idpDisplayName.js'
 
 export type LiveIdpLookup = (sub: string) => Promise<DirectoryUserState>
 
@@ -24,7 +24,6 @@ export type LiveIdpAccessResult =
     }
 
 const UNAVAILABLE = 'Service Unavailable - IdP check failed'
-const NO_NAME = 'Your account has no name in the identity provider.'
 
 /**
  * Live IdP access decision for an authenticated request.
@@ -56,8 +55,9 @@ export async function evaluateLiveIdpAccess(
     }
   }
 
-  if (!hasIdpDisplayName(account.name)) {
-    return { ok: false, reachable: true, status: 403, error: NO_NAME, account }
+  const nameGate = decideIdpDisplayNameGate(account.name)
+  if (!nameGate.ok) {
+    return { ok: false, reachable: true, status: nameGate.status, error: nameGate.error, account }
   }
 
   return { ok: true, reachable: true, account }
