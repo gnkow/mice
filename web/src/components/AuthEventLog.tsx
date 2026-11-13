@@ -1,9 +1,19 @@
-import { Shield } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import {
+  AlertTriangle,
+  Ban,
+  FileText,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  Shield,
+  Smartphone,
+  type LucideIcon,
+} from 'lucide-react'
+import { useEffect, useId, useState } from 'react'
 
 /**
  * Feature 3: Authentication Event Log
- * 
+ *
  * Displays user's authentication events (logins, logouts, failures, etc.)
  * Backend: GET /auth/me/events
  */
@@ -22,7 +32,11 @@ type AuthEventsResponse = {
   offset: number
 }
 
-async function fetchAuthEvents(limit = 20, offset = 0, signal?: AbortSignal): Promise<AuthEventsResponse> {
+async function fetchAuthEvents(
+  limit = 20,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<AuthEventsResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   const res = await fetch(`/auth/me/events?${params}`, {
     credentials: 'same-origin',
@@ -37,7 +51,7 @@ function formatEventTime(epochSec: number): string {
   const now = new Date()
   const diff = now.getTime() - date.getTime()
   const days = Math.floor(diff / (24 * 60 * 60 * 1000))
-  
+
   if (days === 0) {
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   } else if (days < 7) {
@@ -47,81 +61,128 @@ function formatEventTime(epochSec: number): string {
   }
 }
 
-function getEventIcon(action: string): string {
-  if (action.includes('login')) return '🔓'
-  if (action.includes('logout')) return '🚪'
-  if (action.includes('refresh')) return '🔄'
-  if (action.includes('failure') || action.includes('fail')) return '❌'
-  if (action.includes('device')) return '📱'
-  if (action.includes('revoke')) return '⛔'
-  return '📝'
+function eventIcon(action: string): { Icon: LucideIcon; label: string } {
+  if (action.includes('login')) return { Icon: LogIn, label: 'Sign-in' }
+  if (action.includes('logout')) return { Icon: LogOut, label: 'Sign-out' }
+  if (action.includes('refresh')) return { Icon: RefreshCw, label: 'Refresh' }
+  if (action.includes('failure') || action.includes('fail')) {
+    return { Icon: AlertTriangle, label: 'Failure' }
+  }
+  if (action.includes('device')) return { Icon: Smartphone, label: 'Device' }
+  if (action.includes('revoke')) return { Icon: Ban, label: 'Revocation' }
+  return { Icon: FileText, label: 'Event' }
 }
 
 export function AuthEventLog() {
+  const headingId = useId()
+  const descId = useId()
+  const errorId = useId()
   const [data, setData] = useState<AuthEventsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadEvents() {
+  async function loadEvents(signal?: AbortSignal) {
     try {
+      setLoading(true)
       setError(null)
-      const result = await fetchAuthEvents(20)
+      const result = await fetchAuthEvents(20, 0, signal)
+      if (signal?.aborted) return
       setData(result)
     } catch (err) {
+      if (signal?.aborted) return
       setError(err instanceof Error ? err.message : 'Could not load auth events')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }
 
   useEffect(() => {
-    void loadEvents()
+    const ac = new AbortController()
+    void loadEvents(ac.signal)
+    return () => ac.abort()
   }, [])
 
-  if (loading) {
-    return <p role="status">Loading security activity...</p>
-  }
-
-  if (error) {
-    return (
-      <div className="flash flash-error" role="alert">
-        {error}
-      </div>
-    )
-  }
-
-  const events = data?.events || []
+  const events = data?.events ?? []
 
   return (
-    <div className="ns-settings-subsection">
+    <div
+      className="ns-settings-subsection"
+      data-testid="auth-event-log"
+      aria-labelledby={headingId}
+      aria-describedby={descId}
+    >
       <div className="ns-settings-section-head">
-        <h3 id="security-activity-heading">
+        <h3 id={headingId}>
           <Shield size={16} className="button-label-icon" aria-hidden="true" />
           Security Activity
         </h3>
-        <p className="muted small">
+        <p id={descId} className="muted small">
           Recent authentication events on your account (last 20 events).
         </p>
       </div>
 
-      {events.length === 0 && (
-        <p className="muted small">No recent authentication events.</p>
+      {loading && (
+        <p role="status" aria-live="polite">
+          Loading security activity…
+        </p>
       )}
 
-      {events.length > 0 && (
-        <ul className="ns-member-list">
-          {events.map(event => (
-            <li key={event.id} className="ns-member-row">
-              <div className="ns-member-main">
-                <div>
-                  <span>{getEventIcon(event.action)} {event.message}</span>
+      {!loading && error && (
+        <div className="flash flash-error" role="alert" id={errorId} tabIndex={-1}>
+          <p className="error">{error}</p>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => void loadEvents()}
+            aria-describedby={errorId}
+          >
+            <RefreshCw size={14} className="button-label-icon" aria-hidden="true" />
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && events.length === 0 && (
+        <div className="empty-state" role="status">
+          <span className="empty-state-icon" aria-hidden="true" />
+          <p className="muted">No recent authentication events.</p>
+          <p className="muted small">
+            Sign-ins, sign-outs, and failed attempts will appear here.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && events.length > 0 && (
+        <ul className="ns-member-list" aria-labelledby={headingId}>
+          {events.map((event) => {
+            const { Icon, label } = eventIcon(event.action)
+            const requestShort = event.requestId.slice(0, 8)
+            return (
+              <li key={event.id} className="ns-member-row">
+                <div className="ns-member-main">
+                  <div>
+                    <Icon
+                      size={14}
+                      className="button-label-icon"
+                      aria-hidden="true"
+                    />
+                    <span className="visually-hidden">{label}: </span>
+                    <span>{event.message}</span>
+                  </div>
+                  <span className="muted small">
+                    <time dateTime={new Date(event.timestamp * 1000).toISOString()}>
+                      {formatEventTime(event.timestamp)}
+                    </time>
+                    {' · '}
+                    Request{' '}
+                    <span className="mono" title={event.requestId}>
+                      {requestShort}…
+                    </span>
+                  </span>
                 </div>
-                <span className="muted small">
-                  {formatEventTime(event.timestamp)} · Request: {event.requestId.slice(0, 8)}...
-                </span>
-              </div>
-            </li>
-          ))}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
