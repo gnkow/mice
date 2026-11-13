@@ -24,6 +24,8 @@ export type AuthEvent = {
   timestamp: number
   requestId: string
   message: string
+  /** SHA-256(IP + day's salt) when the event had a client address; never the raw IP. */
+  hashedIp?: string
 }
 
 type AuthEventsResponse = {
@@ -157,6 +159,8 @@ export function AuthEventLog() {
           {events.map((event) => {
             const { Icon, label } = eventIcon(event.action)
             const requestShort = event.requestId.slice(0, 8)
+            const hashedIp = event.hashedIp?.trim()
+            const hashedIpShort = hashedIp ? hashedIp.slice(0, 8) : null
             return (
               <li key={event.id} className="ns-member-row">
                 <div className="ns-member-main">
@@ -178,6 +182,19 @@ export function AuthEventLog() {
                     <span className="mono" title={event.requestId}>
                       {requestShort}…
                     </span>
+                    {hashedIp && hashedIpShort ? (
+                      <>
+                        {' · '}
+                        Hashed IP{' '}
+                        <code
+                          className="mono auth-event-hashed-ip"
+                          title={hashedIp}
+                          data-testid="auth-event-hashed-ip"
+                        >
+                          {hashedIpShort}…
+                        </code>
+                      </>
+                    ) : null}
                   </span>
                 </div>
               </li>

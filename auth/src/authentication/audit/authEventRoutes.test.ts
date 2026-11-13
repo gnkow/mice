@@ -81,10 +81,20 @@ describe('Auth event HTTP seam (Ticket 05)', () => {
     const listedText = await listed.text()
     assert.equal(listed.status, 200, listedText)
     const body = JSON.parse(listedText) as {
-      events: Array<{ action: string; outcome: string; requestId: string }>
+      events: Array<{
+        action: string
+        outcome: string
+        requestId: string
+        hashedIp?: string
+      }>
     }
     const logoutEvent = body.events.find((e) => e.action === 'logout' && e.outcome === 'success')
     assert.ok(logoutEvent, 'expected logout auth event after POST /auth/logout')
     assert.ok(logoutEvent.requestId, 'logout event carries request id')
+    // clientIp is always captured on logout (at least "unknown") → hashedIp present for UI.
+    assert.ok(
+      logoutEvent.hashedIp && /^[0-9a-f]{64}$/i.test(logoutEvent.hashedIp),
+      'logout event exposes hashedIp for profile Security Activity',
+    )
   })
 })

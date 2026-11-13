@@ -26,6 +26,7 @@ export function registerAuthEventRoutes(app: Hono): void {
         timestamp: Math.floor((e.timestamp?.getTime() ?? Date.now()) / 1000),
         requestId: e.requestId,
         message: e.reason || `${e.type} ${e.outcome}`,
+        ...(e.hashedIp ? { hashedIp: e.hashedIp } : {}),
       })),
       limit,
       offset,

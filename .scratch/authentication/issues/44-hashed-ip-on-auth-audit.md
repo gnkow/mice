@@ -36,3 +36,9 @@ Every authentication audit event (login, refresh, logout, step-up, failure, revo
 - **Files:** `authEvents.ts`, `authEvents.test.ts`, `authEvents.hashedIp.integration.test.ts`.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **/deep-ui Deepen (reclassified UI)** — supersedes the no-ui skip above.
+- **Board:** reclassified from no-ui → holds (Deepen). Surface: `AuthEventLog` (Profile Security Activity).
+- **Deepen:** `/auth/me/events` includes `hashedIp` when stored; UI shows truncated Hashed IP (`data-testid="auth-event-hashed-ip"`) with full hash in `title` — never raw IP.
+- **E2E:** `e2e/tests/profile-auth-events.spec.ts` — `TC-AUTH-AEL-44` (logout with `X-Forwarded-For` → assert API + UI hashed IP).
+- **Files:** `auth/src/authentication/audit/authEventRoutes.ts`, `authEventRoutes.test.ts`, `web/src/components/AuthEventLog.tsx`, `e2e/tests/profile-auth-events.spec.ts`.
