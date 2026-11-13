@@ -32,3 +32,5 @@ A user logs in through the IdP and receives an opaque server-side session cookie
 - **Audit:** holds — login/callback/`/me`, single-use login state, JWKS, `__Host-` cookie, Principal iss+sub.
 - **Deepen (auto-pick Top):** Collapsed duplicated return-path / SSO href / RequireAuth `next` query into deep `loginNavigation` (`safeLoginReturnPath`, `ssoLoginHref`, `loginRedirectSearch`). LoginPage + RequireAuth stay thin UI adapters on existing chrome/tokens; `loginFlow.ts` untouched.
 - **Tests:** `web/src/lib/loginNavigation.test.ts`
+- **Deep-API deepen (2026-11-13):** Collapsed page + gate into `decideLoginNavigation({ next, location })` → `{ returnPath, ssoHref, redirectSearch }`. Thin wrappers kept; LoginPage/RequireAuth call the deep seam; `loginFlow` untouched.
+- **Tests:** `web/src/lib/loginNavigation.test.ts` (green)

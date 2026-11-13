@@ -6,12 +6,12 @@ import {
   applyAppearance,
   loadAppearance,
 } from '../lib/appearance'
-import { safeLoginReturnPath, ssoLoginHref } from '../lib/loginNavigation'
+import { decideLoginNavigation } from '../lib/loginNavigation'
 
 export function LoginPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const next = safeLoginReturnPath(params.get('next'))
+  const { returnPath: next, ssoHref } = decideLoginNavigation({ next: params.get('next') })
 
   useEffect(() => {
     applyAppearance(loadAppearance())
@@ -41,7 +41,7 @@ export function LoginPage() {
           and proxies oxen-server on your behalf.
         </p>
         <div className="btn-row">
-          <a className="btn primary" href={ssoLoginHref(next)}>
+          <a className="btn primary" href={ssoHref}>
             <ActionLogIn size={14} aria-hidden="true" className="button-label-icon" />
             Sign in with SSO
           </a>

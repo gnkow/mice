@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  decideLoginNavigation,
   loginRedirectSearch,
   safeLoginReturnPath,
   ssoLoginHref,
@@ -19,6 +20,21 @@ describe('safeLoginReturnPath', () => {
   it('keeps same-site relative return paths', () => {
     assert.equal(safeLoginReturnPath('/n/acme'), '/n/acme')
     assert.equal(safeLoginReturnPath('/cli/device?user_code=abc'), '/cli/device?user_code=abc')
+  })
+})
+
+describe('decideLoginNavigation', () => {
+  it('returns sanitized return path, SSO href, and gate redirect together', () => {
+    assert.deepEqual(decideLoginNavigation({ next: '/n/acme', location: '/n/acme?tab=1' }), {
+      returnPath: '/n/acme',
+      ssoHref: '/auth/login?prompt=login&next=%2Fn%2Facme',
+      redirectSearch: '?next=%2Fn%2Facme%3Ftab%3D1',
+    })
+    assert.deepEqual(decideLoginNavigation({ next: '//evil', location: '/' }), {
+      returnPath: '/',
+      ssoHref: '/auth/login?prompt=login',
+      redirectSearch: '',
+    })
   })
 })
 
