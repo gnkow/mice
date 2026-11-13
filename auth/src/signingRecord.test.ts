@@ -83,3 +83,41 @@ describe('signature records are immutable through the API', () => {
     assert.deepEqual(mutating, [])
   })
 })
+
+describe('GET /auth/sign/:id retrieves the record and proof', () => {
+  it('returns the ledger record and a valid verification proof after execute', async () => {
+    const claims = {
+      iss: 'https://idp.test',
+      sub: alice.sub,
+      auth_time: nowSec() - 5,
+      acr: 'mfa',
+      amr: ['pwd', 'otp'],
+    }
+    const signed = await execute({ ...alice, idToken: idToken(claims), authTime: nowSec() - 5 }, 'Batch 9 released')
+    assert.equal(signed.status, 200)
+    const { signature } = (await signed.json()) as { signature: { id: string } }
+
+    const headers = await iso.sessionHeaders({ ...alice, idToken: idToken(claims), authTime: nowSec() - 5 })
+    const app = createApp()
+
+    const recordRes = await app.request(`/auth/sign/${signature.id}`, { headers })
+    assert.equal(recordRes.status, 200)
+    const recordBody = (await recordRes.json()) as {
+      id: string
+      record: { meaning: string; signer: { sub: string } }
+    }
+    assert.equal(recordBody.id, signature.id)
+    assert.equal(recordBody.record.meaning, 'Approved')
+    assert.equal(recordBody.record.signer.sub, alice.sub)
+
+    const proofRes = await app.request(`/auth/sign/${signature.id}/proof`, { headers })
+    assert.equal(proofRes.status, 200)
+    const proofBody = (await proofRes.json()) as { id: string; proof: { valid: boolean; seq: number } }
+    assert.equal(proofBody.id, signature.id)
+    assert.equal(proofBody.proof.valid, true)
+    assert.ok(proofBody.proof.seq > 0)
+
+    const missing = await app.request('/auth/sign/missing-id/proof', { headers })
+    assert.equal(missing.status, 404)
+  })
+})

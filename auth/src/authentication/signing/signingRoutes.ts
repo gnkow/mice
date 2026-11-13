@@ -287,6 +287,31 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     }
   }))
 
+  // Authoritative record + verification proof (append-only; no edit/delete routes).
+  app.get('/auth/sign/:id/proof', guarded({ mutates: false }, async ({ c, user }) => {
+    const unavailable = await directoryFailure(user)
+    if (unavailable) return unavailable
+    const access = await requireSigningAccess(c, user)
+    if (!access.ok) return access.response
+
+    const id = c.req.param('id')
+    const proof = await (await signatureStore()).proof(id)
+    if (!proof) return c.json({ error: 'Not found' }, 404)
+    return c.json({ id, proof })
+  }))
+
+  app.get('/auth/sign/:id', guarded({ mutates: false }, async ({ c, user }) => {
+    const unavailable = await directoryFailure(user)
+    if (unavailable) return unavailable
+    const access = await requireSigningAccess(c, user)
+    if (!access.ok) return access.response
+
+    const id = c.req.param('id')
+    const found = await (await signatureStore()).get(id)
+    if (!found) return c.json({ error: 'Not found' }, 404)
+    return c.json({ id, seq: found.seq, record: found.record })
+  }))
+
   // Demo page for signing ceremony
   app.get('/auth/sign/demo', guarded({ mutates: false }, async ({ c, user }) => {
     return c.html(`
