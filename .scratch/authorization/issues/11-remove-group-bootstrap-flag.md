@@ -20,3 +20,7 @@ Status: done
 - [x] Tests verify no automatic grants from IdP groups
 - [x] Tests verify managers can grant access manually
 - [x] Tests verify users from specific IdP groups do not get automatic permissions
+
+## Comments
+
+**Deep-api Deepen (2026-11-13):** Single seam `principalBootstrap` (`runPrincipalBootstrap`) owns allowlist-only Admin bootstrap at `preparePrincipal`; IdP groups never write instance/namespace grants. Removed group-bootstrap surface from the prepare path. Unit: `principalBootstrap.test.ts` (no `AUTHZ_GROUP_BOOTSTRAP` on env; groups leave Principal pending; no user membership created; `AUTHZ_BOOTSTRAP_ADMINS` still works).

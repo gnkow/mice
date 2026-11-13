@@ -6,7 +6,8 @@ import { extractMfaEvidence } from './authentication/signing/mfaEvidence.js'
 import { decodeJwtPayload } from './authentication/oidc/oidcClaims.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
-import { hasCompletedTraining, isInstanceAdmin, maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
+import { hasCompletedTraining, isInstanceAdmin } from './authzInstanceStore.js'
+import { runPrincipalBootstrap } from './principalBootstrap.js'
 import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
 import { isApprover } from './authzApproverStore.js'
@@ -67,11 +68,12 @@ function deny(reason: string, extra?: Partial<AuthzDecision>): AuthzDecision {
 }
 
 /**
- * Prepare principal: grant instance admin + Admin RBAC role to an allowlisted identity.
- * Writes state, so it runs once at authentication and login; authorization decisions are read-only.
+ * Prepare principal at authenticate/login: allowlist Admin bootstrap only
+ * (`AUTHZ_BOOTSTRAP_ADMINS`). IdP groups never write grants here — see
+ * `principalBootstrap`. Writes state once per auth; authorization decisions are read-only.
  */
 export async function preparePrincipal(user: SessionUser): Promise<void> {
-  await maybeBootstrapInstanceAdmin(user)
+  await runPrincipalBootstrap(user)
 }
 
 export async function canSkipPendingGate(user: SessionUser): Promise<boolean> {
