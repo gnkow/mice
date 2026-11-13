@@ -1,6 +1,7 @@
 import { createSocket } from 'node:dgram'
-import { emitNotification } from '../../notifications.js'
+import { emitNotification, type NotificationEvent } from '../../notifications.js'
 import { listInstanceAdmins } from '../../authzInstanceStore.js'
+import type { UserKey } from '../../authzTypes.js'
 
 const pollMs = 60 * 1000
 const NTP_UNIX_OFFSET = 2_208_988_800
@@ -15,6 +16,16 @@ export type ClockDriftDecision =
       severity: 'warning' | 'critical'
       message: string
     }
+
+/** Injectable collaborators for a scheduled tick (clock + NTP + notify). */
+export type ClockDriftScheduleDeps = {
+  now?: () => number
+  ntp?: () => Promise<number>
+  listAdmins?: () => Promise<UserKey[]>
+  notify?: (event: NotificationEvent) => Promise<void>
+  /** When false, skip the interval timer (tests drive `tick` directly). */
+  poll?: boolean
+}
 
 /** Compares reference and system clocks; owns the 1s threshold and alert copy. */
 export function decideClockDriftAlert(referenceMs: number, systemMs: number): ClockDriftDecision {
@@ -69,31 +80,42 @@ export function readNtpTime(host = process.env.NTP_SERVER || 'pool.ntp.org'): Pr
   })
 }
 
+/**
+ * One scheduled drift check: decide against NTP, then notify instance admins when
+ * drift exceeds 1s. Returns true when a notification was emitted. Collaborators
+ * are injectable for integ tests.
+ */
+export async function runClockDriftTick(
+  at: number,
+  referenceMs: number,
+  deps: Pick<ClockDriftScheduleDeps, 'listAdmins' | 'notify'> = {},
+): Promise<boolean> {
+  const listAdmins = deps.listAdmins ?? listInstanceAdmins
+  const notify = deps.notify ?? emitNotification
+  const decision = decideClockDriftAlert(referenceMs, at)
+  if (!decision.alert) return false
+  const admins = await listAdmins()
+  const day = new Date(at).toISOString().slice(0, 10)
+  await notify({
+    id: `clock-drift:${day}`,
+    category: 'security',
+    title: 'Clock drift',
+    summary: decision.message,
+    audience: 'personal',
+    recipients: admins.map((admin) => ({ iss: admin.iss, sub: admin.sub })),
+    createdAt: new Date(at).toISOString(),
+  })
+  return true
+}
+
 /** Compares the server clock with an NTP reference and alerts instance admins when drift exceeds 1 second. */
-export function startClockDriftSchedule(opts: {
-  now?: () => number
-  ntp?: () => Promise<number>
-  poll?: boolean
-} = {}) {
+export function startClockDriftSchedule(opts: ClockDriftScheduleDeps = {}) {
   const now = opts.now ?? (() => Date.now())
   const ntp = opts.ntp ?? (() => readNtpTime())
-  const tick = async () => {
-    const at = now()
-    const decision = decideClockDriftAlert(await ntp(), at)
-    if (!decision.alert) return false
-    const admins = await listInstanceAdmins()
-    const day = new Date(at).toISOString().slice(0, 10)
-    await emitNotification({
-      id: `clock-drift:${day}`,
-      category: 'security',
-      title: 'Clock drift',
-      summary: decision.message,
-      audience: 'personal',
-      recipients: admins.map((admin) => ({ iss: admin.iss, sub: admin.sub })),
-      createdAt: new Date(at).toISOString(),
-    })
-    return true
-  }
+  const tick = async () => runClockDriftTick(now(), await ntp(), {
+    listAdmins: opts.listAdmins,
+    notify: opts.notify,
+  })
   const safe = () => {
     void tick().catch((err) => console.error('[mice-auth] clock drift alert failed', err))
   }

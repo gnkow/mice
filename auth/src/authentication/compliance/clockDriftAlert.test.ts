@@ -88,3 +88,49 @@ describe('Clock drift alert', () => {
     assert.equal(ntpTimeFromPacket(packet), Date.UTC(2026, 10, 2, 12, 0, 0))
   })
 })
+
+describe('clock drift schedule integ (injectable deps)', () => {
+  it('tick notifies injected admins when drift exceeds 1s', async () => {
+    const notified: Array<{ summary?: string; recipients?: Array<{ sub: string }> }> = []
+    let listed = 0
+    const schedule = startClockDriftSchedule({
+      poll: false,
+      now: () => server,
+      ntp: async () => server + 2500,
+      listAdmins: async () => {
+        listed += 1
+        return [{ iss: 'idp', sub: 'injected-admin' }]
+      },
+      notify: async (event) => {
+        notified.push(event)
+      },
+    })
+    assert.equal(await schedule.tick(), true)
+    assert.equal(listed, 1)
+    assert.equal(notified.length, 1)
+    assert.equal(notified[0]?.recipients?.[0]?.sub, 'injected-admin')
+    assert.match(notified[0]?.summary ?? '', /2500/)
+    schedule.stop()
+  })
+
+  it('tick does not notify when drift is within 1s', async () => {
+    let notifyCalls = 0
+    let listCalls = 0
+    const schedule = startClockDriftSchedule({
+      poll: false,
+      now: () => server,
+      ntp: async () => server + 1000,
+      listAdmins: async () => {
+        listCalls += 1
+        return [{ iss: 'idp', sub: 'injected-admin' }]
+      },
+      notify: async () => {
+        notifyCalls += 1
+      },
+    })
+    assert.equal(await schedule.tick(), false)
+    assert.equal(listCalls, 0)
+    assert.equal(notifyCalls, 0)
+    schedule.stop()
+  })
+})
