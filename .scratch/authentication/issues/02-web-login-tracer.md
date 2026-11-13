@@ -24,3 +24,11 @@ A user logs in through the IdP and receives an opaque server-side session cookie
 - `auth/src/authentication/oidc/oidc.ts` (`keySet` fetches JWKS on every call)
 - `auth/src/authentication/session/session.ts`
 - `auth/src/env.ts` (`cookieName` defaults to `__Host-mice_session`)
+- `web/src/lib/loginNavigation.ts` (return path + SSO href + login redirect search)
+- `web/src/pages/LoginPage.tsx` / `web/src/components/RequireAuth.tsx` (thin adapters)
+
+## Comments
+
+- **Audit:** holds — login/callback/`/me`, single-use login state, JWKS, `__Host-` cookie, Principal iss+sub.
+- **Deepen (auto-pick Top):** Collapsed duplicated return-path / SSO href / RequireAuth `next` query into deep `loginNavigation` (`safeLoginReturnPath`, `ssoLoginHref`, `loginRedirectSearch`). LoginPage + RequireAuth stay thin UI adapters on existing chrome/tokens; `loginFlow.ts` untouched.
+- **Tests:** `web/src/lib/loginNavigation.test.ts`

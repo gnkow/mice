@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { fetchAuthMe } from '../lib/auth'
+import { loginRedirectSearch } from '../lib/loginNavigation'
 
 /**
  * Blocks the Mice app chrome until a BFF session exists.
@@ -33,11 +34,7 @@ export function RequireAuth() {
   }
 
   if (state === 'out') {
-    const next = `${location.pathname}${location.search}`
-    const search =
-      next && next !== '/'
-        ? `?next=${encodeURIComponent(next)}`
-        : ''
+    const search = loginRedirectSearch(`${location.pathname}${location.search}`)
     return <Navigate to={`/login${search}`} replace />
   }
 
