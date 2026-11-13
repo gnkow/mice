@@ -1,14 +1,16 @@
 import type { Context } from 'hono'
 import { offboard } from '../credentials/offboarding.js'
 import { consumeBackChannelJti } from '../access/revocation.js'
+import { decideBackChannelLogoutClaims } from './backChannelLogoutClaims.js'
 import { verifyIdpJwt } from './oidc.js'
-
-const LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout'
 
 /**
  * OIDC Back-Channel Logout: a verified logout token ends the Principal's Sessions
  * (sessions-only cut-off at the token's `iat`, so a replay never ends a later Session).
  * PATs are untouched: logout is not offboarding.
+ *
+ * Claim validation lives in {@link decideBackChannelLogoutClaims}; this handler is the
+ * Hono adapter (verify → decide → offboard → consume jti).
  */
 export async function backChannelLogout(c: Context): Promise<Response> {
   const reject = (why: string) => {
@@ -25,31 +27,18 @@ export async function backChannelLogout(c: Context): Promise<Response> {
   } catch (e) {
     return reject(`logout_token failed verification: ${e instanceof Error ? e.message : e}`)
   }
-  const events = payload.events as Record<string, unknown> | undefined
-  if (!events || typeof events !== 'object' || !(LOGOUT_EVENT in events)) {
-    return reject('not a logout event')
-  }
-  if ('nonce' in payload) return reject('logout_token must not carry a nonce')
-  const sub = payload.sub
-  const iss = payload.iss
-  const jti = payload.jti
-  if (
-    typeof sub !== 'string' || !sub ||
-    typeof iss !== 'string' || !iss ||
-    typeof payload.iat !== 'number' ||
-    typeof jti !== 'string' || !jti
-  ) {
-    return reject('sub, iss, iat and jti required')
-  }
 
-  const principal = { sub, iss }
+  const claims = decideBackChannelLogoutClaims(payload)
+  if (!claims.ok) return reject(claims.reason)
+
+  const principal = { sub: claims.sub, iss: claims.iss }
   const result = await offboard(principal, {
     scope: 'sessions',
     cause: 'back-channel-logout',
-    at: Math.min(payload.iat, Math.floor(Date.now() / 1000)),
+    at: Math.min(claims.iat, Math.floor(Date.now() / 1000)),
     method: c.req.method,
     path: c.req.path,
-    message: `IdP back-channel logout for ${sub}`,
+    message: `IdP back-channel logout for ${claims.sub}`,
     strictAudit: true,
   })
   if (!result.ok) {
@@ -57,8 +46,8 @@ export async function backChannelLogout(c: Context): Promise<Response> {
   }
 
   const now = Math.floor(Date.now() / 1000)
-  const expiresAt = typeof payload.exp === 'number' ? payload.exp : now + 300
-  if (!(await consumeBackChannelJti(jti, expiresAt))) {
+  const expiresAt = claims.exp ?? now + 300
+  if (!(await consumeBackChannelJti(claims.jti, expiresAt))) {
     return reject('logout_token replay')
   }
 
