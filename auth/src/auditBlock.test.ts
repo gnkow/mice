@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { isolatedAuth, withMfa } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders, withMfa } from './testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('./app.js')
@@ -9,7 +9,7 @@ const { setUpstreamFetch } = await import('./proxy.js')
 const { preparePrincipal } = await import('./authz.js')
 const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
-const { initAudit, queryAudit, useAuditLedger, verifyAudit } = await import('./audit.js')
+const { auditChainBlocked, initAudit, queryAudit, useAuditLedger, verifyAudit } = await import('./audit.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
 const admin = iso.admin
 await preparePrincipal(admin)
@@ -59,9 +59,21 @@ async function put() {
   })
 }
 async function adminCall(method: string, path: string, body?: unknown) {
+  const payload = body === undefined ? {} : body
+  const regulated = await regulatedMutationHeaders(admin, {
+    method,
+    path,
+    body: payload,
+    reason: 'Operator decision after review',
+    category: 'privileged_settings',
+  })
   return app.request(path, {
     method,
-    headers: { ...(await iso.sessionHeaders(admin)), 'content-type': 'application/json', 'x-mice-reason': 'Operator decision after review', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+    headers: {
+      ...(await iso.sessionHeaders(admin)),
+      ...regulated,
+      'x-mice-change-control-id': 'CC-2026-114',
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
@@ -82,6 +94,7 @@ describe('failed verification blocks dataset mutations', () => {
     assert.equal((await put()).status, 200)
     await tamperFirst()
     assert.equal((await verifyAudit()).ok, false)
+    assert.equal(auditChainBlocked(), true, 'verify records the break on the chain gate')
     upstreamCalls = []
     const res = await put()
     assert.equal(res.status, 503)
