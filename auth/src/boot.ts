@@ -41,6 +41,10 @@ export async function boot(): Promise<void> {
     const { recordBackupTargetCheck } = await import('./backupTarget.js')
     await recordBackupTargetCheck(process.env.BACKUP_TARGET)
   }
+  {
+    const { verifyAndRecordReleaseManifest } = await import('./releaseManifest.js')
+    await verifyAndRecordReleaseManifest()
+  }
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.once(sig, () => {
       void closeMainDatabase().finally(() => process.exit(0))

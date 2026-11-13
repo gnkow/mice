@@ -1,0 +1,19 @@
+{
+  "format": "mice-release-manifest/1",
+  "releaseVersion": "0.0.0",
+  "components": {
+    "idp_configuration": {
+      "version": "1",
+      "digest": "sha256:a1d4d7ed6760c2c62ae11f8c0bb24d0f45a7ff541b401ff18f2eb7461a869ccd"
+    },
+    "search_index": {
+      "version": "1",
+      "digest": "sha256:b6fb60ecef8360d93ca69e7e3ac3b65177c76947e78e7f57406272efc3397fe1"
+    },
+    "custom_verifiers": {
+      "version": "1",
+      "digest": "sha256:e891c4f825979863ed621b3e5d70435f649d550636cb5292e000577b311b27e2"
+    }
+  },
+  "signature": "QoUEzDoe1lTo1fQnE1P9Titri5RtMTFP8wkmvex9TJOxuk2B_rydYYLAL6p6Pm_9mxt0RDyE5ark5OXekhy5Cg"
+}
