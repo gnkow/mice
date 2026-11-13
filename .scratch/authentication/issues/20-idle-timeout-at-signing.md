@@ -30,3 +30,7 @@ Refusing a zero idle timeout at startup is issue 33.
 **Deepen (auto-picked):** Extract inlined idle logic from `signingRoutes` into deep `evaluateSigningIdle` / `checkSigningIdleTimeout` in `idleTimeout.ts`. Routes stay a one-line adapter; tautological tests replaced with real seam tests.
 
 **Files:** `idleTimeout.ts`, `idleTimeout.test.ts`, `signingRoutes.ts` (minimal)
+
+2026-11-13 — Deep-API deepen (auto-pick Top) + integ: **holds**. Idle decision stays in `evaluateSigningIdle`; routes call it via `requireSigningAccess` (no local wrapper). Unit: idle refuse/allow + `requireSigningAccess` `session_idle` branch. Integ: `POST /auth/sign/prepare` refuses idle Sessions (loadSession expiry or signing gate).
+
+**Files:** `idleTimeout.ts`, `signingAccess.ts`, `signingRoutes.ts` (adapter), `signingAccess.test.ts`, `signingRoutes.integration.test.ts`
