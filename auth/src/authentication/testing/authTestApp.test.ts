@@ -1,4 +1,3 @@
-import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { createAuthTestApp } from './authTestApp.js'
@@ -113,91 +112,57 @@ await describe('authTestApp', async () => {
     assert.ok(claims.exp > claims.iat, 'exp must be after iat')
   })
 
-  await it('a configured IdP user signs in and /auth/me returns that identity', async () => {
+  await it('signIn completes login and /auth/me returns that identity', async () => {
     const app = createAuthTestApp({
       users: [{ sub: 'alice', email: 'alice@example.com', name: 'Alice' }],
     })
 
-    // Start login flow
-    const loginResp = await app.bff.request('/auth/login')
-    assert.equal(loginResp.status, 302, 'login should redirect to IdP')
-    
-    // Extract state from redirect and PKCE cookie
-    const redirectUrl = new URL(loginResp.headers.get('location')!)
-    const state = redirectUrl.searchParams.get('state')!
-    const pkceCookie = loginResp.headers.get('set-cookie')!
-    
-    // Simulate IdP callback with a valid code
-    const code = app.issueAuthCode('alice', state)
-    const callbackResp = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
-      headers: { cookie: pkceCookie },
-    })
-    assert.equal(callbackResp.status, 302, 'callback should redirect after success')
-    
-    // Extract session cookie
-    const sessionCookie = callbackResp.headers.get('set-cookie')!
-    
-    // Call /auth/me with the session
+    const { sessionCookie } = await app.signIn('alice')
+
     const meResp = await app.bff.request('/auth/me', {
       headers: { cookie: sessionCookie },
     })
     assert.equal(meResp.status, 200)
-    
+
     const identity = await meResp.json()
     assert.equal(identity.sub, 'alice')
     assert.equal(identity.email, 'alice@example.com')
     assert.equal(identity.name, 'Alice')
   })
 
-  await it('login state expires after 10 minutes', async () => {
+  await it('signIn fails when login state expires after 10 minutes', async () => {
     const app = createAuthTestApp({
       users: [{ sub: 'bob', email: 'bob@example.com', name: 'Bob' }],
     })
 
-    // Start login flow
     const loginResp = await app.bff.request('/auth/login')
-    const redirectUrl = new URL(loginResp.headers.get('location')!)
-    const state = redirectUrl.searchParams.get('state')!
-    const pkceCookie = loginResp.headers.get('set-cookie')!
-    
-    // Advance clock by 11 minutes
+    assert.equal(loginResp.status, 302)
+
     app.clock.advance(11 * 60 * 1000)
-    
-    // Attempt callback - should fail due to expired state
-    const code = app.issueAuthCode('bob', state)
-    const callbackResp = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
-      headers: { cookie: pkceCookie },
-    })
-    
-    assert.equal(callbackResp.status, 400, 'callback should reject expired login state')
-    const html = await callbackResp.text()
-    assert.ok(html.includes('expired') || html.includes('Invalid'), 'error message should mention expiration')
+
+    await assert.rejects(
+      () => app.signIn('bob', { reuseLogin: loginResp }),
+      (err: Error) => {
+        assert.ok(/expired|Invalid/i.test(err.message))
+        return true
+      },
+    )
   })
 
-  await it('a callback replayed after a successful login is rejected', async () => {
+  await it('a callback replayed after signIn is rejected', async () => {
     const app = createAuthTestApp({
       users: [{ sub: 'charlie', email: 'charlie@example.com', name: 'Charlie' }],
     })
 
-    // Complete a successful login
-    const loginResp = await app.bff.request('/auth/login')
-    const redirectUrl = new URL(loginResp.headers.get('location')!)
-    const state = redirectUrl.searchParams.get('state')!
-    const pkceCookie = loginResp.headers.get('set-cookie')!
-    const code = app.issueAuthCode('charlie', state)
-    
-    const callbackResp1 = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
-      headers: { cookie: pkceCookie },
+    const first = await app.signIn('charlie')
+    assert.ok(first.sessionCookie)
+
+    const replay = await app.bff.request(first.callbackUrl, {
+      headers: { cookie: first.pkceCookie },
     })
-    assert.equal(callbackResp1.status, 302, 'first callback should succeed')
-    
-    // Replay the same callback
-    const callbackResp2 = await app.bff.request(`/auth/callback?code=${code}&state=${state}`, {
-      headers: { cookie: pkceCookie },
-    })
-    assert.equal(callbackResp2.status, 400, 'replayed callback should be rejected')
-    
-    const html = await callbackResp2.text()
+    assert.equal(replay.status, 400, 'replayed callback should be rejected')
+
+    const html = await replay.text()
     assert.ok(html.includes('Invalid') || html.includes('expired') || html.includes('used'), 'error should indicate replay')
   })
 })

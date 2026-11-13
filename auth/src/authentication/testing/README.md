@@ -22,6 +22,9 @@ const app = createAuthTestApp({
   ],
 })
 
+// Complete a login through the harness seam (code/PKCE stay inside)
+const { sessionCookie } = await app.signIn('alice')
+
 // Issue a token for a user
 const token = await app.idp.issueToken('alice')
 
@@ -142,12 +145,8 @@ See `authTestApp.test.ts` for a complete working example including:
 - The IdP issuer is `https://test-idp.example.com`
 - The audience is `test-audience`
 
-## Future Extensions
+## Login seam
 
-The ticket (01-test-idp-harness.md) requires:
+`signIn(sub)` is the public login interface: it starts `/auth/login`, issues the IdP code, completes `/auth/callback`, and returns the session cookie. Authorization codes and PKCE choreography are implementation details behind that seam.
 
-- [ ] External guest users (missing name claim)
-- [ ] MFA and non-MFA authentication methods
-- [ ] Integration with BFF session flow
-
-These can be added by extending `FakeIdpUser` and the test app configuration.
+Guest, missing-name, MFA, and non-MFA users are covered by the `IdpAdapter` contract (`idpAdapter.contract.test.ts` / `createFakeIdpAdapter`).

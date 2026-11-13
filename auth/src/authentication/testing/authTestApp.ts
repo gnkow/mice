@@ -10,15 +10,32 @@ export interface AuthTestAppOptions {
   users: Array<{ sub: string; email: string; name: string }>
 }
 
+export type SignInOptions = {
+  /**
+   * Reuse a prior `/auth/login` response (PKCE cookie + state) instead of starting a fresh login.
+   * Used to advance the shared clock between begin-login and callback.
+   */
+  reuseLogin?: Response
+}
+
+export type SignInResult = {
+  sessionCookie: string
+  /** Absolute callback URL that completed this login (for replay tests). */
+  callbackUrl: string
+  /** PKCE cookie header from the login that paired with this callback. */
+  pkceCookie: string
+}
+
+/**
+ * Test harness module: fake IdP + controllable clock + minimal BFF.
+ * Callers exercise login through `signIn` — code/state/PKCE stay behind the seam.
+ */
 export interface AuthTestApp {
   idp: FakeIdp
   clock: FakeClock
   bff: Hono
-  /**
-   * Internal helper to issue an authorization code for testing.
-   * In a real flow, this happens at the IdP.
-   */
-  issueAuthCode(sub: string, state: string): string
+  /** Completes OIDC login for `sub` and returns the sealed session cookie. */
+  signIn(sub: string, opts?: SignInOptions): Promise<SignInResult>
 }
 
 interface PkceState {
@@ -175,14 +192,41 @@ export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
     }
   })
   
+  function issueAuthCode(sub: string, state: string): string {
+    const code = `code_${Math.random().toString(36).slice(2)}`
+    issuedCodes.set(code, { sub, state })
+    return code
+  }
+
+  async function signIn(sub: string, opts?: SignInOptions): Promise<SignInResult> {
+    const loginResp = opts?.reuseLogin ?? (await bff.request('/auth/login'))
+    if (loginResp.status !== 302) {
+      throw new Error(`login failed with status ${loginResp.status}`)
+    }
+    const redirectUrl = new URL(loginResp.headers.get('location')!)
+    const state = redirectUrl.searchParams.get('state')
+    if (!state) throw new Error('login redirect missing state')
+    const pkceCookie = loginResp.headers.get('set-cookie')
+    if (!pkceCookie) throw new Error('login missing PKCE cookie')
+
+    const code = issueAuthCode(sub, state)
+    const callbackUrl = `/auth/callback?code=${code}&state=${state}`
+    const callbackResp = await bff.request(callbackUrl, {
+      headers: { cookie: pkceCookie },
+    })
+    if (callbackResp.status !== 302) {
+      const body = await callbackResp.text()
+      throw new Error(body || `callback failed with status ${callbackResp.status}`)
+    }
+    const sessionCookie = callbackResp.headers.get('set-cookie')
+    if (!sessionCookie) throw new Error('callback missing session cookie')
+    return { sessionCookie, callbackUrl, pkceCookie }
+  }
+
   return {
     idp,
     clock,
     bff,
-    issueAuthCode(sub: string, state: string): string {
-      const code = `code_${Math.random().toString(36).slice(2)}`
-      issuedCodes.set(code, { sub, state })
-      return code
-    },
+    signIn,
   }
 }
