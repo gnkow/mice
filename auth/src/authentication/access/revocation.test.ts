@@ -11,6 +11,7 @@ import {
   revokeOnRoleChange,
   selfSuspend,
   suspend,
+  SuspensionConfirmError,
 } from './revocation.js'
 
 const unique = (prefix: string) => ({
@@ -74,7 +75,7 @@ describe('Revocation and Suspension (Ticket 06)', () => {
     const requestId = await suspend(target, { suspendedBy: admin, reason: 'test' })
     await assert.rejects(
       confirmSuspension(requestId, { confirmedBy: admin, reason: 'test' }),
-      /different admin/,
+      (err: unknown) => err instanceof SuspensionConfirmError && err.code === 'same_admin',
     )
     assert.equal(await isPrincipalAccessRevoked(target), false)
     await confirmSuspension(requestId, { confirmedBy: admin2, reason: 'cleanup' })

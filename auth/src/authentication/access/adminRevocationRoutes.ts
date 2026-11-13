@@ -1,7 +1,14 @@
 import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
 import { parsePrincipalKey, type PrincipalId } from '../session/principal.js'
-import { revokeAll, suspend, confirmSuspension, listPendingSuspensions, selfSuspend } from '../access/revocation.js'
+import {
+  revokeAll,
+  suspend,
+  confirmSuspension,
+  listPendingSuspensions,
+  selfSuspend,
+  SuspensionConfirmError,
+} from '../access/revocation.js'
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import type { AuditDep } from '../../routeDeps.js'
 
@@ -114,16 +121,14 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
 
       return c.json({ ok: true })
     } catch (err) {
-      if (err instanceof Error) {
-        if ('status' in err && err.status === 503) {
-          return c.json({ error: 'Audit system unavailable - suspension blocked' }, 503)
-        }
-        if (err.message.includes('not found')) {
+      if (err instanceof Error && 'status' in err && err.status === 503) {
+        return c.json({ error: 'Audit system unavailable - suspension blocked' }, 503)
+      }
+      if (err instanceof SuspensionConfirmError) {
+        if (err.code === 'not_found') {
           return c.json({ error: 'Suspension request not found or expired' }, 404)
         }
-        if (err.message.includes('same admin')) {
-          return c.json({ error: 'Cannot confirm your own suspension request' }, 400)
-        }
+        return c.json({ error: 'Cannot confirm your own suspension request' }, 400)
       }
       throw err
     }

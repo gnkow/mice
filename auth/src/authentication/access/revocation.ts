@@ -12,9 +12,10 @@ import { parsePrincipalKey, principalKey, type PrincipalId } from '../session/pr
 /**
  * Revocation and suspension (ticket 06).
  *
- * Every mutation appends an audit Intent before it touches the database; when that append
- * fails the mutation is refused with 503, so a revocation can never happen untrailed.
- * There is no cache: `isRevoked` and `isPrincipalAccessRevoked` read the database live.
+ * Every mutation goes through `runAuditedAccessMutation`: Intent first, then the
+ * database write, then Outcome. When Intent append fails the mutation is refused
+ * with 503, so a revocation can never happen untrailed. There is no cache:
+ * `isRevoked` and `isPrincipalAccessRevoked` read the database live.
  */
 
 /** A security suspend waits this long for a second instance admin to confirm it. */
@@ -68,54 +69,60 @@ type RevokeOnRoleChangeOptions = {
 
 type AuditContext = { via?: AuditVia | 'system'; path?: string; status?: number }
 
+type AuditedMutation<T> = {
+  action: string
+  principal: PrincipalId
+  actor: PrincipalId
+  intentMessage: string
+  outcomeMessage: string
+  context: AuditContext
+  detail?: Record<string, unknown>
+  outcomeDetail?: Record<string, unknown>
+  auditFailure?: boolean
+  mutate: () => Promise<T>
+}
+
 const nowSec = () => Math.floor(Date.now() / 1000)
 
 const unavailable = () =>
   Object.assign(new Error('Audit Intent cannot be appended - audit system unavailable'), { status: 503 })
 
-async function auditIntent(
-  action: string,
-  principal: PrincipalId,
-  actor: PrincipalId,
-  message: string,
-  context: AuditContext,
-  detail: Record<string, unknown> = {},
-) {
+/**
+ * Deep seam for every revoke/suspend mutation: Intent must land before any write;
+ * Outcome follows the write. Callers only supply messages and the mutate body.
+ */
+async function runAuditedAccessMutation<T>(args: AuditedMutation<T>): Promise<T> {
+  if (args.auditFailure) throw unavailable()
+  const detail = args.detail ?? {}
+  let intent
   try {
-    return await appendIntent({
-      actor: { ...actor, email: '', name: '' },
-      via: context.via ?? 'system',
+    intent = await appendIntent({
+      actor: { ...args.actor, email: '', name: '' },
+      via: args.context.via ?? 'system',
       method: 'POST',
-      path: context.path ?? '/auth/admin/revoke',
+      path: args.context.path ?? '/auth/admin/revoke',
       status: 0,
-      action,
-      message,
-      detail: { principal: principalKey(principal), ...detail },
+      action: args.action,
+      message: args.intentMessage,
+      detail: { principal: principalKey(args.principal), ...detail },
     })
   } catch {
     throw unavailable()
   }
-}
 
-function auditOutcome(
-  intentId: string,
-  action: string,
-  principal: PrincipalId,
-  actor: PrincipalId,
-  message: string,
-  context: AuditContext,
-  detail: Record<string, unknown> = {},
-) {
-  return appendOutcome(intentId, {
-    actor: { ...actor, email: '', name: '' },
-    via: context.via ?? 'system',
+  const result = await args.mutate()
+
+  await appendOutcome(intent.id, {
+    actor: { ...args.actor, email: '', name: '' },
+    via: args.context.via ?? 'system',
     method: 'POST',
-    path: context.path ?? '/auth/admin/revoke',
-    status: context.status ?? 200,
-    action,
-    message,
-    detail: { principal: principalKey(principal), ...detail },
+    path: args.context.path ?? '/auth/admin/revoke',
+    status: args.context.status ?? 200,
+    action: args.action,
+    message: args.outcomeMessage,
+    detail: { principal: principalKey(args.principal), ...(args.outcomeDetail ?? detail) },
   })
+  return result
 }
 
 /** Bump the all-credentials cutoff and mark the Principal permanently revoked. */
@@ -176,27 +183,18 @@ async function applySuspension(
  * Intent cannot be stored, in which case nothing is revoked.
  */
 export async function revokeAll(principal: PrincipalId, options: RevokeOptions): Promise<void> {
-  if (options.auditFailure) throw unavailable()
   const at = nowSec()
-  const context: AuditContext = { via: options.via, path: options.path ?? '/auth/admin/revoke' }
-  const intent = await auditIntent(
-    'session.revoke',
+  await runAuditedAccessMutation({
+    action: 'session.revoke',
     principal,
-    options.revokedBy,
-    `Revoked by ${principalKey(options.revokedBy)}: ${options.reason}`,
-    context,
-    { source: 'admin-revocation' },
-  )
-  await inTransaction((tx) => applyPermanentRevocation(tx, principal, at))
-  await auditOutcome(
-    intent.id,
-    'session.revoke',
-    principal,
-    options.revokedBy,
-    `Revoked all credentials for ${principalKey(principal)}`,
-    context,
-    { source: 'admin-revocation' },
-  )
+    actor: options.revokedBy,
+    intentMessage: `Revoked by ${principalKey(options.revokedBy)}: ${options.reason}`,
+    outcomeMessage: `Revoked all credentials for ${principalKey(principal)}`,
+    context: { via: options.via, path: options.path ?? '/auth/admin/revoke' },
+    detail: { source: 'admin-revocation' },
+    auditFailure: options.auditFailure,
+    mutate: () => inTransaction((tx) => applyPermanentRevocation(tx, principal, at)),
+  })
 }
 
 /** Live check: permanently revoked, or a Session started at `sessionStart` predates a cutoff. */
@@ -248,36 +246,30 @@ export async function isPrincipalAccessRevoked(principal: PrincipalId): Promise<
 
 /** Open a 24h suspension request; a second instance admin must confirm it. */
 export async function suspend(principal: PrincipalId, options: SuspendOptions): Promise<string> {
-  if (options.auditFailure) throw unavailable()
   const now = Date.now()
   const id = `susp-${now}-${Math.random().toString(36).slice(2)}`
-  const context: AuditContext = { via: options.via, path: options.path ?? '/auth/admin/suspend' }
-  const intent = await auditIntent(
-    'auth.suspend.request',
+  return runAuditedAccessMutation({
+    action: 'auth.suspend.request',
     principal,
-    options.suspendedBy,
-    `Suspension requested by ${principalKey(options.suspendedBy)}: ${options.reason}`,
-    context,
-    { source: 'admin-suspension' },
-  )
-  await getDb().insert(suspensionRequests).values({
-    id,
-    principalKey: principalKey(principal),
-    suspendedBy: principalKey(options.suspendedBy),
-    reason: options.reason,
-    createdAt: new Date(now),
-    expiresAt: new Date(now + SUSPENSION_CONFIRM_WINDOW_MS),
+    actor: options.suspendedBy,
+    intentMessage: `Suspension requested by ${principalKey(options.suspendedBy)}: ${options.reason}`,
+    outcomeMessage: `Suspension requested for ${principalKey(principal)}`,
+    context: { via: options.via, path: options.path ?? '/auth/admin/suspend' },
+    detail: { source: 'admin-suspension' },
+    outcomeDetail: { source: 'admin-suspension', suspension_id: id },
+    auditFailure: options.auditFailure,
+    mutate: async () => {
+      await getDb().insert(suspensionRequests).values({
+        id,
+        principalKey: principalKey(principal),
+        suspendedBy: principalKey(options.suspendedBy),
+        reason: options.reason,
+        createdAt: new Date(now),
+        expiresAt: new Date(now + SUSPENSION_CONFIRM_WINDOW_MS),
+      })
+      return id
+    },
   })
-  await auditOutcome(
-    intent.id,
-    'auth.suspend.request',
-    principal,
-    options.suspendedBy,
-    `Suspension requested for ${principalKey(principal)}`,
-    context,
-    { source: 'admin-suspension', suspension_id: id },
-  )
-  return id
 }
 
 /** Pending, unconfirmed suspensions; expired rows are dropped on read. */
@@ -307,6 +299,16 @@ export async function listPendingSuspensions(): Promise<SuspensionRequest[]> {
   }))
 }
 
+export class SuspensionConfirmError extends Error {
+  constructor(
+    message: string,
+    readonly code: 'not_found' | 'same_admin',
+  ) {
+    super(message)
+    this.name = 'SuspensionConfirmError'
+  }
+}
+
 /** Confirm a pending suspension. Must be a different admin, within 24h. */
 export async function confirmSuspension(
   suspensionId: string,
@@ -318,49 +320,43 @@ export async function confirmSuspension(
     .where(eq(suspensionRequests.id, suspensionId))
     .limit(1)
   if (!request || request.confirmedAt || request.expiresAt.getTime() <= Date.now()) {
-    throw new Error('Suspension request not found or expired')
+    throw new SuspensionConfirmError('Suspension request not found or expired', 'not_found')
   }
   if (request.suspendedBy === principalKey(options.confirmedBy)) {
-    throw new Error('Cannot confirm suspension: requires a different admin')
+    throw new SuspensionConfirmError(
+      'Cannot confirm suspension: requires a different admin',
+      'same_admin',
+    )
   }
 
   const principal = parsePrincipalKey(request.principalKey)
   const at = nowSec()
-  const context: AuditContext = {
-    via: options.via,
-    path: options.path ?? `/auth/admin/suspend/${suspensionId}/confirm`,
-  }
-  const intent = await auditIntent(
-    'auth.suspend.confirm',
+  await runAuditedAccessMutation({
+    action: 'auth.suspend.confirm',
     principal,
-    options.confirmedBy,
-    `Suspension confirmed by ${principalKey(options.confirmedBy)}: ${options.reason}`,
-    context,
-    { source: 'admin-suspension', suspension_id: suspensionId },
-  )
-
-  await inTransaction(async (tx) => {
-    const [confirmed] = await tx
-      .update(suspensionRequests)
-      .set({ confirmedBy: principalKey(options.confirmedBy), confirmedAt: new Date(at * 1000) })
-      .where(and(
-        eq(suspensionRequests.id, suspensionId),
-        isNull(suspensionRequests.confirmedAt),
-      ))
-      .returning({ id: suspensionRequests.id })
-    if (!confirmed) throw new Error('Suspension request not found or expired')
-    await applySuspension(tx, principal, at, options.confirmedBy, options.reason)
+    actor: options.confirmedBy,
+    intentMessage: `Suspension confirmed by ${principalKey(options.confirmedBy)}: ${options.reason}`,
+    outcomeMessage: `Suspended ${principalKey(principal)}`,
+    context: {
+      via: options.via,
+      path: options.path ?? `/auth/admin/suspend/${suspensionId}/confirm`,
+    },
+    detail: { source: 'admin-suspension', suspension_id: suspensionId },
+    mutate: () => inTransaction(async (tx) => {
+      const [confirmed] = await tx
+        .update(suspensionRequests)
+        .set({ confirmedBy: principalKey(options.confirmedBy), confirmedAt: new Date(at * 1000) })
+        .where(and(
+          eq(suspensionRequests.id, suspensionId),
+          isNull(suspensionRequests.confirmedAt),
+        ))
+        .returning({ id: suspensionRequests.id })
+      if (!confirmed) {
+        throw new SuspensionConfirmError('Suspension request not found or expired', 'not_found')
+      }
+      await applySuspension(tx, principal, at, options.confirmedBy, options.reason)
+    }),
   })
-
-  await auditOutcome(
-    intent.id,
-    'auth.suspend.confirm',
-    principal,
-    options.confirmedBy,
-    `Suspended ${principalKey(principal)}`,
-    context,
-    { source: 'admin-suspension', suspension_id: suspensionId },
-  )
 }
 
 /** Immediate self-suspension; no second admin and no confirmation window. */
@@ -369,27 +365,18 @@ export async function selfSuspend(
   options: SelfSuspendOptions,
 ): Promise<void> {
   const at = nowSec()
-  const context: AuditContext = { via: options.via, path: options.path ?? '/auth/me/suspend' }
-  const intent = await auditIntent(
-    'auth.suspend.self',
+  await runAuditedAccessMutation({
+    action: 'auth.suspend.self',
     principal,
-    principal,
-    `Self-suspended: ${options.reason}`,
-    context,
-    { source: 'self-suspension' },
-  )
-  await inTransaction((tx) =>
-    applySuspension(tx, principal, at, principal, `Self-suspended: ${options.reason}`),
-  )
-  await auditOutcome(
-    intent.id,
-    'auth.suspend.self',
-    principal,
-    principal,
-    `Suspended ${principalKey(principal)}`,
-    context,
-    { source: 'self-suspension' },
-  )
+    actor: principal,
+    intentMessage: `Self-suspended: ${options.reason}`,
+    outcomeMessage: `Suspended ${principalKey(principal)}`,
+    context: { via: options.via, path: options.path ?? '/auth/me/suspend' },
+    detail: { source: 'self-suspension' },
+    mutate: () => inTransaction((tx) =>
+      applySuspension(tx, principal, at, principal, `Self-suspended: ${options.reason}`),
+    ),
+  })
 }
 
 /** End the grant-holder's Sessions so the next request must log in again. PATs stay valid. */
@@ -402,42 +389,31 @@ export async function revokeOnRoleChange(
   if (unique.length === 0) return
 
   const at = nowSec()
-  const context: AuditContext = { via: options.via, path: options.path ?? '/auth/admin' }
-  const intent = await auditIntent(
-    'session.role_change',
-    unique[0]!,
-    options.changedBy,
-    `Role/grant changed by ${principalKey(options.changedBy)}: ${options.reason}`,
-    context,
-    {
+  await runAuditedAccessMutation({
+    action: 'session.role_change',
+    principal: unique[0]!,
+    actor: options.changedBy,
+    intentMessage: `Role/grant changed by ${principalKey(options.changedBy)}: ${options.reason}`,
+    outcomeMessage: `Forced fresh login for ${unique.length} Principal(s)`,
+    context: { via: options.via, path: options.path ?? '/auth/admin' },
+    detail: {
       source: 'role-change',
       principals: unique.map(principalKey),
     },
-  )
-
-  await inTransaction(async (tx) => {
-    for (const principal of unique) {
-      await tx
-        .insert(sessionRevocations)
-        .values({ principalKey: principalKey(principal), sessionsNotBefore: at })
-        .onConflictDoUpdate({
-          target: sessionRevocations.principalKey,
-          set: {
-            sessionsNotBefore: sql`greatest(coalesce(${sessionRevocations.sessionsNotBefore}, 0), ${at})`,
-          },
-        })
-    }
+    mutate: () => inTransaction(async (tx) => {
+      for (const principal of unique) {
+        await tx
+          .insert(sessionRevocations)
+          .values({ principalKey: principalKey(principal), sessionsNotBefore: at })
+          .onConflictDoUpdate({
+            target: sessionRevocations.principalKey,
+            set: {
+              sessionsNotBefore: sql`greatest(coalesce(${sessionRevocations.sessionsNotBefore}, 0), ${at})`,
+            },
+          })
+      }
+    }),
   })
-
-  await auditOutcome(
-    intent.id,
-    'session.role_change',
-    unique[0]!,
-    options.changedBy,
-    `Forced fresh login for ${unique.length} Principal(s)`,
-    context,
-    { source: 'role-change', principals: unique.map(principalKey) },
-  )
 }
 
 /**
