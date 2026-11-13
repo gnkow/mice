@@ -36,3 +36,5 @@ Every mutating repository or namespace authorization asks the directory for the 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
 
 2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
+
+2026-11-13: **deep-ui reclassified (UI)** — Deepen: Settings Access review Sign uses `formatPrivilegedActionError` for directory-unavailable / group-invalid `role=alert` copy. E2E: `privileged-group-recheck.spec.ts` (mocked sign 503/403). No commit/push (operator request).
