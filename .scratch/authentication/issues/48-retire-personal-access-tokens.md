@@ -23,3 +23,5 @@ No route mints a personal access token. Bearer authentication does not accept a 
 - **Files:** `retiredPersonalAccessToken.ts`, `retiredPersonalAccessToken.test.ts`, `cliCredentials.ts`, `cliCredentials.test.ts`, `authenticate.test.ts`.
 - **Deep-API deepen (2026-11-13):** `classifyBearerCredential` → `retired_pat` | `cli` | `unknown`; resolve + refresh refuse retired PAT before DB. `isRetiredPersonalAccessToken` is a thin wrapper.
 - **Tests:** `retiredPersonalAccessToken.test.ts`, `cliCredentials.test.ts`, `authenticate.test.ts` (green)
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

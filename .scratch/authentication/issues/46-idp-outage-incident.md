@@ -34,3 +34,5 @@ An unreachable directory on login or on an authenticated request opens one `idp_
 
 - **Deep-API deepen (2026-11-13):** Extracted pure `decideIdpOutageMutation(hasOpen, check)` (open-once / close-on-answer / noop); `recordIdpCheck` applies it. No `loginFlow` / `idpCheck` edits.
 - **Tests:** `idpOutage.test.ts` unit + integration (green)
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

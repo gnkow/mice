@@ -33,3 +33,5 @@ Signing decodes the stored token and treats MFA heuristically; a missing `auth_t
 - **Seams:** `assessSigningEvidenceCompleteness` / `verifySigningEvidence` (unit) → `POST /auth/sign/execute` (route integ)
 - **Integ:** `auth/src/authentication/signing/signingRoutes.integration.test.ts` (Ticket 52 describe)
 - **No commit/push** this pass.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

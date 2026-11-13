@@ -33,3 +33,5 @@ The signing ceremony extracts `acr`, `amr`, and `auth_time` from the step-up id_
 2026-11-13 — Deep-API deepen (auto-pick Top) + integ: **holds**. Added deep `buildSigningSessionInfo` so execute maps assembled evidence → `SessionInfo` behind one ceremony seam; routes stay a thin adapter over `verifySigningEvidence` + `buildSigningSessionInfo`. Unit: assemble + buildSigningSessionInfo. Integ: `POST /auth/sign/execute` persists evidence on the signature record and `esign.created` audit detail.
 
 **Files:** `signingCeremony.ts` (`assembleSignatureEvidence`, `buildSigningSessionInfo`), `signingRoutes.ts` (adapter), `signingEvidence.test.ts`, `signingRoutes.integration.test.ts`
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

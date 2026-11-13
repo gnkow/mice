@@ -34,3 +34,5 @@ Every mutating repository or namespace authorization asks the directory for the 
 - **Seams:** `directoryLiveGroupKeys` / `intersectSessionWithDirectoryGroups` (module); `withDirectoryGroups` via authz (package).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

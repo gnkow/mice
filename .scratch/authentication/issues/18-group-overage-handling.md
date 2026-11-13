@@ -38,3 +38,5 @@ When the id_token carries an Entra-style group overage indicator, login fetches 
 - **Deepen:** Export typed `DirectoryGroupFetch` + `fetchDirectoryGroupBindings` as the package directory-fetch seam; `resolveGroupOverage` stays the login adapter — no loginFlow edits.
 - **Integ:** `groupOverage.integration.test.ts` — claims overage → bind groups; unconfigured/empty refuse; token groups skip directory.
 - **Files:** `groupOverage.ts`, `groupOverage.test.ts`, `groupOverage.integration.test.ts`.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

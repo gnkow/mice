@@ -33,3 +33,5 @@ Status: done
 **Seams:** module `enforceWebSessionCap` / `sealSession`; HTTP `/auth/dev/session`, `/auth/sessions/web`.
 
 **Files:** `sessionCap.ts`, `sessionCap.test.ts`, `sessionCap.integration.test.ts`, `session.ts` (call site only)
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

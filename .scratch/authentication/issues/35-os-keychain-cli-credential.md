@@ -35,3 +35,5 @@ Status: done
 - **Seams:** `credentialVault` (unit) → login ↔ vault ↔ `resolveToken` (CLI package integ)
 - **Integ:** `cli/lib/keychain.integration.test.mjs`
 - **No commit/push** this pass.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

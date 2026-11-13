@@ -36,3 +36,5 @@ The BFF compares its clock with an NTP reference. Drift above 1 second raises an
 - **Deepen:** `ClockDriftScheduleDeps` injects `listAdmins` + `notify` (+ clock/NTP/poll) like seal-key schedule; `runClockDriftTick` owns decide→notify.
 - **Integ:** `clockDriftAlert.test.ts` — `clock drift schedule integ (injectable deps)` (alert notifies injected admins; within-threshold skips list/notify).
 - **Files:** `clockDriftAlert.ts`, `clockDriftAlert.test.ts`.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

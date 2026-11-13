@@ -37,3 +37,5 @@ The gate reads `claims_supported` from discovery. Keycloak 26 may not advertise 
 - **Seams:** `assessIdpAssurance` (unit) → `assertIdpAssurance` / boot gate (package integ, fake discovery)
 - **Integ:** `auth/src/authentication/session/idpAssuranceGate.integration.test.ts`
 - **No commit/push** this pass.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

@@ -34,3 +34,5 @@ An unset `SESSION_TTL_SEC` uses the 8 h default and passes.
 - **Seams:** `sessionAbsoluteLifetimeProblems` (unit) → `productionStartupProblems` / `assertProductionStartup` (package integ)
 - **Integ:** `auth/src/authentication/session/startupGate.integration.test.ts` (Ticket 51 describe)
 - **No commit/push** this pass.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

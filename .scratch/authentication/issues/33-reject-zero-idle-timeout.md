@@ -32,3 +32,5 @@ Split from issues 03 and 20. U22 says strict behaviour is always on.
 - **Seams:** `sessionIdleTimeoutProblems` (unit) → `productionStartupProblems` / `assertProductionStartup` (package integ)
 - **Integ:** `auth/src/authentication/session/startupGate.integration.test.ts` (Ticket 33 describe)
 - **No commit/push** this pass.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

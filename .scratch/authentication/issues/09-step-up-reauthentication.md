@@ -35,3 +35,5 @@ Sensitive browser actions call `reauthenticate`. The IdP request uses `prompt=lo
 2026-11-13 — Deep-API deepen (auto-pick Top) + integ: **holds**. Prior `decideStepUp` kept. Signing routes now call deep `requireSigningAccess` (`signingAccess.ts`) which demands the 60s step-up then idle. Seams: `decideStepUp` / `reauthenticate` (unit), `requireSigningAccess` (unit), `POST /auth/sign/prepare` reauth challenge (integ).
 
 **Files:** `signingAccess.ts`, `signingAccess.test.ts`, `signingRoutes.ts` (thin adapter), `signingRoutes.integration.test.ts`
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

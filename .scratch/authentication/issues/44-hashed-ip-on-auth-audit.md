@@ -34,3 +34,5 @@ Every authentication audit event (login, refresh, logout, step-up, failure, revo
 - **Deepen:** `recordAuthEvent(input, { hash })` passes the injectable hash through prepare→persist so write-path integ can prove `hashed_ip` without salt fixtures.
 - **Integ:** `authEvents.hashedIp.integration.test.ts` — write→query stores `hashed_ip` matching `hashIp`; injectable hash port; missing IP leaves field unset.
 - **Files:** `authEvents.ts`, `authEvents.test.ts`, `authEvents.hashedIp.integration.test.ts`.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

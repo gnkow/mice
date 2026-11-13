@@ -30,3 +30,5 @@ Authentication tests run against an in-process fake IdP. The harness issues toke
 - **Deepen:** Collapsed the leaky `issueAuthCode` helper into a deeper `AuthTestApp.signIn(sub)` interface. Login code/state/PKCE choreography stays behind the module seam; callers get a session cookie (and replay handles) without learning the callback protocol. `issueAuthCode` is now an internal adapter detail of the harness implementation.
 - **Files:** `authTestApp.ts`, `authTestApp.test.ts`, `README.md`.
 - **deep-api Deepen** (auto-pick Top): Wired harness clock into session sealing (`sealTestSession(user, clock.now())`) and JWT decrypt (`currentDate: harness clock`) so BFF clock offset stamps `sat`/`act`/`exp` and `/auth/me` evaluates expiry against the same clock — not wall time. Added `AuthTestApp.readSession` seam for inspecting sealed claims. Unit: `authTestApp.test.ts` (signIn seals against harness clock). Docs: `testing/README.md`.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

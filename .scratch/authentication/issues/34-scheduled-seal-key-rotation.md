@@ -30,3 +30,5 @@ Boot starts a normal-rotation schedule after the bootstrap key exists. A tick ro
 - **Files:** `auth/src/authentication/session/sealKeyRotationSchedule.ts`, `sealKeyRotationSchedule.test.ts`
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.

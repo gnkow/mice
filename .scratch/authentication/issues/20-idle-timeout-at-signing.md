@@ -34,3 +34,5 @@ Refusing a zero idle timeout at startup is issue 33.
 2026-11-13 — Deep-API deepen (auto-pick Top) + integ: **holds**. Idle decision stays in `evaluateSigningIdle`; routes call it via `requireSigningAccess` (no local wrapper). Unit: idle refuse/allow + `requireSigningAccess` `session_idle` branch. Integ: `POST /auth/sign/prepare` refuses idle Sessions (loadSession expiry or signing gate).
 
 **Files:** `idleTimeout.ts`, `signingAccess.ts`, `signingRoutes.ts` (adapter), `signingAccess.test.ts`, `signingRoutes.integration.test.ts`
+
+2026-11-13: /deep-ui skipped — no-ui (API/CLI/boot acceptance only). User acknowledged skip on authentication deep-ui board.
