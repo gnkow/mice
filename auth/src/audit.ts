@@ -1,17 +1,26 @@
 import { randomBytes } from 'node:crypto'
+import { auditChainGate, type AuditVerification } from './auditChainGate.js'
 import { closeAuditOutage, reportAuditDegradation } from './auditOutage.js'
 import { currentClock, systemClock, type Clock } from './clock.js'
 import { env } from './env.js'
 import { auditActionLabel } from './auditLabels.js'
-import { immudbConfig, openLedger, type Ledger, type LedgerVerification } from './auditLedger.js'
+import { immudbConfig, openLedger, type Ledger } from './auditLedger.js'
 import { type SessionUser } from './authentication/index.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { AuditDetailPolicyError, validateAuditDetail } from './auditDetailPolicy.js'
 import {
-  auditActionMatches,
   CURRENT_AUDIT_SCHEMA_VERSION,
   upcastAuditEvent,
 } from './auditSchema.js'
+import {
+  applyAuditQueryFilters,
+  eventJobIds,
+  eventSessionIds,
+  eventWorkspaceIds,
+} from './auditQueryFilters.js'
+
+export type { AuditVerification } from './auditChainGate.js'
+export { eventJobIds, eventSessionIds, eventWorkspaceIds, applyAuditQueryFilters } from './auditQueryFilters.js'
 
 export type AuditVia = 'session' | 'pat'
 
@@ -123,27 +132,18 @@ export function useAuditLedger(next: Ledger): void {
   ledger = Promise.resolve(next)
 }
 
-export type AuditVerification = LedgerVerification
-let lastVerification: AuditVerification | null = null
-
-let acknowledged: { seq: number; reason: string } | null = null
-
 /**
  * True while the last verification failed and the operator has not acknowledged that same
  * break. Dataset mutations are refused meanwhile. A different or later break blocks again.
  */
 export function auditChainBlocked(): boolean {
-  const v = lastVerification
-  if (!v || v.ok) return false
-  return !(acknowledged && acknowledged.seq === v.firstBreak.seq && acknowledged.reason === v.firstBreak.reason)
+  return auditChainGate.isBlocked()
 }
 
 /** Re-verifies and acknowledges the current break; null when the trail is intact. Held in memory, so a restart asks again. */
 export async function acknowledgeAuditBreak(): Promise<{ seq: number; reason: string } | null> {
-  const v = await verifyAudit()
-  if (v.ok) return null
-  acknowledged = { seq: v.firstBreak.seq, reason: v.firstBreak.reason }
-  return acknowledged
+  await verifyAudit()
+  return auditChainGate.acknowledge()
 }
 
 /** Evidence bundle for the events matching `query`, with a fresh verification of the ledger; see GLOSSARY "audit bundle". */
@@ -219,7 +219,7 @@ export async function verifyAudit(): Promise<AuditVerification> {
   } catch (err) {
     result = { ok: false, events: 0, verifiedAt: new Date(currentClock.now()).toISOString(), firstBreak: { seq: 0, reason: `audit store unreadable: ${String(err)}` } }
   }
-  lastVerification = result
+  auditChainGate.recordVerification(result)
   return result
 }
 
@@ -252,7 +252,7 @@ export async function auditReadiness(): Promise<AuditReadiness> {
     store = 'ok'
     detail = undefined
   }
-  const v = lastVerification
+  const v = auditChainGate.current()
   const chainState = !v ? 'unverified' : v.ok ? 'ok' : auditChainBlocked() ? 'broken' : 'acknowledged'
   return {
     ok: store === 'ok' && chainState !== 'broken',
@@ -631,105 +631,10 @@ export function listAllAuditEvents(): Promise<AuditEvent[]> {
   return readAllEvents()
 }
 
-function detailStrings(
-  detail: Record<string, unknown> | undefined,
-  single: string,
-  plural?: string,
-): string[] {
-  if (!detail) return []
-  const out: string[] = []
-  const one = detail[single]
-  if (typeof one === 'string' && one) out.push(one)
-  if (plural) {
-    const many = detail[plural]
-    if (Array.isArray(many)) {
-      for (const v of many) if (typeof v === 'string' && v) out.push(v)
-    }
-  }
-  return out
-}
-
-/** Session ids an event refers to. */
-export function eventSessionIds(e: AuditEvent): string[] {
-  return detailStrings(e.detail, 'session_id')
-}
-
-/** Job ids an event refers to (single or batch). */
-export function eventJobIds(e: AuditEvent): string[] {
-  return detailStrings(e.detail, 'job_id', 'job_ids')
-}
-
-/** Workspace ids an event refers to, including session mounts. */
-export function eventWorkspaceIds(e: AuditEvent): string[] {
-  const ids = detailStrings(e.detail, 'workspace_id')
-  const mounts = e.detail?.mounts
-  if (Array.isArray(mounts)) {
-    for (const m of mounts) {
-      const w = (m as { workspace_id?: unknown } | null)?.workspace_id
-      if (typeof w === 'string' && w) ids.push(w)
-    }
-  }
-  return ids
-}
-
 async function filterEventsFromLedger(q: AuditQuery): Promise<AuditEvent[]> {
-  let events = await readAllEvents()
-
-  if (!q.includeChain) {
-    const resolved = new Set(events.flatMap((e) => (e.phase === 'outcome' && e.intent_id ? [e.intent_id] : [])))
-    events = events.filter((e) => !(e.phase === 'intent' && resolved.has(e.id)))
-  }
-
-  // Newest first
-  events.reverse()
-
-  if (q.allowedNamespaces) {
-    const allowed = new Set(q.allowedNamespaces)
-    events = events.filter((e) => e.namespace && allowed.has(e.namespace))
-  }
-  if (q.actor) {
-    const a = q.actor.toLowerCase()
-    events = events.filter(
-      (e) =>
-        e.actor.sub.toLowerCase().includes(a) ||
-        e.actor.email.toLowerCase().includes(a) ||
-        e.actor.name.toLowerCase().includes(a),
-    )
-  }
-  if (q.namespace) {
-    events = events.filter((e) => e.namespace === q.namespace)
-  }
-  if (q.repo) {
-    events = events.filter((e) => e.repo === q.repo)
-  }
-  if (q.action) {
-    const filter = q.action
-    events = events.filter((e) => auditActionMatches(e.action, filter))
-  }
-  if (q.via) {
-    events = events.filter((e) => e.via === q.via)
-  }
-  if (q.sessionId) {
-    const id = q.sessionId
-    events = events.filter((e) => eventSessionIds(e).includes(id))
-  }
-  if (q.workspaceId) {
-    const id = q.workspaceId
-    events = events.filter((e) => eventWorkspaceIds(e).includes(id))
-  }
-  if (q.jobId) {
-    const id = q.jobId
-    events = events.filter((e) => eventJobIds(e).includes(id))
-  }
-  if (q.since) {
-    const since = q.since
-    events = events.filter((e) => e.ts >= since)
-  }
-  if (q.until) {
-    const until = q.until
-    events = events.filter((e) => e.ts <= until)
-  }
-  return events
+  const events = await readAllEvents()
+  // Newest first, then shared filter pipeline (same as Postgres index path).
+  return applyAuditQueryFilters([...events].reverse(), q)
 }
 
 /** Prefer the derived Postgres index when healthy; evidence path still uses immudb only. */

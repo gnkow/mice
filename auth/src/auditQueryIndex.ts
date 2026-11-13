@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import type { AuditEvent, AuditQuery } from './audit.js'
-import { auditActionMatches, upcastAuditEvent } from './auditSchema.js'
+import { applyAuditQueryFilters } from './auditQueryFilters.js'
+import { upcastAuditEvent } from './auditSchema.js'
 import { reportAuditDegradation } from './auditOutage.js'
 import { currentClock } from './clock.js'
 import { getDb } from './db/database.js'
@@ -86,56 +87,6 @@ export async function auditQueryIndexIsHealthy(): Promise<boolean> {
   }
 }
 
-function applyInMemoryFilters(events: AuditEvent[], q: AuditQuery): AuditEvent[] {
-  let out = events
-  if (!q.includeChain) {
-    const resolved = new Set(out.flatMap((e) => (e.phase === 'outcome' && e.intent_id ? [e.intent_id] : [])))
-    out = out.filter((e) => !(e.phase === 'intent' && resolved.has(e.id)))
-  }
-  if (q.allowedNamespaces) {
-    const allowed = new Set(q.allowedNamespaces)
-    out = out.filter((e) => e.namespace && allowed.has(e.namespace))
-  }
-  if (q.actor) {
-    const a = q.actor.toLowerCase()
-    out = out.filter(
-      (e) =>
-        e.actor.sub.toLowerCase().includes(a) ||
-        e.actor.email.toLowerCase().includes(a) ||
-        e.actor.name.toLowerCase().includes(a),
-    )
-  }
-  if (q.action) {
-    const filter = q.action
-    out = out.filter((e) => auditActionMatches(e.action, filter))
-  }
-  if (q.via) out = out.filter((e) => e.via === q.via)
-  if (q.sessionId) {
-    const id = q.sessionId
-    out = out.filter((e) => typeof e.detail?.session_id === 'string' && e.detail.session_id === id)
-  }
-  if (q.workspaceId) {
-    const id = q.workspaceId
-    out = out.filter((e) => {
-      if (typeof e.detail?.workspace_id === 'string' && e.detail.workspace_id === id) return true
-      const mounts = e.detail?.mounts
-      return (
-        Array.isArray(mounts) &&
-        mounts.some((m) => (m as { workspace_id?: string } | null)?.workspace_id === id)
-      )
-    })
-  }
-  if (q.jobId) {
-    const id = q.jobId
-    out = out.filter((e) => {
-      if (typeof e.detail?.job_id === 'string' && e.detail.job_id === id) return true
-      const many = e.detail?.job_ids
-      return Array.isArray(many) && many.includes(id)
-    })
-  }
-  return out
-}
-
 /**
  * Filtered read from the derived index (newest first). Returns null when the index should not be used
  * so callers fall back to an immudb scan. Evidence/verify never use this path.
@@ -156,7 +107,7 @@ export async function queryAuditQueryIndex(q: AuditQuery): Promise<AuditEvent[] 
     .orderBy(desc(auditQueryIndex.ts), desc(auditQueryIndex.ledgerSeq))
 
   const events = rows.map((r) => upcastAuditEvent(r.event as AuditEvent))
-  return applyInMemoryFilters(events, q)
+  return applyAuditQueryFilters(events, q)
 }
 
 /**
