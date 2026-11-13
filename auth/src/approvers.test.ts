@@ -9,7 +9,7 @@ after(() => t.restore())
 const { Hono } = await import('hono')
 const { registerNamespaceRoutes } = await import('./namespaceRoutes.js')
 const { preparePrincipal, decideIsApprover } = await import('./authz.js')
-const { sealedSessionCookie } = await import('./testSupport.js')
+const { regulatedMutationHeaders, sealedSessionCookie } = await import('./testSupport.js')
 const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 
 const root = { ...t.person('root'), email: 'root@x.io', emailVerified: true as const }
@@ -24,16 +24,24 @@ const app = new Hono()
 registerNamespaceRoutes(app, { audit: async (_c, _u, _via, f) => void audits.push({ action: f.action, repo: f.repo }) })
 
 const people = { root, owner, bob, carol } as const
-const call = async (as: keyof typeof people, method: string, path: string, body?: unknown) =>
-  app.request(path, {
+const call = async (as: keyof typeof people, method: string, path: string, body?: unknown) => {
+  const user = people[as]
+  const mutation = body !== undefined || method !== 'GET'
+  const headers = mutation
+    ? {
+        ...(await regulatedMutationHeaders(user, { method, path, body: body ?? {} })),
+        cookie: await sealedSessionCookie({ ...user, sessionStart: Math.floor(Date.now() / 1000) }),
+      }
+    : {
+        'content-type': 'application/json',
+        cookie: await sealedSessionCookie({ ...user, sessionStart: Math.floor(Date.now() / 1000) }),
+      }
+  return app.request(path, {
     method,
-    headers: {
-      'content-type': 'application/json',
-      'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
-      cookie: await sealedSessionCookie({ ...people[as], sessionStart: Math.floor(Date.now() / 1000) }),
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   })
+}
 
 await call('owner', 'POST', '/auth/namespaces', { name: 'acme', basePermission: 'read' })
 const repoPath = '/auth/namespaces/acme/repos/data/approvers'
