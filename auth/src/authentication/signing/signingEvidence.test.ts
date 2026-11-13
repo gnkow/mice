@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { SignJWT, generateKeyPair, jwtVerify } from 'jose'
-import { assembleSignatureEvidence } from './signingCeremony.js'
+import { assembleSignatureEvidence, buildSigningSessionInfo } from './signingCeremony.js'
 import {
   assessSigningEvidenceCompleteness,
   verifySigningEvidence,
@@ -54,6 +54,21 @@ describe('assembleSignatureEvidence', () => {
       () => assembleSignatureEvidence({ acr: 'mfa', amr: ['pwd', 'otp'] }, { jwksKeyId: 'k1', verifiedAtMs: 1 }),
       /missing iss/,
     )
+  })
+
+  it('buildSigningSessionInfo maps assembled evidence into createSignature SessionInfo', () => {
+    const assembled = assembleSignatureEvidence(completePayload, {
+      jwksKeyId: 'k1',
+      verifiedAtMs: NOW * 1000,
+    })
+    const session = buildSigningSessionInfo(
+      { iss: 'https://idp.test', sub: 'alice', name: 'Alice' },
+      assembled,
+    )
+    assert.equal(session.mfaVerified, true)
+    assert.equal(session.authenticatedAt, (NOW - 10) * 1000)
+    assert.deepEqual(session.mfaEvidence, assembled.mfaEvidence)
+    assert.deepEqual(session.verificationMetadata, assembled.verificationMetadata)
   })
 })
 

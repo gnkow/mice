@@ -122,6 +122,23 @@ export function assembleSignatureEvidence(
 }
 
 /**
+ * Map verified signing evidence into the SessionInfo createSignature expects.
+ * Routes own HTTP refusal; this only shapes the ceremony input.
+ */
+export function buildSigningSessionInfo(
+  principal: PrincipalId & { name: string },
+  evidence: AssembledSignatureEvidence,
+): SessionInfo {
+  return {
+    authenticatedAt: (evidence.mfaEvidence.auth_time ?? 0) * 1000,
+    mfaVerified: true,
+    principal,
+    mfaEvidence: evidence.mfaEvidence,
+    verificationMetadata: evidence.verificationMetadata,
+  }
+}
+
+/**
  * Check if authentication is fresh enough for signing (<5 minutes).
  */
 export function isAuthenticationFresh(authenticatedAt: number, now: number = Date.now()): boolean {

@@ -29,3 +29,7 @@ The signing ceremony extracts `acr`, `amr`, and `auth_time` from the step-up id_
 - **Audit:** holds — signature records and audit detail carry `acr`/`amr`/`auth_time` plus JWKS kid, verification time, and issuer when MFA evidence is present.
 - **Deepen:** extracted `assembleSignatureEvidence` in `signingCeremony.ts` so signing verification and token-metadata extraction share one assembly seam; `signingRoutes` unchanged beyond existing `verifySigningEvidence` use.
 - **Tests:** `signingEvidence.test.ts` (assemble + verify), `signatureEvidenceMetadata.test.ts`, `signingCeremony.test.ts`.
+
+2026-11-13 — Deep-API deepen (auto-pick Top) + integ: **holds**. Added deep `buildSigningSessionInfo` so execute maps assembled evidence → `SessionInfo` behind one ceremony seam; routes stay a thin adapter over `verifySigningEvidence` + `buildSigningSessionInfo`. Unit: assemble + buildSigningSessionInfo. Integ: `POST /auth/sign/execute` persists evidence on the signature record and `esign.created` audit detail.
+
+**Files:** `signingCeremony.ts` (`assembleSignatureEvidence`, `buildSigningSessionInfo`), `signingRoutes.ts` (adapter), `signingEvidence.test.ts`, `signingRoutes.integration.test.ts`
