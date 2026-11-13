@@ -6,7 +6,7 @@ import {
   generateAccessReviewReport,
   type AccessReviewReport,
 } from './accessReview.js'
-import { applyAccessReviewSign } from './accessReviewSign.js'
+import { applyAccessReviewSign, prepareAccessReviewDocument } from './accessReviewSign.js'
 import type { SignatureRecord } from '../signing/signingCeremony.js'
 
 function hashOf(content: string): string {
@@ -26,9 +26,14 @@ function signatureFor(content: string): SignatureRecord {
 describe('applyAccessReviewSign (#40)', () => {
   const report: AccessReviewReport = generateAccessReviewReport([], '2026-Q4', () => 1_700_000_000_000)
 
+  it('prepares the same content hash the sign gate expects', () => {
+    const prepared = prepareAccessReviewDocument(report)
+    assert.equal(prepared.content, displayedAccessReview(report))
+    assert.equal(prepared.contentHash, hashOf(prepared.content))
+  })
+
   it('seals the report when the expected hash matches the displayed document', () => {
-    const content = displayedAccessReview(report)
-    const expectedHash = hashOf(content)
+    const expectedHash = prepareAccessReviewDocument(report).contentHash
     const result = applyAccessReviewSign(report, expectedHash, (doc) => signatureFor(doc))
     assert.equal(result.ok, true)
     if (!result.ok) return

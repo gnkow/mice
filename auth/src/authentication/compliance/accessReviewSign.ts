@@ -6,15 +6,17 @@
  */
 
 import {
-  displayedAccessReview,
+  prepareAccessReviewDocument,
   signAccessReviewReport,
   type AccessReviewReport,
 } from './accessReview.js'
-import { prepareForSigning, type SignatureRecord } from '../signing/signingCeremony.js'
+import type { SignatureRecord } from '../signing/signingCeremony.js'
 
 export type AccessReviewSignResult =
   | { ok: true; report: AccessReviewReport; contentHash: string; content: string }
   | { ok: false; error: string }
+
+export { prepareAccessReviewDocument }
 
 /**
  * Sign the stored report only when `expectedHash` still matches the displayed document.
@@ -25,15 +27,14 @@ export function applyAccessReviewSign(
   expectedHash: string,
   sign: (content: string) => SignatureRecord,
 ): AccessReviewSignResult {
-  const content = displayedAccessReview(report)
-  const prepared = prepareForSigning(content)
-  if (prepared.hash !== expectedHash) {
+  const prepared = prepareAccessReviewDocument(report)
+  if (prepared.contentHash !== expectedHash) {
     return { ok: false, error: 'Content changed after display; signature invalidated' }
   }
   return {
     ok: true,
-    report: signAccessReviewReport(report, sign(content)),
-    contentHash: prepared.hash,
-    content,
+    report: signAccessReviewReport(report, sign(prepared.content)),
+    contentHash: prepared.contentHash,
+    content: prepared.content,
   }
 }
