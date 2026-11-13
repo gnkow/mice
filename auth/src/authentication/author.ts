@@ -1,9 +1,9 @@
 import type { SessionUser } from './session/session.js'
-import { humanCommitAuthor, humanCommitEmail } from './commits/commitIdentity.js'
+import { humanCommitFields } from './commits/commitIdentity.js'
 
 /** Canonical commit author for a human Principal (`iss|sub`). Ticket 08. */
 export function commitAuthor(user: SessionUser): string {
-  return humanCommitAuthor(user)
+  return humanCommitFields(user).author
 }
 
 function shouldInjectAuthor(body: Record<string, unknown>): boolean {
@@ -47,12 +47,13 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 function overwriteNestedAuthors(value: unknown, user: SessionUser): unknown {
   if (Array.isArray(value)) return value.map((v) => overwriteNestedAuthors(v, user))
   if (!isPlainObject(value)) return value
+  const fields = humanCommitFields(user)
   const hasEmail = EMAIL_KEYS.some((k) => k in value)
   const next: Record<string, unknown> = {}
   for (const [key, v] of Object.entries(value)) {
-    if (EMAIL_KEYS.includes(key)) next[key] = humanCommitEmail(user)
-    else if (NAME_KEYS.includes(key) && !isPlainObject(v)) next[key] = commitAuthor(user)
-    else if (key === 'name' && hasEmail) next[key] = commitAuthor(user)
+    if (EMAIL_KEYS.includes(key)) next[key] = fields.email
+    else if (NAME_KEYS.includes(key) && !isPlainObject(v)) next[key] = fields.author
+    else if (key === 'name' && hasEmail) next[key] = fields.author
     else next[key] = overwriteNestedAuthors(v, user)
   }
   return next
@@ -65,28 +66,29 @@ export function injectAuthorJson(
 ): Record<string, unknown> {
   if (!shouldInjectAuthor(body)) return overwriteNestedAuthors(body, user) as Record<string, unknown>
 
+  const fields = humanCommitFields(user)
   const flat = { ...body }
   for (const [key, v] of Object.entries(flat)) {
     if (isPlainObject(v) || Array.isArray(v)) flat[key] = overwriteNestedAuthors(v, user)
   }
   const next = flat
   for (const k of ['author_name', 'committer', 'committer_name']) {
-    if (k in next && !isPlainObject(next[k])) next[k] = commitAuthor(user)
+    if (k in next && !isPlainObject(next[k])) next[k] = fields.author
   }
   for (const k of ['author_email', 'committer_email']) {
-    if (k in next) next[k] = humanCommitEmail(user)
+    if (k in next) next[k] = fields.email
   }
-  next.email = humanCommitEmail(user)
+  next.email = fields.email
   if ('author' in next || 'message' in next) {
-    next.author = commitAuthor(user)
+    next.author = fields.author
   }
   if ('user_name' in next || 'user_email' in next) {
-    next.user_name = commitAuthor(user)
-    next.user_email = humanCommitEmail(user)
+    next.user_name = fields.author
+    next.user_email = fields.email
   }
   // Branch merge + file move use `name` as author (repo create excluded above).
   if ('name' in next || 'new_path' in next || 'email' in body) {
-    next.name = commitAuthor(user)
+    next.name = fields.author
   }
   return next
 }
@@ -95,6 +97,7 @@ export function injectAuthorFormData(
   form: FormData,
   user: SessionUser,
 ): FormData {
+  const fields = humanCommitFields(user)
   const next = new FormData()
   for (const [key, value] of form.entries()) {
     if (
@@ -108,9 +111,9 @@ export function injectAuthorFormData(
     }
     next.append(key, value)
   }
-  next.set('name', commitAuthor(user))
-  next.set('email', humanCommitEmail(user))
-  next.set('author', commitAuthor(user))
+  next.set('name', fields.author)
+  next.set('email', fields.email)
+  next.set('author', fields.author)
   return next
 }
 

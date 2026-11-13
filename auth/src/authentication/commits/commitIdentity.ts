@@ -24,6 +24,25 @@ export function humanCommitEmail(principal: { email: string }): string {
   return principal.email
 }
 
+/** Author + email stamped together on a human commit (Ticket 08). */
+export type HumanCommitFields = {
+  author: string
+  email: string
+}
+
+/**
+ * Deep seam for human commit identity: both fields callers must overwrite.
+ * Prefer this over calling author/email helpers separately.
+ */
+export function humanCommitFields(
+  principal: PrincipalId & { email: string },
+): HumanCommitFields {
+  return {
+    author: humanCommitAuthor(principal),
+    email: humanCommitEmail(principal),
+  }
+}
+
 /**
  * Strip any identity trailers from client-supplied commit message.
  * These will be re-added by the BFF with authoritative data.

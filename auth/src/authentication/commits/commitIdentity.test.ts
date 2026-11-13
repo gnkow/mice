@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   humanCommitAuthor,
   humanCommitEmail,
+  humanCommitFields,
   stripIdentityTrailers,
   appendIdentityTrailer,
   formatIdentityTrailer,
@@ -46,6 +47,20 @@ describe('Human commit author (Ticket 08)', () => {
     assert.equal(
       humanCommitEmail({ email: 'alice@example.com' }),
       'alice@example.com',
+    )
+  })
+
+  it('humanCommitFields returns author and email together', () => {
+    assert.deepEqual(
+      humanCommitFields({
+        iss: 'https://idp.example.com/',
+        sub: 'alice123',
+        email: 'alice@example.com',
+      }),
+      {
+        author: 'https://idp.example.com|alice123',
+        email: 'alice@example.com',
+      },
     )
   })
 })

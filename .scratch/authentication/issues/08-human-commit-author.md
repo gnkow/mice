@@ -37,3 +37,5 @@ A human commit written through the BFF has `author` set to the Principal's canon
 **Deepen (auto-picked):** Own human commit `author`/`email` identity in `commitIdentity` (`humanCommitAuthor` / `humanCommitEmail`); `author.ts` `commitAuthor` + inject paths and `formatIdentityTrailer` call that seam. No session.ts rewrite.
 
 **Files:** `commitIdentity.ts`, `author.ts`, `author.test.ts`, `commitIdentity.test.ts`
+
+**deep-api Deepen** (auto-pick Top): Added `humanCommitFields` (`{ author, email }`) as the deep stamp seam; `commitAuthor` + `injectAuthorJson` / `injectAuthorFormData` / nested overwrite all go through it once. Unit: `commitIdentity.test.ts` + `author.test.ts`. (Pre-existing `proxyAuthor.test.ts` bodyless-write 400s unrelated to this deepen.)
