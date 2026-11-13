@@ -1,4 +1,5 @@
 import type { PrincipalId } from '../session/principal.js'
+import { extractMfaEvidence } from '../signing/mfaEvidence.js'
 
 /**
  * TICKET 11: IdP Baseline and Drift Reports
@@ -84,6 +85,23 @@ export function checkIdpBaseline(requirements: IdpBaselineRequirements): IdpBase
     timestamp: Date.now(),
     errors,
   }
+}
+
+/**
+ * Derive MFA / auth_time baseline flags from IdP token claims, then run the checklist.
+ * Locality: MFA evidence extraction stays in mfaEvidence; this owns the requirements fold.
+ */
+export function checkIdpBaselineFromClaims(
+  payload: Record<string, unknown>,
+  extras: Pick<IdpBaselineRequirements, 'accountLockoutConfigured' | 'passwordPolicyConfigured'>,
+): IdpBaselineResult {
+  const evidence = extractMfaEvidence(payload)
+  return checkIdpBaseline({
+    mfaEnabled: evidence.hasMfa,
+    authTimeAsserted: evidence.authTime !== undefined,
+    accountLockoutConfigured: extras.accountLockoutConfigured,
+    passwordPolicyConfigured: extras.passwordPolicyConfigured,
+  })
 }
 
 /**

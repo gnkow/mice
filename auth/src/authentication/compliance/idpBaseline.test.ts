@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   checkIdpBaseline,
+  checkIdpBaselineFromClaims,
   detectDrift,
   recordIdpOutage,
   type IdpBaselineRequirements,
@@ -78,6 +79,27 @@ describe('IdP Baseline auth_time', () => {
     })
     assert.equal(result.passed, false)
     assert.ok(result.errors.some((e) => e.includes('auth_time')))
+  })
+})
+
+describe('IdP Baseline from token claims', () => {
+  it('passes when claims show MFA and auth_time', () => {
+    const result = checkIdpBaselineFromClaims(
+      { acr: 'mfa', amr: ['pwd', 'otp'], auth_time: 1_700_000_000 },
+      { accountLockoutConfigured: true, passwordPolicyConfigured: true },
+    )
+    assert.equal(result.passed, true)
+    assert.equal(result.requirements.mfaEnabled, true)
+    assert.equal(result.requirements.authTimeAsserted, true)
+  })
+
+  it('fails when claims lack MFA evidence', () => {
+    const result = checkIdpBaselineFromClaims(
+      { acr: 'password', amr: ['pwd'], auth_time: 1_700_000_000 },
+      { accountLockoutConfigured: true, passwordPolicyConfigured: true },
+    )
+    assert.equal(result.passed, false)
+    assert.ok(result.errors.some((e) => e.includes('MFA')))
   })
 })
 

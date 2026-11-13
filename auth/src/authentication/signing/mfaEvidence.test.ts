@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { extractMfaEvidence, type MfaEvidence } from './mfaEvidence.js'
+import {
+  extractMfaEvidence,
+  evaluateIdpMfaBaseline,
+  type MfaEvidence,
+} from './mfaEvidence.js'
 
 /**
  * MFA Evidence Extraction Tests
@@ -189,5 +193,34 @@ describe('MFA Evidence - hasMfa Logic', () => {
       })
       assert.equal(evidence.hasMfa, true, `Should detect MFA with indicator: ${indicator}`)
     }
+  })
+})
+
+describe('IdP MFA baseline evaluation', () => {
+  it('records MFA available with claims when acr/amr qualify', () => {
+    const result = evaluateIdpMfaBaseline({
+      acr: 'mfa',
+      amr: ['pwd', 'otp'],
+      auth_time: 1_700_000_000,
+    })
+    assert.equal(result.mfaAvailable, true)
+    assert.equal(result.error, null)
+    assert.deepEqual(result.claimsFound, {
+      acr: 'mfa',
+      amr: ['pwd', 'otp'],
+      authTime: 1_700_000_000,
+    })
+  })
+
+  it('records MFA unavailable when claims are weak or missing', () => {
+    const weak = evaluateIdpMfaBaseline({ acr: 'password', amr: ['pwd'] })
+    assert.equal(weak.mfaAvailable, false)
+    assert.match(weak.error ?? '', /MFA/)
+    assert.deepEqual(weak.claimsFound, { acr: 'password', amr: ['pwd'] })
+
+    const absent = evaluateIdpMfaBaseline(null)
+    assert.equal(absent.mfaAvailable, false)
+    assert.equal(absent.claimsFound, null)
+    assert.match(absent.error ?? '', /id_token|claims/i)
   })
 })

@@ -72,3 +72,45 @@ export function extractMfaEvidence(payload: Record<string, unknown>): MfaEvidenc
     authTime,
   }
 }
+
+export type IdpBaselineClaimsFound = {
+  acr?: string
+  amr: string[]
+  authTime?: number
+}
+
+export type IdpMfaBaselineEvaluation = {
+  mfaAvailable: boolean
+  claimsFound: IdpBaselineClaimsFound | null
+  error: string | null
+}
+
+/**
+ * Admin baseline check decision: whether IdP token claims demonstrate MFA.
+ * Stores the same claim shape as `idp_baseline_checks.claims_found`.
+ */
+export function evaluateIdpMfaBaseline(
+  payload: Record<string, unknown> | null | undefined,
+): IdpMfaBaselineEvaluation {
+  if (!payload) {
+    return {
+      mfaAvailable: false,
+      claimsFound: null,
+      error: 'No id_token claims available for baseline check',
+    }
+  }
+  const evidence = extractMfaEvidence(payload)
+  const claimsFound: IdpBaselineClaimsFound = {
+    ...(evidence.acr !== undefined ? { acr: evidence.acr } : {}),
+    amr: evidence.amr,
+    ...(evidence.authTime !== undefined ? { authTime: evidence.authTime } : {}),
+  }
+  if (evidence.hasMfa) {
+    return { mfaAvailable: true, claimsFound, error: null }
+  }
+  return {
+    mfaAvailable: false,
+    claimsFound,
+    error: 'IdP token does not present MFA evidence (acr/amr)',
+  }
+}

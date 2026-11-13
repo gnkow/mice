@@ -21,4 +21,13 @@ Signing reads `acr` and `amr` from the step-up id_token. Missing MFA evidence re
 - `auth/src/authentication/signing/mfaEvidence.ts`
 - `auth/src/authentication/signing/signingRoutes.ts`
 - `auth/src/authentication/admin/idpBaselineRoutes.ts`
+- `auth/src/authentication/compliance/idpBaseline.ts`
 - `web/src/pages/SettingsPage.tsx`
+
+## Comments
+
+2026-11-13 — Checkmate audit: **holds** (MFA refusal + baseline store/status covered by `mfaEvidence` / signing evidence / `idpBaselineRoutes`).
+
+**Deepen (auto-picked):** Collapse claim extract → storeable baseline result into `evaluateIdpMfaBaseline`; admin check evaluates the Session id_token through that seam. `checkIdpBaselineFromClaims` folds MFA evidence into the compliance checklist.
+
+**Files:** `mfaEvidence.ts`, `mfaEvidence.test.ts`, `admin/idpBaselineRoutes.ts`, `compliance/idpBaseline.ts`, `idpBaseline.test.ts`
