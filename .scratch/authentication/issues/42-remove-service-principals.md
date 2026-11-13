@@ -22,3 +22,9 @@ A Session or bearer credential whose issuer is `urn:mice:service` is not a calle
 - [x] Owner-revoke no longer cascades to service principals, because none exist
 - [x] Tests that authenticated as a service principal use a human session instead
 - [x] `kindOf` no longer has a service kind
+
+## Comments
+
+- **Audit:** holds — `kindOf` is human-only; `authenticate` refuses `urn:mice:service` session/bearer; offboarding does not cascade to SPs (`principalKind.test.ts`, `serviceCaller.test.ts`, `offboarding.test.ts`).
+- **Deepen (auto-pick):** Extracted `isServiceCaller` / `SERVICE_ISSUER` in `principal.ts` so kind stays human and caller refusal lives once; `authenticate` only calls the helper (no wholesale requireAuth rewrite).
+- **Files:** `principal.ts`, `principalKind.test.ts`, `requireAuth.ts` (two call sites), `serviceCaller.test.ts`.

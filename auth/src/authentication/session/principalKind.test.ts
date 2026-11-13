@@ -1,7 +1,7 @@
 import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { can, kindOf } from './principal.js'
+import { can, isServiceCaller, kindOf } from './principal.js'
 
 const human = { iss: 'https://idp.example', sub: 'u1' }
 
@@ -14,5 +14,11 @@ describe('principal kind', () => {
   it('a human Principal can be an admin and has favorites', () => {
     assert.equal(can(human, 'canBeAdmin'), true)
     assert.equal(can(human, 'hasFavorites'), true)
+  })
+
+  it('treats urn:mice:service as a refused service caller, not a Principal kind', () => {
+    assert.equal(isServiceCaller({ iss: 'urn:mice:service' }), true)
+    assert.equal(isServiceCaller({ iss: 'urn:mice:service/' }), true)
+    assert.equal(isServiceCaller(human), false)
   })
 })

@@ -11,6 +11,9 @@ export function canonicalIssuer(iss: string): string {
 
 export type PrincipalKind = 'human'
 
+/** Retired service-principal issuer; never a caller (issue 42). */
+export const SERVICE_ISSUER = 'urn:mice:service'
+
 /** What a Principal may do, decided by kind in one place. */
 export type Capability = 'canBeAdmin' | 'hasFavorites'
 
@@ -21,6 +24,15 @@ const CAPABILITIES: Record<PrincipalKind, Record<Capability, boolean>> = {
 /** A Principal is a person. Mice does not classify a service kind. */
 export function kindOf(_p: { iss: string }): PrincipalKind {
   return 'human'
+}
+
+/**
+ * True when the credential's issuer is the retired service-principal issuer.
+ * Kind stays `human`; refusal as a caller lives here so authenticate does not
+ * re-encode the issuer string.
+ */
+export function isServiceCaller(p: { iss: string }): boolean {
+  return canonicalIssuer(p.iss) === SERVICE_ISSUER
 }
 
 export function can(p: { iss: string }, capability: Capability): boolean {
