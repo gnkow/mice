@@ -24,33 +24,6 @@ export function parseGroupBindingKey(
   return { iss: key.slice(0, i), groupId: key.slice(i + 1) }
 }
 
-/**
- * Turn a bare IdP group id/name (or an existing binding key) into the stored grant key.
- * Name-shaped values are normalized; UUID object ids keep lowercase hex.
- */
-export function toGroupBindingKey(iss: string, group: string): {
-  bindingKey: string
-  groupId: string
-  idBased: boolean
-} {
-  const existing = parseGroupBindingKey(group)
-  if (existing) {
-    return {
-      bindingKey: groupBindingKey(existing.iss, existing.groupId),
-      groupId: existing.groupId,
-      idBased: isGroupObjectId(existing.groupId),
-    }
-  }
-  const trimmed = group.trim()
-  const idBased = isGroupObjectId(trimmed)
-  const groupId = trimmed.toLowerCase()
-  return {
-    bindingKey: groupBindingKey(iss, groupId),
-    groupId,
-    idBased,
-  }
-}
-
 export type ExtractedGroup = {
   bindingKey: string
   groupId: string
@@ -63,6 +36,50 @@ export type ExtractGroupsResult = {
   groups: ExtractedGroup[]
   /** True when any claim lacked an object id and fell back to a normalized name. */
   nameBasedFallback: boolean
+}
+
+/**
+ * Single claim → binding seam: UUID object ids are id-based; anything else is a
+ * name fallback. An already-keyed `iss|group_id` is re-keyed from the key's issuer.
+ */
+export function resolveGroupClaim(iss: string, claim: string): ExtractedGroup {
+  const existing = parseGroupBindingKey(claim)
+  if (existing) {
+    const idBased = isGroupObjectId(existing.groupId)
+    const groupId = existing.groupId
+    return {
+      bindingKey: groupBindingKey(existing.iss, groupId),
+      groupId,
+      displayName: groupId,
+      idBased,
+    }
+  }
+  const trimmed = claim.trim()
+  const idBased = isGroupObjectId(trimmed)
+  const groupId = trimmed.toLowerCase()
+  return {
+    bindingKey: groupBindingKey(iss, groupId),
+    groupId,
+    displayName: idBased ? groupId : trimmed,
+    idBased,
+  }
+}
+
+/**
+ * Turn a bare IdP group id/name (or an existing binding key) into the stored grant key.
+ * Name-shaped values are normalized; UUID object ids keep lowercase hex.
+ */
+export function toGroupBindingKey(iss: string, group: string): {
+  bindingKey: string
+  groupId: string
+  idBased: boolean
+} {
+  const resolved = resolveGroupClaim(iss, group)
+  return {
+    bindingKey: resolved.bindingKey,
+    groupId: resolved.groupId,
+    idBased: resolved.idBased,
+  }
 }
 
 function claimList(raw: unknown): string[] {
@@ -88,14 +105,11 @@ export function extractGroupsFromClaims(
   for (const item of claimList(raw)) {
     const trimmed = item.trim()
     if (!trimmed) continue
-    const idBased = isGroupObjectId(trimmed)
-    const groupId = trimmed.toLowerCase()
-    const displayName = idBased ? groupId : trimmed
-    if (!idBased) nameBasedFallback = true
-    const bindingKey = groupBindingKey(iss, groupId)
-    if (seen.has(bindingKey)) continue
-    seen.add(bindingKey)
-    groups.push({ bindingKey, groupId, displayName, idBased })
+    const resolved = resolveGroupClaim(iss, trimmed)
+    if (!resolved.idBased) nameBasedFallback = true
+    if (seen.has(resolved.bindingKey)) continue
+    seen.add(resolved.bindingKey)
+    groups.push(resolved)
   }
 
   return { groups, nameBasedFallback }

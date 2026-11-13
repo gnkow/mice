@@ -24,3 +24,7 @@
 - Keys: `auth/src/groupBinding.ts` (`groupBindingKey`, `extractGroupsFromClaims`)
 - Cache: `group_display_names` + `auth/src/groupDisplayStore.ts`; login refreshes via `sessionGroups`
 - Warning: `groupsNameBasedFallback` on Session / OIDC claims when any claim lacked an object id
+
+## Comments
+
+**Deep-api Deepen (2026-11-13):** Holds at `groupBinding` / `extractGroupsFromClaims`. Top: single claim→binding seam `resolveGroupClaim`; `toGroupBindingKey` and `extractGroupsFromClaims` reuse it. Unit: `groupBinding.test.ts` (resolve + extract + toKey). Integration remains `authzGroupId.test.ts`.
