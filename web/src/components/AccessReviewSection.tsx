@@ -1,7 +1,7 @@
 import { FileText, Download, Shield } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { shownSignature } from '../lib/signatureName'
+import { decideSignatureNameDisplay } from '../lib/signatureName'
 
 type AccessReviewReport = {
   reportId: string
@@ -37,7 +37,9 @@ export function AccessReviewSection() {
   const [contentHash, setContentHash] = useState<string | null>(null)
   const [overdue, setOverdue] = useState<Array<{ quarter: string; reportId: string }>>([])
   const [loading, setLoading] = useState(false)
+  const [signing, setSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [currentName, setCurrentName] = useState<string | null>(null)
 
   async function loadOverdue() {
@@ -67,6 +69,7 @@ export function AccessReviewSection() {
   async function openReport() {
     setLoading(true)
     setError(null)
+    setNotice(null)
     try {
       const res = await fetch(`/auth/admin/access-review/${encodeURIComponent(quarter)}`, {
         credentials: 'same-origin',
@@ -74,6 +77,7 @@ export function AccessReviewSection() {
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to open report')
       showReport(body)
+      setNotice(`Opened stored report for ${quarter}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open report')
     } finally {
@@ -84,6 +88,7 @@ export function AccessReviewSection() {
   async function generateReport() {
     setLoading(true)
     setError(null)
+    setNotice(null)
     try {
       const res = await fetch('/auth/admin/access-review/generate', {
         method: 'POST',
@@ -91,14 +96,15 @@ export function AccessReviewSection() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quarter }),
       })
-      
+
       if (!res.ok) {
         const body = await res.json()
         throw new Error(body.error || 'Failed to generate report')
       }
-      
+
       const data = await res.json()
       showReport(data)
+      setNotice(`Report ready for ${quarter}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate report')
     } finally {
@@ -108,8 +114,9 @@ export function AccessReviewSection() {
 
   async function signReport() {
     if (!report || !contentHash) return
-    setLoading(true)
+    setSigning(true)
     setError(null)
+    setNotice(null)
     try {
       const res = await fetch('/auth/admin/access-review/sign', {
         method: 'POST',
@@ -125,11 +132,12 @@ export function AccessReviewSection() {
         throw new Error(body.error || 'Failed to sign report')
       }
       showReport(body)
+      setNotice('Signed as Reviewed.')
       await loadOverdue()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign report')
     } finally {
-      setLoading(false)
+      setSigning(false)
     }
   }
 
@@ -172,136 +180,194 @@ export function AccessReviewSection() {
         </div>
       )}
 
-      <div className="form">
-        <label>
-          Quarter
-          <input
-            type="text"
-            value={quarter}
-            onChange={(e) => setQuarter(e.target.value)}
-            placeholder="2026-Q4"
-            disabled={loading}
-          />
-        </label>
+      <div className="ns-member-form">
+        <div className="ns-settings-grid">
+          <label className="ns-settings-field">
+            <span className="ns-settings-label">Quarter</span>
+            <input
+              type="text"
+              value={quarter}
+              onChange={(e) => setQuarter(e.target.value)}
+              placeholder="2026-Q4"
+              disabled={loading}
+            />
+          </label>
+        </div>
 
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => void generateReport()}
-          disabled={loading || !quarter}
-        >
-          <FileText size={14} aria-hidden="true" className="button-label-icon" />
-          {loading ? 'Working...' : 'Generate Report'}
-        </button>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => void openReport()}
-          disabled={loading || !quarter}
-        >
-          <Download size={14} aria-hidden="true" className="button-label-icon" />
-          Open stored report
-        </button>
+        <div className="btn-row ns-settings-actions">
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => void generateReport()}
+            disabled={loading || !quarter}
+          >
+            <FileText size={14} aria-hidden="true" className="button-label-icon" />
+            {loading ? 'Working…' : 'Generate Report'}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void openReport()}
+            disabled={loading || !quarter}
+          >
+            <Download size={14} aria-hidden="true" className="button-label-icon" />
+            Open stored report
+          </button>
+        </div>
 
-        {error && <p className="error">{error}</p>}
+        {loading && (
+          <p role="status" aria-live="polite">Working on access review…</p>
+        )}
+        {error && (
+          <p className="flash flash-error" role="alert">{error}</p>
+        )}
+        {notice && (
+          <p className="flash flash-success" role="status">{notice}</p>
+        )}
       </div>
 
+      {!report && !loading && !error && (
+        <div className="empty-state" role="status">
+          <span className="empty-state-icon" aria-hidden="true" />
+          <p className="muted">No report open yet.</p>
+          <p className="muted small">
+            Generate a quarter or open a stored report to review Principals, roles, grants, and last login.
+          </p>
+        </div>
+      )}
+
       {report && (
-        <div className="card" style={{ marginTop: '1rem' }}>
+        <div className="ns-settings-subsection">
           <h3>Report: {report.quarter}</h3>
-          <p className="muted">
+          <p className="muted small">
             Generated {new Date(report.generatedAt).toLocaleString()}
           </p>
-          
-          <div style={{ marginTop: '1rem' }}>
-            <p><strong>Principals:</strong> {report.principals.length}</p>
+
+          <div className="ns-settings-grid">
+            <div className="ns-settings-field">
+              <span className="ns-settings-label">Principals</span>
+              <p className="muted small">{report.principals.length}</p>
+            </div>
             {report.reviewerSignature && (
-              <p className="muted">
-                {shownSignature(
-                  { name: report.reviewerSignature.principal.name, signedAt: report.reviewerSignature.signedAt },
-                  currentName ?? undefined,
-                )}
-                {' '}
-                <Link to={`/settings/principal?iss=${encodeURIComponent(report.reviewerSignature.principal.iss)}&sub=${encodeURIComponent(report.reviewerSignature.principal.sub)}`}>
-                  Name history
-                </Link>
-              </p>
+              <div
+                className="ns-settings-field"
+                data-testid="access-review-signature"
+                aria-label="Reviewer signature identity"
+              >
+                <span className="ns-settings-label">Signature</span>
+                <p className="muted small">
+                  {decideSignatureNameDisplay(
+                    {
+                      name: report.reviewerSignature.principal.name,
+                      signedAt: report.reviewerSignature.signedAt,
+                    },
+                    currentName ?? undefined,
+                  ).signedLine}
+                </p>
+                {currentName &&
+                  currentName !== report.reviewerSignature.principal.name && (
+                    <p className="muted small" data-testid="signature-now-known-as">
+                      Now known as: {currentName}
+                    </p>
+                  )}
+                <p className="muted small">
+                  <Link
+                    to={`/settings/principal?iss=${encodeURIComponent(report.reviewerSignature.principal.iss)}&sub=${encodeURIComponent(report.reviewerSignature.principal.sub)}`}
+                  >
+                    Name history
+                  </Link>
+                </p>
+              </div>
             )}
             {!report.reviewerSignature && (
-              <p className="warning">Awaiting an instance admin signature</p>
+              <div className="ns-settings-field">
+                <span className="ns-settings-label">Signature</span>
+                <p className="flash flash-warn" role="status">
+                  Awaiting an instance admin signature. Sign report runs the signing ceremony against this report&apos;s hash.
+                </p>
+              </div>
             )}
           </div>
 
-          <div style={{ marginTop: '1rem' }}>
+          <div className="btn-row ns-settings-actions">
             {!report.reviewerSignature && (
               <button
                 type="button"
                 className="btn primary"
                 onClick={() => void signReport()}
-                disabled={loading || !contentHash}
+                disabled={loading || signing || !contentHash}
+                aria-busy={signing || undefined}
               >
                 <Shield size={14} aria-hidden="true" className="button-label-icon" />
-                Sign report
+                {signing ? 'Signing…' : 'Sign report'}
               </button>
             )}
             <button
               type="button"
               className="btn"
               onClick={downloadReport}
+              disabled={signing}
             >
               <Download size={14} aria-hidden="true" className="button-label-icon" />
               Download JSON
             </button>
           </div>
 
-          <details style={{ marginTop: '1rem' }}>
-            <summary>View Principals ({report.principals.length})</summary>
-            <div className="table-container" style={{ marginTop: '0.5rem' }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Principal</th>
-                    <th>Roles</th>
-                    <th>Permissions</th>
-                    <th>Last Login</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.principals.map((p, i) => (
-                    <tr key={i}>
-                      <td>
-                        <div>{p.principal.name}</div>
-                        <div className="muted small">{p.principal.sub}</div>
-                      </td>
-                      <td>
-                        {p.roles.length > 0 ? (
-                          <div className="small">{p.roles.join(', ')}</div>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
-                      <td>
-                        {p.grants.length > 0 ? (
-                          <div className="small">{p.grants.join(', ')}</div>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
-                      <td>
-                        {p.lastLogin ? (
-                          <div className="small">
-                            {new Date(p.lastLogin).toLocaleDateString()}
-                          </div>
-                        ) : (
-                          <span className="muted">Never</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {report.principals.length === 0 ? (
+            <div className="empty-state" role="status">
+              <span className="empty-state-icon" aria-hidden="true" />
+              <p className="muted">This report has no Principals.</p>
             </div>
-          </details>
+          ) : (
+            <details>
+              <summary>View Principals ({report.principals.length})</summary>
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Principal</th>
+                      <th>Roles</th>
+                      <th>Permissions</th>
+                      <th>Last Login</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.principals.map((p, i) => (
+                      <tr key={i}>
+                        <td>
+                          <div>{p.principal.name}</div>
+                          <div className="muted small">{p.principal.sub}</div>
+                        </td>
+                        <td>
+                          {p.roles.length > 0 ? (
+                            <div className="small">{p.roles.join(', ')}</div>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td>
+                          {p.grants.length > 0 ? (
+                            <div className="small">{p.grants.join(', ')}</div>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td>
+                          {p.lastLogin ? (
+                            <div className="small">
+                              {new Date(p.lastLogin).toLocaleDateString()}
+                            </div>
+                          ) : (
+                            <span className="muted">Never</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
         </div>
       )}
     </section>

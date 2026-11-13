@@ -39,3 +39,5 @@ An admin generates one report per quarter. It lists every Principal with namespa
 **Tests:** `accessReview.test.ts` (unit), `accessReviewRoutes.test.ts` (integ).
 
 2026-11-13: deep-api Deepen (holds) — auto-picked Top architecture recommendation; unit+integration strengthened at ticket seams; Status remains done.
+
+2026-11-13 — **deep-ui Deepen** (holds): Settings `AccessReviewSection` — empty-state before open, submit loading/`role=alert`/`role=status` feedback, ns-settings chrome (kept signature name-display). E2E: `e2e/tests/settings-auth-admin.spec.ts` · Access review (generate).
