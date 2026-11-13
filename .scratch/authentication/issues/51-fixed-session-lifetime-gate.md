@@ -29,3 +29,8 @@ An unset `SESSION_TTL_SEC` uses the 8 h default and passes.
 **Files:** `auth/src/authentication/session/startupGate.ts`, `startupGate.test.ts`
 
 **Tests:** `startupGate.test.ts` (`sessionAbsoluteLifetimeProblems` + existing TTL boundary cases)
+
+2026-11-13 Deep-API (integ): **holds** + package-seam integ. Ceiling refusal through `productionStartupProblems` / `assertProductionStartup` package exports (shared file with Ticket 33).
+- **Seams:** `sessionAbsoluteLifetimeProblems` (unit) → `productionStartupProblems` / `assertProductionStartup` (package integ)
+- **Integ:** `auth/src/authentication/session/startupGate.integration.test.ts` (Ticket 51 describe)
+- **No commit/push** this pass.
