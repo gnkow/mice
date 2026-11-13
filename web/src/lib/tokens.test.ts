@@ -9,12 +9,13 @@ describe('CLI info and scope labels', () => {
       authHost: 'localhost:8080',
       loginExample: 'mice login',
       cloneExample: 'mice clone http://localhost:8080/ns/repo',
-      configExample: 'oxen config --auth localhost:8080',
+      configExample: 'mice login  # device credentials for localhost:8080',
       oxenCloneExample: 'oxen clone http://localhost:8080/ns/repo',
     }
     assert.match(info.loginExample ?? '', /mice login/)
     assert.match(info.cloneExample, /mice clone/)
-    assert.match(info.configExample, /oxen config --auth/)
+    assert.match(info.configExample, /mice login/)
+    assert.doesNotMatch(info.configExample, /PAT|personal access/i)
   })
 
   it('formats a namespace role and a repo role', () => {

@@ -7,7 +7,7 @@ type Props = {
   repo: string
 }
 
-type SectionKey = 'login' | 'oxen' | 'python' | 'auth'
+type SectionKey = 'login' | 'oxen' | 'python'
 
 export function CloneBox({ namespace, repo }: Props) {
   const [copied, setCopied] = useState<SectionKey | null>(null)
@@ -39,7 +39,6 @@ export function CloneBox({ namespace, repo }: Props) {
 
   const loginCmd = 'mice login'
   const miceCloneCmd = `mice clone ${target}`
-  const authCmd = `oxen config --auth ${authHost} <PAT>`
   const pythonCmd = `import oxen\noxen.clone("${target}")`
 
   async function copy(key: SectionKey, text: string) {
@@ -54,7 +53,7 @@ export function CloneBox({ namespace, repo }: Props) {
 
   return (
     <div className="clone-box" role="menu" aria-label="Clone repository">
-      <section className="clone-section">
+      <section className="clone-section" data-testid="clone-device-credentials">
         <div className="clone-section-head">
           <b>Sign in (CLI)</b>
           <button
@@ -74,8 +73,9 @@ export function CloneBox({ namespace, repo }: Props) {
           <code>{loginCmd}</code>
         </pre>
         <p className="clone-hint muted small">
-          Opens a browser to authorize the Mice CLI. Traffic goes through the
-          auth BFF (not raw oxen-server).
+          Opens a browser to authorize short-lived CLI device credentials (not a personal
+          access token). Traffic goes through the auth BFF at{' '}
+          <span className="mono">{authHost}</span>. Revoke credentials under Profile → Access.
         </p>
       </section>
 
@@ -123,31 +123,6 @@ export function CloneBox({ namespace, repo }: Props) {
         <pre className="clone-code mono">
           <code>{pythonCmd}</code>
         </pre>
-      </section>
-
-      <section className="clone-section">
-        <div className="clone-section-head">
-          <b>Automation PAT</b>
-          <button
-            type="button"
-            className="clone-copy"
-            onClick={() => void copy('auth', authCmd)}
-            title={copied === 'auth' ? 'Copied' : 'Copy'}
-            aria-label={
-              copied === 'auth' ? 'Copied auth command' : 'Copy auth command'
-            }
-          >
-            <Copy size={16} aria-hidden />
-            <span className="clone-copy-label">{copied === 'auth' ? 'Copied' : ''}</span>
-          </button>
-        </div>
-        <pre className="clone-code mono">
-          <code>{authCmd}</code>
-        </pre>
-        <p className="clone-hint muted small">
-          For CI: create a PAT under Profile → CLI tokens, then configure oxen
-          against the BFF host.
-        </p>
       </section>
     </div>
   )

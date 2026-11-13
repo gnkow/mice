@@ -6,7 +6,7 @@ import { mintSession } from '../helpers/session'
 const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
 
-/** CLI/PAT tests manage their own session (no auto-login fixture). */
+/** CLI device-credential tests manage their own session (no auto-login fixture). */
 const test = base
 
 async function sessionLogin(
@@ -52,7 +52,29 @@ test.describe('CLI auth via device login (PLAT-AUTH)', () => {
     expect(info.remote).toMatch(/8080/)
     expect(info.loginExample).toMatch(/mice login/)
     expect(info.cloneExample).toMatch(/mice clone/)
-    expect(info.configExample).toMatch(/oxen config --auth/)
+    expect(info.configExample).toMatch(/mice login/)
+    expect(info.configExample).not.toMatch(/PAT|personal access/i)
+  })
+
+  test('TC-CLI-48: Clone box uses device credentials only (no PAT copy)', async ({
+    page,
+  }) => {
+    await sessionLogin(page)
+    const ns = uniqueId('clone-pat-retire')
+    const repo = 'repo'
+    await createRepo(ns, repo)
+    await page.goto(`/n/${ns}/r/${repo}/tree/main`)
+    const cloneDetails = page.locator('details.clone-dropdown')
+    await expect(cloneDetails).toBeVisible({ timeout: 15_000 })
+    await cloneDetails.locator('summary').click()
+    const cloneBox = page.locator('.clone-box')
+    await expect(cloneBox.getByTestId('clone-device-credentials')).toBeVisible()
+    await expect(cloneBox.getByText(/short-lived CLI device credentials/i)).toBeVisible()
+    await expect(cloneBox.getByText(/Profile → Access/i)).toBeVisible()
+    await expect(cloneBox.getByText(/Automation PAT/i)).toHaveCount(0)
+    await expect(cloneBox.getByText(/<PAT>/i)).toHaveCount(0)
+    await expect(cloneBox.getByText(/personal access token/i)).toBeVisible()
+    await deleteRepo(ns, repo)
   })
 
   test('TC-CLI-07: device login start → approve → poll → /api works', async ({

@@ -32,8 +32,8 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
       authHost,
       loginExample: 'mice login',
       cloneExample: `mice clone ${remote}/<namespace>/<repo>`,
-      /** Automation / CI still use a manually minted PAT. */
-      configExample: `oxen config --auth ${authHost} <PAT>`,
+      /** Short-lived device credentials via mice login — personal access tokens are retired. */
+      configExample: `mice login  # device credentials for ${authHost}`,
       oxenCloneExample: `oxen clone ${remote}/<namespace>/<repo>`,
     })
   })
