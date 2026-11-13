@@ -750,7 +750,9 @@ function UsersGrantSection({
               </select>
             </label>
             <label className="ns-settings-field">
-              <span className="ns-settings-label">Expires</span>
+              <span className="ns-settings-label">
+                Expires{grantRoleValue === 'auditor' ? ' (required for Auditor)' : ''}
+              </span>
               <input
                 type="datetime-local"
                 value={expiresLocal}
@@ -759,6 +761,17 @@ function UsersGrantSection({
               />
             </label>
           </div>
+          {grantRoleValue === 'auditor' && (
+            <p
+              className="flash flash-warn"
+              role="status"
+              data-testid="auditor-grant-hint"
+            >
+              Auditor grants always expire. The principal must present MFA on every
+              request, can read across ACLs (including signature evidence on Audit), and
+              cannot write, merge, delete, or sign.
+            </p>
+          )}
           {floorBlocksDemotion && (
             <p className="flash flash-warn" role="status">
               Remove is refused while two or fewer instance admins remain
