@@ -32,7 +32,12 @@ import { createDatasetCapture, createLineageCapture, type DatasetVersions } from
 import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
-import { filterNamespaceCatalog, recordAclBypassRead, seedRepoCreate } from './proxyEffects.js'
+import {
+  attachRepositoryId,
+  filterNamespaceCatalog,
+  recordAclBypassRead,
+  seedRepoCreate,
+} from './proxyEffects.js'
 import {
   authorsFromCommits,
   decideSelfMerge,
@@ -431,7 +436,7 @@ export async function proxyToOxen(
     const auditEvent = await appendOutcome(intent.id, auditFields(upstream.status, datasetVersions.after(upstream, buffered)))
     await lineage.after(upstream, buffered, auditEvent?.id)
 
-    // After successful repo create: seed AuthZ namespace + creator Admin
+    // After successful repo create: seed AuthZ namespace + creator Admin; expose stable id
     if (
       upstream.ok &&
       (classified.action === 'repo.create' ||
@@ -439,7 +444,10 @@ export async function proxyToOxen(
       ns &&
       repo
     ) {
-      await seedRepoCreate(user, ns, repo)
+      const seeded = await seedRepoCreate(user, ns, repo)
+      if (seeded && typeof responseBody === 'string') {
+        responseBody = attachRepositoryId(responseBody, seeded.repositoryId)
+      }
     }
   }
 

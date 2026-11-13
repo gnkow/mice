@@ -7,7 +7,7 @@ process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
-const { filterNamespaceCatalog, seedRepoCreate } = await import('./proxyEffects.js')
+const { attachRepositoryId, filterNamespaceCatalog, seedRepoCreate } = await import('./proxyEffects.js')
 const { preparePrincipal } = await import('./authz.js')
 const { getRepoCollaboratorRole, setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz, getNamespace } = await import('./authzNamespaceStore.js')
@@ -52,6 +52,8 @@ describe('filterNamespaceCatalog', async () => {
   })
 })
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 describe('seedRepoCreate', () => {
   it('makes the creator repo admin and seeds the namespace for an instance admin', async () => {
     await seedRepoCreate(admin, 'pe-new', 'repo1')
@@ -63,5 +65,30 @@ describe('seedRepoCreate', () => {
     await preparePrincipal(u)
     await seedRepoCreate(u, 'pe-unseeded', 'repo1')
     assert.equal(await getNamespace('pe-unseeded'), null)
+  })
+  it('returns a stable repository_id for the seeded repository', async () => {
+    const first = await seedRepoCreate(admin, 'pe-stable', 'data')
+    assert.ok(first)
+    assert.match(first.repositoryId, UUID_RE)
+    const second = await seedRepoCreate(admin, 'pe-stable', 'data')
+    assert.equal(second?.repositoryId, first.repositoryId)
+  })
+})
+
+describe('attachRepositoryId', () => {
+  it('adds repository_id to a proxied create JSON body', () => {
+    const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    const out = attachRepositoryId(
+      JSON.stringify({ status: 'success', repository: { namespace: 'n', name: 'r', repo_uuid: 'oxen' } }),
+      id,
+    )
+    const body = JSON.parse(out)
+    assert.equal(body.repository_id, id)
+    assert.equal(body.repository.repository_id, id)
+    assert.equal(body.repository.repo_uuid, 'oxen')
+  })
+
+  it('leaves non-JSON bodies untouched', () => {
+    assert.equal(attachRepositoryId('not-json', 'id'), 'not-json')
   })
 })

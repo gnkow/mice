@@ -47,15 +47,40 @@ export async function filterNamespaceCatalog(
   }
 }
 
-/** After a successful repo create: seed the AuthZ namespace (privileged callers) and make the creator repo Admin. */
-export async function seedRepoCreate(user: SessionUser, namespace: string, repo: string): Promise<void> {
+export type SeededRepository = { repositoryId: string }
+
+/**
+ * After a successful repo create: seed the AuthZ namespace (privileged callers) and make the creator
+ * repo Admin. Returns the stable AuthZ repository id when a row was ensured.
+ */
+export async function seedRepoCreate(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+): Promise<SeededRepository | null> {
   if ((await decideInstanceAction(user, 'namespace.create')).allow) {
     await ensureNamespaceForCreate(user, namespace, 'none')
   }
   // A collaborator grant hangs off a namespace row; an unseeded namespace has nothing to attach to.
-  if (await getNamespace(namespace)) {
-    await ensureRepository(namespace, repo)
-    await setRepoCollaborator(namespace, repo, user, 'admin')
+  if (!(await getNamespace(namespace))) return null
+  const record = await ensureRepository(namespace, repo)
+  if (!record) return null
+  await setRepoCollaborator(namespace, repo, user, 'admin')
+  return { repositoryId: record.id }
+}
+
+/** Stamp the AuthZ stable id onto a proxied oxen create JSON body. */
+export function attachRepositoryId(body: string, repositoryId: string): string {
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>
+    parsed.repository_id = repositoryId
+    const repository = parsed.repository
+    if (repository && typeof repository === 'object' && !Array.isArray(repository)) {
+      ;(repository as Record<string, unknown>).repository_id = repositoryId
+    }
+    return JSON.stringify(parsed)
+  } catch {
+    return body
   }
 }
 

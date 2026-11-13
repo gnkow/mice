@@ -14,3 +14,7 @@
 - [x] Tests verify repository creation returns stable ID
 - [x] Tests verify same repository has same ID across requests
 - [x] Tests verify authorization works by ID (not just name)
+
+## Comments
+
+**Deep-api Close (2026-11-13):** Audit found schema/mint/authz-by-id holding but proxied create responses omitted `repository_id`. Closed at seams `proxyEffects.seedRepoCreate` / `attachRepositoryId` + `proxy.ts` repo.create path. Unit: `proxyEffects.test.ts`. Integration: `proxyRepoCreateId.test.ts`.
