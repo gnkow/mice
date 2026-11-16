@@ -14,7 +14,7 @@ Ticket `Status:` is not evidence. Only code and green tests are.
 
 ### 1. Resolve the spec
 
-The user names a spec (`.specs/NN-….md`), a feature slug (`.scratch/<feature>/`), or one ticket under that feature. Resolve the **feature**: every working-item ticket in `.scratch/<feature>/issues/`.
+The user names a spec (`.specs/NN-….md`), a feature/spec parent issue, or an implementation issue. Resolve the **feature**: every open/closed `implementation` sub-issue of the matching GitHub feature parent (`area:<slug>`). See `docs/agents/issue-tracker.md`.
 
 Exclude wayfinder decision tickets (`research` / `grilling` / `prototype`) and `wontfix` from the board—they are not working items.
 

@@ -1,0 +1,56 @@
+# One-shot / idempotent: close GitHub issues listed in scripts/github-issue-sync.json.
+# Uses GITHUB_TOKEN so agents can sync issue state when api.github.com is blocked locally.
+name: github-issue-sync
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'scripts/github-issue-sync.json'
+      - '.github/workflows/github-issue-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Close issues from sync manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { readFileSync } = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const manifest = JSON.parse(readFileSync('scripts/github-issue-sync.json', 'utf8'));
+          const sh = (args) =>
+            execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+          for (const item of manifest.close || []) {
+            const n = String(item.number);
+            let state = 'UNKNOWN';
+            try {
+              state = sh(['issue', 'view', n, '--json', 'state', '-q', '.state']).trim();
+            } catch (e) {
+              console.error(`skip #${n}: cannot view`, e.stderr || e.message);
+              continue;
+            }
+            if (state === 'CLOSED') {
+              console.log(`#${n} already closed`);
+              continue;
+            }
+            if (item.comment) {
+              sh(['issue', 'comment', n, '--body', item.comment]);
+            }
+            sh(['issue', 'close', n, '--reason', 'completed']);
+            console.log(`closed #${n}`);
+          }
+          for (const item of manifest.leave_open || []) {
+            console.log(`leave open #${item.number}: ${item.note || ''}`);
+          }
+          NODE

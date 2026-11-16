@@ -2,6 +2,8 @@
 
 Issues for this repo live on GitHub. Specs remain as markdown in `.specs/`.
 
+Do **not** create or keep a local `.scratch/` ticket tree — that tracker is retired. Historical tickets were migrated with `scripts/migrate-scratch-to-github.mjs`; status sync uses `scripts/github-issue-sync.json` + `.github/workflows/github-issue-sync.yml`.
+
 ## Canonical locations
 
 - **Feature / spec parents:** GitHub issues labeled `feature` (one per `.specs/NN-*.md`, plus Training). Body links to the in-repo spec file.

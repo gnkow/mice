@@ -1,5 +1,6 @@
 import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +27,15 @@ const { queryAudit } = await import('../../audit.js')
 const { getDb } = await import('../../db/database.js')
 const { sealKeys } = await import('../../db/schema.js')
 const { setDirectoryFetchForTests } = await import('../directory/directory.js')
+const { regulatedMutationHeaders } = await import('../../testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('../signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('../../auditLedger.js')
+
+useSignatureStore(
+  openSignatureStore(
+    await openLedger({ ...immudbConfig(), prefix: `seal-rot/${randomBytes(4).toString('hex')}/` }),
+  ),
+)
 
 setDirectoryFetchForTests(async (input) => {
   const url = String(input)
@@ -70,18 +80,34 @@ describe('Seal key rotation HTTP seam (Ticket 17)', () => {
     await ensureBootstrapKey()
   })
 
-  it('POST /auth/admin/seal-keys/rotate performs normal rotation and audits', async () => {
+  it('GXP-R-013 POST /auth/admin/seal-keys/rotate refuses without ceremony and accepts with it', async () => {
     const api = app()
+    const path = '/auth/admin/seal-keys/rotate'
     const before = await getCurrentSealKey()
     assert.ok(before)
 
-    const res = await api.request('/auth/admin/seal-keys/rotate', {
+    const bare = await api.request(path, {
       method: 'POST',
       headers: {
         cookie: await adminCookie(),
         origin: 'http://localhost',
         'content-type': 'application/json',
       },
+      body: '{}',
+    })
+    assert.equal(bare.status, 400)
+    assert.equal(((await bare.json()) as { code?: string }).code, 'reason_required')
+
+    const headers = await regulatedMutationHeaders(admin, {
+      method: 'POST',
+      path,
+      body: {},
+      reason: 'Scheduled seal-key rotation after quarterly review',
+      category: 'privileged_settings',
+    })
+    const res = await api.request(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: await adminCookie(), origin: 'http://localhost' },
       body: '{}',
     })
     const text = await res.text()
@@ -102,19 +128,36 @@ describe('Seal key rotation HTTP seam (Ticket 17)', () => {
     assert.ok(events.some((e) => e.detail?.newKeyId === body.key.id))
   })
 
-  it('POST /auth/admin/seal-keys/rotate/emergency revokes current key with 8h grace and audits', async () => {
+  it('GXP-R-013 POST /auth/admin/seal-keys/rotate/emergency refuses without ceremony and accepts with it', async () => {
     const api = app()
+    const path = '/auth/admin/seal-keys/rotate/emergency'
     const before = await getCurrentSealKey()
     assert.ok(before)
+    const reqBody = { reason: 'Compromise suspected in lab' }
 
-    const res = await api.request('/auth/admin/seal-keys/rotate/emergency', {
+    const bare = await api.request(path, {
       method: 'POST',
       headers: {
         cookie: await adminCookie(),
         origin: 'http://localhost',
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ reason: 'Compromise suspected in lab' }),
+      body: JSON.stringify(reqBody),
+    })
+    assert.equal(bare.status, 400)
+    assert.equal(((await bare.json()) as { code?: string }).code, 'reason_required')
+
+    const headers = await regulatedMutationHeaders(admin, {
+      method: 'POST',
+      path,
+      body: reqBody,
+      reason: 'Compromise suspected in lab - emergency seal rotation',
+      category: 'privileged_settings',
+    })
+    const res = await api.request(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: await adminCookie(), origin: 'http://localhost' },
+      body: JSON.stringify(reqBody),
     })
     const text = await res.text()
     assert.equal(res.status, 200, text)

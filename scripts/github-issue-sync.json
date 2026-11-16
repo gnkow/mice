@@ -1,0 +1,75 @@
+{
+  "comment": "Sync scratch→GitHub statuses after deep-api close. Audit tickets #127–#141 already existed on GitHub (never lived under .scratch).",
+  "close": [
+    {
+      "number": 91,
+      "comment": "API done: `completeSignedMerge` + `POST /auth/merge-requests/:id/complete` (bound Approved signature → oxen merge → QC Passed)."
+    },
+    {
+      "number": 93,
+      "comment": "API done: append-only revoke → QC Failed + linked `esign.revoked` record."
+    },
+    {
+      "number": 94,
+      "comment": "API done: pre-merge revoke blocks open MRs; complete refuses QC Failed commits. UI QC warn remains `/deep-ui`."
+    },
+    {
+      "number": 95,
+      "comment": "API done: revocation notifies repo owners (best-effort, non-blocking)."
+    },
+    {
+      "number": 101,
+      "comment": "API done: `decideRestoreTestGate` + admin restore-test routes; complete refuses until pass."
+    },
+    {
+      "number": 105,
+      "comment": "API done: `runCrossStoreIntegrity` + daily schedule; report-only with alerts + audit."
+    },
+    {
+      "number": 106,
+      "comment": "API done: `buildSignedRecordReport` + `GET /auth/repos/:ns/:repo/signed-record-report`."
+    },
+    {
+      "number": 121,
+      "comment": "API done: admin revoke/suspend/confirm and instance revoke-sessions already use `guarded({ reason: true })` (covered by `revocationReasonPolicy.test.ts`)."
+    },
+    {
+      "number": 122,
+      "comment": "API done: seal-key rotate + emergency now require GxP reason ceremony (`sealKeyRoutes.test.ts`)."
+    },
+    {
+      "number": 117,
+      "comment": "API done: merge request store + routes; complete path wired via gxp/05."
+    },
+    {
+      "number": 118,
+      "comment": "API done: per-commit QC Marked/Passed/Failed store + GET."
+    }
+  ],
+  "leave_open": [
+    {
+      "number": 92,
+      "note": "Signing ceremony UI — `/deep-ui`"
+    },
+    {
+      "number": 83,
+      "note": "Auditor live-signing e2e — ready-for-human / SSO stack"
+    },
+    {
+      "number": 123,
+      "note": "Announcements reason policy — needs-info"
+    },
+    {
+      "number": 124,
+      "note": "Approver seat entity versions — remaining API follow-on"
+    },
+    {
+      "number": 116,
+      "note": "Validated branches (repositories) — not yet implemented beyond default-branch name check"
+    },
+    {
+      "number": 119,
+      "note": "Signed unmark validated branch — blocked on #116"
+    }
+  ]
+}

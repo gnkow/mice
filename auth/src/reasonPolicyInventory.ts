@@ -454,10 +454,8 @@ const BFF: ReasonPolicyEntry[] = [
     id: 'bff.seal-keys.rotate',
     surface: 'bff',
     key: 'POST /auth/admin/seal-keys/rotate|/rotate/emergency',
-    reason: 'exempt',
-    rationale:
-      'Privileged crypto control; emergency takes body.reason but neither path uses guarded reason:true — follow-on #122.',
-    coverage: 'sealKeyRoutes.test.ts; follow-on #122',
+    reason: 'required',
+    coverage: 'auth/src/authentication/session/sealKeyRoutes.test.ts; guarded reason:true (#122)',
   },
   {
     id: 'bff.announcements',

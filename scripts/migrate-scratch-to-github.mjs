@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * One-shot migration: .specs + .scratch → GitHub Issues + Project (Kanban).
- * Idempotent via .tmp-gh-migration.json manifest.
+ * RETIRED one-shot migration: .specs + .scratch → GitHub Issues + Project (Kanban).
+ * `.scratch/` is removed; do not reintroduce it. For closing/syncing issue state
+ * after work lands, use `scripts/github-issue-sync.json` + the github-issue-sync workflow.
+ *
+ * Idempotent via .tmp-gh-migration.json manifest (if present).
  *
  * Usage: node scripts/migrate-scratch-to-github.mjs
  * Requires: gh auth with repo + project + read:project scopes

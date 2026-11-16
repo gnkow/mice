@@ -76,24 +76,27 @@ export function registerSealKeyRoutes(app: Hono): void {
    * POST /auth/admin/seal-keys/rotate
    * Perform normal rotation (30-day schedule, 7-day overlap)
    */
-  app.post('/auth/admin/seal-keys/rotate', guarded(requireInstanceAdmin, async ({ c, user }) => {
-    const { newKey } = await rotateSealKeyWithAudit({
-      kind: 'normal',
-      actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
-      via: 'session',
-    })
+  app.post(
+    '/auth/admin/seal-keys/rotate',
+    guarded({ ...requireInstanceAdmin, reason: true, body: 'optional' }, async ({ c, user }) => {
+      const { newKey } = await rotateSealKeyWithAudit({
+        kind: 'normal',
+        actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+        via: 'session',
+      })
 
-    return c.json({
-      success: true,
-      key: {
-        id: newKey.id,
-        validFrom: newKey.validFrom,
-        validUntil: newKey.validUntil,
-        rotationType: newKey.rotationType,
-        createdAt: newKey.createdAt.toISOString(),
-      },
-    })
-  }))
+      return c.json({
+        success: true,
+        key: {
+          id: newKey.id,
+          validFrom: newKey.validFrom,
+          validUntil: newKey.validUntil,
+          rotationType: newKey.rotationType,
+          createdAt: newKey.createdAt.toISOString(),
+        },
+      })
+    }),
+  )
 
   /**
    * POST /auth/admin/seal-keys/rotate/emergency
@@ -101,7 +104,7 @@ export function registerSealKeyRoutes(app: Hono): void {
    */
   app.post(
     '/auth/admin/seal-keys/rotate/emergency',
-    guarded({ ...requireInstanceAdmin, body: 'optional' }, async ({ c, user, body }) => {
+    guarded({ ...requireInstanceAdmin, reason: true, body: 'optional' }, async ({ c, user, body }) => {
       const reason =
         typeof body?.reason === 'string' ? body.reason : 'Emergency rotation requested'
 
