@@ -25,3 +25,4 @@
 - **Deepen (auto-pick Top):** extract `beginTrackedIntent`, `carryFromIntent`, `orphanIntents`; guarded uses beginTrackedIntent.
 - **Tests:** `auditIntentChain.test.ts` unit; existing `auditIntent.test.ts` HTTP remains.
 - **Seams:** module intent→outcome helpers; HTTP via `auditIntent.test.ts`.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `beginTrackedIntent` / `carryFromIntent` / `orphanIntents` (`auditIntentOutcome.ts`, `auditReasonFields.ts`); `guarded` uses `beginTrackedIntent`. Unit: `auditIntentChain.test.ts` + `auditIntentOutcome.test.ts`; HTTP: `auditIntent.test.ts`. Status done.
