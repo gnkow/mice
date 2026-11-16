@@ -36,7 +36,11 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
 
   app.get('/auth/callback', async (c) => {
     const limited = await enforceIpRateLimit(c, RATE_LIMIT_CONFIG.login)
-    if (limited) return limited
+    if (limited) {
+      // Browser SSO callback: land on LoginPage with a titled rate-limit alert (ticket 24).
+      // API-style clients still get the JSON 429 body from enforceIpRateLimit when they hit other endpoints.
+      return c.redirect('/login?status=rate_limited')
+    }
     if (!oidcConfigured()) return c.json({ error: 'OIDC is not configured' }, 503)
     const pkceCookie = getCookie(c, PKCE_COOKIE)
     deleteCookie(c, PKCE_COOKIE, {

@@ -111,3 +111,9 @@ export function isAuthorityError(message: string): boolean {
   const m = message.toLowerCase()
   return m.includes('insufficient approval authority') || m.includes('forbidden')
 }
+
+/** True when the API rejected because demotion would break the two-admin floor. */
+export function isAdminFloorError(message: string): boolean {
+  const m = message.toLowerCase()
+  return m.includes('at least two admins must remain')
+}

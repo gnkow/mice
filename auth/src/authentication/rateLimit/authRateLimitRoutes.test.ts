@@ -43,11 +43,16 @@ await describe('authentication rate limits', async () => {
     registerLoginRoutes(app, { audit })
     for (let i = 0; i < 10; i++) {
       const res = await app.request('/auth/callback', { headers: { 'x-forwarded-for': '203.0.113.25' } })
+      // Callback rate-limit lands on LoginPage (redirect), not raw JSON 429.
       assert.notEqual(res.status, 429)
+      assert.notEqual(res.headers.get('location'), '/login?status=rate_limited')
     }
-    const blocked = await app.request('/auth/callback', { headers: { 'x-forwarded-for': '203.0.113.25' } })
-    assert.equal(blocked.status, 429)
-    assert.equal(blocked.headers.get('retry-after'), '60')
+    const blocked = await app.request('/auth/callback', {
+      headers: { 'x-forwarded-for': '203.0.113.25' },
+      redirect: 'manual',
+    })
+    assert.ok(blocked.status >= 300 && blocked.status < 400, `expected redirect, got ${blocked.status}`)
+    assert.equal(blocked.headers.get('location'), '/login?status=rate_limited')
   })
 
   await it('refuses the 21st token refresh from one IP within a minute', async () => {
