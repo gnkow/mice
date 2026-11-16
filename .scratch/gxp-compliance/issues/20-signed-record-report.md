@@ -4,9 +4,13 @@
 
 **Blocked by:** 01, 05, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Per-repo report lists approvals and revocations with manifestation fields
-- [ ] Report is available as PDF and as a machine-readable export
-- [ ] Report content matches the authoritative immudb records
-- [ ] Generation is auditable
+- [x] Per-repo report lists approvals and revocations with manifestation fields
+- [x] Report is available as PDF and as a machine-readable export
+- [x] Report content matches the authoritative immudb records
+- [x] Generation is auditable
+
+## Comments
+
+**Deep-api Close (2026-11-16):** Seam `buildSignedRecordReport`; route `GET /auth/repos/:ns/:repo/signed-record-report` (`?format=pdf`). Approvals + revocations from signature store; audit on generate. Unit: `signedRecordReport.test.ts`.
