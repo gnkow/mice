@@ -11,6 +11,7 @@ import {
   type RepoFinePermission,
   type RepoRole,
 } from './authzTypes.js'
+import { appendVersionInterval } from './entityVersionAppend.js'
 
 export type CustomNamespaceRole = {
   id: string
@@ -253,8 +254,11 @@ async function recordCustomRoleVersion(
   definition: Record<string, unknown>,
   at = new Date(),
 ): Promise<void> {
-  await closeOpenCustomRoleVersion(tx, namespaceId, kind, roleId, at)
-  await openCustomRoleVersion(tx, namespaceId, kind, roleId, definition, at)
+  await appendVersionInterval({
+    at,
+    closeOpen: (when) => closeOpenCustomRoleVersion(tx, namespaceId, kind, roleId, when),
+    openNext: (when) => openCustomRoleVersion(tx, namespaceId, kind, roleId, definition, when),
+  })
 }
 
 function nsRoleDefinition(role: CustomNamespaceRole): Record<string, unknown> {

@@ -30,6 +30,7 @@ import {
 } from './authzTypes.js'
 import { toGroupBindingKey } from './groupBinding.js'
 import { defaultGroupIssuer } from './groupDisplayStore.js'
+import { appendVersionInterval } from './entityVersionAppend.js'
 
 export type NamespaceSettings = {
   id: string
@@ -224,8 +225,11 @@ async function recordNamespaceSettingsVersion(
   row: typeof namespaces.$inferSelect,
   at = new Date(),
 ): Promise<void> {
-  await closeOpenNamespaceSettingsVersion(tx, row.id, at)
-  await openNamespaceSettingsVersion(tx, row, at)
+  await appendVersionInterval({
+    at,
+    closeOpen: (when) => closeOpenNamespaceSettingsVersion(tx, row.id, when),
+    openNext: (when) => openNamespaceSettingsVersion(tx, row, when),
+  })
 }
 
 /** Chronological settings versions for a namespace (by current name → stable id). */
@@ -284,8 +288,11 @@ async function openMembershipVersion(tx: Tx, namespaceId: string, at: Date): Pro
 
 /** Append a new membership-set version after a live membership mutation. */
 async function recordMembershipVersion(tx: Tx, namespaceId: string, at = new Date()): Promise<void> {
-  await closeOpenMembershipVersion(tx, namespaceId, at)
-  await openMembershipVersion(tx, namespaceId, at)
+  await appendVersionInterval({
+    at,
+    closeOpen: (when) => closeOpenMembershipVersion(tx, namespaceId, when),
+    openNext: (when) => openMembershipVersion(tx, namespaceId, when),
+  })
 }
 
 /** Chronological membership-set versions for a namespace (entity history, not audit). */
@@ -877,18 +884,25 @@ async function snapshotCollaboratorSeats(tx: Tx, repositoryId: string): Promise<
 }
 
 async function recordCollaboratorVersion(tx: Tx, repositoryId: string, at = new Date()): Promise<void> {
-  await tx
-    .update(repoCollaboratorVersions)
-    .set({ validTo: at })
-    .where(
-      and(eq(repoCollaboratorVersions.repositoryId, repositoryId), isNull(repoCollaboratorVersions.validTo)),
-    )
-  await tx.insert(repoCollaboratorVersions).values({
-    repositoryId,
-    collaborators: await snapshotCollaboratorSeats(tx, repositoryId),
-    validFrom: at,
-    validTo: null,
-    createdAt: at,
+  await appendVersionInterval({
+    at,
+    closeOpen: async (when) => {
+      await tx
+        .update(repoCollaboratorVersions)
+        .set({ validTo: when })
+        .where(
+          and(eq(repoCollaboratorVersions.repositoryId, repositoryId), isNull(repoCollaboratorVersions.validTo)),
+        )
+    },
+    openNext: async (when) => {
+      await tx.insert(repoCollaboratorVersions).values({
+        repositoryId,
+        collaborators: await snapshotCollaboratorSeats(tx, repositoryId),
+        validFrom: when,
+        validTo: null,
+        createdAt: when,
+      })
+    },
   })
 }
 
