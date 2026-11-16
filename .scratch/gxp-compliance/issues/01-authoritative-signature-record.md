@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (store and server events; the merge flow in gxp-compliance/05 supplies the binding and manifest, and no HTTP route exposes the proof yet)
+**Status:** done
 
 - [x] Each signature writes one immudb record with `esign.created`; failures write `esign.failed`
 - [x] The record carries the fields above and a verification proof can be retrieved
@@ -14,7 +14,7 @@
 
 ## Comments
 
-- **Audit:** holds at store + `POST /auth/sign/execute`; proof only via module seam (no HTTP).
+- **Audit:** holds at store + `POST /auth/sign/execute`; record/proof also via `GET /auth/sign/:id[/proof]`.
 - **Deepen (auto-pick Top):** `GET /auth/sign/:id` + `GET /auth/sign/:id/proof` for record/proof retrieval.
 - **Tests:** `signingRecord.test.ts` HTTP get/proof after execute; `signatureStore.test.ts` remains the unit seam.
 - **Seams:** HTTP `/auth/sign/:id[/proof]`; module `signatureStore.proof` / `get`.
