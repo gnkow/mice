@@ -17,5 +17,11 @@ playwright/.cache/
 auth/bin/
 # Dev database passwords (make db-secrets)
 .secrets/
+# Accidental root copies — canonical location is .secrets/
+/postgres-password
+/immudb-password
+/novu-password
+# Local Codegraph index
+.codegraph/
 # Third-party UI/UX Pro Max skill assets (installed locally)
 .agents/skills/ui-ux-pro-max/
