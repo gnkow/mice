@@ -25,3 +25,4 @@
 - **Deepen (auto-pick Top):** extract `appendJobResultCommitIntent` in `jobs.ts`; both `completeCliJob` and `executeJob` use it.
 - **Tests:** `jobsAuditOutage.test.ts` — helper unit (ok + throw) + `completeCliJob` refuses with `AUDIT_UNAVAILABLE_MESSAGE` / 503 and leaves `result_commit` null.
 - **Seams:** module `appendJobResultCommitIntent`; package `completeCliJob` under `useAuditLedger` fault injection.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `appendJobResultCommitIntent` shared by `completeCliJob` and `executeJob` (`jobs.ts`). Tests at public seam: helper unit + `completeCliJob` outage (`jobsAuditOutage.test.ts`). `executeJob` outage left to shared helper (Docker-heavy path not unit-harnessed). Status done.
