@@ -26,3 +26,4 @@
 - **Deepen (auto-pick Top):** extract `mergeResultBinding` so digest-first binding is one seam for ticket 05.
 - **Tests:** `mergeManifest.test.ts` binding unit; `signatureStore.test.ts` records via that helper (manifest before signature).
 - **Seams:** module `mergeResultBinding` + `signatureStore.record`.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `mergeResultBinding` in `mergeManifest.ts`; HTTP usage via `completeSignedMerge` → `POST /auth/merge-requests/:id/complete` (`completeSignedMerge.test.ts` binds digest-first then completes). Unit: `mergeManifest.test.ts`; store: `signatureStore.test.ts` (manifest before signature). Status done.
