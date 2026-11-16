@@ -20,3 +20,4 @@
 - **Audit:** holds (module + routes + tests existed as WIP). Unit+integration present.
 - **Deepen (auto-pick Top):** export `buildReleaseManifestBody` + `verifyReleaseManifestSignature`; signing script imports the same seam (no duplicated live digests).
 - **Seams:** `buildReleaseManifestBody` / `signReleaseManifest` / `verifyReleaseManifestSignature` (module); boot verify+audit; admin release-manifest routes.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `buildReleaseManifestBody` / `verifyReleaseManifestSignature` / `signReleaseManifest` in `releaseManifest.ts`; signing script shares body seam. Unit: `releaseManifest.test.ts`; admin: `releaseManifestRoutes.test.ts`. Status done.
