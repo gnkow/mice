@@ -8,7 +8,7 @@ import {
   inventoryRequiredDatasetActions,
   reasonPolicyInventory,
 } from './reasonPolicyInventory.js'
-import { mutationNeedsReason, reasonRequiredActions } from './auditReason.js'
+import { createExemptActions, mutationNeedsReason, reasonRequiredActions } from './auditReason.js'
 
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
 after(() => t.restore())
@@ -53,6 +53,7 @@ describe('reason policy inventory (unit)', () => {
 
   it('required dataset keys match reasonRequiredActions() / mutationNeedsReason', () => {
     assert.deepEqual(inventoryRequiredDatasetActions(), reasonRequiredActions())
+    assert.deepEqual(inventoryCreateExemptActions(), createExemptActions())
     for (const action of inventoryRequiredDatasetActions()) {
       assert.equal(mutationNeedsReason(action), true, action)
     }

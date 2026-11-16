@@ -4,7 +4,7 @@
 
 **Blocked by:** 03, 04
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Notes
 
@@ -15,8 +15,12 @@
 
 ## Acceptance
 
-- [ ] Inventory lists every mutating BFF and proxied dataset operation and whether a reason is required
-- [ ] Every required operation refuses without category + free text and accepts with them (HTTP coverage or linked existing tests)
-- [ ] Every exemption has a written rationale in Notes
-- [ ] Gaps fixed here have tests; larger gaps are filed as follow-on tickets and linked
-- [ ] Ticket 03 acceptance remains true after the inventory (no silent weakenings)
+- [x] Inventory lists every mutating BFF and proxied dataset operation and whether a reason is required
+- [x] Every required operation refuses without category + free text and accepts with them (HTTP coverage or linked existing tests)
+- [x] Every exemption has a written rationale in Notes
+- [x] Gaps fixed here have tests; larger gaps are filed as follow-on tickets and linked
+- [x] Ticket 03 acceptance remains true after the inventory (no silent weakenings)
+
+## Comments
+
+- **Deep-api Deepen (2026-11-16):** Pure helpers `inventoryRequiredDatasetActions` / `inventoryCreateExemptActions` in `reasonPolicyInventory.ts`; parity with `reasonRequiredActions()` + `createExemptActions()`. Unit + HTTP gap coverage: `reasonPolicyInventory.test.ts`. Status done.
