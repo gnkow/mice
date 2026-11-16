@@ -1,6 +1,6 @@
 import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync } from 'node:fs'
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -188,6 +188,15 @@ describe('production startup gate', () => {
       productionStartupProblems({ NODE_ENV: 'development', SESSION_IDLE_SEC: '900' }),
       [],
     )
+  })
+
+  it('rejects production when evaluateBackupTarget finds the target unusable', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mice-backup-gate-file-'))
+    const file = join(dir, 'not-a-dir')
+    writeFileSync(file, 'x')
+    const p = productionStartupProblems({ ...good, BACKUP_TARGET: file })
+    assert.equal(p.length, 1)
+    assert.match(p[0]!, /BACKUP_TARGET/)
   })
 
   it('throws with every problem listed', () => {

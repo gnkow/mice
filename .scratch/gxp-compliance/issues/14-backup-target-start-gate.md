@@ -20,3 +20,4 @@
 - **Audit:** holds at gate (import already on master) but module was missing from git — shipped `backupTarget.ts` + boot audit. Unit present; integration via `startupGate.test.ts` (thin → thickened with `evaluateBackupTarget`).
 - **Deepen (auto-pick Top):** `evaluateBackupTarget` as the single policy seam; `backupTargetProblems` and `recordBackupTargetCheck` both go through it.
 - **Seams:** `evaluateBackupTarget` / `backupTargetProblems` (module); `assertProductionStartup` (startup); `recordBackupTargetCheck` at boot (audit).
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `evaluateBackupTarget` in `backupTarget.ts`; `backupTargetProblems` + `recordBackupTargetCheck` + `startupGate` all go through it. Strengthened `startupGate.test.ts` (unusable file path via gate). Unit: `backupTarget.test.ts`. Status done.
