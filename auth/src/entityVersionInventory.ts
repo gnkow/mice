@@ -244,10 +244,33 @@ export function entityVersionInventory(): EntityVersionEntry[] {
   return ENTITY_VERSION_INVENTORY
 }
 
-export function versionedEntities(): EntityVersionEntry[] {
-  return ENTITY_VERSION_INVENTORY.filter((e) => e.status === 'versioned')
+export function versionedEntities(entries: EntityVersionEntry[] = ENTITY_VERSION_INVENTORY): EntityVersionEntry[] {
+  return entries.filter((e) => e.status === 'versioned')
 }
 
-export function exemptEntities(): EntityVersionEntry[] {
-  return ENTITY_VERSION_INVENTORY.filter((e) => e.status === 'exempt')
+export function exemptEntities(entries: EntityVersionEntry[] = ENTITY_VERSION_INVENTORY): EntityVersionEntry[] {
+  return entries.filter((e) => e.status === 'exempt')
+}
+
+/**
+ * Pure completeness check: every row is versioned (with store + history seam) or exempt (with rationale).
+ */
+export function decideInventoryComplete(entries: EntityVersionEntry[]): {
+  complete: boolean
+  problems: string[]
+} {
+  const problems: string[] = []
+  for (const e of entries) {
+    if (e.status === 'exempt') {
+      if (!e.rationale?.trim()) problems.push(`${e.id}: exempt without rationale`)
+      continue
+    }
+    if (e.status === 'versioned') {
+      if (!e.store?.trim()) problems.push(`${e.id}: versioned without store`)
+      if (!e.historySeam?.trim()) problems.push(`${e.id}: versioned without historySeam`)
+      continue
+    }
+    problems.push(`${e.id}: unknown status`)
+  }
+  return { complete: problems.length === 0, problems }
 }

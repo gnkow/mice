@@ -4,9 +4,11 @@ import { after, describe, it } from 'node:test'
 import { randomBytes } from 'node:crypto'
 import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 import {
+  decideInventoryComplete,
   entityVersionInventory,
   exemptEntities,
   versionedEntities,
+  type EntityVersionEntry,
 } from './entityVersionInventory.js'
 
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
@@ -62,6 +64,19 @@ describe('entity version inventory (unit)', () => {
       assert.ok(row.store, row.id)
       assert.ok(row.historySeam, row.id)
     }
+    const decided = decideInventoryComplete(rows)
+    assert.equal(decided.complete, true, decided.problems.join('; '))
+  })
+
+  it('decideInventoryComplete flags missing rationale or history seam', () => {
+    const bad: EntityVersionEntry[] = [
+      { id: 'x', entity: 'X', status: 'exempt', coverage: 't' },
+      { id: 'y', entity: 'Y', status: 'versioned', coverage: 't' },
+    ]
+    const decided = decideInventoryComplete(bad)
+    assert.equal(decided.complete, false)
+    assert.ok(decided.problems.some((p) => p.includes('x:')))
+    assert.ok(decided.problems.some((p) => p.includes('y:')))
   })
 })
 
