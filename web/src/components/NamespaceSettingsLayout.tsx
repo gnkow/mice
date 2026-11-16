@@ -2,6 +2,7 @@ import {
   History as ActionHistory,
   Pencil as ActionPencil,
   Settings as ActionSettings,
+  ShieldCheck as ActionShieldCheck,
   ShieldAlert as ActionShieldAlert,
   Users as ActionUsers,
   Wrench as ActionWrench,
@@ -16,10 +17,17 @@ const SETTINGS_NAV_GROUPS = [
       { id: 'ns-general', label: 'General', Icon: ActionSettings },
       { id: 'ns-rename', label: 'Rename', Icon: ActionPencil },
       { id: 'ns-members', label: 'Members', Icon: ActionUsers },
+      { id: 'ns-approvers', label: 'Approvers', Icon: ActionShieldCheck },
       { id: 'ns-custom-roles', label: 'Custom roles', Icon: ActionWrench },
       { id: 'ns-danger', label: 'Danger zone', Icon: ActionShieldAlert },
     ],
   },
+]
+
+const HISTORY_LINKS = [
+  { path: 'history', label: 'Settings history' },
+  { path: 'members/history', label: 'Membership history' },
+  { path: 'custom-roles/history', label: 'Custom roles history' },
 ]
 
 /** Left section nav + outlet for `/n/:namespace/settings/*`. */
@@ -28,7 +36,7 @@ export function NamespaceSettingsLayout() {
   const location = useLocation()
   const parentCtx = useOutletContext()
   const base = `/n/${encodeURIComponent(namespace)}/settings`
-  const onHistory = /\/settings\/history\/?$/.test(location.pathname)
+  const onHistory = /\/settings\/(?:history|members\/history|custom-roles\/history)\/?$/.test(location.pathname)
 
   return (
     <div className="profile-layout ns-settings-layout">
@@ -54,15 +62,18 @@ export function NamespaceSettingsLayout() {
         ) : (
           <SectionNav label="Settings sections" groups={SETTINGS_NAV_GROUPS} />
         )}
-        <NavLink
-          to={`${base}/history`}
-          className={({ isActive }) =>
-            `ns-settings-history-link${isActive ? ' active' : ''}`
-          }
-        >
-          <ActionHistory size={14} aria-hidden="true" />
-          Settings history
-        </NavLink>
+        {HISTORY_LINKS.map(({ path, label }) => (
+          <NavLink
+            key={path}
+            to={`${base}/${path}`}
+            className={({ isActive }) =>
+              `ns-settings-history-link${isActive ? ' active' : ''}`
+            }
+          >
+            <ActionHistory size={14} aria-hidden="true" />
+            {label}
+          </NavLink>
+        ))}
       </aside>
       <div className="profile-main ns-settings-main">
         <Outlet context={parentCtx} />

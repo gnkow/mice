@@ -182,6 +182,18 @@ export function searchDirectory(
   )
 }
 
+/** Failure from an AuthZ BFF call; carries the HTTP status and machine code when the server sent one. */
+export class AuthzError extends Error {
+  readonly status: number
+  readonly code?: string
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'AuthzError'
+    this.status = status
+    this.code = code
+  }
+}
+
 export async function authzFetch<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
@@ -242,8 +254,8 @@ export async function authzFetch<T>(
     }
   }
   if (!res.ok) {
-    const err = body as { error?: string }
-    throw new Error(err.error || `AuthZ ${res.status}`)
+    const err = body as { error?: string; code?: string }
+    throw new AuthzError(err.error || `AuthZ ${res.status}`, res.status, err.code)
   }
   return body as T
 }
@@ -738,6 +750,134 @@ export function deleteCustomRepoRole(ns: string, roleId: string) {
     `/auth/namespaces/${encodeURIComponent(ns)}/custom-roles/repo/${encodeURIComponent(roleId)}`,
     { method: 'DELETE' },
   )
+}
+
+// ── Approvers (#86, #124) ───────────────────────────────────────────────────
+
+export type ApproverPrincipal = { sub: string; iss: string }
+
+export type ApproverScope = { ns: string; repo?: string }
+
+function approversPath(scope: ApproverScope): string {
+  const ns = `/auth/namespaces/${encodeURIComponent(scope.ns)}`
+  return scope.repo ? `${ns}/repos/${encodeURIComponent(scope.repo)}/approvers` : `${ns}/approvers`
+}
+
+export function fetchApprovers(scope: ApproverScope, signal?: AbortSignal) {
+  return authzFetch<{ approvers: ApproverPrincipal[] }>(approversPath(scope), { signal })
+}
+
+export function grantApproverSeat(scope: ApproverScope, target: ApproverPrincipal) {
+  return authzFetch<{ ok: boolean; approvers: ApproverPrincipal[] }>(approversPath(scope), {
+    method: 'PUT',
+    body: JSON.stringify({ sub: target.sub, iss: target.iss }),
+  })
+}
+
+export function revokeApproverSeat(scope: ApproverScope, target: ApproverPrincipal) {
+  return authzFetch<{ ok: boolean; approvers: ApproverPrincipal[] }>(approversPath(scope), {
+    method: 'DELETE',
+    body: JSON.stringify({ sub: target.sub, iss: target.iss }),
+  })
+}
+
+export type ApproverVersion = {
+  validFrom: string
+  validTo: string | null
+  approvers: ApproverPrincipal[]
+}
+
+export function fetchApproverHistory(scope: ApproverScope, signal?: AbortSignal) {
+  return authzFetch<{ versions: ApproverVersion[] }>(`${approversPath(scope)}/history`, { signal })
+}
+
+// ── Entity history (#108, #109, #110) ───────────────────────────────────────
+
+export type SeatVersionEntry = { kind: 'user' | 'group'; key: string; role: string }
+
+export type NamespaceMembershipVersion = {
+  validFrom: string
+  validTo: string | null
+  members: SeatVersionEntry[]
+}
+
+export function fetchNamespaceMembershipHistory(ns: string, signal?: AbortSignal) {
+  return authzFetch<{ versions: NamespaceMembershipVersion[] }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/members/history`,
+    { signal },
+  )
+}
+
+export type RepoCollaboratorVersion = {
+  validFrom: string
+  validTo: string | null
+  collaborators: SeatVersionEntry[]
+}
+
+export function fetchRepoCollaboratorHistory(ns: string, repo: string, signal?: AbortSignal) {
+  return authzFetch<{ versions: RepoCollaboratorVersion[] }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators/history`,
+    { signal },
+  )
+}
+
+export type CustomRoleVersion = {
+  validFrom: string
+  validTo: string | null
+  kind: 'namespace' | 'repo'
+  roleId: string
+  definition: {
+    id?: string
+    name?: string
+    description?: string
+    permissions?: string[]
+    base?: string
+    baseRepositoryRole?: string
+  }
+}
+
+export function fetchCustomRoleHistory(ns: string, signal?: AbortSignal) {
+  return authzFetch<{ versions: CustomRoleVersion[] }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/custom-roles/history`,
+    { signal },
+  )
+}
+
+// ── Signature revoke (#93) ──────────────────────────────────────────────────
+
+export type SignatureRevocationResult = {
+  revocation: {
+    id: string
+    signatureId: string
+    revokedAt: string
+    reason: string
+    changeControlId: string
+    commitIds: string[]
+  }
+  blockedMergeRequestIds: string[]
+}
+
+/** Append-only revoke; the reason ceremony runs through `authzFetch` → `withReason`. */
+export function revokeSignature(signatureId: string, input?: { commitIds?: string[]; mergeRequestId?: string }) {
+  return authzFetch<SignatureRevocationResult>(
+    `/auth/signatures/${encodeURIComponent(signatureId)}/revoke`,
+    { method: 'POST', body: JSON.stringify({ ...(input ?? {}) }) },
+  )
+}
+
+// ── Restore test (#101) ─────────────────────────────────────────────────────
+
+export type RestoreTestStatus = { passed: boolean; passedAt?: string; recordedBy?: string }
+
+export function fetchRestoreTest(signal?: AbortSignal) {
+  return authzFetch<{ restoreTest: RestoreTestStatus }>('/auth/admin/restore-test', { signal })
+}
+
+export function recordRestoreTestPass() {
+  return authzFetch<{ restoreTest: RestoreTestStatus }>('/auth/admin/restore-test/pass', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
 }
 
 export type { AuthUser }

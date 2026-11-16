@@ -1,7 +1,7 @@
 import type { Hono } from 'hono'
 import { env } from './env.js'
 import { decideInstanceAction, decideManageApprovers, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
-import { grantApprover, listApprovers, revokeApprover } from './authzApproverStore.js'
+import { grantApprover, listApproverHistory, listApprovers, revokeApprover } from './authzApproverStore.js'
 import { denialResponse } from './decisionHttp.js'
 import {
   isCustomRepoRoleAssigned,
@@ -449,6 +449,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       const denied = denialResponse(c, await decideNamespaceAction(session, scope.ns, 'namespace.view'))
       if (denied) return denied
       return c.json({ approvers: await listApprovers(scope) })
+    }))
+
+    app.get(`${base}/history`, guarded({}, async ({ c, user: session }) => {
+      const scope = scopeOf(c)
+      const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
+      if (denied) return denied
+      const versions = await listApproverHistory(scope)
+      if (!versions) return c.json({ error: 'Not found' }, 404)
+      return c.json({ versions })
     }))
 
     app.put(base, guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {

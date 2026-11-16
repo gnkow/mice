@@ -28,6 +28,13 @@ export async function listApprovers(scope: authzRepo.ApproverScope): Promise<Use
   return (await authzRepo.listApproverKeys(scope)).map((k) => parseUserKey(k))
 }
 
+/** Chronological approver-seat versions for a namespace or repository (entity history, not audit). */
+export async function listApproverHistory(scope: authzRepo.ApproverScope) {
+  const versions = await authzRepo.listApproverVersions(scope)
+  if (!versions) return null
+  return versions.map((v) => ({ ...v, approvers: v.approvers.map((k) => parseUserKey(k)) }))
+}
+
 export async function isApprover(ns: string, repo: string, user: UserKey): Promise<boolean> {
   return authzRepo.isApproverKey(ns, repo, userKey(user))
 }

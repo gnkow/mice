@@ -80,3 +80,48 @@ describe('approver role', () => {
     assert.equal((await decideIsApprover(root, 'acme', 'data')).allow, false)
   })
 })
+
+describe('approver seat entity versions (#124)', () => {
+  const historyOf = async (as: keyof typeof people, path: string) => {
+    const res = await call(as, 'GET', `${path}/history`)
+    return { status: res.status, body: (await res.json()) as { versions?: Array<{ validFrom: string; validTo: string | null; approvers: Array<{ sub: string; iss: string }> }> } }
+  }
+  const subs = (v: { approvers: Array<{ sub: string }> }) => v.approvers.map((a) => a.sub).sort()
+
+  it('appends one version per effective namespace change and keeps closed intervals', async () => {
+    await call('owner', 'POST', '/auth/namespaces', { name: 'versions-ns', basePermission: 'read' })
+    const path = '/auth/namespaces/versions-ns/approvers'
+    assert.deepEqual((await historyOf('owner', path)).body.versions, [])
+
+    assert.equal((await call('owner', 'PUT', path, { sub: 'bob', iss: 'test' })).status, 200)
+    assert.equal((await call('owner', 'PUT', path, { sub: 'bob', iss: 'test' })).status, 200, 'idempotent grant')
+    assert.equal((await call('owner', 'PUT', path, { sub: 'carol', iss: 'test' })).status, 200)
+    assert.equal((await call('owner', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200)
+    assert.equal((await call('owner', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200, 'idempotent revoke')
+
+    const { status, body } = await historyOf('owner', path)
+    assert.equal(status, 200)
+    const versions = body.versions!
+    assert.deepEqual(versions.map(subs), [['bob'], ['bob', 'carol'], ['carol']])
+    assert.equal(versions.at(-1)!.validTo, null)
+    for (const closed of versions.slice(0, -1)) assert.ok(closed.validTo)
+    assert.equal(versions[0]!.validTo, versions[1]!.validFrom)
+  })
+
+  it('records repository approver history separately from the namespace', async () => {
+    const path = '/auth/namespaces/versions-ns/repos/ledger/approvers'
+    assert.deepEqual((await historyOf('owner', path)).body.versions, [])
+    await call('owner', 'PUT', path, { sub: 'bob', iss: 'test' })
+    await call('owner', 'DELETE', path, { sub: 'bob', iss: 'test' })
+    const versions = (await historyOf('owner', path)).body.versions!
+    assert.deepEqual(versions.map(subs), [['bob'], []])
+    const ns = (await historyOf('owner', '/auth/namespaces/versions-ns/approvers')).body.versions!
+    assert.equal(ns.length, 3, 'namespace history untouched by repo seats')
+  })
+
+  it('only the namespace Owner reads history; unknown namespaces are denied', async () => {
+    assert.equal((await historyOf('carol', '/auth/namespaces/versions-ns/approvers')).status, 403)
+    assert.equal((await historyOf('root', '/auth/namespaces/versions-ns/approvers')).status, 403)
+    assert.equal((await historyOf('owner', '/auth/namespaces/nope-ns/approvers')).status, 403)
+  })
+})

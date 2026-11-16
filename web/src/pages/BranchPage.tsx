@@ -5,11 +5,13 @@ import { BranchesSubNav } from '../components/BranchesSubNav'
 import { AuthorAvatar } from '../components/AuthorAvatar'
 import { CommitEmail } from '../components/CommitEmail'
 import { MetaPanel } from '../components/MetaPanel'
+import { QcFailedWarning } from '../components/QcFailedWarning'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
+import { useCommitQc } from '../hooks/useCommitQc'
 import { confirmDelete } from '../lib/confirmDelete'
 import { resolveDefaultBranch } from '../lib/lastBranch'
-import { compareCommits, deleteBranch, getCommit, listBranches, mergeCommitIntoBranch, updateBranch } from '../lib/oxen/api'
+import { compareCommits, deleteBranch, getCommit, listBranches, listCommitHistory, mergeCommitIntoBranch, updateBranch } from '../lib/oxen/api'
 import { formatRelativeTime } from '../lib/time'
 import { FavoriteStar } from '../components/FavoriteStar'
 
@@ -45,6 +47,8 @@ function BranchDetail({ namespace, repo, branch }: { namespace: string; repo: st
     return result.compare.commits?.length ?? 0
   }, [namespace, repo, branch, defaultBranch, data?.branch.commit_id])
   const loaded = !!data
+  const history = useAsync(async signal => (await listCommitHistory(namespace, repo, branch, signal)).commits, [namespace, repo, branch, data?.branch.commit_id])
+  const { summary: qcSummary } = useCommitQc(namespace, repo, history.kind === 'ok' ? history.data : null)
   useEffect(() => {
     if (loaded && (hash === '#metadata' || hash === '#power-tools')) {
       document.getElementById(hash.slice(1))?.scrollIntoView()
@@ -93,6 +97,7 @@ function BranchDetail({ namespace, repo, branch }: { namespace: string; repo: st
     {error && <p className="flash flash-error" role="alert">{error}</p>}
     <StateBlock loading={state.kind === 'loading'} error={state.kind === 'error' ? state.message : null} onRetry={state.reload}>
       {data && <>
+        <QcFailedWarning namespace={namespace} repo={repo} summary={qcSummary} scope={`branch ${branch}`} advice="Its tip is built on revoked signatures; review before merging or releasing." />
         <section className="panel" aria-labelledby="branch-info-heading">
           <h2 id="branch-info-heading">Branch info</h2>
           <dl>

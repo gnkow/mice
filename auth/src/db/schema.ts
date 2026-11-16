@@ -215,6 +215,39 @@ export const repoApprovers = pgTable(
   (t) => [primaryKey({ columns: [t.repositoryId, t.userKey] })],
 )
 
+/** Append-only successive approver sets for a namespace (GxP ticket 124). */
+export const namespaceApproverVersions = pgTable(
+  'namespace_approver_versions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    namespaceId: uuid('namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    /** Sorted `iss|sub` user keys holding the approver seat after the change. */
+    approvers: jsonb('approvers').$type<string[]>().notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('namespace_approver_versions_ns_from_idx').on(t.namespaceId, t.validFrom)],
+)
+
+/** Append-only successive approver sets for a repository (GxP ticket 124). */
+export const repoApproverVersions = pgTable(
+  'repo_approver_versions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    approvers: jsonb('approvers').$type<string[]>().notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('repo_approver_versions_repo_from_idx').on(t.repositoryId, t.validFrom)],
+)
+
 /**
  * Cached IdP group display names. Grant keys are `iss|group_id` on membership tables;
  * this table is presentation + the name-based-fallback warning flag only.

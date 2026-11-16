@@ -1,6 +1,6 @@
 import { FolderOpen as ActionFolderOpen, History as ActionHistory, Trash2 as ActionTrash2 } from 'lucide-react'
 import { MetaPanel } from '../components/MetaPanel'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Link,
   useNavigate,
@@ -11,8 +11,11 @@ import { AuthorAvatar } from '../components/AuthorAvatar'
 import { CommitEmail } from '../components/CommitEmail'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { CommitList } from '../components/CommitList'
+import { QcFailedWarning } from '../components/QcFailedWarning'
+import { SignedRecordReportButton } from '../components/SignedRecordReportButton'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
+import { useCommitQc } from '../hooks/useCommitQc'
 import {
   getCommit,
   getRootCommit,
@@ -70,6 +73,13 @@ export function CommitsPage() {
   )
 
   const active = mode === 'history' ? history : all
+  const { qc, summary: qcSummary } = useCommitQc(
+    namespace,
+    repo,
+    active.kind === 'ok' ? active.data.commits : null,
+  )
+  const qcFailed = useMemo(() => new Set(qcSummary.failed), [qcSummary])
+  const qcDescendants = useMemo(() => new Set(qcSummary.descendants), [qcSummary])
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
   const linkSearch = params.toString() ? `?${params.toString()}` : ''
   const listHref = `${base}/commits${linkSearch}`
@@ -154,6 +164,7 @@ export function CommitsPage() {
         </div>
 
         <div className="history-toolbar">
+          <SignedRecordReportButton namespace={namespace} repo={repo} className="btn ghost small" />
           <div className="history-mode">
             <span className="history-mode-spacer" aria-hidden>
               Mode
@@ -249,6 +260,13 @@ export function CommitsPage() {
         </p>
       )}
 
+      <QcFailedWarning
+        namespace={namespace}
+        repo={repo}
+        summary={qcSummary}
+        scope={mode === 'history' ? `the history of ${revisionLabel}` : 'this repository'}
+      />
+
       <div className="history-layout">
         <section className="history-list" aria-label="Commit list">
           <StateBlock
@@ -268,6 +286,8 @@ export function CommitsPage() {
                 commits={active.data.commits}
                 selectedId={commitId || undefined}
                 linkSearch={linkSearch}
+                qcFailed={qcFailed}
+                qcDescendants={qcDescendants}
               />
             )}
           </StateBlock>
@@ -332,6 +352,15 @@ export function CommitsPage() {
                       )}
                     </span>
                   </p>
+                  {qc[commit.id] === 'failed' ? (
+                    <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-failed">
+                      This commit is <strong>QC Failed</strong>: a signature covering it was revoked.
+                    </p>
+                  ) : qcDescendants.has(commit.id) ? (
+                    <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-descendant">
+                      This commit descends from a <strong>QC Failed</strong> commit.
+                    </p>
+                  ) : null}
                   <MetaPanel key={commit.id} type="commit" id={`${namespace}/${repo}#${commit.id}`} />
                 </>
               )}

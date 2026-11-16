@@ -1103,6 +1103,9 @@ This allows future **wildcard permissions**:
 | Account | Role | Purpose |
 |---------|------|---------|
 | `mice_admin@mice.com` | `admin` | Instance administrator (bootstrap) |
+| `mice_mfa@mice.com` | `admin` | MFA-capable instance administrator (bootstrap) |
+| `mice@example.com` | `user` | Default SSO / e2e user (granted, not admin) |
+| `partner@partner.example` | `user` | SAML broker e2e (granted, not admin) |
 | `mice_manager@mice.com` | `manager` | Team manager / access-request review |
 | `mice_auditor@mice.com` | `auditor` | Compliance auditor |
 | `mice_user@mice.com` | `user` | Standard user |

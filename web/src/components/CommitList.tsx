@@ -12,6 +12,10 @@ type Props = {
   selectedId?: string
   /** Query string to keep on commit links (including leading `?`). */
   linkSearch?: string
+  /** Commits whose QC status is failed (GxP #94). */
+  qcFailed?: ReadonlySet<string>
+  /** Commits that descend from a QC Failed commit. */
+  qcDescendants?: ReadonlySet<string>
 }
 
 export function CommitList({
@@ -20,6 +24,8 @@ export function CommitList({
   commits,
   selectedId,
   linkSearch = '',
+  qcFailed,
+  qcDescendants,
 }: Props) {
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
   const emails = useCurrentEmails(commits.map((c) => c.author))
@@ -70,6 +76,15 @@ export function CommitList({
                           {formatRelativeTime(c.timestamp)}
                         </time>
                       </span>
+                      {qcFailed?.has(c.id) ? (
+                        <span className="ns-tag ns-tag-warn" data-testid="commit-qc-failed">
+                          QC Failed
+                        </span>
+                      ) : qcDescendants?.has(c.id) ? (
+                        <span className="ns-tag ns-tag-muted" data-testid="commit-qc-descendant">
+                          Descends from QC Failed
+                        </span>
+                      ) : null}
                       <MetaPills type="commit" id={`${namespace}/${repo}#${c.id}`} />
                     </span>
                     <span className="commit-sha mono">{c.id.slice(0, 7)}</span>

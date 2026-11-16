@@ -1,6 +1,7 @@
 import { Key, AlertCircle, Clock, CheckCircle, XCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
+import { authzFetch } from '../lib/authzApi'
 import {
   SEAL_KEY_ROTATION_DAYS,
   decideSealKeyScheduleStatus,
@@ -57,29 +58,22 @@ async function getCurrentSealKey(): Promise<SealKeyInfo> {
   return data.key
 }
 
+/**
+ * Rotation requires a reason + electronic signature (#122). `authzFetch` runs the
+ * reason/signing ceremony (`withReason`) when the BFF asks for it, like AdminRevocationSection.
+ */
 async function performNormalRotation(): Promise<void> {
-  const res = await fetch('/auth/admin/seal-keys/rotate', {
+  await authzFetch('/auth/admin/seal-keys/rotate', {
     method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: 'Rotation failed' }))
-    throw new Error(data.error || 'Normal rotation failed')
-  }
 }
 
 async function performEmergencyRotation(reason: string): Promise<void> {
-  const res = await fetch('/auth/admin/seal-keys/rotate/emergency', {
+  await authzFetch('/auth/admin/seal-keys/rotate/emergency', {
     method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason }),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: 'Emergency rotation failed' }))
-    throw new Error(data.error || 'Emergency rotation failed')
-  }
 }
 
 function formatTimestamp(epochSec: number): string {

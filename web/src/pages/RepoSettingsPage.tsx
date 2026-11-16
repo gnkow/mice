@@ -1,7 +1,9 @@
-import { FolderGit2 as ActionFolderGit2, MoveRight as ActionMoveRight, Pencil as ActionPencil, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
+import { FolderGit2 as ActionFolderGit2, History as ActionHistory, MoveRight as ActionMoveRight, Pencil as ActionPencil, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
 import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ApproversSection } from '../components/ApproversSection'
+import { SignedRecordReportButton } from '../components/SignedRecordReportButton'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import {
@@ -203,10 +205,18 @@ export function RepoSettingsPage() {
                 collaborators without namespace membership).
               </p>
             </div>
-            <p className="muted small ns-settings-count">
-              {collaborators.length} collaborator
-              {collaborators.length === 1 ? '' : 's'}
-            </p>
+            <div>
+              <p className="muted small ns-settings-count">
+                {collaborators.length} collaborator
+                {collaborators.length === 1 ? '' : 's'}
+              </p>
+              <Link
+                className="btn ghost small"
+                to={`${base}/settings/collaborators/history`}
+              >
+                <ActionHistory size={14} aria-hidden="true" className="button-label-icon" />Collaborator history
+              </Link>
+            </div>
           </div>
 
           {collaborators.length === 0 ? (
@@ -379,6 +389,20 @@ export function RepoSettingsPage() {
               </div>
             </div>
           </form>
+        </section>
+
+        <ApproversSection namespace={namespace} repo={repo} />
+
+        <section
+          className="settings-section"
+          aria-labelledby="repo-signed-record-heading"
+        >
+          <h2 id="repo-signed-record-heading">Signed-record report</h2>
+          <p className="muted small">
+            Per-repository report of electronic signatures, revocations and QC
+            status for audit and release evidence. Requires read access.
+          </p>
+          <SignedRecordReportButton namespace={namespace} repo={repo} />
         </section>
 
         <section className="settings-section" aria-labelledby="repo-meta-heading">

@@ -77,12 +77,24 @@ export function summarizeMutation(method: string, path: string): string {
     if (parts[1] === 'namespaces') {
       const ns = parts[2] ? decodeURIComponent(parts[2]) : undefined
       if (m === 'POST' && !ns) return 'Create a namespace'
-      if (m === 'PATCH' && ns) return `Update settings for namespace “${ns}”`
-      if (m === 'DELETE' && ns) return `Delete namespace “${ns}”`
+      if (m === 'PATCH' && ns && !parts[3]) return `Update settings for namespace “${ns}”`
+      if (m === 'DELETE' && ns && !parts[3]) return `Delete namespace “${ns}”`
       if (parts[3] === 'members') return `${m === 'DELETE' ? 'Remove a member from' : 'Change membership in'} namespace “${ns}”`
+      if (parts[3] === 'approvers') return `${m === 'DELETE' ? 'Remove an approver from' : 'Assign an approver in'} namespace “${ns}”`
+      if (parts[3] === 'repos' && parts[5] === 'approvers') {
+        return `${m === 'DELETE' ? 'Remove an approver from' : 'Assign an approver on'} ${ns}/${parts[4]}`
+      }
       if (parts[3] === 'repos' && parts[5] === 'collaborators') {
         return `${m === 'DELETE' ? 'Remove a collaborator from' : 'Change collaborators on'} ${ns}/${parts[4]}`
       }
+    }
+    if (parts[1] === 'signatures' && parts[3] === 'revoke' && parts[2]) {
+      return `Revoke signature ${decodeURIComponent(parts[2]).slice(0, 8)}… (affected commits become QC Failed)`
+    }
+    if (parts[1] === 'admin' && parts[2] === 'seal-keys') {
+      return parts[4] === 'emergency'
+        ? 'Emergency-rotate the session cookie seal key'
+        : 'Rotate the session cookie seal key'
     }
     if (parts[1] === 'instance') return 'Change instance settings or permissions'
     if (parts[1] === 'access-requests') return 'Decide an access request'

@@ -2,6 +2,7 @@ import { FolderGit2 as ActionFolderGit2, FolderOpen as ActionFolderOpen, Trash2 
 import { MetaBody } from '../components/MetaPanel'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ApproversSection } from '../components/ApproversSection'
 import { CustomRolesSection } from '../components/CustomRolesSection'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
@@ -411,6 +412,8 @@ export function NamespaceSettingsPage() {
                 </div>
               </form>
             </section>
+
+            <ApproversSection namespace={namespace} />
 
             <CustomRolesSection namespace={namespace} />
 

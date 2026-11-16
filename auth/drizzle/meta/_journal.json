@@ -71,6 +71,13 @@
       "when": 1794835000000,
       "tag": "0009_merge_requests_and_qc",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794900000000,
+      "tag": "0010_approver_versions",
+      "breakpoints": true
     }
   ]
 }
