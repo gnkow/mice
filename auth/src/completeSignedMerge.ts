@@ -13,6 +13,7 @@ import {
   SIGNED_MERGE_REFUSALS,
   type SignedMergeRefusalCode,
 } from './signedMergeComplete.js'
+import { anyCommitQcFailed } from './signatureRevoke.js'
 
 export type CompleteSignedMergeInput = {
   mergeRequestId: string
@@ -83,6 +84,15 @@ export async function completeSignedMerge(
     }
   }
 
+  if (await anyCommitQcFailed(mr.repositoryId, input.commitIds)) {
+    return {
+      ok: false,
+      status: 409,
+      code: SIGNED_MERGE_REFUSALS.not_open,
+      detail: 'Merge blocked: one or more commits are QC Failed',
+    }
+  }
+
   const decision = decideSignedMergeComplete({
     mr,
     isApprover: approver.allow,
@@ -130,7 +140,10 @@ export async function completeSignedMerge(
   const merged = await markMergeRequestMerged(mr.id, { mergeCommitId })
   const passed = [...new Set([...input.commitIds, mergeCommitId])]
   if (passed.length > 0) {
-    await markCommitsQc(mr.repositoryId, passed, 'passed', { mergeRequestId: mr.id })
+    await markCommitsQc(mr.repositoryId, passed, 'passed', {
+      mergeRequestId: mr.id,
+      allowFailedToPassed: true,
+    })
   }
   return {
     ok: true,

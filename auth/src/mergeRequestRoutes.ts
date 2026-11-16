@@ -10,7 +10,9 @@ import {
 } from './mergeRequestStore.js'
 import { getCommitQc, markCommitsQc } from './commitQcStore.js'
 import { completeSignedMerge } from './completeSignedMerge.js'
+import { allocateChangeControlId, CHANGE_CONTROL_HEADER } from './changeControl.js'
 import { env } from './env.js'
+import { revokeSignature } from './signatureRevoke.js'
 import type { AuditDep } from './routeDeps.js'
 
 let mergeExecutor:
@@ -176,6 +178,68 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const repo = await readRepository(ns, repoName)
       if (!repo) return c.json({ error: 'Not found' }, 404)
       return c.json({ commitId, status: await getCommitQc(repo.id, commitId) })
+    }),
+  )
+
+  // GxP ticket 07 — revoke signature / commits → QC Failed (linked append-only record).
+  app.post(
+    '/auth/signatures/:id/revoke',
+    guarded({ mutates: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+      const {
+        resolveReason,
+        REASON_HEADER,
+        REASON_CATEGORY_HEADER,
+      } = await import('./auditReason.js')
+      const reason = resolveReason({
+        actor: user,
+        explicit: c.req.header(REASON_HEADER),
+        category: c.req.header(REASON_CATEGORY_HEADER) ?? 'revocation',
+        required: true,
+      })
+      if (!reason.ok) {
+        return c.json({ error: reason.rejection.detail, code: reason.rejection.code }, 400)
+      }
+      const body = raw as {
+        commitIds?: string[]
+        mergeRequestId?: string
+        changeControlId?: string
+      }
+      const changeControlId =
+        (typeof body.changeControlId === 'string' && body.changeControlId.trim()) ||
+        c.req.header(CHANGE_CONTROL_HEADER)?.trim() ||
+        allocateChangeControlId()
+      const result = await revokeSignature({
+        signatureId: c.req.param('id'),
+        revoker: { iss: user.iss, sub: user.sub, name: user.name },
+        reason: reason.value.reason,
+        changeControlId,
+        commitIds: Array.isArray(body.commitIds) ? body.commitIds.map(String) : undefined,
+        mergeRequestId: typeof body.mergeRequestId === 'string' ? body.mergeRequestId : undefined,
+      })
+      if (!result.ok) {
+        await audit({
+          action: 'esign.revoke_denied',
+          status: result.status,
+          message: result.detail,
+          detail: { code: result.code, signatureId: c.req.param('id') },
+        })
+        return c.json({ error: result.detail, code: result.code }, result.status as 400 | 403 | 404)
+      }
+      await audit({
+        action: 'esign.revoked',
+        message: `Revoked signature ${result.revocation.signatureId}`,
+        detail: {
+          signatureId: result.revocation.signatureId,
+          revocationId: result.revocation.id,
+          commitIds: result.revocation.commitIds,
+          blockedMergeRequestIds: result.blockedMergeRequestIds,
+          changeControlId,
+        },
+      })
+      return c.json({
+        revocation: result.revocation,
+        blockedMergeRequestIds: result.blockedMergeRequestIds,
+      })
     }),
   )
 

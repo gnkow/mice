@@ -66,6 +66,24 @@ export type SignatureStore = {
   /** Append-only consume marker so a signature cannot authorize a second mutation. */
   consume(id: string): Promise<void>
   isConsumed(id: string): Promise<boolean>
+  /** Append-only linked revocation; never edits or deletes the original record. */
+  revoke(input: {
+    signatureId: string
+    revokedBy: { iss: string; sub: string; name?: string }
+    reason: string
+    changeControlId: string
+    commitIds: string[]
+  }): Promise<{ id: string; seq: number }>
+  listRevocations(signatureId: string): Promise<
+    Array<{
+      id: string
+      signatureId: string
+      revokedAt: string
+      reason: string
+      changeControlId: string
+      commitIds: string[]
+    }>
+  >
 }
 
 export type SignatureView = {
@@ -183,6 +201,44 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
         `consumed/${id}`,
         JSON.stringify({ kind: 'esign.consumed', signatureId: id, consumedAt: new Date().toISOString() }),
       )
+    },
+    async revoke(input) {
+      const id = randomUUID()
+      const record = {
+        kind: 'esign.revoked' as const,
+        id,
+        signatureId: input.signatureId,
+        revokedAt: new Date().toISOString(),
+        revokedBy: input.revokedBy,
+        reason: input.reason,
+        changeControlId: input.changeControlId,
+        commitIds: input.commitIds,
+      }
+      const seq = await ledger.append(`revocation/${id}`, JSON.stringify(record))
+      return { id, seq }
+    },
+    async listRevocations(signatureId) {
+      const out: Array<{
+        id: string
+        signatureId: string
+        revokedAt: string
+        reason: string
+        changeControlId: string
+        commitIds: string[]
+      }> = []
+      for (const entry of await ledger.readAll()) {
+        if (!entry.key.includes('revocation/')) continue
+        const row = JSON.parse(entry.value) as {
+          id: string
+          signatureId: string
+          revokedAt: string
+          reason: string
+          changeControlId: string
+          commitIds: string[]
+        }
+        if (row.signatureId === signatureId) out.push(row)
+      }
+      return out
     },
   }
 }
