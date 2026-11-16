@@ -28,3 +28,4 @@
 - **Deepen (auto-pick Top):** mint-first `allocateChangeControlId` + `resolveChangeControl` seam; wire proxy/guarded; drop dead `changeControlPatternFor`.
 - **Tests:** `changeControl.test.ts` unit; `changeControl.api.test.ts` mint + client id on namespace settings.
 - **Seams:** module `allocateChangeControlId` / `resolveChangeControl`; HTTP namespace PATCH.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `allocateChangeControlId` / `resolveChangeControl` in `changeControl.ts`; wired via proxy + `guarded`. Unit: `changeControl.test.ts`; HTTP: `changeControl.api.test.ts`. Status done.
