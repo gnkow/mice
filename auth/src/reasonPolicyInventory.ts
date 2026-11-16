@@ -446,11 +446,9 @@ const BFF: ReasonPolicyEntry[] = [
   {
     id: 'bff.admin.revoke',
     surface: 'bff',
-    key: 'POST /auth/admin/revoke|/auth/admin/suspend|...confirm|/auth/me/suspend',
-    reason: 'exempt',
-    rationale:
-      'Body carries free-text reason today but not the GxP category+signature ceremony — follow-on #121.',
-    coverage: 'adminRevocationRoutes; follow-on #121',
+    key: 'POST /auth/admin/revoke|/auth/admin/suspend|...confirm|/auth/me/suspend|/auth/instance/revoke-sessions',
+    reason: 'required',
+    coverage: 'auth/src/revocationReasonPolicy.test.ts; guarded reason:true',
   },
   {
     id: 'bff.seal-keys.rotate',

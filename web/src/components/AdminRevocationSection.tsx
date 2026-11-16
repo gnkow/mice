@@ -1,6 +1,14 @@
 import { AlertTriangle, Shield } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
+import {
+  CHANGE_CONTROL_HEADER,
+  REASON_CATEGORY_HEADER,
+  REASON_HEADER,
+  SIGNATURE_HEADER,
+  withReason,
+  type ReasonSubmission,
+} from '../lib/reason'
 
 /**
  * Feature 5: Admin Revocation UI
@@ -18,13 +26,32 @@ type PendingSuspension = {
   expiresAt: string
 }
 
+function ceremonyHeaders(submission?: ReasonSubmission): HeadersInit {
+  if (!submission) return { 'Content-Type': 'application/json' }
+  return {
+    'Content-Type': 'application/json',
+    [REASON_HEADER]: submission.reason,
+    [REASON_CATEGORY_HEADER]: submission.category,
+    [SIGNATURE_HEADER]: submission.signatureId,
+    ...(submission.changeControlId
+      ? { [CHANGE_CONTROL_HEADER]: submission.changeControlId }
+      : {}),
+  }
+}
+
 async function revokeUser(principal: string, reason: string): Promise<void> {
-  const res = await fetch('/auth/admin/revoke', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ principal, reason }),
-  })
+  const path = '/auth/admin/revoke'
+  const body = { principal, reason }
+  const res = await withReason(
+    (submission) =>
+      fetch(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: ceremonyHeaders(submission),
+        body: JSON.stringify(body),
+      }),
+    { method: 'POST', path, body, changeSummary: `Revoke all sessions for ${principal}` },
+  )
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: 'Revocation failed' }))
     throw new Error(data.error || 'Revocation failed')
@@ -32,12 +59,18 @@ async function revokeUser(principal: string, reason: string): Promise<void> {
 }
 
 async function suspendUser(principal: string, reason: string): Promise<{ requestId: string }> {
-  const res = await fetch('/auth/admin/suspend', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ principal, reason }),
-  })
+  const path = '/auth/admin/suspend'
+  const body = { principal, reason }
+  const res = await withReason(
+    (submission) =>
+      fetch(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: ceremonyHeaders(submission),
+        body: JSON.stringify(body),
+      }),
+    { method: 'POST', path, body, changeSummary: `Suspend ${principal}` },
+  )
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: 'Suspension failed' }))
     throw new Error(data.error || 'Suspension failed')
@@ -46,12 +79,18 @@ async function suspendUser(principal: string, reason: string): Promise<{ request
 }
 
 async function confirmSuspension(requestId: string, reason: string): Promise<void> {
-  const res = await fetch(`/auth/admin/suspend/${encodeURIComponent(requestId)}/confirm`, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reason }),
-  })
+  const path = `/auth/admin/suspend/${encodeURIComponent(requestId)}/confirm`
+  const body = { reason }
+  const res = await withReason(
+    (submission) =>
+      fetch(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: ceremonyHeaders(submission),
+        body: JSON.stringify(body),
+      }),
+    { method: 'POST', path, body, changeSummary: `Confirm suspension ${requestId}` },
+  )
   if (!res.ok) {
     const data = await res.json().catch(() => ({ error: 'Confirmation failed' }))
     throw new Error(data.error || 'Confirmation failed')

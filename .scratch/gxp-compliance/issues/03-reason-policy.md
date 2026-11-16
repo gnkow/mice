@@ -27,3 +27,5 @@
 - **Deepen (auto-pick Top):** extract `requireReasonCategory` + export `createExemptActions` / `isReasonCategory`.
 - **Tests:** `auditReasonPolicy.test.ts` category seam + create-exempt list; existing proxy HTTP remains.
 - **Seams:** module `requireReasonCategory`; `mutationNeedsReason` / `createExemptActions`.
+
+**Deep-api Close (2026-11-16):** Re-audit found revocation-class BFF routes skipping GxP reason/ceremony. Closed at seams `guarded({ reason: true })` on `/auth/admin/revoke|/suspend|…confirm|/auth/me/suspend` and `/auth/instance/revoke-sessions`; inventory `bff.admin.revoke` → required. Unit/HTTP: `revocationReasonPolicy.test.ts`. Web admin section retries via `withReason`; e2e uses `AUTH_DEV_MODE` `/auth/dev/mutation-signature`.

@@ -23,10 +23,11 @@ const adminGate = async (u: { principalId?: number; sub: string; iss: string }) 
 }
 
 export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): void {
-  // Admin revoke-all
+  // Admin revoke-all (GxP ticket 03: revocation class → reason + ceremony)
   app.post('/auth/admin/revoke', guarded({ 
     gate: adminGate, 
-    mutates: true, 
+    mutates: true,
+    reason: true,
     body: { required: ['principal', 'reason'] } 
   }, async ({ c, user, body }) => {
     const principalKey = String(body.principal)
@@ -64,6 +65,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
   app.post('/auth/admin/suspend', guarded({
     gate: adminGate,
     mutates: true,
+    reason: true,
     body: { required: ['principal', 'reason'] }
   }, async ({ c, user, body }) => {
     const principalKey = String(body.principal)
@@ -102,6 +104,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
   app.post('/auth/admin/suspend/:requestId/confirm', guarded({
     gate: adminGate,
     mutates: true,
+    reason: true,
     body: { required: ['reason'] }
   }, async ({ c, user, body }) => {
     const requestId = c.req.param('requestId')
@@ -137,6 +140,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
   // Panic: a Principal suspends their own account immediately.
   app.post('/auth/me/suspend', guarded({
     mutates: true,
+    reason: true,
     body: { required: ['reason'] }
   }, async ({ c, user, body }) => {
     try {

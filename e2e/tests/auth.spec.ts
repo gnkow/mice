@@ -6,6 +6,7 @@ import {
   signInWithSsoViaKeycloak,
   signOutViaUi,
 } from '../helpers/keycloak'
+import { regulatedMutationHeaders } from '../helpers/regulated'
 import { mintSession } from '../helpers/session'
 
 const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
@@ -68,9 +69,19 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
       iss: 'mice-e2e',
       role: 'admin',
     })
+    const revokeBody = { sub: targetSub, iss: 'mice-e2e' }
     const revoke = await adminPage.request.post(
       `${AUTH_URL}/auth/instance/revoke-sessions`,
-      { data: { sub: targetSub, iss: 'mice-e2e' } },
+      {
+        headers: await regulatedMutationHeaders(adminPage.request, {
+          method: 'POST',
+          path: '/auth/instance/revoke-sessions',
+          body: revokeBody,
+          category: 'revocation',
+          reason: 'E2E admin cut-off of signed-in user sessions',
+        }),
+        data: revokeBody,
+      },
     )
     expect(revoke.ok()).toBeTruthy()
 

@@ -8,7 +8,11 @@ import { guarded } from '../session/routeGuard.js'
 export function registerRevocationRoutes(app: Hono): void {
   app.post(
     '/auth/instance/revoke-sessions',
-    guarded({ body: { required: ['sub', 'iss'] } }, async ({ c, user, body }) => {
+    guarded({
+      mutates: true,
+      reason: true,
+      body: { required: ['sub', 'iss'] },
+    }, async ({ c, user, body }) => {
       const target = { sub: body.sub as string, iss: body.iss as string }
       const result = await offboard(target, {
         scope: 'all',
