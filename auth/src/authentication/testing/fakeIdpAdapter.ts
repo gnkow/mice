@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { SignJWT, exportJWK, generateKeyPair } from 'jose'
 import type { Clock } from '../../clock.js'
 import type { IdpAdapter, SignInOptions, SignInResult, TestUserSpec } from './idpAdapter.js'
+import { buildTestIdTokenClaims } from './testIdTokenClaims.js'
 
 /**
  * In-process IdP that speaks the authorization-code endpoints the production OIDC client calls.
@@ -72,17 +73,11 @@ export async function createFakeIdpAdapter(opts: { clock: Clock }): Promise<IdpA
       const user = users.get(key)
       if (!user || user.disabled) return { ok: false, error: 'access_denied', state }
       const now = Math.floor(opts.clock.now() / 1000)
-      const claims: Record<string, unknown> = {
-        email: user.email,
+      const claims = buildTestIdTokenClaims(user, {
+        nowSec: now,
+        authAgeSec: options?.authAgeSec,
         nonce: url.searchParams.get('nonce'),
-        auth_time: now - (options?.authAgeSec ?? 0),
-        amr: user.mfa ? ['pwd', 'otp'] : ['pwd'],
-        acr: user.mfa ? 'mfa' : 'pwd',
-        email_verified: user.emailVerified !== false,
-      }
-      if (user.name !== null) claims.name = user.name ?? key
-      if (user.groups) claims.groups = user.groups
-      if (user.guest) claims.guest = true
+      })
       const token = await new SignJWT(claims)
         .setProtectedHeader({ alg: 'RS256', kid: 'fake' })
         .setIssuer(issuer)

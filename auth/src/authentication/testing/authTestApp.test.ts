@@ -89,6 +89,27 @@ await describe('authTestApp', async () => {
     assert.equal(bobClaims.name, 'Bob Guest')
   })
 
+  await it('IdP issues guest, MFA, non-MFA, and missing-name tokens', async () => {
+    const app = createAuthTestApp({
+      users: [
+        { sub: 'plain', email: 'p@example.com', name: 'Plain' },
+        { sub: 'mfa', email: 'm@example.com', name: 'Mfa', mfa: true },
+        { sub: 'guest', email: 'g@partner.example', name: 'Guest', guest: true },
+        { sub: 'nameless', email: 'n@example.com', name: null },
+      ],
+    })
+
+    const plain = await app.idp.decodeToken(await app.idp.issueToken('plain'))
+    const mfa = await app.idp.decodeToken(await app.idp.issueToken('mfa'))
+    const guest = await app.idp.decodeToken(await app.idp.issueToken('guest'))
+    const nameless = await app.idp.decodeToken(await app.idp.issueToken('nameless'))
+
+    assert.deepEqual([plain.amr, plain.acr], [['pwd'], 'pwd'])
+    assert.deepEqual([mfa.amr, mfa.acr], [['pwd', 'otp'], 'mfa'])
+    assert.equal(guest.guest, true)
+    assert.equal(nameless.name, undefined)
+  })
+
   await it('contract: tokens include standard OIDC claims', async () => {
     const app = createAuthTestApp({
       users: [{ sub: 'charlie', email: 'charlie@example.com', name: 'Charlie' }],

@@ -85,18 +85,32 @@ export function ProfilePage() {
                   )}
                 </div>
                 <p className="profile-account-email">{me.data.user.email}</p>
-                <div className="profile-account-meta">
+                <dl className="profile-account-meta">
                   <div className="profile-account-meta-row">
-                    <span className="profile-account-meta-label">Provider:</span>
-                    <span className="profile-account-meta-value">SSO</span>
+                    <dt className="profile-account-meta-label">Sign-in</dt>
+                    <dd className="profile-account-meta-value">SSO (organisation IdP)</dd>
                   </div>
                   {badge && (
                     <div className="profile-account-meta-row">
-                      <span className="profile-account-meta-label">Role:</span>
-                      <span className="profile-account-meta-value">{badge}</span>
+                      <dt className="profile-account-meta-label">Role</dt>
+                      <dd className="profile-account-meta-value">{badge}</dd>
                     </div>
                   )}
-                </div>
+                  <div className="profile-account-meta-row profile-account-meta-row--identity">
+                    <dt className="profile-account-meta-label">Issuer</dt>
+                    <dd className="profile-account-meta-value profile-account-id" title={me.data.user.iss}>
+                      <span className="profile-account-id-hint">Provider identity (iss)</span>
+                      <code>{me.data.user.iss}</code>
+                    </dd>
+                  </div>
+                  <div className="profile-account-meta-row profile-account-meta-row--identity">
+                    <dt className="profile-account-meta-label">Subject</dt>
+                    <dd className="profile-account-meta-value profile-account-id" title={me.data.user.sub}>
+                      <span className="profile-account-id-hint">User UUID (sub)</span>
+                      <code>{me.data.user.sub}</code>
+                    </dd>
+                  </div>
+                </dl>
               </div>
             </div>
             <p className="muted small auth-panel-stack">

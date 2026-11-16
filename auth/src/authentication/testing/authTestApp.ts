@@ -4,10 +4,12 @@ import { EncryptJWT, jwtDecrypt } from 'jose'
 import { createHash } from 'node:crypto'
 import { fakeClock, type FakeClock } from '../../clock.js'
 import { createFakeIdp, type FakeIdp } from './fakeIdp.js'
+import type { TestUserSpec } from './idpAdapter.js'
 import type { SessionUser } from '../session/session.js'
 
 export interface AuthTestAppOptions {
-  users: Array<{ sub: string; email: string; name: string }>
+  /** Same user shape as {@link IdpAdapter} — guest / MFA / missing name included. */
+  users: Array<TestUserSpec & { sub: string }>
 }
 
 export type SignInOptions = {
@@ -191,7 +193,8 @@ export function createAuthTestApp(options: AuthTestAppOptions): AuthTestApp {
       sub: user.sub,
       iss: 'https://test-idp.example.com',
       email: user.email,
-      name: user.name,
+      // Missing IdP name claim → empty string on the sealed session (login refuse is production's job).
+      name: user.name ?? '',
     }
     
     // Seal and set session cookie (stamped from the harness clock, not wall time)

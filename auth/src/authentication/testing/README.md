@@ -52,15 +52,21 @@ The fake IdP issues real JWT tokens signed with a test key. Tokens include:
 
 ### Configurable Users
 
-Users are configured at app creation. Each user needs:
+Users use the same `TestUserSpec` shape as `IdpAdapter` (guest / MFA / missing name included):
 
 ```typescript
 {
-  sub: string     // Subject identifier (unique)
-  email: string   // Email address
-  name: string    // Display name
+  sub: string              // Subject identifier (unique)
+  email: string            // Email address
+  name?: string | null     // Display name; `null` omits the claim
+  guest?: boolean          // External guest (`guest: true` claim)
+  mfa?: boolean            // `amr`/`acr` MFA evidence
+  groups?: string[]
+  disabled?: boolean
 }
 ```
+
+Claim construction is shared (`buildTestIdTokenClaims`) so AuthTestApp and `createFakeIdpAdapter` cannot drift.
 
 ### Token Issuance
 
@@ -145,14 +151,15 @@ See `authTestApp.test.ts` for a complete working example including:
 
 ## Implementation Notes
 
-- Tokens are signed with HS256 using a fixed test key
-- Token expiration is set to 1 hour from issuance
-- Expiration checking is disabled in `decodeToken()` for test convenience
-- The IdP issuer is `https://test-idp.example.com`
+- AuthTestApp tokens are signed with HS256 using a fixed test key; the OIDC adapter uses RS256
+- Both paths build claims via `buildTestIdTokenClaims` (guest / MFA / missing name)
+- Token expiration is set to 1 hour from issuance on AuthTestApp; adapter codes expire in 5 minutes
+- Expiration checking is disabled in AuthTestApp `decodeToken()` for test convenience
+- The AuthTestApp IdP issuer is `https://test-idp.example.com`
 - The audience is `test-audience`
 
 ## Login seam
 
 `signIn(sub)` is the public login interface: it starts `/auth/login`, issues the IdP code, completes `/auth/callback`, and returns the session cookie. Authorization codes and PKCE choreography are implementation details behind that seam.
 
-Guest, missing-name, MFA, and non-MFA users are covered by the `IdpAdapter` contract (`idpAdapter.contract.test.ts` / `createFakeIdpAdapter`).
+Guest, missing-name, MFA, and non-MFA users are covered on AuthTestApp (`issueToken`) and by the `IdpAdapter` contract (`idpAdapter.contract.test.ts` / `createFakeIdpAdapter`).
