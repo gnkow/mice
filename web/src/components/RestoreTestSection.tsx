@@ -63,7 +63,7 @@ export function RestoreTestSection() {
         <div className="ns-settings-grid">
           <div className="ns-settings-field">
             <span className="ns-settings-label">Gate</span>
-            <p className={status.passed ? 'flash flash-success' : 'flash flash-warning'}>
+            <p className={status.passed ? 'flash flash-success' : 'flash flash-warn'}>
               {status.passed ? 'Passed' : 'Not passed yet'}
             </p>
           </div>

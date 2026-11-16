@@ -401,17 +401,17 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.goto('/settings')
       await page.getByRole('link', { name: 'Restore test', exact: true }).click()
       const section = page.locator('#restore-test')
-      const status = section.getByTestId('restore-test-status')
-      await expect(status).toHaveAttribute('data-passed', 'false')
-      await expect(status).toContainText(/No passing restore test/)
+      await expect(section.getByText('Not passed yet')).toBeVisible()
 
       const record = section.getByRole('button', { name: 'Record restore test pass' })
-      await expect(record).toBeDisabled()
-      await section.getByLabel(/I confirm a restore test completed successfully/).check()
+      await expect(record).toBeEnabled()
       await record.click()
-      await expect(section.getByRole('status').filter({ hasText: 'Restore test pass recorded' })).toBeVisible()
-      await expect(status).toHaveAttribute('data-passed', 'true')
-      await expect(status).toContainText('mice-e2e|operator')
+      await expect(
+        section.getByRole('status').filter({ hasText: 'Restore test recorded as passed.' }),
+      ).toBeVisible()
+      await expect(section.getByText('Passed', { exact: true })).toBeVisible()
+      await expect(section.getByText(/mice-e2e\|operator/)).toBeVisible()
+      await expect(record).toBeDisabled()
     })
 
     test('TC-GXP-101-02: a failed record is announced as role=alert', async ({ page }) => {
@@ -422,7 +422,6 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.goto('/settings')
       await page.getByRole('link', { name: 'Restore test', exact: true }).click()
       const section = page.locator('#restore-test')
-      await section.getByLabel(/I confirm a restore test completed successfully/).check()
       await section.getByRole('button', { name: 'Record restore test pass' }).click()
       await expect(section.getByRole('alert')).toContainText('Instance admin required')
     })
