@@ -21,3 +21,4 @@
 - **Audit:** holds (probe + HA gate + outage alert already on master). Unit thin → thickened; integration present (`auditHealthRoutes.test.ts`, `/readyz`).
 - **Deepen (auto-pick Top):** export `immudbHaStatus` from `auditOutage.ts`; `auditHealthRoutes` and `startupGate` share `immudbHaAttested`/`immudbHaStatus` (one HA policy seam).
 - **Seams:** `immudbHaAttested` / `immudbHaStatus` (module); `GET/POST /auth/admin/audit-health/*` (HTTP); production `assertProductionStartup` (startup).
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `immudbHaAttested` / `immudbHaStatus` in `auditOutage.ts`; shared by `auditHealthRoutes` + `startupGate`. Unit: `auditOutage.test.ts`; HTTP: `auditHealthRoutes.test.ts`. Status done.
