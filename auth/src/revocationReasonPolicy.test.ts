@@ -37,7 +37,7 @@ const cookie = async () =>
   sealedSessionCookie({ ...admin, sessionStart: Math.floor(Date.now() / 1000) })
 
 describe('revocation reason policy (HTTP)', () => {
-  it('POST /auth/admin/revoke refuses without category + free text and accepts with ceremony', async () => {
+  it('GXP-R-013 POST /auth/admin/revoke refuses without category + free text and accepts with ceremony', async () => {
     const path = '/auth/admin/revoke'
     const body = { principal: 'idp|victim', reason: 'Security incident cut-off' }
 
@@ -70,7 +70,7 @@ describe('revocation reason policy (HTTP)', () => {
     assert.notEqual(okJson.code, 'signature_required')
   })
 
-  it('POST /auth/instance/revoke-sessions refuses without a reason and accepts past the gate', async () => {
+  it('GXP-R-013 POST /auth/instance/revoke-sessions refuses without a reason and accepts past the gate', async () => {
     const path = '/auth/instance/revoke-sessions'
     const body = { sub: 'victim', iss: 'idp' }
 

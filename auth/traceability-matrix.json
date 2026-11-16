@@ -1,0 +1,55 @@
+{
+  "generatedAt": 1794834404146,
+  "mappings": [
+    {
+      "requirementId": "GXP-R-008",
+      "requirementDescription": "Authoritative e-signature record in immudb",
+      "testCases": [
+        "src/authentication/signing/signatureStore.test.ts :: GXP-R-008 stores the full record in the ledger with a server timestamp and no way to change it"
+      ]
+    },
+    {
+      "requirementId": "GXP-R-013",
+      "requirementDescription": "Reason policy on regulated mutation classes",
+      "testCases": [
+        "src/revocationReasonPolicy.test.ts :: GXP-R-013 POST /auth/admin/revoke refuses without category + free text and accepts with ceremony",
+        "src/revocationReasonPolicy.test.ts :: GXP-R-013 POST /auth/instance/revoke-sessions refuses without a reason and accepts past the gate"
+      ]
+    },
+    {
+      "requirementId": "GXP-R-014",
+      "requirementDescription": "Change-control id on regulated mutations and signatures",
+      "testCases": [
+        "src/changeControl.api.test.ts :: GXP-R-014 creates without a change-control id; updates mint or keep a client id"
+      ]
+    },
+    {
+      "requirementId": "GXP-R-026",
+      "requirementDescription": "Electronic signature ceremony on regulated mutations",
+      "testCases": [
+        "src/mutationSignature.api.test.ts :: GXP-R-026 creates without a signature and refuses update without one"
+      ]
+    },
+    {
+      "requirementId": "GXP-R-061",
+      "requirementDescription": "Backup target configured and reachable at start",
+      "testCases": [
+        "src/backupTarget.test.ts :: GXP-R-061 rejects a missing or blank target"
+      ]
+    },
+    {
+      "requirementId": "GXP-R-063",
+      "requirementDescription": "Restore / integrity controls for regulated records",
+      "testCases": [
+        "src/backupTarget.test.ts :: GXP-R-063 records a successful check in the audit trail"
+      ]
+    }
+  ],
+  "coverage": {
+    "totalRequirements": 6,
+    "coveredRequirements": 6,
+    "coveragePercentage": 100
+  },
+  "scannedTestNames": 1478,
+  "digest": "sha256:64009a064b6623a70ee3e3d9eb5958f59c15993566a2295248e1b4b8889c8df5"
+}

@@ -32,7 +32,7 @@ const cookie = async () =>
   sealedSessionCookie({ ...manager, sessionStart: Math.floor(Date.now() / 1000) })
 
 describe('electronic signature on regulated namespace mutations', () => {
-  it('creates without a signature and refuses update without one', async () => {
+  it('GXP-R-026 creates without a signature and refuses update without one', async () => {
     const ns = `esig-${Date.now().toString(36)}`
     assert.equal(
       (

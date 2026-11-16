@@ -13,7 +13,7 @@ import { immudbConfig, openLedger } from './auditLedger.js'
 import { initAudit, queryAudit, useAuditLedger } from './audit.js'
 
 describe('backup target start gate', () => {
-  it('rejects a missing or blank target', () => {
+  it('GXP-R-061 rejects a missing or blank target', () => {
     for (const target of [undefined, '', '  ']) {
       const p = backupTargetProblems(target)
       assert.equal(p.length, 1, String(target))
@@ -56,7 +56,7 @@ describe('backup target start gate', () => {
     assert.match(p[0]!, /BACKUP_TARGET/)
   })
 
-  it('records a successful check in the audit trail', async () => {
+  it('GXP-R-063 records a successful check in the audit trail', async () => {
     useAuditLedger(await openLedger(immudbConfig()))
     await initAudit()
     const dir = mkdtempSync(join(tmpdir(), 'mice-backup-record-'))

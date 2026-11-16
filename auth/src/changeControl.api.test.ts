@@ -32,7 +32,7 @@ const cookie = async () =>
   sealedSessionCookie({ ...manager, sessionStart: Math.floor(Date.now() / 1000) })
 
 describe('change-control id on namespace mutations', () => {
-  it('creates without a change-control id; updates mint or keep a client id', async () => {
+  it('GXP-R-014 creates without a change-control id; updates mint or keep a client id', async () => {
     const ns = `cc-${Date.now().toString(36)}`
     const created = await app.request('/auth/namespaces', {
       method: 'POST',

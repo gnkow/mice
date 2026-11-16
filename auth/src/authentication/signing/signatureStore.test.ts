@@ -33,7 +33,7 @@ const base: NewSignature = { signer, meaning: 'Approved', contentHash: sha('cont
 const withBinding: NewSignature = { ...base, binding, manifest, changeControlId }
 
 describe('authoritative signature record', () => {
-  it('stores the full record in the ledger with a server timestamp and no way to change it', async () => {
+  it('GXP-R-008 stores the full record in the ledger with a server timestamp and no way to change it', async () => {
     const saved = await store.record(withBinding)
     const back = await store.get(saved.id)
     assert.equal(back?.record.signer.name, 'Alice Anders')

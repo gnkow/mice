@@ -344,6 +344,36 @@ export async function verifyAndRecordReleaseManifest(
   const status = await verifyReleaseManifestAt({ path })
   if (path || env.NODE_ENV === 'production') {
     await recordReleaseManifestCheck(status)
+    // GxP ticket 18: ship the tagged-test matrix with the release audit trail.
+    try {
+      const { readFileSync } = await import('node:fs')
+      const { fileURLToPath } = await import('node:url')
+      const { recordTraceabilityMatrixRelease } = await import('./traceabilityMatrix.js')
+      const matrixPath =
+        env.TRACEABILITY_MATRIX_PATH?.trim() ||
+        fileURLToPath(new URL('../traceability-matrix.json', import.meta.url))
+      const raw = JSON.parse(readFileSync(matrixPath, 'utf8')) as {
+        mappings: Array<{
+          requirementId: string
+          requirementDescription: string
+          testCases: string[]
+        }>
+        coverage: {
+          totalRequirements: number
+          coveredRequirements: number
+          coveragePercentage: number
+        }
+        generatedAt: number
+      }
+      await recordTraceabilityMatrixRelease({
+        generatedAt: raw.generatedAt,
+        mappings: raw.mappings,
+        coverage: raw.coverage,
+      })
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      console.warn('[mice-auth] traceability matrix not recorded:', reason)
+    }
   }
   if (!status.match) {
     console.error('[mice-auth] release manifest check FAILED', status.mismatches.join('; ') || status.reason)
