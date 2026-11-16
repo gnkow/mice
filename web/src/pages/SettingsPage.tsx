@@ -1,8 +1,9 @@
-import { ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound, Package, Scale } from 'lucide-react'
+import { ArchiveRestore, ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound, Package, Scale } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
+import { RestoreTestSection } from '../components/RestoreTestSection'
 import { SealKeyRotationSection } from '../components/SealKeyRotationSection'
 import { MiceSuspensionSection } from '../components/MiceSuspensionSection'
 import { AccessReviewSection } from '../components/AccessReviewSection'
@@ -129,6 +130,7 @@ export function SettingsPage() {
             items: [
               { id: 'audit-health', label: 'Audit health', Icon: HeartPulse },
               { id: 'seal-key-rotation', label: 'Seal keys', Icon: KeyRound },
+              { id: 'restore-test', label: 'Restore test', Icon: ArchiveRestore },
             ],
           },
           {
@@ -203,6 +205,7 @@ export function SettingsPage() {
             <GroupBindingSection />
             <AuditHealthSection />
             <SealKeyRotationSection />
+            <RestoreTestSection />
             <RegulatedConfigSection />
             <ReleaseManifestSection />
             <InstanceAdminSection signedInIss={signedInIss} />
@@ -1150,6 +1153,10 @@ type AuditHealthStatus = {
     verifiedAt?: string
     firstBreak?: { seq: number; reason: string }
   }
+  /** Chain tip for IQP / change-control; null until the ledger has been verified. */
+  chainTip?: { txid: number; root: string; verifiedAt?: string } | null
+  /** Public half of AUDIT_EXPORT_PRIVATE_KEY (PEM); null when no signing key is configured. */
+  exportPublicKey?: string | null
   ha: { attested: boolean; detail: string }
   currentOutage: {
     startedAt: number
@@ -1515,6 +1522,53 @@ function AuditHealthSection() {
               {data.readiness.chain}
               {data.readiness.firstBreak ? ` — ${data.readiness.firstBreak.reason}` : ''}
             </p>
+          </div>
+
+          <div className="ns-settings-field" data-testid="audit-chain-tip">
+            <span className="ns-settings-label">Chain tip (IQP)</span>
+            {data.chainTip ? (
+              <>
+                <p className="small">
+                  txid <code className="inline-code" data-testid="audit-chain-tip-txid">{data.chainTip.txid}</code>
+                  {' · '}
+                  root <code className="inline-code" data-testid="audit-chain-tip-root">{data.chainTip.root || '(empty ledger)'}</code>
+                </p>
+                <p className="muted small">
+                  File with the IQP / change-control record at install; re-file after a restore.
+                  {data.chainTip.verifiedAt
+                    ? ` Verified ${new Date(data.chainTip.verifiedAt).toLocaleString()}.`
+                    : ''}
+                </p>
+              </>
+            ) : (
+              <p className="flash flash-warning">
+                Not available — the ledger has not been verified yet. Run “Check now”.
+              </p>
+            )}
+          </div>
+
+          <div className="ns-settings-field" data-testid="audit-export-public-key">
+            <span className="ns-settings-label">Export public key</span>
+            {data.exportPublicKey ? (
+              <>
+                <pre
+                  className="mono small"
+                  tabIndex={0}
+                  aria-label="Audit export signing public key (PEM)"
+                  style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+                  data-testid="audit-export-public-key-pem"
+                >
+                  {data.exportPublicKey.trim()}
+                </pre>
+                <p className="muted small">
+                  Verifies signed audit bundles. File alongside the genesis root in IQP.
+                </p>
+              </>
+            ) : (
+              <p className="flash flash-warning">
+                Not configured — set <code className="inline-code">AUDIT_EXPORT_PRIVATE_KEY</code>; PDF and bundle exports are refused until then.
+              </p>
+            )}
           </div>
 
           <div className="ns-settings-field">

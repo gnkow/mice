@@ -1,5 +1,5 @@
 import type { Context, Hono } from 'hono'
-import { acknowledgeAuditBreak, actorFromUser, appendAudit, auditEventsToCsv, auditFacets, buildAuditExportBundle, queryAudit, queryAuditForExport, type AuditQuery } from './audit.js'
+import { acknowledgeAuditBreak, actorFromUser, appendAudit, auditEventsToCsv, auditFacets, buildAuditExportBundle, queryAudit, queryAuditForExport, verifyAudit, type AuditQuery } from './audit.js'
 import { auditEventsToPdf, auditExportPrivateKeyPem } from './auditExport.js'
 import { instanceGate } from './decisionHttp.js'
 import { auditActionLabel, knownAuditActions } from './auditLabels.js'
@@ -154,6 +154,22 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     c.header('Content-Disposition', `attachment; filename="audit-bundle-${day}.json"`)
     c.header('Cache-Control', 'no-store')
     return c.json(built.bundle)
+  }))
+
+  /**
+   * Auditor-facing chain verification: re-walks the immudb proofs and returns the tip
+   * ({ head, root }) or the first break. Read-only; same audit-read scope as the list.
+   */
+  app.get('/auth/audit/verify', guarded({}, async ({ c, user }) => {
+    const r = await resolveAuditQuery(c, user)
+    if ('error' in r) return r.error
+    const v = await verifyAudit()
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      v.ok
+        ? { ok: true, events: v.events, verifiedAt: v.verifiedAt, tip: { txid: v.head, root: v.root } }
+        : { ok: false, events: v.events, verifiedAt: v.verifiedAt, firstBreak: v.firstBreak },
+    )
   }))
 
   /**

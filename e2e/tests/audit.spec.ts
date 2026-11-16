@@ -264,4 +264,121 @@ test.describe('audit log (PLAT-AUDIT)', () => {
       expect(download.suggestedFilename()).toMatch(/^audit-.*\.csv$/)
     })
   })
+
+  test.describe('deep-ui: export PDF, verify, change control, denial', () => {
+    const mockedEvent = {
+      id: 'deep-ui-1',
+      seq: 1,
+      ts: new Date().toISOString(),
+      actor: { sub: 'deep-ui', iss: 'mice-e2e', name: 'Deep UI', email: 'deep-ui@mice.local' },
+      via: 'session',
+      method: 'POST',
+      path: '/api/repos/ns/repo/file/main/a.csv',
+      status: 200,
+      action: 'file.write',
+      action_label: 'File written',
+      namespace: 'ns',
+      repo: 'repo',
+      change_control_id: 'CC-2026-0042',
+      dataset: { base: 'aaaaaaaaaaaaaaaa1111', head: 'bbbbbbbbbbbbbbbb2222' },
+    }
+
+    test('TC-AUDIT-12: Export PDF button downloads the PDF export (#131)', async ({ page }) => {
+      await sessionLogin(page)
+      await page.route('**/auth/audit/export.pdf*', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/pdf',
+          headers: { 'Content-Disposition': 'attachment; filename="audit-2026-01-01.pdf"' },
+          body: Buffer.from('%PDF-1.4\n%%EOF\n'),
+        }),
+      )
+      await page.goto('/audit')
+      await expect(page.getByRole('button', { name: 'Export PDF' })).toBeEnabled({ timeout: 15_000 })
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Export PDF' }).click(),
+      ])
+      expect(download.suggestedFilename()).toBe('audit-2026-01-01.pdf')
+    })
+
+    test('TC-AUDIT-13: Export PDF failure surfaces a role=alert message (#131)', async ({ page }) => {
+      await sessionLogin(page)
+      await page.route('**/auth/audit/export.pdf*', (route) =>
+        route.fulfill({ status: 503, json: { error: 'Audit export signing key is not configured' } }),
+      )
+      await page.goto('/audit')
+      await page.getByRole('button', { name: 'Export PDF' }).click()
+      await expect(page.getByRole('alert')).toContainText('signing key is not configured')
+    })
+
+    test('TC-AUDIT-14: table shows change control and dataset base/head (#139, #138)', async ({ page }) => {
+      await sessionLogin(page)
+      await page.route('**/auth/audit?*', (route) =>
+        route.fulfill({ json: { events: [mockedEvent], nextCursor: null } }),
+      )
+      await page.goto('/audit')
+      await expect(page.getByRole('columnheader', { name: 'Change control' })).toBeVisible()
+      await expect(page.getByRole('columnheader', { name: 'Dataset' })).toBeVisible()
+      const row = page.locator('.audit-table tbody tr').first()
+      await expect(row.getByTestId('audit-change-control')).toHaveText('CC-2026-0042')
+      await expect(row.getByTestId('audit-dataset')).toContainText('aaaaaaaa…')
+      await expect(row.getByTestId('audit-dataset')).toContainText('bbbbbbbb…')
+    })
+
+    test('TC-AUDIT-15: Verify chain shows tip, and a break as role=alert (#135)', async ({ page }) => {
+      await sessionLogin(page)
+      let broken = false
+      await page.route('**/auth/audit/verify', (route) =>
+        route.fulfill({
+          json: broken
+            ? { ok: false, events: 7, verifiedAt: new Date().toISOString(), firstBreak: { seq: 4, reason: 'hash mismatch' } }
+            : { ok: true, events: 7, verifiedAt: new Date().toISOString(), tip: { txid: 7, root: 'cm9vdA==' } },
+        }),
+      )
+      await page.goto('/audit')
+      await page.getByRole('button', { name: 'Verify chain' }).click()
+      await expect(page.getByTestId('audit-verify-txid')).toHaveText('7')
+      await expect(page.getByTestId('audit-verify-root')).toHaveText('cm9vdA==')
+
+      broken = true
+      await page.getByRole('button', { name: 'Verify chain' }).click()
+      await expect(page.getByRole('alert').filter({ hasText: 'hash mismatch' })).toBeVisible()
+      await expect(page.getByTestId('audit-verify-ok')).toHaveCount(0)
+    })
+
+    test('TC-AUDIT-16: 403 on audit fetch renders a denied state, not "Failed to load" (#140)', async ({ page }) => {
+      await sessionLogin(page)
+      await page.route('**/auth/audit?*', (route) =>
+        route.fulfill({ status: 403, json: { error: 'Missing permission view_audit' } }),
+      )
+      await page.goto('/audit')
+      const denied = page.getByTestId('audit-denied')
+      await expect(denied).toBeVisible({ timeout: 15_000 })
+      await expect(denied).toContainText('Access denied')
+      await expect(denied).toContainText('Missing permission view_audit')
+      await expect(page.getByText(/Failed to load audit log/)).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Export PDF' })).toBeDisabled()
+    })
+
+    test('TC-AUDIT-17: Settings audit health shows chain tip and export public key (#132)', async ({ page }) => {
+      await mintSession(page, { sub: uniqueId('audit-health-admin'), role: 'admin' })
+      await page.route('**/auth/admin/audit-health/status', (route) =>
+        route.fulfill({
+          json: {
+            readiness: { ok: true, store: 'ok', chain: 'ok' },
+            chainTip: { txid: 42, root: 'dGlwLXJvb3Q=', verifiedAt: new Date().toISOString() },
+            exportPublicKey: '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAtest\n-----END PUBLIC KEY-----\n',
+            ha: { attested: true, detail: 'ok' },
+            currentOutage: null,
+            recentOutages: [],
+          },
+        }),
+      )
+      await page.goto('/settings')
+      await expect(page.getByTestId('audit-chain-tip-txid')).toHaveText('42', { timeout: 15_000 })
+      await expect(page.getByTestId('audit-chain-tip-root')).toHaveText('dGlwLXJvb3Q=')
+      await expect(page.getByTestId('audit-export-public-key-pem')).toContainText('BEGIN PUBLIC KEY')
+    })
+  })
 })

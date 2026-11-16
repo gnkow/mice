@@ -23,8 +23,30 @@ export type AuditEvent = {
   reason_source?: 'explicit' | 'commit-message'
   /** Pick-list category when a reason was required. */
   category?: string
+  /** Change-control record id for regulated mutations. */
+  change_control_id?: string
+  /** Dataset commit ids before and after a dataset mutation. */
+  dataset?: AuditDataset
   detail?: Record<string, unknown>
 }
+
+export type AuditDataset = { base?: string; head?: string }
+
+/** The caller may not read the audit trail (HTTP 403). */
+export class AuditDeniedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AuditDeniedError'
+  }
+}
+
+export type AuditLoadResult =
+  | { kind: 'ok'; data: AuditListResponse }
+  | { kind: 'denied'; reason: string }
+
+export type AuditVerifyResult =
+  | { ok: true; events: number; verifiedAt: string; tip: { txid: number; root: string } }
+  | { ok: false; events: number; verifiedAt: string; firstBreak: { seq: number; reason: string } }
 
 export type AuditQuery = {
   actor?: string
@@ -107,6 +129,9 @@ export async function fetchAudit(
     credentials: 'same-origin',
     signal,
   })
+  if (res.status === 403) {
+    throw new AuditDeniedError(await errorBody(res, 'You do not have permission to view the audit log.'))
+  }
   if (!res.ok) {
     throw new Error(
       res.status === 401
@@ -115,6 +140,39 @@ export async function fetchAudit(
     )
   }
   return (await res.json()) as AuditListResponse
+}
+
+/** Like {@link fetchAudit}, but maps an authorization denial (403) to a `denied` result. */
+export async function loadAudit(
+  query: AuditQuery = {},
+  signal?: AbortSignal,
+): Promise<AuditLoadResult> {
+  try {
+    return { kind: 'ok', data: await fetchAudit(query, signal) }
+  } catch (err) {
+    if (err instanceof AuditDeniedError) return { kind: 'denied', reason: err.message }
+    throw err
+  }
+}
+
+/** The server's `{ error }` message when present, else the fallback. */
+async function errorBody(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown }
+    return typeof body.error === 'string' && body.error ? body.error : fallback
+  } catch {
+    return fallback
+  }
+}
+
+/** Re-walk the ledger proofs and return the chain tip or the first break. */
+export async function verifyAuditChain(signal?: AbortSignal): Promise<AuditVerifyResult> {
+  const res = await fetch('/auth/audit/verify', { credentials: 'same-origin', signal })
+  if (res.status === 403) {
+    throw new AuditDeniedError(await errorBody(res, 'You do not have permission to verify the audit log.'))
+  }
+  if (!res.ok) throw new Error(await errorBody(res, `Verification failed (${res.status})`))
+  return (await res.json()) as AuditVerifyResult
 }
 
 export async function fetchAuditFacets(
@@ -130,18 +188,36 @@ export async function fetchAuditFacets(
   return (await res.json()) as AuditFacets
 }
 
-/** Download the CSV for the given filters (paging params are ignored). */
-export async function exportAuditCsv(query: AuditQuery = {}): Promise<void> {
+export type AuditExportFormat = 'csv' | 'pdf' | 'bundle'
+
+const EXPORT_PATH: Record<AuditExportFormat, string> = {
+  csv: 'export.csv',
+  pdf: 'export.pdf',
+  bundle: 'export.bundle',
+}
+const EXPORT_FALLBACK_NAME: Record<AuditExportFormat, string> = {
+  csv: 'audit.csv',
+  pdf: 'audit.pdf',
+  bundle: 'audit-bundle.json',
+}
+
+/** Download an export for the given filters (paging params are ignored). */
+export async function exportAudit(
+  format: AuditExportFormat,
+  query: AuditQuery = {},
+): Promise<void> {
   const params = buildParams({ ...query, cursor: undefined, limit: undefined })
   const qs = params.toString()
-  const res = await fetch(`/auth/audit/export.csv${qs ? `?${qs}` : ''}`, {
+  const res = await fetch(`/auth/audit/${EXPORT_PATH[format]}${qs ? `?${qs}` : ''}`, {
     credentials: 'same-origin',
   })
-  if (!res.ok) throw new Error(`Export failed (${res.status})`)
+  if (!res.ok) {
+    throw new Error(await errorBody(res, `Export failed (${res.status})`))
+  }
   const blob = await res.blob()
   const name =
     /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ??
-    'audit.csv'
+    EXPORT_FALLBACK_NAME[format]
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -150,4 +226,9 @@ export async function exportAuditCsv(query: AuditQuery = {}): Promise<void> {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+}
+
+/** Download the CSV for the given filters (paging params are ignored). */
+export function exportAuditCsv(query: AuditQuery = {}): Promise<void> {
+  return exportAudit('csv', query)
 }

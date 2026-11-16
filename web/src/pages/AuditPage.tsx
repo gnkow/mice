@@ -1,19 +1,31 @@
-import { Download as ActionDownload, Search as ActionSearch, Trash2 as ActionTrash2 } from 'lucide-react'
+import {
+  Download as ActionDownload,
+  FileText as ActionFileText,
+  Search as ActionSearch,
+  ShieldCheck as ActionShieldCheck,
+  Trash2 as ActionTrash2,
+} from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import {
   actionLabel,
   eventResources,
-  exportAuditCsv,
-  fetchAudit,
+  AuditDeniedError,
+  exportAudit,
   fetchAuditFacets,
+  loadAudit,
+  verifyAuditChain,
   type AuditEvent,
+  type AuditExportFormat,
   type AuditFacets,
   type AuditResource,
+  type AuditVerifyResult,
 } from '../lib/audit'
 import { signatureEvidenceRows } from '../lib/signatureEvidence'
+import { revocableSignatureId, revokedSignatureIds } from '../lib/signatureRevoke'
 
 const FILTER_KEYS = [
   'actor',
@@ -97,6 +109,34 @@ function formatTs(ts: string): string {
   }
 }
 
+function ChangeControlCell({ event }: { event: AuditEvent }) {
+  if (!event.change_control_id) return <span className="muted">—</span>
+  return (
+    <code className="mono small" data-testid="audit-change-control" title={event.change_control_id}>
+      {event.change_control_id}
+    </code>
+  )
+}
+
+function DatasetCell({ event }: { event: AuditEvent }) {
+  const { base, head } = event.dataset ?? {}
+  if (!base && !head) return <span className="muted">—</span>
+  return (
+    <div className="small" data-testid="audit-dataset">
+      {base ? (
+        <div title={base}>
+          <span className="muted">Base</span> <span className="mono">{shortId(base)}</span>
+        </div>
+      ) : null}
+      {head ? (
+        <div title={head}>
+          <span className="muted">Head</span> <span className="mono">{shortId(head)}</span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function RepoCell({ event }: { event: AuditEvent }) {
   if (!event.namespace || !event.repo) {
     return <span className="muted">—</span>
@@ -111,8 +151,11 @@ function RepoCell({ event }: { event: AuditEvent }) {
 export function AuditPage() {
   const [params, setParams] = useSearchParams()
   const [draft, setDraft] = useState<Draft>(() => draftFromParams(params))
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState<AuditExportFormat | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<AuditVerifyResult | null>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
 
   const applied = useMemo(
     () => ({
@@ -128,7 +171,7 @@ export function AuditPage() {
   )
 
   const state = useAsync(
-    (signal) => fetchAudit({ ...applied, limit: 100 }, signal),
+    (signal) => loadAudit({ ...applied, limit: 100 }, signal),
     [
       applied.actor,
       applied.namespace,
@@ -172,15 +215,38 @@ export function AuditPage() {
     setParams({}, { replace: true })
   }
 
-  async function onExport() {
-    setExporting(true)
+  const denied = state.kind === 'ok' && state.data.kind === 'denied' ? state.data.reason : null
+  const events = state.kind === 'ok' && state.data.kind === 'ok' ? state.data.data.events : null
+  const revoked = useMemo(() => revokedSignatureIds(events ?? []), [events])
+
+  async function onExport(format: AuditExportFormat) {
+    setExporting(format)
     setExportError(null)
     try {
-      await exportAuditCsv(applied)
+      await exportAudit(format, applied)
     } catch (err) {
       setExportError(err instanceof Error ? err.message : 'Export failed')
     } finally {
-      setExporting(false)
+      setExporting(null)
+    }
+  }
+
+  async function onVerify() {
+    setVerifying(true)
+    setVerifyError(null)
+    setVerifyResult(null)
+    try {
+      setVerifyResult(await verifyAuditChain())
+    } catch (err) {
+      setVerifyError(
+        err instanceof AuditDeniedError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Verification failed',
+      )
+    } finally {
+      setVerifying(false)
     }
   }
 
@@ -194,17 +260,60 @@ export function AuditPage() {
             / which repo). Signature rows expand to show IdP MFA evidence for auditors.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => void onExport()}
-          disabled={exporting}
-          title="Download the events matching the applied filters"
-        >
-          <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />{exporting ? 'Exporting…' : 'Export CSV'}
-        </button>
+        <div className="btn-row" role="group" aria-label="Audit actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void onExport('csv')}
+            disabled={exporting !== null || denied !== null}
+            title="Download the events matching the applied filters"
+          >
+            <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />{exporting === 'csv' ? 'Exporting…' : 'Export CSV'}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void onExport('pdf')}
+            disabled={exporting !== null || denied !== null}
+            title="Download a PDF of the events matching the applied filters"
+          >
+            <ActionFileText size={14} aria-hidden="true" className="button-label-icon" />{exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void onExport('bundle')}
+            disabled={exporting !== null || denied !== null}
+            title="Download the signed evidence bundle (events, manifest, CSV, PDF, verification)"
+          >
+            <ActionShieldCheck size={14} aria-hidden="true" className="button-label-icon" />{exporting === 'bundle' ? 'Exporting…' : 'Export signed bundle'}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void onVerify()}
+            disabled={verifying || denied !== null}
+            title="Re-verify the audit chain and show the tip"
+          >
+            <ActionShieldCheck size={14} aria-hidden="true" className="button-label-icon" />{verifying ? 'Verifying…' : 'Verify chain'}
+          </button>
+        </div>
       </div>
-      {exportError && <p className="flash flash-error">{exportError}</p>}
+      {exportError && <p className="flash flash-error" role="alert">{exportError}</p>}
+      {verifyError && <p className="flash flash-error" role="alert" data-testid="audit-verify-error">{verifyError}</p>}
+      {verifyResult?.ok === true && (
+        <p className="flash flash-success" role="status" data-testid="audit-verify-ok">
+          Chain verified ({verifyResult.events} events) at {formatTs(verifyResult.verifiedAt)}. Tip txid{' '}
+          <code className="inline-code" data-testid="audit-verify-txid">{verifyResult.tip.txid}</code>
+          {' · '}root{' '}
+          <code className="inline-code" data-testid="audit-verify-root">{verifyResult.tip.root || '(empty ledger)'}</code>
+        </p>
+      )}
+      {verifyResult?.ok === false && (
+        <p className="flash flash-error" role="alert" data-testid="audit-verify-break">
+          Chain verification failed at event {verifyResult.firstBreak.seq}: {verifyResult.firstBreak.reason}
+        </p>
+      )}
 
       <form className="audit-filters" onSubmit={onFilter}>
         <label>
@@ -292,10 +401,25 @@ export function AuditPage() {
         loading={state.kind === 'loading'}
         error={state.kind === 'error' ? state.message : null}
         onRetry={() => state.reload()}
-        empty={state.kind === 'ok' && state.data.events.length === 0}
-        emptyMessage="No audit events match these filters."
+        empty={denied !== null || (events !== null && events.length === 0)}
+        emptyMessage={
+          denied !== null ? (
+            <div role="alert" data-testid="audit-denied">
+              <p className="muted">
+                <strong>Access denied.</strong> {denied}
+              </p>
+              <p className="muted small">
+                Viewing the audit log needs the instance <code className="inline-code">audit:read</code>{' '}
+                permission, or ownership of / <code className="inline-code">view_audit</code> on a namespace.
+                Ask an instance admin to grant access.
+              </p>
+            </div>
+          ) : (
+            'No audit events match these filters.'
+          )
+        }
       >
-        {state.kind === 'ok' && (
+        {events !== null && (
           <div className="branches-table-wrap">
             <table className="branches-table audit-table">
               <thead>
@@ -308,11 +432,13 @@ export function AuditPage() {
                   <th>Resource</th>
                   <th>Status</th>
                   <th>Reason</th>
+                  <th>Change control</th>
+                  <th>Dataset</th>
                   <th>Message</th>
                 </tr>
               </thead>
               <tbody>
-                {state.data.events.map((ev) => (
+                {events.map((ev) => (
                   <tr key={ev.id} data-audit-id={ev.id}>
                     <td className="mono small">{formatTs(ev.ts)}</td>
                     <td>
@@ -343,6 +469,12 @@ export function AuditPage() {
                         <span className="muted">—</span>
                       )}
                     </td>
+                    <td>
+                      <ChangeControlCell event={ev} />
+                    </td>
+                    <td>
+                      <DatasetCell event={ev} />
+                    </td>
                     <td className="small">
                       {ev.message || (
                         <span className="muted">
@@ -352,6 +484,7 @@ export function AuditPage() {
                         </span>
                       )}
                       <SignatureEvidence event={ev} />
+                      <SignatureRevoke event={ev} revoked={revoked} onRevoked={() => state.reload()} />
                     </td>
                   </tr>
                 ))}
@@ -361,6 +494,32 @@ export function AuditPage() {
         )}
       </StateBlock>
     </main>
+  )
+}
+
+/** Revoke control (or a "Revoked" tag) on signature rows (GxP #93). */
+function SignatureRevoke({
+  event,
+  revoked,
+  onRevoked,
+}: {
+  event: AuditEvent
+  revoked: Set<string>
+  onRevoked: () => void
+}) {
+  const signatureId = revocableSignatureId(event.action, event.detail)
+  if (!signatureId) return null
+  if (revoked.has(signatureId)) {
+    return (
+      <p className="small" data-testid="signature-revoked-tag">
+        <span className="ns-tag ns-tag-warn">Revoked</span>
+      </p>
+    )
+  }
+  return (
+    <div className="small" data-testid="signature-revoke">
+      <RevokeSignatureButton signatureId={signatureId} onRevoked={onRevoked} />
+    </div>
   )
 }
 
