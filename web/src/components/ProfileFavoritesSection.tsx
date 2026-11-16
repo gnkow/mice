@@ -38,9 +38,16 @@ export function ProfileFavoritesSection() {
   }
 
   return (
-    <section className="settings-section" id="favorites" aria-labelledby="profile-favorites-heading">
-      <h2 id="profile-favorites-heading"><Star size={18} className="button-label-icon" aria-hidden="true" />Favorites</h2>
-      <p className="muted small">Your personal favorites. They are listed first in their lists.</p>
+    <div className="ns-settings-subsection" id="favorites" aria-labelledby="profile-favorites-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h3 id="profile-favorites-heading">
+            <Star size={16} className="button-label-icon" aria-hidden="true" />
+            Favorites
+          </h3>
+          <p className="muted small">Your personal favorites. They are listed first in their lists.</p>
+        </div>
+      </div>
       <div role="tablist" aria-label="Favorite types" className="favorites-tabs btn-row">
         {FAVORITE_TYPES.map((t) => (
           <button
@@ -79,6 +86,6 @@ export function ProfileFavoritesSection() {
           </ul>
         )}
       </div>
-    </section>
+    </div>
   )
 }

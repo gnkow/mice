@@ -13,6 +13,7 @@ import { SectionNav } from './SectionNav'
 const SETTINGS_NAV_GROUPS = [
   {
     title: 'Settings',
+    Icon: ActionSettings,
     items: [
       { id: 'ns-general', label: 'General', Icon: ActionSettings },
       { id: 'ns-rename', label: 'Rename', Icon: ActionPencil },
@@ -45,6 +46,7 @@ export function NamespaceSettingsLayout() {
           <nav className="profile-nav" aria-label="Settings sections">
             <div className="profile-nav-group">
               <p className="profile-nav-title" id="ns-settings-nav-title">
+                <ActionSettings size={14} aria-hidden="true" />
                 Settings
               </p>
               <ul aria-labelledby="ns-settings-nav-title">

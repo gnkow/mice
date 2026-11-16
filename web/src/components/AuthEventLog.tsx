@@ -108,19 +108,22 @@ export function AuthEventLog() {
 
   return (
     <div
+      id="profile-security-activity"
       className="ns-settings-subsection"
       data-testid="auth-event-log"
       aria-labelledby={headingId}
       aria-describedby={descId}
     >
       <div className="ns-settings-section-head">
-        <h3 id={headingId}>
-          <Shield size={16} className="button-label-icon" aria-hidden="true" />
-          Security Activity
-        </h3>
-        <p id={descId} className="muted small">
-          Recent authentication events on your account (last 20 events).
-        </p>
+        <div>
+          <h3 id={headingId}>
+            <Shield size={16} className="button-label-icon" aria-hidden="true" />
+            Security Activity
+          </h3>
+          <p id={descId} className="muted small">
+            Recent authentication events on your account (last 20 events).
+          </p>
+        </div>
       </div>
 
       {loading && (

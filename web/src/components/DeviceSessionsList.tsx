@@ -114,29 +114,32 @@ export function DeviceSessionsList() {
 
   return (
     <div
+      id="profile-cli-credentials"
       className="ns-settings-subsection"
       data-testid="cli-device-credentials"
       aria-labelledby={headingId}
       aria-describedby={descId}
     >
       <div className="ns-settings-section-head">
-        <h3 id={headingId}>
-          <Laptop size={16} className="button-label-icon" aria-hidden="true" />
-          CLI device credentials
-          {!loading && !error ? (
-            <span className="muted small"> ({activeLabel})</span>
-          ) : null}
-        </h3>
-        <p id={descId} className="muted small">
-          Short-lived credentials from <code>mice login</code> (device approval): an 8-hour
-          access token with a rotating refresh token. This page does not mint personal access
-          tokens — list and revoke device credentials here.
-        </p>
+        <div>
+          <h3 id={headingId}>
+            <Laptop size={16} className="button-label-icon" aria-hidden="true" />
+            CLI Credentials
+            {!loading && !error ? (
+              <span className="muted small"> ({activeLabel})</span>
+            ) : null}
+          </h3>
+          <p id={descId} className="muted small">
+            Short-lived credentials from <code>mice login</code> (device approval): an 8-hour
+            access token with a rotating refresh token. This page does not mint personal access
+            tokens — list and revoke device credentials here.
+          </p>
+        </div>
       </div>
 
       {loading && (
         <p role="status" aria-live="polite">
-          Loading CLI device credentials…
+          Loading CLI credentials…
         </p>
       )}
 

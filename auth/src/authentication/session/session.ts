@@ -10,6 +10,7 @@ import { trackNameChange } from './nameChangeHistory.js'
 import { sealSessionCookie, unsealSessionCookie } from './cookieSeal.js'
 import { canonicalIssuer } from './principal.js'
 import { enforceWebSessionCap } from './sessionCap.js'
+import { decideSessionLiveness } from './sessionLiveness.js'
 
 export { canonicalIssuer }
 
@@ -152,9 +153,14 @@ async function loadSession(id: string): Promise<SessionUser | null> {
   if (!row) return null
   const { s } = row
   const now = nowSec()
-  const expired = now >= s.sessionStart + env.sessionTtlSec
-  const idle = env.sessionIdleSec > 0 && now - s.lastActive > env.sessionIdleSec
-  if (expired || idle) {
+  const liveness = decideSessionLiveness({
+    now,
+    sessionStart: s.sessionStart,
+    lastActive: s.lastActive,
+    ttlSec: env.sessionTtlSec,
+    idleSec: env.sessionIdleSec,
+  })
+  if (!liveness.alive) {
     await getDb().delete(webSessions).where(eq(webSessions.idHash, s.idHash))
     return null
   }

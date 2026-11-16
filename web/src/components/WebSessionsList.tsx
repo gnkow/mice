@@ -1,5 +1,6 @@
 import { Monitor, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
+import { confirmDelete } from '../lib/confirmDelete'
 
 /**
  * Web Browser Session Management (Feature 1)
@@ -16,6 +17,12 @@ export type WebSession = {
   id: string
   sessionStart: number
   lastActive: number
+  /** True when this row is the caller’s cookie session. */
+  current?: boolean
+  /** Absolute expiry (sessionStart + TTL), epoch seconds. */
+  expiresAt?: number
+  /** Idle expiry (lastActive + idle), epoch seconds when idle is enabled. */
+  idleExpiresAt?: number
 }
 
 type WebSessionsResponse = {
@@ -45,18 +52,47 @@ function formatTimeAgo(epochSec: number): string {
   const diff = now - epochSec
 
   if (diff < 60) return 'Just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`
-  return `${Math.floor(diff / 86400)} days ago`
+  if (diff < 3600) {
+    const m = Math.floor(diff / 60)
+    return m === 1 ? '1 minute ago' : `${m} minutes ago`
+  }
+  if (diff < 86400) {
+    const h = Math.floor(diff / 3600)
+    return h === 1 ? '1 hour ago' : `${h} hours ago`
+  }
+  const d = Math.floor(diff / 86400)
+  return d === 1 ? '1 day ago' : `${d} days ago`
 }
 
-export function WebSessionsList({ currentSessionId }: { currentSessionId?: string }) {
+function formatExpiresIn(epochSec: number): string {
+  const now = Math.floor(Date.now() / 1000)
+  const diff = epochSec - now
+  if (diff <= 0) return 'expired'
+  if (diff < 60) return 'in under a minute'
+  if (diff < 3600) return `in ${Math.floor(diff / 60)} min`
+  if (diff < 86400) {
+    const hours = Math.floor(diff / 3600)
+    const mins = Math.floor((diff % 3600) / 60)
+    return mins > 0 ? `in ${hours}h ${mins}m` : `in ${hours}h`
+  }
+  return `in ${Math.floor(diff / 86400)} days`
+}
+
+function formatClock(epochSec: number): string {
+  return new Date(epochSec * 1000).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
+
+export function WebSessionsList() {
   const headingId = useId()
   const descId = useId()
   const errorId = useId()
   const [sessions, setSessions] = useState<WebSession[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [revoking, setRevoking] = useState<string | null>(null)
 
   async function loadSessions(signal?: AbortSignal) {
@@ -81,13 +117,22 @@ export function WebSessionsList({ currentSessionId }: { currentSessionId?: strin
   }, [])
 
   async function handleRevoke(sessionId: string) {
-    if (!window.confirm('Sign out this browser session?')) return
+    const shortId = sessionId.slice(0, 12)
+    const ok = await confirmDelete({
+      title: `Sign out session ${shortId}…?`,
+      detail:
+        'That browser will need to sign in again. Your current session stays signed in.',
+      requireTypedConfirm: false,
+    })
+    if (!ok) return
 
     try {
       setRevoking(sessionId)
       setError(null)
+      setNotice(null)
       await revokeWebSession(sessionId)
       await loadSessions()
+      setNotice('Browser session signed out.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to revoke session')
     } finally {
@@ -95,40 +140,46 @@ export function WebSessionsList({ currentSessionId }: { currentSessionId?: strin
     }
   }
 
-  const otherSessions =
-    currentSessionId != null
-      ? sessions.filter((s) => s.id !== currentSessionId)
-      : sessions.length > 1
-        ? sessions
-        : []
+  const otherSessions = sessions.filter((s) => !s.current)
   const activeLabel = `${sessions.length} of ${WEB_SESSION_CAP} active`
   const nearCap = !loading && !error && sessions.length >= WEB_SESSION_CAP
 
   return (
     <div
+      id="profile-web-sessions"
       className="ns-settings-subsection"
       data-testid="web-sessions-list"
       aria-labelledby={headingId}
       aria-describedby={descId}
+      aria-busy={loading || undefined}
     >
       <div className="ns-settings-section-head">
-        <h3 id={headingId}>
-          <Monitor size={16} className="button-label-icon" aria-hidden="true" />
-          Web Sessions
-          {!loading && !error ? (
-            <span className="muted small"> ({activeLabel})</span>
-          ) : null}
-        </h3>
-        <p id={descId} className="muted small">
-          Active browser sessions on your account (maximum {WEB_SESSION_CAP}). You can revoke
-          individual sessions. When you are at the cap, signing in from another browser may
-          sign out the oldest session automatically.
-        </p>
+        <div>
+          <h3 id={headingId}>
+            <Monitor size={16} className="button-label-icon" aria-hidden="true" />
+            Web Sessions
+            {!loading && !error ? (
+              <span className="muted small"> ({activeLabel})</span>
+            ) : null}
+          </h3>
+          <p id={descId} className="muted small">
+            Active browser sessions on your account (maximum {WEB_SESSION_CAP}). Idle sessions
+            expire after 15 minutes; absolute lifetime is 8 hours. You can revoke individual
+            sessions. When you are at the cap, signing in from another browser may sign out the
+            oldest session automatically.
+          </p>
+        </div>
       </div>
 
       {loading && (
         <p role="status" aria-live="polite">
           Loading web sessions…
+        </p>
+      )}
+
+      {!loading && notice && (
+        <p className="flash flash-success" role="status" data-testid="web-sessions-notice">
+          {notice}
         </p>
       )}
 
@@ -158,26 +209,50 @@ export function WebSessionsList({ currentSessionId }: { currentSessionId?: strin
       {!loading && !error && sessions.length > 0 && (
         <ul className="ns-member-list" aria-labelledby={headingId}>
           {sessions.map((session) => {
-            const isCurrent = currentSessionId != null && session.id === currentSessionId
+            const isCurrent = session.current === true
             const shortId = session.id.slice(0, 12)
             const revokeLabel = `Sign out session ${shortId}`
 
             return (
-              <li key={session.id} className="ns-member-row">
+              <li
+                key={session.id}
+                className="ns-member-row"
+                data-current={isCurrent ? 'true' : undefined}
+              >
                 <div className="ns-member-main">
-                  {isCurrent ? (
-                    <span className="pill ok" role="status">
-                      Current session
-                    </span>
-                  ) : (
-                    <span className="mono muted small" title={session.id}>
-                      {shortId}…
+                  <div className="web-session-title">
+                    {isCurrent ? (
+                      <span className="pill ok" role="status">
+                        Current session
+                      </span>
+                    ) : (
+                      <span className="mono muted small" title={session.id}>
+                        Session {shortId}…
+                      </span>
+                    )}
+                  </div>
+                  <span className="muted small">
+                    Started {formatTimeAgo(session.sessionStart)}
+                    {session.sessionStart ? ` (${formatClock(session.sessionStart)})` : ''}
+                    {' · '}
+                    Last active {formatTimeAgo(session.lastActive)}
+                  </span>
+                  {(session.expiresAt != null || session.idleExpiresAt != null) && (
+                    <span className="muted small" data-testid="web-session-expiry">
+                      {session.idleExpiresAt != null ? (
+                        <>
+                          Idle expires {formatExpiresIn(session.idleExpiresAt)}
+                          {' · '}
+                        </>
+                      ) : null}
+                      {session.expiresAt != null ? (
+                        <>
+                          Absolute expiry {formatExpiresIn(session.expiresAt)} (
+                          {formatClock(session.expiresAt)})
+                        </>
+                      ) : null}
                     </span>
                   )}
-                  <span className="muted small">
-                    Started {formatTimeAgo(session.sessionStart)} · Last active{' '}
-                    {formatTimeAgo(session.lastActive)}
-                  </span>
                 </div>
                 {!isCurrent && (
                   <button

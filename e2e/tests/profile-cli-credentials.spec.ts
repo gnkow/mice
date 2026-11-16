@@ -39,12 +39,12 @@ test.describe('profile CLI device credentials (PLAT-AUTH)', () => {
 
     const access = page.getByTestId('profile-cli-access')
     await expect(access).toBeVisible()
-    await expect(access.getByText(/short-lived CLI device credentials/i)).toBeVisible()
-    await expect(access.getByText(/Personal access tokens are not minted/i)).toBeVisible()
+    await expect(access.getByText(/short-lived CLI credentials from/i)).toBeVisible()
+    await expect(access.getByText(/Personal access tokens are not minted here/i)).toBeVisible()
 
     const section = page.getByTestId('cli-device-credentials')
     await expect(
-      section.getByRole('heading', { name: /CLI device credentials/i }),
+      section.getByRole('heading', { name: /^CLI Credentials/ }),
     ).toBeVisible()
     await expect(section.getByText(/8-hour access token/i)).toBeVisible()
     await expect(section.getByText(/does not mint personal access tokens/i)).toBeVisible()
@@ -81,7 +81,7 @@ test.describe('profile CLI device credentials (PLAT-AUTH)', () => {
     await page.goto('/profile')
     const section = page.getByTestId('cli-device-credentials')
     await expect(section).toContainText(/1 active/, { timeout: 15_000 })
-    await expect(section.getByText(/Device credential/i)).toBeVisible()
+    await expect(section.getByText('Device credential', { exact: true })).toBeVisible()
 
     page.once('dialog', (d) => void d.accept())
     await section.getByRole('button', { name: /Revoke CLI credential/i }).click()

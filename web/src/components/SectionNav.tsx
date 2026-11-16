@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 
+type NavIcon = ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' }>
+
 export type SectionNavItem = {
   id: string
   label: string
-  Icon: ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' }>
+  Icon: NavIcon
   badge?: number
 }
-export type SectionNavGroup = { title: string; items: SectionNavItem[] }
+export type SectionNavGroup = { title: string; Icon?: NavIcon; items: SectionNavItem[] }
 
 /** Grouped in-page navigation; highlights the section currently in view. */
 export function SectionNav({ label, groups }: { label: string; groups: SectionNavGroup[] }) {
@@ -45,9 +47,13 @@ export function SectionNav({ label, groups }: { label: string; groups: SectionNa
     <nav className="profile-nav" aria-label={label} ref={navRef}>
       {visibleGroups.map((group) => {
         const titleId = `settings-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`
+        const TitleIcon = group.Icon
         return (
           <div key={group.title} className="profile-nav-group">
-            <p className="profile-nav-title" id={titleId}>{group.title}</p>
+            <p className="profile-nav-title" id={titleId}>
+              {TitleIcon ? <TitleIcon size={14} aria-hidden="true" /> : null}
+              {group.title}
+            </p>
             <ul aria-labelledby={titleId}>
               {group.items.map(({ id, label: text, Icon, badge }) => (
                 <li key={id}>
@@ -64,7 +70,8 @@ export function SectionNav({ label, groups }: { label: string; groups: SectionNa
                       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                     }}
                   >
-                    <Icon size={16} aria-hidden="true" />{text}
+                    <Icon size={16} aria-hidden="true" />
+                    {text}
                     {badge != null && <span className="pill profile-nav-badge">{badge}</span>}
                   </a>
                 </li>

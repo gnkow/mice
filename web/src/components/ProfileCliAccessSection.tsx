@@ -54,9 +54,8 @@ export function ProfileCliAccessSection() {
             Access
           </h2>
           <p className="muted small">
-            Manage browser sessions and short-lived CLI device credentials from{' '}
-            <code>mice login</code>. Personal access tokens are not minted here — use device
-            approval only, then list or revoke credentials below.
+            Manage browser sessions, short-lived CLI credentials from <code>mice login</code>,
+            and recent security activity. Personal access tokens are not minted here.
           </p>
         </div>
       </div>
@@ -67,22 +66,26 @@ export function ProfileCliAccessSection() {
 
       <AuthEventLog />
 
-      <div className="ns-settings-subsection">
-        <h3>
-          <LogOut size={16} className="button-label-icon" aria-hidden="true" />
-          Sign Out Everywhere
-        </h3>
-        <p className="muted small">
-          Revoke all browser sessions and CLI device credentials. You will be logged out
-          immediately.
-        </p>
+      <div id="profile-sign-out-everywhere" className="ns-settings-subsection">
+        <div className="ns-settings-section-head">
+          <div>
+            <h3>
+              <LogOut size={16} className="button-label-icon" aria-hidden="true" />
+              Sign Out All
+            </h3>
+            <p className="muted small">
+              Revoke all browser sessions and CLI credentials. You will be logged out
+              immediately.
+            </p>
+          </div>
+        </div>
         <button
           className="btn danger"
           type="button"
           onClick={() => void signOutEverywhere()}
           disabled={revoking}
         >
-          {revoking ? 'Signing out...' : 'Sign out everywhere'}
+          {revoking ? 'Signing out…' : 'Sign Out All'}
         </button>
         {signedOut && (
           <p className="flash flash-success" role="status">

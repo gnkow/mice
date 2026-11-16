@@ -34,6 +34,9 @@ test.describe('profile web sessions list (PLAT-AUTH)', () => {
     await expect(
       section.getByText(/signing in from another browser may\s+sign out the oldest session/i),
     ).toBeVisible()
+    await expect(section.getByText('Current session')).toBeVisible()
+    await expect(section.getByTestId('web-session-expiry').first()).toContainText(/Idle expires/i)
+    await expect(section.getByTestId('web-session-expiry').first()).toContainText(/Absolute expiry/i)
     await expect(
       section.getByRole('button', { name: /Sign out session/ }).first(),
     ).toBeVisible()
@@ -95,10 +98,13 @@ test.describe('profile web sessions list (PLAT-AUTH)', () => {
     await expect(section).toContainText(/2 of 5 active/)
 
     // Sessions are ordered by start time; revoke the newest (other browser), not this one.
-    page.once('dialog', (d) => void d.accept())
     await section.getByRole('button', { name: /Sign out session/ }).last().click()
+    await page.getByRole('button', { name: 'Confirm' }).click()
 
     await expect(section).toContainText(/1 of 5 active/, { timeout: 15_000 })
+    await expect(section.getByTestId('web-sessions-notice')).toContainText(
+      /Browser session signed out/i,
+    )
     await other.close()
   })
 })

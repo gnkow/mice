@@ -21,7 +21,7 @@ test.describe('sign out everywhere (PLAT-AUTH)', () => {
     await page.waitForTimeout(1100)
     await page.goto('/profile')
     page.once('dialog', (d) => void d.accept())
-    await page.getByRole('button', { name: 'Sign out everywhere' }).click()
+    await page.getByRole('button', { name: 'Sign Out All' }).click()
     await expect(page.getByText('Signed out everywhere.')).toBeVisible()
 
     const stale = await other.request.get(`${BASE_URL}/auth/me`)

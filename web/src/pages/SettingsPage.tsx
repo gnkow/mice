@@ -93,9 +93,10 @@ export function SettingsPage() {
   // Order: frequent day-to-day access work → IdP trust → audit integrity → rare instance ops.
   // Nav groups and DOM section order stay identical so scrollspy / keyboard order match.
   const groups = [
-    { title: 'General', items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
+    { title: 'General', Icon: ActionSettings, items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
     {
       title: 'Access',
+      Icon: ActionUserPlus,
       items: [
         ...(canReviewAccess
           ? [
@@ -117,6 +118,7 @@ export function SettingsPage() {
       ? [
           {
             title: 'Identity',
+            Icon: ShieldAlert,
             items: [
               { id: 'idp-baseline', label: 'IdP baseline', Icon: ShieldAlert },
               { id: 'idp-drift', label: 'IdP drift', Icon: GitCompare },
@@ -127,6 +129,7 @@ export function SettingsPage() {
           },
           {
             title: 'Audit',
+            Icon: HeartPulse,
             items: [
               { id: 'audit-health', label: 'Audit health', Icon: HeartPulse },
               { id: 'seal-key-rotation', label: 'Seal keys', Icon: KeyRound },
@@ -135,6 +138,7 @@ export function SettingsPage() {
           },
           {
             title: 'Instance',
+            Icon: ShieldUser,
             items: [
               { id: 'regulated-config', label: 'Regulated config', Icon: Scale },
               { id: 'release-manifest', label: 'Release manifest', Icon: Package },

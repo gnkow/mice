@@ -146,10 +146,22 @@ export function NotificationSettingsPage({ embedded = false }: { embedded?: bool
     finally { setPushBusy(false) }
   }
 
-  const Container = embedded ? 'section' : 'main'
-  return <Container id={embedded ? 'notifications' : undefined} className={embedded ? 'settings-section' : 'page notification-page'} aria-label={embedded ? 'Notification preferences' : undefined}>
-    <div className="page-head">
-      <div>{embedded ? <h2><Bell className="button-label-icon" aria-hidden="true" />Notifications</h2> : <h1>Notifications</h1>}<p className="lede">Choose the activity and delivery channels that work for you.</p></div>
+  const Container = embedded ? 'div' : 'main'
+  return <Container id={embedded ? 'notifications' : undefined} className={embedded ? 'ns-settings-subsection' : 'page notification-page'} aria-label={embedded ? 'Notification preferences' : undefined}>
+    <div className={embedded ? 'ns-settings-section-head' : 'page-head'}>
+      <div>
+        {embedded ? (
+          <h3>
+            <Bell size={16} className="button-label-icon" aria-hidden="true" />
+            Notifications
+          </h3>
+        ) : (
+          <h1>Notifications</h1>
+        )}
+        <p className={embedded ? 'muted small' : 'lede'}>
+          Choose the activity and delivery channels that work for you.
+        </p>
+      </div>
       <Link className="btn" to="/notifications"><Mail size={16} aria-hidden="true" />Open inbox</Link>
     </div>
     {error && <p className="flash flash-error" role="alert">{error}</p>}
@@ -159,7 +171,7 @@ export function NotificationSettingsPage({ embedded = false }: { embedded?: bool
     <button className="btn" type="button" disabled={loading || busy || pushBusy} onClick={() => { setLoading(true); setError(''); void load() }}><RefreshCw size={15} aria-hidden="true" />{remoteChanged ? 'Discard edits and reload' : 'Reload saved preferences'}</button>
     {form && settings && <form className="notification-settings form" onSubmit={event => void save(event)}>
       <fieldset disabled={busy || loading}>
-        <legend><Bell size={18} aria-hidden="true" />Delivery preferences</legend>
+        <legend><Bell size={18} aria-hidden="true" />Delivery Preferences</legend>
         <label className="checkbox-row"><input type="checkbox" checked={form.enabled} onChange={event => update({ ...form, enabled: event.target.checked })} />Enable notifications</label>
         <p className="muted small">No alerts bypass this switch or your category choices. Inbox activity is immediate; quiet hours defer online toasts, email, and push. Email and Push are opt-in.</p>
         <div className="notification-matrix-scroll">
@@ -191,7 +203,7 @@ export function NotificationSettingsPage({ embedded = false }: { embedded?: bool
         </div>
         <p className="muted small">Times use your saved timezone, including daylight saving changes. An end earlier than the start spans midnight.</p>
       </fieldset>
-      <fieldset disabled={busy || loading} className="ns-settings-subsection">
+      <fieldset disabled={busy || loading}>
         <legend>Watch</legend>
         <p>All accessible resources are included by default. The nearest explicit override wins: a child watch can override a parent mute. Watch never grants access, overrides disabled categories, or enables an external channel. Personal outcomes are separate from resource muting.</p>
         <p className="muted small">Favorites notify by default; mute a resource to override. A favorite never overrides a disabled category.</p>
@@ -210,7 +222,17 @@ export function NotificationSettingsPage({ embedded = false }: { embedded?: bool
       <button className="btn primary" type="submit" disabled={busy || loading || remoteChanged}><Save size={16} aria-hidden="true" />{busy ? 'Saving…' : 'Save preferences'}</button>
     </form>}
     <section className="notification-device">
-      <h2><Download size={18} className="button-label-icon" aria-hidden="true" />Browser push</h2>
+      {embedded ? (
+        <h4>
+          <Download size={16} className="button-label-icon" aria-hidden="true" />
+          Browser Push
+        </h4>
+      ) : (
+        <h2>
+          <Download size={18} className="button-label-icon" aria-hidden="true" />
+          Browser Push
+        </h2>
+      )}
       <p>Push uses this browser's permission and device subscription. It can arrive while MICE is closed. Permission is requested only when you select Enable. Browser/OS settings and provider availability can delay or block delivery.</p>
       <p>Permission: <strong>{permission}</strong> · This browser: <strong>{subscribed ? 'subscription present' : 'not subscribed'}</strong></p>
       {!pushSupported && <p className="muted">Web Push requires HTTPS (or localhost) and a browser supporting notifications, service workers, and Push. Some mobile browsers require installing MICE on your home screen first.</p>}
