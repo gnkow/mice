@@ -18,3 +18,4 @@
 - **Deepen (auto-pick Top):** `GET /auth/sign/:id` + `GET /auth/sign/:id/proof` for record/proof retrieval.
 - **Tests:** `signingRecord.test.ts` HTTP get/proof after execute; `signatureStore.test.ts` remains the unit seam.
 - **Seams:** HTTP `/auth/sign/:id[/proof]`; module `signatureStore.proof` / `get`.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top in code — `GET /auth/sign/:id` + `GET /auth/sign/:id/proof` in `signingRoutes.ts`; store seam `signatureStore.get` / `proof`. HTTP covered by `signingRecord.test.ts` (record + valid proof after execute; 404 missing). Status done.
