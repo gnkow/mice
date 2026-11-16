@@ -1,6 +1,11 @@
-import { LogIn as ActionLogIn } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import {
+  CircleAlert as IconStatusError,
+  LogIn as ActionLogIn,
+  TriangleAlert as IconStatusWarn,
+} from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { LoginBrand } from '../components/LoginBrand'
 import { fetchAuthMe } from '../lib/auth'
 import {
   applyAppearance,
@@ -15,6 +20,7 @@ export function LoginPage() {
   const { returnPath: next, ssoHref } = decideLoginNavigation({ next: params.get('next') })
   const status = decideLoginStatus(params.get('status'))
   const statusRef = useRef<HTMLElement>(null)
+  const [leaving, setLeaving] = useState(false)
 
   useEffect(() => {
     applyAppearance(loadAppearance())
@@ -38,20 +44,19 @@ export function LoginPage() {
     if (status) statusRef.current?.focus()
   }, [status])
 
+  useEffect(() => {
+    if (!leaving) return
+    // Wait a paint so "Continuing…" is visible before /auth/login unloads the page.
+    const id = window.setTimeout(() => {
+      window.location.assign(ssoHref)
+    }, 80)
+    return () => window.clearTimeout(id)
+  }, [leaving, ssoHref])
+
   return (
     <div className="login-shell">
-      <main className="page narrow login-page" aria-labelledby="login-heading">
-        <p className="login-brand">
-          <img
-            className="login-brand-logo"
-            src="/favicon.svg"
-            alt=""
-            width={22}
-            height={22}
-            aria-hidden="true"
-          />
-          <span>MICE</span>
-        </p>
+      <main className="page narrow login-page" aria-labelledby="login-heading" aria-busy={leaving}>
+        <LoginBrand />
         <h1 id="login-heading">Sign in</h1>
         <p className="lede" id="login-lede">
           Welcome. Use your organisation account to continue to Mice.
@@ -59,15 +64,30 @@ export function LoginPage() {
         {status ? (
           <section
             ref={statusRef}
-            className={`flash ${status.tone === 'warn' ? 'flash-warn' : 'flash-error'}`}
+            className={`login-status flash ${status.tone === 'warn' ? 'flash-warn' : 'flash-error'}`}
             role="alert"
             aria-labelledby="login-status-title"
             tabIndex={-1}
             data-testid="login-status"
             data-status={status.code}
           >
-            <h2 id="login-status-title">{status.title}</h2>
-            <p>{status.message}</p>
+            {status.tone === 'warn' ? (
+              <IconStatusWarn
+                size={18}
+                aria-hidden="true"
+                className="login-status-icon"
+              />
+            ) : (
+              <IconStatusError
+                size={18}
+                aria-hidden="true"
+                className="login-status-icon"
+              />
+            )}
+            <div className="login-status-copy">
+              <h2 id="login-status-title">{status.title}</h2>
+              <p>{status.message}</p>
+            </div>
           </section>
         ) : null}
         <div className="btn-row">
@@ -75,12 +95,33 @@ export function LoginPage() {
             className="btn primary"
             href={ssoHref}
             aria-label="Sign in with SSO"
-            aria-describedby={status ? 'login-status-title login-lede' : 'login-lede'}
+            aria-busy={leaving || undefined}
+            aria-describedby={
+              leaving
+                ? 'login-sso-pending'
+                : status
+                  ? 'login-status-title login-lede'
+                  : 'login-lede'
+            }
+            onClick={(e) => {
+              e.preventDefault()
+              setLeaving(true)
+            }}
           >
             <ActionLogIn size={14} aria-hidden="true" className="button-label-icon" />
-            SSO
+            {leaving ? 'Continuing…' : 'SSO'}
           </a>
         </div>
+        {leaving ? (
+          <p
+            id="login-sso-pending"
+            className="muted small"
+            role="status"
+            data-testid="login-sso-pending"
+          >
+            Continuing to sign-in…
+          </p>
+        ) : null}
       </main>
     </div>
   )

@@ -2,27 +2,26 @@ import { createHash } from 'node:crypto'
 import { eq, lt } from 'drizzle-orm'
 import { getDb } from '../../db/database.js'
 import { loginStates } from '../../db/schema.js'
-import type { SessionUser } from '../session/session.js'
 import { currentClock, type Clock } from '../../clock.js'
 import { defaultOidcProvider, pkceChallenge, randomString, type OidcProvider } from './oidc.js'
-import { resolveGroupOverage } from './groupOverage.js'
 import type { Directory } from '../directory/directoryTypes.js'
 import { directoryNow } from '../directory/directory.js'
-import { isSuspended } from '../access/miceSuspension.js'
-import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
-import { actorFromUser, appendAudit } from '../../audit.js'
-import { canonicalIssuer } from '../session/principal.js'
-import { recordIdpCheck } from '../compliance/idpOutage.js'
-import { decideIdpDisplayNameGate } from './idpDisplayName.js'
 import {
-  gateLoginDirectoryStatus,
-  type LoginDirectoryRefuseSurface,
-} from './loginDirectoryStatus.js'
+  admitLoginAfterToken,
+  failLogin,
+  safeReauthReturnPath,
+  safeReturnPath,
+  type LoginRefuseSurface,
+  type LoginResult,
+} from './loginAdmission.js'
 
 export const PKCE_COOKIE = 'mice_oidc_pkce'
 
 /** Login state lives in Postgres for 10 minutes and is consumed by the first callback that presents it. */
 export const LOGIN_STATE_TTL_MS = 10 * 60_000
+
+export type { LoginRefuseSurface, LoginResult }
+export { safeReturnPath, safeReauthReturnPath }
 
 type PkceState = {
   verifier: string
@@ -36,22 +35,10 @@ type PkceState = {
 
 const hashId = (id: string) => createHash('sha256').update(id).digest('hex')
 
-/** Only same-site relative paths outside the login and auth routes are valid return targets. */
-export function safeReturnPath(raw: string | undefined | null): string | undefined {
-  if (!raw) return undefined
-  if (!raw.startsWith('/') || raw.startsWith('//')) return undefined
-  if (raw.startsWith('/login') || raw.startsWith('/auth/')) return undefined
-  return raw
-}
-
-/** Step-up may resume an /auth/step-up/ action; every other /auth/ path stays blocked. */
-export function safeReauthReturnPath(raw: string | undefined | null): string | undefined {
-  if (raw?.startsWith('/auth/step-up/') && !raw.startsWith('//')) return raw
-  return safeReturnPath(raw)
-}
-
 /** Begin an OIDC authorization-code login: the PKCE cookie value to set and the IdP redirect. */
-async function beginLogin(provider: OidcProvider, clock: Clock,
+async function beginLogin(
+  provider: OidcProvider,
+  clock: Clock,
   next?: string | null,
   reauth?: { maxAge: number; sub: string; iss: string },
 ): Promise<{ pkceCookie: string; authorizeUrl: string }> {
@@ -61,7 +48,9 @@ async function beginLogin(provider: OidcProvider, clock: Clock,
   const challenge = await pkceChallenge(verifier)
   const safeNext = reauth ? safeReauthReturnPath(next) : safeReturnPath(next)
   const pkce: PkceState = {
-    verifier, state, nonce,
+    verifier,
+    state,
+    nonce,
     ...(safeNext ? { next: safeNext } : {}),
     ...(reauth ? { reauth } : {}),
   }
@@ -90,35 +79,6 @@ async function beginLogin(provider: OidcProvider, clock: Clock,
   }
 }
 
-/** LoginPage `?status=` codes for refuse/outage surfaces (tickets 04, 32, 38). */
-export type LoginRefuseSurface = LoginDirectoryRefuseSurface | 'empty_name'
-
-export type LoginResult =
-  | { ok: true; user: SessionUser; dest: string; reauth?: { maxAge: number; sub: string; iss: string } }
-  | {
-      ok: false
-      status: 400 | 403 | 500 | 503
-      html: string
-      reauth?: boolean
-      reason?: string
-      /** When set, `/auth/callback` redirects to LoginPage instead of bare HTML. */
-      surface?: LoginRefuseSurface
-    }
-
-const retry = '<a href="/auth/login">Retry</a>'
-const fail = (
-  status: 400 | 403 | 500 | 503,
-  msg: string,
-  reauth = false,
-  surface?: LoginRefuseSurface,
-): LoginResult => ({
-  ok: false,
-  status,
-  html: `<p>${msg}</p><p>${retry}</p>`,
-  ...(surface ? { surface } : {}),
-  ...(reauth ? { reauth: true, reason: msg } : {}),
-})
-
 /** Deletes and returns the login state for a cookie: the state is single-use even when the callback then fails. */
 async function consumeLoginState(clock: Clock, cookie: string | undefined): Promise<PkceState | null> {
   if (!cookie) return null
@@ -133,7 +93,7 @@ async function consumeLoginState(clock: Clock, cookie: string | undefined): Prom
   }
 }
 
-/** Finish the login: validate state, exchange the code, and build the Session user. */
+/** Finish the login: validate state, exchange the code, then admit the Principal. */
 async function finishLogin(
   provider: OidcProvider,
   directory: Directory,
@@ -144,178 +104,30 @@ async function finishLogin(
     error?: string
     pkceCookie?: string
     requestId?: string
-  }
+  },
 ): Promise<LoginResult> {
   const pkce = await consumeLoginState(clock, input.pkceCookie)
-  if (input.error) return fail(400, `Login failed: ${input.error}`, !!pkce?.reauth)
-  if (!input.code || !input.state || !input.pkceCookie) return fail(400, 'Missing OIDC state.')
-  if (!pkce) return fail(400, 'Invalid OIDC state.')
+  if (input.error) return failLogin(400, `Login failed: ${input.error}`, !!pkce?.reauth)
+  if (!input.code || !input.state || !input.pkceCookie) return failLogin(400, 'Missing OIDC state.')
+  if (!pkce) return failLogin(400, 'Invalid OIDC state.')
   const isReauth = !!pkce.reauth
-  if (pkce.state !== input.state) return fail(400, 'State mismatch.', isReauth)
+  if (pkce.state !== input.state) return failLogin(400, 'State mismatch.', isReauth)
   try {
     const user = await provider.completeLogin({
       code: input.code,
       codeVerifier: pkce.verifier,
       nonce: pkce.nonce,
     })
-    const account = await directory.userStatus(user.sub)
-    const directoryGate = await gateLoginDirectoryStatus(account.status, {
-      recordIdpCheck: async (reachable) => {
-        if (reachable) {
-          await recordIdpCheck({ reachable: true, at: clock.now() })
-        } else {
-          await recordIdpCheck({
-            reachable: false,
-            at: clock.now(),
-            check: 'login',
-            requestId: input.requestId ?? 'login',
-          })
-        }
-      },
-      recordDisabled: () => recordIdpDisabled(user),
+    return admitLoginAfterToken({
+      user,
+      directory,
+      clock,
+      pkce: { next: pkce.next, reauth: pkce.reauth },
+      requestId: input.requestId,
     })
-    if (!directoryGate.allow) {
-      return fail(
-        directoryGate.httpStatus,
-        directoryGate.message,
-        isReauth,
-        directoryGate.surface,
-      )
-    }
-    const nameGate = decideIdpDisplayNameGate(account.name)
-    if (!nameGate.ok) {
-      const iss = canonicalIssuer(user.iss)
-      await appendAudit({
-        actor: { sub: user.sub, iss, email: user.email, name: '' },
-        via: 'session',
-        method: 'GET',
-        path: '/auth/callback',
-        status: nameGate.status,
-        action: 'auth.login.failed',
-        message: `Refused login ${iss}|${user.sub}`,
-      })
-      return fail(nameGate.status, nameGate.error, isReauth, 'empty_name')
-    }
-    const reenable = await considerReenable(user, async (event) => {
-      const stored = await appendAudit({
-        actor: actorFromUser(user),
-        via: 'session',
-        method: 'GET',
-        path: '/auth/callback',
-        status: 200,
-        action: 'auth.reenable.automatic',
-        message: event.message,
-        detail: event.detail,
-      })
-      return stored?.id ?? null
-    })
-    if (reenable === 'awaiting-confirmation') {
-      return fail(403, 'Re-enable confirmation required', isReauth)
-    }
-    if (await isSuspended({ iss: user.iss, sub: user.sub })) {
-      const iss = canonicalIssuer(user.iss)
-      await appendAudit({
-        actor: { sub: user.sub, iss, email: user.email, name: user.name },
-        via: 'session',
-        method: 'GET',
-        path: '/auth/callback',
-        status: 403,
-        action: 'auth.suspended',
-        message: `Refused login ${iss}|${user.sub}`,
-      })
-      return fail(403, 'Suspended', isReauth)
-    }
-
-    // Ticket 18: Resolve group overage by fetching from directory if needed
-    if (user.groupsOverage) {
-      const resolved = await resolveGroupOverage(user, directory)
-      if (!resolved) {
-        // Overage detected but directory fetch failed - explicit login failure
-        return fail(
-          500,
-          'Group membership could not be determined. Please contact your administrator.',
-          isReauth
-        )
-      }
-    }
-    
-    if (pkce.reauth) {
-      if (user.sub !== pkce.reauth.sub || user.iss !== pkce.reauth.iss) {
-        return fail(400, 'Re-authentication was completed by a different account.', true)
-      }
-      const age = Math.floor(clock.now() / 1000) - (user.authTime ?? 0)
-      if (user.authTime === undefined || age > pkce.reauth.maxAge + 5) {
-        return fail(400, 'Re-authentication was not recent enough.', true)
-      }
-    }
-    const { groups, nameBasedFallback } = await sessionGroups(user, directory)
-    return {
-      ok: true,
-      ...(pkce.reauth ? { reauth: pkce.reauth } : {}),
-      dest: (pkce.reauth ? safeReauthReturnPath(pkce.next) : safeReturnPath(pkce.next)) ?? '/',
-      user: {
-        sub: user.sub,
-        iss: user.iss,
-        email: user.email,
-        ...(user.emailVerified ? { emailVerified: true } : {}),
-        name: account.name,
-        idToken: user.idToken,
-        ...(user.authTime !== undefined ? { authTime: user.authTime } : {}),
-        ...(groups.length ? { groups } : {}),
-        ...(nameBasedFallback ? { groupsNameBasedFallback: true } : {}),
-      },
-    }
   } catch (e) {
-    return fail(500, e instanceof Error ? e.message : 'login failed', isReauth)
+    return failLogin(500, e instanceof Error ? e.message : 'login failed', isReauth)
   }
-}
-
-/**
- * Binding keys from the token plus directory object ids, and refresh the display-name cache.
- */
-async function sessionGroups(
-  user: { sub: string; iss: string; groups: string[]; groupsNameBasedFallback?: boolean },
-  directory: Directory,
-): Promise<{ groups: string[]; nameBasedFallback: boolean }> {
-  const { groupBindingKey, parseGroupBindingKey, toGroupBindingKey } = await import('../../groupBinding.js')
-  const { upsertGroupDisplayNames } = await import('../../groupDisplayStore.js')
-  const iss = user.iss
-  const keys = new Set<string>()
-  const cacheRows: Array<{ bindingKey: string; displayName: string; idBased: boolean }> = []
-  let nameBasedFallback = !!user.groupsNameBasedFallback
-
-  for (const g of user.groups) {
-    const parsed = parseGroupBindingKey(g)
-    if (parsed) {
-      keys.add(groupBindingKey(parsed.iss, parsed.groupId))
-      continue
-    }
-    const resolved = toGroupBindingKey(iss, g)
-    keys.add(resolved.bindingKey)
-    if (!resolved.idBased) nameBasedFallback = true
-  }
-
-  if (directory.configured) {
-    try {
-      const listed = await directory.getUserGroups(user.sub)
-      const dirIss = directory.issuer || iss
-      for (const group of listed) {
-        if (!group.id) continue
-        const bindingKey = groupBindingKey(dirIss, group.id)
-        keys.add(bindingKey)
-        cacheRows.push({
-          bindingKey,
-          displayName: group.name || group.id,
-          idBased: true,
-        })
-      }
-    } catch (err) {
-      console.error('[mice-auth] directory group id lookup failed', err)
-    }
-  }
-
-  if (cacheRows.length) await upsertGroupDisplayNames(cacheRows)
-  return { groups: [...keys], nameBasedFallback }
 }
 
 /** Login flow over an OIDC provider and clock. */
@@ -324,7 +136,7 @@ export function createLoginFlow(deps: { provider: OidcProvider; directory: Direc
   return {
     startLogin: (next?: string | null, reauth?: { maxAge: number; sub: string; iss: string }) =>
       beginLogin(deps.provider, clock, next, reauth),
-    completeLogin: (input: Parameters<typeof finishLogin>[3]) => 
+    completeLogin: (input: Parameters<typeof finishLogin>[3]) =>
       finishLogin(deps.provider, deps.directory, clock, input),
   }
 }
@@ -337,8 +149,12 @@ const lazyProvider: OidcProvider = {
   verifyJwt: (t) => defaultOidcProvider().verifyJwt(t),
 }
 const lazyDirectory: Directory = {
-  get configured() { return directoryNow().configured },
-  get issuer() { return directoryNow().issuer },
+  get configured() {
+    return directoryNow().configured
+  },
+  get issuer() {
+    return directoryNow().issuer
+  },
   searchUsers: (q, l) => directoryNow().searchUsers(q, l),
   searchGroups: (q, l) => directoryNow().searchGroups(q, l),
   userStatus: (s) => directoryNow().userStatus(s),

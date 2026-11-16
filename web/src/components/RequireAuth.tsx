@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { LoginBrand } from './LoginBrand'
 import { fetchAuthMe } from '../lib/auth'
 import type { IdpAccessGate } from '../lib/idpAccessGate'
 import { decideLoginNavigation } from '../lib/loginNavigation'
@@ -54,7 +55,7 @@ export function RequireAuth() {
     return (
       <div className="login-shell">
         <main className="page narrow login-page" aria-labelledby="idp-gate-heading">
-          <p className="login-brand">MICE</p>
+          <LoginBrand />
           <h1 id="idp-gate-heading">Sign-in check</h1>
           <section
             ref={gateRef}

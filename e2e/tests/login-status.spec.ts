@@ -91,4 +91,18 @@ test.describe('login status surfaces', () => {
       '/auth/login?prompt=login&next=%2Fnamespaces',
     )
   })
+
+  test('TC-LOGIN-STATUS: SSO click shows continuing status before navigation', async ({
+    page,
+  }) => {
+    await page.route('**/auth/login**', async (route) => {
+      await new Promise((r) => setTimeout(r, 750))
+      await route.abort('failed')
+    })
+    await page.goto('/login')
+    await page.getByRole('link', { name: 'Sign in with SSO' }).click()
+    await expect(page.getByTestId('login-sso-pending')).toBeVisible()
+    await expect(page.getByRole('status')).toContainText('Continuing to sign-in')
+    await expect(page.locator('main.login-page')).toHaveAttribute('aria-busy', 'true')
+  })
 })
