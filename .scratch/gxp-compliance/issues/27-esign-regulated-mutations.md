@@ -29,3 +29,4 @@
 - **Audit:** holds (prepare route + WIP module) but gate was not wired and module was missing from git.
 - **Deepen (auto-pick Top):** `evaluateMutationSignatureBinding` pure seam; `resolveMutationSignature` owns store lookup/consume.
 - **Seams:** `prepareMutationDocument` / `evaluateMutationSignatureBinding` / `resolveMutationSignature` (module); `routeGuard` + `proxy` (HTTP); admin/ceremony via `/auth/sign/prepare-mutation`.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `evaluateMutationSignatureBinding` + `resolveMutationSignature` in `mutationSignature.ts`; wired via `routeGuard` + `proxy`. Unit: `mutationSignature.test.ts`; HTTP: `mutationSignature.api.test.ts`. Status done.
