@@ -147,5 +147,6 @@ describe('RBAC S35 access request review helpers', () => {
     assert.equal(isAdminFloorError('At least two admins must remain'), true)
     assert.equal(isAdminFloorError('At least two instance admins must remain'), true)
     assert.equal(isAdminFloorError('Grant failed'), false)
+    assert.equal(isAdminFloorError('Already resolved'), false)
   })
 })

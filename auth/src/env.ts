@@ -45,6 +45,12 @@ export function loadEnv(src: NodeJS.ProcessEnv = process.env) {
     auditVerifyIntervalSec: Number(src.AUDIT_VERIFY_INTERVAL_SEC ?? 3600),
     /** Unpaired Intent older than this many seconds triggers an admin orphan alert (grill lock Q9). */
     auditOrphanAlertSec: Number(src.AUDIT_ORPHAN_ALERT_SEC ?? 15 * 60),
+    /**
+     * Ed25519 PKCS#8 PEM for signing audit export manifests (IQP holds the matching public key).
+     * Required for signed bundle / PDF export; missing key refuses those exports.
+     * Compose may pass literal `\n` escapes — expand them here.
+     */
+    auditExportPrivateKey: (src.AUDIT_EXPORT_PRIVATE_KEY ?? '').replace(/\\n/g, '\n'),
     /** Minimum length of a mutation reason (and of a commit message used as one). */
     auditReasonMinLength: Number(src.AUDIT_REASON_MIN_LENGTH ?? 10),
     cookieName: src.SESSION_COOKIE_NAME ?? '__Host-mice_session',

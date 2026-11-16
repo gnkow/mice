@@ -48,9 +48,30 @@ value, `OIDC_CLIENT_SECRET` is not the shipped `mice-auth-secret`, and `COOKIE_S
 
 In production the BFF also refuses to start unless `AUTHZ_BOOTSTRAP_ADMINS` names at least one
 instance admin, `AUTH_DEV_MODE` is unset, `AUTH_DATA_DIR` is writable, `IMMUDB_HA=true`
-(single-instance immudb is unsupported), and `OXEN_UPSTREAM`
+(single-instance immudb is unsupported), `BACKUP_TARGET` is a writable directory (backup
+start gate), and `OXEN_UPSTREAM`
 is an internal address (single-label service name, loopback, private range, or
-`.internal`/`.local`/`.svc` suffix). Authorization is always enforced.
+`.internal`/`.local`/`.svc` suffix). Authorization is always enforced. A successful
+production start records `system.backup_target.check` in the audit trail.
+
+Each release ships a signed `auth/release-manifest.json` (IdP configuration, search index,
+and custom verifier digests). The BFF verifies it at start; a mismatch is audited as
+`system.release_manifest.check` and shown under **Settings → Release manifest**. Regenerate
+with `node auth/scripts/sign-release-manifest.mjs` after changing a validated component
+contract (set `RELEASE_MANIFEST_SIGNING_KEY` for production keys).
+
+Audit exports (`GET /auth/audit/export.bundle`, `.csv`, `.pdf`) include a signed
+manifest. Set `AUDIT_EXPORT_PRIVATE_KEY` (Ed25519 PKCS#8 PEM; generate with
+`node auth/scripts/gen-audit-export-key.mjs`) and record the matching public key in
+the IQP next to the immudb genesis root. Admin status exposes `exportPublicKey`.
+
+At each start the BFF writes the effective regulated configuration (session limits, reason
+policy, change-control allocation, audit HA / backup flags) to the audit trail as
+`system.regulated_config.start` (and `system.regulated_config.change` when it differs from
+the previous start). Operators can review it under **Settings → Regulated config**.
+Change-control ids are minted server-side on regulated mutations. Those same mutations
+also require a Part 11 electronic signature (step-up MFA, content hash, immudb record)
+before they run; creates stay exempt.
 
 Oxen has no auth of its own, so it must only be reachable from the BFF. `compose.yaml` publishes no
 oxen port; the dev-only `compose.override.yaml` (auto-loaded by `docker compose up`) publishes `3001`

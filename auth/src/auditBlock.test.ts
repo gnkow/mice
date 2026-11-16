@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { isolatedAuth, withMfa } from './testSupport.js'
+import { isolatedAuth, regulatedMutationHeaders, withMfa } from './testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('./app.js')
@@ -9,7 +9,7 @@ const { setUpstreamFetch } = await import('./proxy.js')
 const { preparePrincipal } = await import('./authz.js')
 const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
-const { initAudit, queryAudit, useAuditLedger, verifyAudit } = await import('./audit.js')
+const { auditChainBlocked, initAudit, queryAudit, useAuditLedger, verifyAudit } = await import('./audit.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
 const admin = iso.admin
 await preparePrincipal(admin)
@@ -59,9 +59,21 @@ async function put() {
   })
 }
 async function adminCall(method: string, path: string, body?: unknown) {
+  const payload = body === undefined ? {} : body
+  const regulated = await regulatedMutationHeaders(admin, {
+    method,
+    path,
+    body: payload,
+    reason: 'Operator decision after review',
+    category: 'privileged_settings',
+  })
   return app.request(path, {
     method,
-    headers: { ...(await iso.sessionHeaders(admin)), 'content-type': 'application/json', 'x-mice-reason': 'Operator decision after review', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+    headers: {
+      ...(await iso.sessionHeaders(admin)),
+      ...regulated,
+      'x-mice-change-control-id': 'CC-2026-114',
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
@@ -82,6 +94,7 @@ describe('failed verification blocks dataset mutations', () => {
     assert.equal((await put()).status, 200)
     await tamperFirst()
     assert.equal((await verifyAudit()).ok, false)
+    assert.equal(auditChainBlocked(), true, 'verify records the break on the chain gate')
     upstreamCalls = []
     const res = await put()
     assert.equal(res.status, 503)
@@ -128,20 +141,35 @@ describe('failed verification blocks dataset mutations', () => {
 })
 
 describe('export bundle', () => {
-  it('contains the events and a fresh verification result', async () => {
+  it('contains the events, signed manifest, CSV, PDF, and a fresh verification result', async () => {
+    const { verifyAuditExportManifest } = await import('./auditExport.js')
     assert.equal((await put()).status, 200)
     // Admin has no audit:read (S25); Auditor exports.
     const res = await auditorCall('GET', '/auth/audit/export.bundle?namespace=bk')
     assert.equal(res.status, 200)
     const bundle = (await res.json()) as Record<string, any>
-    assert.equal(bundle.format, 'mice-audit-bundle/2')
+    assert.equal(bundle.format, 'mice-audit-bundle/3')
     assert.ok(bundle.events.length >= 2)
     assert.ok(bundle.events.every((e: any) => e.namespace === 'bk'))
     assert.equal(bundle.verification.ok, true)
     assert.equal(typeof bundle.verification.head, 'number')
     assert.equal(typeof bundle.verification.root, 'string')
     assert.ok(bundle.verification.root.length > 0)
-    assert.equal(bundle.signing, undefined)
+    assert.ok(bundle.manifest?.signature)
+    assert.ok(typeof bundle.public_key === 'string' && bundle.public_key.includes('PUBLIC KEY'))
+    const { signature, ...manifestBody } = bundle.manifest
+    assert.equal(verifyAuditExportManifest(manifestBody, signature, bundle.public_key), true)
+    assert.ok(typeof bundle.csv === 'string' && bundle.csv.includes('timestamp,'))
+    assert.ok(typeof bundle.pdf_base64 === 'string' && Buffer.from(bundle.pdf_base64, 'base64').subarray(0, 5).toString() === '%PDF-')
+  })
+
+  it('serves a PDF for the same filter scope', async () => {
+    assert.equal((await put()).status, 200)
+    const res = await auditorCall('GET', '/auth/audit/export.pdf?namespace=bk')
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('content-type'), 'application/pdf')
+    const bytes = Buffer.from(await res.arrayBuffer())
+    assert.equal(bytes.subarray(0, 5).toString(), '%PDF-')
   })
 
   it('logs who exported which range', async () => {

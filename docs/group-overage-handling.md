@@ -463,7 +463,7 @@ All overage events are logged:
 ## References
 
 - **Specification:** `respec/01-authentication/spec.md` (Round 8 U17)
-- **Ticket:** `.scratch/authentication/issues/18-group-overage-handling.md`
+- **Ticket:** [#36](https://github.com/gnkow/mice/issues/36) (migrated from local tracker)
 - **RFC:** No RFC - IdP-specific behavior
 - **Microsoft Docs:** [Handle overage in tokens](https://docs.microsoft.com/en-us/azure/active-directory/develop/id-tokens#groups-overage-claim)
 - **Okta Docs:** [Groups claim](https://developer.okta.com/docs/guides/customize-tokens-groups-claim/main/)

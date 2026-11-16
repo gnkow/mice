@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are local markdown files under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+Issues are GitHub Issues (feature/spec parents with implementation sub-issues) on the Mice project board. Specs remain in `.specs/`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

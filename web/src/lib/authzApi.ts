@@ -3,6 +3,7 @@ import {
   CHANGE_CONTROL_HEADER,
   REASON_CATEGORY_HEADER,
   REASON_HEADER,
+  SIGNATURE_HEADER,
   summarizeMutation,
   withReason,
 } from './reason'
@@ -185,7 +186,12 @@ export async function authzFetch<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
 ): Promise<T> {
-  const send = (submission?: { reason: string; category: string }) =>
+  const send = (submission?: {
+    reason: string
+    category: string
+    changeControlId?: string
+    signatureId?: string
+  }) =>
     fetch(path, {
       credentials: 'same-origin',
       ...init,
@@ -197,16 +203,35 @@ export async function authzFetch<T>(
           ? {
               [REASON_HEADER]: submission.reason,
               [REASON_CATEGORY_HEADER]: submission.category,
-              [CHANGE_CONTROL_HEADER]: submission.changeControlId,
+              [SIGNATURE_HEADER]: submission.signatureId!,
+              ...(submission.changeControlId
+                ? { [CHANGE_CONTROL_HEADER]: submission.changeControlId }
+                : {}),
             }
           : {}),
       },
     })
   const method = (init?.method ?? 'GET').toUpperCase()
+  const mutationBody =
+    typeof init?.body === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(init.body) as unknown
+          } catch {
+            return undefined
+          }
+        })()
+      : undefined
   const res =
     method === 'GET' || method === 'HEAD'
       ? await send()
-      : await withReason(send, { changeSummary: summarizeMutation(method, path) })
+      : await withReason(send, {
+          changeSummary: summarizeMutation(method, path),
+          method,
+          path,
+          body: mutationBody,
+          init,
+        })
   const text = await res.text()
   let body: unknown = {}
   if (text) {
@@ -225,7 +250,9 @@ export async function authzFetch<T>(
 
 export async function fetchNamespaceAuthz(ns: string, signal?: AbortSignal) {
   const data = await authzFetch<{
+    id: string
     name: string
+    description: string
     basePermission: BasePermission
     membersCanCreateRepos: boolean
     members: Array<
@@ -240,6 +267,22 @@ export async function fetchNamespaceAuthz(ns: string, signal?: AbortSignal) {
     unresolvedGroups: data.unresolvedGroups ?? [],
     groupBindingWarning: data.groupBindingWarning,
   }
+}
+
+export type NamespaceSettingsVersion = {
+  validFrom: string
+  validTo: string | null
+  name: string
+  description: string
+  basePermission: BasePermission
+  membersCanCreateRepos: boolean
+}
+
+export function fetchNamespaceSettingsHistory(ns: string, signal?: AbortSignal) {
+  return authzFetch<{ versions: NamespaceSettingsVersion[] }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/settings/history`,
+    { signal },
+  )
 }
 
 export type GroupBindingStatus = {
@@ -263,11 +306,24 @@ export function checkGroupBindingMode(sampleGroups?: string[]) {
 export function patchNamespaceAuthz(
   ns: string,
   patch: Partial<{
+    name: string
+    description: string
     basePermission: BasePermission
     membersCanCreateRepos: boolean
   }>,
 ) {
-  return authzFetch(`/auth/namespaces/${encodeURIComponent(ns)}`, {
+  return authzFetch<{
+    ok: boolean
+    id?: string
+    name?: string
+    namespace: {
+      id: string
+      name: string
+      description: string
+      basePermission: BasePermission
+      membersCanCreateRepos: boolean
+    } | null
+  }>(`/auth/namespaces/${encodeURIComponent(ns)}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
   })
@@ -341,6 +397,7 @@ export function createNamespaceAuthz(input: {
 export type AuthzNamespaceSummary = {
   id: string
   name: string
+  description: string
   basePermission: BasePermission
   membersCanCreateRepos: boolean
   createdAt: string

@@ -45,4 +45,17 @@ describe('signature evidence rows (#13 auditor view + #53 identity)', () => {
     assert.deepEqual(signatureEvidenceRows('file.write', { mfaEvidence: { acr: 'mfa', amr: [] } }), [])
     assert.deepEqual(signatureEvidenceRows('esign.created', undefined), [])
   })
+
+  it('also labels evidence for signature.created (auditor alias)', () => {
+    const rows = signatureEvidenceRows('signature.created', {
+      mfaEvidence: { acr: 'mfa', amr: ['pwd'], auth_time: 1_700_000_000 },
+      verificationMetadata: {
+        jwks_key_id: 'kid-alias',
+        token_verified_at: 1_767_225_600_000,
+        idp_issuer: 'https://idp.test',
+      },
+    })
+    assert.ok(rows.some((r) => r.label === 'Auth context (acr)' && r.value === 'mfa'))
+    assert.ok(rows.some((r) => r.label === 'JWKS key id' && r.value === 'kid-alias'))
+  })
 })

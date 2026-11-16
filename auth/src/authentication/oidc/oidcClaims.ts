@@ -119,6 +119,7 @@ export function claimsFromPayload(
   const sub = typeof payload.sub === 'string' ? payload.sub : ''
   const iss = typeof payload.iss === 'string' ? payload.iss : opts.fallbackIssuer
   const email = typeof payload.email === 'string' ? payload.email : `${sub}@users.local`
+  // Token name is informational only; Session name comes from the IdP directory (Ticket 32).
   const name = typeof payload.name === 'string' ? payload.name.trim() : ''
   if (!sub) throw new Error('id_token missing sub')
   

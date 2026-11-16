@@ -1,30 +1,37 @@
-# Issue tracker: Local Markdown
+# Issue tracker: GitHub Issues + Project
 
-Issues and specs for this repo live as markdown files in `.scratch/`.
+Issues for this repo live on GitHub. Specs remain as markdown in `.specs/`.
+
+## Canonical locations
+
+- **Feature / spec parents:** GitHub issues labeled `feature` (one per `.specs/NN-*.md`, plus Training). Body links to the in-repo spec file.
+- **Implementation tickets:** GitHub issues labeled `implementation`, linked as **sub-issues** of the matching feature/spec parent.
+- **Board:** GitHub Project [Mice](https://github.com/users/gnkow/projects/5) (Kanban Status: Todo / In Progress / Done), linked to this repository.
+- **Specs (source of truth for product intent):** `.specs/<NN>-<slug>.md` in the repo
 
 ## Conventions
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The spec is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`, never a single combined tickets file
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- Triage state is a GitHub label (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, `deferred`). See `triage-labels.md`.
+- Area is a GitHub label `area:<slug>` (e.g. `area:authentication`).
+- Closed work uses GitHub issue state Closed (Done on the project board). `wontfix` / `deferred` keep those labels.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+Create a GitHub issue on this repository with `gh issue create` (or the GitHub UI):
+
+- Feature/spec work: label `feature` + `area:<slug>`; link the `.specs/…` path in the body.
+- Implementation work: label `implementation` + `area:<slug>` + a triage label; add it as a **sub-issue** of the parent feature/spec issue; add it to project Mice.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Open or `gh issue view <number>` for the referenced GitHub issue. The user will normally pass the issue number or URL.
 
 ## Wayfinding operations
 
-Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
+Used by `/wayfinder`. Prefer GitHub issues over local files:
 
-- **Map**: `.scratch/<effort>/map.md` (the Notes / Decisions-so-far / Fog body).
-- **Child ticket**: `.scratch/<effort>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records `claimed`/`resolved`.
-- **Blocking**: a `Blocked by: NN, NN` line near the top. A ticket is unblocked when every file it lists is `resolved`.
-- **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
-- **Claim**: set `Status: claimed` and save before any work.
-- **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
+- Parent effort / map context can live in the feature/spec parent issue body (or linked notes).
+- Child tickets are sub-issues of that parent.
+- Blocking relationships: document with `Blocked by: #N` in the issue body (and GitHub blockers when available).
+- Frontier: open sub-issues on the parent that are unblocked and labeled `ready-for-agent` / `ready-for-human`.
+- Claim / resolve: use GitHub assignees and issue state (and project Status) rather than editing local markdown.

@@ -1,0 +1,8 @@
+# Docker Desktop only — included by `make up` / `docker compose`.
+# Do not load under Podman: the host docker.sock symlink cannot be bind-mounted
+# into the machine (statfs EOPNOTSUPP). Jobs/Sessions docker provisioners then
+# need an in-VM socket or SESSIONS_PROVISIONER=mock / JOBS_RUNNER=none.
+services:
+  auth:
+    volumes:
+      - ${JOBS_DOCKER_SOCKET_HOST:-/var/run/docker.sock}:/var/run/docker.sock

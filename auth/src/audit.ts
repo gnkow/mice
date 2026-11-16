@@ -1,17 +1,40 @@
 import { randomBytes } from 'node:crypto'
+import { auditChainGate, type AuditVerification } from './auditChainGate.js'
+import {
+  auditReadiness as runAuditReadiness,
+  type AuditReadiness,
+} from './auditReadiness.js'
 import { closeAuditOutage, reportAuditDegradation } from './auditOutage.js'
 import { currentClock, systemClock, type Clock } from './clock.js'
 import { env } from './env.js'
 import { auditActionLabel } from './auditLabels.js'
-import { immudbConfig, openLedger, type Ledger, type LedgerVerification } from './auditLedger.js'
+import { immudbConfig, openLedger, type Ledger } from './auditLedger.js'
 import { type SessionUser } from './authentication/index.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { AuditDetailPolicyError, validateAuditDetail } from './auditDetailPolicy.js'
 import {
-  auditActionMatches,
   CURRENT_AUDIT_SCHEMA_VERSION,
   upcastAuditEvent,
 } from './auditSchema.js'
+import {
+  applyAuditQueryFilters,
+  eventJobIds,
+  eventSessionIds,
+  eventWorkspaceIds,
+} from './auditQueryFilters.js'
+import { createAuditIntentOutcome } from './auditIntentOutcome.js'
+
+export type { AuditVerification } from './auditChainGate.js'
+export type { AuditReadiness } from './auditReadiness.js'
+export { composeAuditReadiness } from './auditReadiness.js'
+export { AUDIT_UNAVAILABLE_MESSAGE } from './auditFailClosed.js'
+export { eventJobIds, eventSessionIds, eventWorkspaceIds, applyAuditQueryFilters } from './auditQueryFilters.js'
+export { intentReasonFields, type TrackedReason } from './auditReasonFields.js'
+export {
+  carryFromIntent,
+  orphanIntents,
+  type AuditIntentOutcome,
+} from './auditIntentOutcome.js'
 
 export type AuditVia = 'session' | 'pat'
 
@@ -24,9 +47,6 @@ export type AuditActor = {
 
 /** `intent` is written before a mutation runs, `outcome` after. Other events carry no phase. */
 export type AuditPhase = 'intent' | 'outcome'
-
-/** User-facing copy when a mutation is refused because the audit store cannot accept an Intent. */
-export const AUDIT_UNAVAILABLE_MESSAGE = 'audit unavailable, nothing was saved'
 
 export type AuditEvent = {
   id: string
@@ -123,27 +143,18 @@ export function useAuditLedger(next: Ledger): void {
   ledger = Promise.resolve(next)
 }
 
-export type AuditVerification = LedgerVerification
-let lastVerification: AuditVerification | null = null
-
-let acknowledged: { seq: number; reason: string } | null = null
-
 /**
  * True while the last verification failed and the operator has not acknowledged that same
  * break. Dataset mutations are refused meanwhile. A different or later break blocks again.
  */
 export function auditChainBlocked(): boolean {
-  const v = lastVerification
-  if (!v || v.ok) return false
-  return !(acknowledged && acknowledged.seq === v.firstBreak.seq && acknowledged.reason === v.firstBreak.reason)
+  return auditChainGate.isBlocked()
 }
 
 /** Re-verifies and acknowledges the current break; null when the trail is intact. Held in memory, so a restart asks again. */
 export async function acknowledgeAuditBreak(): Promise<{ seq: number; reason: string } | null> {
-  const v = await verifyAudit()
-  if (v.ok) return null
-  acknowledged = { seq: v.firstBreak.seq, reason: v.firstBreak.reason }
-  return acknowledged
+  await verifyAudit()
+  return auditChainGate.acknowledge()
 }
 
 /** Evidence bundle for the events matching `query`, with a fresh verification of the ledger; see GLOSSARY "audit bundle". */
@@ -153,18 +164,57 @@ export async function buildAuditExportBundle(
   filters: Record<string, unknown>,
 ): Promise<{ ok: true; bundle: Record<string, unknown> } | { ok: false; error: string }> {
   try {
+    const {
+      AUDIT_EXPORT_BUNDLE_FORMAT,
+      auditEventsToPdf,
+      auditExportPrivateKeyPem,
+      auditExportPublicKeyPem,
+      buildExportManifestBody,
+      signAuditExportManifest,
+    } = await import('./auditExport.js')
+    const privateKeyPem = auditExportPrivateKeyPem()
+    const publicKeyPem = auditExportPublicKeyPem()
+    if (!privateKeyPem || !publicKeyPem) {
+      return {
+        ok: false,
+        error: 'Audit export signing key is not configured (set AUDIT_EXPORT_PRIVATE_KEY)',
+      }
+    }
     const { events: found, truncated } = await queryAuditForExport(query)
     const verification = await verifyAudit()
+    const exportedAt = new Date(currentClock.now()).toISOString()
+    // Bundle events are chain order (oldest first); CSV/PDF keep newest-first browse order.
+    const chainEvents = [...found].reverse()
+    const manifestBody = buildExportManifestBody({
+      exportedAt,
+      exportedBy,
+      events: chainEvents,
+      truncated,
+      verification,
+      filters,
+    })
+    let signature: string
+    try {
+      signature = signAuditExportManifest(manifestBody, privateKeyPem)
+    } catch (err) {
+      return { ok: false, error: `Audit export signing failed: ${String((err as Error)?.message ?? err)}` }
+    }
+    const csv = auditEventsToCsv(found)
+    const pdf = auditEventsToPdf(found)
     return {
       ok: true,
       bundle: {
-        format: 'mice-audit-bundle/2',
-        exported_at: new Date(currentClock.now()).toISOString(),
+        format: AUDIT_EXPORT_BUNDLE_FORMAT,
+        exported_at: exportedAt,
         exported_by: exportedBy,
         range: filters,
         truncated,
-        events: [...found].reverse(),
+        events: chainEvents,
         verification,
+        manifest: { ...manifestBody, signature },
+        public_key: publicKeyPem,
+        csv,
+        pdf_base64: pdf.toString('base64'),
       },
     }
   } catch (err) {
@@ -180,50 +230,20 @@ export async function verifyAudit(): Promise<AuditVerification> {
   } catch (err) {
     result = { ok: false, events: 0, verifiedAt: new Date(currentClock.now()).toISOString(), firstBreak: { seq: 0, reason: `audit store unreadable: ${String(err)}` } }
   }
-  lastVerification = result
+  auditChainGate.recordVerification(result)
   return result
 }
 
 let lastAppendError: string | null = null
 
-export type AuditReadiness = {
-  ok: boolean
-  store: 'ok' | 'error'
-  chain: 'ok' | 'broken' | 'acknowledged' | 'unverified'
-  events?: number
-  verifiedAt?: string
-  /** Tip tx id from the last successful verify — for IQP / change-control filing. */
-  head?: number
-  /** Tip root (base64 ALH) from the last successful verify. */
-  root?: string
-  firstBreak?: { seq: number; reason: string }
-  detail?: string
-}
-
 /** Cheap: pings the ledger and reads the last verification; never walks the proofs. */
-export async function auditReadiness(): Promise<AuditReadiness> {
-  let store: 'ok' | 'error' = lastAppendError ? 'error' : 'ok'
-  let detail = lastAppendError ?? undefined
-  const health = await (await ledgerOrOpen()).health().catch((err: unknown) => ({ ok: false as const, detail: String(err) }))
-  if (!health.ok) {
-    store = 'error'
-    detail = health.detail
-  } else {
-    // The ledger answers again; do not stay red on a stale append error.
-    store = 'ok'
-    detail = undefined
-  }
-  const v = lastVerification
-  const chainState = !v ? 'unverified' : v.ok ? 'ok' : auditChainBlocked() ? 'broken' : 'acknowledged'
-  return {
-    ok: store === 'ok' && chainState !== 'broken',
-    store,
-    chain: chainState,
-    ...(v ? { events: v.events, verifiedAt: v.verifiedAt } : {}),
-    ...(v && v.ok ? { head: v.head, root: v.root } : {}),
-    ...(v && !v.ok ? { firstBreak: v.firstBreak } : {}),
-    ...(detail ? { detail } : {}),
-  }
+export function auditReadiness(): Promise<AuditReadiness> {
+  return runAuditReadiness({
+    lastAppendError: () => lastAppendError,
+    health: async () => (await ledgerOrOpen()).health(),
+    currentVerification: () => auditChainGate.current(),
+    isChainBlocked: () => auditChainBlocked(),
+  })
 }
 
 /** Boot check: connects to the ledger (creating its database on first use) and verifies it. */
@@ -423,11 +443,18 @@ async function appendStored(partial: AuditInput, extra: Pick<AuditEvent, 'phase'
       policy.detail !== undefined ? { ...partial, detail: policy.detail } : partial,
       extra,
     )
-    await (await ledgerOrOpen()).append(event.id, JSON.stringify(event))
+    const seq = await (await ledgerOrOpen()).append(event.id, JSON.stringify(event))
     lastAppendError = null
     void closeAuditOutage(currentClock.now()).catch((err) =>
       console.error('[mice-auth] audit outage close failed', err),
     )
+    // Derived Postgres query index (not evidence); failures must not block the ledger write.
+    try {
+      const { projectAuditQueryIndex } = await import('./auditQueryIndex.js')
+      await projectAuditQueryIndex(event, seq)
+    } catch (err) {
+      console.error('[mice-auth] audit query index project failed', err)
+    }
     return event
   } catch (err) {
     if (err instanceof AuditDetailPolicyError) throw err
@@ -470,72 +497,25 @@ export async function appendOutcome(intentId: string, partial: AuditInput): Prom
   }
 }
 
-type TrackedReason = Pick<
-  AuditEvent,
-  'reason' | 'reason_source' | 'category' | 'change_control_id' | 'signature_id'
->
-
-const intents = new WeakMap<object, {
-  id: string
-  outcomes: number
-  reason?: TrackedReason
-}>()
-
-/** Fields from an Intent that must appear on its Outcome (reason / change-control / signature). */
-export function carryFromIntent(intent: AuditEvent): TrackedReason | undefined {
-  if (!intent.reason && !intent.change_control_id && !intent.signature_id) return undefined
-  return {
-    ...(intent.reason
-      ? {
-          reason: intent.reason,
-          reason_source: intent.reason_source,
-          ...(intent.category ? { category: intent.category } : {}),
-        }
-      : {}),
-    ...(intent.change_control_id ? { change_control_id: intent.change_control_id } : {}),
-    ...(intent.signature_id ? { signature_id: intent.signature_id } : {}),
-  }
-}
+const intentOutcome = createAuditIntentOutcome<AuditEvent, AuditInput>({
+  appendIntent,
+  appendOutcome,
+  appendAudit,
+})
 
 /** Remembers the intent written for a request so native audit calls can link their outcome to it. */
-export function trackIntent(request: object, intent: AuditEvent): void {
-  const reason = carryFromIntent(intent)
-  intents.set(request, {
-    id: intent.id,
-    outcomes: 0,
-    ...(reason ? { reason } : {}),
-  })
-}
+export const trackIntent = intentOutcome.trackIntent
 
 /**
  * Intent before the effect, tracked on the request for {@link appendOutcomeFor}.
  * Throws when the ledger cannot store the Intent — callers must refuse the mutation.
  */
-export async function beginTrackedIntent(request: object, partial: AuditInput): Promise<AuditEvent> {
-  const intent = await appendIntent(partial)
-  trackIntent(request, intent)
-  return intent
-}
+export const beginTrackedIntent = intentOutcome.beginTrackedIntent
 
 /** Appends an outcome for the request's tracked intent, or a plain event when it has none. */
-export function appendOutcomeFor(request: object, partial: AuditInput): Promise<AuditEvent | null> {
-  const tracked = intents.get(request)
-  if (!tracked) return appendAudit(partial)
-  tracked.outcomes += 1
-  return appendOutcome(tracked.id, { ...tracked.reason, ...partial })
-}
+export const appendOutcomeFor = intentOutcome.appendOutcomeFor
 
-export function trackedIntent(request: object): { id: string; outcomes: number } | undefined {
-  return intents.get(request)
-}
-
-/** Intents with no matching Outcome — detectable orphans (ticket 12 reconciler is wontfix). */
-export function orphanIntents(events: AuditEvent[]): AuditEvent[] {
-  const resolved = new Set(
-    events.flatMap((e) => (e.phase === 'outcome' && e.intent_id ? [e.intent_id] : [])),
-  )
-  return events.filter((e) => e.phase === 'intent' && !resolved.has(e.id))
-}
+export const trackedIntent = intentOutcome.trackedIntent
 
 /** Events written after ledger position `seq`; `scannedTo` is the position to resume from. */
 export async function readAuditAfter(seq: number, limit?: number): Promise<{ events: AuditEvent[]; scannedTo: number }> {
@@ -549,6 +529,23 @@ export async function readAuditAfter(seq: number, limit?: number): Promise<{ eve
     }
   }
   return { events, scannedTo }
+}
+
+/** Like {@link readAuditAfter} but keeps ledger sequence numbers for index projection. */
+export async function readAuditAfterWithSeq(
+  seq: number,
+  limit?: number,
+): Promise<{ rows: Array<{ event: AuditEvent; seq: number }>; scannedTo: number }> {
+  const { records, scannedTo } = await (await ledgerOrOpen()).readAfter(seq, limit)
+  const rows: Array<{ event: AuditEvent; seq: number }> = []
+  for (const record of records) {
+    try {
+      rows.push({ event: upcastAuditEvent(JSON.parse(record.value)), seq: record.seq })
+    } catch {
+      /* surfaced by verifyAudit */
+    }
+  }
+  return { rows, scannedTo }
 }
 
 async function readAllEvents(): Promise<AuditEvent[]> {
@@ -568,105 +565,22 @@ export function listAllAuditEvents(): Promise<AuditEvent[]> {
   return readAllEvents()
 }
 
-function detailStrings(
-  detail: Record<string, unknown> | undefined,
-  single: string,
-  plural?: string,
-): string[] {
-  if (!detail) return []
-  const out: string[] = []
-  const one = detail[single]
-  if (typeof one === 'string' && one) out.push(one)
-  if (plural) {
-    const many = detail[plural]
-    if (Array.isArray(many)) {
-      for (const v of many) if (typeof v === 'string' && v) out.push(v)
-    }
-  }
-  return out
+async function filterEventsFromLedger(q: AuditQuery): Promise<AuditEvent[]> {
+  const events = await readAllEvents()
+  // Newest first, then shared filter pipeline (same as Postgres index path).
+  return applyAuditQueryFilters([...events].reverse(), q)
 }
 
-/** Session ids an event refers to. */
-export function eventSessionIds(e: AuditEvent): string[] {
-  return detailStrings(e.detail, 'session_id')
-}
-
-/** Job ids an event refers to (single or batch). */
-export function eventJobIds(e: AuditEvent): string[] {
-  return detailStrings(e.detail, 'job_id', 'job_ids')
-}
-
-/** Workspace ids an event refers to, including session mounts. */
-export function eventWorkspaceIds(e: AuditEvent): string[] {
-  const ids = detailStrings(e.detail, 'workspace_id')
-  const mounts = e.detail?.mounts
-  if (Array.isArray(mounts)) {
-    for (const m of mounts) {
-      const w = (m as { workspace_id?: unknown } | null)?.workspace_id
-      if (typeof w === 'string' && w) ids.push(w)
-    }
-  }
-  return ids
-}
-
+/** Prefer the derived Postgres index when healthy; evidence path still uses immudb only. */
 async function filterEvents(q: AuditQuery): Promise<AuditEvent[]> {
-  let events = await readAllEvents()
-
-  if (!q.includeChain) {
-    const resolved = new Set(events.flatMap((e) => (e.phase === 'outcome' && e.intent_id ? [e.intent_id] : [])))
-    events = events.filter((e) => !(e.phase === 'intent' && resolved.has(e.id)))
+  try {
+    const { queryAuditQueryIndex } = await import('./auditQueryIndex.js')
+    const fromIndex = await queryAuditQueryIndex(q)
+    if (fromIndex !== null) return fromIndex
+  } catch (err) {
+    console.error('[mice-auth] audit query index read failed; falling back to ledger', err)
   }
-
-  // Newest first
-  events.reverse()
-
-  if (q.allowedNamespaces) {
-    const allowed = new Set(q.allowedNamespaces)
-    events = events.filter((e) => e.namespace && allowed.has(e.namespace))
-  }
-  if (q.actor) {
-    const a = q.actor.toLowerCase()
-    events = events.filter(
-      (e) =>
-        e.actor.sub.toLowerCase().includes(a) ||
-        e.actor.email.toLowerCase().includes(a) ||
-        e.actor.name.toLowerCase().includes(a),
-    )
-  }
-  if (q.namespace) {
-    events = events.filter((e) => e.namespace === q.namespace)
-  }
-  if (q.repo) {
-    events = events.filter((e) => e.repo === q.repo)
-  }
-  if (q.action) {
-    const filter = q.action
-    events = events.filter((e) => auditActionMatches(e.action, filter))
-  }
-  if (q.via) {
-    events = events.filter((e) => e.via === q.via)
-  }
-  if (q.sessionId) {
-    const id = q.sessionId
-    events = events.filter((e) => eventSessionIds(e).includes(id))
-  }
-  if (q.workspaceId) {
-    const id = q.workspaceId
-    events = events.filter((e) => eventWorkspaceIds(e).includes(id))
-  }
-  if (q.jobId) {
-    const id = q.jobId
-    events = events.filter((e) => eventJobIds(e).includes(id))
-  }
-  if (q.since) {
-    const since = q.since
-    events = events.filter((e) => e.ts >= since)
-  }
-  if (q.until) {
-    const until = q.until
-    events = events.filter((e) => e.ts <= until)
-  }
-  return events
+  return filterEventsFromLedger(q)
 }
 
 export async function queryAudit(q: AuditQuery): Promise<{

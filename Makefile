@@ -15,6 +15,9 @@ export SESSIONS_HOST_DATA_DIR ?= $(CURDIR)/.data/sessions
 #   SESSIONS_PROVISIONER=mock make up
 export SESSIONS_PROVISIONER ?= docker
 
+# compose.docker.yaml mounts the host docker.sock (Jobs/Sessions). Omit under Podman.
+COMPOSE ?= docker compose -f compose.yaml -f compose.override.yaml -f compose.docker.yaml
+
 .PHONY: db-secrets help up down install test smoke test-view test-ui test-unit test-cli reset clean clear readwatch
 
 help:
@@ -54,13 +57,13 @@ up: db-secrets
 	  $(MAKE) readwatch; \
 	fi
 	mkdir -p "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)"
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 
 test-sessions: install
 	SESSIONS_PROVISIONER=mock npm test -- e2e/tests/sessions.spec.ts $(ARGS)
 
 down:
-	docker compose down
+	$(COMPOSE) down
 
 install:
 	npm install
@@ -92,7 +95,7 @@ test-ui: install
 # workspace store/overlays, host job/session dirs, leftover probe volumes.
 # Keeps: node_modules volumes, .secrets/ (dev passwords).
 reset:
-	docker compose down --remove-orphans
+	$(COMPOSE) down --remove-orphans
 	@for v in \
 		mice_postgres-data \
 		mice_immudb-data \
@@ -107,13 +110,13 @@ reset:
 	done
 	rm -rf "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)" auth/data
 	mkdir -p "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)"
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 	@echo "Reset all app data volumes and restarted the stack."
 
 # Tear down Compose (including data + node_modules volumes),
 # and remove local install / Playwright artifacts.
 clean clear:
-	docker compose down -v --remove-orphans
+	$(COMPOSE) down -v --remove-orphans
 	-@for v in $$(docker volume ls -q --filter name=mice-probe); do docker volume rm "$$v"; done
 	-@for v in mice-store mice-workspaces; do docker volume rm "$$v" 2>/dev/null || true; done
 	rm -rf "$(JOBS_HOST_DATA_DIR)" "$(SESSIONS_HOST_DATA_DIR)" auth/data

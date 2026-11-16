@@ -150,13 +150,14 @@ export function generateOQEvidence(
 
 /**
  * Check for clock drift against a reference time.
+ * Pack-facing helper; runtime schedule uses decideClockDriftAlert in clockDriftAlert.ts.
  */
 export function checkClockDrift(
   referenceTime: number,
   systemTime: number = Date.now(),
 ): ClockDriftCheck {
   const driftMs = Math.abs(systemTime - referenceTime)
-  
+
   return {
     referenceTime,
     systemTime,
@@ -168,12 +169,13 @@ export function checkClockDrift(
 
 /**
  * Generate an alert if clock drift exceeds threshold.
+ * Pack-facing helper; runtime schedule uses decideClockDriftAlert in clockDriftAlert.ts.
  */
 export function generateClockDriftAlert(check: ClockDriftCheck): ClockDriftAlert | null {
   if (check.withinThreshold) {
     return null
   }
-  
+
   return {
     alertId: `clock-drift-${Date.now()}`,
     detectedAt: Date.now(),

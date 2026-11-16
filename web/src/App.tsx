@@ -20,6 +20,10 @@ import { CliDevicePage } from './pages/CliDevicePage'
 import { LoginPage } from './pages/LoginPage'
 import { PendingAccessPage } from './pages/PendingAccessPage'
 import { MergePage } from './pages/MergePage'
+import { NamespaceLayout } from './components/NamespaceLayout'
+import { NamespaceSettingsLayout } from './components/NamespaceSettingsLayout'
+import { NamespaceMetadataPage } from './pages/NamespaceMetadataPage'
+import { NamespaceSettingsHistoryPage } from './pages/NamespaceSettingsHistoryPage'
 import { NamespaceSettingsPage } from './pages/NamespaceSettingsPage'
 import { NamespacePage } from './pages/NamespacePage'
 import { NamespacesListPage } from './pages/NamespacesListPage'
@@ -77,11 +81,17 @@ export default function App() {
               <Route path="meta" element={<MetaPage />} />
               <Route path="meta/search" element={<Navigate to="/meta" replace />} />
               <Route path="docs" element={<DocsPage />} />
-              <Route path="n/:namespace" element={<NamespacePage />} />
-              <Route
-                path="n/:namespace/settings"
-                element={<NamespaceSettingsPage />}
-              />
+              <Route path="n/:namespace" element={<NamespaceLayout />}>
+                <Route index element={<NamespacePage />} />
+                <Route path="metadata" element={<NamespaceMetadataPage />} />
+                <Route path="settings" element={<NamespaceSettingsLayout />}>
+                  <Route index element={<NamespaceSettingsPage />} />
+                  <Route
+                    path="history"
+                    element={<NamespaceSettingsHistoryPage />}
+                  />
+                </Route>
+              </Route>
               <Route
                 path="n/:namespace/access"
                 element={<Navigate to="../settings" relative="path" replace />}

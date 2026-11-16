@@ -41,9 +41,9 @@ services:
 
   # Audit trail (ADR 0005). The admin password is loaded from an env file; immudb has no *_FILE variable.
   immudb:
-    image: codenotary/immudb:1.9.5
-    # No arm64 build of this tag; the newer arm64 image has no binary to health-check with.
-    platform: linux/amd64
+    # Prefer multi-arch `latest`: 1.9.5 is amd64-only and crashes under qemu on Apple Silicon
+    # (`fatal error: lfstack.push`). Arm64 images include /usr/local/bin/immuadmin for healthchecks.
+    image: codenotary/immudb:latest
     env_file:
       - ${IMMUDB_ENV_PATH:-./.secrets/immudb.env}
     volumes:
@@ -177,17 +177,20 @@ services:
       PUBLIC_OXEN_REMOTE: http://localhost:${AUTH_PORT:-8080}
       PUBLIC_WEB_ORIGIN: http://localhost:${WEB_PORT:-5173}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-mice-session-secret}
+      # Ed25519 PKCS#8 PEM (\n-escaped). Regenerate with `node auth/scripts/gen-audit-export-key.mjs`; file the public key in IQP.
+      AUDIT_EXPORT_PRIVATE_KEY: "${AUDIT_EXPORT_PRIVATE_KEY:------BEGIN PRIVATE KEY-----\\nMC4CAQAwBQYDK2VwBCIEIDDE/V5/+dMDU6prQ/All5QDlKSRFkfLiWLoBurtp1ou\\n-----END PRIVATE KEY-----\\n}"
       SESSION_IDLE_SEC: ${SESSION_IDLE_SEC:-900}
       AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice_admin@mice.com,mice_mfa@mice.com}
       AUTHZ_REQUIRE_TRAINING: ${AUTHZ_REQUIRE_TRAINING:-false}
       # Server-side discovery inside Compose (override all OIDC_* for another IdP)
       OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/mice}
       # Browser-facing issuer / authorize host
-      OIDC_ISSUER_PUBLIC: ${OIDC_ISSUER_PUBLIC:-http://localhost:${KEYCLOAK_PORT:-8180}/realms/mice}
+      # Flat defaults only — podman-compose breaks nested ${A:-…${B:-x}…} interpolation.
+      OIDC_ISSUER_PUBLIC: ${OIDC_ISSUER_PUBLIC:-http://localhost:8180/realms/mice}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-mice-auth}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-mice-auth-secret}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:${WEB_PORT:-5173}/auth/callback}
-      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:${WEB_PORT:-5173}/login}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:5173/auth/callback}
+      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-http://localhost:5173/login}
       OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
       # Directory search via Keycloak Admin API (service account on mice-auth)
       KEYCLOAK_ADMIN_URL: ${KEYCLOAK_ADMIN_URL:-http://keycloak:8080}
@@ -236,8 +239,8 @@ services:
       # Bind-mount so host Docker can re-bind job workdirs into runner containers.
       - ${JOBS_HOST_DATA_DIR:-./.data/jobs}:/data/jobs
       - ${SESSIONS_HOST_DATA_DIR:-./.data/sessions}:/data/sessions
-      # Local (Docker) runner. Set JOBS_RUNNER=kubernetes for Cluster jobs.
-      - ${JOBS_DOCKER_SOCKET_HOST:-/var/run/docker.sock}:/var/run/docker.sock
+      # docker.sock for local Jobs/Sessions runners is in compose.override.yaml (Docker Desktop).
+      # Podman Desktop cannot bind-mount the host API socket (statfs EOPNOTSUPP).
     secrets:
       - postgres_password
       - immudb_password

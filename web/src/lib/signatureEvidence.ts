@@ -9,12 +9,14 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v : undefined
 }
 
+const SIGNATURE_EVIDENCE_ACTIONS = new Set(['esign.created', 'signature.created'])
+
 /**
  * Labelled MFA, token-verification, and signature-identity evidence on an
- * `esign.created` audit event (Tickets 13 + 53).
+ * `esign.created` audit event (Tickets 13, 26, 53).
  */
 export function signatureEvidenceRows(action: string, detail: Detail): EvidenceRow[] {
-  if (action !== 'esign.created' || !detail) return []
+  if (!SIGNATURE_EVIDENCE_ACTIONS.has(action) || !detail) return []
 
   const signer =
     detail.signer && typeof detail.signer === 'object'

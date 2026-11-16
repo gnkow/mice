@@ -143,9 +143,15 @@ test.describe('audit GxP deny paths', () => {
       expect(ready.audit.chain).toBe('ok')
       const bundle = await admin.page.request.get(`${AUTH_URL}/auth/audit/export.bundle`)
       if (bundle.ok()) {
-        const body = (await bundle.json()) as { format?: string; signing?: unknown; verification?: { ok?: boolean } }
-        expect(body.format).toBe('mice-audit-bundle/2')
-        expect(body.signing).toBeUndefined()
+        const body = (await bundle.json()) as {
+          format?: string
+          verification?: { ok?: boolean }
+          manifest?: { signature?: string }
+          public_key?: string
+        }
+        expect(body.format).toBe('mice-audit-bundle/3')
+        expect(body.manifest?.signature).toBeTruthy()
+        expect(body.public_key).toContain('PUBLIC KEY')
         expect(body.verification?.ok).toBe(true)
       }
     } finally {

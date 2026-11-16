@@ -11,8 +11,10 @@ export type ReasonCategoryValue = (typeof REASON_CATEGORIES)[number]['value']
 export type ReasonSubmission = {
   reason: string
   category: ReasonCategoryValue
-  /** QMS change-control id (required with reason on update/delete classes). */
-  changeControlId: string
+  /** Optional; the BFF mints a change-control id when absent. */
+  changeControlId?: string
+  /** Required for regulated mutations after the signing ceremony. */
+  signatureId: string
 }
 
 export type ReasonPromptOptions = {
@@ -20,6 +22,9 @@ export type ReasonPromptOptions = {
   changeSummary: string
   /** Server rejection detail (min length, missing category, etc.). */
   detail: string
+  method: string
+  path: string
+  body?: unknown
 }
 
 type Opener = (options: ReasonPromptOptions) => Promise<ReasonSubmission | null>
@@ -32,7 +37,7 @@ export function registerReasonOpener(next: Opener | null) {
 }
 
 /**
- * Collects category + free-text reason via the in-app modal.
+ * Collects category + free-text reason and completes the electronic signature ceremony.
  * Falls back to null when the provider is not mounted (tests / SSR).
  */
 export function askReason(options: ReasonPromptOptions): Promise<ReasonSubmission | null> {

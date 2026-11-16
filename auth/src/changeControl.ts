@@ -24,6 +24,7 @@ export function allocateChangeControlId(now = new Date()): string {
 /**
  * Resolves the change-control id for a mutation.
  * When required: uses a non-empty client/declared id if present, otherwise mints one.
+ * No per-namespace pattern validation.
  */
 export function resolveChangeControl(input: {
   id?: string | null

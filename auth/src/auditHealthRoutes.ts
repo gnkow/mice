@@ -1,5 +1,6 @@
 import type { Hono } from 'hono'
 import { auditReadiness, verifyAudit } from './audit.js'
+import { auditExportPublicKeyPem } from './auditExport.js'
 import {
   closeAuditOutage,
   currentAuditOutage,
@@ -29,6 +30,8 @@ async function statusPayload() {
       readiness.head != null && readiness.root != null
         ? { txid: readiness.head, root: readiness.root, verifiedAt: readiness.verifiedAt }
         : null,
+    /** Public half of AUDIT_EXPORT_PRIVATE_KEY — file in IQP alongside the genesis root. */
+    exportPublicKey: auditExportPublicKeyPem(),
     ha: immudbHaStatus(),
     currentOutage: outage,
     recentOutages,

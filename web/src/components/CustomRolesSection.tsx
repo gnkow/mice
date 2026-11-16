@@ -110,6 +110,7 @@ export function CustomRolesSection({ namespace }: Props) {
 
   return (
     <section
+      id="ns-custom-roles"
       className="settings-section"
       aria-labelledby="ns-custom-roles-heading"
     >

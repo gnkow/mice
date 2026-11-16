@@ -1,6 +1,7 @@
 import { loadSettings } from './settings'
 import {
   CHANGE_CONTROL_HEADER,
+  SIGNATURE_HEADER,
   REASON_CATEGORY_HEADER,
   REASON_HEADER,
   summarizeMutation,
@@ -47,7 +48,12 @@ export async function oxenFetch<T>(
   }
 
   const method = options.method ?? 'GET'
-  const send = (submission?: { reason: string; category: string; changeControlId: string }) =>
+  const send = (submission?: {
+    reason: string
+    category: string
+    changeControlId?: string
+    signatureId?: string
+  }) =>
     fetch(resolveUrl(path), {
       method,
       headers: submission
@@ -55,7 +61,10 @@ export async function oxenFetch<T>(
             ...headers,
             [REASON_HEADER]: submission.reason,
             [REASON_CATEGORY_HEADER]: submission.category,
-            [CHANGE_CONTROL_HEADER]: submission.changeControlId,
+            [SIGNATURE_HEADER]: submission.signatureId!,
+            ...(submission.changeControlId
+              ? { [CHANGE_CONTROL_HEADER]: submission.changeControlId }
+              : {}),
           }
         : headers,
       body,
@@ -65,7 +74,12 @@ export async function oxenFetch<T>(
   const res =
     method === 'GET' || method === 'HEAD'
       ? await send()
-      : await withReason(send, { changeSummary: summarizeMutation(method, path) })
+      : await withReason(send, {
+          changeSummary: summarizeMutation(method, path),
+          method,
+          path,
+          body: options.body,
+        })
 
   if (options.raw) {
     if (!res.ok) {
