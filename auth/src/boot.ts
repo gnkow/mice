@@ -72,6 +72,10 @@ export async function boot(): Promise<void> {
   startIdpDriftSchedule() // Ticket 23: Daily IdP drift detection
   startAccessReviewAlertSchedule()
   startClockDriftSchedule()
+  {
+    const { startCrossStoreIntegritySchedule } = await import('./crossStoreIntegrity.js')
+    startCrossStoreIntegritySchedule()
+  }
   const { startInstancePermissionExpirySchedule } = await import('./instancePermissionExpiry.js')
   startInstancePermissionExpirySchedule({
     audit: async (event) => {

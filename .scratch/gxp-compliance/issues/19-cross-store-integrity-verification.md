@@ -4,9 +4,13 @@
 
 **Blocked by:** 01; repositories/03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Scheduled verification covers signatures ↔ audit ↔ oxen
-- [ ] Output is a report; nothing is deleted or repaired
-- [ ] Findings raise an operator alert
-- [ ] Each run is itself auditable
+- [x] Scheduled verification covers signatures ↔ audit ↔ oxen
+- [x] Output is a report; nothing is deleted or repaired
+- [x] Findings raise an operator alert
+- [x] Each run is itself auditable
+
+## Comments
+
+**Deep-api Close (2026-11-16):** Seam `runCrossStoreIntegrity` + `startCrossStoreIntegritySchedule` (boot); admin `POST /auth/admin/integrity-check`. Report-only findings + notification + audit. Unit/integ: `crossStoreIntegrity.test.ts`.
