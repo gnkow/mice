@@ -311,6 +311,66 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
     }),
   )
 
+  // GxP ticket 06 — preview merge-result content hash for the signing ceremony UI.
+  app.get(
+    '/auth/merge-requests/:id/signing-preview',
+    guarded({}, async ({ c, user }) => {
+      const mr = await getMergeRequest(c.req.param('id'))
+      if (!mr) return c.json({ error: 'Not found' }, 404)
+      if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'read')).ok) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
+      const { buildMergeManifest, mergeResultBinding, manifestForCommit } = await import(
+        './authentication/signing/mergeManifest.js'
+      )
+      const { isValidatedBranch } = await import('./signedMergeComplete.js')
+      let merge = buildMergeManifest([])
+      let manifestEntries: Array<{ path: string; contentHash: string }> = []
+      try {
+        // Prefer the source tip tree as the proposed merge-result content evidence.
+        const built = await manifestForCommit(
+          { namespace: mr.namespace, repo: mr.repo },
+          mr.expectedSourceHead,
+        )
+        merge = built
+        const lines = built.manifest
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+        manifestEntries = lines.map((line) => {
+          const sp = line.lastIndexOf(' ')
+          return {
+            path: line.slice(0, sp),
+            contentHash: line.slice(sp + 1),
+          }
+        })
+      } catch {
+        // Oxen unavailable in some test/dev paths — empty tree is still a stable digest.
+      }
+      const { binding, manifest } = mergeResultBinding({
+        repo: `${mr.namespace}/${mr.repo}`,
+        sourceHead: mr.expectedSourceHead,
+        targetHead: mr.expectedTargetHead,
+        merge,
+      })
+      return c.json({
+        mergeRequest: mr,
+        meaning: 'Approved',
+        content: manifest,
+        hash: binding.manifestDigest,
+        binding,
+        manifest,
+        manifestEntries,
+        validatedTarget: isValidatedBranch(mr.targetBranch),
+        principal: {
+          iss: user.iss,
+          sub: user.sub,
+          name: user.name ?? `${user.iss}|${user.sub}`,
+        },
+      })
+    }),
+  )
+
   // GxP ticket 05 — consumable signed complete into a validated branch.
   // Uses a merge-bound signature (not the mutation-document ceremony from reason:true).
   app.post(

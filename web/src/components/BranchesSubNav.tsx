@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeftRight, GitBranch, GitMerge, Layers } from 'lucide-react'
+import { ArrowLeftRight, GitBranch, GitMerge, GitPullRequest, Layers } from 'lucide-react'
 
 /** Switches between the Branches, Compare (diff) and Merge views, keeping base/head. */
 export function BranchesSubNav() {
@@ -18,10 +18,13 @@ export function BranchesSubNav() {
   const onCompare =
     pathname === `${base}/compare` || pathname === `${base}/df-compare`
   const onMerge = pathname === `${base}/merge`
+  const onMergeRequests =
+    pathname === `${base}/merge-requests` ||
+    pathname.startsWith(`${base}/merge-requests/`)
   const onStages =
     pathname === `${base}/stages` ||
     pathname.startsWith(`${base}/stages/`)
-  const onBranches = !onCompare && !onMerge && !onStages
+  const onBranches = !onCompare && !onMerge && !onMergeRequests && !onStages
 
   return (
     <nav className="branches-subnav" aria-label="Branch views">
@@ -46,6 +49,13 @@ export function BranchesSubNav() {
       >
         <GitMerge size={14} aria-hidden="true" className="button-label-icon" />
         Merge
+      </NavLink>
+      <NavLink
+        to={`${base}/merge-requests`}
+        className={() => (onMergeRequests ? 'active' : undefined)}
+      >
+        <GitPullRequest size={14} aria-hidden="true" className="button-label-icon" />
+        Merge requests
       </NavLink>
       <NavLink
         to={`${base}/stages`}

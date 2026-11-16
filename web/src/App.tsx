@@ -20,9 +20,13 @@ import { CliDevicePage } from './pages/CliDevicePage'
 import { LoginPage } from './pages/LoginPage'
 import { PendingAccessPage } from './pages/PendingAccessPage'
 import { MergePage } from './pages/MergePage'
+import { MergeRequestPage } from './pages/MergeRequestPage'
+import { MergeRequestsPage } from './pages/MergeRequestsPage'
 import { NamespaceLayout } from './components/NamespaceLayout'
 import { NamespaceSettingsLayout } from './components/NamespaceSettingsLayout'
 import { NamespaceMetadataPage } from './pages/NamespaceMetadataPage'
+import { NamespaceCustomRolesHistoryPage } from './pages/NamespaceCustomRolesHistoryPage'
+import { NamespaceMembershipHistoryPage } from './pages/NamespaceMembershipHistoryPage'
 import { NamespaceSettingsHistoryPage } from './pages/NamespaceSettingsHistoryPage'
 import { NamespaceSettingsPage } from './pages/NamespaceSettingsPage'
 import { NamespacePage } from './pages/NamespacePage'
@@ -30,6 +34,7 @@ import { NamespacesListPage } from './pages/NamespacesListPage'
 import { NewNamespacePage } from './pages/NewNamespacePage'
 import { NewRepoPage } from './pages/NewRepoPage'
 import { RepositoriesListPage } from './pages/RepositoriesListPage'
+import { RepoCollaboratorHistoryPage } from './pages/RepoCollaboratorHistoryPage'
 import { RepoSettingsPage } from './pages/RepoSettingsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { PrincipalNamePage } from './pages/PrincipalNamePage'
@@ -90,6 +95,14 @@ export default function App() {
                     path="history"
                     element={<NamespaceSettingsHistoryPage />}
                   />
+                  <Route
+                    path="members/history"
+                    element={<NamespaceMembershipHistoryPage />}
+                  />
+                  <Route
+                    path="custom-roles/history"
+                    element={<NamespaceCustomRolesHistoryPage />}
+                  />
                 </Route>
               </Route>
               <Route
@@ -108,7 +121,16 @@ export default function App() {
                 <Route path="compare" element={<ComparePage />} />
                 <Route path="df-compare" element={<DataFrameComparePage />} />
                 <Route path="merge" element={<MergePage />} />
+                <Route path="merge-requests" element={<MergeRequestsPage />} />
+                <Route
+                  path="merge-requests/:mergeRequestId"
+                  element={<MergeRequestPage />}
+                />
                 <Route path="settings" element={<RepoSettingsPage />} />
+                <Route
+                  path="settings/collaborators/history"
+                  element={<RepoCollaboratorHistoryPage />}
+                />
                 <Route path="stages" element={<WorkspacesPage />} />
                 <Route path="stages/:workspaceId" element={<WorkspacePage />} />
                 <Route path="workspaces" element={<WorkspacesHubPage />} />

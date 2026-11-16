@@ -222,6 +222,37 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           : typeof body.change_control_id === 'string' && body.change_control_id.trim()
             ? body.change_control_id.trim()
             : allocateChangeControlId()
+      // Optional merge-result binding (gxp/06 signing ceremony UI → complete signed merge).
+      const rawBinding = body.binding
+      const binding =
+        rawBinding && typeof rawBinding === 'object' && !Array.isArray(rawBinding)
+          ? (() => {
+              const b = rawBinding as Record<string, unknown>
+              const repo = typeof b.repo === 'string' ? b.repo.trim() : ''
+              const sourceHead = typeof b.sourceHead === 'string' ? b.sourceHead.trim() : ''
+              const targetHead = typeof b.targetHead === 'string' ? b.targetHead.trim() : ''
+              const manifestDigest =
+                typeof b.manifestDigest === 'string' ? b.manifestDigest.trim() : ''
+              if (!repo || !sourceHead || !targetHead || !manifestDigest) return undefined
+              return { repo, sourceHead, targetHead, manifestDigest }
+            })()
+          : undefined
+      if (binding && binding.manifestDigest !== signature.hash) {
+        return c.json(
+          {
+            error: 'Binding manifest digest must match the signed content hash',
+            expectedHash: signature.hash,
+            actualHash: binding.manifestDigest,
+          },
+          400,
+        )
+      }
+      const manifest =
+        typeof body.manifest === 'string'
+          ? body.manifest
+          : binding
+            ? content
+            : undefined
       let saved: { id: string; seq: number }
       try {
         saved = await (await signatureStore()).record({
@@ -229,6 +260,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           meaning,
           contentHash: signature.hash,
           changeControlId,
+          ...(binding ? { binding } : {}),
+          ...(manifest !== undefined ? { manifest } : {}),
           ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
           ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
         })

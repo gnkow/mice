@@ -25,7 +25,14 @@ export function RepoNav() {
     location.pathname === `${base}/commits` ||
     location.pathname.startsWith(`${base}/commits/`)
 
-  const onBranches = ['branches', 'compare', 'df-compare', 'merge', 'stages'].some(
+  const onBranches = [
+    'branches',
+    'compare',
+    'df-compare',
+    'merge',
+    'merge-requests',
+    'stages',
+  ].some(
     (seg) =>
       location.pathname === `${base}/${seg}` ||
       location.pathname.startsWith(`${base}/${seg}/`),

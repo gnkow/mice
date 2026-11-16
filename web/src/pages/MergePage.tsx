@@ -1,20 +1,24 @@
 import { GitMerge as ActionGitMerge } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
 import { CommitList } from '../components/CommitList'
+import { QcFailedWarning } from '../components/QcFailedWarning'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
+import { useCommitQc } from '../hooks/useCommitQc'
 import {
   pickOtherBranch,
   resolveDefaultBranch,
 } from '../lib/lastBranch'
+import { openMergeRequest } from '../lib/mergeRequests'
 import {
   checkMergeable,
   listBranches,
   mergeBranches,
 } from '../lib/oxen/api'
 import { OxenApiError } from '../lib/oxen/types'
+import { askReason } from '../lib/reasonPrompt'
 
 function SwapIcon({ size = 14 }: { size?: number }) {
   return (
@@ -40,6 +44,7 @@ function BranchIcon({ size = 14 }: { size?: number }) {
 
 export function MergePage() {
   const { namespace = '', repo = '' } = useParams()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -120,6 +125,43 @@ export function MergePage() {
     setError(null)
     setResult(null)
     try {
+      // Default branch is validated from creation — signing happens on the MR page (#92).
+      const intoValidated = base === resolveDefaultBranch(branchNames, namespace, repo)
+      if (intoValidated) {
+        if (!baseTip || !headTip) {
+          throw new Error('Branch tips are required to open a merge request')
+        }
+        const path = `/auth/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/merge-requests`
+        const body = {
+          sourceBranch: head,
+          targetBranch: base,
+          expectedSourceHead: headTip,
+          expectedTargetHead: baseTip,
+          commitIds: mergeData?.commits.map((c) => c.id) ?? [],
+        }
+        const ceremony = await askReason({
+          changeSummary: `Open merge request ${head} → ${base}`,
+          detail: 'An electronic signature is required to open this merge request',
+          method: 'POST',
+          path,
+          body,
+        })
+        if (!ceremony?.signatureId) {
+          setError('Signing cancelled')
+          return
+        }
+        const mr = await openMergeRequest(namespace, repo, {
+          ...body,
+          reason: ceremony.reason,
+          category: ceremony.category,
+          signatureId: ceremony.signatureId,
+          changeControlId: ceremony.changeControlId,
+        })
+        navigate(
+          `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/merge-requests/${encodeURIComponent(mr.id)}`,
+        )
+        return
+      }
       const res = await mergeBranches(namespace, repo, base, head)
       setResult(
         `Merged ${res.commits.head.id.slice(0, 8)} into ${res.commits.base.id.slice(0, 8)} → ${res.commits.merge.id.slice(0, 8)}`,
@@ -147,6 +189,13 @@ export function MergePage() {
   const commitCount = mergeData?.commits.length ?? 0
   const conflictCount = mergeData?.conflicts.length ?? 0
   const isMergeable = Boolean(mergeData?.is_mergeable) && conflictCount === 0
+  const { summary: qcSummary } = useCommitQc(
+    namespace,
+    repo,
+    mergeData?.commits ?? null,
+  )
+  const qcFailed = useMemo(() => new Set(qcSummary.failed), [qcSummary])
+  const qcDescendants = useMemo(() => new Set(qcSummary.descendants), [qcSummary])
   const baseTip =
     branches.kind === 'ok'
       ? branches.data.branches.find((b) => b.name === base)?.commit_id
@@ -316,21 +365,43 @@ export function MergePage() {
                 {tipsMatch || commitCount === 0 ? (
                   <p className="muted">Nothing to merge.</p>
                 ) : (
-                  <CommitList
-                    namespace={namespace}
-                    repo={repo}
-                    commits={mergeData.commits}
-                  />
+                  <>
+                    <QcFailedWarning
+                      namespace={namespace}
+                      repo={repo}
+                      summary={qcSummary}
+                      scope="the commits to merge"
+                      advice="Review the revoked signature before merging these commits."
+                    />
+                    <CommitList
+                      namespace={namespace}
+                      repo={repo}
+                      commits={mergeData.commits}
+                      qcFailed={qcFailed}
+                      qcDescendants={qcDescendants}
+                    />
+                  </>
                 )}
 
                 <div className="merge-actions">
+                  {base === defaultBranch ? (
+                    <p className="muted small" style={{ marginRight: 'auto' }}>
+                      Merges into <strong>{base}</strong> require an Approver signature
+                      on the merge-request page.
+                    </p>
+                  ) : null}
                   <button
                     type="button"
                     className="btn primary"
                     disabled={busy || !isMergeable || nothingToMerge}
                     onClick={() => void onMerge()}
                   >
-                    <ActionGitMerge size={14} aria-hidden="true" className="button-label-icon" />{busy ? 'Merging…' : `Merge ${head} → ${base}`}
+                    <ActionGitMerge size={14} aria-hidden="true" className="button-label-icon" />
+                    {busy
+                      ? 'Working…'
+                      : base === defaultBranch
+                        ? `Open merge request ${head} → ${base}`
+                        : `Merge ${head} → ${base}`}
                   </button>
                 </div>
               </section>
