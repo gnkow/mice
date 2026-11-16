@@ -20,3 +20,4 @@
 - **Audit:** holds (WIP module + routes + tests). Unit+integration present.
 - **Deepen (auto-pick Top):** `evaluateRegulatedConfigAtStart` as the pure digest/previous-boot seam; `recordRegulatedConfigAtStart` audits from that result.
 - **Seams:** `effectiveRegulatedConfig` / `evaluateRegulatedConfigAtStart` (module); boot record; admin regulated-config route.
+- **Deep-api Deepen (2026-11-16):** Confirmed Top — `evaluateRegulatedConfigAtStart` in `regulatedConfig.ts`; `recordRegulatedConfigAtStart` audits from that result. Unit: `regulatedConfig.test.ts`; admin: `regulatedConfigRoutes.test.ts`. Status done.
