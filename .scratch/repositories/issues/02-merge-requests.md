@@ -9,9 +9,11 @@
 - [x] `merge_requests` store: open / list / get / resync with `expectedSourceHead`, `expectedTargetHead`, status `open|stale|merged|blocked`
 - [x] Head mismatch on complete returns 409; target tip move marks the MR stale
 - [x] Opening an MR requires write; completing into a validated branch requires `approver` + self-merge refusal _(approver+complete deferred to gxp/05; open requires write)_
-- [ ] Complete path consumes a signature with source/target/manifest binding then proxies oxen merge _(queued for gxp/05)_
+- [x] Complete path consumes a signature with source/target/manifest binding then proxies oxen merge _(gxp/05 `completeSignedMerge`)_
 - [x] Unit + HTTP tests cover open, stale, mismatch decision, and resync
 
 ## Comments
 
 **Deep-api Close (2026-11-16):** Minted scratch ticket + landed `merge_requests` table, `mergeRequestStore` (`open`/`resync`/`decideMergeRequestComplete`/`markMerged`), HTTP `POST/GET …/merge-requests` + resync. Complete-with-binding is the gxp/05 seam. Tests: `mergeRequestStore.test.ts`, `mergeRequestRoutes.test.ts`.
+
+**Follow-up (2026-11-16):** gxp/05 shipped `POST /auth/merge-requests/:id/complete` → `completeSignedMerge` (bound Approved signature → oxen merge → QC Passed).

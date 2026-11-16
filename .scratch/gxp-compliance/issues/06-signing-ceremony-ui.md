@@ -11,3 +11,7 @@
 - [ ] UI collects required reason and change-control id
 - [ ] Step-up completes in the browser; CLI only opens a merge request and prints a signing link
 - [ ] Clear error states for refusal (not approver, author in range, stale heads, audit unavailable)
+
+## Comments
+
+**Deep-api (2026-11-16):** Out of API lane — blockers 05/07–09/15 done at BFF seams (`completeSignedMerge`, revoke, restore gate). Hand off to `/deep-ui` for MR ceremony chrome.
