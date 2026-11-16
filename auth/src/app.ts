@@ -16,6 +16,7 @@ import { registerRbacGrantRoutes } from './rbacGrantRoutes.js'
 import { registerJobRoutes } from './jobsRoutes.js'
 import { registerMetaRoutes } from './metaRoutes.js'
 import { registerNamespaceRoutes } from './namespaceRoutes.js'
+import { registerMergeRequestRoutes } from './mergeRequestRoutes.js'
 import { notificationReadiness, registerNotificationRoutes } from './notifications.js'
 import { proxyToOxen } from './proxy.js'
 import { registerReasonRoutes } from './reasonRoutes.js'
@@ -89,6 +90,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerRevocationRoutes(app)
   registerReasonRoutes(app)
   registerNamespaceRoutes(app, { audit })
+  registerMergeRequestRoutes(app, { audit })
 
   app.all('/api/*', async (c) => {
     const authed = await authenticateOutcome(c, { allowScoped: true })

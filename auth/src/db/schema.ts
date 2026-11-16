@@ -1010,6 +1010,51 @@ export const rateLimits = pgTable(
   ],
 )
 
+/** repositories/02 — merge request gate onto validated branches. */
+export const mergeRequests = pgTable(
+  'merge_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    namespace: text('namespace').notNull(),
+    repo: text('repo').notNull(),
+    sourceBranch: text('source_branch').notNull(),
+    targetBranch: text('target_branch').notNull(),
+    expectedSourceHead: text('expected_source_head').notNull(),
+    expectedTargetHead: text('expected_target_head').notNull(),
+    /** open | stale | merged | blocked */
+    status: text('status').notNull(),
+    openedBy: text('opened_by').notNull(),
+    mergeCommitId: text('merge_commit_id'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('merge_requests_repo_status_idx').on(t.repositoryId, t.status),
+    index('merge_requests_repo_created_idx').on(t.repositoryId, t.createdAt),
+  ],
+)
+
+/** repositories/03 — per-commit QC status (branch-invariant). */
+export const commitQcStatus = pgTable(
+  'commit_qc_status',
+  {
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    commitId: text('commit_id').notNull(),
+    /** none | marked | passed | failed */
+    status: text('status').notNull(),
+    mergeRequestId: uuid('merge_request_id').references(() => mergeRequests.id, {
+      onDelete: 'set null',
+    }),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.repositoryId, t.commitId] })],
+)
+
 /** Ticket 17: Session seal key ring for emergency rotation (U7, U16) */
 export const sealKeys = pgTable(
   'seal_keys',

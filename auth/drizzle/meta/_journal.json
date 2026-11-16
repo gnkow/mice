@@ -64,6 +64,13 @@
       "when": 1794600000000,
       "tag": "0008_audit_query_index",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794835000000,
+      "tag": "0009_merge_requests_and_qc",
+      "breakpoints": true
     }
   ]
 }
