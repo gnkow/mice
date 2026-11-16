@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { IdpCheckRecord } from '../compliance/idpOutage.js'
 import {
   applyLoginDirectoryDecision,
   decideLoginDirectoryStatus,
   gateLoginDirectoryStatus,
+  settleLoginDirectoryFromDirectory,
+  settleLoginDirectoryStatus,
 } from './loginDirectoryStatus.js'
 
 describe('decideLoginDirectoryStatus', () => {
@@ -115,5 +118,92 @@ describe('applyLoginDirectoryDecision / gateLoginDirectoryStatus', () => {
       surface: 'unreachable',
     })
     assert.deepEqual(events, ['unreachable'])
+  })
+})
+
+describe('settleLoginDirectoryStatus', () => {
+  it('shapes a reachable IdP check record and allows enabled', async () => {
+    const checks: IdpCheckRecord[] = []
+    const gate = await settleLoginDirectoryStatus('enabled', {
+      now: 1_700_000_000_000,
+      requestId: 'req-login',
+      recordIdpCheck: async (rec) => {
+        checks.push(rec)
+      },
+      recordDisabled: async () => {
+        assert.fail('enabled must not record IdP-disabled')
+      },
+    })
+    assert.deepEqual(gate, { allow: true })
+    assert.deepEqual(checks, [{ reachable: true, at: 1_700_000_000_000 }])
+  })
+
+  it('shapes an unreachable login check and refuses directory error', async () => {
+    const checks: IdpCheckRecord[] = []
+    let disabled = 0
+    const gate = await settleLoginDirectoryStatus('error', {
+      now: 42,
+      requestId: 'login-r1',
+      recordIdpCheck: async (rec) => {
+        checks.push(rec)
+      },
+      recordDisabled: async () => {
+        disabled += 1
+      },
+    })
+    assert.deepEqual(gate, {
+      allow: false,
+      httpStatus: 503,
+      message: 'IdP is unreachable. Login cannot be verified at this time.',
+      surface: 'unreachable',
+    })
+    assert.deepEqual(checks, [
+      { reachable: false, at: 42, check: 'login', requestId: 'login-r1' },
+    ])
+    assert.equal(disabled, 0)
+  })
+
+  it('records IdP-disabled after a reachable check when the account is disabled', async () => {
+    const events: string[] = []
+    const gate = await settleLoginDirectoryStatus('disabled', {
+      now: 9,
+      requestId: 'd1',
+      recordIdpCheck: async (rec) => {
+        events.push(rec.reachable ? 'reachable' : 'unreachable')
+      },
+      recordDisabled: async () => {
+        events.push('disabled')
+      },
+    })
+    assert.equal(gate.allow, false)
+    assert.deepEqual(events, ['reachable', 'disabled'])
+  })
+})
+
+describe('settleLoginDirectoryFromDirectory', () => {
+  it('looks up the Principal then settles status in one call', async () => {
+    const checks: IdpCheckRecord[] = []
+    const { account, gate } = await settleLoginDirectoryFromDirectory({
+      directory: {
+        userStatus: async (sub) => {
+          assert.equal(sub, 'user-1')
+          return { status: 'missing', name: '' }
+        },
+      },
+      sub: 'user-1',
+      now: 100,
+      requestId: 'lookup-1',
+      recordIdpCheck: async (rec) => {
+        checks.push(rec)
+      },
+      recordDisabled: async () => {
+        assert.fail('missing must not record IdP-disabled')
+      },
+    })
+    assert.deepEqual(account, { status: 'missing', name: '' })
+    assert.equal(gate.allow, false)
+    if (gate.allow) return
+    assert.equal(gate.surface, 'missing')
+    assert.deepEqual(checks, [{ reachable: true, at: 100 }])
   })
 })

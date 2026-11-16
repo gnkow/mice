@@ -3590,19 +3590,19 @@ p.ok {
   margin-inline: 0;
   padding: 0.85rem 0.95rem;
   border-radius: calc(var(--radius) + 0.05rem);
-  border-left-width: 3px;
+  border-width: 1px;
+  box-shadow: none;
 }
 
 .login-page .login-status.flash-warn {
   margin: 0 0 1.25rem;
   border-color: color-mix(in srgb, #d4a017 55%, var(--line));
-  border-left-color: #d4a017;
   background: color-mix(in srgb, #d4a017 14%, var(--panel));
   color: var(--fg);
 }
 
 .login-page .login-status.flash-error {
-  border-left-color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
 }
 
 .login-page .login-status-icon {
@@ -3639,6 +3639,14 @@ p.ok {
   font-size: 0.875rem;
   line-height: 1.5;
   color: var(--muted);
+}
+
+.login-page .login-status-hint {
+  margin-top: 0.45rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted);
+  opacity: 0.92;
 }
 
 .login-page .flash:focus-visible {

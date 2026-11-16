@@ -3,10 +3,16 @@
  *
  * `decideLoginDirectoryStatus` is pure allow/refuse + which IdP check to record.
  * `applyLoginDirectoryDecision` owns the side-effect order (reachability first,
- * then IdP-disabled history) so finishLogin does not re-branch on those flags.
+ * then IdP-disabled history). `settleLoginDirectoryStatus` shapes IdP-check
+ * payloads; `settleLoginDirectoryFromDirectory` also owns the userStatus lookup
+ * so admission only maps the gate.
  */
 
-import type { DirectoryUserStatus } from '../directory/directoryTypes.js'
+import type { IdpCheckRecord } from '../compliance/idpOutage.js'
+import type {
+  DirectoryUserState,
+  DirectoryUserStatus,
+} from '../directory/directoryTypes.js'
 
 /** Stable LoginPage `?status=` codes for directory refuses (tickets 04, 38). */
 export type LoginDirectoryRefuseSurface = 'disabled' | 'missing' | 'unreachable'
@@ -94,10 +100,63 @@ export async function applyLoginDirectoryDecision(
   return { allow: true }
 }
 
-/** Decide and apply in one call — the finishLogin directory gate seam. */
+/** Decide and apply in one call — thin adapter over decide + apply. */
 export async function gateLoginDirectoryStatus(
   status: DirectoryUserStatus,
   effects: LoginDirectoryEffects,
 ): Promise<LoginDirectoryGate> {
   return applyLoginDirectoryDecision(decideLoginDirectoryStatus(status), effects)
+}
+
+/** Context for settling a directory status into IdP-check + disabled history writes. */
+export type LoginDirectorySettleContext = {
+  now: number
+  requestId: string
+  recordIdpCheck: (rec: IdpCheckRecord) => Promise<void>
+  recordDisabled: () => Promise<void>
+}
+
+/**
+ * Settle a directory status: shape reachable/unreachable IdP-check records, then
+ * apply decide + side-effect order. Callers map the gate; they do not branch on
+ * check payload shape.
+ */
+export async function settleLoginDirectoryStatus(
+  status: DirectoryUserStatus,
+  ctx: LoginDirectorySettleContext,
+): Promise<LoginDirectoryGate> {
+  return gateLoginDirectoryStatus(status, {
+    recordIdpCheck: async (reachable) => {
+      if (reachable) {
+        await ctx.recordIdpCheck({ reachable: true, at: ctx.now })
+      } else {
+        await ctx.recordIdpCheck({
+          reachable: false,
+          at: ctx.now,
+          check: 'login',
+          requestId: ctx.requestId,
+        })
+      }
+    },
+    recordDisabled: ctx.recordDisabled,
+  })
+}
+
+/** Directory lookup + settle — the admitLoginAfterToken directory gate seam. */
+export async function settleLoginDirectoryFromDirectory(input: {
+  directory: { userStatus(sub: string): Promise<DirectoryUserState> }
+  sub: string
+  now: number
+  requestId: string
+  recordIdpCheck: (rec: IdpCheckRecord) => Promise<void>
+  recordDisabled: () => Promise<void>
+}): Promise<{ account: DirectoryUserState; gate: LoginDirectoryGate }> {
+  const account = await input.directory.userStatus(input.sub)
+  const gate = await settleLoginDirectoryStatus(account.status, {
+    now: input.now,
+    requestId: input.requestId,
+    recordIdpCheck: input.recordIdpCheck,
+    recordDisabled: input.recordDisabled,
+  })
+  return { account, gate }
 }

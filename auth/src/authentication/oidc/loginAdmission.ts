@@ -17,7 +17,7 @@ import { recordIdpCheck } from '../compliance/idpOutage.js'
 import { resolveGroupOverage } from './groupOverage.js'
 import { decideIdpDisplayNameGate } from './idpDisplayName.js'
 import {
-  gateLoginDirectoryStatus,
+  settleLoginDirectoryFromDirectory,
   type LoginDirectoryRefuseSurface,
 } from './loginDirectoryStatus.js'
 import type { OidcClaims } from './oidc.js'
@@ -87,20 +87,12 @@ export async function admitLoginAfterToken(input: {
 }): Promise<LoginResult> {
   const { user, directory, clock, pkce, requestId } = input
   const isReauth = !!pkce.reauth
-  const account = await directory.userStatus(user.sub)
-  const directoryGate = await gateLoginDirectoryStatus(account.status, {
-    recordIdpCheck: async (reachable) => {
-      if (reachable) {
-        await recordIdpCheck({ reachable: true, at: clock.now() })
-      } else {
-        await recordIdpCheck({
-          reachable: false,
-          at: clock.now(),
-          check: 'login',
-          requestId: requestId ?? 'login',
-        })
-      }
-    },
+  const { account, gate: directoryGate } = await settleLoginDirectoryFromDirectory({
+    directory,
+    sub: user.sub,
+    now: clock.now(),
+    requestId: requestId ?? 'login',
+    recordIdpCheck,
     recordDisabled: () => recordIdpDisabled(user),
   })
   if (!directoryGate.allow) {

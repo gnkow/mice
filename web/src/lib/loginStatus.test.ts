@@ -13,25 +13,29 @@ describe('decideLoginStatus', () => {
     assert.equal(decideLoginStatus('nope'), null)
   })
 
-  it('maps every refuse/outage code to a titled surface', () => {
+  it('maps every refuse/outage code to a titled surface with a recovery hint', () => {
     for (const code of LOGIN_STATUS_CODES) {
       const surface = decideLoginStatus(code)
       assert.ok(surface)
       assert.equal(surface.code, code)
       assert.ok(surface.title.trim())
       assert.ok(surface.message.trim())
+      assert.ok(surface.hint.trim())
     }
   })
 
-  it('keeps BFF refuse copy for directory and empty-name statuses', () => {
+  it('keeps BFF refuse copy and distinct titles for directory statuses', () => {
+    assert.equal(decideLoginStatus('disabled')?.title, 'Account disabled')
     assert.equal(
       decideLoginStatus('disabled')?.message,
       'Your account has been disabled by the administrator.',
     )
+    assert.equal(decideLoginStatus('missing')?.title, 'Account not found')
     assert.equal(
       decideLoginStatus('missing')?.message,
       'Your account was not found in the directory.',
     )
+    assert.equal(decideLoginStatus('empty_name')?.title, 'Display name required')
     assert.equal(
       decideLoginStatus('empty_name')?.message,
       'Your account has no name in the identity provider.',
@@ -47,10 +51,12 @@ describe('decideLoginStatus', () => {
     )
   })
 
-  it('marks unreachable and rate_limited as warn and account refuses as error', () => {
+  it('marks directory and outage surfaces as warn (shared login-status chrome)', () => {
     assert.equal(decideLoginStatus('unreachable')?.tone, 'warn')
     assert.equal(decideLoginStatus('rate_limited')?.tone, 'warn')
-    assert.equal(decideLoginStatus('disabled')?.tone, 'error')
+    assert.equal(decideLoginStatus('disabled')?.tone, 'warn')
+    assert.equal(decideLoginStatus('missing')?.tone, 'warn')
+    assert.equal(decideLoginStatus('empty_name')?.tone, 'warn')
   })
 })
 

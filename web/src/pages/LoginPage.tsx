@@ -67,6 +67,7 @@ export function LoginPage() {
             className={`login-status flash ${status.tone === 'warn' ? 'flash-warn' : 'flash-error'}`}
             role="alert"
             aria-labelledby="login-status-title"
+            aria-describedby="login-status-message login-status-hint"
             tabIndex={-1}
             data-testid="login-status"
             data-status={status.code}
@@ -86,7 +87,10 @@ export function LoginPage() {
             )}
             <div className="login-status-copy">
               <h2 id="login-status-title">{status.title}</h2>
-              <p>{status.message}</p>
+              <p id="login-status-message">{status.message}</p>
+              <p id="login-status-hint" className="login-status-hint">
+                {status.hint}
+              </p>
             </div>
           </section>
         ) : null}

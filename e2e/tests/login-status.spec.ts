@@ -9,29 +9,34 @@ import { expect, test } from '@playwright/test'
 const SURFACES = [
   {
     code: 'disabled',
-    title: 'Sign-in refused',
+    title: 'Account disabled',
     message: 'Your account has been disabled by the administrator.',
+    hint: /Ask your organisation administrator to restore access/i,
   },
   {
     code: 'missing',
-    title: 'Sign-in refused',
+    title: 'Account not found',
     message: 'Your account was not found in the directory.',
+    hint: /Ask your organisation administrator to provision your account/i,
   },
   {
     code: 'empty_name',
-    title: 'Sign-in refused',
+    title: 'Display name required',
     message: 'Your account has no name in the identity provider.',
+    hint: /Update your display name/i,
   },
   {
     code: 'unreachable',
     title: 'Identity provider unavailable',
     message: 'IdP is unreachable. Login cannot be verified at this time.',
+    hint: /Wait a few minutes and try again/i,
   },
   {
     code: 'rate_limited',
     title: 'Too many attempts',
     message:
       'Too many sign-in attempts from this network. Wait about a minute, then try again.',
+    hint: /retry with SSO after a short wait/i,
   },
 ] as const
 
@@ -50,6 +55,7 @@ test.describe('login status surfaces', () => {
         alert.getByRole('heading', { name: surface.title }),
       ).toBeVisible()
       await expect(alert.getByText(surface.message, { exact: true })).toBeVisible()
+      await expect(alert.getByText(surface.hint)).toBeVisible()
       await expect(page.getByRole('link', { name: 'Sign in with SSO' })).toBeVisible()
       await expect(page.locator('header.topbar')).toHaveCount(0)
     })

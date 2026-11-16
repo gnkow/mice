@@ -1,8 +1,9 @@
 /**
  * Login refuse / IdP status surfaces (tickets 04, 32, 38).
  *
- * Stable `?status=` codes from the auth callback redirect. Copy matches the BFF
- * refuse messages so LoginPage never invents a second wording.
+ * Stable `?status=` codes from the auth callback redirect. Body copy matches the
+ * BFF refuse messages so LoginPage never invents a second wording. Titles and
+ * recovery hints are page chrome only.
  */
 
 export const LOGIN_STATUS_CODES = [
@@ -20,35 +21,43 @@ export type LoginStatusSurface = {
   /** Visible heading inside the alert (not orphan body text). */
   title: string
   message: string
+  /** Short next-step guidance under the BFF message. */
+  hint: string
   /** Visual tone; unreachable is a service outage, others are account refuses. */
   tone: 'error' | 'warn'
 }
 
 const SURFACES: Record<LoginStatusCode, Omit<LoginStatusSurface, 'code'>> = {
   disabled: {
-    title: 'Sign-in refused',
+    title: 'Account disabled',
     message: 'Your account has been disabled by the administrator.',
-    tone: 'error',
+    hint: 'Ask your organisation administrator to restore access, then try again.',
+    // Same chrome as unreachable: soft warn panel, not a hard form-error flash.
+    tone: 'warn',
   },
   missing: {
-    title: 'Sign-in refused',
+    title: 'Account not found',
     message: 'Your account was not found in the directory.',
-    tone: 'error',
+    hint: 'Ask your organisation administrator to provision your account in the identity directory.',
+    tone: 'warn',
   },
   empty_name: {
-    title: 'Sign-in refused',
+    title: 'Display name required',
     message: 'Your account has no name in the identity provider.',
-    tone: 'error',
+    hint: 'Update your display name in the identity provider, then sign in again.',
+    tone: 'warn',
   },
   unreachable: {
     title: 'Identity provider unavailable',
     message: 'IdP is unreachable. Login cannot be verified at this time.',
+    hint: 'Wait a few minutes and try again. If this continues, contact your administrator.',
     tone: 'warn',
   },
   rate_limited: {
     title: 'Too many attempts',
     message:
       'Too many sign-in attempts from this network. Wait about a minute, then try again.',
+    hint: 'You can keep this page open and retry with SSO after a short wait.',
     tone: 'warn',
   },
 }
