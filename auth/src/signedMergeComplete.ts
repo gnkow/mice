@@ -11,6 +11,7 @@ export const SIGNED_MERGE_REFUSALS = {
   meaning: 'meaning',
   change_control: 'change_control',
   not_validated: 'not_validated',
+  restore_test_required: 'restore_test_required',
 } as const
 
 export type SignedMergeRefusalCode =

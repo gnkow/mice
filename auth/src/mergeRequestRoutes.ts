@@ -181,6 +181,74 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
     }),
   )
 
+  // GxP ticket 15 — operator records a passing restore test.
+  app.post(
+    '/auth/admin/restore-test/pass',
+    guarded({ mutates: true, body: 'optional' }, async ({ c, user, audit }) => {
+      const { isInstanceAdmin } = await import('./authzInstanceStore.js')
+      if (!(await isInstanceAdmin(user))) return c.json({ error: 'Instance admin required' }, 403)
+      const { recordRestoreTestPassed } = await import('./restoreTestGate.js')
+      const status = await recordRestoreTestPassed({
+        recordedBy: `${user.iss}|${user.sub}`,
+      })
+      await audit({
+        action: 'system.restore_test.passed',
+        message: 'Operator recorded restore test pass',
+        detail: status,
+      })
+      return c.json({ restoreTest: status })
+    }),
+  )
+
+  app.get(
+    '/auth/admin/restore-test',
+    guarded({}, async ({ c, user }) => {
+      const { isInstanceAdmin } = await import('./authzInstanceStore.js')
+      if (!(await isInstanceAdmin(user))) return c.json({ error: 'Instance admin required' }, 403)
+      const { restoreTestStatus } = await import('./restoreTestGate.js')
+      return c.json({ restoreTest: restoreTestStatus() })
+    }),
+  )
+
+  // GxP ticket 19 — report-only integrity run.
+  app.post(
+    '/auth/admin/integrity-check',
+    guarded({ mutates: true, body: 'optional' }, async ({ c, user, audit }) => {
+      const { isInstanceAdmin } = await import('./authzInstanceStore.js')
+      if (!(await isInstanceAdmin(user))) return c.json({ error: 'Instance admin required' }, 403)
+      const { runCrossStoreIntegrity } = await import('./crossStoreIntegrity.js')
+      const report = await runCrossStoreIntegrity({ notify: async () => {} })
+      await audit({
+        action: 'system.integrity_check',
+        message: `Integrity check ${report.runId}`,
+        detail: { findings: report.findings.length },
+      })
+      return c.json({ report })
+    }),
+  )
+
+  // GxP ticket 20 — per-repo signed-record report.
+  app.get(
+    '/auth/repos/:ns/:repo/signed-record-report',
+    guarded({}, async ({ c, user }) => {
+      const ns = c.req.param('ns')
+      const repoName = c.req.param('repo')
+      if (!(await hasRepoPermission(user, ns, repoName, 'read')).ok) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
+      const { buildSignedRecordReport } = await import('./signedRecordReport.js')
+      const format = c.req.query('format')
+      const report = await buildSignedRecordReport(`${ns}/${repoName}`)
+      if (format === 'pdf') {
+        return new Response(report.pdfText, {
+          status: 200,
+          headers: { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="signed-record.pdf"' },
+        })
+      }
+      return c.json({ report })
+    }),
+  )
+
   // GxP ticket 07 — revoke signature / commits → QC Failed (linked append-only record).
   app.post(
     '/auth/signatures/:id/revoke',

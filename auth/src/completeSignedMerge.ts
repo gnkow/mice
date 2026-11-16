@@ -14,6 +14,7 @@ import {
   type SignedMergeRefusalCode,
 } from './signedMergeComplete.js'
 import { anyCommitQcFailed } from './signatureRevoke.js'
+import { decideRestoreTestGate } from './restoreTestGate.js'
 
 export type CompleteSignedMergeInput = {
   mergeRequestId: string
@@ -81,6 +82,16 @@ export async function completeSignedMerge(
       status: 400,
       code: 'signature_invalid',
       detail: 'This signature has already been used',
+    }
+  }
+
+  const restore = decideRestoreTestGate()
+  if (!restore.allow) {
+    return {
+      ok: false,
+      status: 503,
+      code: SIGNED_MERGE_REFUSALS.restore_test_required,
+      detail: restore.detail ?? 'Restore test required',
     }
   }
 

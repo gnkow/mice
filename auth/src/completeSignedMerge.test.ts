@@ -18,12 +18,15 @@ const { registerMergeRequestRoutes, setMergeExecutorForTests } = await import('.
 const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
 const { buildMergeManifest, mergeResultBinding } = await import('./authentication/signing/mergeManifest.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
+const { recordRestoreTestPassed, resetRestoreTestGate } = await import('./restoreTestGate.js')
 
 useSignatureStore(
   openSignatureStore(
     await openLedger({ ...immudbConfig(), prefix: `gxp05/${randomBytes(4).toString('hex')}/` }),
   ),
 )
+resetRestoreTestGate()
+await recordRestoreTestPassed({ recordedBy: 'test' })
 
 const approver = t.person('approver')
 await preparePrincipal(approver)
@@ -104,6 +107,58 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
     assert.equal(json.mergeCommitId, 'merge-sha-1')
     assert.equal(await getCommitQc(repo.id, 'c1'), 'passed')
     assert.equal(await getCommitQc(repo.id, 'merge-sha-1'), 'passed')
+  })
+
+  it('GXP-R-063 refuses complete until a restore test has passed', async () => {
+    resetRestoreTestGate()
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'gxp5',
+      repo: 'assay',
+      sourceBranch: 'feature-r',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-r',
+      expectedTargetHead: 'tgt-r',
+      openedBy: { iss: approver.iss, sub: approver.sub },
+    })
+    const merge = buildMergeManifest([])
+    const { binding, manifest } = mergeResultBinding({
+      repo: 'gxp5/assay',
+      sourceHead: 'src-r',
+      targetHead: 'tgt-r',
+      merge,
+    })
+    const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+    const { id } = await (
+      await signatureStore()
+    ).record({
+      signer: { iss: approver.iss, sub: approver.sub, name: approver.name },
+      meaning: 'Approved',
+      contentHash: binding.manifestDigest,
+      binding,
+      manifest,
+      changeControlId: 'CC-restore',
+    })
+    const res = await app.request(`/auth/merge-requests/${mr.id}/complete`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: await cookie(),
+        'x-mice-reason': 'Attempt merge before restore test',
+        'x-mice-reason-category': 'other',
+      },
+      body: JSON.stringify({
+        liveSourceHead: 'src-r',
+        liveTargetHead: 'tgt-r',
+        authors: ['https://other|scientist'],
+        signatureId: id,
+        manifestEntries: [],
+      }),
+    })
+    const json = (await res.json()) as { code?: string; error?: string }
+    assert.equal(res.status, 503)
+    assert.equal(json.code, 'restore_test_required')
+    await recordRestoreTestPassed({ recordedBy: 'test' })
   })
 
   it('refuses when the signer is not an approver', async () => {

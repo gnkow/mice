@@ -4,8 +4,12 @@
 
 **Blocked by:** 14, 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] First validated-branch merge or signature is refused until a restore test has passed
-- [ ] Passing restore test is recorded and visible to operators
-- [ ] Subsequent regulated actions proceed once the gate has passed
+- [x] First validated-branch merge or signature is refused until a restore test has passed
+- [x] Passing restore test is recorded and visible to operators
+- [x] Subsequent regulated actions proceed once the gate has passed
+
+## Comments
+
+**Deep-api Close (2026-11-16):** Seams `decideRestoreTestGate` + `recordRestoreTestPassed` + gate in `completeSignedMerge`; admin `POST/GET /auth/admin/restore-test`. Unit: `restoreTestGate.test.ts`. HTTP: complete refuses with `restore_test_required` until unlock (`completeSignedMerge.test.ts`).
