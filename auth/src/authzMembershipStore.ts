@@ -28,9 +28,14 @@ const who = (user: Who) => ({ key: userKey(user), groups: repo.sessionGroups(use
 export const INSTANCE_ADMIN_MEMBERSHIP_REFUSAL =
   'Instance admins cannot be granted namespace membership (separation of duties)'
 
+/** Pure SoD decision: instance admins never receive namespace membership. */
+export function decideInstanceAdminMembership(isAdmin: boolean): string | null {
+  return isAdmin ? INSTANCE_ADMIN_MEMBERSHIP_REFUSAL : null
+}
+
 /** One SoD gate for membership grants; covers self-grant when the target is the admin. */
 export async function refuseInstanceAdminMembership(target: UserKey): Promise<string | null> {
-  return (await isInstanceAdmin(target)) ? INSTANCE_ADMIN_MEMBERSHIP_REFUSAL : null
+  return decideInstanceAdminMembership(await isInstanceAdmin(target))
 }
 
 /** Direct user membership role ref (predefined or custom id). */

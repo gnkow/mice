@@ -12,7 +12,7 @@ export function namespacesEmptyMessage(input: {
   const q = input.filter.trim()
   if (q) return `No namespaces match “${q}”.`
   if (input.isInstanceAdmin) {
-    return 'No namespaces in your catalog. Instance admins manage the platform and are not granted data-plane membership (separation of duties).'
+    return 'No namespaces in your catalog. Instance admins manage the platform only — no data-plane membership (separation of duties).'
   }
   if (input.canCreate) {
     return 'No namespaces yet. Create a namespace to set access before adding repositories.'

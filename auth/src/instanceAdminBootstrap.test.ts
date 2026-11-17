@@ -14,7 +14,12 @@ process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
-const { decideInstanceAction, NAMESPACE_CREATE_BOOTSTRAP_REFUSAL, preparePrincipal } = await import('./authz.js')
+const {
+  decideInstanceAction,
+  decideNamespaceCreateBootstrap,
+  NAMESPACE_CREATE_BOOTSTRAP_REFUSAL,
+  preparePrincipal,
+} = await import('./authz.js')
 const { assignRole } = await import('./rbacStore.js')
 
 const admin = { sub: 'admin', iss: 'test', email: 'admin@mice.local', emailVerified: true, name: 'Admin' }
@@ -22,6 +27,16 @@ const manager = { sub: 'manager', iss: 'test', email: 'manager@example.com', nam
 
 after(() => {
   rmSync(dataDir, { recursive: true, force: true })
+})
+
+await describe('decideNamespaceCreateBootstrap', async () => {
+  await it('refuses when every formal role is admin', () => {
+    assert.equal(decideNamespaceCreateBootstrap(false), NAMESPACE_CREATE_BOOTSTRAP_REFUSAL)
+  })
+
+  await it('allows the permission check to proceed once a non-admin exists', () => {
+    assert.equal(decideNamespaceCreateBootstrap(true), null)
+  })
 })
 
 await describe('bootstrap namespace creation', async () => {

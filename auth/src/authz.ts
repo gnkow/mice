@@ -526,9 +526,14 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
 export const NAMESPACE_CREATE_BOOTSTRAP_REFUSAL =
   'No non-admin users exist yet: grant namespace:create to a manager first'
 
+/** Pure bootstrap SoD decision: needs at least one non-admin formal role. */
+export function decideNamespaceCreateBootstrap(hasNonAdmin: boolean): string | null {
+  return hasNonAdmin ? null : NAMESPACE_CREATE_BOOTSTRAP_REFUSAL
+}
+
 export async function refuseNamespaceCreateBootstrap(): Promise<string | null> {
   const hasNonAdmin = (await listRbacUsers()).some((u) => u.role !== null && u.role !== 'admin')
-  return hasNonAdmin ? null : NAMESPACE_CREATE_BOOTSTRAP_REFUSAL
+  return decideNamespaceCreateBootstrap(hasNonAdmin)
 }
 
 export async function authorizeInstanceAction(

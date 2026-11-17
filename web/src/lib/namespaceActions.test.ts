@@ -13,11 +13,18 @@ describe('namespace card actions (#06 separation of duties)', () => {
   it('explains SoD when an instance admin sees an empty catalog', () => {
     assert.match(
       namespacesEmptyMessage({ filter: '', canCreate: false, isInstanceAdmin: true }),
-      /separation of duties/i,
+      /platform only|separation of duties/i,
     )
     assert.match(
       namespacesEmptyMessage({ filter: '', canCreate: true, isInstanceAdmin: false }),
       /Create a namespace/,
+    )
+  })
+
+  it('keeps search-miss copy ahead of the SoD empty state', () => {
+    assert.match(
+      namespacesEmptyMessage({ filter: 'zzz', canCreate: false, isInstanceAdmin: true }),
+      /No namespaces match/,
     )
   })
 })

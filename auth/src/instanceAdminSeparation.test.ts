@@ -24,6 +24,7 @@ const {
 const { isInstanceAdmin } = await import('./authzInstanceStore.js')
 const { createNamespaceAuthz, listNamespacesForUser } = await import('./authzNamespaceStore.js')
 const {
+  decideInstanceAdminMembership,
   hasNamespaceCapability,
   INSTANCE_ADMIN_MEMBERSHIP_REFUSAL,
   refuseInstanceAdminMembership,
@@ -44,6 +45,16 @@ before(async () => {
 
 after(() => {
   rmSync(dataDir, { recursive: true, force: true })
+})
+
+await describe('decideInstanceAdminMembership', async () => {
+  await it('refuses when the target is an instance admin', () => {
+    assert.equal(decideInstanceAdminMembership(true), INSTANCE_ADMIN_MEMBERSHIP_REFUSAL)
+  })
+
+  await it('allows when the target is not an instance admin', () => {
+    assert.equal(decideInstanceAdminMembership(false), null)
+  })
 })
 
 await describe('instance admin separation of duties', async () => {
