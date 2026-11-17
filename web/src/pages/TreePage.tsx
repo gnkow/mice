@@ -3,8 +3,8 @@ import { MetaPills } from '../components/MetaPills'
 import { MetaModal } from '../components/MetaModal'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { AuthorAvatar } from '../components/AuthorAvatar'
-import { CommitEmail, useCurrentEmails } from '../components/CommitEmail'
+import { usePrincipalProfiles } from '../components/CommitEmail'
+import { UserRef } from '../components/UserRef'
 import { BranchSwitcher } from '../components/BranchSwitcher'
 import { FileIcon } from '../components/FileIcon'
 import { DataTypeIcon, RestoreIcon } from '../components/icons'
@@ -314,7 +314,9 @@ export function TreePage() {
     return best ?? null
   }, [listing])
 
-  const emails = useCurrentEmails(latestCommit?.author ? [latestCommit.author] : [])
+  const profiles = usePrincipalProfiles(
+    latestCommit?.author ? [latestCommit.author] : [],
+  )
 
   const commitCount =
     commits.kind === 'ok'
@@ -611,11 +613,12 @@ export function TreePage() {
           <div className="file-browser">
             {listing.kind === 'ok' && latestCommit && (
               <div className="latest-commit">
-                <AuthorAvatar name={latestCommit.author || 'unknown'} />
-                <span className="latest-commit-author">
-                  {latestCommit.author || 'unknown'}
-                  <CommitEmail author={latestCommit.author} stored={latestCommit.email} emails={emails} />
-                </span>
+                <UserRef
+                  className="latest-commit-author"
+                  author={latestCommit.author || 'unknown'}
+                  storedEmail={latestCommit.email}
+                  profiles={profiles}
+                />
                 <Link
                   className="latest-commit-msg"
                   to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/commits/${encodeURIComponent(latestCommit.id)}`}

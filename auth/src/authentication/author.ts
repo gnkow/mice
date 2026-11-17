@@ -1,5 +1,8 @@
 import type { SessionUser } from './session/session.js'
-import { humanCommitFields } from './commits/commitIdentity.js'
+import {
+  humanCommitFields,
+  type HumanCommitFields,
+} from './commits/commitIdentity.js'
 
 /** Canonical commit author for a human Principal (`iss|sub`). Ticket 08. */
 export function commitAuthor(user: SessionUser): string {
@@ -44,32 +47,42 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * Overwrite author fields in nested objects and arrays. `name` is only an
  * author when its object also carries an email field.
  */
-function overwriteNestedAuthors(value: unknown, user: SessionUser): unknown {
-  if (Array.isArray(value)) return value.map((v) => overwriteNestedAuthors(v, user))
+function overwriteNestedAuthors(
+  value: unknown,
+  fields: HumanCommitFields,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((v) => overwriteNestedAuthors(v, fields))
+  }
   if (!isPlainObject(value)) return value
-  const fields = humanCommitFields(user)
   const hasEmail = EMAIL_KEYS.some((k) => k in value)
   const next: Record<string, unknown> = {}
   for (const [key, v] of Object.entries(value)) {
     if (EMAIL_KEYS.includes(key)) next[key] = fields.email
     else if (NAME_KEYS.includes(key) && !isPlainObject(v)) next[key] = fields.author
     else if (key === 'name' && hasEmail) next[key] = fields.author
-    else next[key] = overwriteNestedAuthors(v, user)
+    else next[key] = overwriteNestedAuthors(v, fields)
   }
   return next
 }
 
-/** Overwrite oxen author-related fields from the authenticated session. */
-export function injectAuthorJson(
+/**
+ * Deep seam for Ticket 08: stamp an oxen JSON body with human commit fields.
+ * Callers supply fields from `humanCommitFields` (or a test double).
+ */
+export function stampOxenAuthorBody(
   body: Record<string, unknown>,
-  user: SessionUser,
+  fields: HumanCommitFields,
 ): Record<string, unknown> {
-  if (!shouldInjectAuthor(body)) return overwriteNestedAuthors(body, user) as Record<string, unknown>
+  if (!shouldInjectAuthor(body)) {
+    return overwriteNestedAuthors(body, fields) as Record<string, unknown>
+  }
 
-  const fields = humanCommitFields(user)
   const flat = { ...body }
   for (const [key, v] of Object.entries(flat)) {
-    if (isPlainObject(v) || Array.isArray(v)) flat[key] = overwriteNestedAuthors(v, user)
+    if (isPlainObject(v) || Array.isArray(v)) {
+      flat[key] = overwriteNestedAuthors(v, fields)
+    }
   }
   const next = flat
   for (const k of ['author_name', 'committer', 'committer_name']) {
@@ -91,6 +104,14 @@ export function injectAuthorJson(
     next.name = fields.author
   }
   return next
+}
+
+/** Overwrite oxen author-related fields from the authenticated session. */
+export function injectAuthorJson(
+  body: Record<string, unknown>,
+  user: SessionUser,
+): Record<string, unknown> {
+  return stampOxenAuthorBody(body, humanCommitFields(user))
 }
 
 export function injectAuthorFormData(

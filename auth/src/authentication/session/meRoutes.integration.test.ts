@@ -36,11 +36,15 @@ describe('Ticket 49 — POST /auth/principals/emails HTTP seam', () => {
       }),
     })
     assert.equal(res.status, 200)
-    const body = (await res.json()) as { emails: Record<string, string> }
+    const body = (await res.json()) as {
+      emails: Record<string, string>
+      names: Record<string, string>
+    }
     assert.deepEqual(body.emails, { [author]: 'alice@lab.test' })
+    assert.deepEqual(body.names, { [author]: 'Email Alice' })
   })
 
-  it('returns an empty map when authors is missing or empty', async () => {
+  it('returns empty maps when authors is missing or empty', async () => {
     const headers = {
       ...(await iso.sessionHeaders(alice)),
       'content-type': 'application/json',
@@ -52,7 +56,7 @@ describe('Ticket 49 — POST /auth/principals/emails HTTP seam', () => {
         body: JSON.stringify(body),
       })
       assert.equal(res.status, 200)
-      assert.deepEqual(await res.json(), { emails: {} })
+      assert.deepEqual(await res.json(), { emails: {}, names: {} })
     }
   })
 

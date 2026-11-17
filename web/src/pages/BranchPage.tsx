@@ -2,8 +2,7 @@ import { ArrowLeftRight as ActionArrowLeftRight, FolderOpen as ActionFolderOpen,
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
-import { AuthorAvatar } from '../components/AuthorAvatar'
-import { CommitEmail } from '../components/CommitEmail'
+import { UserRef } from '../components/UserRef'
 import { MetaPanel } from '../components/MetaPanel'
 import { QcFailedWarning } from '../components/QcFailedWarning'
 import { StateBlock } from '../components/StateBlock'
@@ -104,7 +103,13 @@ function BranchDetail({ namespace, repo, branch }: { namespace: string; repo: st
             <dt>Name</dt><dd className="mono">{branch} {branch === data.defaultBranch && <span className="pill default-branch">default</span>}</dd>
             <dt>Tip commit</dt><dd><Link className="mono" to={`${base}/commits/${encodeURIComponent(data.commit.id)}`}>{data.commit.id}</Link></dd>
             <dt>Message</dt><dd>{data.commit.message}</dd>
-            <dt>Author</dt><dd><AuthorAvatar name={data.commit.author || 'unknown'} /> {data.commit.author || 'unknown'}<CommitEmail author={data.commit.author} stored={data.commit.email} /></dd>
+            <dt>Author</dt>
+            <dd>
+              <UserRef
+                author={data.commit.author || 'unknown'}
+                storedEmail={data.commit.email}
+              />
+            </dd>
             <dt>Updated</dt><dd title={data.commit.timestamp}>{formatRelativeTime(data.commit.timestamp)}</dd>
             {branch !== data.defaultBranch && <><dt>Commits ahead of {data.defaultBranch}</dt><dd>
               <StateBlock loading={comparison.kind === 'loading'} error={comparison.kind === 'error' ? comparison.message : null} onRetry={comparison.reload}>

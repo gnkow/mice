@@ -7,8 +7,7 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom'
-import { AuthorAvatar } from '../components/AuthorAvatar'
-import { CommitEmail } from '../components/CommitEmail'
+import { UserRef } from '../components/UserRef'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { CommitList } from '../components/CommitList'
 import { QcFailedWarning } from '../components/QcFailedWarning'
@@ -316,10 +315,11 @@ export function CommitsPage() {
                   </div>
 
                   <div className="history-detail-identity">
-                    <AuthorAvatar name={commit.author} />
+                    <UserRef
+                      author={commit.author}
+                      storedEmail={commit.email}
+                    />
                     <p className="history-detail-byline muted small">
-                      <span>{commit.author}</span>
-                      <CommitEmail author={commit.author} stored={commit.email} />
                       <time
                         dateTime={commit.timestamp}
                         title={new Date(commit.timestamp).toLocaleString()}

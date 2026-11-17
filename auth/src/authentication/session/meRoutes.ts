@@ -9,7 +9,7 @@ import { setTrainingCompleted, setTrainingCompletedSelf, hasCompletedTraining } 
 import { rememberNotificationUser } from '../../notifications.js'
 import { listCliCredentials, revokeCliCredentialFamily } from '../credentials/cliCredentials.js'
 import { parseEmailLookupAuthors } from './emailLookupRequest.js'
-import { currentEmailsByAuthor } from './session.js'
+import { currentProfilesByAuthor } from './session.js'
 import {
   approveAccessRequest,
   denyAccessRequest,
@@ -284,8 +284,8 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     return c.json({ ok: true })
   }))
 
-  /** Current emails for commit authors. The oxen commit is left unchanged. */
+  /** Current emails (and names) for commit authors. The oxen commit is left unchanged. */
   app.post('/auth/principals/emails', guarded({ body: 'json' }, async ({ c, body }) => {
-    return c.json({ emails: await currentEmailsByAuthor(parseEmailLookupAuthors(body)) })
+    return c.json(await currentProfilesByAuthor(parseEmailLookupAuthors(body)))
   }))
 }

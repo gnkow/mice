@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 import type { Commit } from '../lib/oxen/types'
 import { MetaPills } from './MetaPills'
-import { AuthorAvatar } from './AuthorAvatar'
-import { CommitEmail, useCurrentEmails } from './CommitEmail'
+import { usePrincipalProfiles } from './CommitEmail'
+import { UserRef } from './UserRef'
 import { dayKey, formatDayHeading, formatRelativeTime } from '../lib/time'
 
 type Props = {
@@ -28,7 +28,7 @@ export function CommitList({
   qcDescendants,
 }: Props) {
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
-  const emails = useCurrentEmails(commits.map((c) => c.author))
+  const profiles = usePrincipalProfiles(commits.map((c) => c.author))
 
   const groups: { key: string; heading: string; items: Commit[] }[] = []
   for (const c of commits) {
@@ -62,13 +62,14 @@ export function CommitList({
                     to={`${base}/commits/${encodeURIComponent(c.id)}${linkSearch}`}
                     aria-current={selected ? 'true' : undefined}
                   >
-                    <AuthorAvatar name={c.author} />
+                    <UserRef
+                      author={c.author}
+                      storedEmail={c.email}
+                      profiles={profiles}
+                    />
                     <span className="commit-row-body">
                       <span className="commit-msg">{c.message}</span>
                       <span className="commit-meta">
-                        {c.author}
-                        <CommitEmail author={c.author} stored={c.email} emails={emails} separator />
-                        {' · '}
                         <time
                           dateTime={c.timestamp}
                           title={new Date(c.timestamp).toLocaleString()}

@@ -112,7 +112,10 @@ async function mockRepoApis(
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      json: { emails: { [author]: currentEmail } },
+      json: {
+        emails: { [author]: currentEmail },
+        names: { [author]: 'Mice User' },
+      },
     })
   })
 }
@@ -125,14 +128,14 @@ test.describe('Commit email display (#49)', () => {
     await mockRepoApis(page, 'current@mice.local')
 
     await page.goto(`/n/${ns}/r/${repo}/commits`)
-    const email = page.getByTestId('commit-email').first()
+    const ref = page.getByTestId('user-ref').first()
+    await expect(ref.getByText('Mice User')).toBeVisible()
+    await ref.getByRole('button').click()
+    const info = page.getByTestId('user-info')
+    const email = info.getByTestId('commit-email')
     await expect(email.locator('.mono')).toContainText('stored@mice.local')
     await expect(email.getByTestId('commit-email-current')).toContainText(
       'current: current@mice.local',
-    )
-    await expect(email).toHaveAttribute(
-      'aria-label',
-      'Commit email stored@mice.local, current email current@mice.local',
     )
   })
 
@@ -143,7 +146,8 @@ test.describe('Commit email display (#49)', () => {
     await mockRepoApis(page, 'stored@mice.local')
 
     await page.goto(`/n/${ns}/r/${repo}/commits`)
-    const email = page.getByTestId('commit-email').first()
+    await page.getByTestId('user-ref').first().getByRole('button').click()
+    const email = page.getByTestId('user-info').getByTestId('commit-email')
     await expect(email.locator('.mono')).toContainText('stored@mice.local')
     await expect(email.getByTestId('commit-email-current')).toHaveCount(0)
   })

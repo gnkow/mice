@@ -4,6 +4,7 @@ import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
+import { UserRef } from '../components/UserRef'
 import { LineageGraph } from '../components/LineageGraph'
 import { StateBlock } from '../components/StateBlock'
 import {
@@ -937,7 +938,10 @@ export function BlobPage() {
                           {v.commit.id.slice(0, 8)}
                         </span>
                         {' · '}
-                        {v.commit.author}
+                        <UserRef
+                          author={v.commit.author}
+                          storedEmail={v.commit.email}
+                        />
                         {' · '}
                         <time
                           dateTime={v.commit.timestamp}

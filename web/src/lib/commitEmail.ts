@@ -30,9 +30,17 @@ export function shownCommitEmail(stored: string | undefined, current: string | u
   return decideCommitEmailDisplay(stored, current)?.email
 }
 
-export async function fetchCurrentEmails(authors: string[], signal?: AbortSignal): Promise<Record<string, string>> {
+export type PrincipalProfiles = {
+  emails: Record<string, string>
+  names: Record<string, string>
+}
+
+export async function fetchPrincipalProfiles(
+  authors: string[],
+  signal?: AbortSignal,
+): Promise<PrincipalProfiles> {
   const unique = [...new Set(authors.map((a) => a.trim()).filter(Boolean))]
-  if (unique.length === 0) return {}
+  if (unique.length === 0) return { emails: {}, names: {} }
   const res = await fetch('/auth/principals/emails', {
     method: 'POST',
     credentials: 'same-origin',
@@ -40,7 +48,17 @@ export async function fetchCurrentEmails(authors: string[], signal?: AbortSignal
     body: JSON.stringify({ authors: unique }),
     signal,
   })
-  if (!res.ok) return {}
-  const data = (await res.json()) as { emails?: Record<string, string> }
-  return data.emails ?? {}
+  if (!res.ok) return { emails: {}, names: {} }
+  const data = (await res.json()) as {
+    emails?: Record<string, string>
+    names?: Record<string, string>
+  }
+  return { emails: data.emails ?? {}, names: data.names ?? {} }
+}
+
+export async function fetchCurrentEmails(
+  authors: string[],
+  signal?: AbortSignal,
+): Promise<Record<string, string>> {
+  return (await fetchPrincipalProfiles(authors, signal)).emails
 }

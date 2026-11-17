@@ -1,13 +1,27 @@
 import { useAsync } from '../hooks/useAsync'
-import { decideCommitEmailDisplay, fetchCurrentEmails } from '../lib/commitEmail'
+import {
+  decideCommitEmailDisplay,
+  fetchPrincipalProfiles,
+  type PrincipalProfiles,
+} from '../lib/commitEmail'
 
-export function useCurrentEmails(authors: string[]): Record<string, string> {
-  const key = [...new Set(authors.map((a) => a.trim()).filter(Boolean))].sort().join('\n')
+const emptyProfiles: PrincipalProfiles = { emails: {}, names: {} }
+
+export function usePrincipalProfiles(authors: string[]): PrincipalProfiles {
+  const key = [...new Set(authors.map((a) => a.trim()).filter(Boolean))]
+    .sort()
+    .join('\n')
   const state = useAsync(
-    (signal) => fetchCurrentEmails(key ? key.split('\n') : [], signal),
+    (signal) =>
+      fetchPrincipalProfiles(key ? key.split('\n') : [], signal),
     [key],
   )
-  return state.kind === 'ok' ? state.data : {}
+  return state.kind === 'ok' ? state.data : emptyProfiles
+}
+
+/** @deprecated Prefer usePrincipalProfiles — kept for call sites that only need emails. */
+export function useCurrentEmails(authors: string[]): Record<string, string> {
+  return usePrincipalProfiles(authors).emails
 }
 
 export function CommitEmail({
@@ -21,8 +35,11 @@ export function CommitEmail({
   emails?: Record<string, string>
   separator?: boolean
 }) {
-  const fetched = useCurrentEmails(emails ? [] : author ? [author] : [])
-  const shown = decideCommitEmailDisplay(stored ?? undefined, (emails ?? fetched)[author.trim()])
+  const fetched = usePrincipalProfiles(emails ? [] : author ? [author] : [])
+  const shown = decideCommitEmailDisplay(
+    stored ?? undefined,
+    (emails ?? fetched.emails)[author.trim()],
+  )
   if (!shown) return null
   return (
     <>

@@ -3,8 +3,8 @@ import { ArrowLeftRight, FolderOpen, History, Tags, Wrench } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
-import { AuthorAvatar } from '../components/AuthorAvatar'
-import { CommitEmail, useCurrentEmails } from '../components/CommitEmail'
+import { usePrincipalProfiles } from '../components/CommitEmail'
+import { UserRef } from '../components/UserRef'
 import { CommitSelector } from '../components/CommitSelector'
 import { Modal } from '../components/Modal'
 import { StateBlock } from '../components/StateBlock'
@@ -84,7 +84,9 @@ export function BranchesPage() {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [metaByName, setMetaByName] = useState<Record<string, BranchMeta>>({})
-  const emails = useCurrentEmails(Object.values(metaByName).map((m) => m.commit?.author ?? ''))
+  const profiles = usePrincipalProfiles(
+    Object.values(metaByName).map((m) => m.commit?.author ?? ''),
+  )
 
   const branchList = branches.kind === 'ok' ? branches.data.branches : []
   const branchNames = useMemo(
@@ -367,14 +369,12 @@ export function BranchesPage() {
                         >
                           {commit ? (
                             <div className="branch-updated">
-                              <AuthorAvatar
-                                name={commit.author || 'unknown'}
+                              <UserRef
+                                author={commit.author || 'unknown'}
+                                storedEmail={commit.email}
+                                profiles={profiles}
                               />
                               <div className="branch-updated-text">
-                                <span className="branch-updated-author">
-                                  {commit.author || 'unknown'}
-                                  <CommitEmail author={commit.author} stored={commit.email} emails={emails} />
-                                </span>
                                 <span
                                   className="branch-updated-time muted"
                                   title={commit.timestamp}

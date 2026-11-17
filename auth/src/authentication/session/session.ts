@@ -90,25 +90,50 @@ export async function ensurePrincipal(identity: { iss: string; sub: string; name
 
 /** The Principal's current email, or null when this identity has none stored. */
 export async function getCurrentEmail(identity: { iss: string; sub: string }): Promise<string | null> {
+  const profile = await getCurrentProfile(identity)
+  return profile?.email ?? null
+}
+
+/** Current email + display name for a Principal, or null when unknown. */
+export async function getCurrentProfile(
+  identity: { iss: string; sub: string },
+): Promise<{ email: string | null; name: string | null } | null> {
   const iss = canonicalIssuer(identity.iss)
   const [row] = await getDb()
-    .select({ email: principals.email })
+    .select({ email: principals.email, name: principals.name })
     .from(principals)
     .where(and(eq(principals.iss, iss), eq(principals.sub, identity.sub)))
     .limit(1)
-  return row?.email ?? null
+  if (!row) return null
+  return {
+    email: row.email ?? null,
+    name: row.name?.trim() ? row.name : null,
+  }
 }
 
 /** Current emails for commit authors (`iss|sub`). Unknown authors are omitted. */
 export async function currentEmailsByAuthor(authors: string[]): Promise<Record<string, string>> {
+  return (await currentProfilesByAuthor(authors)).emails
+}
+
+/** Current emails and names for commit authors (`iss|sub`). Unknown authors are omitted. */
+export async function currentProfilesByAuthor(
+  authors: string[],
+): Promise<{ emails: Record<string, string>; names: Record<string, string> }> {
   const emails: Record<string, string> = {}
+  const names: Record<string, string> = {}
   for (const author of authors) {
     const bar = author.indexOf('|')
     if (bar <= 0 || bar === author.length - 1) continue
-    const email = await getCurrentEmail({ iss: author.slice(0, bar), sub: author.slice(bar + 1) })
-    if (email) emails[author] = email
+    const profile = await getCurrentProfile({
+      iss: author.slice(0, bar),
+      sub: author.slice(bar + 1),
+    })
+    if (!profile) continue
+    if (profile.email) emails[author] = profile.email
+    if (profile.name) names[author] = profile.name
   }
-  return emails
+  return { emails, names }
 }
 
 /**

@@ -2,7 +2,14 @@
 // Per spec (respec/01-authentication/spec.md): "There are no PATs and no service principals"
 
 // Author injection
-export { hasAuthorQueryParam, injectAuthorFormData, injectAuthorJson, isAuthorFreeBinaryRoute } from './author.js'
+export {
+  commitAuthor,
+  hasAuthorQueryParam,
+  injectAuthorFormData,
+  injectAuthorJson,
+  isAuthorFreeBinaryRoute,
+  stampOxenAuthorBody,
+} from './author.js'
 
 // CLI device flow (RFC 8628) - replaces PATs
 export { registerCliDeviceRoutes } from './credentials/cliDeviceRoutes.js'

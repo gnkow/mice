@@ -12,8 +12,8 @@ import {
 import { formatBytes } from '../lib/oxen/client'
 import { lastBranch } from '../lib/lastBranch'
 import { OxenApiError } from '../lib/oxen/types'
-import { AuthorAvatar } from './AuthorAvatar'
-import { CommitEmail, useCurrentEmails } from './CommitEmail'
+import { usePrincipalProfiles } from './CommitEmail'
+import { UserRef } from './UserRef'
 import { DataTypeIcon } from './icons'
 import { useState } from 'react'
 
@@ -69,7 +69,7 @@ export function RepoAside() {
         .map((name) => [name.toLowerCase(), name]),
     ).values(),
   ]
-  const emails = useCurrentEmails(contributors)
+  const profiles = usePrincipalProfiles(contributors)
 
   function onRefreshAbout() {
     const branch = lastBranch(namespace, repo, 'main')
@@ -235,12 +235,12 @@ export function RepoAside() {
           <ul className="hub-aside-contributors">
             {contributors.slice(0, 8).map((name) => (
               <li key={name}>
-                <AuthorAvatar name={name} />
-                <span>@{name}</span>
-                <CommitEmail
+                <UserRef
                   author={name}
-                  stored={commitRows.find((c) => c.author.trim() === name)?.email}
-                  emails={emails}
+                  storedEmail={
+                    commitRows.find((c) => c.author.trim() === name)?.email
+                  }
+                  profiles={profiles}
                 />
               </li>
             ))}
