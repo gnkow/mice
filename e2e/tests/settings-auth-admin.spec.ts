@@ -13,19 +13,52 @@ test.describe('Settings · User Revocation (Admin)', () => {
     await openAdminSettings(page)
     await page.getByRole('link', { name: 'Revocations', exact: true }).click()
 
+    const section = page.getByTestId('admin-revocation')
+    await expect(section).toBeVisible()
     await expect(page.getByRole('heading', { name: 'User Revocation' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Revoke User Access' })).toBeVisible()
     await expect(page.getByRole('heading', { name: /Emergency Suspension/i })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Pending Confirmations' })).toBeVisible()
+
+    await expect(section.getByTestId('admin-revoke-form')).toBeVisible()
+    await expect(section.getByTestId('admin-suspend-form')).toBeVisible()
+    await expect(section.getByTestId('admin-pending-suspensions')).toBeVisible()
+
     await expect(
-      page.locator('#user-revocation').getByRole('button', { name: /Revoke All Sessions/i }),
+      section.getByText(/Access is not cut until confirmation/i),
     ).toBeVisible()
     await expect(
-      page.locator('#user-revocation').getByRole('button', { name: /Initiate Suspension/i }),
+      section.getByRole('button', { name: /Revoke All Sessions/i }),
     ).toBeVisible()
     await expect(
-      page.locator('#user-revocation').getByText(/No pending suspensions|Loading pending|awaiting second-admin/i).first(),
+      section.getByRole('button', { name: /Initiate Suspension/i }),
+    ).toBeVisible()
+    await expect(
+      section.getByText(/No pending suspensions|Loading pending|awaiting second-admin/i).first(),
     ).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('revoke and suspend actions stay disabled until principal and reason are filled', async ({
+    page,
+  }) => {
+    await openAdminSettings(page)
+    await page.getByRole('link', { name: 'Revocations', exact: true }).click()
+
+    const revoke = page.getByTestId('admin-revoke-form')
+    const suspend = page.getByTestId('admin-suspend-form')
+
+    await expect(revoke.getByRole('button', { name: /Revoke All Sessions/i })).toBeDisabled()
+    await expect(suspend.getByRole('button', { name: /Initiate Suspension/i })).toBeDisabled()
+
+    await revoke.getByPlaceholder(/user@example.com/i).fill('target@example.com')
+    await expect(revoke.getByRole('button', { name: /Revoke All Sessions/i })).toBeDisabled()
+    await revoke.getByPlaceholder(/Security incident/i).fill('e2e revoke reason')
+    await expect(revoke.getByRole('button', { name: /Revoke All Sessions/i })).toBeEnabled()
+
+    await suspend.getByPlaceholder(/suspicious.user/i).fill('suspect@example.com')
+    await expect(suspend.getByRole('button', { name: /Initiate Suspension/i })).toBeDisabled()
+    await suspend.getByPlaceholder(/account compromise/i).fill('e2e suspend reason')
+    await expect(suspend.getByRole('button', { name: /Initiate Suspension/i })).toBeEnabled()
   })
 })
 

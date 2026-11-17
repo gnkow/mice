@@ -1,4 +1,4 @@
-import { AlertTriangle, Shield } from 'lucide-react'
+import { AlertTriangle, Ban, Clock, Shield } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
 import {
@@ -112,11 +112,19 @@ export function AdminRevocationSection() {
   const [revokeReason, setRevokeReason] = useState('')
   const [suspendPrincipal, setSuspendPrincipal] = useState('')
   const [suspendReason, setSuspendReason] = useState('')
-  const [confirmReason, setConfirmReason] = useState('')
+  const [confirmReasons, setConfirmReasons] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const pending = useAsync((signal) => fetchPendingSuspensions(signal), [])
+
+  function confirmReasonFor(id: string): string {
+    return confirmReasons[id] ?? ''
+  }
+
+  function setConfirmReasonFor(id: string, value: string) {
+    setConfirmReasons((prev) => ({ ...prev, [id]: value }))
+  }
 
   async function handleRevoke(e: FormEvent) {
     e.preventDefault()
@@ -159,7 +167,8 @@ export function AdminRevocationSection() {
   }
 
   async function handleConfirm(requestId: string) {
-    if (!confirmReason.trim()) {
+    const reason = confirmReasonFor(requestId).trim()
+    if (!reason) {
       setMessage({ type: 'error', text: 'Confirmation reason required' })
       return
     }
@@ -167,9 +176,13 @@ export function AdminRevocationSection() {
     setBusy(true)
     setMessage(null)
     try {
-      await confirmSuspension(requestId, confirmReason.trim())
+      await confirmSuspension(requestId, reason)
       setMessage({ type: 'success', text: `Suspension ${requestId} confirmed` })
-      setConfirmReason('')
+      setConfirmReasons((prev) => {
+        const next = { ...prev }
+        delete next[requestId]
+        return next
+      })
       pending.reload()
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Confirmation failed' })
@@ -179,7 +192,12 @@ export function AdminRevocationSection() {
   }
 
   return (
-    <section id="user-revocation" className="settings-section" aria-labelledby="user-revocation-heading">
+    <section
+      id="user-revocation"
+      className="settings-section"
+      aria-labelledby="user-revocation-heading"
+      data-testid="admin-revocation"
+    >
       <div className="ns-settings-section-head">
         <div>
           <h2 id="user-revocation-heading">
@@ -196,16 +214,25 @@ export function AdminRevocationSection() {
         <div
           className={`flash ${message.type === 'error' ? 'flash-error' : 'flash-success'}`}
           role={message.type === 'error' ? 'alert' : 'status'}
+          data-testid="admin-revocation-flash"
         >
           {message.text}
         </div>
       )}
 
-      <div className="ns-settings-subsection">
-        <h3>Revoke User Access</h3>
-        <p className="muted small">
-          Immediately revoke all sessions and credentials for a user. This is permanent and cannot be undone.
-        </p>
+      <div className="ns-settings-subsection" data-testid="admin-revoke-form">
+        <div className="ns-settings-section-head">
+          <div>
+            <h3>
+              <Ban size={16} className="button-label-icon" aria-hidden="true" />
+              Revoke User Access
+            </h3>
+            <p className="muted small">
+              Immediately end all sessions and credentials for a Principal. Permanent — blocks a
+              fresh login until an admin restores access elsewhere.
+            </p>
+          </div>
+        </div>
         <form className="ns-member-form" onSubmit={handleRevoke}>
           <div className="ns-settings-grid">
             <label className="ns-settings-field">
@@ -235,21 +262,25 @@ export function AdminRevocationSection() {
               type="submit"
               disabled={busy || !revokePrincipal.trim() || !revokeReason.trim()}
             >
-              {busy ? 'Revoking...' : 'Revoke All Sessions'}
+              {busy ? 'Revoking…' : 'Revoke All Sessions'}
             </button>
           </div>
         </form>
       </div>
 
-      <div className="ns-settings-subsection">
-        <h3>
-          <AlertTriangle size={16} className="button-label-icon" aria-hidden="true" />
-          Emergency Suspension
-        </h3>
-        <p className="muted small">
-          Initiate a security suspension requiring second-admin confirmation within 24 hours.
-          Access is revoked immediately, pending confirmation.
-        </p>
+      <div className="ns-settings-subsection" data-testid="admin-suspend-form">
+        <div className="ns-settings-section-head">
+          <div>
+            <h3>
+              <AlertTriangle size={16} className="button-label-icon" aria-hidden="true" />
+              Emergency Suspension
+            </h3>
+            <p className="muted small">
+              Open a 24-hour request that a different instance admin must confirm. Access is not
+              cut until confirmation; unconfirmed requests lapse.
+            </p>
+          </div>
+        </div>
         <form className="ns-member-form" onSubmit={handleSuspend}>
           <div className="ns-settings-grid">
             <label className="ns-settings-field">
@@ -279,14 +310,24 @@ export function AdminRevocationSection() {
               type="submit"
               disabled={busy || !suspendPrincipal.trim() || !suspendReason.trim()}
             >
-              {busy ? 'Suspending...' : 'Initiate Suspension'}
+              {busy ? 'Suspending…' : 'Initiate Suspension'}
             </button>
           </div>
         </form>
       </div>
 
-      <div className="ns-settings-subsection">
-        <h3>Pending Confirmations</h3>
+      <div className="ns-settings-subsection" data-testid="admin-pending-suspensions">
+        <div className="ns-settings-section-head">
+          <div>
+            <h3>
+              <Clock size={16} className="button-label-icon" aria-hidden="true" />
+              Pending Confirmations
+            </h3>
+            <p className="muted small">
+              Second-admin confirmations for emergency suspensions (24-hour window).
+            </p>
+          </div>
+        </div>
         {pending.kind === 'loading' && (
           <p role="status" aria-live="polite">Loading pending suspensions…</p>
         )}
@@ -300,7 +341,7 @@ export function AdminRevocationSection() {
         )}
         {pending.kind === 'ok' && pending.data.length === 0 && (
           <div className="empty-state" role="status">
-            <span className="empty-state-icon" aria-hidden="true" />
+            <Clock size={28} className="empty-state-icon-lucide" aria-hidden="true" />
             <p className="muted">No pending suspensions.</p>
             <p className="muted small">
               Emergency suspensions awaiting second-admin confirmation will appear here.
@@ -309,39 +350,41 @@ export function AdminRevocationSection() {
         )}
         {pending.kind === 'ok' && pending.data.length > 0 && (
           <>
-            <p className="muted small">
-              {pending.data.length} suspension{pending.data.length === 1 ? '' : 's'} awaiting second-admin confirmation.
+            <p className="muted small ns-settings-count">
+              {pending.data.length} suspension{pending.data.length === 1 ? '' : 's'} awaiting
+              second-admin confirmation.
             </p>
             <ul className="ns-member-list">
               {pending.data.map(s => (
-                <li key={s.id} className="ns-member-row">
+                <li key={s.id} className="ns-member-row" data-testid="pending-suspension-row">
                   <div className="ns-member-main">
                     <div>
                       <strong>{s.principal}</strong>
-                      <span className="muted small"> · Request: {s.id.slice(0, 16)}...</span>
+                      <span className="muted small"> · Request: {s.id.slice(0, 16)}…</span>
                     </div>
                     <span className="muted small">
-                      Suspended by: {s.suspendedBy}
+                      Requested by: {s.suspendedBy}
                       <br />
                       Reason: {s.reason}
                       <br />
                       Expires: {new Date(s.expiresAt).toLocaleString()}
                     </span>
                   </div>
-                  <div className="ns-settings-field" style={{ maxWidth: '300px' }}>
+                  <div className="ns-settings-field admin-confirm-field">
                     <label>
                       <span className="ns-settings-label">Confirmation reason</span>
                       <input
-                        value={confirmReason}
-                        onChange={e => setConfirmReason(e.target.value)}
+                        value={confirmReasonFor(s.id)}
+                        onChange={e => setConfirmReasonFor(s.id, e.target.value)}
                         placeholder="Reviewed and approved"
                         required
+                        aria-label={`Confirmation reason for ${s.principal}`}
                       />
                     </label>
                     <button
                       className="btn primary small"
                       type="button"
-                      disabled={busy || !confirmReason.trim()}
+                      disabled={busy || !confirmReasonFor(s.id).trim()}
                       onClick={() => void handleConfirm(s.id)}
                     >
                       Confirm Suspension

@@ -1,12 +1,18 @@
-import { and, eq, isNull, lt, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt } from 'drizzle-orm'
 import { getDb, inTransaction, type Tx } from '../../db/database.js'
 import {
   backChannelLogoutJtis,
   principalAccessFlags,
-  sessionRevocations,
   suspensionRequests,
 } from '../../db/schema.js'
 import { appendIntent, appendOutcome, type AuditVia } from '../../audit.js'
+import {
+  bumpAllCredentialsCutoff,
+  bumpSessionsOnlyCutoff,
+  isCredentialRevoked,
+  isPermanentlyRevoked,
+  markPermanentlyRevoked,
+} from '../credentials/credentialRevocation.js'
 import { parsePrincipalKey, principalKey, type PrincipalId } from '../session/principal.js'
 
 /**
@@ -127,18 +133,7 @@ async function runAuditedAccessMutation<T>(args: AuditedMutation<T>): Promise<T>
 
 /** Bump the all-credentials cutoff and mark the Principal permanently revoked. */
 async function applyPermanentRevocation(tx: Tx, principal: PrincipalId, at: number): Promise<void> {
-  const key = principalKey(principal)
-  const revokedAt = new Date(at * 1000)
-  await tx
-    .insert(sessionRevocations)
-    .values({ principalKey: key, notBefore: at, revokedAt })
-    .onConflictDoUpdate({
-      target: sessionRevocations.principalKey,
-      set: {
-        notBefore: sql`greatest(coalesce(${sessionRevocations.notBefore}, 0), ${at})`,
-        revokedAt: sql`coalesce(${sessionRevocations.revokedAt}, ${revokedAt})`,
-      },
-    })
+  await markPermanentlyRevoked(tx, principal, at)
 }
 
 /** End current Sessions and put a `suspension` flag in place; grants are untouched. */
@@ -150,13 +145,7 @@ async function applySuspension(
   reason: string,
 ): Promise<void> {
   const key = principalKey(principal)
-  await tx
-    .insert(sessionRevocations)
-    .values({ principalKey: key, notBefore: at })
-    .onConflictDoUpdate({
-      target: sessionRevocations.principalKey,
-      set: { notBefore: sql`greatest(coalesce(${sessionRevocations.notBefore}, 0), ${at})` },
-    })
+  await bumpAllCredentialsCutoff(tx, principal, at)
 
   const [active] = await tx
     .select({ id: principalAccessFlags.id })
@@ -202,36 +191,17 @@ export async function isRevoked(
   principal: PrincipalId,
   options?: { sessionStart?: number },
 ): Promise<boolean> {
-  const [revocation] = await getDb()
-    .select()
-    .from(sessionRevocations)
-    .where(eq(sessionRevocations.principalKey, principalKey(principal)))
-    .limit(1)
-  if (!revocation) return false
-
   if (options?.sessionStart !== undefined) {
-    if (revocation.notBefore !== null && options.sessionStart <= revocation.notBefore) return true
-    if (
-      revocation.sessionsNotBefore !== null &&
-      options.sessionStart <= revocation.sessionsNotBefore
-    ) {
-      return true
-    }
-    return false
+    return isCredentialRevoked(principal, options.sessionStart, 'session')
   }
-
-  return revocation.revokedAt !== null
+  return isPermanentlyRevoked(principal)
 }
 
 /** Live check used before a login: permanent revocation or an active Mice suspension flag. */
 export async function isPrincipalAccessRevoked(principal: PrincipalId): Promise<boolean> {
-  const key = principalKey(principal)
-  const [revocation] = await getDb()
-    .select({ revokedAt: sessionRevocations.revokedAt })
-    .from(sessionRevocations)
-    .where(eq(sessionRevocations.principalKey, key))
-  if (revocation?.revokedAt) return true
+  if (await isPermanentlyRevoked(principal)) return true
 
+  const key = principalKey(principal)
   const [flag] = await getDb()
     .select({ id: principalAccessFlags.id })
     .from(principalAccessFlags)
@@ -402,15 +372,7 @@ export async function revokeOnRoleChange(
     },
     mutate: () => inTransaction(async (tx) => {
       for (const principal of unique) {
-        await tx
-          .insert(sessionRevocations)
-          .values({ principalKey: principalKey(principal), sessionsNotBefore: at })
-          .onConflictDoUpdate({
-            target: sessionRevocations.principalKey,
-            set: {
-              sessionsNotBefore: sql`greatest(coalesce(${sessionRevocations.sessionsNotBefore}, 0), ${at})`,
-            },
-          })
+        await bumpSessionsOnlyCutoff(tx, principal, at)
       }
     }),
   })

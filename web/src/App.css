@@ -2700,6 +2700,25 @@ p.ok {
   border-bottom: none;
 }
 
+.admin-confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-width: 18rem;
+  min-width: 12rem;
+  flex: 0 1 18rem;
+}
+
+.admin-confirm-field label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-confirm-field .btn {
+  align-self: flex-start;
+}
+
 .ns-member-main {
   display: flex;
   flex-direction: column;
