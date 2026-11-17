@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { summarizeMutation, withReason } from './reason'
+import { summarizeMutation, withReason, type ReasonSubmission } from './reason'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-const submission = {
+const submission: ReasonSubmission = {
   reason: 'Quarterly access review',
-  category: 'privileged_settings' as const,
+  category: 'privileged_settings',
   signatureId: 'sig-test-1',
 }
 
 test('sends once when the server accepts it', async () => {
-  const seen: Array<typeof submission | undefined> = []
+  const seen: Array<ReasonSubmission | undefined> = []
   const res = await withReason(async (r) => (seen.push(r), json(200, { ok: true })), {
     ask: async () => ({ ...submission, reason: 'unused' }),
     method: 'PATCH',
@@ -23,7 +23,7 @@ test('sends once when the server accepts it', async () => {
 })
 
 test('asks for ceremony on signature_required and retries with signature id', async () => {
-  const seen: Array<typeof submission | undefined> = []
+  const seen: Array<ReasonSubmission | undefined> = []
   const res = await withReason(
     async (r) =>
       (seen.push(r),
@@ -47,7 +47,7 @@ test('asks for ceremony on signature_required and retries with signature id', as
 })
 
 test('asks for ceremony on reason_required', async () => {
-  const seen: Array<typeof submission | undefined> = []
+  const seen: Array<ReasonSubmission | undefined> = []
   const res = await withReason(
     async (r) =>
       (seen.push(r),

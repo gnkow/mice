@@ -54,11 +54,35 @@ export function approvableRoles(reviewerRole: string | null | undefined): string
   return []
 }
 
+/** Role bundle ∪ extras for the grant checklist (role perms are pre-checked). */
+export function selectGrantRolePermissions(input: {
+  role: string | null
+  rolePermissions?: Record<string, string[]>
+  extras?: readonly string[]
+}): string[] {
+  const bundle =
+    input.role && input.rolePermissions?.[input.role]
+      ? input.rolePermissions[input.role]
+      : []
+  return [...new Set([...(bundle ?? []), ...(input.extras ?? []).filter(Boolean)])]
+}
+
+/** Permissions checked beyond the formal role (custom grants only). */
+export function extrasBeyondRole(
+  role: string | null,
+  selected: readonly string[],
+  rolePermissions?: Record<string, string[]>,
+): string[] {
+  const bundle = new Set(
+    role && rolePermissions?.[role] ? rolePermissions[role] : [],
+  )
+  return [...new Set(selected.filter((p) => Boolean(p) && !bundle.has(p)))]
+}
+
 export type ApproveFormState = {
   expiresAt: number
   grantedRole: string | null
   grantedPermissions: string[]
-  reason: string
 }
 
 export type ApproveBodyResult =
@@ -69,12 +93,14 @@ export type ApproveBodyResult =
         expiresAt: number
         grantedRole: string | null
         grantedPermissions: string[]
-        reason?: string
       }
     }
   | { ok: false; error: string }
 
-/** Validate approve form → POST /auth/access-requests/:id body. */
+/**
+ * Validate approve form → POST /auth/access-requests/:id body.
+ * Reason belongs to the signing ceremony (`X-Mice-Reason`), not this form.
+ */
 export function buildApproveBody(state: ApproveFormState): ApproveBodyResult {
   if (!Number.isFinite(state.expiresAt) || state.expiresAt <= 0) {
     return { ok: false, error: 'Expiry is required' }
@@ -82,7 +108,6 @@ export function buildApproveBody(state: ApproveFormState): ApproveBodyResult {
   if (state.grantedRole == null && state.grantedPermissions.length === 0) {
     return { ok: false, error: 'Choose a role or at least one permission to grant' }
   }
-  const reason = state.reason.trim()
   return {
     ok: true,
     body: {
@@ -90,7 +115,6 @@ export function buildApproveBody(state: ApproveFormState): ApproveBodyResult {
       expiresAt: state.expiresAt,
       grantedRole: state.grantedRole,
       grantedPermissions: [...new Set(state.grantedPermissions.filter(Boolean))],
-      ...(reason ? { reason } : {}),
     },
   }
 }

@@ -83,6 +83,17 @@ export function parseAuthzMe(raw) {
         effectivePermissions: r.effectivePermissions,
         permissionCatalog: r.permissionCatalog,
     };
+    if (r.rolePermissions !== undefined) {
+        if (typeof r.rolePermissions !== 'object' || r.rolePermissions === null)
+            return null;
+        const bundles = {};
+        for (const [key, value] of Object.entries(r.rolePermissions)) {
+            if (!isStringArray(value))
+                return null;
+            bundles[key] = value;
+        }
+        out.rolePermissions = bundles;
+    }
     if (r.trainingCompleted !== undefined) {
         if (typeof r.trainingCompleted !== 'boolean')
             return null;

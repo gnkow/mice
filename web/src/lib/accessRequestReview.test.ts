@@ -5,10 +5,12 @@ import {
   approvableRoles,
   buildApproveBody,
   buildDenyBody,
+  extrasBeyondRole,
   filterAccessRequests,
   formatRequestedAccess,
   isAdminFloorError,
   isAuthorityError,
+  selectGrantRolePermissions,
 } from './accessRequestReview'
 
 const row = (partial: {
@@ -92,14 +94,13 @@ describe('RBAC S35 access request review helpers', () => {
     assert.deepEqual(approvableRoles('user'), [])
   })
 
-  it('builds approve body with expiry and optional modified grant', () => {
+  it('builds approve body with expiry and optional modified grant (reason is signed separately)', () => {
     const expiresAt = 1_700_000_000_000
     assert.deepEqual(
       buildApproveBody({
         expiresAt,
         grantedRole: 'user',
         grantedPermissions: [],
-        reason: '',
       }),
       {
         ok: true,
@@ -111,7 +112,6 @@ describe('RBAC S35 access request review helpers', () => {
         expiresAt,
         grantedRole: null,
         grantedPermissions: ['namespace:create'],
-        reason: '  ok  ',
       }),
       {
         ok: true,
@@ -120,7 +120,6 @@ describe('RBAC S35 access request review helpers', () => {
           expiresAt,
           grantedRole: null,
           grantedPermissions: ['namespace:create'],
-          reason: 'ok',
         },
       },
     )
@@ -129,9 +128,31 @@ describe('RBAC S35 access request review helpers', () => {
         expiresAt: 0,
         grantedRole: 'user',
         grantedPermissions: [],
-        reason: '',
       }).ok,
       false,
+    )
+  })
+
+  it('pre-selects role permissions and keeps only extras for the approve body', () => {
+    const rolePermissions = {
+      user: ['repo:read', 'job:submit'],
+      manager: ['repo:read', 'job:submit', 'namespace:create'],
+    }
+    assert.deepEqual(
+      selectGrantRolePermissions({
+        role: 'user',
+        rolePermissions,
+        extras: ['audit:read'],
+      }),
+      ['repo:read', 'job:submit', 'audit:read'],
+    )
+    assert.deepEqual(
+      extrasBeyondRole('user', ['repo:read', 'job:submit', 'audit:read'], rolePermissions),
+      ['audit:read'],
+    )
+    assert.deepEqual(
+      extrasBeyondRole(null, ['repo:read', 'audit:read'], rolePermissions),
+      ['repo:read', 'audit:read'],
     )
   })
 

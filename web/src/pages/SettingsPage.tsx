@@ -1,5 +1,5 @@
 import { ArchiveRestore, ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound, Package, Scale } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
@@ -11,6 +11,7 @@ import { IdpDriftSection } from '../components/IdpDriftSection'
 import { ReenableSection } from '../components/ReenableSection'
 import { DisabledSignersSection } from '../components/DisabledSignersSection'
 import { GroupBindingSection } from '../components/GroupBindingSection'
+import { Pagination, paginate } from '../components/Pagination'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { useAsync } from '../hooks/useAsync'
@@ -32,12 +33,18 @@ import {
   approvableRoles,
   buildApproveBody,
   buildDenyBody,
+  extrasBeyondRole,
   filterAccessRequests,
   formatRequestedAccess,
   isAdminFloorError,
   isAuthorityError,
+  selectGrantRolePermissions,
   type AccessRequestStatusFilter,
 } from '../lib/accessRequestReview'
+import {
+  SIGNED_MUTATION_COMPLETE_EVENT,
+  type PendingSignedMutation,
+} from '../lib/signingResume'
 import { buildDirectGrantBodies } from '../lib/directGrantForm'
 import { delegatedExpiryLabel, delegatedExpiryTone } from '../lib/delegatedExpiry'
 import { profileRoleBadge } from '../lib/profileRoleBadge'
@@ -241,11 +248,31 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
   const roleChoices = approvableRoles(authz.role)
   const pendingCount = filterAccessRequests(allRequests, 'pending').length
 
+  const reloadRequests = state.reload
+  useEffect(() => {
+    function onComplete(e: Event) {
+      const intent = (e as CustomEvent<PendingSignedMutation>).detail
+      if (!intent?.apiPath?.includes('/access-requests/')) return
+      setSelectedId(null)
+      setError(null)
+      reloadRequests()
+    }
+    window.addEventListener(SIGNED_MUTATION_COMPLETE_EVENT, onComplete)
+    return () => window.removeEventListener(SIGNED_MUTATION_COMPLETE_EVENT, onComplete)
+  }, [reloadRequests])
+
   function openReview(req: AccessRequestRow) {
+    const role = req.requestedRole ?? null
     setSelectedId(req.id)
     setMode('review')
-    setGrantedRole(req.requestedRole ?? null)
-    setGrantedPermissions([...(req.requestedPermissions ?? [])])
+    setGrantedRole(role)
+    setGrantedPermissions(
+      selectGrantRolePermissions({
+        role,
+        rolePermissions: authz.rolePermissions,
+        extras: req.requestedPermissions,
+      }),
+    )
     setExpiresLocal(defaultExpiryLocalValue())
     setReason('')
     setError(null)
@@ -273,8 +300,12 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
     const built = buildApproveBody({
       expiresAt,
       grantedRole,
-      grantedPermissions,
-      reason,
+      // Role bundle is shown checked in the UI; only extras are custom grants.
+      grantedPermissions: extrasBeyondRole(
+        grantedRole,
+        grantedPermissions,
+        authz.rolePermissions,
+      ),
     })
     if (!built.ok) {
       setError(built.error)
@@ -449,7 +480,22 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
               <span className="ns-settings-label">Grant role</span>
               <select
                 value={grantedRole ?? ''}
-                onChange={(e) => setGrantedRole(e.target.value || null)}
+                onChange={(e) => {
+                  const next = e.target.value || null
+                  const extras = extrasBeyondRole(
+                    grantedRole,
+                    grantedPermissions,
+                    authz.rolePermissions,
+                  )
+                  setGrantedRole(next)
+                  setGrantedPermissions(
+                    selectGrantRolePermissions({
+                      role: next,
+                      rolePermissions: authz.rolePermissions,
+                      extras,
+                    }),
+                  )
+                }}
               >
                 <option value="">No role (permissions only)</option>
                 {roleChoices.map((role) => (
@@ -471,32 +517,40 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
           </div>
           <fieldset>
             <legend>Grant permissions (optional modify)</legend>
+            <p className="muted small">
+              Permissions included in the selected role are checked automatically. Add
+              extras below if you need more than the role provides.
+            </p>
             <div className="perm-multiselect perm-multiselect-compact">
-              {authz.permissionCatalog.map((perm) => (
-                <label key={perm} className="radio-row">
-                  <input
-                    type="checkbox"
-                    checked={grantedPermissions.includes(perm)}
-                    onChange={() =>
-                      setGrantedPermissions((prev) => togglePermission(prev, perm))
-                    }
-                  />
-                  <code className="small">{perm}</code>
-                </label>
-              ))}
+              {authz.permissionCatalog.map((perm) => {
+                const inRole = Boolean(
+                  grantedRole &&
+                    authz.rolePermissions?.[grantedRole]?.includes(perm),
+                )
+                return (
+                  <label key={perm} className="radio-row">
+                    <input
+                      type="checkbox"
+                      checked={grantedPermissions.includes(perm)}
+                      disabled={inRole}
+                      onChange={() => {
+                        if (inRole) return
+                        setGrantedPermissions((prev) => togglePermission(prev, perm))
+                      }}
+                    />
+                    <code className="small">{perm}</code>
+                    {inRole ? (
+                      <span className="muted small"> (in role)</span>
+                    ) : null}
+                  </label>
+                )
+              })}
             </div>
           </fieldset>
-          <label htmlFor="access-request-approve-reason">
-            Approval reason (optional)
-            <textarea
-              id="access-request-approve-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={2}
-              placeholder="Why this grant is appropriate"
-              aria-describedby={error ? 'access-request-authority-error' : undefined}
-            />
-          </label>
+          <p className="muted small" data-testid="access-request-approve-reason-hint">
+            Approving opens the signing ceremony — the reason you enter there is bound to the
+            electronic signature for this approval.
+          </p>
           <div className="btn-row ns-settings-actions">
             <button
               className="btn primary"
@@ -552,6 +606,9 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
   )
 }
 
+/** Page size for Settings → Grant access (latest principals first). */
+const GRANT_ACCESS_PAGE_SIZE = 5
+
 function UsersGrantSection({
   authz,
   signedInIss,
@@ -571,10 +628,11 @@ function UsersGrantSection({
   const [grantRoleValue, setGrantRoleValue] = useState<string | null>('user')
   const [grantPerms, setGrantPerms] = useState<string[]>([])
   const [expiresLocal, setExpiresLocal] = useState(defaultExpiryLocalValue)
-  const [reason, setReason] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
 
   const users = state.kind === 'ok' ? state.data.users : []
+  const pageSlice = paginate(users, page, GRANT_ACCESS_PAGE_SIZE)
   const roleChoices = approvableRoles(authz.role)
   const admins = instance.kind === 'ok' ? instance.data.admins : []
   const adminCount = admins.length
@@ -587,14 +645,34 @@ function UsersGrantSection({
     targetIsAdmin
   const floorBlocksDemotion = demotingAdmin && adminCount <= 2
 
+  const reloadUsers = state.reload
+  const reloadInstance = instance.reload
+  useEffect(() => {
+    function onComplete(e: Event) {
+      const intent = (e as CustomEvent<PendingSignedMutation>).detail
+      if (!intent?.apiPath?.includes('/auth/grants/')) return
+      setGrantOpen(false)
+      setNotice('Granted access')
+      reloadUsers()
+      reloadInstance()
+    }
+    window.addEventListener(SIGNED_MUTATION_COMPLETE_EVENT, onComplete)
+    return () => window.removeEventListener(SIGNED_MUTATION_COMPLETE_EVENT, onComplete)
+  }, [reloadUsers, reloadInstance])
+
   function openGrant(user?: RbacUserRow) {
+    const role = roleChoices[0] ?? null
     setGrantOpen(true)
     setTargetSub(user?.sub ?? '')
     setTargetIss(user?.iss ?? signedInIss)
-    setGrantRoleValue(roleChoices[0] ?? null)
-    setGrantPerms([])
+    setGrantRoleValue(role)
+    setGrantPerms(
+      selectGrantRolePermissions({
+        role,
+        rolePermissions: authz.rolePermissions,
+      }),
+    )
     setExpiresLocal(defaultExpiryLocalValue())
-    setReason('')
     setError(null)
     setAuthorityError(false)
     setAdminFloorError(false)
@@ -614,9 +692,13 @@ function UsersGrantSection({
       sub: targetSub,
       iss: targetIss,
       role: grantRoleValue,
-      permissions: grantPerms,
+      // Role bundle is shown checked; only extras become custom grants.
+      permissions: extrasBeyondRole(
+        grantRoleValue,
+        grantPerms,
+        authz.rolePermissions,
+      ),
       expiresAt,
-      reason,
     })
     if (!built.ok) {
       setError(built.error)
@@ -700,33 +782,44 @@ function UsersGrantSection({
         </div>
       )}
       {users.length > 0 && (
-        <ul className="ns-member-list">
-          {users.map((u) => (
-            <li key={`${u.iss}|${u.sub}`} className="ns-member-row">
-              <div className="ns-member-main">
-                <code className="ns-member-sub">{u.name || u.email || u.sub}</code>
-                <span className="muted small">
-                  {u.email}
-                  {' · '}
-                  {u.role
-                    ? profileRoleBadge({ role: u.role, pending: false })
-                    : 'No role'}
-                  {' · '}
-                  {u.customPermissionCount} custom permission
-                  {u.customPermissionCount === 1 ? '' : 's'}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="btn ghost small"
-                disabled={busy}
-                onClick={() => openGrant(u)}
-              >
-                Grant Access
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="ns-member-list" data-testid="users-grant-list">
+            {pageSlice.items.map((u) => (
+              <li key={`${u.iss}|${u.sub}`} className="ns-member-row">
+                <div className="ns-member-main">
+                  <code className="ns-member-sub">{u.name || u.email || u.sub}</code>
+                  <span className="muted small">
+                    {u.email}
+                    {' · '}
+                    {u.role
+                      ? profileRoleBadge({ role: u.role, pending: false })
+                      : 'No role'}
+                    {' · '}
+                    {u.customPermissionCount} custom permission
+                    {u.customPermissionCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  disabled={busy}
+                  onClick={() => openGrant(u)}
+                >
+                  Grant Access
+                </button>
+              </li>
+            ))}
+          </ul>
+          {pageSlice.pageCount > 1 ? (
+            <Pagination
+              page={pageSlice.page}
+              pageCount={pageSlice.pageCount}
+              total={pageSlice.total}
+              onPageChange={setPage}
+              label="Grant access pagination"
+            />
+          ) : null}
+        </>
       )}
 
       {grantOpen && (
@@ -749,7 +842,20 @@ function UsersGrantSection({
               <select
                 value={grantRoleValue ?? ''}
                 onChange={(e) => {
-                  setGrantRoleValue(e.target.value || null)
+                  const next = e.target.value || null
+                  const extras = extrasBeyondRole(
+                    grantRoleValue,
+                    grantPerms,
+                    authz.rolePermissions,
+                  )
+                  setGrantRoleValue(next)
+                  setGrantPerms(
+                    selectGrantRolePermissions({
+                      role: next,
+                      rolePermissions: authz.rolePermissions,
+                      extras,
+                    }),
+                  )
                   setAdminFloorError(false)
                 }}
               >
@@ -791,31 +897,41 @@ function UsersGrantSection({
             </p>
           )}
           <fieldset>
-            <legend>Custom permissions</legend>
+            <legend>Permissions (optional modify)</legend>
+            <p className="muted small">
+              Permissions included in the selected role are checked automatically. Add
+              extras below if you need more than the role provides.
+            </p>
             <div className="perm-multiselect perm-multiselect-compact">
-              {authz.permissionCatalog.map((perm) => (
-                <label key={perm} className="radio-row">
-                  <input
-                    type="checkbox"
-                    checked={grantPerms.includes(perm)}
-                    onChange={() => setGrantPerms((prev) => togglePermission(prev, perm))}
-                  />
-                  <code className="small">{perm}</code>
-                </label>
-              ))}
+              {authz.permissionCatalog.map((perm) => {
+                const inRole = Boolean(
+                  grantRoleValue &&
+                    authz.rolePermissions?.[grantRoleValue]?.includes(perm),
+                )
+                return (
+                  <label key={perm} className="radio-row">
+                    <input
+                      type="checkbox"
+                      checked={grantPerms.includes(perm)}
+                      disabled={inRole}
+                      onChange={() => {
+                        if (inRole) return
+                        setGrantPerms((prev) => togglePermission(prev, perm))
+                      }}
+                    />
+                    <code className="small">{perm}</code>
+                    {inRole ? (
+                      <span className="muted small"> (in role)</span>
+                    ) : null}
+                  </label>
+                )
+              })}
             </div>
           </fieldset>
-          <label htmlFor="grant-access-reason">
-            Reason (required)
-            <textarea
-              id="grant-access-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={2}
-              placeholder="Why this grant is appropriate"
-              required
-            />
-          </label>
+          <p className="muted small" data-testid="grant-access-reason-hint">
+            Submitting opens the signing ceremony — the reason you enter there is bound to the
+            electronic signature for this grant.
+          </p>
           <div className="btn-row ns-settings-actions">
             <button
               className="btn primary"

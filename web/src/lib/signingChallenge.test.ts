@@ -29,6 +29,19 @@ test('09 step-up: API reauthUrl next is rewritten to the in-app resume path', ()
   assert.equal(c.continueUrl, '/auth/reauth?max_age=60&next=%2Fn%2Fdemo%2Fsettings')
 })
 
+test('09 step-up: resume path keeps Settings hash so Access requests survives MFA', () => {
+  const c = classifySigningChallenge(
+    401,
+    { error: 'reauthentication_required', reauthUrl: '/auth/reauth?max_age=60&next=%2F' },
+    { resumePath: '/settings#access-requests' },
+  )
+  assert.ok(c)
+  assert.equal(
+    c.continueUrl,
+    '/auth/reauth?max_age=60&next=%2Fsettings%23access-requests',
+  )
+})
+
 test('20 idle: session_idle yields Session idle interstitial with reauth Continue', () => {
   const c = classifySigningChallenge(
     401,

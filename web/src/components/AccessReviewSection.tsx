@@ -7,6 +7,7 @@ import {
   classifySigningChallenge,
   type SigningChallenge,
 } from '../lib/signingChallenge'
+import { continueToSigningReauth, pageResumePath } from '../lib/signingResume'
 import { SigningChallengeInterstitial } from './SigningChallengeInterstitial'
 
 type AccessReviewReport = {
@@ -140,7 +141,7 @@ export function AccessReviewSection() {
       const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
       if (!res.ok) {
         const next = classifySigningChallenge(res.status, body, {
-          resumePath: window.location.pathname + window.location.search,
+          resumePath: pageResumePath(),
         })
         if (next) {
           setChallenge(next)
@@ -181,9 +182,7 @@ export function AccessReviewSection() {
           challenge={challenge}
           onDismiss={() => setChallenge(null)}
           onContinue={() => {
-            if (challenge.continueUrl) {
-              window.location.assign(challenge.continueUrl)
-            }
+            if (challenge.continueUrl) continueToSigningReauth(challenge.continueUrl)
           }}
         />
       ) : null}

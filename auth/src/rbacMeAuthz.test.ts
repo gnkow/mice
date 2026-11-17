@@ -64,6 +64,8 @@ describe('RBAC S31 GET /auth/me/authz', () => {
     assert.equal(pendingBody!.role, null)
     assert.deepEqual(pendingBody!.effectivePermissions, [])
     assert.deepEqual(pendingBody!.permissionCatalog, [...INSTANCE_PERMISSION_CATALOG])
+    assert.ok(pendingBody!.rolePermissions)
+    assert.ok((pendingBody!.rolePermissions!.user ?? []).includes('repo:files:write'))
     assert.equal('permissions' in pendingBody!, false)
     assert.equal('instanceAdmin' in pendingBody!, false)
     assert.equal('hasAnyGrant' in pendingBody!, false)

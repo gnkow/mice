@@ -20,6 +20,7 @@ import {
   classifySigningChallenge,
   type SigningChallenge,
 } from '../lib/signingChallenge'
+import { continueToSigningReauth, pageResumePath } from '../lib/signingResume'
 import {
   completeSignedMergeRequest,
   executeMergeSignature,
@@ -65,7 +66,7 @@ export function MergeRequestPage() {
 
   function applyChallenge(status: number, body: unknown): boolean {
     const next = classifySigningChallenge(status, body, {
-      resumePath: window.location.pathname + window.location.search,
+      resumePath: pageResumePath(),
     })
     if (!next) return false
     setChallenge(next)
@@ -223,9 +224,7 @@ export function MergeRequestPage() {
           challenge={challenge}
           onDismiss={() => setChallenge(null)}
           onContinue={() => {
-            if (challenge.continueUrl) {
-              window.location.assign(challenge.continueUrl)
-            }
+            if (challenge.continueUrl) continueToSigningReauth(challenge.continueUrl)
           }}
         />
       ) : null}
@@ -412,12 +411,13 @@ function SigningForm({
               disabled={busy}
             >
               {REASON_CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
+                <option key={c.value} value={c.value} title={c.hint}>
+                  {c.label} — {c.hint}
                 </option>
               ))}
             </select>
           </label>
+          <p className="muted small">{REASON_CATEGORIES.find((c) => c.value === category)?.hint}</p>
 
           <label className="reason-prompt-label" htmlFor={reasonId}>
             Reason

@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from 'drizzle-orm'
+import { and, asc, desc, eq, gt } from 'drizzle-orm'
 import { appendAudit, type AuditActor } from './audit.js'
 import { ensurePrincipal } from './authentication/session/session.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
@@ -617,7 +617,7 @@ export type RbacUserRow = {
   customPermissionCount: number
 }
 
-/** Settings → Users: principals with current role and custom-perm count. */
+/** Settings → Users: principals with current role and custom-perm count (newest first). */
 export async function listRbacUsers(now = Date.now()): Promise<RbacUserRow[]> {
   const people = await getDb()
     .select({
@@ -628,7 +628,7 @@ export async function listRbacUsers(now = Date.now()): Promise<RbacUserRow[]> {
       email: principals.email,
     })
     .from(principals)
-    .orderBy(asc(principals.name), asc(principals.email), asc(principals.sub))
+    .orderBy(desc(principals.id))
 
   const roleById = new Map<number, InstanceRole>()
   for (const r of await getDb().select().from(principalRoles)) {

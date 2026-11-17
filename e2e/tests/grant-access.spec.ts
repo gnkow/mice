@@ -37,6 +37,36 @@ test.describe('Grant access / no IdP bootstrap (#11)', () => {
     await expect(section.getByRole('button', { name: 'Grant Access' }).first()).toBeVisible()
   })
 
+  test('TC-GRANT-01b: Grant access lists latest five with pagination', async ({ page }) => {
+    await mintSession(page, { sub: `e2e-grant-page-${Date.now()}`, role: 'admin' })
+    const users = Array.from({ length: 7 }, (_, i) => ({
+      sub: `grant-page-${6 - i}`,
+      iss: 'https://idp.test',
+      name: `Grant Page ${6 - i}`,
+      email: `grant-page-${6 - i}@example.com`,
+      role: 'user',
+      customPermissionCount: 0,
+    }))
+    await page.route('**/auth/grants/users', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ users }),
+      })
+    })
+
+    const section = await openSettingsSection(page, 'Grant access', 'users-grant')
+    const list = section.getByTestId('users-grant-list')
+    await expect(list.locator('li')).toHaveCount(5)
+    await expect(list.locator('li').first()).toContainText('Grant Page 6')
+    const pager = section.getByRole('navigation', { name: 'Grant access pagination' })
+    await expect(pager).toBeVisible()
+    await expect(pager.getByText(/7 · Page 1 of 2/i)).toBeVisible()
+    await pager.getByRole('button', { name: /Next/i }).click()
+    await expect(list.locator('li')).toHaveCount(2)
+    await expect(pager.getByText(/7 · Page 2 of 2/i)).toBeVisible()
+  })
+
   test('TC-GRANT-02: Access requests empty state explains manual grant path', async ({
     page,
   }) => {

@@ -83,6 +83,11 @@ test.describe('09 step-up reauthentication UI', () => {
     const continueBtn = interstitial.getByTestId('signing-challenge-continue')
     await expect(continueBtn).toBeEnabled()
     await expect(continueBtn).toHaveText(/Confirm it's you/i)
-    await expect(interstitial.getByText(/same account/i)).toBeVisible()
+    await expect(
+      interstitial.locator('.signing-challenge-hint'),
+    ).toContainText(/same account/i)
+    await expect(
+      interstitial.locator('.signing-challenge-hint'),
+    ).toContainText(/continues automatically/i)
   })
 })

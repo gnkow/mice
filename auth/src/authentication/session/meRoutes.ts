@@ -18,7 +18,7 @@ import {
   submitAccessRequest,
 } from '../../rbacAccessRequests.js'
 import { INSTANCE_PERMISSION_CATALOG, isInstancePermission } from '../../rbacCatalog.js'
-import { isInstanceRole } from '../../rbacRoles.js'
+import { INSTANCE_ROLES, getRolePermissions, isInstanceRole } from '../../rbacRoles.js'
 import { getEffectivePermissions, getUserRole, hasPermission } from '../../rbacStore.js'
 import { authzEnforceReport } from '../../authzAlwaysOn.js'
 import { sessionHasMfaEvidence } from '../signing/mfaEvidence.js'
@@ -53,12 +53,16 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
   app.get('/auth/me/authz', guarded({}, async ({ c, user: session }) => {
     const pending = await isPendingUser(session)
     const role = await getUserRole(session)
+    const rolePermissions = Object.fromEntries(
+      INSTANCE_ROLES.map((r) => [r, getRolePermissions(r)]),
+    )
     return c.json({
       ...authzEnforceReport(),
       pending,
       role,
       effectivePermissions: await getEffectivePermissions(session),
       permissionCatalog: [...INSTANCE_PERMISSION_CATALOG],
+      rolePermissions,
       trainingCompleted: await hasCompletedTraining(session),
       requireTraining: env.authzRequireTraining,
     })
@@ -205,13 +209,15 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
         grantedPermissions.push(p)
       }
     }
+    const signedReason = (c.req.header('x-mice-reason') ?? '').trim()
+    const bodyReason = typeof body.reason === 'string' ? body.reason.trim() : ''
     const result = await approveAccessRequest({
       reviewer: session,
       requestId,
       expiresAt,
       grantedRole,
       grantedPermissions,
-      reason: typeof body.reason === 'string' ? body.reason : undefined,
+      reason: signedReason || bodyReason || undefined,
     })
     if (!result.ok) {
       const status = result.error === 'Not found' ? 404 : result.error.startsWith('Forbidden') ? 403 : 400

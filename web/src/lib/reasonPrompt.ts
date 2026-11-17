@@ -1,12 +1,77 @@
+/**
+ * Fixed v1 pick-list (must match auth `REASON_CATEGORIES` values).
+ * Labels describe which operations belong in each bucket.
+ */
 export const REASON_CATEGORIES = [
-  { value: 'data_correction', label: 'Data correction' },
-  { value: 'destructive', label: 'Destructive action' },
-  { value: 'privileged_settings', label: 'Privileged settings' },
-  { value: 'revocation', label: 'Revocation' },
-  { value: 'other', label: 'Other' },
+  {
+    value: 'data_correction',
+    label: 'Data correction',
+    hint: 'Amend existing records, metadata, or file content',
+  },
+  {
+    value: 'destructive',
+    label: 'Destructive action',
+    hint: 'Delete repositories, branches, namespaces, or other data',
+  },
+  {
+    value: 'privileged_settings',
+    label: 'Access & settings',
+    hint: 'Grants, roles, members, instance or namespace configuration',
+  },
+  {
+    value: 'revocation',
+    label: 'Revocation',
+    hint: 'Revoke signatures, sessions, or previously granted access',
+  },
+  {
+    value: 'other',
+    label: 'Other',
+    hint: 'Does not fit the categories above',
+  },
 ] as const
 
 export type ReasonCategoryValue = (typeof REASON_CATEGORIES)[number]['value']
+
+/**
+ * Pick the category that best matches the mutation about to be signed.
+ * Operators can still change it in the ceremony.
+ */
+export function suggestReasonCategory(input: {
+  method: string
+  path: string
+  changeSummary?: string
+}): ReasonCategoryValue {
+  const method = input.method.toUpperCase()
+  const path = input.path.toLowerCase()
+  const summary = (input.changeSummary ?? '').toLowerCase()
+  const hay = `${path} ${summary}`
+
+  if (
+    /revok|suspend|\/deny\b/.test(hay) ||
+    /\brevoc/.test(hay) ||
+    path.includes('/signatures/') && path.includes('revoke')
+  ) {
+    return 'revocation'
+  }
+  if (
+    method === 'DELETE' ||
+    /\bdelete\b|\bdestroy\b|destructive/.test(hay)
+  ) {
+    return 'destructive'
+  }
+  if (
+    /access-request|\/grants\/|\/instance|seal-key|announcement|permission|\/members|collaborator|approver|\/role|training|group-binding|access-review/.test(
+      hay,
+    ) ||
+    /\bgrant\b|\bapprov|\baccess request|\bsettings\b/.test(summary)
+  ) {
+    return 'privileged_settings'
+  }
+  if (/correct|amend|metadata|\/file|\/files|patch|data correction/.test(hay)) {
+    return 'data_correction'
+  }
+  return 'other'
+}
 
 export type ReasonSubmission = {
   reason: string

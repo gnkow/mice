@@ -1,5 +1,7 @@
 /** Signing-ceremony challenges that need an in-app interstitial (tickets 09 / 20 / 52). */
 
+import { pageResumePath } from './signingResume'
+
 export type SigningChallengeKind = 'step_up' | 'session_idle' | 'mfa_required'
 
 export type SigningChallenge = {
@@ -68,7 +70,8 @@ export function classifySigningChallenge(
   const error = typeof record.error === 'string' ? record.error : ''
   const reason = typeof record.reason === 'string' ? record.reason : ''
   const message = typeof record.message === 'string' ? record.message : ''
-  const resumePath = opts?.resumePath ?? (typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/')
+  const resumePath =
+    opts?.resumePath ?? (typeof window !== 'undefined' ? pageResumePath() : '/')
   const hasReauthUrl = typeof record.reauthUrl === 'string' && record.reauthUrl.trim().length > 0
 
   if (
@@ -79,7 +82,7 @@ export function classifySigningChallenge(
       kind: 'step_up',
       title: "Confirm it's you",
       message:
-        'This signature needs a fresh sign-in from the last minute. Confirm it is still you — the same account — then try again.',
+        'This signature needs a fresh sign-in from the last minute. Confirm it is still you — the same account. When you return, signing continues automatically.',
       continueUrl: reauthContinueUrl(record, resumePath),
     }
   }
@@ -90,7 +93,7 @@ export function classifySigningChallenge(
       title: 'Session idle',
       message:
         message ||
-        'Your session has been idle too long to sign. Continue to sign in again, then retry the signature.',
+        'Your session has been idle too long to sign. Continue to sign in again; when you return, signing continues automatically.',
       continueUrl: reauthContinueUrl(record, resumePath),
     }
   }
@@ -107,7 +110,7 @@ export function classifySigningChallenge(
     return {
       kind: 'mfa_required',
       title: 'MFA required',
-      message: `Electronic signatures need verified multi-factor authentication.${evidenceHint} Continue to sign in again with your organisation MFA (for example an authenticator OTP), then retry.`,
+      message: `Electronic signatures need verified multi-factor authentication.${evidenceHint} Continue to sign in again with your organisation MFA (for example an authenticator OTP). When you return, signing continues automatically.`,
       continueUrl: reauthContinueUrl(record, resumePath),
       ...(EVIDENCE_REASONS.has(reason) ? { evidenceReason: reason } : {}),
     }
@@ -121,14 +124,12 @@ export function classifySigningChallenge(
  * current IdP sign-in. Same interstitial as an API `amr_missing` / MFA refusal.
  */
 export function mfaRequiredChallenge(resumePath?: string): SigningChallenge {
-  const path =
-    resumePath ??
-    (typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/')
+  const path = resumePath ?? (typeof window !== 'undefined' ? pageResumePath() : '/')
   return {
     kind: 'mfa_required',
     title: 'MFA required',
     message:
-      'Electronic signatures need verified multi-factor authentication. Your current sign-in does not evidence MFA. Continue to sign in again with your organisation MFA (for example an authenticator OTP), then retry.',
+      'Electronic signatures need verified multi-factor authentication. Your current sign-in does not evidence MFA. Continue to sign in again with your organisation MFA (for example an authenticator OTP). When you return, signing continues automatically.',
     continueUrl: reauthContinueUrl({}, path),
   }
 }

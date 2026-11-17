@@ -22,19 +22,19 @@ const KIND_META: Record<
     Icon: ShieldAlert,
     tone: 'warn',
     continueLabel: "Confirm it's you",
-    hint: 'You will sign in again as the same account, then return here to finish the signature.',
+    hint: 'You will sign in again as the same account. When you return, the signature ceremony continues automatically — you do not start the action over.',
   },
   session_idle: {
     Icon: TimerReset,
     tone: 'warn',
     continueLabel: 'Sign in again',
-    hint: 'Your session timed out from inactivity. Sign in again, then retry the signature.',
+    hint: 'Your session timed out from inactivity. Sign in again; when you return, the signature ceremony continues automatically.',
   },
   mfa_required: {
     Icon: KeyRound,
     tone: 'error',
     continueLabel: 'Complete MFA',
-    hint: 'Electronic signatures need verified multi-factor authentication before they can proceed.',
+    hint: 'After MFA you return here and the signature ceremony continues automatically — you do not click Approve / Grant again.',
   },
 }
 

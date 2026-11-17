@@ -85,6 +85,11 @@ export type AuthzMe = {
   effectivePermissions: string[]
   /** Full RBAC permission catalog for UI checklists. */
   permissionCatalog: string[]
+  /**
+   * Formal role → permission bundle (for grant/approve checklists).
+   * Optional for older payloads; when present, UI pre-checks role permissions.
+   */
+  rolePermissions?: Record<string, string[]>
   trainingCompleted?: boolean
   requireTraining?: boolean
 }
@@ -108,6 +113,15 @@ export function parseAuthzMe(raw: unknown): AuthzMe | null {
     role: r.role,
     effectivePermissions: r.effectivePermissions,
     permissionCatalog: r.permissionCatalog,
+  }
+  if (r.rolePermissions !== undefined) {
+    if (typeof r.rolePermissions !== 'object' || r.rolePermissions === null) return null
+    const bundles: Record<string, string[]> = {}
+    for (const [key, value] of Object.entries(r.rolePermissions as Record<string, unknown>)) {
+      if (!isStringArray(value)) return null
+      bundles[key] = value
+    }
+    out.rolePermissions = bundles
   }
   if (r.trainingCompleted !== undefined) {
     if (typeof r.trainingCompleted !== 'boolean') return null

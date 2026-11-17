@@ -10,6 +10,7 @@ import {
 import {
   REASON_CATEGORIES,
   registerReasonOpener,
+  suggestReasonCategory,
   type ReasonCategoryValue,
   type ReasonPromptOptions,
   type ReasonSubmission,
@@ -20,6 +21,13 @@ import {
   mfaRequiredChallenge,
   type SigningChallenge,
 } from '../lib/signingChallenge'
+import {
+  continueToSigningReauth,
+  dispatchSignedMutationComplete,
+  ensureResumeSignedMutation,
+  pageResumePath,
+  takeCeremonyResumeDraft,
+} from '../lib/signingResume'
 import { SigningChallengeInterstitial } from './SigningChallengeInterstitial'
 
 type Pending = {
@@ -62,8 +70,16 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     registerReasonOpener(
       (options) =>
         new Promise<ReasonSubmission | null>((resolve) => {
-          setCategory('data_correction')
-          setReason('')
+          const draft = takeCeremonyResumeDraft()
+          setCategory(
+            draft?.category ??
+              suggestReasonCategory({
+                method: options.method,
+                path: options.path,
+                changeSummary: options.changeSummary,
+              }),
+          )
+          setReason(draft?.reason ?? '')
           setPrepared(null)
           setError(null)
           setChallenge(null)
@@ -73,9 +89,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
           void fetchAuthMe()
             .then((me) => {
               if (!me.authenticated || me.user.mfaEvidenced !== false) return
-              setChallenge(
-                mfaRequiredChallenge(window.location.pathname + window.location.search),
-              )
+              setChallenge(mfaRequiredChallenge(pageResumePath()))
             })
             .catch(() => {
               /* network blip: prepare/execute still refuse without MFA */
@@ -83,6 +97,25 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
         }),
     )
     return () => registerReasonOpener(null)
+  }, [])
+
+  // After IdP MFA/step-up, replay the interrupted mutation so the ceremony reopens
+  // without requiring another Approve / Grant click.
+  useEffect(() => {
+    const resume = ensureResumeSignedMutation(pageResumePath())
+    if (!resume) return
+    let cancelled = false
+    void resume.promise
+      .then((res) => {
+        if (cancelled || !res.ok) return
+        dispatchSignedMutationComplete(resume.intent)
+      })
+      .catch(() => {
+        /* user cancelled ceremony or mutation failed — page shows its own errors on retry */
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -111,7 +144,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
 
   function applyChallengeFromBody(status: number, body: unknown): boolean {
     const next = classifySigningChallenge(status, body, {
-      resumePath: window.location.pathname + window.location.search,
+      resumePath: pageResumePath(),
     })
     if (!next) return false
     setChallenge(next)
@@ -127,7 +160,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     try {
       const me = await fetchAuthMe()
       if (me.authenticated && me.user.mfaEvidenced === false) {
-        setChallenge(mfaRequiredChallenge(window.location.pathname + window.location.search))
+        setChallenge(mfaRequiredChallenge(pageResumePath()))
         setBusy(false)
         return
       }
@@ -171,7 +204,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     try {
       const me = await fetchAuthMe()
       if (me.authenticated && me.user.mfaEvidenced === false) {
-        setChallenge(mfaRequiredChallenge(window.location.pathname + window.location.search))
+        setChallenge(mfaRequiredChallenge(pageResumePath()))
         setBusy(false)
         return
       }
@@ -235,9 +268,17 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
           challenge={challenge}
           onDismiss={() => finish(null)}
           onContinue={() => {
-            if (challenge.continueUrl) {
-              window.location.assign(challenge.continueUrl)
-            }
+            if (!challenge.continueUrl || !pending) return
+            continueToSigningReauth(challenge.continueUrl, {
+              path: pageResumePath(),
+              method: pending.options.method,
+              apiPath: pending.options.path,
+              body: pending.options.body,
+              changeSummary: pending.options.changeSummary,
+              ...(reason.trim()
+                ? { draftReason: reason.trim(), draftCategory: category }
+                : {}),
+            })
           }}
         />
       ) : null}
@@ -282,14 +323,18 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
                     onChange={(e) => setCategory(e.target.value as ReasonCategoryValue)}
                     required
                     disabled={busy}
+                    aria-describedby={`${categoryId}-hint`}
                   >
                     {REASON_CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
+                      <option key={c.value} value={c.value} title={c.hint}>
+                        {c.label} — {c.hint}
                       </option>
                     ))}
                   </select>
                 </label>
+                <p id={`${categoryId}-hint`} className="muted small">
+                  {REASON_CATEGORIES.find((c) => c.value === category)?.hint}
+                </p>
 
                 <label className="reason-prompt-label" htmlFor={reasonId}>
                   Reason

@@ -20,7 +20,10 @@ function parseExpiresAt(body: Record<string, unknown>): number | null {
   return null
 }
 
-function grantReason(body: Record<string, unknown>): string {
+/** Prefer the signed ceremony reason; fall back to body or a short default. */
+function grantReason(c: { req: { header: (name: string) => string | undefined } }, body: Record<string, unknown>): string {
+  const signed = (c.req.header('x-mice-reason') ?? '').trim()
+  if (signed) return signed
   return typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'Direct grant'
 }
 
@@ -56,7 +59,7 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
           actor: user,
           target: t,
           role: body.role,
-          reason: grantReason(body),
+          reason: grantReason(c, body),
           expiresAt,
         })
         if (!result.ok) {
@@ -109,7 +112,7 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
           actor: user,
           target: t,
           permissions,
-          reason: grantReason(body),
+          reason: grantReason(c, body),
           expiresAt,
         })
         if (!result.ok) {

@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import { buildDirectGrantBodies } from './directGrantForm'
 
 describe('RBAC S36 direct grant form', () => {
-  it('builds role and/or permission grant bodies with expiry and reason', () => {
+  it('builds role and/or permission grant bodies with expiry (reason is signed separately)', () => {
     const expiresAt = 1_800_000_000_000
     assert.deepEqual(
       buildDirectGrantBodies({
@@ -12,7 +12,6 @@ describe('RBAC S36 direct grant form', () => {
         role: 'manager',
         permissions: [],
         expiresAt,
-        reason: ' onboard ',
       }),
       {
         ok: true,
@@ -24,7 +23,6 @@ describe('RBAC S36 direct grant form', () => {
               iss: 'https://idp.test',
               role: 'manager',
               expiresAt,
-              reason: 'onboard',
             },
           },
         ],
@@ -38,7 +36,6 @@ describe('RBAC S36 direct grant form', () => {
         role: null,
         permissions: ['namespace:create', 'audit:read'],
         expiresAt,
-        reason: 'extra',
       }),
       {
         ok: true,
@@ -50,7 +47,6 @@ describe('RBAC S36 direct grant form', () => {
               iss: 'https://idp.test',
               permissions: ['namespace:create', 'audit:read'],
               expiresAt,
-              reason: 'extra',
             },
           },
         ],
@@ -63,7 +59,6 @@ describe('RBAC S36 direct grant form', () => {
       role: 'user',
       permissions: ['audit:read'],
       expiresAt,
-      reason: 'both',
     })
     assert.equal(both.ok, true)
     if (!both.ok) throw new Error('expected ok')
@@ -72,7 +67,7 @@ describe('RBAC S36 direct grant form', () => {
     assert.equal(both.bodies[1]!.kind, 'permissions')
   })
 
-  it('rejects missing target, grant, expiry, or reason', () => {
+  it('rejects missing target, grant, or expiry', () => {
     const expiresAt = 1_800_000_000_000
     assert.equal(
       buildDirectGrantBodies({
@@ -81,7 +76,6 @@ describe('RBAC S36 direct grant form', () => {
         role: 'user',
         permissions: [],
         expiresAt,
-        reason: 'x',
       }).ok,
       false,
     )
@@ -92,7 +86,6 @@ describe('RBAC S36 direct grant form', () => {
         role: null,
         permissions: [],
         expiresAt,
-        reason: 'x',
       }).ok,
       false,
     )
@@ -103,18 +96,6 @@ describe('RBAC S36 direct grant form', () => {
         role: 'user',
         permissions: [],
         expiresAt: 0,
-        reason: 'x',
-      }).ok,
-      false,
-    )
-    assert.equal(
-      buildDirectGrantBodies({
-        sub: 'u1',
-        iss: 'https://idp.test',
-        role: 'user',
-        permissions: [],
-        expiresAt,
-        reason: '  ',
       }).ok,
       false,
     )

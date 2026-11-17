@@ -574,7 +574,6 @@ export function grantRole(input: {
   iss: string
   role: string
   expiresAt: number
-  reason: string
 }) {
   return authzFetch('/auth/grants/role', {
     method: 'POST',
@@ -587,7 +586,6 @@ export function grantPermissions(input: {
   iss: string
   permissions: string[]
   expiresAt: number
-  reason: string
 }) {
   return authzFetch('/auth/grants/permissions', {
     method: 'POST',

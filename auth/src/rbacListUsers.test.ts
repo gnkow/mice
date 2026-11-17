@@ -53,5 +53,9 @@ describe('RBAC S36 list users for Grant Access', () => {
     assert.ok(rowB)
     assert.equal(rowB!.role, null)
     assert.equal(rowB!.customPermissionCount, 0)
+    // Newest principal first (b created after a).
+    const iA = users.findIndex((u) => u.sub === a.sub)
+    const iB = users.findIndex((u) => u.sub === b.sub)
+    assert.ok(iB < iA)
   })
 })
