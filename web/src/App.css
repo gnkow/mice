@@ -860,8 +860,27 @@ code {
   font-style: italic;
 }
 
+.ns-page-head-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.ns-page-head-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.85rem;
+  flex-shrink: 0;
+}
+
+.ns-page-head-aside .storage-meter {
+  justify-items: end;
+  text-align: right;
+  min-width: 12rem;
+}
+
 .ns-page-desc {
-  margin: 0.35rem 0 0;
+  margin: 1.25rem 0 1rem;
   max-width: 40rem;
 }
 
@@ -4969,11 +4988,101 @@ p.ok {
   min-width: 0;
 }
 
+.repo-title-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.ns-page-title {
+  margin: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .repo-title-name {
   margin: 0;
   font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+.entity-id-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: min(100%, 36rem);
+  margin: 0;
+  /* Flush left with the entity title above (kill UA button padding). */
+  padding: 0.1rem 0.35rem 0.1rem 0;
+  padding-inline-start: 0;
+  border: 1px solid transparent;
+  border-left-width: 0;
+  border-radius: 0 0.35rem 0.35rem 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  letter-spacing: 0;
+  cursor: pointer;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.entity-id-inline:hover,
+.entity-id-inline:focus-visible {
+  border-color: var(--line);
+  border-left: none;
+  background: var(--canvas-subtle);
+  color: var(--fg);
+  outline: none;
+}
+
+.entity-id-inline-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-id-inline-icon {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.entity-id-inline-status {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.entity-id-inline-status:empty {
+  display: none;
+}
+
+.entity-id-after-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+  min-width: 0;
+}
+
+.entity-id-after-title .entity-id-inline,
+.jobs-card-heading .entity-id-inline,
+.workspace-name-cell .entity-id-inline,
+.repo-summary-main .entity-id-inline {
+  max-width: min(100%, 22rem);
 }
 
 .repo-stat-chips {

@@ -1,8 +1,25 @@
 import { Link, useParams } from 'react-router-dom'
 import { BookOpen, Copy, Lock } from 'lucide-react'
+import { useAsync } from '../hooks/useAsync'
+import { fetchNamespaceAuthz } from '../lib/authzApi'
+import { entityIdTitle } from '../lib/entityId'
+import { getRepository } from '../lib/oxen/api'
 
 export function RepoHeader() {
   const { namespace = '', repo = '' } = useParams()
+  const nsAuthz = useAsync(
+    (signal) => fetchNamespaceAuthz(namespace, signal).catch(() => null),
+    [namespace],
+  )
+  const repoDetail = useAsync(
+    (signal) => getRepository(namespace, repo, signal).catch(() => null),
+    [namespace, repo],
+  )
+  const namespaceId = nsAuthz.kind === 'ok' ? nsAuthz.data?.id : null
+  const repositoryId =
+    repoDetail.kind === 'ok'
+      ? repoDetail.data?.repository.repository_id ?? repoDetail.data?.repository_id ?? null
+      : null
 
   async function copyPath() {
     try {
@@ -20,6 +37,7 @@ export function RepoHeader() {
           <Link
             className="repo-header-owner"
             to={`/n/${encodeURIComponent(namespace)}`}
+            title={namespaceId ? entityIdTitle('namespace', namespaceId) : undefined}
           >
             {namespace}
           </Link>
@@ -29,6 +47,7 @@ export function RepoHeader() {
           <Link
             className="repo-header-name-link"
             to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`}
+            title={repositoryId ? entityIdTitle('repository', repositoryId) : undefined}
           >
             {repo}
           </Link>

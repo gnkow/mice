@@ -12,6 +12,7 @@ import {
 } from '../lib/jobs'
 import { StatusPill } from './StatusPill'
 import { MetaPills } from './MetaPills'
+import { EntityIdInline } from './EntityId'
 import { formatRelativeTime } from '../lib/time'
 
 type Props = {
@@ -24,7 +25,6 @@ type Props = {
 export function JobSummaryCard({ job, showRepo }: Props) {
   const href = `/n/${encodeURIComponent(job.namespace)}/r/${encodeURIComponent(job.repo)}/jobs/${encodeURIComponent(job.id)}`
   const title = (job.name || '').trim() || job.id
-  const hasName = Boolean(job.name?.trim())
   const sourceFull = jobSourceLabel(job)
   const resultFull = jobOutcomeRefLabel(job)
   const image = jobImageLabel(job)
@@ -44,11 +44,7 @@ export function JobSummaryCard({ job, showRepo }: Props) {
             <span className="jobs-card-name" title={title}>
               {title}
             </span>
-            {hasName ? (
-              <span className="jobs-card-id mono muted" title={job.id}>
-                {job.id.slice(0, 10)}
-              </span>
-            ) : null}
+            <EntityIdInline kind="job" id={job.id} />
           </span>
           <span className="jobs-card-tags">
             <span

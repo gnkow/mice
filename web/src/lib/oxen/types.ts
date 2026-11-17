@@ -50,10 +50,14 @@ export type RepositoryDataTypesView = {
   branch_count?: number
   min_version?: string | null
   repo_uuid?: string | null
+  /** AuthZ stable entity id (stamped by the BFF). */
+  repository_id?: string | null
 }
 
 export type RepositoryDataTypesResponse = StatusMessage & {
   repository: RepositoryDataTypesView
+  /** AuthZ stable entity id (stamped by the BFF; also nested on repository). */
+  repository_id?: string | null
 }
 
 export type RepositoryCreationView = {
@@ -63,10 +67,12 @@ export type RepositoryCreationView = {
   min_version?: string | null
   storage_kind?: string
   repo_uuid?: string | null
+  repository_id?: string | null
 }
 
 export type RepositoryCreationResponse = StatusMessage & {
   repository: RepositoryCreationView
+  repository_id?: string | null
 }
 
 export type DataTypeView = {

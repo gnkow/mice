@@ -4,11 +4,11 @@ import {
   sessionImageLabel,
   sessionMounts,
   sessionTitle,
-  shortenSessionId,
   type DesktopSession,
 } from '../lib/sessions'
 import { StatusPill } from './StatusPill'
 import { MetaPills } from './MetaPills'
+import { EntityIdInline } from './EntityId'
 import { formatRelativeTime } from '../lib/time'
 
 type Props = {
@@ -35,9 +35,7 @@ export function SessionSummaryCard({ session }: Props) {
             <span className="jobs-card-name" title={title}>
               {title}
             </span>
-            <span className="jobs-card-id mono muted" title={session.id}>
-              {shortenSessionId(session.id, 10)}
-            </span>
+            <EntityIdInline kind="session" id={session.id} />
           </span>
           <span className="jobs-card-tags">
             <StatusPill status={session.status} />

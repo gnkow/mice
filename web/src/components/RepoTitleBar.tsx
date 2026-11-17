@@ -4,6 +4,7 @@ import { useAsync } from '../hooks/useAsync'
 import { getRepository } from '../lib/oxen/api'
 import { formatBytes } from '../lib/oxen/client'
 import { CloneBox } from './CloneBox'
+import { EntityIdInline } from './EntityId'
 import { FavoriteStar } from './FavoriteStar'
 import { DataTypeIcon, SizeIcon } from './icons'
 import { VisibilityPill } from './VisibilityPill'
@@ -16,12 +17,19 @@ export function RepoTitleBar() {
     [namespace, repo],
   )
   const repository = detail.kind === 'ok' ? detail.data.repository : null
+  const repositoryId =
+    repository?.repository_id ??
+    (detail.kind === 'ok' ? detail.data.repository_id : null) ??
+    null
 
   return (
     <div className="repo-title-bar">
       <div className="repo-title-row">
         <div className="repo-title-left">
-          <h2 className="repo-title-name">{repo}</h2>
+          <div className="repo-title-identity">
+            <h2 className="repo-title-name">{repo}</h2>
+            {repositoryId ? <EntityIdInline kind="repository" id={repositoryId} /> : null}
+          </div>
           <FavoriteStar type="repo" id={repoId} />
           <VisibilityPill />
         </div>

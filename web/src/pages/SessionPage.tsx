@@ -15,11 +15,11 @@ import {
   retrySession,
   sessionMounts,
   sessionTitle,
-  shortenSessionId,
   stopSession,
   type DesktopSession,
 } from '../lib/sessions'
 import { formatRelativeTime } from '../lib/time'
+import { EntityIdInline } from '../components/EntityId'
 import { FavoriteStar } from '../components/FavoriteStar'
 
 type Tab = 'workspaces' | 'container' | 'metadata'
@@ -180,11 +180,11 @@ export function SessionPage() {
 
         <div className="job-page-title-row">
           <div className="job-page-title-main">
-            <h1 className="job-page-title">{title}</h1>
+            <div className="repo-title-identity">
+              <h1 className="job-page-title">{title}</h1>
+              <EntityIdInline kind="session" id={session.id} />
+            </div>
             <FavoriteStar type="session" id={session.id} label={title} />
-            <span className="job-page-id mono muted" title={session.id}>
-              {shortenSessionId(session.id, 12)}
-            </span>
             <span className="job-page-tags">
               <span className="pill">{session.provisioner}</span>
               <StatusPill status={session.status} />

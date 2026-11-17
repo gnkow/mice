@@ -10,6 +10,7 @@ import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { loadCatalog } from '../lib/catalog'
 import { confirmDelete } from '../lib/confirmDelete'
+import { EntityIdInline } from '../components/EntityId'
 import { resolveDefaultBranch } from '../lib/lastBranch'
 import { listBranches } from '../lib/oxen/api'
 import { formatBytes } from '../lib/oxen/client'
@@ -168,13 +169,15 @@ export function WorkspacesHubPage() {
               {workspaces.map((w) => (
                 <tr key={w.id} data-workspace={w.id}>
                   <td>
-                    <Link
-                      className="workspace-name-link"
-                      to={`/n/${encodeURIComponent(w.namespace)}/r/${encodeURIComponent(w.repo)}/workspaces/${encodeURIComponent(w.id)}`}
-                    >
-                      {w.name || w.id}
-                    </Link>{' '}
-                    <span className="mono muted small">{w.id}</span>
+                    <div className="entity-id-after-title">
+                      <Link
+                        className="workspace-name-link"
+                        to={`/n/${encodeURIComponent(w.namespace)}/r/${encodeURIComponent(w.repo)}/workspaces/${encodeURIComponent(w.id)}`}
+                      >
+                        {w.name || w.id}
+                      </Link>
+                      <EntityIdInline kind="workspace" id={w.id} />
+                    </div>
                   </td>
                   <td className="muted small">
                     <Link to={`/n/${encodeURIComponent(w.namespace)}/r/${encodeURIComponent(w.repo)}`}>

@@ -1,3 +1,4 @@
+import { EntityIdInline } from '../components/EntityId'
 import { StatusPill } from '../components/StatusPill'
 import { useEffect, useState } from 'react'
 import { FileDiff, Monitor, Terminal, X as ActionX, type LucideIcon } from 'lucide-react'
@@ -71,10 +72,10 @@ export function WorkspaceDetailPage() {
               </p>
               <div className="job-page-title-row">
                 <div className="job-page-title-main">
-                  <h1 className="job-page-title">{title}</h1>
-                  {ws.name ? (
-                    <span className="job-page-id mono muted" title={ws.id}>{ws.id}</span>
-                  ) : null}
+                  <div className="repo-title-identity">
+                    <h1 className="job-page-title">{title}</h1>
+                    <EntityIdInline kind="workspace" id={ws.id} />
+                  </div>
                   <span className="job-page-tags">
                     <span className="pill">{ws.driver}</span>
                     <StatusPill status={ws.status} />

@@ -1,6 +1,7 @@
 import { FolderGit2 as ActionFolderGit2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
+import { EntityIdInline } from './EntityId'
 import { FavoriteStar } from './FavoriteStar'
 import { StateBlock } from './StateBlock'
 import { useAsync } from '../hooks/useAsync'
@@ -54,15 +55,23 @@ export function NamespaceLayout() {
   return (
     <main className="page wide">
       <div className="page-head">
-        <div>
+        <div className="ns-page-head-main">
           <p className="crumb">
             <Link to="/namespaces">Namespaces</Link>
             <span aria-hidden> / </span>
             <span>{namespace}</span>
           </p>
-          <h1>
-            {namespace} <FavoriteStar type="namespace" id={namespace} />
-          </h1>
+          <div className="repo-title-identity">
+            <h1 className="ns-page-title">
+              {namespace} <FavoriteStar type="namespace" id={namespace} />
+            </h1>
+            {state.kind === 'ok' && (state.data.authz?.id || state.data.summary?.id) ? (
+              <EntityIdInline
+                kind="namespace"
+                id={(state.data.authz?.id || state.data.summary?.id)!}
+              />
+            ) : null}
+          </div>
           {state.kind === 'ok' && (
             <>
               {state.data.description ? (
@@ -73,17 +82,6 @@ export function NamespaceLayout() {
                   <Link to={`${base}/settings#ns-general`}>Add one in settings</Link>
                 </p>
               )}
-              <div className="storage-meter" style={{ marginTop: '0.75rem' }}>
-                <span className="storage-meter-label">Storage</span>
-                <strong className="small">{state.data.storageGb.toFixed(3)} GB</strong>
-                <div className="storage-meter-bar" aria-hidden>
-                  <span
-                    style={{
-                      width: `${Math.min(100, Math.max(2, state.data.storageGb || 2))}%`,
-                    }}
-                  />
-                </div>
-              </div>
               <div className="ns-card-info">
                 <div className="ns-card-tags">
                   {!state.data.onOxen && <span className="ns-tag ns-tag-muted">Empty</span>}
@@ -108,11 +106,26 @@ export function NamespaceLayout() {
             </>
           )}
         </div>
-        <div className="btn-row">
-          <Link className="btn primary" to={`/repos/new?namespace=${encodeURIComponent(namespace)}`}>
-            <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />
-            New repository
-          </Link>
+        <div className="ns-page-head-aside">
+          {state.kind === 'ok' ? (
+            <div className="storage-meter">
+              <span className="storage-meter-label">Storage</span>
+              <strong className="small">{state.data.storageGb.toFixed(3)} GB</strong>
+              <div className="storage-meter-bar" aria-hidden>
+                <span
+                  style={{
+                    width: `${Math.min(100, Math.max(2, state.data.storageGb || 2))}%`,
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
+          <div className="btn-row">
+            <Link className="btn primary" to={`/repos/new?namespace=${encodeURIComponent(namespace)}`}>
+              <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />
+              New repository
+            </Link>
+          </div>
         </div>
       </div>
 

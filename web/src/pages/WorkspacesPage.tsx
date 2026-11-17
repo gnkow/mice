@@ -11,6 +11,7 @@ import { MetaPills } from '../components/MetaPills'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { confirmDelete } from '../lib/confirmDelete'
+import { EntityIdInline } from '../components/EntityId'
 import { resolveDefaultBranch } from '../lib/lastBranch'
 import {
   createWorkspace,
@@ -222,9 +223,7 @@ export function WorkspacesPage() {
                               {label}
                             </Link>
                             <FavoriteStar type="stage" id={`${namespace}/${repo}!${ws.id}`} label={label} />
-                            <span className="mono muted small" title={ws.id}>
-                              {ws.id.slice(0, 8)}
-                            </span>
+                            <EntityIdInline kind="workspace" id={ws.id} />
                           </div>
                           <MetaPills type="workspace" id={`${namespace}/${repo}!${ws.id}`} />
                         </td>

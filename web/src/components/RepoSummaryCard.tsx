@@ -8,7 +8,9 @@ import { confirmDelete } from '../lib/confirmDelete'
 import { lastBranch } from '../lib/lastBranch'
 import { formatRelativeTime } from '../lib/time'
 import { FavoriteStar } from './FavoriteStar'
+import { EntityIdInline } from './EntityId'
 import { MetaPills } from './MetaPills'
+import { UserRef } from './UserRef'
 import { VisibilityPill } from './VisibilityPill'
 
 type Props = {
@@ -67,6 +69,10 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
   const href = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(name)}/tree/${encodeURIComponent(lastBranch(namespace, name, 'main'))}`
   const summary =
     detail.kind === 'ok' ? summarize(detail.data) : detail.kind === 'loading' ? '…' : null
+  const repositoryId =
+    detail.kind === 'ok'
+      ? detail.data.repository.repository_id ?? detail.data.repository_id ?? null
+      : null
   const wsCount =
     workspaces.kind === 'ok' ? workspaces.data.workspaces.length : null
   const meta = [
@@ -111,6 +117,7 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
           {showNamespace && <span className="muted">{namespace} / </span>}
           {name}
         </span>
+        {repositoryId ? <EntityIdInline kind="repository" id={repositoryId} /> : null}
         <span className="card-meta">{meta || 'Open repository →'}</span>
         {dataTypes.length > 0 && (
           <span className="repo-summary-types small muted">
@@ -119,7 +126,9 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
         )}
         {commit && (
           <span className="repo-summary-commit small muted" title={commit.message}>
-            Updated {formatRelativeTime(commit.timestamp)} · {commit.author} · {commit.message.split('\n')[0]}
+            Updated {formatRelativeTime(commit.timestamp)} ·{' '}
+            <UserRef author={commit.author} storedEmail={commit.email} /> ·{' '}
+            {commit.message.split('\n')[0]}
           </span>
         )}
         <MetaPills type="repo" id={`${namespace}/${name}`} />

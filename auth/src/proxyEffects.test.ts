@@ -7,10 +7,17 @@ process.env.AUTHZ_REQUIRE_TRAINING = 'false'
 process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://127.0.0.1:3001'
 
-const { attachRepositoryId, filterNamespaceCatalog, seedRepoCreate } = await import('./proxyEffects.js')
+const {
+  attachRepositoryId,
+  filterNamespaceCatalog,
+  finalizeProxiedRepoCreate,
+  seedRepoCreate,
+  stampRepositoryIdOnRepoDetail,
+} = await import('./proxyEffects.js')
 const { preparePrincipal } = await import('./authz.js')
 const { getRepoCollaboratorRole, setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz, getNamespace } = await import('./authzNamespaceStore.js')
+const { ensureRepository } = await import('./repositoryStore.js')
 
 
 const { assignRole } = await import('./rbacStore.js')
@@ -90,5 +97,59 @@ describe('attachRepositoryId', () => {
 
   it('leaves non-JSON bodies untouched', () => {
     assert.equal(attachRepositoryId('not-json', 'id'), 'not-json')
+  })
+})
+
+describe('finalizeProxiedRepoCreate', () => {
+  it('seeds AuthZ and stamps repository_id onto the upstream create body', async () => {
+    const upstream = JSON.stringify({
+      status: 'success',
+      repository: { namespace: 'pe-finalize', name: 'assay', repo_uuid: 'oxen-1' },
+    })
+    const out = await finalizeProxiedRepoCreate(admin, 'pe-finalize', 'assay', upstream)
+    const body = JSON.parse(out)
+    assert.match(body.repository_id, UUID_RE)
+    assert.equal(body.repository.repository_id, body.repository_id)
+    assert.equal(body.repository.repo_uuid, 'oxen-1')
+    assert.equal(await getRepoCollaboratorRole('pe-finalize', 'assay', admin), 'admin')
+  })
+
+  it('returns the upstream body unchanged when AuthZ cannot seed', async () => {
+    const u = person('pe-finalize-plain')
+    await preparePrincipal(u)
+    const upstream = '{"status":"success"}'
+    assert.equal(await finalizeProxiedRepoCreate(u, 'pe-no-ns', 'r', upstream), upstream)
+  })
+})
+
+describe('stampRepositoryIdOnRepoDetail', () => {
+  it('stamps the AuthZ id onto a successful GET repo detail body', async () => {
+    await createNamespaceAuthz(admin, 'pe-detail', 'none', true)
+    const record = await ensureRepository('pe-detail', 'study')
+    assert.ok(record)
+    const upstream = new Response(
+      JSON.stringify({
+        status: 'success',
+        repository: { namespace: 'pe-detail', name: 'study', size: 7, data_types: [] },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )
+    const out = await stampRepositoryIdOnRepoDetail(
+      'GET',
+      '/api/repos/pe-detail/study',
+      upstream,
+    )
+    assert.ok(out)
+    const body = JSON.parse(out)
+    assert.equal(body.repository_id, record.id)
+    assert.equal(body.repository.repository_id, record.id)
+  })
+
+  it('ignores non-detail routes and failed upstreams', async () => {
+    const ok = new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    assert.equal(await stampRepositoryIdOnRepoDetail('GET', '/api/repos/pe-detail/study/branches', ok), null)
+    assert.equal(await stampRepositoryIdOnRepoDetail('POST', '/api/repos/pe-detail/study', ok), null)
+    const failed = new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } })
+    assert.equal(await stampRepositoryIdOnRepoDetail('GET', '/api/repos/pe-detail/study', failed), null)
   })
 })

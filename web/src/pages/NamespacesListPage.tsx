@@ -9,6 +9,7 @@ import { fetchAuthzMe, hasEffectivePermission, isAdminRole } from '../lib/auth'
 import { canDeleteNamespace, namespacesEmptyMessage } from '../lib/namespaceActions'
 import { confirmDelete } from '../lib/confirmDelete'
 import { deleteNamespaceAuthz, listAuthzNamespaces } from '../lib/authzApi'
+import { EntityIdInline } from '../components/EntityId'
 import { loadCatalog } from '../lib/catalog'
 import {
   mergeNamespaces,
@@ -204,12 +205,17 @@ export function NamespacesListPage() {
                   <li key={ns.name}>
                     <article className="ns-card">
                       <div className="ns-card-main">
-                        <Link
-                          className="ns-card-title"
-                          to={`/n/${encodeURIComponent(ns.name)}`}
-                        >
-                          {ns.name}
-                        </Link>
+                        <div className="entity-id-after-title">
+                          <Link
+                            className="ns-card-title"
+                            to={`/n/${encodeURIComponent(ns.name)}`}
+                          >
+                            {ns.name}
+                          </Link>
+                          {ns.authz?.id ? (
+                            <EntityIdInline kind="namespace" id={ns.authz.id} />
+                          ) : null}
+                        </div>
                         {ns.authz?.description?.trim() ? (
                           <p className="ns-card-desc muted">{ns.authz.description.trim()}</p>
                         ) : (

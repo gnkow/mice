@@ -2,7 +2,7 @@ import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
 import { setRepoCollaborator } from './authzCollaboratorStore.js'
 import { decideInstanceAction } from './authz.js'
 import { ensureNamespaceForCreate, getNamespace } from './authzNamespaceStore.js'
-import { ensureRepository } from './repositoryStore.js'
+import { ensureRepository, readRepository } from './repositoryStore.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
 import { type SessionUser } from './authentication/index.js'
 
@@ -82,6 +82,50 @@ export function attachRepositoryId(body: string, repositoryId: string): string {
   } catch {
     return body
   }
+}
+
+/**
+ * After a successful proxied repo create: seed AuthZ and stamp `repository_id`
+ * onto the upstream JSON body. Returns the body unchanged when seeding cannot run.
+ */
+export async function finalizeProxiedRepoCreate(
+  user: SessionUser,
+  namespace: string,
+  repo: string,
+  responseBody: string,
+): Promise<string> {
+  const seeded = await seedRepoCreate(user, namespace, repo)
+  if (!seeded) return responseBody
+  return attachRepositoryId(responseBody, seeded.repositoryId)
+}
+
+const REPO_DETAIL_PATH = /^\/api\/repos\/([^/]+)\/([^/]+)$/
+
+/**
+ * Stamp AuthZ `repository_id` onto a successful GET repo detail response.
+ * Returns the rewritten body, or null when the response is left untouched.
+ * Consumes the upstream body whenever a JSON detail payload is read.
+ */
+export async function stampRepositoryIdOnRepoDetail(
+  method: string,
+  pathname: string,
+  upstream: Response,
+): Promise<string | null> {
+  if (method !== 'GET' || !upstream.ok) return null
+  const match = (pathname.replace(/\/+$/, '') || '/').match(REPO_DETAIL_PATH)
+  if (!match) return null
+  if (!(upstream.headers.get('content-type') ?? '').includes('application/json')) return null
+  const ns = decodeURIComponent(match[1]!)
+  const repo = decodeURIComponent(match[2]!)
+  const record = await readRepository(ns, repo)
+  if (!record) return null
+  let text: string
+  try {
+    text = await upstream.text()
+  } catch {
+    return null
+  }
+  return attachRepositoryId(text, record.id)
 }
 
 /** Audit that a site admin was allowed through on the bypass, not on a grant. */

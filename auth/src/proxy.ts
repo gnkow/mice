@@ -39,10 +39,10 @@ import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
 import {
-  attachRepositoryId,
   filterNamespaceCatalog,
+  finalizeProxiedRepoCreate,
   recordAclBypassRead,
-  seedRepoCreate,
+  stampRepositoryIdOnRepoDetail,
 } from './proxyEffects.js'
 import {
   authorsFromCommits,
@@ -471,6 +471,9 @@ export async function proxyToOxen(
   const filteredCatalog = await filterNamespaceCatalog(user, method, pathname, upstream)
   if (filteredCatalog !== null) responseBody = filteredCatalog
 
+  const stampedDetail = await stampRepositoryIdOnRepoDetail(method, pathname, upstream)
+  if (stampedDetail !== null) responseBody = stampedDetail
+
   if (intent) {
     // Buffered once: the dataset versions and the lineage op both read the answer, and the caller is served it.
     let buffered: string | undefined
@@ -494,9 +497,8 @@ export async function proxyToOxen(
       ns &&
       repo
     ) {
-      const seeded = await seedRepoCreate(user, ns, repo)
-      if (seeded && typeof responseBody === 'string') {
-        responseBody = attachRepositoryId(responseBody, seeded.repositoryId)
+      if (typeof responseBody === 'string') {
+        responseBody = await finalizeProxiedRepoCreate(user, ns, repo, responseBody)
       }
     }
   }

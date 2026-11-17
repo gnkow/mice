@@ -20,6 +20,7 @@ import {
 } from '../lib/jobs'
 import { StatusPill } from '../components/StatusPill'
 import { formatRelativeTime } from '../lib/time'
+import { EntityIdInline } from '../components/EntityId'
 import { FavoriteStar } from '../components/FavoriteStar'
 
 type JobTab = 'overview' | 'files' | 'logs' | 'metadata'
@@ -91,7 +92,6 @@ export function JobPage() {
 
   const job = detail.data.job
   const title = job.name?.trim() || `Job ${job.id.slice(0, 10)}`
-  const hasName = Boolean(job.name?.trim())
   const sourceFull = jobSourceLabel(job)
   const resultFull = jobOutcomeRefLabel(job)
   const syncTo = jobTargetLabel(job)
@@ -119,13 +119,11 @@ export function JobPage() {
 
         <div className="job-page-title-row">
           <div className="job-page-title-main">
-            <h1 className="job-page-title">{title}</h1>
+            <div className="repo-title-identity">
+              <h1 className="job-page-title">{title}</h1>
+              <EntityIdInline kind="job" id={job.id} />
+            </div>
             <FavoriteStar type="job" id={job.id} label={title} />
-            {hasName ? (
-              <span className="job-page-id mono muted" title={job.id}>
-                {job.id.slice(0, 12)}
-              </span>
-            ) : null}
             <span className="job-page-tags">
               <span
                 className={jobRunnerClass(job)}
