@@ -160,12 +160,17 @@ describe('Access Review Routes (Issue #12)', () => {
           body: JSON.stringify({ quarter: '2026-Q2' }),
         })
       const firstText = await (await send()).text()
-      const first = JSON.parse(firstText) as { report: { reportId: string; generatedAt: number; principals: Array<{ principal: { sub: string } }> } }
+      const first = JSON.parse(firstText) as {
+        report: { reportId: string; generatedAt: number; principals: Array<{ principal: { sub: string } }> }
+        contentHash: string
+      }
+      assert.ok(first.contentHash)
       await sealSession({ ...mk('latecomer'), emailVerified: true, sessionStart: 1_700_001_000 })
       const secondText = await (await send()).text()
       const second = JSON.parse(secondText) as typeof first
       assert.equal(second.report.reportId, first.report.reportId)
       assert.equal(second.report.generatedAt, first.report.generatedAt)
+      assert.equal(second.contentHash, first.contentHash)
       assert.equal(second.report.principals.some((p) => p.principal.sub === 'latecomer'), false)
     })
 

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   accessReviewAdminView,
+  buildPrincipalAccessRecord,
   displayedAccessReview,
   generateAccessReviewReport,
   openOrGenerateAccessReview,
@@ -89,6 +90,45 @@ describe('Quarterly Access Review', () => {
     }
     const signedReport = signAccessReviewReport(report, signature)
     assert.deepEqual(signedReport.reviewerSignature, signature)
+  })
+
+  describe('buildPrincipalAccessRecord', () => {
+    it('lists instance role, namespace seats, grants, and last login', () => {
+      const row = buildPrincipalAccessRecord({
+        iss: 'https://idp.example.com',
+        sub: 'alice',
+        name: '  Alice  ',
+        lastLoginAt: new Date('2026-01-15T00:00:00.000Z'),
+        instanceRole: 'admin',
+        namespaceRoles: [
+          ['mice', 'owner'],
+          ['labs', 'member'],
+        ],
+        grants: ['create_namespace'],
+      })
+      assert.deepEqual(row.principal, {
+        iss: 'https://idp.example.com',
+        sub: 'alice',
+        name: 'Alice',
+      })
+      assert.deepEqual(row.roles, ['instance:admin', 'mice:owner', 'labs:member'])
+      assert.deepEqual(row.grants, ['create_namespace'])
+      assert.equal(row.lastLogin, Date.parse('2026-01-15T00:00:00.000Z'))
+    })
+
+    it('falls back to Unknown and omits empty instance role / last login', () => {
+      const row = buildPrincipalAccessRecord({
+        iss: 'https://idp.example.com',
+        sub: 'anon',
+        name: null,
+        instanceRole: null,
+        namespaceRoles: [],
+        grants: [],
+      })
+      assert.equal(row.principal.name, 'Unknown')
+      assert.deepEqual(row.roles, [])
+      assert.equal(row.lastLogin, undefined)
+    })
   })
 
   describe('accessReviewAdminView', () => {

@@ -1,6 +1,5 @@
 import { AlertTriangle, FileText, Download, Shield } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { formatPrivilegedActionError } from '../lib/privilegedActionError'
 import { decideSignatureNameDisplay } from '../lib/signatureName'
 import {
@@ -8,7 +7,12 @@ import {
   type SigningChallenge,
 } from '../lib/signingChallenge'
 import { continueToSigningReauth, pageResumePath } from '../lib/signingResume'
+import { Pagination, paginate } from './Pagination'
 import { SigningChallengeInterstitial } from './SigningChallengeInterstitial'
+import { UserRef } from './UserRef'
+
+/** Compact page size so the Principals table paginates in typical review sizes. */
+const PRINCIPAL_PAGE_SIZE = 5
 
 type AccessReviewReport = {
   reportId: string
@@ -46,9 +50,9 @@ export function AccessReviewSection() {
   const [loading, setLoading] = useState(false)
   const [signing, setSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [challenge, setChallenge] = useState<SigningChallenge | null>(null)
   const [currentName, setCurrentName] = useState<string | null>(null)
+  const [principalPage, setPrincipalPage] = useState(1)
 
   async function loadOverdue() {
     const res = await fetch('/auth/admin/access-review/overdue', { credentials: 'same-origin' })
@@ -62,6 +66,7 @@ export function AccessReviewSection() {
   function showReport(data: { report: AccessReviewReport; contentHash?: string }) {
     setReport(data.report)
     setContentHash(data.contentHash ?? null)
+    setPrincipalPage(1)
     const signer = data.report.reviewerSignature?.principal
     if (!signer) {
       setCurrentName(null)
@@ -77,7 +82,6 @@ export function AccessReviewSection() {
   async function openReport(forQuarter = quarter) {
     setLoading(true)
     setError(null)
-    setNotice(null)
     try {
       const res = await fetch(`/auth/admin/access-review/${encodeURIComponent(forQuarter)}`, {
         credentials: 'same-origin',
@@ -85,7 +89,6 @@ export function AccessReviewSection() {
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to open report')
       showReport(body)
-      setNotice(`Opened stored report for ${forQuarter}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open report')
     } finally {
@@ -101,7 +104,6 @@ export function AccessReviewSection() {
   async function generateReport() {
     setLoading(true)
     setError(null)
-    setNotice(null)
     try {
       const res = await fetch('/auth/admin/access-review/generate', {
         method: 'POST',
@@ -117,7 +119,6 @@ export function AccessReviewSection() {
 
       const data = await res.json()
       showReport(data)
-      setNotice(`Report ready for ${quarter}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate report')
     } finally {
@@ -129,7 +130,6 @@ export function AccessReviewSection() {
     if (!report || !contentHash) return
     setSigning(true)
     setError(null)
-    setNotice(null)
     setChallenge(null)
     try {
       const res = await fetch('/auth/admin/access-review/sign', {
@@ -153,7 +153,6 @@ export function AccessReviewSection() {
         throw new Error(formatPrivilegedActionError(apiError, res.status).message)
       }
       showReport(body as { report: AccessReviewReport; contentHash?: string })
-      setNotice('Signed as Reviewed.')
       await loadOverdue()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign report')
@@ -279,9 +278,6 @@ export function AccessReviewSection() {
             {error}
           </p>
         )}
-        {notice && (
-          <p className="flash flash-success" role="status">{notice}</p>
-        )}
       </div>
 
       {!report && !loading && !error && (
@@ -301,51 +297,59 @@ export function AccessReviewSection() {
             Generated {new Date(report.generatedAt).toLocaleString()}
           </p>
 
-          <div className="ns-settings-grid">
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Principals</span>
-              <p className="muted small">{report.principals.length}</p>
+          <dl className="ns-settings-facts" aria-label="Access review summary">
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Principals</dt>
+              <dd className="ns-settings-fact-value">
+                <span className="ns-tag ns-tag-muted">{report.principals.length}</span>
+              </dd>
             </div>
-            {report.reviewerSignature && (
+            {report.reviewerSignature ? (
               <div
-                className="ns-settings-field"
+                className="ns-settings-fact ns-settings-fact-wide"
                 data-testid="access-review-signature"
                 aria-label="Reviewer signature identity"
               >
-                <span className="ns-settings-label">Signature</span>
-                <p className="muted small">
+                <dt className="ns-settings-fact-label">Signature</dt>
+                <dd className="ns-settings-fact-value">
+                  <span className="status-pill ok">Signed</span>
+                  <span className="muted small">Signed by:</span>
+                  <UserRef
+                    author={`${report.reviewerSignature.principal.iss}|${report.reviewerSignature.principal.sub}`}
+                    name={report.reviewerSignature.principal.name}
+                  />
+                  <span className="muted small">
+                    (
+                    {new Date(report.reviewerSignature.signedAt)
+                      .toISOString()
+                      .slice(0, 10)}
+                    )
+                  </span>
                   {decideSignatureNameDisplay(
                     {
                       name: report.reviewerSignature.principal.name,
                       signedAt: report.reviewerSignature.signedAt,
                     },
                     currentName ?? undefined,
-                  ).signedLine}
-                </p>
-                {currentName &&
-                  currentName !== report.reviewerSignature.principal.name && (
-                    <p className="muted small" data-testid="signature-now-known-as">
+                  ).nowKnownAs ? (
+                    <span className="muted small" data-testid="signature-now-known-as">
                       Now known as: {currentName}
-                    </p>
-                  )}
-                <p className="muted small">
-                  <Link
-                    to={`/settings/principal?iss=${encodeURIComponent(report.reviewerSignature.principal.iss)}&sub=${encodeURIComponent(report.reviewerSignature.principal.sub)}`}
-                  >
-                    Name history
-                  </Link>
-                </p>
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+            ) : (
+              <div className="ns-settings-fact ns-settings-fact-wide">
+                <dt className="ns-settings-fact-label">Signature</dt>
+                <dd className="ns-settings-fact-value" role="status">
+                  <span className="status-pill warn">Awaiting signature</span>
+                  <span className="muted small">
+                    Sign report runs the signing ceremony against this report&apos;s hash.
+                  </span>
+                </dd>
               </div>
             )}
-            {!report.reviewerSignature && (
-              <div className="ns-settings-field">
-                <span className="ns-settings-label">Signature</span>
-                <p className="flash flash-warn" role="status">
-                  Awaiting an instance admin signature. Sign report runs the signing ceremony against this report&apos;s hash.
-                </p>
-              </div>
-            )}
-          </div>
+          </dl>
 
           <div className="btn-row ns-settings-actions">
             {!report.reviewerSignature && (
@@ -377,57 +381,92 @@ export function AccessReviewSection() {
               <p className="muted">This report has no Principals.</p>
             </div>
           ) : (
-            <details>
-              <summary>View Principals ({report.principals.length})</summary>
-              <div className="table-container">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Principal</th>
-                      <th>Roles</th>
-                      <th>Permissions</th>
-                      <th>Last Login</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.principals.map((p, i) => (
-                      <tr key={i}>
-                        <td>
-                          <div>{p.principal.name}</div>
-                          <div className="muted small">{p.principal.sub}</div>
-                        </td>
-                        <td>
-                          {p.roles.length > 0 ? (
-                            <div className="small">{p.roles.join(', ')}</div>
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                        <td>
-                          {p.grants.length > 0 ? (
-                            <div className="small">{p.grants.join(', ')}</div>
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                        <td>
-                          {p.lastLogin ? (
-                            <div className="small">
-                              {new Date(p.lastLogin).toLocaleDateString()}
-                            </div>
-                          ) : (
-                            <span className="muted">Never</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
+            <AccessReviewPrincipalTable
+              principals={report.principals}
+              page={principalPage}
+              onPageChange={setPrincipalPage}
+            />
           )}
         </div>
       )}
     </section>
+  )
+}
+
+function AccessReviewPrincipalTable({
+  principals,
+  page,
+  onPageChange,
+}: {
+  principals: AccessReviewReport['principals']
+  page: number
+  onPageChange: (page: number) => void
+}) {
+  const slice = paginate(principals, page, PRINCIPAL_PAGE_SIZE)
+  return (
+    <div className="auth-panel-stack">
+      <div className="table-container">
+        <table className="table" aria-label="Access review Principals">
+          <thead>
+            <tr>
+              <th>Principal</th>
+              <th>Roles</th>
+              <th>Permissions</th>
+              <th>Last Login</th>
+            </tr>
+          </thead>
+          <tbody>
+            {slice.items.map((p) => (
+              <tr key={`${p.principal.iss}|${p.principal.sub}`}>
+                <td>
+                  <UserRef
+                    author={`${p.principal.iss}|${p.principal.sub}`}
+                    name={p.principal.name}
+                  />
+                </td>
+                <td>
+                  {p.roles.length > 0 ? (
+                    <div className="ns-card-tags">
+                      {p.roles.map((role) => (
+                        <span key={role} className="ns-tag ns-tag-muted">{role}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+                <td>
+                  {p.grants.length > 0 ? (
+                    <div className="ns-card-tags">
+                      {p.grants.map((grant) => (
+                        <span key={grant} className="ns-tag ns-tag-muted">{grant}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+                <td>
+                  {p.lastLogin ? (
+                    <span className="small">{new Date(p.lastLogin).toLocaleDateString()}</span>
+                  ) : (
+                    <span className="muted">Never</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {slice.pageCount > 1 ? (
+        <Pagination
+          page={slice.page}
+          pageCount={slice.pageCount}
+          total={slice.total}
+          onPageChange={onPageChange}
+          label="Access review Principals pagination"
+        />
+      ) : null}
+    </div>
   )
 }

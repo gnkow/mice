@@ -1022,11 +1022,10 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
             {data.admins.map((a) => (
               <li key={`${a.iss}\0${a.sub}`} className="ns-member-row">
                 <div className="ns-member-main">
-                  <code className="ns-member-sub">
-                    <Link to={`/settings/principal?iss=${encodeURIComponent(a.iss)}&sub=${encodeURIComponent(a.sub)}`}>
-                      {a.name || a.email || a.sub}
-                    </Link>
-                  </code>
+                  <UserRef
+                    author={`${a.iss}|${a.sub}`}
+                    name={a.name || a.email || a.sub}
+                  />
                   <span className="muted small">
                     {a.email ? `${a.email} · ` : ''}
                     {a.sub}

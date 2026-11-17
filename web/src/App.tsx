@@ -39,7 +39,6 @@ import { RepoCollaboratorHistoryPage } from './pages/RepoCollaboratorHistoryPage
 import { RepoSettingsHistoryPage } from './pages/RepoSettingsHistoryPage'
 import { RepoSettingsPage } from './pages/RepoSettingsPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { PrincipalNamePage } from './pages/PrincipalNamePage'
 import { TreePage } from './pages/TreePage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { WorkspaceDetailPage } from './pages/WorkspaceDetailPage'
@@ -156,7 +155,6 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
               <Route path="repos/new" element={<NewRepoPage />} />
-              <Route path="settings/principal" element={<PrincipalNamePage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="profile" element={<ProfilePage />} />

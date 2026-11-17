@@ -1,6 +1,6 @@
 import { UserCheck } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { UserRef } from './UserRef'
 
 type ReenablePeriod = {
   principal: string
@@ -126,13 +126,12 @@ export function ReenableSection() {
         <ul className="ns-member-list">
           {periods.map((period) => {
             const { iss, sub } = splitPrincipal(period.principal)
-            const nameHref = `/settings/principal?${new URLSearchParams({ iss, sub }).toString()}`
             const reasonInvalid = fieldErrorFor === period.principal
             const reasonFieldId = `reenable-reason-${period.principal}`
             return (
               <li key={period.principal} className="ns-member-row">
                 <div className="ns-member-main">
-                  <Link to={nameHref}>{sub}</Link>
+                  <UserRef author={period.principal} name={sub} />
                   <span className="muted small ns-member-sub">
                     Disabled {when(period.disabledAt)}
                     {period.awaitingConfirmation

@@ -3,6 +3,7 @@ import { getDb } from '../../db/database.js'
 import { accessReviewReports, principals } from '../../db/schema.js'
 import { instancePermissions } from '../../authzInstanceStore.js'
 import { namespaceRolesFor } from '../../authzMembershipStore.js'
+import { getUserRole } from '../../rbacStore.js'
 import type { PrincipalId } from '../session/principal.js'
 import { prepareForSigning, type SignatureRecord } from '../signing/signingCeremony.js'
 
@@ -123,21 +124,57 @@ async function defaultFindStored(quarter: string): Promise<AccessReviewReport | 
   return stored?.report ?? null
 }
 
-/** Assemble every Principal with namespace roles, instance grants, and last login. */
+/**
+ * Pure assembly of one Principal row for the quarterly report.
+ * Instance role (when present) is listed as `instance:<role>`; namespace seats as `ns:role`.
+ */
+export function buildPrincipalAccessRecord(input: {
+  iss: string
+  sub: string
+  name: string | null
+  lastLoginAt?: Date | null
+  instanceRole?: string | null
+  namespaceRoles: Iterable<[string, string]>
+  grants: string[]
+}): PrincipalAccessRecord {
+  const roles: string[] = []
+  const instanceRole = input.instanceRole?.trim()
+  if (instanceRole) roles.push(`instance:${instanceRole}`)
+  for (const [ns, role] of input.namespaceRoles) {
+    roles.push(`${ns}:${role}`)
+  }
+  return {
+    principal: {
+      iss: input.iss,
+      sub: input.sub,
+      name: input.name?.trim() || 'Unknown',
+    },
+    roles,
+    grants: [...input.grants],
+    ...(input.lastLoginAt ? { lastLogin: input.lastLoginAt.getTime() } : {}),
+  }
+}
+
+/** Assemble every Principal with roles, instance grants, and last login. */
 export async function collectPrincipalAccessRecords(): Promise<PrincipalAccessRecord[]> {
   const allPrincipals = await getDb().select().from(principals)
   return Promise.all(
     allPrincipals.map(async (p) => {
-      const principal = { iss: p.iss, sub: p.sub, name: p.name || 'Unknown' }
-      const perms = await instancePermissions(principal)
-      const roles = await namespaceRolesFor(principal)
-      const rolesList = Array.from(roles.entries()).map(([ns, role]) => `${ns}:${role}`)
-      return {
-        principal,
-        roles: rolesList,
+      const principal = { iss: p.iss, sub: p.sub }
+      const [perms, roles, instanceRole] = await Promise.all([
+        instancePermissions(principal),
+        namespaceRolesFor(principal),
+        getUserRole(principal),
+      ])
+      return buildPrincipalAccessRecord({
+        iss: p.iss,
+        sub: p.sub,
+        name: p.name,
+        lastLoginAt: p.lastLoginAt,
+        instanceRole,
+        namespaceRoles: roles.entries(),
         grants: perms,
-        ...(p.lastLoginAt ? { lastLogin: p.lastLoginAt.getTime() } : {}),
-      }
+      })
     }),
   )
 }

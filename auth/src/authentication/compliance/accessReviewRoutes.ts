@@ -42,15 +42,15 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
         message: `Opened access review report for ${quarter}`,
         detail: { reportId: result.report.reportId, quarter },
       })
-      return c.json({ report: result.report })
+    } else {
+      await audit({
+        action: 'access-review.generate',
+        message: `Generated access review report for ${quarter}`,
+        detail: { reportId: result.report.reportId, principalCount: result.report.principals.length },
+      })
     }
 
-    await audit({
-      action: 'access-review.generate',
-      message: `Generated access review report for ${quarter}`,
-      detail: { reportId: result.report.reportId, principalCount: result.report.principals.length },
-    })
-
+    // Always return the displayed-document hash so Generate and Open share the sign gate.
     return c.json(accessReviewAdminView(result.report))
   }))
 

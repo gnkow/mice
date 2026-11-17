@@ -5700,6 +5700,44 @@ p.ok {
   word-break: break-word;
 }
 
+.user-info-name-history {
+  margin: 0.65rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
+}
+
+.user-info-name-history-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.user-info-name-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 9rem;
+  overflow: auto;
+}
+
+.user-info-name-history-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.user-info-name-history-name {
+  color: var(--fg);
+}
+
 .latest-commit .user-ref .avatar-circle,
 .commit-row .user-ref .avatar-circle {
   width: 1.4rem;

@@ -54,6 +54,6 @@ test.describe('Access review overdue alert (#41)', () => {
     await expect(section.getByRole('heading', { name: `Report: ${quarter}` })).toBeVisible({
       timeout: 10_000,
     })
-    await expect(section.getByRole('status').filter({ hasText: /Opened stored report/i })).toBeVisible()
+    await expect(section.getByRole('heading', { name: /Report:/i })).toBeVisible()
   })
 })

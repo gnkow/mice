@@ -51,9 +51,7 @@ test.describe('Access review sign (#40)', () => {
     await expect(section.getByRole('heading', { name: `Report: ${quarter}` })).toBeVisible({
       timeout: 15_000,
     })
-    await expect(
-      section.getByText(/Awaiting an instance admin signature/i),
-    ).toBeVisible()
+    await expect(section.getByText(/Awaiting signature/i)).toBeVisible()
 
     const signButton = section.getByRole('button', { name: /Sign report|Signing/i })
     await expect(signButton).toBeVisible()
@@ -84,10 +82,10 @@ test.describe('Access review sign (#40)', () => {
     })
 
     await signButton.click()
-    await expect(section.getByRole('status').filter({ hasText: /Signed as Reviewed/i })).toBeVisible({
+    await expect(section.getByTestId('access-review-signature')).toBeVisible({
       timeout: 10_000,
     })
-    await expect(section.getByTestId('access-review-signature')).toBeVisible()
+    await expect(section.getByTestId('access-review-signature')).toContainText(/Signed/i)
   })
 
   test('sign failure shows accessible alert', async ({ page }) => {

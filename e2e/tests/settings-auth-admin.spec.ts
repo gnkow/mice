@@ -89,13 +89,9 @@ test.describe('Settings · Access review (Admin)', () => {
     await generate.click()
 
     await expect(
-      page.locator('#access-review').locator('.flash-success, .flash-error').first(),
+      page.locator('#access-review').getByRole('heading', { name: /Report:/i }),
     ).toBeVisible({ timeout: 15_000 })
-
-    const reportHeading = page.locator('#access-review').getByRole('heading', { name: /Report:/i })
-    if (await reportHeading.isVisible()) {
-      await expect(page.locator('#access-review').getByText(/Principals/i).first()).toBeVisible()
-    }
+    await expect(page.locator('#access-review').getByText(/Principals/i).first()).toBeVisible()
   })
 })
 
