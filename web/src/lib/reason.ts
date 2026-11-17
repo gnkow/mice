@@ -1,3 +1,4 @@
+import { CeremonyCancelled } from './ceremonyCancelled'
 import { askReason, summarizeMutation, type ReasonSubmission } from './reasonPrompt'
 
 /** Carries the reason for a change; the BFF requires one on update/delete and privileged mutations. */
@@ -5,6 +6,8 @@ export const REASON_HEADER = 'X-Mice-Reason'
 export const REASON_CATEGORY_HEADER = 'X-Mice-Reason-Category'
 export const CHANGE_CONTROL_HEADER = 'X-Mice-Change-Control-Id'
 export const SIGNATURE_HEADER = 'X-Mice-Signature-Id'
+
+export { CeremonyCancelled, isCeremonyCancelled } from './ceremonyCancelled'
 
 const CEREMONY_CODES = new Set([
   'reason_required',
@@ -77,7 +80,8 @@ export async function withReason(
     body,
   })
   if (!submission?.reason.trim() || !submission.category || !submission.signatureId) {
-    return res
+    // Do not surface the BFF's reason_required body as a page flash after dismiss.
+    throw new CeremonyCancelled()
   }
   return send({
     reason: submission.reason.trim(),

@@ -26,7 +26,7 @@ export function DisabledSignersSection() {
         credentials: 'same-origin',
         signal,
       })
-      const body = await res.json() as { alarms?: DisabledSignerAlarm[]; error?: string }
+      const body = (await res.json()) as { alarms?: DisabledSignerAlarm[]; error?: string }
       if (!res.ok) throw new Error(body.error || 'Failed to load disabled signers')
       setState({ kind: 'ok', alarms: body.alarms ?? [] })
     } catch (err) {
@@ -53,13 +53,27 @@ export function DisabledSignersSection() {
             Disabled signers
           </h2>
           <p className="muted small">
-            Principals the identity provider lists as disabled who still hold signing rights in Mice. The daily drift job raises the same alarm.
+            Principals the identity provider lists as disabled who still hold signing rights in Mice
+            (Approver seat, or a User / Manager / Admin instance role). The daily IdP drift job raises
+            the same critical alarm.
           </p>
         </div>
+        <button
+          type="button"
+          className="btn ghost small"
+          disabled={state.kind === 'loading'}
+          aria-busy={state.kind === 'loading' || undefined}
+          onClick={() => void load()}
+        >
+          <RefreshCw size={14} className="button-label-icon" aria-hidden="true" />
+          Refresh
+        </button>
       </div>
 
       {state.kind === 'loading' && (
-        <p role="status" aria-live="polite">Loading disabled signers…</p>
+        <p role="status" aria-live="polite">
+          Loading disabled signers…
+        </p>
       )}
 
       {state.kind === 'error' && (
@@ -77,26 +91,44 @@ export function DisabledSignersSection() {
           <span className="empty-state-icon" aria-hidden="true" />
           <p className="muted">No disabled Principal holds signing rights.</p>
           <p className="muted small">
-            Critical alarms appear here when the directory disables a Principal who can still sign.
+            Critical alarms appear here when the directory disables a Principal who can still sign
+            (Approver or write-capable role). Pending Principals without a role do not alarm.
           </p>
         </div>
       )}
 
       {state.kind === 'ok' && state.alarms.length > 0 && (
-        <ul className="ns-member-list">
-          {state.alarms.map((alarm) => {
-            const href = `/settings/principal?${new URLSearchParams({ iss: alarm.iss, sub: alarm.sub }).toString()}`
-            return (
-              <li key={alarm.principalId} className="ns-member-row">
-                <div className="ns-member-main">
-                  <Link to={href}>{alarm.name}</Link>
-                  <span className="muted small ns-member-sub">{alarm.reason}</span>
-                </div>
-                <span className="flash flash-error">Critical</span>
-              </li>
-            )
-          })}
-        </ul>
+        <>
+          <p
+            className="muted small ns-settings-count"
+            data-testid="disabled-signers-count"
+            role="status"
+          >
+            {state.alarms.length} critical alarm{state.alarms.length === 1 ? '' : 's'}
+          </p>
+          <ul className="ns-member-list" data-testid="disabled-signers-list">
+            {state.alarms.map((alarm) => {
+              const href = `/settings/principal?${new URLSearchParams({
+                iss: alarm.iss,
+                sub: alarm.sub,
+              }).toString()}`
+              return (
+                <li key={alarm.principalId} className="ns-member-row">
+                  <div className="ns-member-main">
+                    <Link to={href}>{alarm.name}</Link>
+                    <span className="muted small">
+                      <code className="ns-member-sub">{alarm.sub}</code>
+                      {' · '}
+                      <code className="inline-code">{alarm.iss}</code>
+                    </span>
+                    <span className="muted small ns-member-sub">{alarm.reason}</span>
+                  </div>
+                  <span className="flash flash-error">Critical</span>
+                </li>
+              )
+            })}
+          </ul>
+        </>
       )}
     </section>
   )

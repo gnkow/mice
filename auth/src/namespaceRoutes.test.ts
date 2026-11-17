@@ -89,10 +89,47 @@ describe('namespace routes', () => {
     const detail = (await (await call('manager', 'GET', '/auth/namespaces/acme')).json()) as {
       id: string
       name: string
+      permissions: {
+        manageSettings: boolean
+        manageMembers: boolean
+        manageCustomRoles: boolean
+        deleteNamespace: boolean
+        manageApprovers: boolean
+      }
     }
     assert.equal(detail.name, 'acme')
     assert.equal(detail.id, stableId)
+    assert.deepEqual(detail.permissions, {
+      manageSettings: true,
+      manageMembers: true,
+      manageCustomRoles: true,
+      deleteNamespace: true,
+      manageApprovers: true,
+    })
     assert.equal((await call('manager', 'GET', '/auth/namespaces/nope')).status, 404)
+
+    // Member may view but cannot mutate settings / members / delete / approvers.
+    assert.equal(
+      (
+        await call('manager', 'PUT', '/auth/namespaces/acme/members', {
+          kind: 'user',
+          sub: alice.sub,
+          iss: alice.iss,
+          role: 'member',
+        })
+      ).status,
+      200,
+    )
+    const memberView = (await (await call('alice', 'GET', '/auth/namespaces/acme')).json()) as {
+      permissions: typeof detail.permissions
+    }
+    assert.deepEqual(memberView.permissions, {
+      manageSettings: false,
+      manageMembers: false,
+      manageCustomRoles: false,
+      deleteNamespace: false,
+      manageApprovers: false,
+    })
 
     assert.equal((await call('alice', 'PATCH', '/auth/namespaces/acme', { basePermission: 'write' })).status, 403)
     assert.equal((await call('root', 'PATCH', '/auth/namespaces/acme', { basePermission: 'write' })).status, 403)
@@ -157,6 +194,59 @@ describe('namespace routes', () => {
     const list = (await (await call('manager', 'GET', path)).json()) as { collaborators: unknown[] }
     assert.equal(list.collaborators.length, 1)
     assert.equal((await call('manager', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200)
+  })
+
+  it('repo rename is AuthZ-only and preserves the stable id', async () => {
+    const created = await call('manager', 'POST', '/auth/namespaces', {
+      name: 'rename-route-ns',
+      basePermission: 'none',
+    })
+    assert.equal(created.status, 200)
+    // Seed the AuthZ repo row (collaborator PUT ensures it).
+    assert.equal(
+      (
+        await call('manager', 'PUT', '/auth/namespaces/rename-route-ns/repos/study/collaborators', {
+          sub: alice.sub,
+          iss: alice.iss,
+          role: 'write',
+        })
+      ).status,
+      200,
+    )
+    const before = await call('manager', 'GET', '/auth/namespaces/rename-route-ns/repos/study/permissions')
+    assert.equal(before.status, 200)
+    const perms = (await before.json()) as { permissions: { rename: boolean } }
+    assert.equal(perms.permissions.rename, true)
+
+    assert.equal(
+      (await call('alice', 'PATCH', '/auth/namespaces/rename-route-ns/repos/study', { name: 'assay' })).status,
+      403,
+    )
+    const renamed = await call('manager', 'PATCH', '/auth/namespaces/rename-route-ns/repos/study', {
+      name: 'assay',
+    })
+    assert.equal(renamed.status, 200)
+    assert.ok(audits.includes('repo.rename'))
+    const body = (await renamed.json()) as {
+      name: string
+      repository: { id: string; name: string }
+    }
+    assert.equal(body.name, 'assay')
+    assert.equal(body.repository.name, 'assay')
+    assert.match(body.repository.id, /^[0-9a-f-]{36}$/i)
+    // Old display name is gone from AuthZ (tombstoned); rename again must 400.
+    assert.equal(
+      (
+        await call('manager', 'PATCH', '/auth/namespaces/rename-route-ns/repos/study', {
+          name: 'other',
+        })
+      ).status,
+      400,
+    )
+    assert.equal(
+      (await call('manager', 'GET', '/auth/namespaces/rename-route-ns/repos/assay/permissions')).status,
+      200,
+    )
   })
 
   it('custom roles: catalog, create, update and delete for a namespace role', async () => {

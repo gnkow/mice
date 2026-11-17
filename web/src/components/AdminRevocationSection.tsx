@@ -1,6 +1,7 @@
 import { AlertTriangle, Ban, Clock, Shield } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
+import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import {
   CHANGE_CONTROL_HEADER,
   REASON_CATEGORY_HEADER,
@@ -138,6 +139,7 @@ export function AdminRevocationSection() {
       setRevokePrincipal('')
       setRevokeReason('')
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Revocation failed' })
     } finally {
       setBusy(false)
@@ -160,6 +162,7 @@ export function AdminRevocationSection() {
       setSuspendReason('')
       pending.reload()
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Suspension failed' })
     } finally {
       setBusy(false)
@@ -185,6 +188,7 @@ export function AdminRevocationSection() {
       })
       pending.reload()
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Confirmation failed' })
     } finally {
       setBusy(false)

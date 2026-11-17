@@ -45,6 +45,21 @@ import {
   stampRepositoryIdOnRepoDetail,
 } from './proxyEffects.js'
 import {
+  physicalCreateBody,
+  rewriteNamespacePathToPhysical,
+  rewriteOxenJsonToDisplay,
+  rewriteRepoListPathToPhysical,
+  rewriteReposApiPathToPhysical,
+} from './oxenPhysicalKeys.js'
+import {
+  displayNamespaceName,
+  displayRepoRef,
+  preparePhysicalRepoCreate,
+  resolveNamespaceId,
+  resolvePhysicalRepo,
+} from './oxenPhysicalResolve.js'
+import { renameRepository } from './repositoryStore.js'
+import {
   authorsFromCommits,
   decideSelfMerge,
   signerAuthorKey,
@@ -282,7 +297,8 @@ export async function proxyToOxen(
 
   const mutating = method !== 'GET' && method !== 'HEAD'
   const classified = interpretRequest(method, pathname)
-  const ns = classified.namespace ?? createNs
+  // List/detail namespace routes put the display name on `targetNamespace`, not `namespace`.
+  const ns = classified.namespace ?? classified.targetNamespace ?? createNs
   const repo = classified.repo ?? createRepo
 
   if (mutating && isDatasetMutation(classified.action) && auditChainBlocked()) return auditChainBroken()
@@ -448,16 +464,122 @@ export async function proxyToOxen(
     }
   }
 
+  // Display-name rename only: oxen physical keys are stable UUIDs (no in-place oxen rename).
+  if (
+    mutating &&
+    ns &&
+    repo &&
+    method === 'PATCH' &&
+    /\/rename\/?$/.test(pathname.replace(/\/+$/, '') || '/')
+  ) {
+    let nextName = ''
+    // Prefer signatureBody (pre–author-injection). Injected `name` must never become the new repo name.
+    const fromSignature =
+      signatureBody && typeof signatureBody === 'object' && !Array.isArray(signatureBody)
+        ? (signatureBody as Record<string, unknown>)
+        : null
+    if (fromSignature) {
+      nextName = String(fromSignature.repo_name ?? fromSignature.name ?? '').trim()
+    }
+    if (!nextName) {
+      try {
+        const parsed =
+          typeof body === 'string' ? (JSON.parse(body) as Record<string, unknown>) : {}
+        nextName = String(parsed.repo_name ?? '').trim()
+      } catch {
+        nextName = ''
+      }
+    }
+    if (!nextName) {
+      if (intent) await appendOutcome(intent.id, auditFields(400))
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          status_message: 'bad_request',
+          error: { detail: 'Repository name required' },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    const result = await renameRepository(ns, repo, nextName)
+    if (!result.ok) {
+      if (intent) await appendOutcome(intent.id, auditFields(400))
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          status_message: 'bad_request',
+          error: { detail: result.error },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    const payload = JSON.stringify({
+      status: 'success',
+      status_message: 'resource_updated',
+      repository: { namespace: ns, name: nextName },
+    })
+    if (intent) {
+      await appendOutcome(intent.id, {
+        ...auditFields(200),
+        action: 'repo.rename',
+        repo: nextName,
+        detail: { previous_name: repo, name: nextName },
+      })
+    }
+    return new Response(payload, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  // Display names stay on the client/AuthZ path; oxen sees stable UUID keys.
+  let upstreamPath = pathname
+  let upstreamBody = body
+  let createdPhysical: { namespaceId: string; repositoryId: string } | null = null
+  if (
+    (classified.action === 'repo.create' || (pathname === '/api/repos' && method === 'POST')) &&
+    ns &&
+    repo
+  ) {
+    createdPhysical = await preparePhysicalRepoCreate(user, ns, repo)
+    if (!createdPhysical) {
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          status_message: 'forbidden',
+          error: { detail: 'Cannot create repository: AuthZ namespace is missing or create is blocked' },
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    upstreamBody = physicalCreateBody(
+      typeof body === 'string' ? body : undefined,
+      createdPhysical,
+    )
+  } else if (ns && repo) {
+    const physical = await resolvePhysicalRepo(ns, repo)
+    upstreamPath = rewriteReposApiPathToPhysical(pathname, physical)
+  } else if ((classified.kind === 'repo.list' || classified.action === 'repo.list') && ns) {
+    const namespaceId = await resolveNamespaceId(ns)
+    upstreamPath = rewriteRepoListPathToPhysical(pathname, namespaceId)
+  } else if (
+    (classified.kind === 'namespace.detail' || pathname.startsWith('/api/namespaces/')) &&
+    ns
+  ) {
+    const namespaceId = await resolveNamespaceId(ns)
+    upstreamPath = rewriteNamespacePathToPhysical(pathname, namespaceId)
+  }
+
   let upstream: Response
   try {
     await lineage.before()
     if (mutating) await datasetVersions.before()
     upstream = await upstreamFetch(
-      `${env.oxenUpstream}${pathname}${url.search}`,
+      `${env.oxenUpstream}${upstreamPath}${url.search}`,
       {
         method,
         headers: reqHeaders,
-        body,
+        body: upstreamBody,
         redirect: 'manual',
       },
     )
@@ -467,6 +589,7 @@ export async function proxyToOxen(
   }
 
   let responseBody: BodyInit | null = upstream.body
+  const upstreamIsJson = (upstream.headers.get('content-type') ?? '').includes('application/json')
 
   const filteredCatalog = await filterNamespaceCatalog(user, method, pathname, upstream)
   if (filteredCatalog !== null) responseBody = filteredCatalog
@@ -477,30 +600,102 @@ export async function proxyToOxen(
   if (intent) {
     // Buffered once: the dataset versions and the lineage op both read the answer, and the caller is served it.
     let buffered: string | undefined
-    if (upstream.ok && (upstream.headers.get('content-type') ?? '').includes('application/json')) {
+    if (upstream.ok && upstreamIsJson && typeof responseBody !== 'string') {
       try {
         buffered = await upstream.text()
       } catch {
         buffered = undefined
       }
+      if (buffered !== undefined) responseBody = buffered
+    } else if (typeof responseBody === 'string') {
+      buffered = responseBody
     }
-    if (buffered !== undefined) responseBody = buffered
 
     const auditEvent = await appendOutcome(intent.id, auditFields(upstream.status, datasetVersions.after(upstream, buffered)))
     await lineage.after(upstream, buffered, auditEvent?.id)
 
-    // After successful repo create: seed AuthZ namespace + creator Admin; expose stable id
+    // Create: AuthZ was minted before oxen; stamp id + restore display names on the answer.
     if (
       upstream.ok &&
-      (classified.action === 'repo.create' ||
-        (pathname === '/api/repos' && method === 'POST')) &&
+      createdPhysical &&
       ns &&
-      repo
+      repo &&
+      typeof responseBody === 'string'
     ) {
-      if (typeof responseBody === 'string') {
-        responseBody = await finalizeProxiedRepoCreate(user, ns, repo, responseBody)
+      responseBody = await finalizeProxiedRepoCreate(user, ns, repo, responseBody)
+    }
+  }
+
+  // GET list/detail must be buffered too — otherwise clients see oxen UUID keys and navigate to them.
+  if (upstream.ok && upstreamIsJson && typeof responseBody !== 'string' && responseBody != null) {
+    try {
+      responseBody =
+        responseBody === upstream.body
+          ? await upstream.text()
+          : await new Response(responseBody).text()
+    } catch {
+      /* leave body as-is */
+    }
+  }
+
+  // Swap physical UUID keys in oxen JSON back to display names for clients.
+  if (typeof responseBody === 'string' && upstreamIsJson) {
+    const displayNameCache = new Map<string, string>()
+    const displayRepoCache = new Map<string, { namespace: string; repo: string }>()
+
+    if (createdPhysical && ns && repo) {
+      displayNameCache.set(
+        createdPhysical.namespaceId,
+        (await displayNamespaceName(createdPhysical.namespaceId)) ?? ns,
+      )
+      displayRepoCache.set(
+        `${createdPhysical.namespaceId}\0${createdPhysical.repositoryId}`,
+        { namespace: ns, repo },
+      )
+    } else if (ns && repo) {
+      const physical = await resolvePhysicalRepo(ns, repo)
+      if (physical) {
+        displayNameCache.set(physical.namespaceId, ns)
+        displayRepoCache.set(`${physical.namespaceId}\0${physical.repositoryId}`, {
+          namespace: ns,
+          repo,
+        })
+      }
+    } else if (ns) {
+      const namespaceId = await resolveNamespaceId(ns)
+      if (namespaceId) displayNameCache.set(namespaceId, ns)
+    }
+
+    const pairRe =
+      /"namespace"\s*:\s*"([0-9a-f-]{36})"\s*,\s*"name"\s*:\s*"([0-9a-f-]{36})"/gi
+    let pair: RegExpExecArray | null
+    while ((pair = pairRe.exec(responseBody))) {
+      const namespaceId = pair[1]!
+      const repositoryId = pair[2]!
+      const key = `${namespaceId}\0${repositoryId}`
+      if (displayRepoCache.has(key)) continue
+      const ref = await displayRepoRef(namespaceId, repositoryId)
+      if (ref) {
+        displayRepoCache.set(key, ref)
+        displayNameCache.set(namespaceId, ref.namespace)
       }
     }
+
+    const nsOnlyRe = /"namespace"\s*:\s*"([0-9a-f-]{36})"/gi
+    let nsOnly: RegExpExecArray | null
+    while ((nsOnly = nsOnlyRe.exec(responseBody))) {
+      const id = nsOnly[1]!
+      if (displayNameCache.has(id)) continue
+      const name = await displayNamespaceName(id)
+      if (name) displayNameCache.set(id, name)
+    }
+
+    responseBody = rewriteOxenJsonToDisplay(
+      responseBody,
+      (id) => displayNameCache.get(id) ?? null,
+      (namespaceId, repositoryId) =>
+        displayRepoCache.get(`${namespaceId}\0${repositoryId}`) ?? null,
+    )
   }
 
   const resHeaders = new Headers()

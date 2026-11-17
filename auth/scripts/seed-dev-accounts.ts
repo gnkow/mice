@@ -258,6 +258,35 @@ function oxenUpstream(): string {
   return (process.env.OXEN_UPSTREAM || 'http://127.0.0.1:3001').replace(/\/$/, '')
 }
 
+const UUID_NAME_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/**
+ * Drop AuthZ rows whose *name* is a UUID (leftover from list-leakage minting).
+ * Keeps the real display-named sample repo.
+ */
+async function purgeUuidNamedRepos(namespace: string, keepId: string): Promise<void> {
+  const { getDb } = await import('../src/db/database.js')
+  const { repositories, namespaces } = await import('../src/db/schema.js')
+  const { eq } = await import('drizzle-orm')
+  const { deleteRepositoryRecord } = await import('../src/repositoryStore.js')
+  const rows = await getDb()
+    .select({ id: repositories.id, name: repositories.name })
+    .from(repositories)
+    .innerJoin(namespaces, eq(namespaces.id, repositories.namespaceId))
+    .where(eq(namespaces.name, namespace))
+  let purged = 0
+  for (const row of rows) {
+    if (row.id === keepId) continue
+    if (!UUID_NAME_RE.test(row.name)) continue
+    const result = await deleteRepositoryRecord(namespace, row.name)
+    if (result.ok) purged += 1
+  }
+  if (purged) {
+    console.log(`✓ Purged ${purged} UUID-named AuthZ repo row(s) under ${namespace}`)
+  }
+}
+
 /** Create the oxen-server repo (namespaces appear when the first repo is created). */
 async function ensureOxenRepo(namespace: string, name: string): Promise<void> {
   const url = `${oxenUpstream()}/api/repos`
@@ -320,12 +349,16 @@ async function seedSampleWorkspace(users: {
     }
   }
 
-  await ensureOxenRepo(SAMPLE_NAMESPACE, SAMPLE_REPO)
-
+  // Mint AuthZ ids first; oxen physical keys are those stable UUIDs (display names stay in AuthZ).
   const repo = await ensureRepository(SAMPLE_NAMESPACE, SAMPLE_REPO)
   if (!repo) {
     throw new Error(`Failed to ensure AuthZ repository ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}`)
   }
+  await purgeUuidNamedRepos(SAMPLE_NAMESPACE, repo.id)
+  await ensureOxenRepo(repo.namespaceId, repo.id)
+  console.log(
+    `✓ Oxen physical path ${repo.namespaceId}/${repo.id} ↔ display ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}`,
+  )
 
   for (const [label, target, role] of [
     ['manager', users.manager, 'admin'],

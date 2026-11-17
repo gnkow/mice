@@ -40,7 +40,7 @@ describe('signing resume after MFA step-up', () => {
       )
     })
 
-    // askReason opener is null in unit tests → withReason returns the 400 response.
+    // askReason opener is null in unit tests → withReason throws CeremonyCancelled.
     const first = ensureResumeSignedMutation('/settings#access-requests')
     const second = ensureResumeSignedMutation('/settings')
     assert.ok(first)
@@ -54,8 +54,10 @@ describe('signing resume after MFA step-up', () => {
     })
     assert.equal(takeCeremonyResumeDraft(), null)
 
-    const res = await first.promise
-    assert.equal(res.status, 400)
+    await assert.rejects(() => first.promise, (err: unknown) => {
+      assert.equal((err as Error).name, 'CeremonyCancelled')
+      return true
+    })
     assert.equal(fetchMock.mock.callCount(), 1)
     assert.equal(sessionStorage.getItem(SIGNING_RESUME_KEY), null)
     assert.equal(ensureResumeSignedMutation('/settings'), null)

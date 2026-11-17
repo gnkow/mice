@@ -97,6 +97,14 @@ export const ENTITY_VERSION_INVENTORY: EntityVersionEntry[] = [
     coverage: 'auth/src/namespaceMembershipVersions.test.ts',
   },
   {
+    id: 'repo.settings',
+    entity: 'Repository settings (display name)',
+    status: 'versioned',
+    store: 'repository_settings_versions',
+    historySeam: 'GET /auth/namespaces/:ns/repos/:repo/settings/history',
+    coverage: 'auth/src/authzRepository.test.ts repository settings versions',
+  },
+  {
     id: 'repo.collaborators',
     entity: 'Repository collaborator set',
     status: 'versioned',

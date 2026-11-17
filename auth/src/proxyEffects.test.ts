@@ -57,6 +57,19 @@ describe('filterNamespaceCatalog', async () => {
     const failed = new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } })
     assert.equal(await filterNamespaceCatalog(member, 'GET', '/api/namespaces', failed), null)
   })
+  it('rewrites physical UUID namespace keys to display names before filtering', async () => {
+    const a = await getNamespace('pe-a')
+    const b = await getNamespace('pe-b')
+    assert.ok(a && b)
+    const physicalCatalog = () =>
+      new Response(JSON.stringify({ namespaces: [{ namespace: a.id }, { name: b.id }] }), {
+        headers: { 'content-type': 'application/json' },
+      })
+    const out = await filterNamespaceCatalog(member, 'GET', '/api/namespaces', physicalCatalog())
+    assert.deepEqual(names(out), ['pe-a'])
+    const adminOut = await filterNamespaceCatalog(admin, 'GET', '/api/namespaces', physicalCatalog())
+    assert.deepEqual(names(adminOut), ['pe-a', 'pe-b'])
+  })
 })
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -143,6 +156,25 @@ describe('stampRepositoryIdOnRepoDetail', () => {
     const body = JSON.parse(out)
     assert.equal(body.repository_id, record.id)
     assert.equal(body.repository.repository_id, record.id)
+  })
+
+  it('mints an AuthZ id on first detail read when the row was missing', async () => {
+    await createNamespaceAuthz(admin, 'pe-mint-get', 'none', true)
+    const { readRepository } = await import('./repositoryStore.js')
+    assert.equal(await readRepository('pe-mint-get', 'late'), null)
+    const upstream = new Response(
+      JSON.stringify({
+        status: 'success',
+        repository: { namespace: 'pe-mint-get', name: 'late' },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )
+    const out = await stampRepositoryIdOnRepoDetail('GET', '/api/repos/pe-mint-get/late', upstream)
+    assert.ok(out)
+    const body = JSON.parse(out) as { repository_id?: string }
+    const stored = await readRepository('pe-mint-get', 'late')
+    assert.ok(stored)
+    assert.equal(body.repository_id, stored.id)
   })
 
   it('ignores non-detail routes and failed upstreams', async () => {

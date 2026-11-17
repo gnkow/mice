@@ -109,7 +109,6 @@ test.describe('Two instance admins (#39)', () => {
     await users.getByLabel('Subject (sub)').fill(`not-an-admin-${Date.now()}`)
     await users.getByLabel('Issuer (iss)').fill('mice-e2e')
     await users.locator('select').selectOption({ label: 'User' })
-    await users.getByLabel('Reason (required)').fill('Trying to demote under the floor')
     await users.getByRole('button', { name: 'Grant', exact: true }).click()
     await expect(users.getByRole('alert')).toContainText(/Admin floor:/i)
     await expect(users.getByRole('alert')).toContainText(/At least two admins must remain/i)

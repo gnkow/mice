@@ -99,7 +99,7 @@ test.describe('RBAC web UI (#16)', () => {
     await row.getByRole('button', { name: 'Grant Access' }).click()
     await users.locator('select').selectOption({ label: 'No role change' })
     await users.locator('label', { hasText: 'repo:bypass_acl' }).getByRole('checkbox').check()
-    await users.getByLabel('Reason (required)').fill('Trying to grant above my authority')
+    await expect(users.getByTestId('grant-access-reason-hint')).toBeVisible()
 
     let denyAuthority = true
     await page.route('**/auth/grants/**', async (route) => {
@@ -128,7 +128,6 @@ test.describe('RBAC web UI (#16)', () => {
     denyAuthority = false
     await users.locator('select').selectOption({ label: 'User' })
     await users.locator('label', { hasText: 'repo:bypass_acl' }).getByRole('checkbox').uncheck()
-    await users.getByLabel('Reason (required)').fill('Onboarding')
     await users.getByRole('button', { name: 'Grant', exact: true }).click()
     await expect(users.getByRole('status')).toContainText(/Granted access/i)
   })

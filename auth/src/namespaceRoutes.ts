@@ -1,6 +1,13 @@
 import type { Hono } from 'hono'
 import { env } from './env.js'
-import { decideInstanceAction, decideManageApprovers, decideManageRepoCollaborators, decideNamespaceAction } from './authz.js'
+import {
+  decideInstanceAction,
+  decideManageApprovers,
+  decideManageRepoCollaborators,
+  decideNamespaceAction,
+  hasRepoPermission,
+} from './authz.js'
+import { canEditEntity } from './metaAuthz.js'
 import { grantApprover, listApproverHistory, listApprovers, revokeApprover } from './authzApproverStore.js'
 import { denialResponse } from './decisionHttp.js'
 import {
@@ -22,6 +29,12 @@ import {
   listNamespacesForUser,
   updateNamespaceSettings,
 } from './authzNamespaceStore.js'
+import {
+  listRepositorySettingsVersions,
+  readRepository,
+  readRepositoryById,
+  renameRepository,
+} from './repositoryStore.js'
 import {
   ALL_NAMESPACE_CAPABILITIES,
   ALL_REPO_FINE_PERMISSIONS,
@@ -121,12 +134,32 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const unresolvedGroups = await reconcileNamespaceGroupIds(ns)
     const members = await listNamespaceMembers(ns)
     const groupBindingWarning = await namespaceGroupBindingWarning(ns)
+    const [
+      manageSettings,
+      manageMembers,
+      manageCustomRoles,
+      deleteNamespace,
+      manageApprovers,
+    ] = await Promise.all([
+      decideNamespaceAction(session, ns, 'namespace.settings'),
+      decideNamespaceAction(session, ns, 'namespace.members.manage'),
+      decideNamespaceAction(session, ns, 'namespace.roles.manage'),
+      decideNamespaceAction(session, ns, 'namespace.delete'),
+      decideManageApprovers(session, ns),
+    ])
     return c.json({
       ...settings,
       name: ns,
       members,
       unresolvedGroups,
       ...(groupBindingWarning ? { groupBindingWarning } : {}),
+      permissions: {
+        manageSettings: manageSettings.allow,
+        manageMembers: manageMembers.allow,
+        manageCustomRoles: manageCustomRoles.allow,
+        deleteNamespace: deleteNamespace.allow,
+        manageApprovers: manageApprovers.allow,
+      },
     })
   }))
 
@@ -159,9 +192,11 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       membersCanCreateRepos: boolean
     }>
     const previous = await getNamespace(ns)
+    const nextName = body.name?.trim()
+    // Display-name rename only: oxen paths use stable namespace UUIDs (no transfer).
     const result = await updateNamespaceSettings(ns, body)
     if (!result.ok) return c.json({ error: result.error }, 400)
-    const currentName = body.name?.trim() || ns
+    const currentName = nextName || ns
     const updated = await getNamespace(currentName)
     await auditMutation(c, session, 'session', {
       action: 'namespace.settings.update',
@@ -195,7 +230,10 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const ns = c.req.param('ns')
     const denied = denialResponse(c, await decideNamespaceAction(session, ns, 'namespace.delete'))
     if (denied) return denied
-    if (!await getNamespace(ns)) return c.json({ error: 'Not found' }, 404)
+    const settings = await getNamespace(ns)
+    if (!settings) return c.json({ error: 'Not found' }, 404)
+    // Oxen stores the namespace under its stable AuthZ id, not the display name.
+    const physicalNs = settings.id
 
     const deleteRepositories =
       typeof raw.deleteRepositories === 'boolean' ? raw.deleteRepositories : true
@@ -204,7 +242,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (deleteRepositories) {
       try {
         const listRes = await fetch(
-          `${env.oxenUpstream}/api/repos/${encodeURIComponent(ns)}`,
+          `${env.oxenUpstream}/api/repos/${encodeURIComponent(physicalNs)}`,
         )
         if (listRes.ok) {
           const listBody = (await listRes.json()) as {
@@ -212,27 +250,29 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
           }
           const repos = listBody.repositories ?? []
           for (const r of repos) {
-            const name = r.name
-            if (!name) continue
+            const physicalRepo = r.name
+            if (!physicalRepo) continue
             const delRes = await fetch(
-              `${env.oxenUpstream}/api/repos/${encodeURIComponent(ns)}/${encodeURIComponent(name)}`,
+              `${env.oxenUpstream}/api/repos/${encodeURIComponent(physicalNs)}/${encodeURIComponent(physicalRepo)}`,
               { method: 'DELETE' },
             )
             if (!delRes.ok && delRes.status !== 404) {
               return c.json(
                 {
-                  error: `Failed to delete repository ${ns}/${name} (${delRes.status})`,
+                  error: `Failed to delete repository ${ns}/${physicalRepo} (${delRes.status})`,
                 },
                 502,
               )
             }
-            deletedRepos.push(name)
+            const displayRepo =
+              (await readRepositoryById(physicalRepo))?.name ?? physicalRepo
+            deletedRepos.push(displayRepo)
             await auditMutation(c, session, 'session', {
               action: 'repo.delete',
               namespace: ns,
-              repo: name,
-              message: `Deleted repository ${ns}/${name} (namespace deletion)`,
-              detail: { cascade: 'namespace.delete' },
+              repo: displayRepo,
+              message: `Deleted repository ${ns}/${displayRepo} (namespace deletion)`,
+              detail: { cascade: 'namespace.delete', repository_id: physicalRepo },
             })
           }
         }
@@ -243,7 +283,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     } else {
       try {
         const listRes = await fetch(
-          `${env.oxenUpstream}/api/repos/${encodeURIComponent(ns)}`,
+          `${env.oxenUpstream}/api/repos/${encodeURIComponent(physicalNs)}`,
         )
         if (listRes.ok) {
           const listBody = (await listRes.json()) as {
@@ -346,6 +386,80 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       detail: { target: memberTarget(body) },
     })
     return c.json({ ok: true, members: await listNamespaceMembers(ns) })
+  }))
+
+  /**
+   * Display-name rename only (oxen physical keys are stable UUIDs).
+   * Body: { name: string }
+   */
+  app.patch(
+    '/auth/namespaces/:ns/repos/:repo',
+    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {
+      const ns = c.req.param('ns')
+      const repo = c.req.param('repo')
+      const admin = await hasRepoPermission(session, ns, repo, 'admin')
+      if (!admin.ok || admin.bypass) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
+      const body = raw as { name?: string }
+      const next = typeof body.name === 'string' ? body.name.trim() : ''
+      if (!next) return c.json({ error: 'Repository name required' }, 400)
+      const result = await renameRepository(ns, repo, next)
+      if (!result.ok) return c.json({ error: result.error }, 400)
+      const updated = await readRepository(ns, next)
+      await auditMutation(c, session, 'session', {
+        action: 'repo.rename',
+        namespace: ns,
+        repo: next,
+        message: `Renamed repository ${ns}/${repo} → ${next}`,
+        detail: { previous_name: repo, name: next, repository_id: updated?.id },
+      })
+      return c.json({
+        ok: true,
+        namespace: ns,
+        name: next,
+        repository: updated
+          ? { id: updated.id, namespace: updated.namespace, name: updated.name }
+          : null,
+      })
+    }),
+  )
+
+  app.get('/auth/namespaces/:ns/repos/:repo/settings/history', guarded({}, async ({ c, user: session }) => {
+    const ns = c.req.param('ns')
+    const repo = c.req.param('repo')
+    const admin = await hasRepoPermission(session, ns, repo, 'admin')
+    if (!admin.ok || admin.bypass) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    const versions = await listRepositorySettingsVersions(ns, repo)
+    if (!versions) return c.json({ error: 'Not found' }, 404)
+    return c.json({ versions })
+  }))
+
+  /** Caller-facing capabilities for repository settings chrome. */
+  app.get('/auth/namespaces/:ns/repos/:repo/permissions', guarded({}, async ({ c, user: session }) => {
+    const ns = c.req.param('ns')
+    const repo = c.req.param('repo')
+    const read = await hasRepoPermission(session, ns, repo, 'read')
+    if (!read.ok) return c.json({ error: 'Forbidden' }, 403)
+    const admin = await hasRepoPermission(session, ns, repo, 'admin')
+    const [manageCollaborators, manageApprovers, editMetadata] = await Promise.all([
+      decideManageRepoCollaborators(session, ns, repo),
+      decideManageApprovers(session, ns),
+      canEditEntity(session, { type: 'repo', id: `${ns}/${repo}`, namespace: ns, repo }),
+    ])
+    return c.json({
+      permissions: {
+        rename: admin.ok && !admin.bypass,
+        transfer: admin.ok && !admin.bypass,
+        manageCollaborators: manageCollaborators.allow,
+        manageApprovers: manageApprovers.allow,
+        editMetadata,
+        deleteRepository: admin.ok && !admin.bypass,
+        viewSignedRecord: true,
+      },
+    })
   }))
 
   app.get('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {

@@ -25,9 +25,11 @@ const NS_BASE_OPTS: BasePermission[] = [
 
 type Props = {
   namespace: string
+  /** When false, hide create/delete controls (list still visible when readable). */
+  canManage?: boolean
 }
 
-export function CustomRolesSection({ namespace }: Props) {
+export function CustomRolesSection({ namespace, canManage = true }: Props) {
   const roles = useAsync(
     (signal) => fetchCustomRoles(namespace, signal),
     [namespace],
@@ -49,6 +51,9 @@ export function CustomRolesSection({ namespace }: Props) {
   const [repoPerms, setRepoPerms] = useState<RepoFinePermission[]>([])
 
   if (roles.kind === 'error' && roles.message.includes('Forbidden')) {
+    return null
+  }
+  if (!canManage && roles.kind === 'ok' && roles.data.namespaceRoles.length === 0 && roles.data.repoRoles.length === 0) {
     return null
   }
 
@@ -159,6 +164,7 @@ export function CustomRolesSection({ namespace }: Props) {
                     </span>
                   </div>
                   <span className="ns-tag">namespace</span>
+                  {canManage ? (
                   <button
                     type="button"
                     className="btn ghost small"
@@ -177,11 +183,13 @@ export function CustomRolesSection({ namespace }: Props) {
                   >
                     <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete
                   </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
           )}
 
+          {canManage ? (
           <form className="ns-member-form" onSubmit={onCreateNs}>
             <h3 className="ns-settings-subhead">New namespace role</h3>
             <div className="ns-member-form-fields cols-2-fields">
@@ -239,6 +247,7 @@ export function CustomRolesSection({ namespace }: Props) {
               </button>
             </div>
           </form>
+          ) : null}
 
           <div className="ns-settings-section-head ns-settings-section-head-spaced">
             <div>
@@ -270,6 +279,7 @@ export function CustomRolesSection({ namespace }: Props) {
                     </span>
                   </div>
                   <span className="ns-tag">{r.base}</span>
+                  {canManage ? (
                   <button
                     type="button"
                     className="btn ghost small"
@@ -288,11 +298,13 @@ export function CustomRolesSection({ namespace }: Props) {
                   >
                     <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete
                   </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
           )}
 
+          {canManage ? (
           <form className="ns-member-form" onSubmit={onCreateRepo}>
             <h3 className="ns-settings-subhead">New repository role</h3>
             <div className="ns-member-form-fields cols-2-fields">
@@ -366,6 +378,7 @@ export function CustomRolesSection({ namespace }: Props) {
               </button>
             </div>
           </form>
+          ) : null}
         </>
       )}
     </section>

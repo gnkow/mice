@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { RequireAuth } from './components/RequireAuth'
 import { RequireAuthz } from './components/RequireAuthz'
 import { RepoIndexRedirect, RepoLayout } from './components/RepoLayout'
+import { RepoSettingsLayout } from './components/RepoSettingsLayout'
 import { BlobPage } from './pages/BlobPage'
 import { BranchesPage } from './pages/BranchesPage'
 import { BranchPage } from './pages/BranchPage'
@@ -24,7 +25,6 @@ import { MergeRequestPage } from './pages/MergeRequestPage'
 import { MergeRequestsPage } from './pages/MergeRequestsPage'
 import { NamespaceLayout } from './components/NamespaceLayout'
 import { NamespaceSettingsLayout } from './components/NamespaceSettingsLayout'
-import { NamespaceMetadataPage } from './pages/NamespaceMetadataPage'
 import { NamespaceCustomRolesHistoryPage } from './pages/NamespaceCustomRolesHistoryPage'
 import { NamespaceMembershipHistoryPage } from './pages/NamespaceMembershipHistoryPage'
 import { NamespaceSettingsHistoryPage } from './pages/NamespaceSettingsHistoryPage'
@@ -34,7 +34,9 @@ import { NamespacesListPage } from './pages/NamespacesListPage'
 import { NewNamespacePage } from './pages/NewNamespacePage'
 import { NewRepoPage } from './pages/NewRepoPage'
 import { RepositoriesListPage } from './pages/RepositoriesListPage'
+import { RepoApproverHistoryPage } from './pages/RepoApproverHistoryPage'
 import { RepoCollaboratorHistoryPage } from './pages/RepoCollaboratorHistoryPage'
+import { RepoSettingsHistoryPage } from './pages/RepoSettingsHistoryPage'
 import { RepoSettingsPage } from './pages/RepoSettingsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { PrincipalNamePage } from './pages/PrincipalNamePage'
@@ -88,7 +90,10 @@ export default function App() {
               <Route path="docs" element={<DocsPage />} />
               <Route path="n/:namespace" element={<NamespaceLayout />}>
                 <Route index element={<NamespacePage />} />
-                <Route path="metadata" element={<NamespaceMetadataPage />} />
+                <Route
+                  path="metadata"
+                  element={<Navigate to="../settings#ns-metadata" relative="path" replace />}
+                />
                 <Route path="settings" element={<NamespaceSettingsLayout />}>
                   <Route index element={<NamespaceSettingsPage />} />
                   <Route
@@ -126,11 +131,18 @@ export default function App() {
                   path="merge-requests/:mergeRequestId"
                   element={<MergeRequestPage />}
                 />
-                <Route path="settings" element={<RepoSettingsPage />} />
-                <Route
-                  path="settings/collaborators/history"
-                  element={<RepoCollaboratorHistoryPage />}
-                />
+                <Route path="settings" element={<RepoSettingsLayout />}>
+                  <Route index element={<RepoSettingsPage />} />
+                  <Route path="history" element={<RepoSettingsHistoryPage />} />
+                  <Route
+                    path="collaborators/history"
+                    element={<RepoCollaboratorHistoryPage />}
+                  />
+                  <Route
+                    path="approvers/history"
+                    element={<RepoApproverHistoryPage />}
+                  />
+                </Route>
                 <Route path="stages" element={<WorkspacesPage />} />
                 <Route path="stages/:workspaceId" element={<WorkspacePage />} />
                 <Route path="workspaces" element={<WorkspacesHubPage />} />

@@ -2,8 +2,10 @@ import type { Context, Hono } from 'hono'
 import { createHash } from 'node:crypto'
 import { actorFromUser } from './audit.js'
 import { getNamespace } from './authzNamespaceStore.js'
+import { readRepository, readRepositoryById } from './repositoryStore.js'
 import { env } from './env.js'
 import { getJob } from './jobsStore.js'
+import { isPhysicalOxenKey } from './oxenPhysicalKeys.js'
 import { canEditEntity, canReadEntity, type MetaAuthzDeps } from './metaAuthz.js'
 import { resolveEffective } from './metaResolve.js'
 import {
@@ -91,8 +93,14 @@ export async function resolveRef(type: string, id: string, scope?: EntityRef['sc
       if (!await getSessionRecord(ref.id)) throw new MetaError(404, `Session "${ref.id}" not found`)
       break
     default:
-      if (ref.namespace && ref.repo && !(await repoExists(ref.namespace, ref.repo))) {
-        throw new MetaError(404, `Repository "${ref.namespace}/${ref.repo}" not found`)
+      if (ref.namespace && ref.repo) {
+        // AuthZ is authoritative for Mice ids/display names; oxen paths are physical UUIDs.
+        const inAuthz = isPhysicalOxenKey(ref.repo)
+          ? await readRepositoryById(ref.repo)
+          : await readRepository(ref.namespace, ref.repo)
+        if (!inAuthz && !(await repoExists(ref.namespace, ref.repo))) {
+          throw new MetaError(404, `Repository "${ref.namespace}/${ref.repo}" not found`)
+        }
       }
   }
   return ref

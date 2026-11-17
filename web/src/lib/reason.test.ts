@@ -62,13 +62,20 @@ test('asks for ceremony on reason_required', async () => {
   assert.deepEqual(seen, [undefined, submission])
 })
 
-test('recognises the oxen-shaped rejection and gives up when the user cancels', async () => {
+test('throws CeremonyCancelled when the user dismisses the ceremony', async () => {
   let calls = 0
-  const res = await withReason(
-    async () => (calls++, json(400, { status_message: 'reason_too_short', error: { detail: 'too short' } })),
-    { ask: async () => null, method: 'DELETE', path: '/api/repos/a/b' },
+  await assert.rejects(
+    () =>
+      withReason(
+        async () =>
+          (calls++, json(400, { status_message: 'reason_too_short', error: { detail: 'too short' } })),
+        { ask: async () => null, method: 'DELETE', path: '/api/repos/a/b' },
+      ),
+    (err: unknown) => {
+      assert.equal((err as Error).name, 'CeremonyCancelled')
+      return true
+    },
   )
-  assert.equal(res.status, 400)
   assert.equal(calls, 1)
 })
 

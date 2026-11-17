@@ -38,7 +38,9 @@ export function RepoNav() {
       location.pathname.startsWith(`${base}/${seg}/`),
   )
 
-  const onSettings = location.pathname === `${base}/settings`
+  const onSettings =
+    location.pathname === `${base}/settings` ||
+    location.pathname.startsWith(`${base}/settings/`)
   const onWorkspaces =
     location.pathname === `${base}/workspaces` ||
     location.pathname.startsWith(`${base}/workspaces/`)

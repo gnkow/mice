@@ -78,6 +78,13 @@
       "when": 1794900000000,
       "tag": "0010_approver_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0011_repository_settings_versions",
+      "breakpoints": true
     }
   ]
 }

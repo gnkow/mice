@@ -46,8 +46,10 @@ test.describe('AuthZ + GxP deep UI', () => {
       await expect(section.getByRole('heading', { name: 'Approvers' })).toBeVisible()
       await expect(section.getByTestId('approver-row')).toHaveCount(1)
       await expect(section.getByTestId('approver-row')).toContainText('approver-b')
-      await expect(section.getByLabel('Approver subject (sub)')).toBeVisible()
-      await expect(section.getByLabel('Approver issuer (iss)')).toBeVisible()
+      await expect(section.getByLabel('Search directory')).toBeVisible()
+      await section.getByRole('button', { name: 'Manual entry' }).click()
+      await expect(section.getByLabel('Subject (sub)')).toBeVisible()
+      await expect(section.getByLabel('Issuer (iss)')).toBeVisible()
 
       await section.getByRole('button', { name: 'Approver history' }).click()
       const history = section.getByTestId('approver-history')
@@ -80,8 +82,9 @@ test.describe('AuthZ + GxP deep UI', () => {
 
       await page.goto(`/n/${encodeURIComponent(ns)}/settings`)
       const section = page.getByTestId('approvers-section')
-      await section.getByLabel('Approver subject (sub)').fill('qa-lead')
-      await section.getByLabel('Approver issuer (iss)').fill('mice-e2e')
+      await section.getByRole('button', { name: 'Manual entry' }).click()
+      await section.getByLabel('Subject (sub)').fill('qa-lead')
+      await section.getByLabel('Issuer (iss)').fill('mice-e2e')
       await section.getByRole('button', { name: 'Assign approver' }).click()
       await expect(section.getByRole('alert')).toContainText('Only a namespace Owner')
 

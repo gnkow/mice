@@ -88,6 +88,22 @@ export const repositories = pgTable(
   (t) => [uniqueIndex('repositories_namespace_name').on(t.namespaceId, t.name)],
 )
 
+/** Successive repository settings snapshots (display name today). */
+export const repositorySettingsVersions = pgTable(
+  'repository_settings_versions',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    validFrom: ts('valid_from').notNull(),
+    validTo: ts('valid_to'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('repository_settings_versions_repo_from_idx').on(t.repositoryId, t.validFrom)],
+)
+
 export const namespaceMembers = pgTable(
   'namespace_members',
   {

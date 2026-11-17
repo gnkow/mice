@@ -28,3 +28,8 @@ export function entityIdTitle(kind: EntityIdKind, id: string): string {
 export function entityIdCopyLabel(kind: EntityIdKind, id: string): string {
   return `${LABELS[kind]} ${id}. Click to copy.`
 }
+
+/** Visible entity id text — always the full id (never truncated). */
+export function entityIdDisplay(id: string): string {
+  return id.trim()
+}

@@ -23,15 +23,22 @@ afterEach(() => restoreUpstream?.())
 
 describe('proxied repo create exposes repository_id', () => {
   it('stamps the AuthZ stable id onto a successful create response', async () => {
-    restoreUpstream = setUpstreamFetch(async () =>
-      new Response(
+    let upstreamBody = ''
+    restoreUpstream = setUpstreamFetch(async (_url, init) => {
+      upstreamBody = typeof init?.body === 'string' ? init.body : ''
+      const parsed = JSON.parse(upstreamBody) as { namespace?: string; name?: string }
+      return new Response(
         JSON.stringify({
           status: 'success',
-          repository: { namespace: 'rid-ns', name: 'study', repo_uuid: 'oxen-uuid' },
+          repository: {
+            namespace: parsed.namespace,
+            name: parsed.name,
+            repo_uuid: 'oxen-uuid',
+          },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    )
+      )
+    })
 
     const res = await app.request('/api/repos', {
       method: 'POST',
@@ -47,13 +54,18 @@ describe('proxied repo create exposes repository_id', () => {
     assert.equal(res.status, 200)
     const body = (await res.json()) as {
       repository_id?: string
-      repository?: { repository_id?: string; repo_uuid?: string }
+      repository?: { repository_id?: string; repo_uuid?: string; namespace?: string; name?: string }
     }
     const stored = await readRepository('rid-ns', 'study')
     assert.ok(stored)
+    const sent = JSON.parse(upstreamBody) as { namespace: string; name: string }
+    assert.equal(sent.namespace, stored.namespaceId)
+    assert.equal(sent.name, stored.id)
     assert.match(body.repository_id!, UUID_RE)
     assert.equal(body.repository_id, stored.id)
     assert.equal(body.repository?.repository_id, stored.id)
+    assert.equal(body.repository?.namespace, 'rid-ns')
+    assert.equal(body.repository?.name, 'study')
     assert.equal(body.repository?.repo_uuid, 'oxen-uuid')
   })
 })

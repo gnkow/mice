@@ -1,21 +1,34 @@
 import { History as ActionHistory, ShieldCheck as ActionShieldCheck, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
-import { useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
 import {
   fetchApproverHistory,
   fetchApprovers,
+  fetchRepoCollaborators,
   grantApproverSeat,
   revokeApproverSeat,
   type ApproverPrincipal,
   type ApproverScope,
+  type CollaboratorPrincipal,
 } from '../lib/authzApi'
+import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
+import { decideUserRefLabel } from '../lib/userRef'
+import { usePrincipalProfiles } from './CommitEmail'
+import { DirectoryPicker } from './DirectoryPicker'
 import { UserRef } from './UserRef'
-import { UserKeyLabel, VersionHistoryList } from './VersionHistory'
+import { ApproverVersionSeats, VersionHistoryList } from './VersionHistory'
 
 type Props = {
   namespace: string
   /** Omit for a namespace-wide seat; set for a repository-scoped seat. */
   repo?: string
+  /** When false, list only (no assign/revoke). Defaults to true for repo settings call sites. */
+  canManage?: boolean
+  /**
+   * When set (repo settings History nav), hide the inline history toggle —
+   * history lives on that route instead.
+   */
+  historyTo?: string
 }
 
 function ApproverHistory({ scope }: { scope: ApproverScope }) {
@@ -30,20 +43,137 @@ function ApproverHistory({ scope }: { scope: ApproverScope }) {
         state={state}
         label="Approver versions"
         emptyMessage="No versions recorded."
-        renderBody={(v) =>
-          v.approvers.length === 0 ? (
-            <p className="muted small">No approvers</p>
-          ) : (
-            <ul className="muted small" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {v.approvers.map((a) => (
-                <li key={`${a.iss}|${a.sub}`}>
-                  <UserKeyLabel userKey={`${a.iss}|${a.sub}`} />
-                </li>
-              ))}
-            </ul>
-          )
-        }
+        renderBody={(v) => <ApproverVersionSeats approvers={v.approvers} />}
       />
+    </div>
+  )
+}
+
+function CollaboratorApproverPicker({
+  collaborators,
+  value,
+  disabled,
+  onChange,
+}: {
+  collaborators: Extract<CollaboratorPrincipal, { kind: 'user' }>[]
+  value: ApproverPrincipal | null
+  disabled?: boolean
+  onChange: (next: ApproverPrincipal | null) => void
+}) {
+  const listId = useId()
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const authors = useMemo(
+    () => collaborators.map((c) => `${c.iss}|${c.sub}`),
+    [collaborators],
+  )
+  const profiles = usePrincipalProfiles(authors)
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return collaborators
+    return collaborators.filter((c) => {
+      const key = `${c.iss}|${c.sub}`
+      const label = decideUserRefLabel({
+        author: key,
+        name: profiles.names[key],
+        email: profiles.emails[key],
+      }).toLowerCase()
+      return (
+        label.includes(q) ||
+        c.sub.toLowerCase().includes(q) ||
+        c.iss.toLowerCase().includes(q)
+      )
+    })
+  }, [collaborators, profiles, query])
+
+  const selectedKey = value ? `${value.iss}|${value.sub}` : ''
+  const showList = open && collaborators.length > 0
+
+  return (
+    <div
+      className="directory-picker directory-picker--dropdown"
+      ref={wrapRef}
+      data-testid="collaborator-approver-picker"
+    >
+      <label className="directory-picker-search">
+        Search collaborators
+        <input
+          type="search"
+          role="combobox"
+          aria-expanded={showList}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          value={
+            value && !query
+              ? decideUserRefLabel({
+                  author: selectedKey,
+                  name: profiles.names[selectedKey],
+                  email: profiles.emails[selectedKey],
+                })
+              : query
+          }
+          disabled={disabled}
+          placeholder="Name, email, or username"
+          autoComplete="off"
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setOpen(true)
+            if (value) onChange(null)
+          }}
+          onFocus={() => {
+            if (value) setQuery('')
+            setOpen(true)
+          }}
+        />
+      </label>
+      {value ? (
+        <p className="muted small directory-picker-selected">
+          Selected: <UserRef author={selectedKey} profiles={profiles} interactive={false} />
+        </p>
+      ) : null}
+      {collaborators.length === 0 ? (
+        <p className="muted small">Add a user collaborator before assigning an approver.</p>
+      ) : null}
+      {showList ? (
+        <ul id={listId} className="directory-picker-list" role="listbox">
+          {filtered.length === 0 ? (
+            <li className="muted small directory-picker-empty">No matching collaborators.</li>
+          ) : (
+            filtered.map((c) => {
+              const key = `${c.iss}|${c.sub}`
+              const selected = key === selectedKey
+              return (
+                <li key={key}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    className="directory-picker-option"
+                    disabled={disabled}
+                    onClick={() => {
+                      onChange({ sub: c.sub, iss: c.iss })
+                      setQuery('')
+                      setOpen(false)
+                    }}
+                  >
+                    <UserRef author={key} profiles={profiles} interactive={false} />
+                  </button>
+                </li>
+              )
+            })
+          )}
+        </ul>
+      ) : null}
     </div>
   )
 }
@@ -52,13 +182,22 @@ function ApproverHistory({ scope }: { scope: ApproverScope }) {
  * Owner-managed approver seats (GxP #86). Approvers are an explicit grant, never implied by Owner,
  * maintain or admin; they may sign merges into validated branches and revoke signatures.
  */
-export function ApproversSection({ namespace, repo }: Props) {
+export function ApproversSection({
+  namespace,
+  repo,
+  canManage = true,
+  historyTo,
+}: Props) {
   const scope: ApproverScope = repo ? { ns: namespace, repo } : { ns: namespace }
   const label = repo ? `${namespace}/${repo}` : namespace
   const headingId = useId()
-  const subId = useId()
-  const issId = useId()
   const state = useAsync((signal) => fetchApprovers(scope, signal), [namespace, repo])
+  const collabState = useAsync(
+    (signal) =>
+      repo ? fetchRepoCollaborators(namespace, repo, signal) : Promise.resolve(null),
+    [namespace, repo],
+  )
+  const [picked, setPicked] = useState<ApproverPrincipal | null>(null)
   const [sub, setSub] = useState('')
   const [iss, setIss] = useState('mice-dev')
   const [busy, setBusy] = useState(false)
@@ -66,6 +205,20 @@ export function ApproversSection({ namespace, repo }: Props) {
   const [notice, setNotice] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [historyKey, setHistoryKey] = useState(0)
+
+  const userCollaborators = useMemo(
+    () =>
+      (collabState.kind === 'ok' ? collabState.data?.collaborators ?? [] : []).filter(
+        (c): c is Extract<CollaboratorPrincipal, { kind: 'user' }> => c.kind === 'user',
+      ),
+    [collabState],
+  )
+
+  useEffect(() => {
+    setPicked(null)
+    setSub('')
+    setIss('mice-dev')
+  }, [namespace, repo])
 
   async function change(action: () => Promise<unknown>, done: string) {
     setBusy(true)
@@ -77,6 +230,7 @@ export function ApproversSection({ namespace, repo }: Props) {
       state.reload()
       setHistoryKey((k) => k + 1)
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setError(err instanceof Error ? err.message : 'Approver change failed')
     } finally {
       setBusy(false)
@@ -85,13 +239,20 @@ export function ApproversSection({ namespace, repo }: Props) {
 
   function onGrant(e: FormEvent) {
     e.preventDefault()
-    const target = { sub: sub.trim(), iss: iss.trim() }
-    if (!target.sub || !target.iss) {
-      setError('Enter the approver’s subject (sub) and issuer (iss)')
+    const target = repo
+      ? picked
+      : { sub: sub.trim(), iss: iss.trim() }
+    if (!target?.sub || !target.iss) {
+      setError(
+        repo
+          ? 'Choose a collaborator to assign as approver'
+          : 'Choose a user from search or enter sub/iss manually',
+      )
       return
     }
     void change(async () => {
       await grantApproverSeat(scope, target)
+      setPicked(null)
       setSub('')
     }, `Assigned approver role to ${target.sub}`)
   }
@@ -101,6 +262,7 @@ export function ApproversSection({ namespace, repo }: Props) {
   }
 
   const approvers = state.kind === 'ok' ? state.data.approvers : []
+  const inlineHistory = canManage && !historyTo
 
   return (
     <section
@@ -163,6 +325,7 @@ export function ApproversSection({ namespace, repo }: Props) {
                 <UserRef author={`${a.iss}|${a.sub}`} />
               </div>
               <span className="ns-tag ns-tag-accent">approver</span>
+              {canManage ? (
               <button
                 type="button"
                 className="btn ghost small"
@@ -173,57 +336,58 @@ export function ApproversSection({ namespace, repo }: Props) {
                 <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />
                 Revoke
               </button>
+              ) : null}
             </li>
           ))}
         </ul>
       ) : null}
 
+      {canManage ? (
       <form className="ns-member-form" onSubmit={onGrant} aria-label="Assign approver">
         <h3 className="ns-settings-subhead">Assign approver</h3>
-        <div className="ns-member-form-fields cols-2">
-          <label htmlFor={subId}>
-            Approver subject (sub)
-            <input
-              id={subId}
-              value={sub}
-              disabled={busy}
-              onChange={(e) => setSub(e.target.value)}
-              placeholder="user-sub"
-              autoComplete="off"
-              required
+        <div className={`ns-member-form-fields ${repo ? '' : 'cols-2'}`}>
+          {repo ? (
+            <CollaboratorApproverPicker
+              collaborators={userCollaborators}
+              value={picked}
+              disabled={busy || collabState.kind === 'loading'}
+              onChange={setPicked}
             />
-          </label>
-          <label htmlFor={issId}>
-            Approver issuer (iss)
-            <input
-              id={issId}
-              value={iss}
+          ) : (
+            <DirectoryPicker
+              kind="user"
+              sub={sub}
+              iss={iss}
+              defaultIss="mice-dev"
               disabled={busy}
-              onChange={(e) => setIss(e.target.value)}
-              placeholder="mice-dev"
-              autoComplete="off"
-              required
+              onChange={({ sub: nextSub, iss: nextIss }) => {
+                setSub(nextSub)
+                setIss(nextIss)
+              }}
             />
-          </label>
+          )}
         </div>
         <div className="ns-member-form-actions">
           <button className="btn primary" type="submit" disabled={busy}>
             <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />
             Assign approver
           </button>
-          <button
-            className="btn ghost"
-            type="button"
-            aria-expanded={showHistory}
-            onClick={() => setShowHistory((v) => !v)}
-          >
-            <ActionHistory size={14} aria-hidden="true" className="button-label-icon" />
-            {showHistory ? 'Hide approver history' : 'Approver history'}
-          </button>
+          {inlineHistory ? (
+            <button
+              className="btn ghost"
+              type="button"
+              aria-expanded={showHistory}
+              onClick={() => setShowHistory((v) => !v)}
+            >
+              <ActionHistory size={14} aria-hidden="true" className="button-label-icon" />
+              {showHistory ? 'Hide approver history' : 'Approver history'}
+            </button>
+          ) : null}
         </div>
       </form>
+      ) : null}
 
-      {showHistory ? <ApproverHistory key={historyKey} scope={scope} /> : null}
+      {inlineHistory && showHistory ? <ApproverHistory key={historyKey} scope={scope} /> : null}
     </section>
   )
 }

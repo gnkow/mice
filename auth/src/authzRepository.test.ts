@@ -53,8 +53,15 @@ describe('stable namespace ids', () => {
   })
 })
 
-const { ensureRepository, readRepository, renameRepository } = await import('./repositoryStore.js')
+const {
+  createOwnedRepository,
+  ensureRepository,
+  listRepositorySettingsVersions,
+  readRepository,
+  renameRepository,
+} = await import('./repositoryStore.js')
 const { hasRepoPermission } = await import('./authz.js')
+const { userKey } = await import('./authzTypes.js')
 
 describe('stable repository ids', () => {
   it('ensure mints a stable UUID that rename preserves', async () => {
@@ -70,6 +77,45 @@ describe('stable repository ids', () => {
     const renamed = await readRepository('repo-ns', 'study-v2')
     assert.ok(renamed)
     assert.equal(renamed.id, created.id)
+
+    // Same-name must not tombstone the live name (that would block the next real rename).
+    assert.deepEqual(await renameRepository('repo-ns', 'study-v2', 'study-v2'), { ok: true })
+    assert.equal((await readRepository('repo-ns', 'study-v2'))?.id, created.id)
+    assert.deepEqual(await renameRepository('repo-ns', 'study-v2', 'study-v3'), { ok: true })
+    assert.equal((await readRepository('repo-ns', 'study-v3'))?.id, created.id)
+  })
+
+  it('createOwnedRepository mints a stable id and grants the creator Admin in one path', async () => {
+    await createNamespaceAuthz(alice, 'owned-ns', 'none')
+    const created = await createOwnedRepository('owned-ns', 'assay', userKey(alice))
+    assert.ok(created)
+    assert.match(created.id, UUID_RE)
+    assert.equal((await listRepoCollaborators('owned-ns', 'assay')).some((c) => c.kind === 'user' && c.sub === 'alice' && c.role === 'admin'), true)
+
+    const again = await createOwnedRepository('owned-ns', 'assay', userKey(alice))
+    assert.equal(again?.id, created.id)
+  })
+})
+
+describe('repository settings versions', () => {
+  it('records display-name intervals on create and rename', async () => {
+    await createNamespaceAuthz(alice, 'settings-hist-ns', 'none')
+    const created = await createOwnedRepository('settings-hist-ns', 'alpha', userKey(alice))
+    assert.ok(created)
+    const v0 = await listRepositorySettingsVersions('settings-hist-ns', 'alpha')
+    assert.ok(v0)
+    assert.equal(v0.length, 1)
+    assert.equal(v0[0]?.name, 'alpha')
+    assert.equal(v0[0]?.validTo, null)
+
+    assert.deepEqual(await renameRepository('settings-hist-ns', 'alpha', 'beta'), { ok: true })
+    const v1 = await listRepositorySettingsVersions('settings-hist-ns', 'beta')
+    assert.ok(v1)
+    assert.equal(v1.length, 2)
+    assert.equal(v1[0]?.name, 'alpha')
+    assert.ok(v1[0]?.validTo)
+    assert.equal(v1[1]?.name, 'beta')
+    assert.equal(v1[1]?.validTo, null)
   })
 })
 

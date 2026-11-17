@@ -2,19 +2,25 @@ import { test, expect, repoPath, repoTitle } from '../fixtures'
 import { deleteRepo, uniqueId } from '../helpers/oxenApi'
 
 test.describe('repository manage (R-05 R-06 R-07–R-09)', () => {
-  test('R-05: rename refused on OSS self-host', async ({ page, seededRepo }) => {
+  test('R-05: rename updates display name and keeps the stable id path', async ({
+    page,
+    seededRepo,
+  }) => {
+    const nextName = 'renamed-repo'
     await page.goto(repoPath(seededRepo, '/settings'))
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 
-    await page.getByPlaceholder('New name').fill('renamed-repo')
+    await page.getByPlaceholder('New name').fill(nextName)
     await page.getByRole('button', { name: 'Rename' }).click()
 
-    await expect(page.locator('.flash-error')).toContainText(
-      /addresses repositories by name|cannot rename/i,
-    )
     await expect(page).toHaveURL(
-      new RegExp(`/n/${seededRepo.namespace}/r/${seededRepo.repo}/settings`),
+      new RegExp(`/n/${seededRepo.namespace}/r/${nextName}/tree/`),
+      { timeout: 30_000 },
     )
+    await expect(repoTitle(page, nextName)).toBeVisible()
+
+    // Fixture teardown still targets the original name — delete the renamed row.
+    await deleteRepo(seededRepo.namespace, nextName)
   })
 
   test('R-06: transfer moves repo to another namespace', async ({

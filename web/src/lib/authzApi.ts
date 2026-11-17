@@ -260,6 +260,23 @@ export async function authzFetch<T>(
   return body as T
 }
 
+/** Caller-facing capabilities for namespace settings chrome (from GET /auth/namespaces/:ns). */
+export type NamespaceViewerPermissions = {
+  manageSettings: boolean
+  manageMembers: boolean
+  manageCustomRoles: boolean
+  deleteNamespace: boolean
+  manageApprovers: boolean
+}
+
+const NO_NS_PERMISSIONS: NamespaceViewerPermissions = {
+  manageSettings: false,
+  manageMembers: false,
+  manageCustomRoles: false,
+  deleteNamespace: false,
+  manageApprovers: false,
+}
+
 export async function fetchNamespaceAuthz(ns: string, signal?: AbortSignal) {
   const data = await authzFetch<{
     id: string
@@ -272,12 +289,14 @@ export async function fetchNamespaceAuthz(ns: string, signal?: AbortSignal) {
     >
     unresolvedGroups?: string[]
     groupBindingWarning?: string
+    permissions?: NamespaceViewerPermissions
   }>(`/auth/namespaces/${encodeURIComponent(ns)}`, { signal })
   return {
     ...data,
     members: data.members.map(normalizeMember),
     unresolvedGroups: data.unresolvedGroups ?? [],
     groupBindingWarning: data.groupBindingWarning,
+    permissions: data.permissions ?? NO_NS_PERMISSIONS,
   }
 }
 
@@ -437,6 +456,52 @@ export function deleteNamespaceAuthz(
       }),
     },
   )
+}
+
+/** Caller-facing capabilities for repository settings chrome. */
+export type RepoViewerPermissions = {
+  rename: boolean
+  transfer: boolean
+  manageCollaborators: boolean
+  manageApprovers: boolean
+  editMetadata: boolean
+  deleteRepository: boolean
+  viewSignedRecord: boolean
+}
+
+const NO_REPO_PERMISSIONS: RepoViewerPermissions = {
+  rename: false,
+  transfer: false,
+  manageCollaborators: false,
+  manageApprovers: false,
+  editMetadata: false,
+  deleteRepository: false,
+  viewSignedRecord: false,
+}
+
+export async function fetchRepoPermissions(
+  ns: string,
+  repo: string,
+  signal?: AbortSignal,
+) {
+  const data = await authzFetch<{ permissions?: RepoViewerPermissions }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/permissions`,
+    { signal },
+  )
+  return data.permissions ?? NO_REPO_PERMISSIONS
+}
+
+/** Display-name rename; oxen path stays on the stable repository id. */
+export function renameRepoAuthz(ns: string, repo: string, name: string) {
+  return authzFetch<{
+    ok: boolean
+    namespace: string
+    name: string
+    repository: { id: string; namespace: string; name: string } | null
+  }>(`/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
 }
 
 export async function fetchRepoCollaborators(
@@ -815,6 +880,19 @@ export type RepoCollaboratorVersion = {
 export function fetchRepoCollaboratorHistory(ns: string, repo: string, signal?: AbortSignal) {
   return authzFetch<{ versions: RepoCollaboratorVersion[] }>(
     `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/collaborators/history`,
+    { signal },
+  )
+}
+
+export type RepoSettingsVersion = {
+  validFrom: string
+  validTo: string | null
+  name: string
+}
+
+export function fetchRepoSettingsHistory(ns: string, repo: string, signal?: AbortSignal) {
+  return authzFetch<{ versions: RepoSettingsVersion[] }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/settings/history`,
     { signal },
   )
 }

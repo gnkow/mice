@@ -17,6 +17,7 @@ const admin = ctx.admin
 await ctx.grantRole(admin, 'manager')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 assert.equal((await createNamespaceAuthz(admin, 'lin', 'none')).ok, true)
+const { ensureRepository } = await import('./repositoryStore.js')
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -112,12 +113,16 @@ await describe('proxy lineage capture', async () => {
   })
 
   await it('does not capture reads', async () => {
+    const record = await ensureRepository('lin', 'reads')
+    assert.ok(record)
     const oxen = fakeOxen({ entries: [null], write: () => json({ status: 'ok' }) })
     try {
       await app.request('/api/repos/lin/reads/file/main/data.csv')
     } finally {
       oxen.restore()
     }
-    assert.deepEqual(oxen.calls, ['GET /api/repos/lin/reads/file/main/data.csv'])
+    assert.deepEqual(oxen.calls, [
+      `GET /api/repos/${record.namespaceId}/${record.id}/file/main/data.csv`,
+    ])
   })
 })

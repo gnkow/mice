@@ -351,7 +351,14 @@ describe('proxy author injection fails closed', () => {
       contentType: 'application/json',
       body: JSON.stringify({ namespace: 'acme', name: 'data' }),
     })
-    assert.deepEqual(JSON.parse(received[0]!.body), { namespace: 'acme', name: 'data' })
+    const { readRepository } = await import('./repositoryStore.js')
+    const stored = await readRepository('acme', 'data')
+    assert.ok(stored)
+    // Oxen sees stable ids; author injection must not rewrite create name/namespace fields.
+    assert.deepEqual(JSON.parse(received[0]!.body), {
+      namespace: stored.namespaceId,
+      name: stored.id,
+    })
   })
 
   it('records the same iss, sub, and email on the audit actor', async () => {

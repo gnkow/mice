@@ -22,6 +22,7 @@ import {
   type MemberPrincipal,
   type MemberRoleRef,
 } from '../lib/authzApi'
+import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 
 const BASE_OPTS: BasePermission[] = [
   'none',
@@ -83,13 +84,14 @@ export function NamespaceSettingsPage() {
     try {
       const res = await patchNamespaceAuthz(namespace, patch)
       if (patch.name && patch.name.trim() && patch.name.trim() !== namespace) {
-        navigate(`/n/${encodeURIComponent(res.name ?? patch.name.trim())}/settings#ns-rename`, {
+        navigate(`/n/${encodeURIComponent(res.name ?? patch.name.trim())}`, {
           replace: true,
         })
         return
       }
       state.reload()
     } catch (e) {
+      if (isCeremonyCancelled(e)) return
       setError(e instanceof Error ? e.message : 'Update failed')
     } finally {
       setBusy(false)
@@ -130,6 +132,7 @@ export function NamespaceSettingsPage() {
       }
       state.reload()
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setError(err instanceof Error ? err.message : 'Add failed')
     } finally {
       setBusy(false)
@@ -148,6 +151,7 @@ export function NamespaceSettingsPage() {
       )
       state.reload()
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setError(err instanceof Error ? err.message : 'Remove failed')
     } finally {
       setBusy(false)
@@ -171,6 +175,7 @@ export function NamespaceSettingsPage() {
       await deleteNamespaceAuthz(namespace, { deleteRepositories: true })
       navigate('/namespaces')
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setError(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setBusy(false)
@@ -203,7 +208,9 @@ export function NamespaceSettingsPage() {
         error={state.kind === 'error' ? state.message : null}
         onRetry={() => state.reload()}
       >
-        {state.kind === 'ok' && (
+        {state.kind === 'ok' && (() => {
+          const perms = state.data.permissions
+          return (
           <div className="ns-settings">
             <section
               id="ns-general"
@@ -222,7 +229,7 @@ export function NamespaceSettingsPage() {
                   <span className="ns-settings-label">Base permission</span>
                   <select
                     value={state.data.basePermission}
-                    disabled={busy}
+                    disabled={busy || !perms.manageSettings}
                     onChange={(e) =>
                       void saveSettings({
                         basePermission: e.target.value as BasePermission,
@@ -244,7 +251,7 @@ export function NamespaceSettingsPage() {
                   <input
                     type="checkbox"
                     checked={state.data.membersCanCreateRepos}
-                    disabled={busy}
+                    disabled={busy || !perms.manageSettings}
                     onChange={(e) =>
                       void saveSettings({
                         membersCanCreateRepos: e.target.checked,
@@ -264,6 +271,7 @@ export function NamespaceSettingsPage() {
               </div>
             </section>
 
+            {perms.manageSettings ? (
             <section
               id="ns-rename"
               className="settings-section"
@@ -271,8 +279,8 @@ export function NamespaceSettingsPage() {
             >
               <h2 id="ns-rename-heading">Rename</h2>
               <p className="muted small">
-                Change the namespace path. The stable namespace id is preserved; memberships and
-                repository grants keep working.
+                Changes the display name only. The stable namespace id (and oxen path) stay the
+                same; memberships and repository grants follow the id.
               </p>
               <form
                 className="ns-settings-grid"
@@ -304,6 +312,7 @@ export function NamespaceSettingsPage() {
                 </div>
               </form>
             </section>
+            ) : null}
 
             <section
               id="ns-members"
@@ -371,6 +380,7 @@ export function NamespaceSettingsPage() {
                       >
                         {m.role}
                       </span>
+                      {perms.manageMembers ? (
                       <button
                         type="button"
                         className="btn ghost small"
@@ -379,11 +389,13 @@ export function NamespaceSettingsPage() {
                       >
                         <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                       </button>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
               )}
 
+              {perms.manageMembers ? (
               <form className="ns-member-form" onSubmit={onAddMember}>
                 <h3 className="ns-settings-subhead">Add member</h3>
                 <div className="ns-member-form-fields">
@@ -461,11 +473,12 @@ export function NamespaceSettingsPage() {
                   </div>
                 </div>
               </form>
+              ) : null}
             </section>
 
-            <ApproversSection namespace={namespace} />
+            <ApproversSection namespace={namespace} canManage={perms.manageApprovers} />
 
-            <CustomRolesSection namespace={namespace} />
+            <CustomRolesSection namespace={namespace} canManage={perms.manageCustomRoles} />
 
             <section
               id="ns-metadata"
@@ -476,6 +489,7 @@ export function NamespaceSettingsPage() {
               <MetaBody type="namespace" id={namespace} />
             </section>
 
+            {perms.deleteNamespace ? (
             <section
               id="ns-danger"
               className="danger-zone ns-danger-zone"
@@ -497,8 +511,10 @@ export function NamespaceSettingsPage() {
                 <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete namespace
               </button>
             </section>
+            ) : null}
           </div>
-        )}
+          )
+        })()}
       </StateBlock>
     </main>
   )

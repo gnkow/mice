@@ -42,8 +42,8 @@ async function loadNamespaceChrome(namespace: string, signal: AbortSignal) {
   }
 }
 
-/** Shared chrome + tabs for `/n/:namespace/*` (repositories, metadata, settings). */
-export function NamespaceLayout() {
+  /** Shared chrome + tabs for `/n/:namespace/*` (repositories, settings). */
+  export function NamespaceLayout() {
   const { namespace = '' } = useParams()
   const base = `/n/${encodeURIComponent(namespace)}`
   const state = useAsync((signal) => loadNamespaceChrome(namespace, signal), [namespace])
@@ -133,7 +133,6 @@ export function NamespaceLayout() {
         <NavLink to={base} end>
           Repositories
         </NavLink>
-        <NavLink to={`${base}/metadata`}>Metadata</NavLink>
         <NavLink to={`${base}/settings`}>Settings</NavLink>
       </nav>
 

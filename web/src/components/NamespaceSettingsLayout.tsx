@@ -9,29 +9,44 @@ import {
   Wrench as ActionWrench,
 } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useOutletContext, useParams } from 'react-router-dom'
-import { SectionNav } from './SectionNav'
+import { useAsync } from '../hooks/useAsync'
+import {
+  fetchNamespaceAuthz,
+  type NamespaceViewerPermissions,
+} from '../lib/authzApi'
+import { SectionNav, type SectionNavGroup } from './SectionNav'
 
-const SETTINGS_NAV_GROUPS = [
-  {
-    title: 'Settings',
-    Icon: ActionSettings,
-    items: [
-      { id: 'ns-general', label: 'General', Icon: ActionSettings },
-      { id: 'ns-rename', label: 'Rename', Icon: ActionPencil },
-      { id: 'ns-members', label: 'Members', Icon: ActionUsers },
-      { id: 'ns-approvers', label: 'Approvers', Icon: ActionShieldCheck },
-      { id: 'ns-custom-roles', label: 'Custom roles', Icon: ActionWrench },
-      { id: 'ns-metadata', label: 'Metadata', Icon: ActionTags },
-      { id: 'ns-danger', label: 'Danger zone', Icon: ActionShieldAlert },
-    ],
-  },
+type NavItem = SectionNavGroup['items'][number] & {
+  /** When set, item is shown only when that permission is true. */
+  requires?: keyof NamespaceViewerPermissions
+}
+
+const SETTINGS_NAV_ITEMS: NavItem[] = [
+  { id: 'ns-general', label: 'General', Icon: ActionSettings },
+  { id: 'ns-rename', label: 'Rename', Icon: ActionPencil, requires: 'manageSettings' },
+  { id: 'ns-members', label: 'Members', Icon: ActionUsers },
+  { id: 'ns-approvers', label: 'Approvers', Icon: ActionShieldCheck },
+  { id: 'ns-custom-roles', label: 'Custom roles', Icon: ActionWrench, requires: 'manageCustomRoles' },
+  { id: 'ns-metadata', label: 'Metadata', Icon: ActionTags },
+  { id: 'ns-danger', label: 'Danger zone', Icon: ActionShieldAlert, requires: 'deleteNamespace' },
 ]
 
-const HISTORY_LINKS = [
-  { path: 'history', label: 'Settings history' },
-  { path: 'members/history', label: 'Membership history' },
-  { path: 'custom-roles/history', label: 'Custom roles history' },
+const HISTORY_LINKS: Array<{
+  path: string
+  label: string
+  requires?: keyof NamespaceViewerPermissions
+}> = [
+  { path: 'history', label: 'Settings history', requires: 'manageSettings' },
+  { path: 'members/history', label: 'Membership history', requires: 'manageMembers' },
+  { path: 'custom-roles/history', label: 'Custom roles history', requires: 'manageCustomRoles' },
 ]
+
+function settingsNavGroups(perms: NamespaceViewerPermissions | null): SectionNavGroup[] {
+  const items = SETTINGS_NAV_ITEMS.filter(
+    (item) => !item.requires || (perms?.[item.requires] ?? false),
+  ).map(({ id, label, Icon }) => ({ id, label, Icon }))
+  return [{ title: 'Settings', Icon: ActionSettings, items }]
+}
 
 /** Left section nav + outlet for `/n/:namespace/settings/*`. */
 export function NamespaceSettingsLayout() {
@@ -41,6 +56,12 @@ export function NamespaceSettingsLayout() {
   const base = `/n/${encodeURIComponent(namespace)}/settings`
   const onHistory = /\/settings\/(?:history|members\/history|custom-roles\/history)\/?$/.test(
     location.pathname,
+  )
+  const authz = useAsync((signal) => fetchNamespaceAuthz(namespace, signal), [namespace])
+  const perms = authz.kind === 'ok' ? authz.data.permissions : null
+  const navGroups = settingsNavGroups(perms)
+  const historyLinks = HISTORY_LINKS.filter(
+    (link) => !link.requires || (perms?.[link.requires] ?? false),
   )
 
   return (
@@ -54,7 +75,7 @@ export function NamespaceSettingsLayout() {
                 Settings
               </p>
               <ul aria-labelledby="ns-settings-nav-title">
-                {SETTINGS_NAV_GROUPS[0].items.map(({ id, label, Icon }) => (
+                {navGroups[0]?.items.map(({ id, label, Icon }) => (
                   <li key={id}>
                     <NavLink to={`${base}#${id}`}>
                       <Icon size={16} aria-hidden="true" />
@@ -65,24 +86,26 @@ export function NamespaceSettingsLayout() {
               </ul>
             </div>
           ) : (
-            <SectionNav label="Settings sections" groups={SETTINGS_NAV_GROUPS} bare />
+            <SectionNav label="Settings sections" groups={navGroups} bare />
           )}
-          <div className="profile-nav-group">
-            <p className="profile-nav-title" id="ns-settings-history-title">
-              <ActionHistory size={14} aria-hidden="true" />
-              History
-            </p>
-            <ul aria-labelledby="ns-settings-history-title">
-              {HISTORY_LINKS.map(({ path, label }) => (
-                <li key={path}>
-                  <NavLink to={`${base}/${path}`}>
-                    <ActionHistory size={16} aria-hidden="true" />
-                    {label}
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {historyLinks.length > 0 ? (
+            <div className="profile-nav-group">
+              <p className="profile-nav-title" id="ns-settings-history-title">
+                <ActionHistory size={14} aria-hidden="true" />
+                History
+              </p>
+              <ul aria-labelledby="ns-settings-history-title">
+                {historyLinks.map(({ path, label }) => (
+                  <li key={path}>
+                    <NavLink to={`${base}/${path}`}>
+                      <ActionHistory size={16} aria-hidden="true" />
+                      {label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </nav>
       </aside>
       <div className="profile-main ns-settings-main">

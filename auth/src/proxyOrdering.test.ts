@@ -40,6 +40,10 @@ for (const u of [writer, reader]) {
   await ensurePrincipal(u)
   await assignRole({ actor: null, target: u, role: 'user', reason: 'test', bootstrap: true })
 }
+const { readRepository } = await import('./repositoryStore.js')
+const poRepo = await readRepository('po', 'r')
+assert.ok(poRepo)
+const poPhysicalPath = `/api/repos/${poRepo.namespaceId}/${poRepo.id}`
 
 function appFor(user: typeof writer) {
   const app = new Hono()
@@ -61,9 +65,80 @@ describe('proxy orchestration order (fake upstream)', () => {
     })
     assert.equal(res.status, 200)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0]!.url, 'http://oxen.invalid/api/repos/po/r/branches?x=1')
+    assert.equal(calls[0]!.url, `http://oxen.invalid${poPhysicalPath}/branches?x=1`)
     assert.equal(calls[0]!.headers.get('authorization'), null)
     assert.equal(calls[0]!.headers.get('cookie'), null)
+  })
+
+  it('rewrites repo list paths to the physical namespace id', async () => {
+    // List authz requires namespace membership (repo collaborator alone is not enough).
+    const res = await appFor(admin).request('/api/repos/po', {
+      headers: { authorization: 'Bearer secret' },
+    })
+    assert.equal(res.status, 200)
+    assert.equal(calls.length, 1)
+    assert.equal(
+      calls[0]!.url,
+      `http://oxen.invalid/api/repos/${poRepo.namespaceId}`,
+    )
+  })
+
+  it('rewrites physical UUID keys in list JSON back to display names', async () => {
+    const restoreList = setUpstreamFetch(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'success',
+          repositories: [
+            { namespace: poRepo.namespaceId, name: poRepo.id, min_version: '0.36.0' },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    )
+    try {
+      const res = await appFor(admin).request('/api/repos/po')
+      assert.equal(res.status, 200)
+      const body = (await res.json()) as {
+        repositories: Array<{ namespace: string; name: string; min_version?: string }>
+      }
+      assert.deepEqual(body.repositories, [
+        { namespace: 'po', name: 'r', min_version: '0.36.0' },
+      ])
+    } finally {
+      restoreList()
+    }
+  })
+
+  it('renames via AuthZ without contacting oxen', async () => {
+    const { ensureRepository } = await import('./repositoryStore.js')
+    const scratch = await ensureRepository('po', 'rename-me')
+    assert.ok(scratch)
+    const { regulatedMutationHeaders } = await import('./testSupport.js')
+    const path = '/api/repos/po/rename-me/rename'
+    const body = JSON.stringify({ repo_name: 'renamed-ok' })
+    const signed = await regulatedMutationHeaders(admin, {
+      method: 'PATCH',
+      path,
+      body: { repo_name: 'renamed-ok' },
+      reason: 'Routine test change',
+      category: 'privileged_settings',
+    })
+    const res = await appFor(admin).request(path, {
+      method: 'PATCH',
+      headers: {
+        ...signed,
+        'content-type': 'application/json',
+        'x-mice-change-control-id': 'CC-2026-114',
+      },
+      body,
+    })
+    assert.equal(res.status, 200)
+    assert.equal(calls.length, 0)
+    const json = (await res.json()) as { repository?: { name?: string } }
+    assert.equal(json.repository?.name, 'renamed-ok')
+    const renamed = await readRepository('po', 'renamed-ok')
+    assert.ok(renamed)
+    assert.equal(renamed.id, scratch.id)
   })
 
   it('denies before contacting upstream (403)', async () => {

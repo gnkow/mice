@@ -2,6 +2,7 @@ import { useState, type MouseEvent } from 'react'
 import { Copy as ActionCopy } from 'lucide-react'
 import {
   entityIdCopyLabel,
+  entityIdDisplay,
   entityIdTitle,
   type EntityIdKind,
 } from '../lib/entityId'
@@ -13,7 +14,7 @@ type InlineProps = {
 }
 
 /**
- * Full entity id with copy control.
+ * Full entity id with copy control (never truncated).
  * Entity pages place this under the title; listings place it after the title.
  */
 export function EntityIdInline({ kind, id, className }: InlineProps) {
@@ -35,12 +36,14 @@ export function EntityIdInline({ kind, id, className }: InlineProps) {
     <button
       type="button"
       className={['entity-id-inline', className].filter(Boolean).join(' ')}
+      data-testid={`entity-id-${kind}`}
+      data-entity-id={id}
       onClick={(e) => void copy(e)}
       onMouseDown={(e) => e.stopPropagation()}
       title={entityIdTitle(kind, id)}
       aria-label={entityIdCopyLabel(kind, id)}
     >
-      <span className="entity-id-inline-value">{id}</span>
+      <span className="entity-id-inline-value">{entityIdDisplay(id)}</span>
       <ActionCopy size={12} aria-hidden="true" className="entity-id-inline-icon" />
       <span className="entity-id-inline-status" aria-live="polite">
         {copied ? 'Copied' : ''}

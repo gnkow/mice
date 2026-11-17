@@ -1,13 +1,17 @@
 import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
-import { setRepoCollaborator } from './authzCollaboratorStore.js'
 import { decideInstanceAction } from './authz.js'
 import { ensureNamespaceForCreate, getNamespace } from './authzNamespaceStore.js'
-import { ensureRepository, readRepository } from './repositoryStore.js'
+import { createOwnedRepository, ensureRepository } from './repositoryStore.js'
+import { userKey } from './authzTypes.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
 import { type SessionUser } from './authentication/index.js'
+import { isPhysicalOxenKey } from './oxenPhysicalKeys.js'
+import { displayNamespaceName, resolvePhysicalRepo } from './oxenPhysicalResolve.js'
+import { readRepositoryById } from './repositoryStore.js'
 
 /**
  * Narrow `GET /api/namespaces` to the caller's visible namespaces.
+ * Rewrites physical UUID keys to display names before visibility filtering.
  * Returns the rewritten body, or null when the response is left untouched.
  * The upstream body is consumed whenever a JSON catalog is read.
  */
@@ -36,10 +40,22 @@ export async function filterNamespaceCatalog(
       namespaces?: Array<{ namespace?: string; name?: string }>
       [key: string]: unknown
     }
-    const visible = await visibleNamespaceNames(user)
-    if (visible !== 'all' && Array.isArray(parsed.namespaces)) {
-      const allow = new Set(visible)
-      parsed.namespaces = parsed.namespaces.filter((n) => allow.has(n.namespace ?? n.name ?? ''))
+    if (Array.isArray(parsed.namespaces)) {
+      for (const n of parsed.namespaces) {
+        for (const key of ['namespace', 'name'] as const) {
+          const raw = n[key]
+          if (typeof raw !== 'string' || !isPhysicalOxenKey(raw)) continue
+          const display = await displayNamespaceName(raw)
+          if (display) n[key] = display
+        }
+      }
+      const visible = await visibleNamespaceNames(user)
+      if (visible !== 'all') {
+        const allow = new Set(visible)
+        parsed.namespaces = parsed.namespaces.filter((n) =>
+          allow.has(n.namespace ?? n.name ?? ''),
+        )
+      }
     }
     return JSON.stringify(parsed)
   } catch {
@@ -63,9 +79,8 @@ export async function seedRepoCreate(
   }
   // A collaborator grant hangs off a namespace row; an unseeded namespace has nothing to attach to.
   if (!(await getNamespace(namespace))) return null
-  const record = await ensureRepository(namespace, repo)
+  const record = await createOwnedRepository(namespace, repo, userKey(user))
   if (!record) return null
-  await setRepoCollaborator(namespace, repo, user, 'admin')
   return { repositoryId: record.id }
 }
 
@@ -117,15 +132,27 @@ export async function stampRepositoryIdOnRepoDetail(
   if (!(upstream.headers.get('content-type') ?? '').includes('application/json')) return null
   const ns = decodeURIComponent(match[1]!)
   const repo = decodeURIComponent(match[2]!)
-  const record = await readRepository(ns, repo)
-  if (!record) return null
+  // Prefer id lookup / display resolve — never mint a row whose name is a physical UUID.
+  let repositoryId: string | null = null
+  if (isPhysicalOxenKey(repo)) {
+    const byId = await readRepositoryById(repo)
+    repositoryId = byId?.id ?? null
+  } else {
+    const physical = await resolvePhysicalRepo(ns, repo)
+    repositoryId = physical?.repositoryId ?? null
+    if (!repositoryId) {
+      const minted = await ensureRepository(ns, repo)
+      repositoryId = minted?.id ?? null
+    }
+  }
+  if (!repositoryId) return null
   let text: string
   try {
     text = await upstream.text()
   } catch {
     return null
   }
-  return attachRepositoryId(text, record.id)
+  return attachRepositoryId(text, repositoryId)
 }
 
 /** Audit that a site admin was allowed through on the bypass, not on a grant. */

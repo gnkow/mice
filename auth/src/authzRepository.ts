@@ -21,6 +21,7 @@ import {
   repoCollaboratorVersions,
   repoGroupCollaborators,
   repositories,
+  repositorySettingsVersions,
   repositoryTombstones,
 } from './db/schema.js'
 import {
@@ -515,6 +516,86 @@ export type RepositoryRecord = {
   updatedAt: string
 }
 
+export type RepositorySettingsVersion = {
+  validFrom: string
+  validTo: string | null
+  name: string
+}
+
+async function openRepositorySettingsVersion(
+  tx: Tx,
+  repositoryId: string,
+  name: string,
+  at: Date,
+): Promise<void> {
+  await tx.insert(repositorySettingsVersions).values({
+    repositoryId,
+    name,
+    validFrom: at,
+    validTo: null,
+    createdAt: at,
+  })
+}
+
+async function closeOpenRepositorySettingsVersion(
+  tx: Tx,
+  repositoryId: string,
+  at: Date,
+): Promise<void> {
+  await tx
+    .update(repositorySettingsVersions)
+    .set({ validTo: at })
+    .where(
+      and(
+        eq(repositorySettingsVersions.repositoryId, repositoryId),
+        isNull(repositorySettingsVersions.validTo),
+      ),
+    )
+}
+
+/** Close the open settings version and open the next with the new display name. */
+async function recordRepositorySettingsVersion(
+  tx: Tx,
+  repositoryId: string,
+  name: string,
+  at = new Date(),
+): Promise<void> {
+  await appendVersionInterval({
+    at,
+    closeOpen: (when) => closeOpenRepositorySettingsVersion(tx, repositoryId, when),
+    openNext: (when) => openRepositorySettingsVersion(tx, repositoryId, name, when),
+  })
+}
+
+/** Chronological settings versions for a repository (by current ns/name → stable id). */
+export async function listRepositorySettingsVersions(
+  ns: string,
+  name: string,
+): Promise<RepositorySettingsVersion[] | null> {
+  const repo = await readRepository(ns, name)
+  if (!repo) return null
+  const rows = await getDb()
+    .select()
+    .from(repositorySettingsVersions)
+    .where(eq(repositorySettingsVersions.repositoryId, repo.id))
+    .orderBy(asc(repositorySettingsVersions.validFrom))
+  if (rows.length === 0) {
+    // Pre-versioning rows: surface the live name as the open interval.
+    return [
+      {
+        validFrom: repo.createdAt,
+        validTo: null,
+        name: repo.name,
+      },
+    ]
+  }
+  return rows.map((r) => ({
+    validFrom: r.validFrom.toISOString(),
+    validTo: r.validTo ? r.validTo.toISOString() : null,
+    name: r.name,
+  }))
+}
+
 function toRepository(
   r: typeof repositories.$inferSelect,
   namespace: string,
@@ -581,10 +662,65 @@ export async function ensureRepository(ns: string, name: string): Promise<Reposi
   return readRepository(ns, name)
 }
 
+/**
+ * Mint a stable repository id and grant `adminKey` Admin in one transaction.
+ * Shared create-seed path so the AuthZ row and creator Admin seat cannot diverge
+ * (mirrors insertOwnedNamespace for repositories).
+ */
+export async function createOwnedRepository(
+  ns: string,
+  name: string,
+  adminKey: string,
+): Promise<RepositoryRecord | null> {
+  const nsId = await namespaceIdByName(ns)
+  if (!nsId) return null
+  if (await repoNameBlocked(nsId, name)) return null
+  return inTransaction(async (tx) => {
+    const now = new Date()
+    const inserted = await tx
+      .insert(repositories)
+      .values({ id: randomUUID(), namespaceId: nsId, name, createdAt: now, updatedAt: now })
+      .onConflictDoNothing()
+      .returning()
+    let row = inserted[0]
+    if (!row) {
+      const existing = await tx
+        .select()
+        .from(repositories)
+        .where(and(eq(repositories.namespaceId, nsId), eq(repositories.name, name)))
+        .limit(1)
+      row = existing[0]
+      if (!row) return null
+    }
+    const prev = (
+      await tx
+        .select()
+        .from(repoCollaborators)
+        .where(and(eq(repoCollaborators.repositoryId, row.id), eq(repoCollaborators.userKey, adminKey)))
+    )[0]?.role
+    if (prev !== 'admin') {
+      await tx
+        .insert(repoCollaborators)
+        .values({ repositoryId: row.id, userKey: adminKey, role: 'admin' })
+        .onConflictDoUpdate({
+          target: [repoCollaborators.repositoryId, repoCollaborators.userKey],
+          set: { role: 'admin' },
+        })
+      await recordCollaboratorVersion(tx, row.id, now)
+    }
+    if (inserted[0]) {
+      await openRepositorySettingsVersion(tx, row.id, name, now)
+    }
+    return toRepository(row, ns)
+  })
+}
+
 export async function renameRepository(ns: string, from: string, to: string): Promise<Result> {
   const next = to.trim()
   if (!next) return { ok: false, error: 'Repository name required' }
   if (!/^[a-zA-Z0-9._-]+$/.test(next)) return { ok: false, error: 'Invalid repository name' }
+  // Same-name is a no-op: do not tombstone the live name (mirrors namespace settings).
+  if (next === from) return { ok: true }
   return inTransaction(async (tx) => {
     const rows = await tx
       .select({ repo: repositories, nsId: namespaces.id })
@@ -598,17 +734,33 @@ export async function renameRepository(ns: string, from: string, to: string): Pr
       return { ok: false, error: 'Repository name is reserved after deletion' } as const
     }
     try {
+      const at = new Date()
       await tx
         .insert(repositoryTombstones)
-        .values({ namespaceId: nsId, name: from, deletedAt: new Date() })
+        .values({ namespaceId: nsId, name: from, deletedAt: at })
         .onConflictDoUpdate({
           target: [repositoryTombstones.namespaceId, repositoryTombstones.name],
-          set: { deletedAt: new Date() },
+          set: { deletedAt: at },
         })
       await tx
         .update(repositories)
-        .set({ name: next, updatedAt: new Date() })
+        .set({ name: next, updatedAt: at })
         .where(eq(repositories.id, repo.id))
+      // Backfill an open interval for the previous name when this repo predates versioning.
+      const open = await tx
+        .select()
+        .from(repositorySettingsVersions)
+        .where(
+          and(
+            eq(repositorySettingsVersions.repositoryId, repo.id),
+            isNull(repositorySettingsVersions.validTo),
+          ),
+        )
+        .limit(1)
+      if (!open[0]) {
+        await openRepositorySettingsVersion(tx, repo.id, from, repo.createdAt)
+      }
+      await recordRepositorySettingsVersion(tx, repo.id, next, at)
       return { ok: true } as const
     } catch (e) {
       if (isUniqueViolation(e)) return { ok: false, error: 'Repository already exists' } as const
