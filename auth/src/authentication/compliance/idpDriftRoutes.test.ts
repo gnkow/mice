@@ -153,9 +153,8 @@ describe('IdP drift admin routes', () => {
       hasCriticalDrift: boolean
       criticalDrifts: string[]
     }
-    // Baseline MFA claims are not present on discovery-derived current config → critical.
-    assert.equal(compareBody.hasCriticalDrift, true)
-    assert.ok(compareBody.criticalDrifts.some((d) => d.includes('MFA')))
+    // Discovery cannot measure MFA claims; matching issuer/alg → no critical false positive.
+    assert.equal(compareBody.hasCriticalDrift, false)
 
     const beforeReports = await getDb().select().from(idpDriftReports)
     assert.equal(beforeReports.length, 0)
@@ -171,7 +170,7 @@ describe('IdP drift admin routes', () => {
       report: { id: number; hasCriticalDrift: boolean }
     }
     assert.ok(checkedBody.report.id)
-    assert.equal(checkedBody.report.hasCriticalDrift, true)
+    assert.equal(checkedBody.report.hasCriticalDrift, false)
 
     const reports = await api.request('/auth/admin/idp-drift/reports', {
       headers: { cookie: await cookie() },

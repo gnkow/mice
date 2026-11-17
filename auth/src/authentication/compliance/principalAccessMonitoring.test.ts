@@ -6,16 +6,33 @@ import '../../db/testSchema.js'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { getDb } from '../../db/database.js'
-import { principals } from '../../db/schema.js'
+import { principalRoles, principals } from '../../db/schema.js'
 import { setDirectoryFetchForTests } from '../directory/directory.js'
 import { overrideEnv } from '../../env.js'
+import { assignRole } from '../../rbacStore.js'
 import {
   alarmsFromAccessSnapshots,
   checkDisabledPrincipalsWithSigningRights,
   createPrincipalAccessMonitor,
+  decideHasSigningRights,
   getPrincipalAccessState,
   type AccessSnapshot,
 } from './principalAccessMonitoring.js'
+
+async function grantSigningRole(sub: string, iss: string, role: 'user' | 'manager' | 'admin' = 'user') {
+  assert.equal(
+    (
+      await assignRole({
+        actor: null,
+        target: { sub, iss },
+        role,
+        reason: 'test signing rights',
+        bootstrap: true,
+      })
+    ).ok,
+    true,
+  )
+}
 
 function directoryFetch(disabled: (url: string) => boolean): (url: string) => Promise<Response> {
   return async (url) => {
@@ -34,7 +51,9 @@ function directoryFetch(disabled: (url: string) => boolean): (url: string) => Pr
 
 describe('Principal Access Monitoring (Ticket 11)', () => {
   beforeEach(async () => {
-    await getDb().delete(principals)
+    // permission_snapshots / role history are append-only — do not DELETE them.
+    // Clear mutable role rows; Principals keep unique subs per test below.
+    await getDb().delete(principalRoles)
     overrideEnv({
       directoryProvider: 'keycloak',
       keycloakAdminUrl: 'http://directory.test',
@@ -43,6 +62,18 @@ describe('Principal Access Monitoring (Ticket 11)', () => {
       oidcClientSecret: 'test-secret',
     })
     setDirectoryFetchForTests(directoryFetch((url) => url.includes('/users/disabled-user')))
+  })
+
+  describe('decideHasSigningRights', () => {
+    it('grants rights to Approvers and write-capable instance roles only', () => {
+      assert.equal(decideHasSigningRights({ instanceRole: null, isApprover: true }), true)
+      assert.equal(decideHasSigningRights({ instanceRole: 'user', isApprover: false }), true)
+      assert.equal(decideHasSigningRights({ instanceRole: 'manager', isApprover: false }), true)
+      assert.equal(decideHasSigningRights({ instanceRole: 'admin', isApprover: false }), true)
+      assert.equal(decideHasSigningRights({ instanceRole: 'auditor', isApprover: false }), false)
+      assert.equal(decideHasSigningRights({ instanceRole: 'external', isApprover: false }), false)
+      assert.equal(decideHasSigningRights({ instanceRole: null, isApprover: false }), false)
+    })
   })
 
   describe('alarmsFromAccessSnapshots', () => {
@@ -109,94 +140,113 @@ describe('Principal Access Monitoring (Ticket 11)', () => {
 
   describe('Disabled Principal Alarm', () => {
     it('detects disabled Principal with signing rights', async () => {
-      // Create a disabled Principal
+      const iss = 'http://localhost:8180/realms/mice'
+      const sub = `disabled-user-${Date.now()}`
+      setDirectoryFetchForTests(directoryFetch((url) => url.includes(`/users/${sub}`)))
       await getDb().insert(principals).values({
-        sub: 'disabled-user',
-        iss: 'http://localhost:8180/realms/mice',
+        sub,
+        iss,
         createdAt: new Date(),
         name: 'Disabled User',
       })
+      await grantSigningRole(sub, iss)
 
       const alarms = await checkDisabledPrincipalsWithSigningRights()
+      const hit = alarms.find((a) => a.sub === sub)
 
-      assert.equal(alarms.length, 1, 'Should detect one alarm')
-      assert.equal(alarms[0].sub, 'disabled-user')
-      assert.equal(alarms[0].severity, 'critical')
-      assert.ok(alarms[0].reason.includes('disabled in IdP'))
+      assert.ok(hit, 'Should detect one alarm')
+      assert.equal(hit.severity, 'critical')
+      assert.ok(hit.reason.includes('disabled in IdP'))
+    })
+
+    it('does not alarm for a disabled Principal without signing rights', async () => {
+      const iss = 'http://localhost:8180/realms/mice'
+      const sub = `disabled-pending-${Date.now()}`
+      setDirectoryFetchForTests(directoryFetch((url) => url.includes(`/users/${sub}`)))
+      await getDb().insert(principals).values({
+        sub,
+        iss,
+        createdAt: new Date(),
+        name: 'Disabled Pending',
+      })
+      // No instance role and no Approver seat → not a signer.
+      const alarms = await checkDisabledPrincipalsWithSigningRights()
+      assert.equal(alarms.some((a) => a.sub === sub), false)
     })
 
     it('does not alarm for enabled Principal', async () => {
-      // Create an enabled Principal
+      const iss = 'http://localhost:8180/realms/mice'
+      const sub = `enabled-user-${Date.now()}`
       await getDb().insert(principals).values({
-        sub: 'enabled-user',
-        iss: 'http://localhost:8180/realms/mice',
+        sub,
+        iss,
         createdAt: new Date(),
         name: 'Enabled User',
       })
+      await grantSigningRole(sub, iss)
 
       const alarms = await checkDisabledPrincipalsWithSigningRights()
 
-      assert.equal(alarms.length, 0, 'Should not alarm for enabled user')
+      assert.equal(alarms.some((a) => a.sub === sub), false, 'Should not alarm for enabled user')
     })
 
-    it('detects multiple disabled Principals', async () => {
-      // Create multiple disabled Principals
+    it('detects multiple disabled Principals with signing rights', async () => {
+      const iss = 'http://localhost:8180/realms/mice'
+      const sub1 = `disabled-user-1-${Date.now()}`
+      const sub2 = `disabled-user-2-${Date.now()}`
       await getDb().insert(principals).values([
-        {
-          sub: 'disabled-user-1',
-          iss: 'http://localhost:8180/realms/mice',
-          createdAt: new Date(),
-          name: 'Disabled User 1',
-        },
-        {
-          sub: 'disabled-user-2',
-          iss: 'http://localhost:8180/realms/mice',
-          createdAt: new Date(),
-          name: 'Disabled User 2',
-        },
+        { sub: sub1, iss, createdAt: new Date(), name: 'Disabled User 1' },
+        { sub: sub2, iss, createdAt: new Date(), name: 'Disabled User 2' },
       ])
+      await grantSigningRole(sub1, iss)
+      await grantSigningRole(sub2, iss)
 
-      // Update mock to return disabled for both
-      setDirectoryFetchForTests(directoryFetch((url) => url.includes('/users/disabled-user')))
+      setDirectoryFetchForTests(
+        directoryFetch((url) => url.includes(`/users/${sub1}`) || url.includes(`/users/${sub2}`)),
+      )
 
       const alarms = await checkDisabledPrincipalsWithSigningRights()
 
-      assert.equal(alarms.length, 2, 'Should detect both disabled users')
+      assert.equal(alarms.filter((a) => a.sub === sub1 || a.sub === sub2).length, 2)
     })
 
     it('handles IdP unavailable gracefully', async () => {
+      const iss = 'http://localhost:8180/realms/mice'
+      const sub = `test-user-${Date.now()}`
       await getDb().insert(principals).values({
-        sub: 'test-user',
-        iss: 'http://localhost:8180/realms/mice',
+        sub,
+        iss,
         createdAt: new Date(),
         name: 'Test User',
       })
+      await grantSigningRole(sub, iss)
 
-      // Mock IdP unavailable
       setDirectoryFetchForTests(async () => {
         throw new Error('IdP unavailable')
       })
 
       const alarms = await checkDisabledPrincipalsWithSigningRights()
 
-      // Should not alarm when IdP is unavailable (can't verify)
-      assert.equal(alarms.length, 0, 'Should handle IdP unavailable gracefully')
+      assert.equal(alarms.some((a) => a.sub === sub), false)
     })
   })
 
   describe('Principal Access State', () => {
     it('returns full access state for Principal', async () => {
+      const iss = 'http://localhost:8180/realms/mice'
+      const sub = `enabled-user-${Date.now()}`
       const [principal] = await getDb().insert(principals).values({
-        sub: 'enabled-user',
-        iss: 'http://localhost:8180/realms/mice',
+        sub,
+        iss,
         createdAt: new Date(),
         name: 'Enabled User',
       }).returning()
+      await grantSigningRole(sub, iss)
 
       const state = await getPrincipalAccessState(principal.id)
 
       assert.ok(state, 'Should return state')
-      assert.equal(state.sub, 'enabled-user')
+      assert.equal(state.sub, sub)
       assert.equal(state.name, 'Enabled User')
       assert.equal(state.idpEnabled, true)
       assert.equal(state.hasSigningRights, true)
@@ -207,18 +257,21 @@ describe('Principal Access Monitoring (Ticket 11)', () => {
       assert.equal(state, null)
     })
 
-    it('detects disabled state', async () => {
+    it('detects disabled state without signing rights', async () => {
+      const sub = `disabled-user-${Date.now()}`
       const [principal] = await getDb().insert(principals).values({
-        sub: 'disabled-user',
+        sub,
         iss: 'http://localhost:8180/realms/mice',
         createdAt: new Date(),
         name: 'Disabled User',
       }).returning()
+      setDirectoryFetchForTests(directoryFetch((url) => url.includes(`/users/${sub}`)))
 
       const state = await getPrincipalAccessState(principal.id)
 
       assert.ok(state, 'Should return state')
       assert.equal(state.idpEnabled, false, 'Should detect disabled status')
+      assert.equal(state.hasSigningRights, false, 'Pending Principal has no signing rights')
     })
   })
 })

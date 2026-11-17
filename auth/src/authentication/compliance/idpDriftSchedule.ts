@@ -32,16 +32,22 @@ export function logDriftReport(report: DriftReport): void {
   }
 }
 
+export type IdpDriftTickDeps = IdpDriftFetchDeps & {
+  /** Port for Ticket 11 access alarms; defaults to the live principal-access monitor. */
+  runAccessCheck?: () => Promise<{ alarmsFound: number }>
+}
+
 /**
  * One daily tick: persist drift assessment, log severity, then disabled-signer alarms.
  */
 export async function runIdpDriftTick(
-  deps: IdpDriftFetchDeps = {},
+  deps: IdpDriftTickDeps = {},
 ): Promise<IdpDriftTickResult> {
-  const report = await assessDrift({ ...deps, persist: true })
+  const { runAccessCheck = runDisabledPrincipalCheck, ...driftDeps } = deps
+  const report = await assessDrift({ ...driftDeps, persist: true })
   logDriftReport(report)
 
-  const accessCheck = await runDisabledPrincipalCheck()
+  const accessCheck = await runAccessCheck()
   if (accessCheck.alarmsFound > 0) {
     console.error(
       `[mice-auth] CRITICAL ACCESS ALARM: ${accessCheck.alarmsFound} disabled Principal(s) with signing rights`,

@@ -1,5 +1,8 @@
 import { GitCompare, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { usePrincipalProfiles } from './CommitEmail'
+import { PAGE_SIZE, Pagination, paginate } from './Pagination'
+import { UserRef } from './UserRef'
 
 type MfaClaims = { acr?: string; amr: string[] }
 
@@ -40,12 +43,15 @@ type DriftForm = {
   groupClaimFormat: string
 }
 
-const emptyForm: DriftForm = {
-  amr: '',
+/** Explicit starter defaults before a baseline exists (also used as input placeholders). */
+const FORM_DEFAULTS: DriftForm = {
+  amr: 'pwd, otp',
   scopes: 'openid, profile, email',
   signatureAlgorithm: 'RS256',
   groupClaimFormat: 'array',
 }
+
+const emptyForm: DriftForm = { ...FORM_DEFAULTS }
 
 function formFrom(baseline: Baseline): DriftForm {
   return {
@@ -75,6 +81,7 @@ export function IdpDriftSection() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [reportPage, setReportPage] = useState(1)
 
   const load = useCallback(async () => {
     const [baselineRes, reportsRes] = await Promise.all([
@@ -97,6 +104,7 @@ export function IdpDriftSection() {
     }
     const reportsBody = await reportsRes.json() as { reports: DriftReport[] }
     setReports(reportsBody.reports ?? [])
+    setReportPage(1)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -131,7 +139,6 @@ export function IdpDriftSection() {
       })
       const body = await res.json() as { error?: string; detail?: string }
       if (!res.ok) throw new Error(body.detail || body.error || 'Drift check failed')
-      setNotice('Drift check stored')
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Drift check failed')
@@ -165,7 +172,6 @@ export function IdpDriftSection() {
       })
       const body = await res.json() as { error?: string; detail?: string }
       if (!res.ok) throw new Error(body.detail || body.error || 'Failed to save the baseline')
-      setNotice('Baseline saved')
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save the baseline')
@@ -189,6 +195,9 @@ export function IdpDriftSection() {
   }
 
   const latestUsable = reports.some((report) => !report.error && report.currentConfig.signatureAlgorithm)
+  const establishedBy = baseline?.establishedBy ?? ''
+  const profiles = usePrincipalProfiles(establishedBy ? [establishedBy] : [])
+  const reportSlice = paginate(reports, reportPage, PAGE_SIZE)
 
   return (
     <section id="idp-drift" className="settings-section" aria-labelledby="idp-drift-heading">
@@ -223,30 +232,50 @@ export function IdpDriftSection() {
       {loaded && !loadError && (
         <>
           {baseline ? (
-            <div className="ns-settings-grid">
-              <div className="ns-settings-field">
-                <span className="ns-settings-label">Current baseline</span>
-                <p className="muted small">
-                  {when(baseline.establishedAt)} by <code className="inline-code">{baseline.establishedBy}</code>
-                </p>
+            <dl className="ns-settings-facts">
+              <div className="ns-settings-fact ns-settings-fact-wide">
+                <dt className="ns-settings-fact-label">Established</dt>
+                <dd className="ns-settings-fact-value">
+                  <span>{when(baseline.establishedAt)}</span>
+                  <span className="muted">by</span>
+                  <UserRef author={baseline.establishedBy} profiles={profiles} />
+                </dd>
               </div>
-              <div className="ns-settings-field">
-                <span className="ns-settings-label">Issuer</span>
-                <p className="muted small">{baseline.issuer}</p>
+              <div className="ns-settings-fact ns-settings-fact-wide">
+                <dt className="ns-settings-fact-label">Issuer</dt>
+                <dd className="ns-settings-fact-value">
+                  <code className="inline-code">{baseline.issuer}</code>
+                </dd>
               </div>
-              <div className="ns-settings-field">
-                <span className="ns-settings-label">MFA claims</span>
-                <p className="muted small">
-                  acr {baseline.mfaClaimsAvailable.acr || '(none)'}; amr {baseline.mfaClaimsAvailable.amr.join(', ') || '(none)'}
-                </p>
+              <div className="ns-settings-fact">
+                <dt className="ns-settings-fact-label">MFA claims</dt>
+                <dd className="ns-settings-fact-value">
+                  <span className="ns-tag ns-tag-muted">
+                    acr {baseline.mfaClaimsAvailable.acr || 'none'}
+                  </span>
+                  <span className="ns-tag ns-tag-muted">
+                    amr {baseline.mfaClaimsAvailable.amr.join(', ') || 'none'}
+                  </span>
+                </dd>
               </div>
-              <div className="ns-settings-field">
-                <span className="ns-settings-label">Scopes, algorithm, groups</span>
-                <p className="muted small">
-                  {baseline.requiredScopes.join(', ') || '(none)'} · {baseline.signatureAlgorithm} · {baseline.groupClaimFormat}
-                </p>
+              <div className="ns-settings-fact">
+                <dt className="ns-settings-fact-label">Algorithm</dt>
+                <dd className="ns-settings-fact-value">
+                  <span className="ns-tag ns-tag-muted">{baseline.signatureAlgorithm}</span>
+                  <span className="ns-tag ns-tag-muted">{baseline.groupClaimFormat}</span>
+                </dd>
               </div>
-            </div>
+              <div className="ns-settings-fact ns-settings-fact-wide">
+                <dt className="ns-settings-fact-label">Scopes</dt>
+                <dd className="ns-settings-fact-value">
+                  {baseline.requiredScopes.length > 0
+                    ? baseline.requiredScopes.map((scope) => (
+                        <span key={scope} className="ns-tag ns-tag-muted">{scope}</span>
+                      ))
+                    : <span className="muted">none</span>}
+                </dd>
+              </div>
+            </dl>
           ) : (
             <div className="empty-state" role="status">
               <span className="empty-state-icon" aria-hidden="true" />
@@ -256,7 +285,13 @@ export function IdpDriftSection() {
           )}
 
           <div className="btn-row ns-settings-actions">
-            <button className="btn primary" type="button" onClick={() => void checkNow()} disabled={busy !== null || !baseline}>
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => void checkNow()}
+              disabled={busy !== null || !baseline}
+              title={!baseline ? 'Save a baseline below first' : undefined}
+            >
               {busy === 'check' ? 'Checking…' : 'Check now'}
             </button>
             <button className="btn ghost" type="button" onClick={useLatestCheck} disabled={!latestUsable || busy !== null}>
@@ -265,27 +300,47 @@ export function IdpDriftSection() {
           </div>
 
           {reports.length > 0 ? (
-            <ul className="ns-member-list">
-              {reports.map((report) => (
-                <li key={report.id ?? report.checkedAt} className="ns-member-row">
-                  <div className="ns-member-main">
-                    <span>{when(report.checkedAt)}</span>
-                    <span className="muted small ns-member-sub">
-                      {report.error
-                        ? report.error
-                        : report.hasCriticalDrift
-                          ? `Critical: ${report.criticalDrifts.join('; ')}`
-                          : report.hasNonCriticalDrift
-                            ? `Recorded: ${report.nonCriticalDrifts.join('; ')}`
-                            : 'No drift'}
-                    </span>
-                  </div>
-                  {report.hasCriticalDrift && (
-                    <span className="flash flash-error" role="status">Signing blocked</span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="ns-member-list" aria-label="IdP drift reports">
+                {reportSlice.items.map((report) => {
+                  const findings = report.error
+                    ? [report.error]
+                    : report.hasCriticalDrift
+                      ? report.criticalDrifts
+                      : report.hasNonCriticalDrift
+                        ? report.nonCriticalDrifts
+                        : []
+                  return (
+                    <li key={report.id ?? report.checkedAt} className="ns-member-row">
+                      <div className="ns-member-main">
+                        <span>{when(report.checkedAt)}</span>
+                        {findings.length > 0 ? (
+                          <ul className="muted small ns-member-sub idp-drift-findings">
+                            {findings.map((finding) => (
+                              <li key={finding}>{finding}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="muted small ns-member-sub">No drift</span>
+                        )}
+                      </div>
+                      {report.hasCriticalDrift && (
+                        <span className="flash flash-error" role="status">Signing blocked</span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+              {reportSlice.pageCount > 1 ? (
+                <Pagination
+                  page={reportSlice.page}
+                  pageCount={reportSlice.pageCount}
+                  total={reportSlice.total}
+                  onPageChange={setReportPage}
+                  label="IdP drift report pagination"
+                />
+              ) : null}
+            </>
           ) : (
             <div className="empty-state" role="status">
               <span className="empty-state-icon" aria-hidden="true" />
@@ -296,37 +351,49 @@ export function IdpDriftSection() {
 
           <form className="ns-member-form" onSubmit={(event) => void saveBaseline(event)}>
             <h3 className="ns-settings-subhead">Replace baseline</h3>
-            <div className="ns-settings-grid">
-              <label className="ns-settings-field">
-                <span className="ns-settings-label">MFA amr claims</span>
+            <p className="muted small">
+              Explicit accepted values for the next check. Issuer comes from{' '}
+              <code className="inline-code">OIDC_ISSUER</code> (not editable here). Defaults:{' '}
+              <code className="inline-code">{FORM_DEFAULTS.amr}</code>,{' '}
+              <code className="inline-code">{FORM_DEFAULTS.scopes}</code>,{' '}
+              <code className="inline-code">{FORM_DEFAULTS.signatureAlgorithm}</code>,{' '}
+              <code className="inline-code">{FORM_DEFAULTS.groupClaimFormat}</code>. Use Fill from
+              latest check to copy discovery scopes/algorithm.
+            </p>
+            <div className="ns-member-form-fields cols-2-fields">
+              <label>
+                MFA amr claims
                 <input
                   value={form.amr}
                   onChange={(event) => setForm((current) => ({ ...current, amr: event.target.value }))}
-                  placeholder="pwd, otp"
+                  placeholder={FORM_DEFAULTS.amr}
                   disabled={busy !== null}
                 />
               </label>
-              <label className="ns-settings-field">
-                <span className="ns-settings-label">Required scopes</span>
+              <label>
+                Required scopes
                 <input
                   value={form.scopes}
                   onChange={(event) => setForm((current) => ({ ...current, scopes: event.target.value }))}
+                  placeholder={FORM_DEFAULTS.scopes}
                   disabled={busy !== null}
                 />
               </label>
-              <label className="ns-settings-field">
-                <span className="ns-settings-label">Signature algorithm</span>
+              <label>
+                Signature algorithm
                 <input
                   value={form.signatureAlgorithm}
                   onChange={(event) => setForm((current) => ({ ...current, signatureAlgorithm: event.target.value }))}
+                  placeholder={FORM_DEFAULTS.signatureAlgorithm}
                   disabled={busy !== null}
                 />
               </label>
-              <label className="ns-settings-field">
-                <span className="ns-settings-label">Group-claim format</span>
+              <label>
+                Group-claim format
                 <input
                   value={form.groupClaimFormat}
                   onChange={(event) => setForm((current) => ({ ...current, groupClaimFormat: event.target.value }))}
+                  placeholder={FORM_DEFAULTS.groupClaimFormat}
                   disabled={busy !== null}
                 />
               </label>

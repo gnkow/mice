@@ -7,12 +7,14 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { getDb } from '../../db/database.js'
 import { idpBaseline, idpDriftReports } from '../../db/schema.js'
+import { overrideEnv } from '../../env.js'
 import {
   assessDrift,
   establishBaseline,
   getCurrentBaseline,
   detectDrift,
   getCurrentIdpConfig,
+  issuersEquivalent,
   isSigningBlockedByDrift,
   type IdpBaselineConfig,
   type IdpCurrentConfig,
@@ -72,7 +74,7 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
   })
 
   describe('Drift Detection', () => {
-    it('detects critical drift: MFA claims missing', () => {
+    it('does not treat unmeasured MFA (discovery-only) as drift', () => {
       const baseline: IdpBaselineConfig = {
         id: 1,
         establishedAt: new Date(),
@@ -86,17 +88,17 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
       }
 
       const current: IdpCurrentConfig = {
-        // MFA claims missing
+        // Discovery never sets mfaClaimsAvailable
         requiredScopes: ['openid'],
         signatureAlgorithm: 'RS256',
+        signatureAlgorithmsSupported: ['RS256'],
         groupClaimFormat: 'array',
         issuer: 'http://localhost:8180/realms/mice',
       }
 
       const { criticalDrifts, nonCriticalDrifts } = detectDrift(baseline, current)
 
-      assert.equal(criticalDrifts.length, 1)
-      assert.ok(criticalDrifts[0].includes('MFA claims no longer available'))
+      assert.equal(criticalDrifts.length, 0)
       assert.equal(nonCriticalDrifts.length, 0)
     })
 
@@ -155,7 +157,7 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
       assert.ok(criticalDrifts[0].includes('auth_time'))
     })
 
-    it('detects critical drift: signature algorithm changed', () => {
+    it('detects critical drift: signature algorithm no longer supported', () => {
       const baseline: IdpBaselineConfig = {
         id: 1,
         establishedAt: new Date(),
@@ -171,7 +173,8 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
       const current: IdpCurrentConfig = {
         mfaClaimsAvailable: { amr: ['mfa'] },
         requiredScopes: ['openid'],
-        signatureAlgorithm: 'HS256', // Changed!
+        signatureAlgorithm: 'HS256',
+        signatureAlgorithmsSupported: ['HS256'],
         groupClaimFormat: 'array',
         issuer: 'http://localhost:8180/realms/mice',
       }
@@ -179,7 +182,32 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
       const { criticalDrifts } = detectDrift(baseline, current)
 
       assert.equal(criticalDrifts.length, 1)
-      assert.ok(criticalDrifts[0].includes('RS256 → HS256'))
+      assert.ok(criticalDrifts[0].includes('no longer supported'))
+    })
+
+    it('ignores preferred-alg order when baseline alg remains supported', () => {
+      const baseline: IdpBaselineConfig = {
+        id: 1,
+        establishedAt: new Date(),
+        establishedBy: 'admin@example.com',
+        mfaClaimsAvailable: { amr: ['mfa'] },
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+        issuer: 'http://localhost:8180/realms/mice',
+        isCurrent: true,
+      }
+
+      const current: IdpCurrentConfig = {
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'PS384',
+        signatureAlgorithmsSupported: ['PS384', 'RS256'],
+        groupClaimFormat: 'array',
+        issuer: 'http://localhost:8180/realms/mice',
+      }
+
+      const { criticalDrifts } = detectDrift(baseline, current)
+      assert.equal(criticalDrifts.length, 0)
     })
 
     it('detects critical drift: issuer changed', () => {
@@ -199,6 +227,7 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
         mfaClaimsAvailable: { amr: ['mfa'] },
         requiredScopes: ['openid'],
         signatureAlgorithm: 'RS256',
+        signatureAlgorithmsSupported: ['RS256'],
         groupClaimFormat: 'array',
         issuer: 'http://idp.example.com', // Changed!
       }
@@ -207,6 +236,23 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
 
       assert.equal(criticalDrifts.length, 1)
       assert.ok(criticalDrifts[0].includes('Issuer changed'))
+    })
+
+    it('treats Compose Keycloak host variants as the same issuer', () => {
+      assert.equal(
+        issuersEquivalent(
+          'http://keycloak:8080/realms/mice',
+          'http://localhost:8080/realms/mice',
+        ),
+        true,
+      )
+      assert.equal(
+        issuersEquivalent(
+          'http://keycloak:8080/realms/mice',
+          'http://localhost:8180/realms/mice',
+        ),
+        true,
+      )
     })
 
     it('detects non-critical drift: group claim format changed', () => {
@@ -306,11 +352,12 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
       }
 
       const current: IdpCurrentConfig = {
-        // MFA missing
+        mfaClaimsAvailable: { amr: [] },
         requiredScopes: ['openid'],
-        signatureAlgorithm: 'HS256', // Algorithm changed
+        signatureAlgorithm: 'HS256',
+        signatureAlgorithmsSupported: ['HS256'],
         groupClaimFormat: 'array',
-        issuer: 'http://new-idp.example.com', // Issuer changed
+        issuer: 'http://new-idp.example.com',
       }
 
       const { criticalDrifts } = detectDrift(baseline, current)
@@ -348,67 +395,87 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
     }
 
     it('compares without storing when persist is false', async () => {
-      await establishBaseline('admin@example.com', {
-        mfaClaimsAvailable: { amr: ['mfa'], authTimeAsserted: true },
-        requiredScopes: ['openid'],
-        signatureAlgorithm: 'RS256',
-        groupClaimFormat: 'array',
+      const restore = overrideEnv({
+        oidcIssuer: discovery.issuer,
+        oidcIssuerPublic: discovery.issuer,
       })
-      const result = await assessDrift({
-        persist: false,
-        fetchDiscovery: async () => discovery,
-        issuer: () => discovery.issuer,
-      })
-      assert.equal(result.hasCriticalDrift, true)
-      assert.ok(result.criticalDrifts.some((d) => d.includes('MFA')))
-      const rows = await getDb().select().from(idpDriftReports)
-      assert.equal(rows.length, 0)
-      assert.equal(result.id, undefined)
+      try {
+        await establishBaseline('admin@example.com', {
+          mfaClaimsAvailable: { amr: ['mfa'], authTimeAsserted: true },
+          requiredScopes: ['openid'],
+          signatureAlgorithm: 'RS256',
+          groupClaimFormat: 'array',
+        })
+        const result = await assessDrift({
+          persist: false,
+          fetchDiscovery: async () => discovery,
+          issuer: () => discovery.issuer,
+        })
+        // Discovery cannot measure MFA claims; matching issuer/alg/auth_time → no critical drift.
+        assert.equal(result.hasCriticalDrift, false)
+        const rows = await getDb().select().from(idpDriftReports)
+        assert.equal(rows.length, 0)
+        assert.equal(result.id, undefined)
+      } finally {
+        restore()
+      }
     })
 
     it('stores a report when persist is true', async () => {
-      await establishBaseline('admin@example.com', {
-        mfaClaimsAvailable: { amr: ['mfa'] },
-        requiredScopes: ['openid'],
-        signatureAlgorithm: 'RS256',
-        groupClaimFormat: 'array',
+      const restore = overrideEnv({
+        oidcIssuer: discovery.issuer,
+        oidcIssuerPublic: discovery.issuer,
       })
-      const result = await assessDrift({
-        persist: true,
-        fetchDiscovery: async () => ({
-          ...discovery,
-          // no MFA claims in current config path — discovery alone; MFA stays undefined → critical
-        }),
-        issuer: () => discovery.issuer,
-      })
-      assert.ok(result.id)
-      const rows = await getDb().select().from(idpDriftReports)
-      assert.equal(rows.length, 1)
-      assert.equal(rows[0].id, result.id)
+      try {
+        await establishBaseline('admin@example.com', {
+          mfaClaimsAvailable: { amr: ['mfa'] },
+          requiredScopes: ['openid'],
+          signatureAlgorithm: 'RS256',
+          groupClaimFormat: 'array',
+        })
+        const result = await assessDrift({
+          persist: true,
+          fetchDiscovery: async () => discovery,
+          issuer: () => discovery.issuer,
+        })
+        assert.ok(result.id)
+        const rows = await getDb().select().from(idpDriftReports)
+        assert.equal(rows.length, 1)
+        assert.equal(rows[0].id, result.id)
+      } finally {
+        restore()
+      }
     })
   })
 
   describe('runIdpDriftTick', () => {
     it('persists drift and returns access alarm count', async () => {
-      const { runIdpDriftTick } = await import('./idpDriftSchedule.js')
-      await establishBaseline('admin@example.com', {
-        mfaClaimsAvailable: { amr: ['mfa'] },
-        requiredScopes: ['openid'],
-        signatureAlgorithm: 'RS256',
-        groupClaimFormat: 'array',
-      })
-      const result = await runIdpDriftTick({
-        fetchDiscovery: async () => ({
-          issuer: 'http://localhost:8180/realms/mice',
-          scopes_supported: ['openid'],
-          id_token_signing_alg_values_supported: ['RS256'],
-        }),
-        issuer: () => 'http://localhost:8180/realms/mice',
-      })
-      assert.ok(result.report.id)
-      assert.equal(typeof result.accessAlarmsFound, 'number')
-      const rows = await getDb().select().from(idpDriftReports)
-      assert.equal(rows.length, 1)
+      const issuer = 'http://localhost:8180/realms/mice'
+      const restore = overrideEnv({ oidcIssuer: issuer, oidcIssuerPublic: issuer })
+      try {
+        const { runIdpDriftTick } = await import('./idpDriftSchedule.js')
+        await establishBaseline('admin@example.com', {
+          mfaClaimsAvailable: { amr: ['mfa'] },
+          requiredScopes: ['openid'],
+          signatureAlgorithm: 'RS256',
+          groupClaimFormat: 'array',
+        })
+        const result = await runIdpDriftTick({
+          fetchDiscovery: async () => ({
+            issuer,
+            scopes_supported: ['openid'],
+            id_token_signing_alg_values_supported: ['RS256'],
+          }),
+          issuer: () => issuer,
+          runAccessCheck: async () => ({ alarmsFound: 2 }),
+        })
+        assert.ok(result.report.id)
+        assert.equal(result.accessAlarmsFound, 2)
+        const rows = await getDb().select().from(idpDriftReports)
+        assert.equal(rows.length, 1)
+      } finally {
+        restore()
+      }
     })
   })
 
@@ -472,6 +539,43 @@ describe('IdP Baseline Drift Detection (Ticket 23)', () => {
 
       const result = await isSigningBlockedByDrift()
 
+      assert.equal(result.blocked, false)
+    })
+
+    it('clears the block when a newer clean check supersedes a critical report', async () => {
+      const baseline = await establishBaseline('admin@example.com', {
+        mfaClaimsAvailable: { amr: ['mfa'] },
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+      })
+
+      const config = {
+        requiredScopes: ['openid'],
+        signatureAlgorithm: 'RS256',
+        groupClaimFormat: 'array',
+        issuer: 'http://localhost:8180/realms/mice',
+      }
+      await getDb().insert(idpDriftReports).values({
+        checkedAt: new Date(Date.now() - 60_000),
+        baselineId: baseline.id,
+        hasCriticalDrift: true,
+        hasNonCriticalDrift: false,
+        criticalDrifts: ['MFA claims missing'],
+        nonCriticalDrifts: [],
+        currentConfig: config,
+      })
+      await getDb().insert(idpDriftReports).values({
+        checkedAt: new Date(),
+        baselineId: baseline.id,
+        hasCriticalDrift: false,
+        hasNonCriticalDrift: false,
+        criticalDrifts: [],
+        nonCriticalDrifts: [],
+        currentConfig: config,
+      })
+
+      const result = await isSigningBlockedByDrift()
       assert.equal(result.blocked, false)
     })
 

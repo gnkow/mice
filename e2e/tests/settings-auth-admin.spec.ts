@@ -133,7 +133,7 @@ test.describe('Settings · IdP drift (Admin)', () => {
     ).toBeVisible()
     await expect(
       page.locator('#idp-drift').getByText(
-        /No IdP baseline is stored|Current baseline|No drift reports yet|Loading IdP drift/i,
+        /No IdP baseline is stored|Established|No drift reports yet|Loading IdP drift/i,
       ).first(),
     ).toBeVisible({ timeout: 10_000 })
   })

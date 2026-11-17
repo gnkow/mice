@@ -10,10 +10,12 @@ import { AccessReviewSection } from '../components/AccessReviewSection'
 import { IdpDriftSection } from '../components/IdpDriftSection'
 import { ReenableSection } from '../components/ReenableSection'
 import { DisabledSignersSection } from '../components/DisabledSignersSection'
+import { UserRef } from '../components/UserRef'
 import { GroupBindingSection } from '../components/GroupBindingSection'
 import { Pagination, paginate } from '../components/Pagination'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
+import { usePrincipalProfiles } from '../components/CommitEmail'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthMe, fetchAuthzMe, hasEffectivePermission, isAdminRole, type AuthzMe } from '../lib/auth'
 import {
@@ -1754,30 +1756,90 @@ function AuditHealthSection() {
   )
 }
 
+type IdpBaselineLastCheck = {
+  id: number
+  checkedAt: string
+  checkedBy: string
+  mfaAvailable: boolean
+  claimsFound: { acr?: string; amr: string[] } | null
+  error: string | null
+}
+
+function IdpBaselineStatus({ lastCheck }: { lastCheck: IdpBaselineLastCheck }) {
+  const profiles = usePrincipalProfiles([lastCheck.checkedBy])
+  const amr = lastCheck.claimsFound?.amr ?? []
+
+  return (
+    <dl className="ns-settings-facts">
+      <div className="ns-settings-fact ns-settings-fact-wide">
+        <dt className="ns-settings-fact-label">Last check</dt>
+        <dd className="ns-settings-fact-value">
+          <span>{new Date(lastCheck.checkedAt).toLocaleString()}</span>
+          <span className="muted">by</span>
+          <UserRef author={lastCheck.checkedBy} profiles={profiles} />
+        </dd>
+      </div>
+
+      <div className="ns-settings-fact">
+        <dt className="ns-settings-fact-label">MFA</dt>
+        <dd className="ns-settings-fact-value" role="status">
+          <span className={lastCheck.mfaAvailable ? 'ns-tag ns-tag-accent' : 'ns-tag ns-tag-warn'}>
+            {lastCheck.mfaAvailable ? (
+              <>
+                <ActionCheck size={12} aria-hidden="true" className="button-label-icon" />
+                Available
+              </>
+            ) : (
+              <>
+                <ActionX size={12} aria-hidden="true" className="button-label-icon" />
+                Not available
+              </>
+            )}
+          </span>
+        </dd>
+      </div>
+
+      {lastCheck.claimsFound && (
+        <div className="ns-settings-fact">
+          <dt className="ns-settings-fact-label">Claims</dt>
+          <dd className="ns-settings-fact-value">
+            <span className="ns-tag ns-tag-muted">
+              acr {lastCheck.claimsFound.acr || 'none'}
+            </span>
+            <span className="ns-tag ns-tag-muted">
+              amr {amr.length > 0 ? amr.join(', ') : 'none'}
+            </span>
+          </dd>
+        </div>
+      )}
+
+      {lastCheck.error && (
+        <div className="ns-settings-fact ns-settings-fact-wide">
+          <dt className="ns-settings-fact-label">Error</dt>
+          <dd className="ns-settings-fact-value">
+            <p className="flash flash-warn" role="status">{lastCheck.error}</p>
+          </dd>
+        </div>
+      )}
+    </dl>
+  )
+}
+
 function IdpBaselineSection() {
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
 
   const status = useAsync(async (signal) => {
     const res = await fetch('/auth/admin/idp-baseline/status', { signal })
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     return await res.json() as {
-      lastCheck: {
-        id: number
-        checkedAt: string
-        checkedBy: string
-        mfaAvailable: boolean
-        claimsFound: { acr?: string; amr: string[] } | null
-        error: string | null
-      } | null
+      lastCheck: IdpBaselineLastCheck | null
     }
   }, [])
 
   async function triggerCheck() {
     setChecking(true)
     setError(null)
-    setSuccess(null)
 
     try {
       const res = await fetch('/auth/admin/idp-baseline/check', { method: 'POST' })
@@ -1786,7 +1848,6 @@ function IdpBaselineSection() {
       if (!res.ok) {
         setError(data.error || 'Check failed')
       } else {
-        setSuccess('Baseline check completed')
         status.reload()
       }
     } catch (err) {
@@ -1825,64 +1886,15 @@ function IdpBaselineSection() {
       )}
 
       {status.kind === 'ok' && status.data && (
-        <div className="ns-settings-grid">
-          {status.data.lastCheck ? (
-            <>
-              <div className="ns-settings-field">
-                <span className="ns-settings-label">Last Check</span>
-                <p className="muted small">
-                  {new Date(status.data.lastCheck.checkedAt).toLocaleString()}
-                  {' by '}
-                  <code className="inline-code">{status.data.lastCheck.checkedBy}</code>
-                </p>
-              </div>
-
-              <div className="ns-settings-field">
-                <span className="ns-settings-label">MFA Available</span>
-                <p
-                  className={status.data.lastCheck.mfaAvailable ? 'flash flash-success' : 'flash flash-warn'}
-                  role="status"
-                >
-                  {status.data.lastCheck.mfaAvailable ? (
-                    <>
-                      <ActionCheck size={14} aria-hidden="true" /> Yes
-                    </>
-                  ) : (
-                    <>
-                      <ActionX size={14} aria-hidden="true" /> No
-                    </>
-                  )}
-                </p>
-              </div>
-
-              {status.data.lastCheck.claimsFound && (
-                <div className="ns-settings-field">
-                  <span className="ns-settings-label">Claims Found</span>
-                  <p className="muted small">
-                    <strong>acr:</strong> {status.data.lastCheck.claimsFound.acr || '(none)'}
-                    <br />
-                    <strong>amr:</strong> {status.data.lastCheck.claimsFound.amr.length > 0
-                      ? status.data.lastCheck.claimsFound.amr.join(', ')
-                      : '(none)'}
-                  </p>
-                </div>
-              )}
-
-              {status.data.lastCheck.error && (
-                <div className="ns-settings-field">
-                  <span className="ns-settings-label">Last check error</span>
-                  <p className="flash flash-warn" role="status">{status.data.lastCheck.error}</p>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="empty-state" role="status">
-              <span className="empty-state-icon" aria-hidden="true" />
-              <p className="muted">No baseline checks have been performed yet.</p>
-              <p className="muted small">Run Check Now to record whether the IdP presents MFA claims.</p>
-            </div>
-          )}
-        </div>
+        status.data.lastCheck ? (
+          <IdpBaselineStatus lastCheck={status.data.lastCheck} />
+        ) : (
+          <div className="empty-state" role="status">
+            <span className="empty-state-icon" aria-hidden="true" />
+            <p className="muted">No baseline checks have been performed yet.</p>
+            <p className="muted small">Run Check Now to record whether the IdP presents MFA claims.</p>
+          </div>
+        )
       )}
 
       <div className="btn-row ns-settings-actions">
@@ -1898,7 +1910,6 @@ function IdpBaselineSection() {
       </div>
 
       {error && <p className="flash flash-error" role="alert">{error}</p>}
-      {success && <p className="flash flash-success" role="status">{success}</p>}
     </section>
   )
 }

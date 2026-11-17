@@ -1,6 +1,6 @@
 import { RefreshCw, ShieldAlert } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { UserRef } from './UserRef'
 
 type DisabledSignerAlarm = {
   principalId: number
@@ -107,26 +107,18 @@ export function DisabledSignersSection() {
             {state.alarms.length} critical alarm{state.alarms.length === 1 ? '' : 's'}
           </p>
           <ul className="ns-member-list" data-testid="disabled-signers-list">
-            {state.alarms.map((alarm) => {
-              const href = `/settings/principal?${new URLSearchParams({
-                iss: alarm.iss,
-                sub: alarm.sub,
-              }).toString()}`
-              return (
-                <li key={alarm.principalId} className="ns-member-row">
-                  <div className="ns-member-main">
-                    <Link to={href}>{alarm.name}</Link>
-                    <span className="muted small">
-                      <code className="ns-member-sub">{alarm.sub}</code>
-                      {' · '}
-                      <code className="inline-code">{alarm.iss}</code>
-                    </span>
-                    <span className="muted small ns-member-sub">{alarm.reason}</span>
-                  </div>
-                  <span className="flash flash-error">Critical</span>
-                </li>
-              )
-            })}
+            {state.alarms.map((alarm) => (
+              <li key={alarm.principalId} className="ns-member-row">
+                <div className="ns-member-main">
+                  <UserRef
+                    author={`${alarm.iss}|${alarm.sub}`}
+                    name={alarm.name}
+                  />
+                  <span className="muted small ns-member-sub">{alarm.reason}</span>
+                </div>
+                <span className="flash flash-error">Critical</span>
+              </li>
+            ))}
           </ul>
         </>
       )}

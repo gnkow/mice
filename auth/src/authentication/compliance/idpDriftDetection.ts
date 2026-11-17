@@ -24,13 +24,54 @@ export type IdpBaselineConfig = {
 }
 
 export type IdpCurrentConfig = {
+  /**
+   * Measured MFA claim availability (e.g. from an id_token).
+   * Omit when discovery alone ran — OIDC discovery does not advertise amr/acr values.
+   */
   mfaClaimsAvailable?: { acr?: string; amr: string[] }
   /** From discovery `claims_supported`; undefined when the IdP does not publish the list. */
   authTimeAsserted?: boolean
   requiredScopes: string[]
+  /** Preferred / first advertised signing alg (display + Fill-from-check). */
   signatureAlgorithm: string
+  /** Full discovery `id_token_signing_alg_values_supported` when known. */
+  signatureAlgorithmsSupported?: string[]
   groupClaimFormat: string
   issuer: string
+}
+
+const LOCAL_IDP_HOSTS = new Set(['localhost', '127.0.0.1', 'keycloak'])
+
+function stripIssuer(value: string): string {
+  return value.trim().replace(/\/$/, '')
+}
+
+/**
+ * True when two issuer URLs are the same IdP for drift purposes:
+ * exact match, configured OIDC issuer aliases, or local-dev host/port variants
+ * of the same realm path (Compose Keycloak).
+ */
+export function issuersEquivalent(
+  left: string,
+  right: string,
+  aliases: readonly string[] = [],
+): boolean {
+  const a = stripIssuer(left)
+  const b = stripIssuer(right)
+  if (!a || !b) return a === b
+  if (a === b) return true
+
+  const aliasSet = new Set(aliases.map(stripIssuer).filter(Boolean))
+  if (aliasSet.has(a) && aliasSet.has(b)) return true
+
+  try {
+    const ua = new URL(a)
+    const ub = new URL(b)
+    if (ua.pathname.replace(/\/$/, '') !== ub.pathname.replace(/\/$/, '')) return false
+    return LOCAL_IDP_HOSTS.has(ua.hostname) && LOCAL_IDP_HOSTS.has(ub.hostname)
+  } catch {
+    return false
+  }
 }
 
 export type DriftReport = {
@@ -108,14 +149,17 @@ export async function getCurrentIdpConfig(
   const fetchDiscovery = deps.fetchDiscovery ?? defaultFetchDiscovery
   const discovery = await fetchDiscovery(issuer)
 
-  const signatureAlgorithm = discovery.id_token_signing_alg_values_supported?.[0] ?? 'RS256'
+  const supportedAlgs = discovery.id_token_signing_alg_values_supported ?? ['RS256']
+  const signatureAlgorithm = supportedAlgs[0] ?? 'RS256'
   const requiredScopes = discovery.scopes_supported ?? ['openid', 'profile', 'email']
 
   return {
     requiredScopes,
     signatureAlgorithm,
+    signatureAlgorithmsSupported: supportedAlgs,
     groupClaimFormat: 'array',
     issuer: discovery.issuer,
+    // Discovery does not publish amr/acr values — leave mfaClaimsAvailable unset.
     ...(discovery.claims_supported
       ? { authTimeAsserted: discovery.claims_supported.includes('auth_time') }
       : {}),
@@ -132,12 +176,10 @@ export function detectDrift(
   const criticalDrifts: string[] = []
   const nonCriticalDrifts: string[] = []
 
-  // Critical: MFA claims missing
-  if (baseline.mfaClaimsAvailable && !current.mfaClaimsAvailable) {
-    criticalDrifts.push('MFA claims no longer available in id_token')
-  } else if (
+  // MFA token claims are not on discovery; only compare when current measured them.
+  if (
+    current.mfaClaimsAvailable !== undefined &&
     baseline.mfaClaimsAvailable &&
-    current.mfaClaimsAvailable &&
     baseline.mfaClaimsAvailable.amr.length > 0 &&
     current.mfaClaimsAvailable.amr.length === 0
   ) {
@@ -149,15 +191,27 @@ export function detectDrift(
     criticalDrifts.push('auth_time claim no longer asserted in id_token')
   }
 
-  // Critical: Signature algorithm changed
-  if (baseline.signatureAlgorithm !== current.signatureAlgorithm) {
+  // Critical: baseline signing alg must remain supported (preferred first ≠ drift)
+  const supported = current.signatureAlgorithmsSupported
+  if (supported && supported.length > 0) {
+    if (!supported.includes(baseline.signatureAlgorithm)) {
+      criticalDrifts.push(
+        `Token signature algorithm ${baseline.signatureAlgorithm} is no longer supported (IdP offers ${supported.join(', ')})`,
+      )
+    }
+  } else if (baseline.signatureAlgorithm !== current.signatureAlgorithm) {
     criticalDrifts.push(
-      `Token signature algorithm changed: ${baseline.signatureAlgorithm} → ${current.signatureAlgorithm}`
+      `Token signature algorithm changed: ${baseline.signatureAlgorithm} → ${current.signatureAlgorithm}`,
     )
   }
 
-  // Critical: Issuer changed
-  if (baseline.issuer !== current.issuer) {
+  // Critical: Issuer changed (allow OIDC alias + local-dev host variants)
+  if (
+    !issuersEquivalent(baseline.issuer, current.issuer, [
+      env.oidcIssuer,
+      env.oidcIssuerPublic,
+    ])
+  ) {
     criticalDrifts.push(`Issuer changed: ${baseline.issuer} → ${current.issuer}`)
   }
 
@@ -261,28 +315,22 @@ export async function performDriftCheck(
 
 /**
  * Check if signing should be blocked due to critical drift.
+ * Uses the latest report overall — a newer clean check clears an older critical block.
  */
 export async function isSigningBlockedByDrift(): Promise<{
   blocked: boolean
   reason?: string
   reportId?: number
 }> {
-  // Get most recent drift report (within last 25 hours)
   const oneDayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000)
 
   const [latestReport] = await getDb()
     .select()
     .from(idpDriftReports)
-    .where(eq(idpDriftReports.hasCriticalDrift, true))
     .orderBy(desc(idpDriftReports.checkedAt))
     .limit(1)
 
-  if (!latestReport) {
-    return { blocked: false }
-  }
-
-  // Check if report is recent (within last 25 hours)
-  if (latestReport.checkedAt < oneDayAgo) {
+  if (!latestReport || latestReport.checkedAt < oneDayAgo || !latestReport.hasCriticalDrift) {
     return { blocked: false }
   }
 

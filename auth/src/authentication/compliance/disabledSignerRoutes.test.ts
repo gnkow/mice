@@ -28,6 +28,7 @@ const { env, overrideEnv } = await import('../../env.js')
 const { getDb } = await import('../../db/database.js')
 const { principals } = await import('../../db/schema.js')
 const { maybeBootstrapInstanceAdmin } = await import('../../authzInstanceStore.js')
+const { assignRole } = await import('../../rbacStore.js')
 const { setDirectoryFetchForTests } = await import('../directory/directory.js')
 
 function directoryFetch(disabled: (url: string) => boolean) {
@@ -85,12 +86,25 @@ describe('GET /auth/admin/disabled-signers', () => {
   })
 
   it('returns critical alarms for IdP-disabled Principals with signing rights', async () => {
+    const iss = 'http://localhost:8180/realms/mice'
     await getDb().insert(principals).values({
       sub: 'disabled-user',
-      iss: 'http://localhost:8180/realms/mice',
+      iss,
       createdAt: new Date(),
       name: 'Disabled User',
     })
+    assert.equal(
+      (
+        await assignRole({
+          actor: null,
+          target: { sub: 'disabled-user', iss },
+          role: 'user',
+          reason: 'test signing rights',
+          bootstrap: true,
+        })
+      ).ok,
+      true,
+    )
 
     const app = new Hono()
     registerDisabledSignerRoutes(app)

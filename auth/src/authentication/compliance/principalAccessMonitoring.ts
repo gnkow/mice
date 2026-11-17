@@ -4,9 +4,11 @@
  * Alarms when a Principal is disabled in the IdP and still holds signing rights in Mice.
  */
 
-import { getDb } from '../../db/database.js'
-import { principals } from '../../db/schema.js'
 import { eq } from 'drizzle-orm'
+import { getDb } from '../../db/database.js'
+import { namespaceApprovers, principals, repoApprovers } from '../../db/schema.js'
+import { getUserRole } from '../../rbacStore.js'
+import { principalKey } from '../session/principal.js'
 import { directoryNow } from '../directory/directory.js'
 
 export type PrincipalAccessState = {
@@ -64,6 +66,21 @@ export type PrincipalAccessMonitor = {
 const CRITICAL_REASON =
   'Principal is disabled in IdP but still has signing rights in Mice'
 
+/** Roles that can complete electronic signatures (mutations / admin ceremonies). */
+const SIGNING_INSTANCE_ROLES = new Set(['admin', 'manager', 'user'])
+
+/**
+ * Pure decision: does this Principal hold signing rights in Mice?
+ * Approver seats (merge signatures) or a write-capable instance role.
+ */
+export function decideHasSigningRights(input: {
+  instanceRole: string | null
+  isApprover: boolean
+}): boolean {
+  if (input.isApprover) return true
+  return input.instanceRole != null && SIGNING_INSTANCE_ROLES.has(input.instanceRole)
+}
+
 /** Pure classification: disabled-in-IdP + signing rights → critical alarm. */
 export function alarmsFromAccessSnapshots(
   snapshots: AccessSnapshot[],
@@ -109,9 +126,29 @@ async function defaultIdpEnabled(sub: string): Promise<boolean | null> {
   }
 }
 
-/** Signing rights: Principal exists in Mice (port; replace when authz exposes a tighter check). */
+async function defaultIsApprover(sub: string, iss: string): Promise<boolean> {
+  const key = principalKey({ sub, iss })
+  const [nsSeat] = await getDb()
+    .select({ k: namespaceApprovers.userKey })
+    .from(namespaceApprovers)
+    .where(eq(namespaceApprovers.userKey, key))
+    .limit(1)
+  if (nsSeat) return true
+  const [repoSeat] = await getDb()
+    .select({ k: repoApprovers.userKey })
+    .from(repoApprovers)
+    .where(eq(repoApprovers.userKey, key))
+    .limit(1)
+  return Boolean(repoSeat)
+}
+
+/** Signing rights: Approver seat or write-capable instance role (not mere Principal existence). */
 async function defaultHasSigningRights(principalId: number): Promise<boolean> {
-  return (await defaultFindPrincipal(principalId)) !== null
+  const principal = await defaultFindPrincipal(principalId)
+  if (!principal) return false
+  const instanceRole = await getUserRole({ sub: principal.sub, iss: principal.iss })
+  const isApprover = await defaultIsApprover(principal.sub, principal.iss)
+  return decideHasSigningRights({ instanceRole, isApprover })
 }
 
 function defaultLogCritical(alarms: DisabledPrincipalAlarm[]): void {

@@ -16,7 +16,7 @@ test.describe('IdP MFA Baseline (Admin)', () => {
 
     const section = page.locator('#idp-baseline')
     await expect(
-      section.getByText(/Last Check|No baseline checks have been performed yet|Loading baseline status/i).first(),
+      section.getByText(/Last check|No baseline checks have been performed yet|Loading baseline status/i).first(),
     ).toBeVisible({ timeout: 10_000 })
 
     const checkButton = section.getByRole('button', { name: /Check Now|Checking/i })
@@ -27,11 +27,10 @@ test.describe('IdP MFA Baseline (Admin)', () => {
     await expect(checkButton).toBeDisabled()
     await expect(checkButton).toHaveText(/Checking/i, { timeout: 2000 })
 
+    await expect(checkButton).toBeEnabled({ timeout: 10_000 })
     await expect(
-      section.locator('.flash-success, .flash-error, .flash-warn').first(),
-    ).toBeVisible({ timeout: 10_000 })
-
-    await expect(section.getByText(/Last Check|MFA Available/i).first()).toBeVisible()
+      section.getByText(/Last check|Could not load IdP baseline|Check failed/i).first(),
+    ).toBeVisible()
   })
 
   test('baseline status shows MFA availability after a check', async ({ page }) => {
@@ -44,15 +43,12 @@ test.describe('IdP MFA Baseline (Admin)', () => {
     const section = page.locator('#idp-baseline')
     const checkButton = section.getByRole('button', { name: /Check Now|Checking/i })
     await checkButton.click()
-    await expect(
-      section.locator('.flash-success, .flash-error, .flash-warn').first(),
-    ).toBeVisible({ timeout: 10_000 })
+    await expect(checkButton).toBeEnabled({ timeout: 10_000 })
 
-    const lastCheckLabel = section.getByText('Last Check', { exact: true })
+    const lastCheckLabel = section.getByText('Last check', { exact: true })
     if (await lastCheckLabel.isVisible()) {
-      await expect(section.getByText('MFA Available', { exact: true })).toBeVisible()
-      const statusText = await section.locator('.flash-success, .flash-warn').first().textContent()
-      expect(statusText).toMatch(/(Yes|No)/)
+      await expect(section.getByText('MFA', { exact: true })).toBeVisible()
+      await expect(section.getByText(/Available|Not available/i).first()).toBeVisible()
     }
   })
 })
