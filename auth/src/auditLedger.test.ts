@@ -24,6 +24,20 @@ describe('audit ledger on immudb', () => {
     await ledger.close()
   })
 
+  it('point-reads a record by id without scanning the prefix', async () => {
+    const ledger = await open()
+    const seq = await ledger.append('point-a', '{"k":1}')
+    await ledger.append('point-b', '{"k":2}')
+    const found = await ledger.get('point-a')
+    assert.deepEqual(found, {
+      seq,
+      key: `${prefix}point-a`,
+      value: '{"k":1}',
+    })
+    assert.equal(await ledger.get('missing-id'), undefined)
+    await ledger.close()
+  })
+
   it('reads only what was written after a given sequence number', async () => {
     const ledger = await open()
     const first = await ledger.append('r1', '{"n":1}')

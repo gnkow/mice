@@ -17,6 +17,7 @@ import {
   exportAudit,
   fetchAuditFacets,
   loadAudit,
+  unpairedIntentEvents,
   verifyAuditChain,
   type AuditEvent,
   type AuditExportFormat,
@@ -217,6 +218,7 @@ export function AuditPage() {
 
   const denied = state.kind === 'ok' && state.data.kind === 'denied' ? state.data.reason : null
   const events = state.kind === 'ok' && state.data.kind === 'ok' ? state.data.data.events : null
+  const orphanIntents = useMemo(() => unpairedIntentEvents(events ?? []), [events])
   const revoked = useMemo(() => revokedSignatureIds(events ?? []), [events])
 
   async function onExport(format: AuditExportFormat) {
@@ -312,6 +314,13 @@ export function AuditPage() {
       {verifyResult?.ok === false && (
         <p className="flash flash-error" role="alert" data-testid="audit-verify-break">
           Chain verification failed at event {verifyResult.firstBreak.seq}: {verifyResult.firstBreak.reason}
+        </p>
+      )}
+      {orphanIntents.length > 0 && (
+        <p className="flash flash-warn" role="status" aria-atomic="true" data-testid="audit-orphan-summary">
+          {orphanIntents.length === 1
+            ? '1 Intent without Outcome is visible in this page — investigate before assuming the mutation finished.'
+            : `${orphanIntents.length} Intents without Outcome are visible in this page — investigate before assuming those mutations finished.`}
         </p>
       )}
 
@@ -439,7 +448,12 @@ export function AuditPage() {
               </thead>
               <tbody>
                 {events.map((ev) => (
-                  <tr key={ev.id} data-audit-id={ev.id}>
+                  <tr
+                    key={ev.id}
+                    data-audit-id={ev.id}
+                    data-audit-phase={ev.phase ?? ''}
+                    data-testid={ev.phase === 'intent' ? 'audit-orphan-intent' : undefined}
+                  >
                     <td className="mono small">{formatTs(ev.ts)}</td>
                     <td>
                       <div>{ev.actor.name}</div>
@@ -449,6 +463,15 @@ export function AuditPage() {
                     <td title={ev.action}>
                       <div>{actionLabel(ev)}</div>
                       <div className="muted small mono">{ev.action}</div>
+                      {ev.phase === 'intent' ? (
+                        <span
+                          className="ns-tag ns-tag-warn"
+                          title="This Intent has no Outcome yet"
+                          data-testid="audit-orphan-badge"
+                        >
+                          No Outcome
+                        </span>
+                      ) : null}
                     </td>
                     <td>
                       <RepoCell event={ev} />

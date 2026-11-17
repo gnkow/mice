@@ -1,10 +1,12 @@
-import { ChevronUp as ActionChevronUp, User as ActionUser, Users as ActionUsers } from 'lucide-react'
+import { ChevronUp as ActionChevronUp, Users as ActionUsers } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import {
+  AuthzError,
   searchDirectory,
   type DirectoryGroupHit,
   type DirectoryUserHit,
 } from '../lib/authzApi'
+import { UserRef } from './UserRef'
 
 type UserProps = {
   kind: 'user'
@@ -75,7 +77,13 @@ export function DirectoryPicker(props: Props) {
         })
         .catch((err: unknown) => {
           if (ac.signal.aborted) return
-          setError(err instanceof Error ? err.message : 'Search failed')
+          if (err instanceof AuthzError && err.status === 403) {
+            setError(
+              'Directory search needs manage_members on a namespace, or the directory:search permission.',
+            )
+          } else {
+            setError(err instanceof Error ? err.message : 'Search failed')
+          }
           setUsers([])
           setGroups([])
           setShowManual(true)
@@ -123,7 +131,16 @@ export function DirectoryPicker(props: Props) {
           }}
         />
       </label>
-      {selectedLabel ? (
+      {props.kind === 'user' && props.sub ? (
+        <p className="muted small directory-picker-selected">
+          Selected:{' '}
+          <UserRef
+            author={`${props.iss}|${props.sub}`}
+            name={users.find((u) => u.sub === props.sub && u.iss === props.iss)?.name}
+            storedEmail={users.find((u) => u.sub === props.sub && u.iss === props.iss)?.email}
+          />
+        </p>
+      ) : selectedLabel ? (
         <p className="muted small directory-picker-selected">
           Selected:{' '}
           {props.kind === 'group' && props.label && props.label !== props.group ? (
@@ -152,14 +169,13 @@ export function DirectoryPicker(props: Props) {
                   setOpen(false)
                 }}
               >
-                <span className="directory-picker-option-name">
-                  <ActionUser size={14} aria-hidden="true" className="button-label-icon" />
-                  {u.name || u.email || u.sub}
-                </span>
-                <span className="muted small">
-                  {u.email ? `${u.email} · ` : ''}
-                  {u.sub}
-                </span>
+                <UserRef
+                  interactive={false}
+                  author={`${u.iss}|${u.sub}`}
+                  name={u.name}
+                  storedEmail={u.email}
+                />
+                {u.email ? <span className="muted small">{u.email}</span> : null}
               </button>
             </li>
           ))}

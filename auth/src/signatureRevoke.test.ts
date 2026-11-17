@@ -27,7 +27,7 @@ useSignatureStore(
 const approver = t.person('revoker')
 await preparePrincipal(approver)
 await t.grantRole(approver, 'manager')
-assert.deepEqual(await createNamespaceAuthz(approver, 'rev-ns', 'none'), { ok: true })
+assert.equal((await createNamespaceAuthz(approver, 'rev-ns', 'none')).ok, true)
 const repo = await ensureRepository('rev-ns', 'data')
 assert.ok(repo)
 await grantApprover({ ns: 'rev-ns', repo: 'data' }, approver)

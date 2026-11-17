@@ -98,6 +98,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       namespace: name,
       message: `Created namespace ${name}`,
       detail: {
+        id: result.id,
         basePermission: body.basePermission,
         membersCanCreateRepos: body.membersCanCreateRepos ?? true,
         description,
@@ -105,6 +106,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     })
     return c.json({
       ok: true,
+      id: result.id,
       name,
       namespace: await getNamespace(name),
     })

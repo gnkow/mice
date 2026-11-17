@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   extractMfaEvidence,
   evaluateIdpMfaBaseline,
+  sessionHasMfaEvidence,
   type MfaEvidence,
 } from './mfaEvidence.js'
 
@@ -94,6 +95,17 @@ describe('MFA Evidence Extraction', () => {
 
     assert.equal(evidence.hasMfa, true)
     assert.deepEqual(evidence.amr, ['pwd', 'sms', 'mfa'])
+  })
+
+  it('sessionHasMfaEvidence reads MFA from a compact id_token payload', () => {
+    const encode = (obj: object) =>
+      Buffer.from(JSON.stringify(obj)).toString('base64url')
+    const mfaToken = ['e30', encode({ acr: 'mfa', amr: ['pwd', 'otp'] }), 'sig'].join('.')
+    const pwdToken = ['e30', encode({ acr: 'pwd', amr: ['pwd'] }), 'sig'].join('.')
+    assert.equal(sessionHasMfaEvidence(mfaToken), true)
+    assert.equal(sessionHasMfaEvidence(pwdToken), false)
+    assert.equal(sessionHasMfaEvidence(undefined), false)
+    assert.equal(sessionHasMfaEvidence('not-a-jwt'), false)
   })
 
   it('handles non-standard amr values (hardware token, biometric)', () => {

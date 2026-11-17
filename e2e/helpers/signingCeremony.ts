@@ -103,7 +103,7 @@ export async function expectSigningChallenge(
 }
 
 /**
- * Drive the live Keycloak step-up (password + TOTP for mice_mfa) from a signing
+ * Drive the live Keycloak step-up (password + TOTP for mice_admin) from a signing
  * challenge interstitial, then return to Mice.
  */
 export async function completeLiveKeycloakStepUp(page: Page): Promise<void> {

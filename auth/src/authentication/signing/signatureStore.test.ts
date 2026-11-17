@@ -102,6 +102,18 @@ describe('authoritative signature record', () => {
     assert.equal(await store.proof('missing'), undefined)
   })
 
+  it('point-reads signature, manifest and consume markers through Ledger.get', async () => {
+    const saved = await store.record(withBinding)
+    const byId = await store.get(saved.id)
+    assert.equal(byId?.seq, saved.seq)
+    assert.equal(byId?.record.id, saved.id)
+    assert.equal((await store.getManifest(binding.manifestDigest))?.manifest, manifest)
+    assert.equal(await store.isConsumed(saved.id), false)
+    await store.consume(saved.id)
+    assert.equal(await store.isConsumed(saved.id), true)
+    assert.equal(await store.get('missing-signature'), undefined)
+  })
+
   it('finds signatures through the Postgres index and rebuilds the index from the ledger', async () => {
     const own = { ...binding, repo: `ns/own-${randomBytes(3).toString('hex')}` }
     const other = { ...signer, sub: `bob-${randomBytes(3).toString('hex')}`, name: 'Bob' }

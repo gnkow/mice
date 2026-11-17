@@ -4,6 +4,8 @@ import type { AuditEvent } from './audit.js'
 import {
   agedOrphanIntents,
   alertAgedOrphanIntents,
+  createOrphanAgingAlerter,
+  orphanAlertNotification,
 } from './auditOrphanAlert.js'
 
 const actor = {
@@ -142,5 +144,87 @@ describe('alertAgedOrphanIntents', () => {
       markAlerted: () => {},
     })
     assert.equal(calls, 0)
+  })
+})
+
+describe('orphanAlertNotification', () => {
+  it('builds a stable security notification for an aged Intent', () => {
+    const orphan = intent({
+      id: 'i-1',
+      ts: '2026-11-13T11:00:00.000Z',
+      action: 'workspace.merge',
+    })
+    const n = orphanAlertNotification({
+      intent: orphan,
+      now: Date.parse('2026-11-13T12:00:00.000Z'),
+      thresholdMs: 15 * 60 * 1000,
+      admins: [{ iss: 'https://idp.test', sub: 'admin' }],
+    })
+    assert.equal(n.id, 'audit-orphan:i-1')
+    assert.equal(n.category, 'security')
+    assert.equal(n.href, '/audit')
+    assert.match(n.summary, /workspace\.merge/)
+    assert.match(n.summary, /15 minutes/)
+    assert.deepEqual(n.recipients, [{ iss: 'https://idp.test', sub: 'admin' }])
+  })
+})
+
+describe('createOrphanAgingAlerter', () => {
+  const now = Date.parse('2026-11-13T12:00:00.000Z')
+  const thresholdMs = 15 * 60 * 1000
+
+  it('owns dedupe so two alerters do not share alerted state', async () => {
+    const orphan = intent({
+      id: 'i-shared',
+      ts: new Date(now - thresholdMs - 1).toISOString(),
+      action: 'merge',
+    })
+    const notifiedA: string[] = []
+    const notifiedB: string[] = []
+    const ports = {
+      loadEvents: async () => [orphan],
+      listAdmins: async () => [{ iss: 'https://idp.test', sub: 'admin' }],
+      now: () => now,
+      thresholdMs,
+    }
+    const a = createOrphanAgingAlerter({
+      ...ports,
+      notify: async (n) => {
+        notifiedA.push(n.id)
+      },
+    })
+    const b = createOrphanAgingAlerter({
+      ...ports,
+      notify: async (n) => {
+        notifiedB.push(n.id)
+      },
+    })
+
+    assert.deepEqual(await a.tick(), ['i-shared'])
+    assert.deepEqual(await a.tick(), [])
+    assert.deepEqual(await b.tick(), ['i-shared'])
+    assert.deepEqual(notifiedA, ['audit-orphan:i-shared'])
+    assert.deepEqual(notifiedB, ['audit-orphan:i-shared'])
+  })
+
+  it('reset clears owned dedupe so the same Intent can alert again', async () => {
+    const orphan = intent({
+      id: 'i-reset',
+      ts: new Date(now - thresholdMs - 1).toISOString(),
+    })
+    const notified: string[] = []
+    const alerter = createOrphanAgingAlerter({
+      loadEvents: async () => [orphan],
+      listAdmins: async () => [{ iss: 'https://idp.test', sub: 'admin' }],
+      notify: async (n) => {
+        notified.push(n.id)
+      },
+      now: () => now,
+      thresholdMs,
+    })
+    assert.deepEqual(await alerter.tick(), ['i-reset'])
+    alerter.reset()
+    assert.deepEqual(await alerter.tick(), ['i-reset'])
+    assert.deepEqual(notified, ['audit-orphan:i-reset', 'audit-orphan:i-reset'])
   })
 })

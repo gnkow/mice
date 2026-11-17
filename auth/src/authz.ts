@@ -2,8 +2,7 @@ import {
   confirmPrivilegedGroups,
   withDirectoryGroups,
 } from './authentication/access/privilegedGroups.js'
-import { extractMfaEvidence } from './authentication/signing/mfaEvidence.js'
-import { decodeJwtPayload } from './authentication/oidc/oidcClaims.js'
+import { sessionHasMfaEvidence } from './authentication/signing/mfaEvidence.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
 import { hasCompletedTraining, isInstanceAdmin } from './authzInstanceStore.js'
@@ -198,12 +197,7 @@ export async function auditorMfaRefusal(user: SessionUser): Promise<string | nul
 }
 
 function sessionHasMfa(user: SessionUser): boolean {
-  if (!user.idToken) return false
-  try {
-    return extractMfaEvidence(decodeJwtPayload(user.idToken)).hasMfa
-  } catch {
-    return false
-  }
+  return sessionHasMfaEvidence(user.idToken)
 }
 
 /** Only a namespace Owner assigns or removes approvers; instance admin does not. */

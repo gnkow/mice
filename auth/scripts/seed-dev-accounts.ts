@@ -5,16 +5,19 @@
  *
  * | Email                     | Password     | Role     |
  * |---------------------------|--------------|----------|
- * | mice_admin@mice.com       | admin123     | admin (AUTHZ_BOOTSTRAP_ADMINS on login) |
+ * | mice_admin@mice.com       | admin123 (+ TOTP) | admin (AUTHZ_BOOTSTRAP_ADMINS on login) |
+ * | mice_no_mfa@mice.com      | nomfa123     | user (password-only control) |
  * | mice_manager@mice.com     | manage123    | manager  |
  * | mice_auditor@mice.com     | auditor123   | auditor  |
  * | mice_user@mice.com        | user123      | user     |
  * | mice_external@mice.com    | external123  | external |
  * | mice_pending@mice.com     | pending123   | (none — /pending shell) |
+ * | partner@partner.example   | partner      | user (SAML broker e2e; not bootstrap admin) |
  *
  * Sample workspace (idempotent): namespace `demo` / repo `sample`
  * - Manager is namespace Owner and repo Admin (admins stay out of data SoD)
- * - User is namespace member + repo write
+ * - Default SSO `mice@example.com` is namespace member + repo write (local UI)
+ * - `mice_user` is namespace member + repo write
  * - External is namespace member + repo read
  *
  * Keycloak users (stable ids) live in auth/keycloak/realm-mice.json.
@@ -60,13 +63,22 @@ const ACCOUNTS: readonly DevAccount[] = [
     bootstrapAdmin: true,
   },
   {
-    username: 'mice_mfa',
-    email: 'mice_mfa@mice.com',
-    name: 'Mfa Signer',
-    password: 'mfa123',
+    // Password-only control: Conditional OTP skipped (no TOTP credential). Not bootstrap admin.
+    username: 'mice_no_mfa',
+    email: 'mice_no_mfa@mice.com',
+    name: 'No Mfa',
+    password: 'nomfa123',
     stableSub: 'a0000000-0000-4000-8000-000000000010',
-    role: 'admin',
-    bootstrapAdmin: true,
+    role: 'user',
+  },
+  {
+    // Default SSO e2e user (`KEYCLOAK_E2E_USER=mice`): granted User, not instance Admin.
+    username: 'mice',
+    email: 'mice@example.com',
+    name: 'Mice User',
+    password: 'mice',
+    stableSub: 'a0000000-0000-4000-8000-000000000000',
+    role: 'user',
   },
   {
     username: 'mice_manager',
@@ -107,6 +119,15 @@ const ACCOUNTS: readonly DevAccount[] = [
     password: 'pending123',
     stableSub: 'a0000000-0000-4000-8000-000000000006',
     role: null,
+  },
+  {
+    // SAML broker e2e (`partner-saml` → mice). Granted User so SSO sees topbar; not instance Admin.
+    username: 'partner',
+    email: 'partner@partner.example',
+    name: 'Partner User',
+    password: 'partner',
+    stableSub: 'a0000000-0000-4000-8000-000000000007',
+    role: 'user',
   },
 ]
 
@@ -208,11 +229,6 @@ async function seedAccount(account: DevAccount): Promise<SessionUser> {
   })
   const user = asSessionUser(account, identity)
 
-  if (account.bootstrapAdmin) {
-    console.log(`ℹ ${account.email} → admin on login (AUTHZ_BOOTSTRAP_ADMINS)`)
-    return user
-  }
-
   if (account.role == null) {
     console.log(`ℹ ${account.email} → no role (/pending shell)`)
     return user
@@ -222,11 +238,13 @@ async function seedAccount(account: DevAccount): Promise<SessionUser> {
     throw new Error(`Invalid role for ${account.email}: ${account.role}`)
   }
 
+  // Bootstrap admins are also allowlisted in AUTHZ_BOOTSTRAP_ADMINS (login path).
+  // Still assign here so seed can demote other principals without waiting for SSO.
   const result = await assignRole({
     actor: null,
     target: identity,
     role: account.role,
-    reason: 'dev seed',
+    reason: account.bootstrapAdmin ? 'bootstrap' : 'dev seed',
     bootstrap: true,
   })
   if (!result.ok) {
@@ -268,9 +286,11 @@ async function ensureOxenRepo(namespace: string, name: string): Promise<void> {
 /**
  * One namespace + one repo for local testing.
  * Manager owns the namespace (instance admins stay out of data membership SoD).
+ * Default SSO `mice` gets write so `make reset` leaves a usable workspace.
  */
 async function seedSampleWorkspace(users: {
   manager: SessionUser
+  mice: SessionUser
   user: SessionUser
   external: SessionUser
 }): Promise<void> {
@@ -288,6 +308,7 @@ async function seedSampleWorkspace(users: {
   }
 
   for (const [label, target, role] of [
+    ['mice', users.mice, 'member'],
     ['user', users.user, 'member'],
     ['external', users.external, 'member'],
   ] as const) {
@@ -308,6 +329,7 @@ async function seedSampleWorkspace(users: {
 
   for (const [label, target, role] of [
     ['manager', users.manager, 'admin'],
+    ['mice', users.mice, 'write'],
     ['user', users.user, 'write'],
     ['external', users.external, 'read'],
   ] as const) {
@@ -320,11 +342,123 @@ async function seedSampleWorkspace(users: {
   }
 }
 
+/**
+ * Keycloak's oidc-amr-mapper only emits `amr` when browser-flow authenticators
+ * have Authenticator Reference values. Realm import may skip built-in flow
+ * updates on an existing DB — ensure pwd/otp refs (with maxAge) idempotently.
+ */
+async function ensureKeycloakAmrAuthenticatorRefs(): Promise<void> {
+  const adminUrl = (process.env.KEYCLOAK_ADMIN_URL || 'http://localhost:8180').replace(/\/$/, '')
+  const realm = process.env.KEYCLOAK_REALM || 'mice'
+  const username = process.env.KEYCLOAK_ADMIN || 'admin'
+  const password = process.env.KEYCLOAK_ADMIN_PASSWORD || 'admin'
+
+  const wanted: Record<string, { alias: string; value: string }> = {
+    'auth-username-password-form': { alias: 'amr-pwd', value: 'pwd' },
+    'auth-otp-form': { alias: 'amr-otp', value: 'otp' },
+  }
+
+  try {
+    const tokenRes = await fetch(`${adminUrl}/realms/master/protocol/openid-connect/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        client_id: 'admin-cli',
+        username,
+        password,
+      }),
+    })
+    if (!tokenRes.ok) {
+      console.warn(`⚠ Keycloak admin token failed (${tokenRes.status}); skip AMR authenticator refs`)
+      return
+    }
+    const tokenJson = (await tokenRes.json()) as { access_token?: string }
+    if (!tokenJson.access_token) {
+      console.warn('⚠ Keycloak admin token missing; skip AMR authenticator refs')
+      return
+    }
+    const auth = { Authorization: `Bearer ${tokenJson.access_token}` }
+
+    const execRes = await fetch(
+      `${adminUrl}/admin/realms/${encodeURIComponent(realm)}/authentication/flows/browser/executions`,
+      { headers: auth },
+    )
+    if (!execRes.ok) {
+      console.warn(`⚠ Keycloak browser executions failed (${execRes.status}); skip AMR refs`)
+      return
+    }
+    const executions = (await execRes.json()) as Array<{
+      id?: string
+      providerId?: string
+      authenticatorConfig?: string | null
+    }>
+
+    for (const exec of executions) {
+      const provider = exec.providerId
+      const spec = provider ? wanted[provider] : undefined
+      if (!spec || !exec.id) continue
+      // Flow execution list often omits authenticatorConfig; fetch the execution.
+      let configId = exec.authenticatorConfig ?? null
+      if (!configId) {
+        const detailRes = await fetch(
+          `${adminUrl}/admin/realms/${encodeURIComponent(realm)}/authentication/executions/${exec.id}`,
+          { headers: auth },
+        )
+        if (detailRes.ok) {
+          const detail = (await detailRes.json()) as { authenticatorConfig?: string | null }
+          configId = detail.authenticatorConfig ?? null
+        }
+      }
+      if (configId) {
+        const cfgRes = await fetch(
+          `${adminUrl}/admin/realms/${encodeURIComponent(realm)}/authentication/config/${configId}`,
+          { headers: auth },
+        )
+        if (cfgRes.ok) {
+          const cfg = (await cfgRes.json()) as { config?: Record<string, string> }
+          if (cfg.config?.['default.reference.value'] === spec.value) {
+            console.log(`✓ Keycloak AMR ref already set: ${provider} → ${spec.value}`)
+            continue
+          }
+        }
+      }
+      const createRes = await fetch(
+        `${adminUrl}/admin/realms/${encodeURIComponent(realm)}/authentication/executions/${exec.id}/config`,
+        {
+          method: 'POST',
+          headers: { ...auth, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            alias: spec.alias,
+            config: {
+              'default.reference.value': spec.value,
+              // Avoid Keycloak amr maxAge=0 drop across token-exchange second boundary.
+              'default.reference.maxAge': '3600',
+            },
+          }),
+        },
+      )
+      if (createRes.ok || createRes.status === 201) {
+        console.log(`✓ Keycloak AMR ref configured: ${provider} → ${spec.value}`)
+      } else {
+        console.warn(
+          `⚠ Could not set AMR ref for ${provider} (${createRes.status}); MFA profile may stay password-only`,
+        )
+      }
+    }
+  } catch (err) {
+    console.warn(`⚠ Keycloak AMR ensure failed (${String(err)}); MFA claims may be empty`)
+  }
+}
+
 async function main() {
   console.log('🌱 Seeding development accounts (formal RBAC roles)…\n')
 
   await ensureBootstrapKey()
   console.log('✓ Seal key initialized\n')
+
+  await ensureKeycloakAmrAuthenticatorRefs()
+  console.log('')
 
   const byUsername = new Map<string, SessionUser>()
   for (const account of ACCOUNTS) {
@@ -332,12 +466,13 @@ async function main() {
   }
 
   const manager = byUsername.get('mice_manager')
+  const mice = byUsername.get('mice')
   const user = byUsername.get('mice_user')
   const external = byUsername.get('mice_external')
-  if (!manager || !user || !external) {
-    throw new Error('Missing manager/user/external identities for sample workspace seed')
+  if (!manager || !mice || !user || !external) {
+    throw new Error('Missing manager/mice/user/external identities for sample workspace seed')
   }
-  await seedSampleWorkspace({ manager, user, external })
+  await seedSampleWorkspace({ manager, mice, user, external })
 
   const pad = (s: string, n: number) => s.padEnd(n)
   console.log('\n✅ Development seed complete!\n')
@@ -347,9 +482,10 @@ async function main() {
     console.log(`  ${pad(a.email, 28)} / ${pad(a.password, 12)} → ${roleLabel}`)
   }
   console.log(`\nSample workspace: ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}`)
-  console.log('  manager → namespace owner + repo admin')
-  console.log('  user    → namespace member + repo write')
-  console.log('  external→ namespace member + repo read')
+  console.log('  manager           → namespace owner + repo admin')
+  console.log('  mice@example.com  → namespace member + repo write (default SSO)')
+  console.log('  mice_user         → namespace member + repo write')
+  console.log('  mice_external     → namespace member + repo read')
   console.log('\nNote: Keycloak users are imported from auth/keycloak/realm-mice.json')
   console.log('If accounts are missing after a rename, recreate the keycloak service so the realm re-imports.')
 }

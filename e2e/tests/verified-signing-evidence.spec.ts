@@ -41,6 +41,23 @@ test.describe('52 verified signing evidence UI', () => {
     )
   })
 
+  test('reason prompt gates with MFA required when session has no MFA evidence', async ({
+    page,
+  }) => {
+    await mintSession(page, {
+      sub: uniqueId('rp-mfa-gate'),
+      role: 'admin',
+      iss: 'mice-e2e',
+    })
+    await openReasonPromptViaAnnouncement(page)
+    await expectSigningChallenge(
+      page,
+      /MFA required/i,
+      'mfa_required',
+      /does not evidence MFA|authenticator OTP/i,
+    )
+  })
+
   test('reason prompt execute shows MFA required for incomplete evidence', async ({
     page,
   }) => {

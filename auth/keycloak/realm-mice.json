@@ -2,6 +2,7 @@
   "realm": "mice",
   "enabled": true,
   "sslRequired": "none",
+  "loginTheme": "mice-dev",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -59,6 +60,76 @@
       ]
     }
   ],
+  "authenticatorConfig": [
+    {
+      "alias": "amr-pwd",
+      "config": {
+        "default.reference.value": "pwd",
+        "default.reference.maxAge": "3600"
+      }
+    },
+    {
+      "alias": "amr-otp",
+      "config": {
+        "default.reference.value": "otp",
+        "default.reference.maxAge": "3600"
+      }
+    }
+  ],
+  "authenticationFlows": [
+    {
+      "alias": "Browser - Conditional OTP",
+      "description": "Flow to determine if the OTP is required for the authentication",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "conditional-user-configured",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "autheticatorFlow": false,
+          "authenticatorConfig": "amr-otp",
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "forms",
+      "description": "Username, password, otp and other auth forms.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": true,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "authenticatorConfig": "amr-pwd",
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "autheticatorFlow": true,
+          "flowAlias": "Browser - Conditional OTP",
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ],
   "groups": [
     {
       "name": "engineering",
@@ -89,27 +160,11 @@
       "emailVerified": true,
       "firstName": "Admin",
       "lastName": "User",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "admin123",
-          "temporary": false
-        }
-      ]
-    },
-    {
-      "id": "a0000000-0000-4000-8000-000000000010",
-      "username": "mice_mfa",
-      "enabled": true,
-      "email": "mice_mfa@mice.com",
-      "emailVerified": true,
-      "firstName": "Mfa",
-      "lastName": "Signer",
       "totp": true,
       "credentials": [
         {
           "type": "password",
-          "value": "mfa123",
+          "value": "admin123",
           "temporary": false
         },
         {
@@ -121,6 +176,22 @@
       ]
     },
     {
+      "id": "a0000000-0000-4000-8000-000000000010",
+      "username": "mice_no_mfa",
+      "enabled": true,
+      "email": "mice_no_mfa@mice.com",
+      "emailVerified": true,
+      "firstName": "No",
+      "lastName": "Mfa",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "nomfa123",
+          "temporary": false
+        }
+      ]
+    },
+    {
       "id": "a0000000-0000-4000-8000-000000000002",
       "username": "mice_manager",
       "enabled": true,
@@ -128,11 +199,18 @@
       "emailVerified": true,
       "firstName": "Manager",
       "lastName": "User",
+      "totp": true,
       "credentials": [
         {
           "type": "password",
           "value": "manage123",
           "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "e2e-totp",
+          "secretData": "{\"value\":\"JBSWY3DPEHPK3PXP\"}",
+          "credentialData": "{\"subType\":\"totp\",\"algorithm\":\"HmacSHA1\",\"digits\":6,\"period\":30}"
         }
       ]
     },
@@ -144,11 +222,18 @@
       "emailVerified": true,
       "firstName": "Auditor",
       "lastName": "User",
+      "totp": true,
       "credentials": [
         {
           "type": "password",
           "value": "auditor123",
           "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "e2e-totp",
+          "secretData": "{\"value\":\"JBSWY3DPEHPK3PXP\"}",
+          "credentialData": "{\"subType\":\"totp\",\"algorithm\":\"HmacSHA1\",\"digits\":6,\"period\":30}"
         }
       ]
     },
@@ -160,11 +245,18 @@
       "emailVerified": true,
       "firstName": "Regular",
       "lastName": "User",
+      "totp": true,
       "credentials": [
         {
           "type": "password",
           "value": "user123",
           "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "e2e-totp",
+          "secretData": "{\"value\":\"JBSWY3DPEHPK3PXP\"}",
+          "credentialData": "{\"subType\":\"totp\",\"algorithm\":\"HmacSHA1\",\"digits\":6,\"period\":30}"
         }
       ]
     },
@@ -197,6 +289,22 @@
           "type": "password",
           "value": "pending123",
           "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000007",
+      "username": "partner",
+      "enabled": true,
+      "email": "partner@partner.example",
+      "emailVerified": true,
+      "firstName": "Partner",
+      "lastName": "User",
+      "federatedIdentities": [
+        {
+          "identityProvider": "partner-saml",
+          "userId": "partner@partner.example",
+          "userName": "partner"
         }
       ]
     },

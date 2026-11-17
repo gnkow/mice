@@ -18,11 +18,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 
 describe('stable namespace ids', () => {
   it('create mints a stable UUID that settings rename preserves', async () => {
-    assert.deepEqual(await createNamespaceAuthz(alice, 'stable-ns', 'read'), { ok: true })
+    const minted = await createNamespaceAuthz(alice, 'stable-ns', 'read')
+    assert.equal(minted.ok, true)
+    if (!minted.ok) return
+    assert.match(minted.id, UUID_RE)
     const created = await getNamespace('stable-ns')
     assert.ok(created)
-    assert.match(created.id, UUID_RE)
-    const id = created.id
+    assert.equal(created.id, minted.id)
+    const id = minted.id
 
     assert.deepEqual(await updateNamespaceSettings('stable-ns', { name: 'stable-ns-renamed' }), { ok: true })
     assert.equal(await getNamespace('stable-ns'), null)
@@ -133,7 +136,7 @@ describe('authz list exposes namespace id', () => {
 
 describe('authz repository', () => {
   it('create leaves the creator as the only owner', async () => {
-    assert.deepEqual(await createNamespaceAuthz(alice, 'team-a', 'read'), { ok: true })
+    assert.equal((await createNamespaceAuthz(alice, 'team-a', 'read')).ok, true)
     assert.deepEqual(await listNamespaceMembers('team-a'), [{ kind: 'user', sub: 'alice', iss: 'test', role: 'owner' }])
     assert.equal((await getNamespace('team-a'))?.createdBy, 'test\u001falice')
   })
@@ -187,7 +190,7 @@ describe('authz repository', () => {
       ok: false,
       error: 'Namespace name is reserved after deletion',
     })
-    assert.deepEqual(await createNamespaceAuthz(bob, 'team-b-fresh', 'none'), { ok: true })
+    assert.equal((await createNamespaceAuthz(bob, 'team-b-fresh', 'none')).ok, true)
     assert.deepEqual(await listNamespaceMembers('team-b-fresh'), [{ kind: 'user', sub: 'bob', iss: 'test', role: 'owner' }])
   })
 })

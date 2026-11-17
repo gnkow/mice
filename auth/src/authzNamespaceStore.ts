@@ -51,7 +51,7 @@ export async function createNamespaceAuthz(
   basePermission: BasePermission,
   membersCanCreateRepos = true,
   description = '',
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<repo.CreateNamespaceResult> {
   const name = ns.trim()
   if (!name) return { ok: false, error: 'Namespace name required' }
   if (!/^[a-zA-Z0-9._-]+$/.test(name)) {

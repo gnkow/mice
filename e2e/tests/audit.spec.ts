@@ -380,5 +380,35 @@ test.describe('audit log (PLAT-AUDIT)', () => {
       await expect(page.getByTestId('audit-chain-tip-root')).toHaveText('dGlwLXJvb3Q=')
       await expect(page.getByTestId('audit-export-public-key-pem')).toContainText('BEGIN PUBLIC KEY')
     })
+
+    test('TC-AUDIT-18: unpaired Intent shows summary and No Outcome badge (#127)', async ({ page }) => {
+      await sessionLogin(page)
+      await page.route('**/auth/audit?*', (route) =>
+        route.fulfill({
+          json: {
+            events: [
+              {
+                ...mockedEvent,
+                id: 'orphan-intent-1',
+                phase: 'intent',
+                status: 0,
+                action: 'workspace.merge',
+                action_label: 'Workspace merge',
+                change_control_id: undefined,
+                dataset: undefined,
+              },
+            ],
+            nextCursor: null,
+          },
+        }),
+      )
+      await page.goto('/audit')
+      const summary = page.getByTestId('audit-orphan-summary')
+      await expect(summary).toBeVisible({ timeout: 15_000 })
+      await expect(summary).toHaveAttribute('role', 'status')
+      await expect(summary).toContainText('1 Intent without Outcome')
+      await expect(page.getByTestId('audit-orphan-intent')).toBeVisible()
+      await expect(page.getByTestId('audit-orphan-badge')).toHaveText('No Outcome')
+    })
   })
 })

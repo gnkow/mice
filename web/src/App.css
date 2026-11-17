@@ -1201,6 +1201,16 @@ code {
   gap: 0.45rem;
 }
 
+.signing-challenge-hint {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.signing-challenge .btn.primary:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
 .confirm-type {
   display: grid;
   gap: 0.45rem;
@@ -1593,27 +1603,33 @@ code {
 
 .ns-settings-aside {
   position: sticky;
-  top: 1rem;
+  top: calc(var(--topbar-h, 3.5rem) + 0.75rem);
+  align-self: start;
+}
+
+.ns-settings-aside .ns-settings-nav,
+.ns-settings-aside .profile-nav {
+  position: static;
+  max-height: none;
+  overflow: visible;
+  border-right: none;
+  padding-right: 0;
+}
+
+.ns-settings-aside .section-nav-bare {
+  display: contents;
+}
+
+.user-ref-static {
+  cursor: default;
+  pointer-events: none;
+}
+
+.directory-picker-option {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.ns-settings-history-link {
-  display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.9rem;
-  color: var(--muted);
-  text-decoration: none;
-  padding: 0.35rem 0.5rem;
-  border-radius: 0.35rem;
-}
-
-.ns-settings-history-link:hover,
-.ns-settings-history-link.active {
-  color: var(--fg);
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  gap: 0.35rem 0.75rem;
 }
 
 .ns-settings-dirty-hint {
@@ -5546,104 +5562,6 @@ p.ok {
 .user-ref-panel {
   position: fixed;
   z-index: 80;
-  min-width: 16rem;
-  max-width: min(22rem, 80vw);
-}
-
-.user-info {
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius) + 0.05rem);
-  background: var(--panel);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--fg) 12%, transparent);
-}
-
-.user-info-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  margin: 0;
-}
-
-.user-info-row {
-  display: grid;
-  grid-template-columns: 4.5rem 1fr;
-  gap: 0.5rem;
-  align-items: baseline;
-}
-
-.user-info-row dt {
-  margin: 0;
-  font-size: 0.7rem;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.user-info-row dd {
-  margin: 0;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: var(--fg);
-}
-
-.user-info-break {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.latest-commit .user-ref .avatar-circle,
-.commit-row .user-ref .avatar-circle {
-  width: 1.4rem;
-  height: 1.4rem;
-  font-size: 0.55rem;
-}
-
-.user-ref {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  flex-shrink: 0;
-}
-
-.user-ref-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  max-width: 100%;
-  margin: 0;
-  padding: 0.1rem 0.25rem 0.1rem 0.1rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: left;
-}
-
-.user-ref-trigger:hover,
-.user-ref-trigger:focus-visible {
-  border-color: var(--line);
-  background: color-mix(in srgb, var(--canvas-subtle) 80%, var(--panel));
-  outline: none;
-}
-
-.user-ref-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-ref-panel {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  left: 0;
-  z-index: 40;
   min-width: 16rem;
   max-width: min(22rem, 80vw);
 }

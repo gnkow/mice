@@ -155,6 +155,8 @@ services:
     volumes:
       - ./auth/keycloak/realm-mice.json:/opt/keycloak/data/import/realm-mice.json:ro
       - ./auth/keycloak/realm-partner-saml.json:/opt/keycloak/data/import/realm-partner-saml.json:ro
+      # Dev login theme: shows shared TOTP next to the OTP field (do not mount over /themes).
+      - ./auth/keycloak/themes/mice-dev:/opt/keycloak/themes/mice-dev:ro
     networks:
       - mice
 
@@ -180,7 +182,7 @@ services:
       # Ed25519 PKCS#8 PEM (\n-escaped). Regenerate with `node auth/scripts/gen-audit-export-key.mjs`; file the public key in IQP.
       AUDIT_EXPORT_PRIVATE_KEY: "${AUDIT_EXPORT_PRIVATE_KEY:------BEGIN PRIVATE KEY-----\\nMC4CAQAwBQYDK2VwBCIEIDDE/V5/+dMDU6prQ/All5QDlKSRFkfLiWLoBurtp1ou\\n-----END PRIVATE KEY-----\\n}"
       SESSION_IDLE_SEC: ${SESSION_IDLE_SEC:-900}
-      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice_admin@mice.com,mice_mfa@mice.com}
+      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice_admin@mice.com}
       AUTHZ_REQUIRE_TRAINING: ${AUTHZ_REQUIRE_TRAINING:-false}
       # Server-side discovery inside Compose (override all OIDC_* for another IdP)
       OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/mice}

@@ -4,6 +4,7 @@ import {
   Settings as ActionSettings,
   ShieldCheck as ActionShieldCheck,
   ShieldAlert as ActionShieldAlert,
+  Tags as ActionTags,
   Users as ActionUsers,
   Wrench as ActionWrench,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ const SETTINGS_NAV_GROUPS = [
       { id: 'ns-members', label: 'Members', Icon: ActionUsers },
       { id: 'ns-approvers', label: 'Approvers', Icon: ActionShieldCheck },
       { id: 'ns-custom-roles', label: 'Custom roles', Icon: ActionWrench },
+      { id: 'ns-metadata', label: 'Metadata', Icon: ActionTags },
       { id: 'ns-danger', label: 'Danger zone', Icon: ActionShieldAlert },
     ],
   },
@@ -37,13 +39,15 @@ export function NamespaceSettingsLayout() {
   const location = useLocation()
   const parentCtx = useOutletContext()
   const base = `/n/${encodeURIComponent(namespace)}/settings`
-  const onHistory = /\/settings\/(?:history|members\/history|custom-roles\/history)\/?$/.test(location.pathname)
+  const onHistory = /\/settings\/(?:history|members\/history|custom-roles\/history)\/?$/.test(
+    location.pathname,
+  )
 
   return (
     <div className="profile-layout ns-settings-layout">
       <aside className="ns-settings-aside" aria-label="Settings sections">
-        {onHistory ? (
-          <nav className="profile-nav" aria-label="Settings sections">
+        <nav className="profile-nav ns-settings-nav" aria-label="Settings sections">
+          {onHistory ? (
             <div className="profile-nav-group">
               <p className="profile-nav-title" id="ns-settings-nav-title">
                 <ActionSettings size={14} aria-hidden="true" />
@@ -60,22 +64,26 @@ export function NamespaceSettingsLayout() {
                 ))}
               </ul>
             </div>
-          </nav>
-        ) : (
-          <SectionNav label="Settings sections" groups={SETTINGS_NAV_GROUPS} />
-        )}
-        {HISTORY_LINKS.map(({ path, label }) => (
-          <NavLink
-            key={path}
-            to={`${base}/${path}`}
-            className={({ isActive }) =>
-              `ns-settings-history-link${isActive ? ' active' : ''}`
-            }
-          >
-            <ActionHistory size={14} aria-hidden="true" />
-            {label}
-          </NavLink>
-        ))}
+          ) : (
+            <SectionNav label="Settings sections" groups={SETTINGS_NAV_GROUPS} bare />
+          )}
+          <div className="profile-nav-group">
+            <p className="profile-nav-title" id="ns-settings-history-title">
+              <ActionHistory size={14} aria-hidden="true" />
+              History
+            </p>
+            <ul aria-labelledby="ns-settings-history-title">
+              {HISTORY_LINKS.map(({ path, label }) => (
+                <li key={path}>
+                  <NavLink to={`${base}/${path}`}>
+                    <ActionHistory size={16} aria-hidden="true" />
+                    {label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </nav>
       </aside>
       <div className="profile-main ns-settings-main">
         <Outlet context={parentCtx} />

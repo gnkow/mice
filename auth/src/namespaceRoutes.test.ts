@@ -74,10 +74,15 @@ describe('namespace routes', () => {
     const created = await call('manager', 'POST', '/auth/namespaces', { name: 'acme', basePermission: 'read' })
     assert.equal(created.status, 200)
     assert.ok(audits.includes('namespace.create'))
-    const createdBody = (await created.json()) as { name: string; namespace: { id: string; name: string } }
+    const createdBody = (await created.json()) as {
+      id: string
+      name: string
+      namespace: { id: string; name: string }
+    }
     assert.equal(createdBody.name, 'acme')
-    assert.match(createdBody.namespace.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-    const stableId = createdBody.namespace.id
+    assert.match(createdBody.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    assert.equal(createdBody.namespace.id, createdBody.id)
+    const stableId = createdBody.id
 
     // Instance admins hold no data access (separation of duties, #06): the owning manager does.
     assert.equal((await call('root', 'GET', '/auth/namespaces/acme')).status, 403)

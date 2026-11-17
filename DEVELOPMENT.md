@@ -8,35 +8,38 @@ The development environment comes pre-configured with test accounts for each for
 
 | Email | Password | Formal role | Description |
 |-------|----------|-------------|-------------|
-| `mice_admin@mice.com` | `admin123` | `admin` | Instance admin via `AUTHZ_BOOTSTRAP_ADMINS` on login |
-| `mice_manager@mice.com` | `manage123` | `manager` | Review access requests up to Manager |
-| `mice_auditor@mice.com` | `auditor123` | `auditor` | Read-only / `repo:bypass_acl` |
-| `mice_user@mice.com` | `user123` | `user` | Standard collaborator (already approved) |
-| `mice_external@mice.com` | `external123` | `external` | Read-only guest |
+| `mice_admin@mice.com` | `admin123` (+ TOTP `JBSWY3DPEHPK3PXP`) | `admin` | Bootstrap admin (`AUTHZ_BOOTSTRAP_ADMINS`). Conditional OTP; Profile MFA **Yes** after OTP. |
+| `mice_manager@mice.com` | `manage123` (+ same TOTP) | `manager` | Namespace owner / rename & other signed ceremonies — OTP so step-up can evidence MFA. |
+| `mice_auditor@mice.com` | `auditor123` (+ same TOTP) | `auditor` | Read-only / `repo:bypass_acl`; OTP required for auditor MFA gates. |
+| `mice_user@mice.com` | `user123` (+ same TOTP) | `user` | Standard collaborator; OTP for signed writes. |
+| `mice_no_mfa@mice.com` | `nomfa123` | `user` | Password-only control (no TOTP). Profile MFA stays **No**; signature ceremonies refuse. |
+| `mice@example.com` | `mice` | `user` | Default SSO / e2e (password-only; not bootstrap) |
+| `partner@partner.example` | `partner` | `user` | SAML broker e2e (password-only; not bootstrap) |
+| `mice_external@mice.com` | `external123` | `external` | Read-only guest (password-only) |
 | `mice_pending@mice.com` | `pending123` | *(none)* | No role — `/pending` request wizard |
+
+Shared local TOTP secret for OTP-enabled accounts: `JBSWY3DPEHPK3PXP` (UTF-8 key material). On the Keycloak OTP screen the **mice-dev** login theme shows the current code next to the input (dev only). Seed also configures Keycloak `amr` authenticator refs if realm import skipped built-in flow updates.
 
 ### First-Time Setup
 
-1. **Start the services:**
+1. **Start (and seed) the stack:**
    ```bash
-   docker compose up -d
+   make up
    ```
 
-2. **Wait for services to be ready** (about 30 seconds for Keycloak to import users)
+   `make up` (and `make reset`, which wipes volumes then calls `up`) wait for
+   Postgres, immudb, Keycloak, and auth, then run `seed:dev` inside the auth
+   container. That script:
+   - Ensures principals for each account (resolving Keycloak `sub` when the Admin API is reachable)
+   - Assigns formal `manager` / `auditor` / `user` / `external` roles (including `mice@example.com`)
+   - Leaves **only** `mice_pending` without a role (`/pending` shell)
+   - Leaves `mice_admin` to bootstrap Admin on login (`AUTHZ_BOOTSTRAP_ADMINS`)
+   - Creates sample workspace `demo` / `sample` (manager owns it; `mice@example.com` +
+     `mice_user` write; external read)
 
-3. **Seed roles:**
-   ```bash
-   npm run seed:dev --prefix auth
-   ```
+   Re-seed anytime with `make seed` (stack must already be up).
 
-   This script will:
-   - Ensure principals for each account (resolving Keycloak `sub` when the Admin API is reachable)
-   - Assign formal `manager` / `auditor` / `user` / `external` roles
-   - Leave `mice_pending` without a role
-   - Leave `mice_admin` to bootstrap Admin on first login (`AUTHZ_BOOTSTRAP_ADMINS`)
-   - Create sample workspace `demo` / `sample` (manager owns it; user write; external read)
-
-4. **Login with any account:**
+2. **Login with any account:**
    - Navigate to `http://localhost:5173`
    - Login with one of the accounts above
 
@@ -44,20 +47,24 @@ The development environment comes pre-configured with test accounts for each for
 
 #### Instance Administrator (`mice_admin@mice.com`)
 - Automatically granted Admin on login (via `AUTHZ_BOOTSTRAP_ADMINS`)
+- Requires OTP at Keycloak (shared e2e TOTP secret above)
 - Full instance settings, grants, and access-request approval
 
 #### Manager (`mice_manager@mice.com`)
 - Formal `manager` role from seed
 - Can review access requests up to Manager authority
 - Cannot change instance-level admin settings
+- Has TOTP so namespace rename / other signed ceremonies can complete MFA step-up
 
 #### Auditor (`mice_auditor@mice.com`)
 - Formal `auditor` role from seed
 - Read-oriented catalog including private-repo read via `repo:bypass_acl`
+- Has TOTP (auditor routes require MFA evidence)
 
 #### User (`mice_user@mice.com`)
 - Formal `user` role from seed — ready to use without an access request
 - Write in repositories where they are a collaborator
+- Has TOTP for signed writes
 
 #### External (`mice_external@mice.com`)
 - Formal `external` role from seed
@@ -69,13 +76,13 @@ The development environment comes pre-configured with test accounts for each for
 
 ### Sample workspace
 
-`npm run seed:dev --prefix auth` also ensures one test namespace and repository:
+`make seed` also ensures one test namespace and repository:
 
 | Path | Access |
 |------|--------|
-| `demo` / `sample` | Manager = namespace owner + repo admin; User = member + write; External = member + read |
+| `demo` / `sample` | Manager = namespace owner + repo admin; `mice@example.com` + `mice_user` = member + write; External = member + read |
 
-Instance admins stay out of namespace membership (separation of duties). Open `/namespaces/demo` or `/namespaces/demo/sample` after logging in as manager or user.
+Instance admins stay out of namespace membership (separation of duties). After `make reset` / `make up`, log in as `mice@example.com` and open `/namespaces/demo` or `/namespaces/demo/sample`.
 
 ## Who becomes an instance admin
 
@@ -86,7 +93,9 @@ AUTHZ_BOOTSTRAP_ADMINS=mice_admin@mice.com
 ```
 
 **What happens:**
-- Login as `mice_admin@mice.com` → Admin
+- Login as `mice_admin@mice.com` → Admin (bootstrap; OTP)
+- Login as `mice_no_mfa@mice.com` → User (password-only; after seed)
+- Login as `mice@example.com` / `partner@partner.example` → User (after seed; not bootstrap)
 - Login as `mice_manager@mice.com` → Manager (after seed)
 - Login as `mice_user@mice.com` → User (after seed)
 - Login as `mice_external@mice.com` → External (after seed)
@@ -121,19 +130,21 @@ AUTHZ_BOOTSTRAP_ADMINS=admin@company.com,ops@company.com
 ### Local setup
 
 ```bash
-# 1. Start services
-docker compose up -d
+# Start stack + seed formal roles (only mice_pending stays role-less)
+make up
 
-# 2. Run seed script to assign formal roles
-npm run seed:dev --prefix auth
+# Or re-seed after the stack is already up:
+make seed
 
-# 3. Login with different accounts
-#    - mice_admin@mice.com    → admin
-#    - mice_manager@mice.com  → manager
-#    - mice_auditor@mice.com  → auditor
-#    - mice_user@mice.com     → user
-#    - mice_external@mice.com → external
-#    - mice_pending@mice.com  → /pending shell
+# Login:
+#    - mice_admin@mice.com   → admin (bootstrap; OTP)
+#    - mice_no_mfa@mice.com  → user (password-only)
+#    - mice@example.com      → user
+#    - mice_manager@mice.com → manager
+#    - mice_auditor@mice.com → auditor
+#    - mice_user@mice.com    → user
+#    - mice_external@mice.com→ external
+#    - mice_pending@mice.com → /pending shell
 ```
 
 ### Adding More Test Users
@@ -176,7 +187,7 @@ Update `auth/scripts/seed-dev-accounts.ts` if the account should receive a forma
 
 **Admin permissions not working:**
 - Verify `AUTHZ_BOOTSTRAP_ADMINS` includes the user's email
-- Re-run seed script: `npm run seed:dev --prefix auth`
+- Re-run seed: `make seed`
 
 **"Pending user" / Request access shell:**
 - Expected for `mice_pending@mice.com` (no formal role)

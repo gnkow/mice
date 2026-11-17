@@ -54,7 +54,7 @@ describe('principal bootstrap (#11): IdP groups never autoprovision', () => {
     assert.equal(await isInstanceAdmin(bootstrapAdmin), true)
 
     const ns = 'no-group-autoprovision'
-    assert.deepEqual(await createNamespaceAuthz(bootstrapAdmin, ns, 'none', true), { ok: true })
+    assert.equal((await createNamespaceAuthz(bootstrapAdmin, ns, 'none', true)).ok, true)
     assert.deepEqual(await setNamespaceGroupMember(ns, 'engineering', 'member'), { ok: true })
 
     await preparePrincipal(groupedStranger)

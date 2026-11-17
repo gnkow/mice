@@ -21,6 +21,7 @@ import { INSTANCE_PERMISSION_CATALOG, isInstancePermission } from '../../rbacCat
 import { isInstanceRole } from '../../rbacRoles.js'
 import { getEffectivePermissions, getUserRole, hasPermission } from '../../rbacStore.js'
 import { authzEnforceReport } from '../../authzAlwaysOn.js'
+import { sessionHasMfaEvidence } from '../signing/mfaEvidence.js'
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -42,6 +43,8 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
         iss: session.iss,
         email: session.email,
         name: session.name,
+        /** Current IdP session evidences MFA (acr + qualifying amr) — not IdP enrollment state. */
+        mfaEvidenced: sessionHasMfaEvidence(session.idToken),
       },
     })
   })

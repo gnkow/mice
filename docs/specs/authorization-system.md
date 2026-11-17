@@ -1103,13 +1103,13 @@ This allows future **wildcard permissions**:
 
 | Account | Role | Purpose |
 |---------|------|---------|
-| `mice_admin@mice.com` | `admin` | Instance administrator (bootstrap) |
-| `mice_mfa@mice.com` | `admin` | MFA-capable instance administrator (bootstrap) |
-| `mice@example.com` | `user` | Default SSO / e2e user (granted, not admin) |
-| `partner@partner.example` | `user` | SAML broker e2e (granted, not admin) |
-| `mice_manager@mice.com` | `manager` | Team manager / access-request review |
-| `mice_auditor@mice.com` | `auditor` | Compliance auditor |
-| `mice_user@mice.com` | `user` | Standard user |
+| `mice_admin@mice.com` | `admin` | Instance administrator (bootstrap; MFA/OTP) |
+| `mice_manager@mice.com` | `manager` | Team manager / signed ceremonies (MFA/OTP) |
+| `mice_auditor@mice.com` | `auditor` | Compliance auditor (MFA/OTP) |
+| `mice_user@mice.com` | `user` | Standard user (MFA/OTP) |
+| `mice_no_mfa@mice.com` | `user` | Password-only control (not admin) |
+| `mice@example.com` | `user` | Default SSO / e2e user (password-only) |
+| `partner@partner.example` | `user` | SAML broker e2e (password-only) |
 | `mice_external@mice.com` | `external` | External collaborator |
 | `mice_pending@mice.com` | (none) | No role — `/pending` request flow |
 

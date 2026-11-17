@@ -1,12 +1,14 @@
-import { FolderGit2 as ActionFolderGit2, FolderOpen as ActionFolderOpen, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
+import { Pencil as ActionPencil, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
 import { MetaBody } from '../components/MetaPanel'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApproversSection } from '../components/ApproversSection'
+import { usePrincipalProfiles } from '../components/CommitEmail'
 import { CustomRolesSection } from '../components/CustomRolesSection'
 import { DirectoryPicker } from '../components/DirectoryPicker'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import { StateBlock } from '../components/StateBlock'
+import { UserRef } from '../components/UserRef'
 import { useAsync } from '../hooks/useAsync'
 import { confirmDelete } from '../lib/confirmDelete'
 import {
@@ -58,15 +60,34 @@ export function NamespaceSettingsPage() {
   const [group, setGroup] = useState('')
   const [groupName, setGroupName] = useState('')
   const [role, setRole] = useState<MemberRoleRef>('member')
+  const [renameTo, setRenameTo] = useState(namespace)
+  const memberAuthors =
+    state.kind === 'ok'
+      ? state.data.members
+          .filter((m): m is Extract<MemberPrincipal, { kind: 'user' }> => m.kind === 'user')
+          .map((m) => `${m.iss}|${m.sub}`)
+      : []
+  const memberProfiles = usePrincipalProfiles(memberAuthors)
+
+  useEffect(() => {
+    setRenameTo(namespace)
+  }, [namespace])
 
   async function saveSettings(patch: {
+    name?: string
     basePermission?: BasePermission
     membersCanCreateRepos?: boolean
   }) {
     setBusy(true)
     setError(null)
     try {
-      await patchNamespaceAuthz(namespace, patch)
+      const res = await patchNamespaceAuthz(namespace, patch)
+      if (patch.name && patch.name.trim() && patch.name.trim() !== namespace) {
+        navigate(`/n/${encodeURIComponent(res.name ?? patch.name.trim())}/settings#ns-rename`, {
+          replace: true,
+        })
+        return
+      }
       state.reload()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Update failed')
@@ -173,20 +194,6 @@ export function NamespaceSettingsPage() {
             <code>{namespace}</code>.
           </p>
         </div>
-        <div className="btn-row">
-          <Link
-            className="btn ghost"
-            to={`/n/${encodeURIComponent(namespace)}`}
-          >
-            <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />View namespace
-          </Link>
-          <Link
-            className="btn primary"
-            to={`/repos/new?namespace=${encodeURIComponent(namespace)}`}
-          >
-            <ActionFolderGit2 size={14} aria-hidden="true" className="button-label-icon" />New repository
-          </Link>
-        </div>
       </div>
 
       {error && <p className="flash flash-error" role="status">{error}</p>}
@@ -199,6 +206,7 @@ export function NamespaceSettingsPage() {
         {state.kind === 'ok' && (
           <div className="ns-settings">
             <section
+              id="ns-general"
               className="settings-section"
               aria-labelledby="ns-general-heading"
             >
@@ -257,6 +265,48 @@ export function NamespaceSettingsPage() {
             </section>
 
             <section
+              id="ns-rename"
+              className="settings-section"
+              aria-labelledby="ns-rename-heading"
+            >
+              <h2 id="ns-rename-heading">Rename</h2>
+              <p className="muted small">
+                Change the namespace path. The stable namespace id is preserved; memberships and
+                repository grants keep working.
+              </p>
+              <form
+                className="ns-settings-grid"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const next = renameTo.trim()
+                  if (!next || next === namespace) return
+                  void saveSettings({ name: next })
+                }}
+              >
+                <label className="ns-settings-field">
+                  <span className="ns-settings-label">Name</span>
+                  <input
+                    value={renameTo}
+                    disabled={busy}
+                    autoComplete="off"
+                    onChange={(e) => setRenameTo(e.target.value)}
+                  />
+                </label>
+                <div className="ns-member-form-actions">
+                  <button
+                    className="btn primary"
+                    type="submit"
+                    disabled={busy || !renameTo.trim() || renameTo.trim() === namespace}
+                  >
+                    <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />
+                    Rename namespace
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section
+              id="ns-members"
               className="settings-section"
               aria-labelledby="ns-members-heading"
             >
@@ -306,10 +356,10 @@ export function NamespaceSettingsPage() {
                             bindingMode={m.bindingMode}
                           />
                         ) : (
-                          <>
-                            <code className="ns-member-sub">{m.sub}</code>
-                            <span className="muted small">{m.iss}</span>
-                          </>
+                          <UserRef
+                            author={`${m.iss}|${m.sub}`}
+                            profiles={memberProfiles}
+                          />
                         )}
                       </div>
                       <span
@@ -417,12 +467,17 @@ export function NamespaceSettingsPage() {
 
             <CustomRolesSection namespace={namespace} />
 
-            <section className="settings-section" aria-labelledby="ns-meta-heading">
+            <section
+              id="ns-metadata"
+              className="settings-section"
+              aria-labelledby="ns-meta-heading"
+            >
               <h2 id="ns-meta-heading">Metadata</h2>
               <MetaBody type="namespace" id={namespace} />
             </section>
 
             <section
+              id="ns-danger"
               className="danger-zone ns-danger-zone"
               aria-labelledby="ns-danger-heading"
             >

@@ -103,7 +103,8 @@ export function ProfilePage() {
                 Identity
               </h3>
               <p className="muted small">
-                Name, email, and provider identity from your organisation SSO.
+                Name, email, whether this sign-in used multi-factor authentication, and your
+                organisation SSO identity.
               </p>
             </div>
           </div>
@@ -132,6 +133,18 @@ export function ProfilePage() {
                     <div className="profile-account-meta-row">
                       <dt className="profile-account-meta-label">Sign-in</dt>
                       <dd className="profile-account-meta-value">SSO (organisation IdP)</dd>
+                    </div>
+                    <div className="profile-account-meta-row">
+                      <dt className="profile-account-meta-label">MFA</dt>
+                      <dd
+                        className="profile-account-meta-value"
+                        data-testid="profile-mfa-status"
+                        role="status"
+                      >
+                        {me.data.user.mfaEvidenced
+                          ? 'Yes — verified for this sign-in'
+                          : 'No — this sign-in used password only'}
+                      </dd>
                     </div>
                     {badge && (
                       <div className="profile-account-meta-row">

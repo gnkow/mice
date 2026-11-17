@@ -13,7 +13,7 @@ services:
       # __Host- cookies need Secure+HTTPS; local UI is http://localhost.
       SESSION_COOKIE_NAME: mice_session
       # Instance admins only. `mice` / `partner` are seeded as `user`, not admin.
-      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice_admin@mice.com,mice_mfa@mice.com}
+      AUTHZ_BOOTSTRAP_ADMINS: ${AUTHZ_BOOTSTRAP_ADMINS:-mice_admin@mice.com}
 
   web:
     dns:

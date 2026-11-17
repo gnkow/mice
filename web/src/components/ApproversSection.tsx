@@ -9,6 +9,7 @@ import {
   type ApproverPrincipal,
   type ApproverScope,
 } from '../lib/authzApi'
+import { UserRef } from './UserRef'
 import { UserKeyLabel, VersionHistoryList } from './VersionHistory'
 
 type Props = {
@@ -159,8 +160,7 @@ export function ApproversSection({ namespace, repo }: Props) {
           {approvers.map((a) => (
             <li key={`${a.iss}|${a.sub}`} className="ns-member-row" data-testid="approver-row">
               <div className="ns-member-main">
-                <code className="ns-member-sub">{a.sub}</code>
-                <span className="muted small">{a.iss}</span>
+                <UserRef author={`${a.iss}|${a.sub}`} />
               </div>
               <span className="ns-tag ns-tag-accent">approver</span>
               <button

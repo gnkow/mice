@@ -69,6 +69,8 @@ export type NamespaceMembershipVersion = {
 }
 
 type Result = { ok: true } | { ok: false; error: string }
+/** Create returns the minted stable namespace id so callers need not re-read by name. */
+export type CreateNamespaceResult = { ok: true; id: string } | { ok: false; error: string }
 
 const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000
 
@@ -397,7 +399,7 @@ export async function createNamespace(
   basePermission: BasePermission,
   membersCanCreateRepos: boolean,
   description = '',
-): Promise<Result> {
+): Promise<CreateNamespaceResult> {
   if (await nameBlockedByTombstone(name)) {
     return { ok: false, error: 'Namespace name is reserved after deletion' }
   }
@@ -410,7 +412,7 @@ export async function createNamespace(
       membersCanCreateRepos,
     })
     if (!row) return { ok: false, error: 'Namespace already exists' } as const
-    return { ok: true } as const
+    return { ok: true, id: row.id } as const
   })
 }
 
@@ -569,7 +571,7 @@ export async function ensureRepository(ns: string, name: string): Promise<Reposi
   try {
     const inserted = await getDb()
       .insert(repositories)
-      .values({ namespaceId: nsId, name, createdAt: now, updatedAt: now })
+      .values({ id: randomUUID(), namespaceId: nsId, name, createdAt: now, updatedAt: now })
       .onConflictDoNothing()
       .returning()
     if (inserted[0]) return toRepository(inserted[0], ns)

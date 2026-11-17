@@ -136,37 +136,80 @@ export function registerStepUp(app: Hono): void {
   })
 }
 
+export type ReauthCallbackDecision =
+  | { kind: 'login_failed'; status: number; html: string; reason: string; audit: boolean }
+  | { kind: 'principal_mismatch'; status: 400; html: string }
+  | {
+      kind: 'refresh'
+      dest: string
+      nextAuthTime?: number
+      idToken: string
+    }
+
+/**
+ * Pure step-up callback admission: failed login vs wrong Principal vs refresh Session.
+ * HTTP adapters own cookies, audit writes, and redirects.
+ */
+export function decideReauthCallback(
+  current: SessionUser | null,
+  result: LoginResult,
+): ReauthCallbackDecision {
+  if (!result.ok) {
+    return {
+      kind: 'login_failed',
+      status: result.status,
+      html: result.html,
+      reason: result.reason ?? 'failed',
+      audit: Boolean(current),
+    }
+  }
+  if (!current || current.sub !== result.user.sub || current.iss !== result.user.iss) {
+    return {
+      kind: 'principal_mismatch',
+      status: 400,
+      html: '<p>Re-authentication does not match your signed-in account.</p>',
+    }
+  }
+  return {
+    kind: 'refresh',
+    dest: result.dest,
+    idToken: result.user.idToken,
+    ...(result.user.authTime !== undefined ? { nextAuthTime: result.user.authTime } : {}),
+  }
+}
+
 /** Finishes a step-up callback: refresh the Session on success, audit and change nothing on failure. */
 export async function handleReauthCallback(c: Context, result: LoginResult): Promise<Response> {
   deleteCookie(c, PKCE_COOKIE, { path: '/', secure: env.cookieSecure, sameSite: 'Lax' })
   const current = await getSession(c)
-  if (!result.ok) {
-    if (current) {
+  const decision = decideReauthCallback(current, result)
+  if (decision.kind === 'login_failed') {
+    if (decision.audit && current) {
       await appendAudit({
         actor: actorFromUser(current),
         via: 'session',
         method: c.req.method,
         path: '/auth/callback',
-        status: result.status,
+        status: decision.status,
         action: 'auth.reauth.failed',
         message: 'Step-up re-authentication failed or was cancelled',
-        detail: { reason: result.reason ?? 'failed' },
+        detail: { reason: decision.reason },
       })
     }
-    return c.html(result.html, result.status)
+    return c.html(decision.html, decision.status as 400 | 403 | 500 | 503)
   }
-  if (!current || current.sub !== result.user.sub || current.iss !== result.user.iss) {
-    return c.html('<p>Re-authentication does not match your signed-in account.</p>', 400)
+  if (decision.kind === 'principal_mismatch') {
+    return c.html(decision.html, decision.status)
   }
   // Keep the original absolute-expiry anchor; only the authentication time and its ID token are refreshed.
   await setSessionCookie(c, {
-    ...current,
-    idToken: result.user.idToken,
-    ...(result.user.authTime !== undefined ? { authTime: result.user.authTime } : {}),
+    ...current!,
+    idToken: decision.idToken,
+    ...(decision.nextAuthTime !== undefined ? { authTime: decision.nextAuthTime } : {}),
     lastActive: nowSec(),
   })
   await appendAudit({
-    actor: actorFromUser(current),
+    actor: actorFromUser(current!),
     via: 'session',
     method: c.req.method,
     path: '/auth/callback',
@@ -174,5 +217,5 @@ export async function handleReauthCallback(c: Context, result: LoginResult): Pro
     action: 'auth.reauth',
     message: 'Step-up re-authentication succeeded',
   })
-  return c.redirect(result.dest)
+  return c.redirect(decision.dest)
 }

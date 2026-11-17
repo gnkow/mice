@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { classifySigningChallenge } from './signingChallenge'
+import { classifySigningChallenge, mfaRequiredChallenge } from './signingChallenge'
 
 test('09 step-up: reauthUrl yields Confirm it’s you interstitial', () => {
   const c = classifySigningChallenge(
@@ -11,8 +11,22 @@ test('09 step-up: reauthUrl yields Confirm it’s you interstitial', () => {
   assert.ok(c)
   assert.equal(c.kind, 'step_up')
   assert.equal(c.title, "Confirm it's you")
-  assert.match(c.message, /fresh sign-in/i)
+  assert.match(c.message, /fresh sign-in|same account/i)
   assert.equal(c.continueUrl, '/auth/reauth?max_age=60&next=%2Fsettings')
+})
+
+test('09 step-up: API reauthUrl next is rewritten to the in-app resume path', () => {
+  const c = classifySigningChallenge(
+    401,
+    {
+      error: 'reauthentication_required',
+      reauthUrl: '/auth/reauth?max_age=60&next=%2Fauth%2Fsign%2Fexecute',
+    },
+    { resumePath: '/n/demo/settings' },
+  )
+  assert.ok(c)
+  assert.equal(c.kind, 'step_up')
+  assert.equal(c.continueUrl, '/auth/reauth?max_age=60&next=%2Fn%2Fdemo%2Fsettings')
 })
 
 test('20 idle: session_idle yields Session idle interstitial with reauth Continue', () => {
@@ -46,4 +60,13 @@ test('52 evidence: incomplete MFA claims yield MFA required interstitial', () =>
 test('non-challenge errors return null', () => {
   assert.equal(classifySigningChallenge(400, { error: 'Content changed' }), null)
   assert.equal(classifySigningChallenge(500, { error: 'oops' }), null)
+})
+
+test('mfaRequiredChallenge blocks ceremony when session lacks MFA evidence', () => {
+  const c = mfaRequiredChallenge('/n/demo/settings')
+  assert.equal(c.kind, 'mfa_required')
+  assert.equal(c.title, 'MFA required')
+  assert.match(c.message, /does not evidence MFA/i)
+  assert.match(c.message, /authenticator OTP/i)
+  assert.equal(c.continueUrl, '/auth/reauth?max_age=60&next=%2Fn%2Fdemo%2Fsettings')
 })

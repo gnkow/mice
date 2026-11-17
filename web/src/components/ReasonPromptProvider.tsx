@@ -14,8 +14,10 @@ import {
   type ReasonPromptOptions,
   type ReasonSubmission,
 } from '../lib/reasonPrompt'
+import { fetchAuthMe } from '../lib/auth'
 import {
   classifySigningChallenge,
+  mfaRequiredChallenge,
   type SigningChallenge,
 } from '../lib/signingChallenge'
 import { SigningChallengeInterstitial } from './SigningChallengeInterstitial'
@@ -36,8 +38,9 @@ type Prepared = {
 const PLACEHOLDER =
   'e.g. Corrected assay plate layout after deviation DEV-12'
 
-const GXP_NOTICE =
-  'Under GxP, who made this change and why is permanently recorded. An electronic signature (step-up MFA) is required before the change runs.'
+/** One friendly notice: permanence + MFA + reason length (no API/header jargon). */
+const CEREMONY_NOTICE =
+  'Who made this change and why is kept permanently. You’ll confirm with multi-factor authentication before it runs. Enter a clear reason of at least 10 characters below.'
 
 export function ReasonPromptProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null)
@@ -66,6 +69,17 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
           setChallenge(null)
           setBusy(false)
           setPending({ options, resolve })
+          // Gate before reason entry: no MFA evidence → Complete MFA interstitial.
+          void fetchAuthMe()
+            .then((me) => {
+              if (!me.authenticated || me.user.mfaEvidenced !== false) return
+              setChallenge(
+                mfaRequiredChallenge(window.location.pathname + window.location.search),
+              )
+            })
+            .catch(() => {
+              /* network blip: prepare/execute still refuse without MFA */
+            })
         }),
     )
     return () => registerReasonOpener(null)
@@ -111,6 +125,12 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     setError(null)
     setChallenge(null)
     try {
+      const me = await fetchAuthMe()
+      if (me.authenticated && me.user.mfaEvidenced === false) {
+        setChallenge(mfaRequiredChallenge(window.location.pathname + window.location.search))
+        setBusy(false)
+        return
+      }
       const res = await fetch('/auth/sign/prepare-mutation', {
         method: 'POST',
         credentials: 'same-origin',
@@ -149,6 +169,12 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     setError(null)
     setChallenge(null)
     try {
+      const me = await fetchAuthMe()
+      if (me.authenticated && me.user.mfaEvidenced === false) {
+        setChallenge(mfaRequiredChallenge(window.location.pathname + window.location.search))
+        setBusy(false)
+        return
+      }
       const res = await fetch('/auth/sign/execute', {
         method: 'POST',
         credentials: 'same-origin',
@@ -191,7 +217,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     const text = reason.trim()
-    if (!text || !category || busy) return
+    if (text.length < 10 || !category || busy) return
     if (!prepared) {
       void prepareCeremony(text, category)
       return
@@ -199,7 +225,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     void executeCeremony(text, category, prepared)
   }
 
-  const canConfirm = reason.trim().length > 0 && !busy
+  const canConfirm = reason.trim().length >= 10 && !busy
 
   return (
     <>
@@ -243,12 +269,8 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
             </section>
 
             <p id={noticeId} className="reason-prompt-notice muted small">
-              {GXP_NOTICE}
+              {CEREMONY_NOTICE}
             </p>
-
-            {pending.options.detail ? (
-              <p className="reason-prompt-server muted small">{pending.options.detail}</p>
-            ) : null}
 
             {!prepared ? (
               <>
@@ -279,6 +301,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
                     placeholder={PLACEHOLDER}
                     rows={4}
                     required
+                    minLength={10}
                     autoComplete="off"
                     disabled={busy}
                   />

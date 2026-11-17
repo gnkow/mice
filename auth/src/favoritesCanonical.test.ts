@@ -18,7 +18,7 @@ const app = createApp()
 
 describe('canonicalizeFavorite', () => {
   it('stores namespace and repo favorites as entity UUIDs', async () => {
-    assert.deepEqual(await createNamespaceAuthz(owner, 'fav-ns', 'none'), { ok: true })
+    assert.equal((await createNamespaceAuthz(owner, 'fav-ns', 'none')).ok, true)
     const repo = await ensureRepository('fav-ns', 'data')
     assert.ok(repo)
     const ns = await canonicalizeFavorite('namespace', 'fav-ns')
@@ -35,7 +35,7 @@ describe('canonicalizeFavorite', () => {
   })
 
   it('embeds repository_id in branch and stage favorite keys', async () => {
-    assert.deepEqual(await createNamespaceAuthz(owner, 'fav-br', 'none'), { ok: true })
+    assert.equal((await createNamespaceAuthz(owner, 'fav-br', 'none')).ok, true)
     const repo = await ensureRepository('fav-br', 'study')
     assert.ok(repo)
     assert.deepEqual(await canonicalizeFavorite('branch', 'fav-br/study@main'), {
@@ -52,7 +52,7 @@ describe('canonicalizeFavorite', () => {
 
 describe('PUT /auth/favorites stores entity UUIDs', () => {
   it('rewrites a name-path namespace favorite to the namespace UUID', async () => {
-    assert.deepEqual(await createNamespaceAuthz(owner, 'fav-http', 'none'), { ok: true })
+    assert.equal((await createNamespaceAuthz(owner, 'fav-http', 'none')).ok, true)
     const ns = await canonicalizeFavorite('namespace', 'fav-http')
     assert.ok(ns)
     const res = await app.request('/auth/favorites', {

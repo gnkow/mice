@@ -11,8 +11,17 @@ export type SectionNavItem = {
 export type SectionNavGroup = { title: string; Icon?: NavIcon; items: SectionNavItem[] }
 
 /** Grouped in-page navigation; highlights the section currently in view. */
-export function SectionNav({ label, groups }: { label: string; groups: SectionNavGroup[] }) {
-  const navRef = useRef<HTMLElement>(null)
+export function SectionNav({
+  label,
+  groups,
+  bare = false,
+}: {
+  label: string
+  groups: SectionNavGroup[]
+  /** Render groups only (no outer nav) when nested in another nav. */
+  bare?: boolean
+}) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const visibleGroups = groups.filter((g) => g.items.length > 0)
   const ids = visibleGroups.flatMap((g) => g.items.map((i) => i.id))
   const key = ids.join('|')
@@ -34,7 +43,7 @@ export function SectionNav({ label, groups }: { label: string; groups: SectionNa
   }, [key])
 
   useEffect(() => {
-    const nav = navRef.current
+    const nav = rootRef.current
     const link = nav?.querySelector<HTMLAnchorElement>(`a[href="#${CSS.escape(active)}"]`)
     if (!nav || !link) return
     const navRect = nav.getBoundingClientRect()
@@ -43,43 +52,53 @@ export function SectionNav({ label, groups }: { label: string; groups: SectionNa
     else if (linkRect.bottom > navRect.bottom) nav.scrollTop += linkRect.bottom - navRect.bottom + 8
   }, [active])
 
+  const body = visibleGroups.map((group) => {
+    const titleId = `settings-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`
+    const TitleIcon = group.Icon
+    return (
+      <div key={group.title} className="profile-nav-group">
+        <p className="profile-nav-title" id={titleId}>
+          {TitleIcon ? <TitleIcon size={14} aria-hidden="true" /> : null}
+          {group.title}
+        </p>
+        <ul aria-labelledby={titleId}>
+          {group.items.map(({ id, label: text, Icon, badge }) => (
+            <li key={id}>
+              <a
+                href={`#${id}`}
+                aria-current={active === id ? 'true' : undefined}
+                onClick={(e) => {
+                  e.preventDefault()
+                  setActive(id)
+                  const next = `#${id}`
+                  if (window.location.hash !== next) {
+                    window.history.replaceState(null, '', next)
+                  }
+                  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+              >
+                <Icon size={16} aria-hidden="true" />
+                {text}
+                {badge != null && <span className="pill profile-nav-badge">{badge}</span>}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  })
+
+  if (bare) {
+    return (
+      <div className="section-nav-bare" ref={rootRef} data-label={label}>
+        {body}
+      </div>
+    )
+  }
+
   return (
-    <nav className="profile-nav" aria-label={label} ref={navRef}>
-      {visibleGroups.map((group) => {
-        const titleId = `settings-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`
-        const TitleIcon = group.Icon
-        return (
-          <div key={group.title} className="profile-nav-group">
-            <p className="profile-nav-title" id={titleId}>
-              {TitleIcon ? <TitleIcon size={14} aria-hidden="true" /> : null}
-              {group.title}
-            </p>
-            <ul aria-labelledby={titleId}>
-              {group.items.map(({ id, label: text, Icon, badge }) => (
-                <li key={id}>
-                  <a
-                    href={`#${id}`}
-                    aria-current={active === id ? 'true' : undefined}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      setActive(id)
-                      const next = `#${id}`
-                      if (window.location.hash !== next) {
-                        window.history.replaceState(null, '', next)
-                      }
-                      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }}
-                  >
-                    <Icon size={16} aria-hidden="true" />
-                    {text}
-                    {badge != null && <span className="pill profile-nav-badge">{badge}</span>}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )
-      })}
+    <nav className="profile-nav" aria-label={label}>
+      <div ref={rootRef}>{body}</div>
     </nav>
   )
 }

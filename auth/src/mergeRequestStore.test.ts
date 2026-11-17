@@ -20,7 +20,7 @@ const {
 
 const root = t.person('root')
 await t.grantRole(root, 'manager')
-assert.deepEqual(await createNamespaceAuthz(root, 'lab', 'none'), { ok: true })
+assert.equal((await createNamespaceAuthz(root, 'lab', 'none')).ok, true)
 const repo = await ensureRepository('lab', 'assay')
 assert.ok(repo)
 

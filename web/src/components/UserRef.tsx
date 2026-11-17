@@ -20,17 +20,23 @@ type PanelPos = { top: number; left: number }
 export function UserRef({
   author,
   storedEmail,
+  name: nameProp,
   profiles,
   className,
+  interactive = true,
 }: {
   author: string
   storedEmail?: string | null
+  /** Display name when known (directory hit / membership). */
+  name?: string | null
   profiles?: Profiles
   className?: string
+  /** When false, render a static chip (safe inside another button). */
+  interactive?: boolean
 }) {
   const key = author.trim()
   const parsed = parsePrincipalAuthor(key)
-  const name = profiles?.names?.[key]
+  const name = nameProp?.trim() || profiles?.names?.[key]
   const currentEmail = profiles?.emails?.[key]
   const emailDisplay = decideCommitEmailDisplay(
     storedEmail ?? undefined,
@@ -105,28 +111,38 @@ export function UserRef({
     }
   }, [open])
 
+  const chip = (
+    <>
+      <AuthorAvatar name={label} />
+      <span className="user-ref-label">{label}</span>
+    </>
+  )
+
   return (
     <span
       className={['user-ref', className].filter(Boolean).join(' ')}
       ref={rootRef}
       data-testid="user-ref"
     >
-      <button
-        type="button"
-        className="user-ref-trigger"
-        aria-expanded={open}
-        aria-controls={panelId}
-        aria-haspopup="dialog"
-        onClick={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          setOpen((v) => !v)
-        }}
-      >
-        <AuthorAvatar name={label} />
-        <span className="user-ref-label">{label}</span>
-      </button>
-      {open
+      {interactive ? (
+        <button
+          type="button"
+          className="user-ref-trigger"
+          aria-expanded={open}
+          aria-controls={panelId}
+          aria-haspopup="dialog"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setOpen((v) => !v)
+          }}
+        >
+          {chip}
+        </button>
+      ) : (
+        <span className="user-ref-trigger user-ref-static">{chip}</span>
+      )}
+      {interactive && open
         ? createPortal(
             <div
               ref={panelRef}

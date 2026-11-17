@@ -79,6 +79,8 @@ export type VerifyOptions = {
 export type Ledger = {
   /** Stores a record and returns its sequence number (the immudb transaction id). */
   append(id: string, value: string): Promise<number>
+  /** One record by logical id under this ledger's prefix; undefined when missing. */
+  get(id: string): Promise<LedgerRecord | undefined>
   /** Every record under this ledger's prefix, oldest first. */
   readAll(): Promise<LedgerRecord[]>
   /** Records under this prefix written after `seq`, oldest first, from the transaction log; at most `limit` transactions are examined. */
@@ -96,7 +98,7 @@ type Client = {
   createDatabase(p: { databasename: string }): Promise<unknown>
   useDatabase(p: { databasename: string }): Promise<unknown>
   set(p: { key: string; value: string }): Promise<{ id: number }>
-  get(p: { key: string }): Promise<{ value: string }>
+  get(p: { key: string }): Promise<{ tx?: number; key?: string; value: string }>
   scan(p: { prefix?: string; seekkey?: string; limit?: number }): Promise<{ entriesList: { tx: number; key: string; value: string }[] }>
   txScan(p: { initialtx: number; limit: number; desc?: boolean }): Promise<{ txsList: LedgerTx[] }>
   currentState(): Promise<{ txid: number; txhash: Uint8Array | string }>
@@ -265,9 +267,22 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
     })
   }
 
-  async function prove(id: string, opts: { tamper?: (record: LedgerRecord) => LedgerRecord } = {}): Promise<LedgerProof | undefined> {
+  async function get(id: string): Promise<LedgerRecord | undefined> {
     const key = keyFor(id)
-    const found = (await readAll()).find((r) => r.key === key)
+    try {
+      return await run(async (c) => {
+        const entry = await c.get({ key })
+        const seq = entry.tx
+        if (typeof seq !== 'number' || seq <= 0) return undefined
+        return { seq, key, value: entry.value }
+      })
+    } catch {
+      return undefined
+    }
+  }
+
+  async function prove(id: string, opts: { tamper?: (record: LedgerRecord) => LedgerRecord } = {}): Promise<LedgerProof | undefined> {
+    const found = await get(id)
     if (!found) return undefined
     const own = opts.tamper ? opts.tamper(found) : found
     return run(async (c) => {
@@ -295,6 +310,7 @@ export function openLedger(config: ImmudbConfig & { lazy?: boolean }): Promise<L
       const tx = await run((c) => c.set({ key: keyFor(id), value }))
       return tx.id
     },
+    get,
     readAll,
     readAfter,
     verify,

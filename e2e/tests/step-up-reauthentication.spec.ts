@@ -34,8 +34,15 @@ test.describe('09 step-up reauthentication UI', () => {
     })
 
     await section.getByRole('button', { name: /Sign report/i }).click()
-    await expectSigningChallenge(page, /Confirm it's you/i, 'step_up', /fresh sign-in/i)
-
+    const interstitial = await expectSigningChallenge(
+      page,
+      /Confirm it's you/i,
+      'step_up',
+      /same account|fresh sign-in/i,
+    )
+    await expect(interstitial.getByTestId('signing-challenge-continue')).toHaveText(
+      /Confirm it's you/i,
+    )
     // Continue is the CTA; do not navigate away silently without the interstitial.
     await expect(page).toHaveURL(/settings|access/i)
   })
@@ -67,7 +74,15 @@ test.describe('09 step-up reauthentication UI', () => {
     await dialog.getByLabel('Reason').fill('E2E step-up interstitial check for regulated publish')
     await dialog.getByRole('button', { name: /Review signature/i }).click()
 
-    await expectSigningChallenge(page, /Confirm it's you/i, 'step_up')
-    await expect(page.getByTestId('signing-challenge-continue')).toBeEnabled()
+    const interstitial = await expectSigningChallenge(
+      page,
+      /Confirm it's you/i,
+      'step_up',
+      /same account/i,
+    )
+    const continueBtn = interstitial.getByTestId('signing-challenge-continue')
+    await expect(continueBtn).toBeEnabled()
+    await expect(continueBtn).toHaveText(/Confirm it's you/i)
+    await expect(interstitial.getByText(/same account/i)).toBeVisible()
   })
 })

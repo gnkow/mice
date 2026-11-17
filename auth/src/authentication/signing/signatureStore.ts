@@ -163,7 +163,7 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
       return { id, seq }
     },
     async get(id) {
-      const found = (await ledger.readAll()).find((r) => r.key.endsWith(`signature/${id}`))
+      const found = await ledger.get(`signature/${id}`)
       return found ? { seq: found.seq, record: JSON.parse(found.value) as SignatureRecord } : undefined
     },
     async view(id) {
@@ -188,12 +188,11 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
       return ledger.prove(`signature/${id}`, opts)
     },
     async getManifest(digest) {
-      const found = (await ledger.readAll()).find((r) => r.key.endsWith(`manifest/${digest}`))
+      const found = await ledger.get(`manifest/${digest}`)
       return found ? { seq: found.seq, manifest: found.value } : undefined
     },
     async isConsumed(id) {
-      const found = (await ledger.readAll()).find((r) => r.key.endsWith(`consumed/${id}`))
-      return Boolean(found)
+      return Boolean(await ledger.get(`consumed/${id}`))
     },
     async consume(id) {
       if (await this.isConsumed(id)) return

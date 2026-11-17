@@ -6,9 +6,9 @@ import { openAccountMenu } from '../fixtures'
 const KC_USER = process.env.KEYCLOAK_E2E_USER ?? 'mice'
 const KC_PASSWORD = process.env.KEYCLOAK_E2E_PASSWORD ?? 'mice'
 
-/** Pre-seeded TOTP for `mice_mfa` in `auth/keycloak/realm-mice.json`. */
-export const KEYCLOAK_MFA_USER = process.env.KEYCLOAK_E2E_MFA_USER ?? 'mice_mfa'
-export const KEYCLOAK_MFA_PASSWORD = process.env.KEYCLOAK_E2E_MFA_PASSWORD ?? 'mfa123'
+/** Pre-seeded TOTP for bootstrap admin `mice_admin` in `auth/keycloak/realm-mice.json`. */
+export const KEYCLOAK_MFA_USER = process.env.KEYCLOAK_E2E_MFA_USER ?? 'mice_admin'
+export const KEYCLOAK_MFA_PASSWORD = process.env.KEYCLOAK_E2E_MFA_PASSWORD ?? 'admin123'
 /**
  * Must match `secretData.value` on the realm-import OTP credential. Keycloak treats that
  * value as raw UTF-8 key material (not base32-decoded) for this import shape.
@@ -104,7 +104,7 @@ export async function completeKeycloakLogin(
   await expect(page.locator('header.topbar')).toBeVisible({ timeout: 20_000 })
 }
 
-/** Mice login → SSO → Keycloak password + TOTP (mice_mfa) → Mice app. */
+/** Mice login → SSO → Keycloak password + TOTP (mice_admin) → Mice app. */
 export async function signInWithKeycloakMfa(page: Page) {
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()

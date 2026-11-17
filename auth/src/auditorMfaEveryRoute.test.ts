@@ -64,7 +64,27 @@ describe('Auditor MFA on every decision path (#17)', () => {
   })
 
   it('still lets an Auditor without MFA read /auth/me so the UI can explain', async () => {
-    assert.equal((await app.request('/auth/me', { headers: await iso.sessionHeaders(auditor) })).status, 200)
+    const res = await app.request('/auth/me', { headers: await iso.sessionHeaders(auditor) })
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as {
+      authenticated: boolean
+      user?: { mfaEvidenced?: boolean }
+    }
+    assert.equal(body.authenticated, true)
+    assert.equal(body.user?.mfaEvidenced, false)
+  })
+
+  it('exposes mfaEvidenced true on /auth/me when the session id_token has MFA claims', async () => {
+    const res = await app.request('/auth/me', {
+      headers: await iso.sessionHeaders(withMfa(auditor)),
+    })
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as {
+      authenticated: boolean
+      user?: { mfaEvidenced?: boolean }
+    }
+    assert.equal(body.authenticated, true)
+    assert.equal(body.user?.mfaEvidenced, true)
   })
 
   it('refuses an Auditor PAT without MFA on an instance path with the same reason', async () => {

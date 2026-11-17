@@ -18,7 +18,7 @@ import { mintSession, mintSessionCookie } from '../helpers/session'
 import { signAnnouncementViaLiveCeremony } from '../helpers/signingCeremony'
 
 test.describe('Auditor signature evidence (#13 / #18)', () => {
-  test('TC-AUDITOR-00: Keycloak mice_mfa is challenged for OTP (MFA step-up user)', async ({
+  test('TC-AUDITOR-00: Keycloak mice_admin is challenged for OTP (MFA step-up user)', async ({
     page,
   }) => {
     await page.goto('/login')
@@ -37,7 +37,7 @@ test.describe('Auditor signature evidence (#13 / #18)', () => {
   test('TC-AUDITOR-01: real MFA signing then Auditor opens stored evidence (no injection)', async ({
     page,
   }) => {
-    // Signer: Keycloak user with Conditional OTP (mice_mfa) so the step-up id_token
+    // Signer: Keycloak bootstrap admin with Conditional OTP (mice_admin) so the step-up id_token
     // carries acr/amr/auth_time and JWKS verification metadata into esign.created.
     try {
       await signInWithKeycloakMfa(page)

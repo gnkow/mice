@@ -10,6 +10,8 @@
  * - .scratch/authentication/issues/14-idp-mfa-baseline-validation.md
  */
 
+import { decodeJwtPayload } from '../oidc/oidcClaims.js'
+
 export interface MfaEvidence {
   /** True if MFA was used (both acr present AND amr contains multiple methods) */
   hasMfa: boolean
@@ -70,6 +72,19 @@ export function extractMfaEvidence(payload: Record<string, unknown>): MfaEvidenc
     acr,
     amr,
     authTime,
+  }
+}
+
+/**
+ * Whether the caller's current IdP session evidences MFA (acr + qualifying amr).
+ * Used by /auth/me for profile display and by AuthZ gates (e.g. Auditor).
+ */
+export function sessionHasMfaEvidence(idToken: string | undefined | null): boolean {
+  if (!idToken) return false
+  try {
+    return extractMfaEvidence(decodeJwtPayload(idToken)).hasMfa
+  } catch {
+    return false
   }
 }
 

@@ -6,6 +6,11 @@ export type AuthUser = {
   iss: string
   email: string
   name: string
+  /**
+   * Current IdP session evidences MFA (acr + qualifying amr).
+   * False when password-only or claims missing — not the same as IdP enrollment.
+   */
+  mfaEvidenced?: boolean
 }
 
 export type AuthMe =

@@ -61,6 +61,7 @@ const {
   registerStepUp,
   handleReauthCallback,
   decideStepUp,
+  decideReauthCallback,
   resolveMaxAgeSec,
 } = await import('./stepUp.js')
 const { sealSession, getSession } = await import('../session/session.js')
@@ -90,6 +91,57 @@ setDirectoryFetchForTests(async (url) => {
 await ensureBootstrapKey()
 
 const now = () => Math.floor(Date.now() / 1000)
+
+await describe('decideReauthCallback', async () => {
+  const current = {
+    sub: 'u1',
+    iss: issuer,
+    email: 'u1@x.io',
+    name: 'u1',
+    idToken: 'old',
+    authTime: now() - 100,
+  }
+
+  await it('marks a failed login for audit when a Session is present', () => {
+    const decision = decideReauthCallback(current, {
+      ok: false,
+      status: 403,
+      html: '<p>no</p>',
+      reason: 'cancelled',
+    })
+    assert.deepEqual(decision, {
+      kind: 'login_failed',
+      status: 403,
+      html: '<p>no</p>',
+      reason: 'cancelled',
+      audit: true,
+    })
+  })
+
+  await it('rejects a Principal mismatch', () => {
+    const decision = decideReauthCallback(current, {
+      ok: true,
+      dest: '/',
+      user: { ...current, sub: 'other', idToken: 'new', authTime: now() },
+    })
+    assert.equal(decision.kind, 'principal_mismatch')
+  })
+
+  await it('refreshes auth_time and id token for the same Principal', () => {
+    const authTime = now()
+    const decision = decideReauthCallback(current, {
+      ok: true,
+      dest: '/settings',
+      user: { ...current, idToken: 'fresh', authTime },
+    })
+    assert.deepEqual(decision, {
+      kind: 'refresh',
+      dest: '/settings',
+      idToken: 'fresh',
+      nextAuthTime: authTime,
+    })
+  })
+})
 
 await describe('decideStepUp', async () => {
   const baseSession = {

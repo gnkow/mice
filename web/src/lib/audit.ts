@@ -10,6 +10,10 @@ export type AuditEvent = {
   ts: string
   actor: AuditActor
   via: 'session' | 'pat'
+  /** Present on Intent/Outcome chain events; unpaired Intent rows stay visible in the list. */
+  phase?: 'intent' | 'outcome'
+  /** On an outcome: the Intent id it completes. */
+  intent_id?: string
   method: string
   path: string
   status: number
@@ -28,6 +32,11 @@ export type AuditEvent = {
   /** Dataset commit ids before and after a dataset mutation. */
   dataset?: AuditDataset
   detail?: Record<string, unknown>
+}
+
+/** Unpaired Intent rows in a list page (honest gap — no Outcome yet). */
+export function unpairedIntentEvents(events: AuditEvent[]): AuditEvent[] {
+  return events.filter((e) => e.phase === 'intent')
 }
 
 export type AuditDataset = { base?: string; head?: string }
