@@ -61,6 +61,12 @@ describe('service principals removed (#05): unit', () => {
       status: 401,
       error: 'Authentication required',
     })
+    // Trailing slash must not revive the retired issuer as a caller.
+    assert.deepEqual(decideServiceCallerAdmission({ iss: `${RETIRED_SERVICE_ISSUER}/` }), {
+      allow: false,
+      status: 401,
+      error: 'Authentication required',
+    })
     assert.deepEqual(decideServiceCallerAdmission({ iss: 'https://idp.example' }), { allow: true })
   })
 })
