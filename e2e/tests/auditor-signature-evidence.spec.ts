@@ -15,7 +15,7 @@ import {
 } from '../helpers/keycloak'
 import { uniqueId } from '../helpers/oxenApi'
 import { mintSession, mintSessionCookie } from '../helpers/session'
-import { signAnnouncementViaLiveCeremony } from '../helpers/signingCeremony'
+import { signViaLiveSealKeyRotation } from '../helpers/signingCeremony'
 
 test.describe('Auditor signature evidence (#13 / #18)', () => {
   test('TC-AUDITOR-00: Keycloak mice_admin is challenged for OTP (MFA step-up user)', async ({
@@ -42,7 +42,8 @@ test.describe('Auditor signature evidence (#13 / #18)', () => {
     try {
       await signInWithKeycloakMfa(page)
     } catch (err) {
-      if (page.url().includes('status=unreachable') || page.url().includes('/login')) {
+      // Only skip for the known IdP-directory callback failure — not generic /login timeouts.
+      if (page.url().includes('status=unreachable')) {
         test.skip(
           true,
           'OIDC callback could not establish a session (IdP directory/unreachable). Keycloak MFA OTP works; see ticket 18 Comments.',
@@ -57,7 +58,7 @@ test.describe('Auditor signature evidence (#13 / #18)', () => {
       )
     }
 
-    await signAnnouncementViaLiveCeremony(page)
+    await signViaLiveSealKeyRotation(page)
     await signOutViaUi(page)
 
     // Auditor: MFA session (mint) reads the live audit trail — no page.route injection.

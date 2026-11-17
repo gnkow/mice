@@ -11,7 +11,7 @@ const signer = iso.person('sig-signer')
 const evidence = { acr: 'mfa', amr: ['pwd', 'otp'], auth_time: 1_700_000_000 }
 const verification = { jwks_key_id: 'kid-1', token_verified_at: 1_767_225_600_000, idp_issuer: 'https://idp.test' }
 await appendAudit({
-  actor: { iss: signer.iss, sub: signer.sub },
+  actor: { iss: signer.iss, sub: signer.sub, email: signer.email, name: signer.name },
   via: 'session',
   method: 'POST',
   path: '/auth/sign/execute',
@@ -33,10 +33,11 @@ describe('Auditor opens signature evidence (#13)', () => {
   it('returns the stored MFA and verification evidence on signature events', async () => {
     const res = await query(jwt({ acr: 'mfa', amr: ['pwd', 'otp'] }))
     assert.equal(res.status, 200)
-    const { events } = (await res.json()) as { events: { detail?: Record<string, unknown> }[] }
-    const detail = events.find((e) => e.detail?.hash === 'h1')?.detail
-    assert.deepEqual(detail?.mfaEvidence, evidence)
-    assert.deepEqual(detail?.verificationMetadata, verification)
+    const body = (await res.json()) as { events: { action?: string; detail?: Record<string, unknown> }[] }
+    const hit = body.events.find((e) => e.detail?.hash === 'h1')
+    assert.ok(hit, `expected esign.created with hash h1; got ${JSON.stringify(body.events.slice(0, 5))}`)
+    assert.deepEqual(hit.detail?.mfaEvidence, evidence)
+    assert.deepEqual(hit.detail?.verificationMetadata, verification)
   })
 
   it('refuses audit reads from an Auditor session without MFA evidence', async () => {

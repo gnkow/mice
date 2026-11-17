@@ -65,6 +65,14 @@ export function keycloakOtpInput(page: Page) {
   return page.locator('#otp, input[name="otp"], input#otp').first()
 }
 
+/** Wait until the next 30s TOTP window so a prior submission cannot reuse the same code. */
+export async function waitForNextTotpWindow(atMs = Date.now()): Promise<void> {
+  const periodMs = 30_000
+  const remaining = periodMs - (atMs % periodMs)
+  // Small buffer so Keycloak and the client agree on the new counter.
+  await new Promise((r) => setTimeout(r, remaining + 500))
+}
+
 /** Submit the OTP form when Conditional OTP challenged the user. */
 export async function completeKeycloakOtp(
   page: Page,
@@ -73,6 +81,12 @@ export async function completeKeycloakOtp(
   await expect(keycloakOtpInput(page)).toBeVisible({ timeout: 20_000 })
   await keycloakOtpInput(page).fill(totpCode(secretBase32))
   await keycloakSubmit(page).click()
+  // Same-window reuse after a prior e2e OTP is rejected — wait and retry once.
+  if (await keycloakOtpInput(page).isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await waitForNextTotpWindow()
+    await keycloakOtpInput(page).fill(totpCode(secretBase32))
+    await keycloakSubmit(page).click()
+  }
 }
 
 /** Complete Keycloak username/password and land back in Mice. */

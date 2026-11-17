@@ -134,55 +134,109 @@ export async function completeLiveKeycloakStepUp(page: Page): Promise<void> {
   await expect(page).not.toHaveURL(/8180|openid-connect/, { timeout: 30_000 })
 }
 
-/**
- * Publish an announcement through the real reason + signing ceremony (no response injection).
- * Caller must already be signed in as an admin who can complete Keycloak MFA step-up.
- */
-export async function signAnnouncementViaLiveCeremony(page: Page): Promise<void> {
-  await page.goto('/settings')
-  await page.getByRole('link', { name: 'Announcements' }).click()
-  const section = page.locator('#announcements')
-  const title = `Auditor evidence ${Date.now()}`
-  await section.getByLabel('Title').fill(title)
-  await section.getByLabel('Severity').selectOption('info')
-  await section.getByLabel('Message').fill('Real Keycloak MFA signing for auditor evidence e2e')
-  await section.getByRole('button', { name: 'Publish announcement' }).click()
+const LIVE_CEREMONY_REASON =
+  'E2E auditor signature evidence with live MFA ceremony'
 
+async function fillReasonAndReview(page: Page): Promise<void> {
   const reasonDialog = page.getByRole('dialog', { name: /Reason and signature required/i })
   await expect(reasonDialog).toBeVisible({ timeout: 15_000 })
-  await reasonDialog.getByLabel('Reason').fill('E2E auditor signature evidence with live MFA ceremony')
+  await reasonDialog.getByLabel('Reason').fill(LIVE_CEREMONY_REASON)
   await reasonDialog.getByRole('button', { name: /Review signature/i }).click()
+}
 
-  // Step-up interstitial or immediate Keycloak redirect.
+async function awaitCeremonyGate(page: Page): Promise<'interstitial' | 'sign'> {
   const interstitial = page.getByTestId('signing-challenge-interstitial')
-  if (await interstitial.isVisible().catch(() => false)) {
-    await completeLiveKeycloakStepUp(page)
-    // After reauth, re-open the ceremony if the UI returned to settings.
-    if (!(await page.getByRole('dialog', { name: /Electronic signature|Reason and signature/i }).isVisible().catch(() => false))) {
-      await section.getByRole('button', { name: 'Publish announcement' }).click()
-      const again = page.getByRole('dialog', { name: /Reason and signature required/i })
-      if (await again.isVisible().catch(() => false)) {
-        await again.getByLabel('Reason').fill('E2E auditor signature evidence with live MFA ceremony')
-        await again.getByRole('button', { name: /Review signature/i }).click()
+  const signDialog = page.getByRole('dialog', { name: /Electronic signature/i })
+  await expect(interstitial.or(signDialog)).toBeVisible({ timeout: 20_000 })
+  if (await interstitial.isVisible().catch(() => false)) return 'interstitial'
+  return 'sign'
+}
+
+async function clickSignAndContinue(page: Page): Promise<void> {
+  const signDialog = page.getByRole('dialog', { name: /Electronic signature/i })
+  await expect(signDialog).toBeVisible({ timeout: 20_000 })
+  await signDialog.getByRole('button', { name: /Sign and continue/i }).click()
+}
+
+/**
+ * Drive a real reason + signing ceremony via seal-key normal rotation (no response injection).
+ * Announcements do not require a signature; seal-key rotate does and records `esign.created`.
+ * Caller must already be signed in as an admin who can complete Keycloak MFA step-up.
+ *
+ * Clears Playwright's suite-wide `x-mice-reason` extra header for the ceremony so the signed
+ * document reason matches the retry headers (otherwise the BFF returns signature_invalid).
+ */
+export async function signViaLiveSealKeyRotation(page: Page): Promise<void> {
+  const baseURL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
+  const ctx = page.context()
+  await ctx.setExtraHTTPHeaders({ origin: baseURL })
+
+  try {
+    await page.goto('/settings')
+    await page.getByRole('link', { name: 'Seal keys', exact: true }).click()
+    const section = page.locator('#seal-key-rotation')
+    const rotate = section.getByRole('button', { name: /Perform Normal Rotation/i })
+    await expect(rotate).toBeVisible()
+    await rotate.click()
+
+    await fillReasonAndReview(page)
+
+    // Prepare may require step-up before the sign dialog.
+    if ((await awaitCeremonyGate(page)) === 'interstitial') {
+      await completeLiveKeycloakStepUp(page)
+      if (
+        !(await page
+          .getByRole('dialog', { name: /Electronic signature|Reason and signature/i })
+          .isVisible()
+          .catch(() => false))
+      ) {
+        await rotate.click()
+        await fillReasonAndReview(page)
+      }
+      if ((await awaitCeremonyGate(page)) === 'interstitial') {
+        await completeLiveKeycloakStepUp(page)
+        await expect(page.getByRole('dialog', { name: /Electronic signature/i })).toBeVisible({
+          timeout: 20_000,
+        })
       }
     }
-  }
 
-  const signDialog = page.getByRole('dialog', { name: /Electronic signature/i })
-  if (await signDialog.isVisible().catch(() => false)) {
-    await signDialog.getByRole('button', { name: /Sign and continue/i }).click()
-  }
+    await clickSignAndContinue(page)
 
-  // Another step-up may fire at execute.
-  if (await interstitial.isVisible().catch(() => false)) {
-    await completeLiveKeycloakStepUp(page)
-  }
-  if (await page.getByRole('dialog', { name: /Electronic signature/i }).isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: /Sign and continue/i }).click()
-  }
+    // Execute may require another step-up.
+    const interstitial = page.getByTestId('signing-challenge-interstitial')
+    if (await interstitial.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await completeLiveKeycloakStepUp(page)
+      if (
+        await page
+          .getByRole('dialog', { name: /Electronic signature/i })
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await clickSignAndContinue(page)
+      } else {
+        await rotate.click()
+        await fillReasonAndReview(page)
+        if ((await awaitCeremonyGate(page)) === 'interstitial') {
+          await completeLiveKeycloakStepUp(page)
+        }
+        await clickSignAndContinue(page)
+      }
+    }
 
-  await expect(page.getByText(title).first()).toBeVisible({ timeout: 30_000 })
+    await expect(section.getByText(/Normal rotation completed/i)).toBeVisible({
+      timeout: 30_000,
+    })
+  } finally {
+    await ctx.setExtraHTTPHeaders({
+      'x-mice-reason': 'e2e: automated test change',
+      origin: baseURL,
+    })
+  }
 }
+
+/** @deprecated Prefer signViaLiveSealKeyRotation — announcements are not signature-gated. */
+export const signAnnouncementViaLiveCeremony = signViaLiveSealKeyRotation
 
 // Re-export MFA login for ceremony callers that need a full SSO path.
 export { completeKeycloakLogin, KEYCLOAK_MFA_USER }
