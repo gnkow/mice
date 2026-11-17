@@ -127,6 +127,38 @@ export function decideCliRefreshIdpAccess(
   return { allow: true }
 }
 
+/** Row shape needed to decide whether an access token may authenticate. */
+export type CliAccessTokenRow = {
+  kind: string
+  tokenExpires: Date
+  familyExpires: Date
+  revokedAt: Date | null
+  sub: string
+  iss: string
+  email: string
+  name: string
+  scopes: CliCredentialScope[] | null
+}
+
+/**
+ * Pure gate for a looked-up access token before returning a SessionUser.
+ * Kind, family revoke, access expiry, and family expiry all live here.
+ */
+export function decideCliAccessCredential(
+  row: CliAccessTokenRow | undefined,
+  nowMs: number,
+): SessionUser | null {
+  if (!row || row.kind !== 'access' || row.revokedAt) return null
+  if (row.tokenExpires.getTime() <= nowMs || row.familyExpires.getTime() <= nowMs) return null
+  return {
+    sub: row.sub,
+    iss: row.iss,
+    email: row.email,
+    name: row.name,
+    ...(row.scopes?.length ? { patScopes: row.scopes } : {}),
+  }
+}
+
 /** Short-lived CLI credentials. Raw tokens are returned once; only their hashes are stored. */
 export function createCliCredentials(deps: CliCredentialDeps) {
   const { clock } = deps
@@ -185,15 +217,7 @@ export function createCliCredentials(deps: CliCredentialDeps) {
       .from(cliCredentialTokens)
       .innerJoin(cliCredentialFamilies, eq(cliCredentialFamilies.id, cliCredentialTokens.familyId))
       .where(eq(cliCredentialTokens.tokenHash, hashToken(accessToken.trim())))
-    if (!row || row.kind !== 'access' || row.revokedAt) return null
-    if (row.tokenExpires.getTime() <= now || row.familyExpires.getTime() <= now) return null
-    return {
-      sub: row.sub,
-      iss: row.iss,
-      email: row.email,
-      name: row.name,
-      ...(row.scopes?.length ? { patScopes: row.scopes } : {}),
-    }
+    return decideCliAccessCredential(row, now)
   }
 
   async function refresh(refreshToken: string): Promise<RefreshResult> {

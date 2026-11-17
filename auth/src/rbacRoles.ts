@@ -72,6 +72,8 @@ const USER: readonly InstancePermission[] = [
   'favorites:add',
   'favorites:remove',
   'access_request:submit',
+  'cli_device:approve',
+  'cli_device:deny',
 ]
 
 const MANAGER: readonly InstancePermission[] = [
@@ -112,8 +114,6 @@ const MANAGER: readonly InstancePermission[] = [
   'lineage:rebuild',
   'access_request:list',
   'access_request:review',
-  'cli_device:approve',
-  'cli_device:deny',
   'directory:search',
   'announcements:list',
 ]

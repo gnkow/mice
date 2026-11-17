@@ -55,6 +55,10 @@ await describe('device authorization state machine', async () => {
     const started = await devices.start()
     clock.advance(10 * MIN)
     assert.equal((await devices.poll(started.device_code)).status, 'expired_token')
+    const lookup = await devices.lookup(started.user_code)
+    assert.ok(lookup)
+    assert.equal(lookup?.expired, true)
+    assert.equal(lookup?.status, 'pending')
     assert.deepEqual(await devices.approve(started.user_code, alice), {
       ok: false,
       error: 'Device code expired',

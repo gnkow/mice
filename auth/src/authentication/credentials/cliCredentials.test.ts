@@ -5,6 +5,7 @@ import { fakeClock } from '../../clock.js'
 import {
   cliRefreshReply,
   createCliCredentials,
+  decideCliAccessCredential,
   decideCliRefreshIdpAccess,
   decideCliRefreshTokenState,
   type IdpAccess,
@@ -24,6 +25,57 @@ function credentials(clock = fakeClock()) {
     idp: async () => 'enabled',
   })
 }
+
+await describe('decideCliAccessCredential', async () => {
+  const base = {
+    kind: 'access',
+    tokenExpires: new Date(2_000),
+    familyExpires: new Date(10_000),
+    revokedAt: null as Date | null,
+    sub: 'alice',
+    iss: 'https://idp.example',
+    email: 'alice@example.com',
+    name: 'Alice',
+    scopes: null as string[] | null,
+  }
+
+  await it('returns the SessionUser for a live access token', () => {
+    assert.deepEqual(decideCliAccessCredential(base, 1_000), {
+      sub: 'alice',
+      iss: 'https://idp.example',
+      email: 'alice@example.com',
+      name: 'Alice',
+    })
+  })
+
+  await it('carries scopes onto patScopes when present', () => {
+    const scopes = [{ namespace: 'acme', maxRole: 'read' as const }]
+    assert.deepEqual(
+      decideCliAccessCredential({ ...base, scopes }, 1_000),
+      {
+        sub: 'alice',
+        iss: 'https://idp.example',
+        email: 'alice@example.com',
+        name: 'Alice',
+        patScopes: scopes,
+      },
+    )
+  })
+
+  await it('refuses missing, non-access, revoked, or expired rows', () => {
+    assert.equal(decideCliAccessCredential(undefined, 1_000), null)
+    assert.equal(decideCliAccessCredential({ ...base, kind: 'refresh' }, 1_000), null)
+    assert.equal(
+      decideCliAccessCredential({ ...base, revokedAt: new Date(500) }, 1_000),
+      null,
+    )
+    assert.equal(decideCliAccessCredential(base, 2_000), null)
+    assert.equal(
+      decideCliAccessCredential({ ...base, familyExpires: new Date(500) }, 1_000),
+      null,
+    )
+  })
+})
 
 await describe('decideCliRefreshTokenState / decideCliRefreshIdpAccess', async () => {
   const base = {

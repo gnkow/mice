@@ -20,7 +20,7 @@ const ADMIN_ALLOWS = [
 
 /** Actions Admin does not hold — Manager/User do (S25 separation). */
 const ADMIN_DENIED = [
-  { action: 'cli.device.approve' as const, grantRole: 'manager' as const, reason: 'Missing permission cli_device:approve' },
+  { action: 'cli.device.approve' as const, grantRole: 'user' as const, reason: 'Missing permission cli_device:approve' },
   { action: 'audit.view' as const, grantRole: 'manager' as const, reason: 'Missing permission audit:read' },
   { action: 'lineage.view' as const, grantRole: 'manager' as const, reason: 'Missing permission lineage:read' },
 ]

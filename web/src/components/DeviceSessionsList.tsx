@@ -111,6 +111,7 @@ export function DeviceSessionsList() {
 
   const activeLabel =
     sessions.length === 1 ? '1 active' : `${sessions.length} active`
+  const showRefresh = !loading && !error
 
   return (
     <div
@@ -119,6 +120,7 @@ export function DeviceSessionsList() {
       data-testid="cli-device-credentials"
       aria-labelledby={headingId}
       aria-describedby={descId}
+      aria-busy={loading || undefined}
     >
       <div className="ns-settings-section-head">
         <div>
@@ -160,7 +162,7 @@ export function DeviceSessionsList() {
 
       {!loading && !error && sessions.length === 0 && (
         <div className="empty-state" role="status">
-          <span className="empty-state-icon" aria-hidden="true" />
+          <Laptop size={28} className="empty-state-icon-lucide" aria-hidden="true" />
           <p className="muted">No active CLI device credentials.</p>
           <p className="muted small">
             Run <code>mice login</code> to create a short-lived device credential. Personal
@@ -174,8 +176,10 @@ export function DeviceSessionsList() {
           {sessions.map((session) => {
             const shortId = session.id.slice(0, 12)
             const revokeLabel = `Revoke CLI credential ${shortId}`
+            const createdAbsolute = new Date(session.createdAt).toLocaleString()
+            const expiresAbsolute = new Date(session.expiresAt).toLocaleString()
             return (
-              <li key={session.id} className="ns-member-row">
+              <li key={session.id} className="ns-member-row" data-testid="cli-credential-row">
                 <div className="ns-member-main">
                   <div>
                     <strong>Device credential</strong>
@@ -185,9 +189,14 @@ export function DeviceSessionsList() {
                     </span>
                   </div>
                   <span className="muted small">
-                    Created {formatTimeAgo(session.createdAt)}
+                    Created{' '}
+                    <time dateTime={session.createdAt} title={createdAbsolute}>
+                      {formatTimeAgo(session.createdAt)}
+                    </time>
                     {' · '}
-                    {formatExpiry(session.expiresAt)}
+                    <time dateTime={session.expiresAt} title={expiresAbsolute}>
+                      {formatExpiry(session.expiresAt)}
+                    </time>
                   </span>
                 </div>
                 <button
@@ -205,6 +214,20 @@ export function DeviceSessionsList() {
           })}
         </ul>
       )}
+
+      {showRefresh ? (
+        <div className="cli-credentials-footer">
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => void loadSessions()}
+            aria-label="Refresh CLI credentials"
+          >
+            <RefreshCw size={14} className="button-label-icon" aria-hidden="true" />
+            Refresh
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

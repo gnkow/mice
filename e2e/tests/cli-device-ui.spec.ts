@@ -40,6 +40,25 @@ async function startDevice(
 }
 
 test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
+  test('TC-CLI-08b: admin without approve sees login-status permission warn', async ({
+    page,
+  }) => {
+    await mintSession(page, {
+      name: 'Admin No Approve',
+      email: 'admin-no-approve@mice.local',
+      sub: `admin-cli-${Date.now()}`,
+      iss: 'mice-e2e',
+      role: 'admin',
+    })
+    await page.goto('/cli/device')
+    await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
+    const warn = page.getByTestId('cli-device-permission')
+    await expect(warn).toBeVisible()
+    await expect(warn.getByRole('heading', { name: 'Approval not available' })).toBeVisible()
+    await expect(warn.getByText(/You need permission to approve command-line login/i)).toBeVisible()
+    await expect(warn.getByText(/separation of duties/i)).toBeVisible()
+  })
+
   test('TC-CLI-08: unauthenticated /cli/device redirects to login with next', async ({
     page,
   }) => {
@@ -60,8 +79,10 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
     await page.getByLabel('Device code').fill(started.user_code)
     await page.getByRole('button', { name: 'Look up' }).click()
-    await expect(page.locator('code.mono', { hasText: started.user_code })).toBeVisible()
-    await expect(page.getByText(/waiting for approval/i)).toBeVisible()
+    const statusCard = page.getByTestId('cli-device-status')
+    await expect(statusCard.locator('code.cli-device-code', { hasText: started.user_code })).toBeVisible()
+    await expect(statusCard.getByText(/Waiting for your approval/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Look up', exact: true })).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Deny' }).click()
     await expect(
@@ -75,6 +96,25 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     expect(poll.status()).toBe(400)
     const body = await poll.json()
     expect(body.status).toBe('access_denied')
+  })
+
+  test('TC-CLI-09b: Look up reloads the same code and change-code restores the form', async ({
+    page,
+  }) => {
+    const started = await startDevice(page.request)
+    await sessionLogin(page)
+
+    await page.goto(`/cli/device?user_code=${encodeURIComponent(started.user_code)}`)
+    await expect(page.getByTestId('cli-device-status')).toBeVisible()
+    await expect(page.getByText(/Waiting for your approval/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Look up', exact: true })).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Enter another code' }).click()
+    await expect(page.getByRole('button', { name: 'Look up', exact: true })).toBeVisible()
+    await page.getByLabel('Device code').fill(started.user_code)
+    await page.getByRole('button', { name: 'Look up', exact: true }).click()
+    await expect(page.getByText(/Waiting for your approval/i)).toBeVisible()
+    await expect(page.locator('code.cli-device-code', { hasText: started.user_code })).toBeVisible()
   })
 
   test('TC-CLI-10: GET /auth/cli/device redirects to web UI', async ({
@@ -209,7 +249,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
       `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
     )
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
-    await expect(page.getByText(/waiting for approval/i)).toBeVisible()
+    await expect(page.getByText(/Waiting for your approval/i)).toBeVisible()
 
     const warning = page.locator('#cli-device-security-warning')
     await expect(warning).toBeVisible()
@@ -255,23 +295,19 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
       `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
     )
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
-    await expect(page.getByText(/waiting for approval/i)).toBeVisible()
+    await expect(page.getByText(/Waiting for your approval/i)).toBeVisible()
 
     const approve = page.getByRole('button', { name: 'Approve' })
     const confirm = page.getByLabel(/Type APPROVE/i)
     await expect(approve).toBeDisabled()
-    await expect(
-      page.getByText(/Approve stays disabled until the confirmation matches/i),
-    ).toBeVisible()
 
     await confirm.fill('NOPE')
     await expect(approve).toBeDisabled()
+    await expect(confirm).toHaveAttribute('aria-invalid', 'true')
 
     await confirm.fill('APPROVE')
     await expect(approve).toBeEnabled()
-    await expect(
-      page.getByText(/Confirmation matches\. You can approve or deny/i),
-    ).toBeVisible()
+    await expect(confirm).not.toHaveAttribute('aria-invalid', 'true')
 
     await approve.click()
     await expect(

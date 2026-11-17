@@ -72,6 +72,8 @@ const USER = [
   'favorites:add',
   'favorites:remove',
   'access_request:submit',
+  'cli_device:approve',
+  'cli_device:deny',
 ] as const
 
 const MANAGER = [
@@ -112,8 +114,6 @@ const MANAGER = [
   'lineage:rebuild',
   'access_request:list',
   'access_request:review',
-  'cli_device:approve',
-  'cli_device:deny',
   'directory:search',
   'announcements:list',
 ] as const

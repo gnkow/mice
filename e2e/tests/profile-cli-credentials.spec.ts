@@ -49,6 +49,7 @@ test.describe('profile CLI device credentials (PLAT-AUTH)', () => {
     await expect(section.getByText(/8-hour access token/i)).toBeVisible()
     await expect(section.getByText(/does not mint personal access tokens/i)).toBeVisible()
     await expect(section.getByText(/No active CLI device credentials/i)).toBeVisible()
+    await expect(section.getByRole('button', { name: /Refresh CLI credentials/i })).toBeVisible()
   })
 
   test('TC-AUTH-CLI-07b: Profile lists and revokes a device credential after approve', async ({

@@ -82,7 +82,7 @@ setDirectoryFetchForTests(async (url) => {
   throw new Error(`Unexpected request: ${urlStr}`)
 })
 
-// Manager has cli_device:approve; avoid bootstrap Admin (S25 — no device approve).
+// User has cli_device:approve; avoid bootstrap Admin (S25 — no device approve).
 const approver = {
   sub: 'mgr1',
   iss: 'idp',
@@ -92,7 +92,7 @@ const approver = {
 }
 await ensurePrincipal(approver)
 assert.equal(
-  (await assignRole({ actor: null, target: approver, role: 'manager', reason: 'test', bootstrap: true })).ok,
+  (await assignRole({ actor: null, target: approver, role: 'user', reason: 'test', bootstrap: true })).ok,
   true,
 )
 

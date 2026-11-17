@@ -32,7 +32,7 @@ type InstanceCase = {
 
 const INSTANCE_CASES: InstanceCase[] = [
   { action: 'tokens.manage', grantRole: 'user', reason: 'Missing permission tokens:create' },
-  { action: 'cli.device.approve', grantRole: 'manager', reason: 'Missing permission cli_device:approve', adminDenied: true },
+  { action: 'cli.device.approve', grantRole: 'user', reason: 'Missing permission cli_device:approve', adminDenied: true },
   { action: 'audit.view', grantRole: 'manager', reason: 'Missing permission audit:read', adminDenied: true },
   { action: 'lineage.view', grantRole: 'manager', reason: 'Missing permission lineage:read', adminDenied: true },
   { action: 'store.admin', grantRole: 'admin', reason: 'Missing permission store:gc', unscopedOnly: true },

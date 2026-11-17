@@ -317,12 +317,13 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
 
   async function lookup(userCode: string): Promise<DeviceLookup | null> {
     const rec = await repo.findByUserCode(normalize(userCode))
-    if (!rec || isExpired(rec, clock.now())) return null
+    if (!rec) return null
+    // Expired codes stay visible so the UI can say "expired" instead of "unknown".
     return {
       userCode: rec.userCode,
       status: rec.status,
       expiresAt: rec.expiresAt,
-      expired: false,
+      expired: isExpired(rec, clock.now()),
       ...(rec.scopes?.length ? { scopes: rec.scopes } : {}),
       ...(rec.deviceName ? { deviceName: rec.deviceName } : {}),
       ...(rec.requestHashedIp ? { requestHashedIp: rec.requestHashedIp } : {}),

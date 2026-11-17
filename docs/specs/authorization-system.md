@@ -384,6 +384,9 @@ const USER_PERMISSIONS = [
   
   // Access
   'access_request:submit',
+  // Own CLI device pairing (mice login)
+  'cli_device:approve',
+  'cli_device:deny',
 ]
 ```
 
@@ -444,8 +447,6 @@ const MANAGER_PERMISSIONS = [
   // Access management (up to Manager level)
   'access_request:list',
   'access_request:review',
-  'cli_device:approve',
-  'cli_device:deny',
   'directory:search',
   
   // Announcements (read)
