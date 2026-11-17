@@ -32,11 +32,6 @@ type AuthEventInput = {
   reason?: string
   /** Client address. Stored only as today's hash. */
   clientIp?: string
-  /**
-   * Invoked when this failure pushes the Principal over 5 failures in 10 minutes.
-   * Ignored for successful outcomes.
-   */
-  onAlert?: (alert: FailureAlert) => void
   // These fields should be stripped if present
   token?: unknown
   accessToken?: unknown
@@ -44,6 +39,21 @@ type AuthEventInput = {
   code?: unknown
   authorizationCode?: unknown
   ipAddress?: unknown
+}
+
+/** Notify when a Principal crosses 5 failures in 10 minutes (spec S2). */
+export type FailureAlertNotify = (alert: FailureAlert) => void | Promise<void>
+
+/** Default in-process delivery: structured stderr line for operators / log shippers. */
+export function defaultFailureAlertNotify(alert: FailureAlert): void {
+  console.error(
+    '[mice-auth] auth failure-rate alert',
+    JSON.stringify({
+      principal: alert.principal,
+      failureCount: alert.failureCount,
+      windowMinutes: alert.windowMinutes,
+    }),
+  )
 }
 
 export type RecordAuthEventResult = {
@@ -69,7 +79,7 @@ export type AuthEventHashIp = (ip: string | null | undefined) => Promise<string 
  * the hash implementation; this module owns when hashed_ip is attached.
  */
 export async function prepareAuthEventForStore(
-  input: Omit<AuthEventInput, 'onAlert'>,
+  input: AuthEventInput,
   hash: AuthEventHashIp = hashIp,
 ): Promise<StoredAuthEvent> {
   const { principal, clientIp, type, requestId, outcome, reason } = input
@@ -87,25 +97,32 @@ export async function prepareAuthEventForStore(
 export type RecordAuthEventDeps = {
   /** Hash port for clientIp → hashed_ip; defaults to today's `hashIp`. */
   hash?: AuthEventHashIp
+  /**
+   * Failure-rate notify adapter (defaults to `defaultFailureAlertNotify`).
+   * Callers do not pass this per event — production wiring lives once here.
+   */
+  onFailureAlert?: FailureAlertNotify
 }
 
 /**
  * Auth-event module seam: redact sensitive fields, persist the event, and
- * (on failure) evaluate the 5-in-10-minute alert threshold. Callers do not
- * need a separate checkFailureRate hop. Hash is injectable so write-path integ
- * can prove hashed_ip attachment without depending on salt fixtures.
+ * (on failure) evaluate the 5-in-10-minute alert threshold and notify through
+ * the deps adapter. Callers do not need a separate checkFailureRate hop or a
+ * per-event onAlert. Hash is injectable so write-path integ can prove hashed_ip
+ * attachment without depending on salt fixtures.
  */
 export async function recordAuthEvent(
   input: AuthEventInput,
   deps: RecordAuthEventDeps = {},
 ): Promise<RecordAuthEventResult> {
-  const { onAlert, ...rest } = input
-  const safeEvent = await prepareAuthEventForStore(rest, deps.hash)
+  const safeEvent = await prepareAuthEventForStore(input, deps.hash)
 
   await getDb().insert(authEvents).values(safeEvent)
 
-  if (rest.outcome !== 'failure') return { alerted: false }
-  const alerted = await evaluateFailureRate(rest.principal, { onAlert })
+  if (input.outcome !== 'failure') return { alerted: false }
+  const alerted = await evaluateFailureRate(input.principal, {
+    onFailureAlert: deps.onFailureAlert ?? defaultFailureAlertNotify,
+  })
   return { alerted }
 }
 
@@ -190,7 +207,7 @@ export async function listAuthEventsForPrincipal(
  */
 async function evaluateFailureRate(
   principal: PrincipalId,
-  options: { onAlert?: (alert: FailureAlert) => void } = {},
+  options: { onFailureAlert: FailureAlertNotify },
 ): Promise<boolean> {
   const key = principalKey(principal)
   const windowMinutes = 10
@@ -228,7 +245,7 @@ async function evaluateFailureRate(
       })),
     }
 
-    options.onAlert?.(alert)
+    await options.onFailureAlert(alert)
     return true
   }
 

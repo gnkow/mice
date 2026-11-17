@@ -356,22 +356,24 @@ describe('Authentication Event Audit (Ticket 05)', () => {
 
       let alertCalled = false
       let alertData: any = null
-      const onAlert = (alert: any) => {
+      const onFailureAlert = (alert: any) => {
         alertCalled = true
         alertData = alert
       }
 
-      // recordAuthEvent owns the threshold check — no separate checkFailureRate call
+      // recordAuthEvent owns the threshold check — notify lives on deps, not per event
       for (let i = 0; i < 5; i++) {
         currentTime = now.getTime() + i * 60 * 1000
-        const result = await recordAuthEvent({
-          type: 'login',
-          principal: testUser,
-          requestId: `req-fail-${i}`,
-          outcome: 'failure',
-          reason: 'invalid_credentials',
-          onAlert,
-        })
+        const result = await recordAuthEvent(
+          {
+            type: 'login',
+            principal: testUser,
+            requestId: `req-fail-${i}`,
+            outcome: 'failure',
+            reason: 'invalid_credentials',
+          },
+          { onFailureAlert },
+        )
         if (i < 4) assert.strictEqual(result.alerted, false)
         else assert.strictEqual(result.alerted, true)
       }
@@ -389,18 +391,20 @@ describe('Authentication Event Audit (Ticket 05)', () => {
       currentTime = now.getTime()
 
       let alertCalled = false
-      const onAlert = () => { alertCalled = true }
+      const onFailureAlert = () => { alertCalled = true }
 
       for (let i = 0; i < 4; i++) {
         currentTime = now.getTime() + i * 60 * 1000
-        const result = await recordAuthEvent({
-          type: 'login',
-          principal: testUser,
-          requestId: `req-fail-${i}`,
-          outcome: 'failure',
-          reason: 'invalid_credentials',
-          onAlert,
-        })
+        const result = await recordAuthEvent(
+          {
+            type: 'login',
+            principal: testUser,
+            requestId: `req-fail-${i}`,
+            outcome: 'failure',
+            reason: 'invalid_credentials',
+          },
+          { onFailureAlert },
+        )
         assert.strictEqual(result.alerted, false)
       }
 
@@ -413,35 +417,79 @@ describe('Authentication Event Audit (Ticket 05)', () => {
       currentTime = now.getTime()
 
       let alertCalled = false
-      const onAlert = () => { alertCalled = true }
+      const onFailureAlert = () => { alertCalled = true }
 
       for (let i = 0; i < 3; i++) {
-        const result = await recordAuthEvent({
-          type: 'login',
-          principal: testUser,
-          requestId: `req-old-${i}`,
-          outcome: 'failure',
-          reason: 'invalid_credentials',
-          onAlert,
-        })
+        const result = await recordAuthEvent(
+          {
+            type: 'login',
+            principal: testUser,
+            requestId: `req-old-${i}`,
+            outcome: 'failure',
+            reason: 'invalid_credentials',
+          },
+          { onFailureAlert },
+        )
         assert.strictEqual(result.alerted, false)
       }
 
       currentTime = now.getTime() + 12 * 60 * 1000
 
       for (let i = 0; i < 2; i++) {
-        const result = await recordAuthEvent({
-          type: 'login',
-          principal: testUser,
-          requestId: `req-new-${i}`,
-          outcome: 'failure',
-          reason: 'invalid_credentials',
-          onAlert,
-        })
+        const result = await recordAuthEvent(
+          {
+            type: 'login',
+            principal: testUser,
+            requestId: `req-new-${i}`,
+            outcome: 'failure',
+            reason: 'invalid_credentials',
+          },
+          { onFailureAlert },
+        )
         assert.strictEqual(result.alerted, false)
       }
 
       assert.strictEqual(alertCalled, false)
+    })
+
+    it('uses the default notify adapter when deps omit onFailureAlert', async () => {
+      const testUser = { iss: 'https://idp.example.com', sub: `default-alert-${Date.now()}` }
+      const now = new Date('2026-10-26T10:00:00Z')
+      currentTime = now.getTime()
+
+      const lines: string[] = []
+      const original = console.error
+      console.error = (...args: unknown[]) => {
+        lines.push(args.map(String).join(' '))
+      }
+      try {
+        for (let i = 0; i < 5; i++) {
+          currentTime = now.getTime() + i * 60 * 1000
+          const result = await recordAuthEvent({
+            type: 'login',
+            principal: testUser,
+            requestId: `req-default-${i}`,
+            outcome: 'failure',
+            reason: 'invalid_credentials',
+          })
+          if (i < 4) assert.strictEqual(result.alerted, false)
+          else assert.strictEqual(result.alerted, true)
+        }
+      } finally {
+        console.error = original
+      }
+
+      assert.ok(lines.some((line) => line.includes('[mice-auth] auth failure-rate alert')))
+      assert.ok(
+        lines.some((line) => {
+          const json = line.slice(line.indexOf('{'))
+          try {
+            return JSON.parse(json).principal === principalKey(testUser)
+          } catch {
+            return false
+          }
+        }),
+      )
     })
   })
 

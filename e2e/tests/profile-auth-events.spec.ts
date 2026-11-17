@@ -30,6 +30,10 @@ test.describe('profile auth event log (PLAT-AUTH)', () => {
     const section = page.getByTestId('auth-event-log')
     await expect(section.getByRole('heading', { name: 'Security Activity' })).toBeVisible()
     await expect(section.getByText(/logout/i).first()).toBeVisible({ timeout: 15_000 })
+    await expect(section.getByTestId('auth-event-outcome').first()).toBeVisible()
+    await expect(section.getByRole('button', { name: 'Refresh security activity' })).toBeVisible()
+    const rows = section.getByTestId('auth-event-list').locator('li.auth-event-row')
+    expect(await rows.count()).toBeLessThanOrEqual(5)
   })
 
   test('TC-AUTH-AEL-44: Profile shows hashed IP when present on auth events', async ({

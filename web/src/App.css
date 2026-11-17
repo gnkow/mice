@@ -5746,6 +5746,59 @@ p.ok {
   transform: translate(-50%, -50%) rotate(40deg);
 }
 
+.empty-state-icon-lucide {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.auth-event-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+}
+
+.auth-event-icon-fail {
+  color: var(--danger);
+}
+
+.auth-event-outcome {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.auth-event-outcome.is-success {
+  color: var(--success, #3d9a6a);
+  border-color: color-mix(in srgb, var(--success, #3d9a6a) 40%, var(--line));
+  background: color-mix(in srgb, var(--success, #3d9a6a) 12%, var(--panel));
+}
+
+.auth-event-outcome.is-failure {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+}
+
+.auth-event-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.auth-event-footer .pagination {
+  margin: 0;
+  justify-content: flex-start;
+}
+
+.auth-event-footer > .btn {
+  margin-left: auto;
+}
+
 .commit-day-heading {
   margin: 1rem 0 0.4rem;
   font-size: 0.8rem;
