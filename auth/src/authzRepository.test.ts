@@ -143,6 +143,33 @@ describe('entity name tombstones', () => {
     assert.equal(await ensureRepository('tomb-ns', 'gone'), null)
     assert.ok(await ensureRepository('tomb-ns', 'fresh'))
   })
+
+  it('isNameReservedByTombstone holds for 90 days then releases', async () => {
+    const { isNameReservedByTombstone, TOMBSTONE_MS } = await import('./authzRepository.js')
+    const deletedAt = new Date('2026-01-01T00:00:00.000Z')
+    const stillReserved = deletedAt.getTime() + TOMBSTONE_MS - 1
+    const released = deletedAt.getTime() + TOMBSTONE_MS
+    assert.equal(isNameReservedByTombstone(deletedAt, stillReserved), true)
+    assert.equal(isNameReservedByTombstone(deletedAt, released), false)
+  })
+
+  it('allows reuse once the repository tombstone window expires', async () => {
+    const { getDb } = await import('./db/database.js')
+    const { repositoryTombstones } = await import('./db/schema.js')
+    const { eq } = await import('drizzle-orm')
+    const { TOMBSTONE_MS } = await import('./authzRepository.js')
+    await createNamespaceAuthz(alice, 'tomb-expire-ns', 'none')
+    assert.ok(await ensureRepository('tomb-expire-ns', 'recycle'))
+    const { deleteRepositoryRecord } = await import('./repositoryStore.js')
+    assert.deepEqual(await deleteRepositoryRecord('tomb-expire-ns', 'recycle'), { ok: true })
+    assert.equal(await ensureRepository('tomb-expire-ns', 'recycle'), null)
+    const expired = new Date(Date.now() - TOMBSTONE_MS - 60_000)
+    await getDb()
+      .update(repositoryTombstones)
+      .set({ deletedAt: expired })
+      .where(eq(repositoryTombstones.name, 'recycle'))
+    assert.ok(await ensureRepository('tomb-expire-ns', 'recycle'))
+  })
 })
 
 describe('audit entity ids', () => {

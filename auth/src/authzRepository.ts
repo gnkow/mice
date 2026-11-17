@@ -73,7 +73,13 @@ type Result = { ok: true } | { ok: false; error: string }
 /** Create returns the minted stable namespace id so callers need not re-read by name. */
 export type CreateNamespaceResult = { ok: true; id: string } | { ok: false; error: string }
 
-const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000
+/** Name-reuse quarantine after delete/rename (90 days). */
+export const TOMBSTONE_MS = 90 * 24 * 60 * 60 * 1000
+
+/** Pure decision: is a tombstoned name still reserved at `now`? */
+export function isNameReservedByTombstone(deletedAt: Date, now = Date.now()): boolean {
+  return now - deletedAt.getTime() < TOMBSTONE_MS
+}
 
 export function sessionGroups(user: { groups?: string[]; iss?: string }): string[] {
   const iss = user.iss?.trim() ? user.iss : defaultGroupIssuer()
@@ -336,7 +342,7 @@ async function nameBlockedByTombstone(name: string, now = Date.now()): Promise<b
     .limit(1)
   const row = rows[0]
   if (!row) return false
-  return now - row.deletedAt.getTime() < TOMBSTONE_MS
+  return isNameReservedByTombstone(row.deletedAt, now)
 }
 
 export async function readNamespace(name: string): Promise<NamespaceSettings | null> {
@@ -618,7 +624,7 @@ async function repoNameBlocked(namespaceId: string, name: string, now = Date.now
     .limit(1)
   const row = rows[0]
   if (!row) return false
-  return now - row.deletedAt.getTime() < TOMBSTONE_MS
+  return isNameReservedByTombstone(row.deletedAt, now)
 }
 
 export async function readRepository(ns: string, name: string): Promise<RepositoryRecord | null> {
