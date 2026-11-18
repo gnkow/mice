@@ -176,12 +176,17 @@ export function createCliCredentials(deps: CliCredentialDeps) {
     }
   }
 
-  async function issue(user: Holder, scopes?: CliCredentialScope[]): Promise<IssuedCliCredential> {
+  async function issue(
+    user: Holder,
+    scopes?: CliCredentialScope[],
+    opts?: { deviceName?: string },
+  ): Promise<IssuedCliCredential> {
     const now = clock.now()
     const familyId = randomBytes(16).toString('hex')
     const accessExpires = new Date(now + CLI_ACCESS_TTL_SEC * 1000)
     const familyExpires = new Date(now + FAMILY_TTL_MS)
     const pair = mintPair(familyId, accessExpires, familyExpires)
+    const deviceName = opts?.deviceName?.trim() || null
     await getDb().transaction(async (tx) => {
       await tx.insert(cliCredentialFamilies).values({
         id: familyId,
@@ -189,6 +194,7 @@ export function createCliCredentials(deps: CliCredentialDeps) {
         sub: user.sub,
         email: user.email,
         name: user.name,
+        deviceName,
         scopes: scopes?.length ? scopes : null,
         createdAt: new Date(now),
         expiresAt: familyExpires,
@@ -303,6 +309,7 @@ export function createCliCredentials(deps: CliCredentialDeps) {
     const rows = await getDb()
       .select({
         id: cliCredentialFamilies.id,
+        deviceName: cliCredentialFamilies.deviceName,
         createdAt: cliCredentialFamilies.createdAt,
         expiresAt: cliCredentialFamilies.expiresAt,
       })
@@ -314,6 +321,7 @@ export function createCliCredentials(deps: CliCredentialDeps) {
       ))
     return rows.map((row) => ({
       id: row.id,
+      ...(row.deviceName ? { deviceName: row.deviceName } : {}),
       createdAt: row.createdAt.toISOString(),
       expiresAt: row.expiresAt.toISOString(),
     }))

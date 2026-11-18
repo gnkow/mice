@@ -143,6 +143,15 @@ await describe('CLI credential', async () => {
     assert.equal(await creds.resolve(issued.accessToken), null)
   })
 
+  await it('listForUser includes the device name from issue', async () => {
+    const who = { ...alice, sub: 'alice-device-name' }
+    const creds = credentials()
+    await creds.issue(who, undefined, { deviceName: 'desk-laptop' })
+    const listed = await creds.listForUser(who)
+    assert.equal(listed.length, 1)
+    assert.equal(listed[0]?.deviceName, 'desk-laptop')
+  })
+
   await it('refuses a retired personal access token without looking it up', async () => {
     assert.equal(await credentials().resolve('mice_pat_retired'), null)
     assert.deepEqual(await credentials().refresh('mice_pat_retired'), { error: 'unknown' })

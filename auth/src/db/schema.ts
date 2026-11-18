@@ -396,6 +396,8 @@ export const cliCredentialFamilies = pgTable('cli_credential_families', {
   sub: text('sub').notNull(),
   email: text('email').notNull(),
   name: text('name').notNull(),
+  /** Label chosen at device approval (hostname by default). */
+  deviceName: text('device_name'),
   scopes: jsonb('scopes').$type<CliCredentialScope[]>(),
   createdAt: ts('created_at').notNull(),
   expiresAt: ts('expires_at').notNull(),

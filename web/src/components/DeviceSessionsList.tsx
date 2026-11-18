@@ -10,6 +10,7 @@ import { confirmDelete } from '../lib/confirmDelete'
 
 export type DeviceSession = {
   id: string
+  deviceName?: string
   createdAt: string
   expiresAt: string
 }
@@ -90,9 +91,11 @@ export function DeviceSessionsList() {
   }, [])
 
   async function handleRevoke(sessionId: string) {
+    const session = sessions.find((s) => s.id === sessionId)
+    const label = session?.deviceName?.trim() || sessionId
     const ok = await confirmDelete({
       title: 'Revoke CLI Credential',
-      detail: `This revokes credential ${sessionId}. Run mice login again on that device to get a new one. This cannot be undone.`,
+      detail: `This revokes ${label}. Run mice login again on that device to get a new one. This cannot be undone.`,
       requireTypedConfirm: false,
       irreversibleNote: false,
     })
@@ -174,7 +177,8 @@ export function DeviceSessionsList() {
       {!loading && !error && sessions.length > 0 && (
         <ul className="ns-member-list" aria-labelledby={headingId}>
           {sessions.map((session) => {
-            const revokeLabel = `Revoke CLI credential ${session.id}`
+            const deviceLabel = session.deviceName?.trim() || 'Device credential'
+            const revokeLabel = `Revoke CLI credential ${deviceLabel}`
             const createdAbsolute = new Date(session.createdAt).toLocaleString()
             const expiresAbsolute = new Date(session.expiresAt).toLocaleString()
             return (
@@ -184,11 +188,19 @@ export function DeviceSessionsList() {
                     <span className="status-pill neutral" role="status">
                       Device credential
                     </span>
-                    <code className="inline-code mono muted small" title={session.id}>
-                      {session.id}
-                    </code>
+                    <span
+                      className="cli-credential-device-name"
+                      data-testid="cli-credential-device-name"
+                      title={session.deviceName ? undefined : session.id}
+                    >
+                      {deviceLabel}
+                    </span>
                   </div>
                   <span className="muted small">
+                    <code className="inline-code mono" title={session.id}>
+                      {session.id.slice(0, 8)}…
+                    </code>
+                    {' · '}
                     Created{' '}
                     <time dateTime={session.createdAt} title={createdAbsolute}>
                       {formatTimeAgo(session.createdAt)}

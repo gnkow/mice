@@ -192,6 +192,7 @@ export type DeviceDeps = {
   mint: (
     user: SessionUser,
     scopes?: CliCredentialScope[],
+    opts?: { deviceName?: string },
   ) => Promise<{ token: string; refreshToken: string; expiresIn: number }>
   /** Revokes a minted credential whose approval lost a race. Does not end web sessions. */
   discard: (user: SessionUser, accessToken: string) => Promise<unknown>
@@ -360,7 +361,9 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
     if ('error' in found) return found.error
     const { rec } = found
     const deviceName = opts?.deviceName?.trim() || rec.deviceName
-    const minted = await deps.mint(user, rec.scopes)
+    const minted = await deps.mint(user, rec.scopes, {
+      ...(deviceName ? { deviceName } : {}),
+    })
     const won = await repo.approve(code, nowIso(), {
       token: minted.token,
       refreshToken: minted.refreshToken,
@@ -427,8 +430,8 @@ const defaults = createDeviceAuthorizations({
     remote: env.publicOxenRemote,
     authHost: hostOf(env.publicOxenRemote),
   }),
-  async mint(user, scopes) {
-    const issued = await issueCliCredential(user, scopes)
+  async mint(user, scopes, opts) {
+    const issued = await issueCliCredential(user, scopes, opts)
     return { token: issued.accessToken, refreshToken: issued.refreshToken, expiresIn: issued.expiresIn }
   },
   discard: (_user, accessToken) => revokeCliCredential(accessToken),

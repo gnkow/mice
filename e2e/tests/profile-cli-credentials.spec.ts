@@ -65,9 +65,14 @@ test.describe('profile CLI device credentials (PLAT-AUTH)', () => {
     }
     await mintSession(page, identity)
 
-    const started = await startDevice(page.request, { deviceName: 'e2e-profile-cli' })
+    const deviceName = 'e2e-profile-cli'
+    const started = await startDevice(page.request, { deviceName })
     const approve = await page.request.post(`${AUTH_URL}/auth/cli/device/approve`, {
-      data: { user_code: started.user_code, confirmation: 'APPROVE' },
+      data: {
+        user_code: started.user_code,
+        confirmation: 'APPROVE',
+        device_name: deviceName,
+      },
     })
     expect(approve.ok()).toBeTruthy()
 
@@ -84,6 +89,7 @@ test.describe('profile CLI device credentials (PLAT-AUTH)', () => {
     const section = page.getByTestId('cli-device-credentials')
     await expect(section).toContainText(/1 active/, { timeout: 15_000 })
     await expect(section.getByText('Device credential', { exact: true })).toBeVisible()
+    await expect(section.getByTestId('cli-credential-device-name')).toHaveText(deviceName)
 
     await section.getByRole('button', { name: /Revoke CLI credential/i }).click()
     await expect(page.getByRole('heading', { name: 'Revoke CLI Credential' })).toBeVisible()
