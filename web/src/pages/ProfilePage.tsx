@@ -14,12 +14,13 @@ import {
   Sun,
   UserRound,
 } from 'lucide-react'
-import { fetchAuthMe, fetchAuthzMe } from '../lib/auth'
+import { fetchAuthMe, fetchAuthzMe, type AuthUserGroup } from '../lib/auth'
 import { useAsync } from '../hooks/useAsync'
 import { loadAppearance, saveAppearance, subscribeAppearance, type Appearance } from '../lib/appearance'
 import { NotificationSettingsPage } from './NotificationSettingsPage'
 import { ProfileFavoritesSection } from '../components/ProfileFavoritesSection'
 import { ProfileCliAccessSection } from '../components/ProfileCliAccessSection'
+import { ProfileGroupMembership } from '../components/ProfileGroupMembership'
 import { profileRoleBadge, upgradeableRoles } from '../lib/profileRoleBadge'
 import {
   REQUESTABLE_ROLES,
@@ -35,6 +36,7 @@ export function ProfilePage() {
   const authz = useAsync(() => fetchAuthzMe(), [])
   const ownRequest = useAsync((signal) => fetchOwnAccessRequest(signal), [])
   const [appearance, setAppearance] = useState(loadAppearance)
+  const [refreshedGroups, setRefreshedGroups] = useState<AuthUserGroup[] | null>(null)
   useEffect(() => subscribeAppearance(() => setAppearance(loadAppearance())), [])
 
   function update(patch: Partial<Appearance>) {
@@ -70,6 +72,10 @@ export function ProfilePage() {
   const pendingRequest =
     ownRequest.kind === 'ok' ? ownRequest.data.request : null
 
+  const sessionGroups =
+    refreshedGroups ??
+    (me.kind === 'ok' && me.data.authenticated ? me.data.user.groups ?? [] : [])
+
   return <main className="page wide">
     <div className="page-head">
       <div><h1><UserRound size={24} className="button-label-icon" aria-hidden="true" />Profile</h1>
@@ -103,8 +109,8 @@ export function ProfilePage() {
                 Identity
               </h3>
               <p className="muted small">
-                Name, email, whether this sign-in used multi-factor authentication, and your
-                organisation SSO identity.
+                Name, email, MFA for this sign-in, organisation SSO identity, and IdP group
+                membership.
               </p>
             </div>
           </div>
@@ -169,6 +175,15 @@ export function ProfilePage() {
                   </dl>
                 </div>
               </div>
+
+              <ProfileGroupMembership
+                groups={sessionGroups}
+                onGroupsChange={(next) => {
+                  setRefreshedGroups(next)
+                  me.reload()
+                }}
+              />
+
               <p className="muted small auth-panel-stack">
                 Your identity and commit author are managed by your SSO provider.
               </p>

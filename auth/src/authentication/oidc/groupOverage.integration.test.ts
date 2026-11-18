@@ -43,9 +43,13 @@ describe('group overage directory-fetch package seam (Ticket 18)', () => {
       groups: [`${issuer}|eng`, `${issuer}|admin`],
     })
 
-    assert.equal(await resolveGroupOverage(claims, directory), true)
-    assert.deepEqual(claims.groups, [`${issuer}|eng`, `${issuer}|admin`])
-    assert.equal(claims.groupsOverage, undefined)
+    const resolved = await resolveGroupOverage(claims, directory)
+    assert.equal(resolved.ok, true)
+    if (!resolved.ok) return
+    assert.deepEqual(resolved.claims.groups, [`${issuer}|eng`, `${issuer}|admin`])
+    assert.equal(resolved.claims.groupsOverage, undefined)
+    assert.equal(claims.groupsOverage, true)
+    assert.deepEqual(claims.groups, [])
   })
 
   it('refuses overage resolution when the directory is unconfigured', async () => {
@@ -64,7 +68,10 @@ describe('group overage directory-fetch package seam (Ticket 18)', () => {
       ok: false,
       reason: 'unconfigured',
     })
-    assert.equal(await resolveGroupOverage(claims, directory), false)
+    assert.deepEqual(await resolveGroupOverage(claims, directory), {
+      ok: false,
+      reason: 'unconfigured',
+    })
     assert.equal(claims.groupsOverage, true)
   })
 
@@ -88,7 +95,10 @@ describe('group overage directory-fetch package seam (Ticket 18)', () => {
       ok: false,
       reason: 'empty',
     })
-    assert.equal(await resolveGroupOverage(claims, directory), false)
+    assert.deepEqual(await resolveGroupOverage(claims, directory), {
+      ok: false,
+      reason: 'empty',
+    })
   })
 
   it('does not call the directory when groups are already in the token', async () => {
@@ -116,7 +126,8 @@ describe('group overage directory-fetch package seam (Ticket 18)', () => {
         return base.getUserGroups(sub)
       },
     }
-    assert.equal(await resolveGroupOverage(claims, directory), true)
+    const resolved = await resolveGroupOverage(claims, directory)
+    assert.equal(resolved.ok, true)
     assert.equal(calls, 0)
     assert.deepEqual(claims.groups, [`${issuer}|eng`])
   })

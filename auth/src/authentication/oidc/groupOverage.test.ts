@@ -200,7 +200,7 @@ describe('Directory API Group Fetching (Ticket 18, U17)', () => {
 })
 
 describe('Group Overage Resolution (Ticket 18, U17)', () => {
-  it('resolves overage by fetching and updating claims', async () => {
+  it('resolves overage by returning claims with bound groups (no input mutation)', async () => {
     const claims: OidcClaims = {
       sub: 'alice123',
       iss: 'https://idp.example.com',
@@ -220,17 +220,21 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       }
     })
 
-    const success = await resolveGroupOverage(claims, directory)
-    assert.equal(success, true)
-    assert.deepEqual(claims.groups, [
+    const resolved = await resolveGroupOverage(claims, directory)
+    assert.equal(resolved.ok, true)
+    if (!resolved.ok) return
+    assert.deepEqual(resolved.claims.groups, [
       'https://idp.example.com|eng',
       'https://idp.example.com|admin',
       'https://idp.example.com|qa',
     ])
-    assert.equal(claims.groupsOverage, undefined)
+    assert.equal(resolved.claims.groupsOverage, undefined)
+    // Input claims stay untouched
+    assert.deepEqual(claims.groups, [])
+    assert.equal(claims.groupsOverage, true)
   })
 
-  it('returns false when overage detected but fetch fails', async () => {
+  it('returns typed failure when overage detected but fetch fails', async () => {
     const claims: OidcClaims = {
       sub: 'bob456',
       iss: 'https://idp.example.com',
@@ -248,13 +252,13 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       userGroups: {} // No groups for this user = fetch failure
     })
 
-    const success = await resolveGroupOverage(claims, directory)
-    assert.equal(success, false)
+    const resolved = await resolveGroupOverage(claims, directory)
+    assert.deepEqual(resolved, { ok: false, reason: 'empty' })
     assert.deepEqual(claims.groups, [])
-    assert.equal(claims.groupsOverage, true) // Still marked as overage
+    assert.equal(claims.groupsOverage, true)
   })
 
-  it('returns true when no overage detected', async () => {
+  it('returns ok claims when no overage detected', async () => {
     const claims: OidcClaims = {
       sub: 'charlie789',
       iss: 'https://idp.example.com',
@@ -270,12 +274,14 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       issuer: 'https://idp.example.com',
     })
 
-    const success = await resolveGroupOverage(claims, directory)
-    assert.equal(success, true)
-    assert.deepEqual(claims.groups, ['eng'])
+    const resolved = await resolveGroupOverage(claims, directory)
+    assert.equal(resolved.ok, true)
+    if (!resolved.ok) return
+    assert.equal(resolved.claims, claims)
+    assert.deepEqual(resolved.claims.groups, ['eng'])
   })
 
-  it('returns false when directory getUserGroups throws', async () => {
+  it('returns typed failure when directory getUserGroups throws', async () => {
     const claims: OidcClaims = {
       sub: 'erin111',
       iss: 'https://idp.example.com',
@@ -297,7 +303,10 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       },
     }
 
-    assert.equal(await resolveGroupOverage(claims, directory), false)
+    assert.deepEqual(await resolveGroupOverage(claims, directory), {
+      ok: false,
+      reason: 'error',
+    })
     assert.equal(claims.groupsOverage, true)
     assert.deepEqual(claims.groups, [])
   })
@@ -326,7 +335,8 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       },
     }
 
-    assert.equal(await resolveGroupOverage(claims, directory), true)
+    const resolved = await resolveGroupOverage(claims, directory)
+    assert.equal(resolved.ok, true)
     assert.equal(directoryCalls, 0)
     assert.deepEqual(claims.groups, ['https://idp.example.com|eng'])
   })

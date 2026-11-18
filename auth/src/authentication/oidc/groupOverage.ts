@@ -69,6 +69,14 @@ export async function fetchDirectoryGroupBindings(
 }
 
 /**
+ * Outcome of resolving IdP group overage into session-ready claims.
+ * Does not mutate the input; success returns a new claims object.
+ */
+export type GroupOverageResolution =
+  | { ok: true; claims: OidcClaims }
+  | { ok: false; reason: 'unconfigured' | 'empty' | 'error' }
+
+/**
  * Fetch groups from directory API when IdP indicates overage.
  * Returns populated groups array on success, empty array on failure / no overage path
  * that leaves existing claims groups when overage is not set.
@@ -79,34 +87,28 @@ export async function fetchGroupsOnOverage(
   claims: OidcClaims,
   directory: Directory,
 ): Promise<string[]> {
-  if (!claims.groupsOverage) {
-    return claims.groups
-  }
-  const fetched = await fetchDirectoryGroupBindings(claims, directory)
-  return fetched.ok ? fetched.groups : []
+  const resolved = await resolveGroupOverage(claims, directory)
+  return resolved.ok ? resolved.claims.groups : []
 }
 
 /**
- * Complete the claims by fetching groups if overage was detected.
- * Modifies claims.groups in place and removes the groupsOverage flag.
- *
- * Returns true if groups were successfully populated (or no overage),
- * false if overage was detected but groups could not be fetched.
+ * Complete claims by fetching groups when overage was detected.
+ * Returns a typed resolution: success carries claims with bound groups and
+ * no overage flag; failure carries the directory-fetch reason. Input is unchanged.
  */
 export async function resolveGroupOverage(
   claims: OidcClaims,
   directory: Directory,
-): Promise<boolean> {
+): Promise<GroupOverageResolution> {
   if (!claims.groupsOverage) {
-    return true
+    return { ok: true, claims }
   }
 
   const fetched = await fetchDirectoryGroupBindings(claims, directory)
   if (!fetched.ok) {
-    return false
+    return { ok: false, reason: fetched.reason }
   }
 
-  claims.groups = fetched.groups
-  delete claims.groupsOverage
-  return true
+  const { groupsOverage: _cleared, ...rest } = claims
+  return { ok: true, claims: { ...rest, groups: fetched.groups } }
 }

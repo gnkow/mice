@@ -22,6 +22,12 @@ import { INSTANCE_ROLES, getRolePermissions, isInstanceRole } from '../../rbacRo
 import { getEffectivePermissions, getUserRole, hasPermission } from '../../rbacStore.js'
 import { authzEnforceReport } from '../../authzAlwaysOn.js'
 import { sessionHasMfaEvidence } from '../signing/mfaEvidence.js'
+import { directoryNow } from '../directory/directory.js'
+import {
+  fetchDirectoryGroupsForSession,
+  loadSessionGroupMembership,
+} from './sessionGroupMembership.js'
+import { updateCurrentSessionGroups } from './session.js'
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -45,6 +51,8 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
         name: session.name,
         /** Current IdP session evidences MFA (acr + qualifying amr) — not IdP enrollment state. */
         mfaEvidenced: sessionHasMfaEvidence(session.idToken),
+        /** IdP groups on this session (binding key + display name). */
+        groups: await loadSessionGroupMembership(session.groups),
       },
     })
   })
@@ -273,6 +281,44 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
       ok: true,
       trainingCompleted: await hasCompletedTraining(target),
     })
+  }))
+
+  /**
+   * Refresh IdP groups on this Session from the directory (Profile → Group membership).
+   * Replaces session groups with the live directory list and returns display rows.
+   */
+  app.post('/auth/me/groups/refresh', guarded({ mutates: true }, async ({ c, user: session, audit }) => {
+    const fetched = await fetchDirectoryGroupsForSession(session, directoryNow())
+    if (!fetched.ok) {
+      const message =
+        fetched.reason === 'unconfigured'
+          ? 'Directory is not configured; group membership cannot be refreshed.'
+          : 'Group membership could not be refreshed from the directory.'
+      await audit({
+        action: 'auth.session.groups.refresh',
+        status: fetched.reason === 'unconfigured' ? 503 : 500,
+        message,
+        detail: { reason: fetched.reason },
+      })
+      return c.json({ error: message }, fetched.reason === 'unconfigured' ? 503 : 500)
+    }
+    const updated = await updateCurrentSessionGroups(c, fetched.bindingKeys)
+    if (!updated) {
+      await audit({
+        action: 'auth.session.groups.refresh',
+        status: 401,
+        message: 'No session to update',
+      })
+      return c.json({ error: 'Not authenticated' }, 401)
+    }
+    const groups = await loadSessionGroupMembership(fetched.bindingKeys)
+    await audit({
+      action: 'auth.session.groups.refresh',
+      status: 200,
+      message: `Refreshed ${groups.length} IdP groups on session`,
+      detail: { count: groups.length },
+    })
+    return c.json({ groups })
   }))
 
   /** List the caller's CLI credentials. */

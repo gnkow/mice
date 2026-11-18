@@ -147,15 +147,17 @@ export async function admitLoginAfterToken(input: {
     return failLogin(403, 'Suspended', isReauth)
   }
 
+  let claimsForSession = user
   if (user.groupsOverage) {
     const resolved = await resolveGroupOverage(user, directory)
-    if (!resolved) {
+    if (!resolved.ok) {
       return failLogin(
         500,
         'Group membership could not be determined. Please contact your administrator.',
         isReauth,
       )
     }
+    claimsForSession = resolved.claims
   }
 
   if (pkce.reauth) {
@@ -167,7 +169,7 @@ export async function admitLoginAfterToken(input: {
       return failLogin(400, 'Re-authentication was not recent enough.', true)
     }
   }
-  const { groups, nameBasedFallback } = await sessionGroups(user, directory)
+  const { groups, nameBasedFallback } = await sessionGroups(claimsForSession, directory)
   return {
     ok: true,
     ...(pkce.reauth ? { reauth: pkce.reauth } : {}),

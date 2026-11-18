@@ -1,11 +1,12 @@
 /**
  * HTTP integration for Ticket 49 — POST /auth/principals/emails
  * (emailLookupRequest → currentEmailsByAuthor). UI CommitEmail is out of lane.
+ * Also covers GET /auth/me group membership (Ticket 18 / #36).
  */
 import '../../db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
-import { isolatedAuth } from '../../testSupport.js'
+import { isolatedAuth, sealedSessionCookie } from '../../testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 after(() => iso.restore())
@@ -13,6 +14,8 @@ after(() => iso.restore())
 const { Hono } = await import('hono')
 const { registerMeRoutes } = await import('./meRoutes.js')
 const { ensurePrincipal } = await import('./session.js')
+const { upsertGroupDisplayNames } = await import('../../groupDisplayStore.js')
+const { groupBindingKey } = await import('../../groupBinding.js')
 
 const app = new Hono()
 registerMeRoutes(app, { audit: async () => {} })
@@ -20,6 +23,89 @@ registerMeRoutes(app, { audit: async () => {} })
 const alice = { ...iso.person('email-integ-alice'), name: 'Email Alice', email: 'alice@lab.test' }
 await iso.grantRole(alice, 'user')
 await ensurePrincipal(alice)
+
+describe('GET /auth/me group membership (Ticket 18 / #36)', () => {
+  it('returns session groups with display names', async () => {
+    const eng = groupBindingKey(alice.iss, 'eng-id')
+    const ops = groupBindingKey(alice.iss, 'ops-id')
+    await upsertGroupDisplayNames([
+      { bindingKey: eng, displayName: 'Engineering', idBased: true },
+      { bindingKey: ops, displayName: 'Operations', idBased: true },
+    ])
+    const cookie = await sealedSessionCookie({
+      ...alice,
+      groups: [ops, eng],
+    } as typeof alice & { groups: string[] })
+    const res = await app.request('/auth/me', {
+      headers: { cookie },
+    })
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as {
+      authenticated: boolean
+      user: { groups: Array<{ bindingKey: string; displayName: string }> }
+    }
+    assert.equal(body.authenticated, true)
+    assert.deepEqual(body.user.groups, [
+      { bindingKey: eng, displayName: 'Engineering' },
+      { bindingKey: ops, displayName: 'Operations' },
+    ])
+  })
+
+  it('returns an empty groups list when the session has none', async () => {
+    const res = await app.request('/auth/me', {
+      headers: await iso.sessionHeaders(alice),
+    })
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as {
+      user: { groups: unknown[] }
+    }
+    assert.deepEqual(body.user.groups, [])
+  })
+
+  it('POST /auth/me/groups/refresh replaces session groups from the directory', async () => {
+    const { createFakeDirectory } = await import('../directory/directoryFake.js')
+    const { setDirectoryForTests } = await import('../directory/directory.js')
+    const issuer = alice.iss
+    const eng = groupBindingKey(issuer, 'eng-id')
+    const ops = groupBindingKey(issuer, 'ops-id')
+    // sealedSessionCookie installs a Keycloak fetch mock; set the fake Directory after that.
+    const cookie = await sealedSessionCookie({ ...alice, groups: [] } as typeof alice & {
+      groups: string[]
+    })
+    setDirectoryForTests(
+      createFakeDirectory({
+        configured: true,
+        issuer,
+        // authenticate still needs a live directory status for /auth/me*
+        statuses: { [alice.sub]: 'enabled' },
+        users: [{ sub: alice.sub, email: alice.email, name: alice.name, iss: alice.iss }],
+        userGroups: { [alice.sub]: ['eng-id', 'ops-id'] },
+      }),
+    )
+    try {
+      const res = await app.request('/auth/me/groups/refresh', {
+        method: 'POST',
+        headers: { cookie, origin: 'http://localhost' },
+      })
+      assert.equal(res.status, 200)
+      const body = (await res.json()) as {
+        groups: Array<{ bindingKey: string; displayName: string }>
+      }
+      assert.deepEqual(body.groups, [
+        { bindingKey: eng, displayName: 'eng-id' },
+        { bindingKey: ops, displayName: 'ops-id' },
+      ])
+      const me = await app.request('/auth/me', { headers: { cookie } })
+      assert.equal(me.status, 200)
+      const meBody = (await me.json()) as {
+        user: { groups: Array<{ bindingKey: string; displayName: string }> }
+      }
+      assert.deepEqual(meBody.user.groups, body.groups)
+    } finally {
+      setDirectoryForTests(null)
+    }
+  })
+})
 
 describe('Ticket 49 — POST /auth/principals/emails HTTP seam', () => {
   it('returns current emails for known authors and omits unknown', async () => {

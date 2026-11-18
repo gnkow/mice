@@ -1,6 +1,11 @@
 import { parseAuthzMe, type AuthzMe } from './authzContract'
 import { decideIdpAccessGate, type IdpAccessGate } from './idpAccessGate'
 
+export type AuthUserGroup = {
+  bindingKey: string
+  displayName: string
+}
+
 export type AuthUser = {
   sub: string
   iss: string
@@ -11,6 +16,8 @@ export type AuthUser = {
    * False when password-only or claims missing — not the same as IdP enrollment.
    */
   mfaEvidenced?: boolean
+  /** IdP groups on this session (from login / overage resolve). */
+  groups?: AuthUserGroup[]
 }
 
 export type AuthMe =
@@ -46,6 +53,20 @@ export async function fetchAuthzMe(signal?: AbortSignal): Promise<AuthzMe | null
   })
   if (!res.ok) return null
   return parseAuthzMe(await res.json())
+}
+
+/** Refresh IdP groups on this session from the directory (Profile → Group membership). */
+export async function refreshAuthMeGroups(): Promise<AuthUserGroup[]> {
+  const res = await fetch('/auth/me/groups/refresh', {
+    method: 'POST',
+    credentials: 'same-origin',
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error ?? 'Could not refresh group membership')
+  }
+  const data = (await res.json()) as { groups?: AuthUserGroup[] }
+  return data.groups ?? []
 }
 
 /** True when the caller's effective RBAC permissions include `permission`. */

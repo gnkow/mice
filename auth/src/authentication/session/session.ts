@@ -259,6 +259,20 @@ export async function touchSession(c: Context, user: SessionUser): Promise<void>
   writeCookie(c, sealed, (user.sessionStart ?? nowSec()) + env.sessionTtlSec - nowSec())
 }
 
+/** Replace IdP group binding keys on the request's current web Session. */
+export async function updateCurrentSessionGroups(
+  c: Context,
+  groups: string[],
+): Promise<boolean> {
+  const id = await readSessionCookie(c)
+  if (!id) return false
+  const result = await getDb()
+    .update(webSessions)
+    .set({ groups })
+    .where(eq(webSessions.idHash, hashId(id)))
+  return (result.rowCount ?? 0) > 0
+}
+
 /** Deletes the server-side Session behind the request's cookie. */
 export async function destroySession(c: Context): Promise<void> {
   const id = await readSessionCookie(c)
