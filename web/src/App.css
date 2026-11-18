@@ -1120,6 +1120,14 @@ code {
   margin: 0;
   font-family: var(--font-display);
   font-size: 1.25rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.modal > p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .modal-body {
@@ -2832,6 +2840,29 @@ p.ok {
   gap: 0.15rem;
   min-width: 0;
   flex: 1;
+}
+
+#profile-web-sessions .ns-member-main,
+#profile-cli-credentials .ns-member-main {
+  gap: 0.45rem;
+}
+
+.web-session-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.web-session-title .inline-code {
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+#profile-web-sessions .ns-member-main > .muted.small,
+#profile-cli-credentials .ns-member-main > .muted.small {
+  line-height: 1.45;
 }
 
 .ns-member-sub {

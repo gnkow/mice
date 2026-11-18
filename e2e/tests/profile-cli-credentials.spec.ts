@@ -84,8 +84,9 @@ test.describe('profile CLI device credentials (PLAT-AUTH)', () => {
     await expect(section).toContainText(/1 active/, { timeout: 15_000 })
     await expect(section.getByText('Device credential', { exact: true })).toBeVisible()
 
-    page.once('dialog', (d) => void d.accept())
     await section.getByRole('button', { name: /Revoke CLI credential/i }).click()
+    await expect(page.getByRole('heading', { name: 'Revoke CLI Credential' })).toBeVisible()
+    await page.getByRole('button', { name: 'Confirm' }).click()
     await expect(section).toContainText(/No active CLI device credentials/i, {
       timeout: 15_000,
     })

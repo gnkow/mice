@@ -35,11 +35,14 @@ test.describe('profile web sessions list (PLAT-AUTH)', () => {
       section.getByText(/signing in from another browser may\s+sign out the oldest session/i),
     ).toBeVisible()
     await expect(section.getByText('Current session')).toBeVisible()
+    await expect(section.getByText('Session', { exact: true })).toBeVisible()
+    await expect(section.locator('.web-session-title code').first()).toBeVisible()
     await expect(section.getByTestId('web-session-expiry').first()).toContainText(/Idle expires/i)
     await expect(section.getByTestId('web-session-expiry').first()).toContainText(/Absolute expiry/i)
     await expect(
       section.getByRole('button', { name: /Sign out session/ }).first(),
     ).toBeVisible()
+    await expect(section.getByText('Sign Out', { exact: true }).first()).toBeVisible()
 
     await other.close()
   })
@@ -68,10 +71,11 @@ test.describe('profile web sessions list (PLAT-AUTH)', () => {
     await page.goto('/profile')
     const section = page.getByTestId('web-sessions-list')
     await expect(section).toContainText(/5 of 5 active/, { timeout: 15_000 })
-    await expect(section.getByTestId('web-sessions-cap-note')).toBeVisible()
-    await expect(section.getByTestId('web-sessions-cap-note')).toContainText(
-      /evict the oldest browser session/i,
-    )
+    const capNote = section.getByTestId('web-sessions-cap-note')
+    await expect(capNote).toBeVisible()
+    await expect(capNote).toContainText(/At limit/i)
+    await expect(capNote).toContainText(/evict the oldest browser session/i)
+    await expect(capNote.locator('.status-pill.warn')).toBeVisible()
 
     await Promise.all(extras.map((c) => c.close()))
   })
@@ -102,9 +106,7 @@ test.describe('profile web sessions list (PLAT-AUTH)', () => {
     await page.getByRole('button', { name: 'Confirm' }).click()
 
     await expect(section).toContainText(/1 of 5 active/, { timeout: 15_000 })
-    await expect(section.getByTestId('web-sessions-notice')).toContainText(
-      /Browser session signed out/i,
-    )
+    await expect(section.getByText('Current session')).toBeVisible()
     await other.close()
   })
 })

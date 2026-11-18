@@ -1,5 +1,6 @@
 import { Laptop, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
+import { confirmDelete } from '../lib/confirmDelete'
 
 /**
  * Lists the signed-in Principal's short-lived CLI device credentials from `mice login`.
@@ -89,13 +90,13 @@ export function DeviceSessionsList() {
   }, [])
 
   async function handleRevoke(sessionId: string) {
-    if (
-      !window.confirm(
-        'Revoke this CLI device credential? You will need to run "mice login" again on that device.',
-      )
-    ) {
-      return
-    }
+    const ok = await confirmDelete({
+      title: 'Revoke CLI Credential',
+      detail: `This revokes credential ${sessionId}. Run mice login again on that device to get a new one. This cannot be undone.`,
+      requireTypedConfirm: false,
+      irreversibleNote: false,
+    })
+    if (!ok) return
 
     try {
       setRevoking(sessionId)
@@ -165,8 +166,7 @@ export function DeviceSessionsList() {
           <Laptop size={28} className="empty-state-icon-lucide" aria-hidden="true" />
           <p className="muted">No active CLI device credentials.</p>
           <p className="muted small">
-            Run <code>mice login</code> to create a short-lived device credential. Personal
-            access tokens are not available.
+            Run <code>mice login</code> to create a short-lived device credential.
           </p>
         </div>
       )}
@@ -174,19 +174,19 @@ export function DeviceSessionsList() {
       {!loading && !error && sessions.length > 0 && (
         <ul className="ns-member-list" aria-labelledby={headingId}>
           {sessions.map((session) => {
-            const shortId = session.id.slice(0, 12)
-            const revokeLabel = `Revoke CLI credential ${shortId}`
+            const revokeLabel = `Revoke CLI credential ${session.id}`
             const createdAbsolute = new Date(session.createdAt).toLocaleString()
             const expiresAbsolute = new Date(session.expiresAt).toLocaleString()
             return (
               <li key={session.id} className="ns-member-row" data-testid="cli-credential-row">
                 <div className="ns-member-main">
-                  <div>
-                    <strong>Device credential</strong>
-                    <span className="mono muted small" title={session.id}>
-                      {' '}
-                      {shortId}…
+                  <div className="web-session-title">
+                    <span className="status-pill neutral" role="status">
+                      Device credential
                     </span>
+                    <code className="inline-code mono muted small" title={session.id}>
+                      {session.id}
+                    </code>
                   </div>
                   <span className="muted small">
                     Created{' '}

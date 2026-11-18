@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { sealSession, ensurePrincipal, type SessionUser } from './session.js'
 import {
   enforceWebSessionCap,
-  sessionToEvictForCap,
+  sessionsToEvictForCap,
   WEB_SESSION_CAP,
 } from './sessionCap.js'
 import { getDb } from '../../db/database.js'
@@ -37,24 +37,28 @@ const mk = (sub: string, opts?: Partial<SessionUser>): SessionUser => ({
   ...opts,
 })
 
-describe('sessionToEvictForCap', () => {
-  it('returns null when under the cap', () => {
+describe('sessionsToEvictForCap', () => {
+  it('returns empty when under the cap', () => {
     const rows = [
       { idHash: 'a', sessionStart: 1 },
       { idHash: 'b', sessionStart: 2 },
     ]
-    assert.equal(sessionToEvictForCap(rows, WEB_SESSION_CAP), null)
-    assert.equal(sessionToEvictForCap(rows, 5), null)
+    assert.deepEqual(sessionsToEvictForCap(rows, WEB_SESSION_CAP), [])
+    assert.deepEqual(sessionsToEvictForCap(rows, 5), [])
   })
 
-  it('returns the oldest row when at the cap', () => {
+  it('returns the oldest row when at the cap (room for one mint)', () => {
     const rows = [1, 2, 3, 4, 5].map((n) => ({ idHash: `h${n}`, sessionStart: n }))
-    assert.deepEqual(sessionToEvictForCap(rows, 5), { idHash: 'h1', sessionStart: 1 })
+    assert.deepEqual(sessionsToEvictForCap(rows, 5), [{ idHash: 'h1', sessionStart: 1 }])
   })
 
-  it('returns the oldest row when over the cap', () => {
-    const rows = [1, 2, 3, 4, 5, 6].map((n) => ({ idHash: `h${n}`, sessionStart: n }))
-    assert.deepEqual(sessionToEvictForCap(rows, 5), { idHash: 'h1', sessionStart: 1 })
+  it('returns enough oldest rows when already over the cap', () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7].map((n) => ({ idHash: `h${n}`, sessionStart: n }))
+    assert.deepEqual(sessionsToEvictForCap(rows, 5), [
+      { idHash: 'h1', sessionStart: 1 },
+      { idHash: 'h2', sessionStart: 2 },
+      { idHash: 'h3', sessionStart: 3 },
+    ])
   })
 })
 
@@ -201,7 +205,7 @@ describe('Session Cap and Eviction', () => {
     assert.equal(eviction.detail?.cap, WEB_SESSION_CAP)
   })
 
-  it('enforceWebSessionCap returns the evicted row (no audit side-channel required)', async () => {
+  it('enforceWebSessionCap returns the evicted rows (no audit side-channel required)', async () => {
     const user = mk('evan-return')
     const principalId = await ensurePrincipal(user)
     const sessions: string[] = []
@@ -217,17 +221,48 @@ describe('Session Cap and Eviction', () => {
       principalId,
       actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
     })
-    assert.ok(result.evicted, 'expected an eviction at the cap')
-    assert.equal(result.evicted.idHash, hashId(sessions[0]!))
-    assert.equal(
+    assert.equal(result.evicted.length, 1, 'expected one eviction at the cap')
+    assert.equal(result.evicted[0]!.idHash, hashId(sessions[0]!))
+    assert.deepEqual(
       (
         await enforceWebSessionCap({
           principalId,
           actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
         })
       ).evicted,
-      null,
+      [],
       'under cap after one eviction',
     )
+  })
+
+  it('enforceWebSessionCap heals an already over-cap store before mint', async () => {
+    const user = mk('over-cap-heal')
+    const principalId = await ensurePrincipal(user)
+    const now = Math.floor(Date.now() / 1000)
+    // Insert seven rows directly so the store is already over the cap.
+    for (let i = 0; i < WEB_SESSION_CAP + 2; i++) {
+      await getDb().insert(webSessions).values({
+        idHash: hashId(`pre-${user.sub}-${i}`),
+        principalId,
+        email: user.email,
+        emailVerified: true,
+        name: user.name,
+        idToken: null,
+        groups: [],
+        authTime: null,
+        sessionStart: now - (200 - i * 10),
+        lastActive: now,
+      })
+    }
+    const result = await enforceWebSessionCap({
+      principalId,
+      actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+    })
+    assert.equal(result.evicted.length, 3)
+    const remaining = await getDb()
+      .select()
+      .from(webSessions)
+      .where(eq(webSessions.principalId, principalId))
+    assert.equal(remaining.length, WEB_SESSION_CAP - 1)
   })
 })

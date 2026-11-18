@@ -104,7 +104,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             <p id={detailId} className="muted">
               {pending.options.detail}
             </p>
-            <p className="muted small">This cannot be undone.</p>
+            {pending.options.irreversibleNote !== false ? (
+              <p className="muted small">This cannot be undone.</p>
+            ) : null}
             {needType && (
               <div className="confirm-type">
                 <label className="confirm-type-label" htmlFor={inputId}>

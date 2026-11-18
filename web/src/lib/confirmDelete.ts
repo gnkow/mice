@@ -7,6 +7,11 @@ export type ConfirmDeleteOptions = {
   confirmWord?: string
   /** When false, only Confirm/Cancel (default true) */
   requireTypedConfirm?: boolean
+  /**
+   * When false, omit the separate “This cannot be undone.” line
+   * (fold that warning into `detail` instead). Default true.
+   */
+  irreversibleNote?: boolean
 }
 
 type Opener = (options: ConfirmDeleteOptions) => Promise<boolean>

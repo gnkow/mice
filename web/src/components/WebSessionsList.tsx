@@ -92,7 +92,6 @@ export function WebSessionsList() {
   const [sessions, setSessions] = useState<WebSession[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [revoking, setRevoking] = useState<string | null>(null)
 
   async function loadSessions(signal?: AbortSignal) {
@@ -117,22 +116,19 @@ export function WebSessionsList() {
   }, [])
 
   async function handleRevoke(sessionId: string) {
-    const shortId = sessionId.slice(0, 12)
     const ok = await confirmDelete({
-      title: `Sign out session ${shortId}…?`,
-      detail:
-        'That browser will need to sign in again. Your current session stays signed in.',
+      title: 'Sign Out from Web Session',
+      detail: `This ends session ${sessionId} on that browser. It will need to sign in again. Your current session stays signed in. This cannot be undone.`,
       requireTypedConfirm: false,
+      irreversibleNote: false,
     })
     if (!ok) return
 
     try {
       setRevoking(sessionId)
       setError(null)
-      setNotice(null)
       await revokeWebSession(sessionId)
       await loadSessions()
-      setNotice('Browser session signed out.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to revoke session')
     } finally {
@@ -159,7 +155,10 @@ export function WebSessionsList() {
             <Monitor size={16} className="button-label-icon" aria-hidden="true" />
             Web Sessions
             {!loading && !error ? (
-              <span className="muted small"> ({activeLabel})</span>
+              <span className="muted small" role="status" aria-atomic="true">
+                {' '}
+                ({activeLabel})
+              </span>
             ) : null}
           </h3>
           <p id={descId} className="muted small">
@@ -174,12 +173,6 @@ export function WebSessionsList() {
       {loading && (
         <p role="status" aria-live="polite">
           Loading web sessions…
-        </p>
-      )}
-
-      {!loading && notice && (
-        <p className="flash flash-success" role="status" data-testid="web-sessions-notice">
-          {notice}
         </p>
       )}
 
@@ -210,8 +203,7 @@ export function WebSessionsList() {
         <ul className="ns-member-list" aria-labelledby={headingId}>
           {sessions.map((session) => {
             const isCurrent = session.current === true
-            const shortId = session.id.slice(0, 12)
-            const revokeLabel = `Sign out session ${shortId}`
+            const revokeLabel = `Sign out session ${session.id}`
 
             return (
               <li
@@ -222,14 +214,17 @@ export function WebSessionsList() {
                 <div className="ns-member-main">
                   <div className="web-session-title">
                     {isCurrent ? (
-                      <span className="pill ok" role="status">
+                      <span className="status-pill ok" role="status">
                         Current session
                       </span>
                     ) : (
-                      <span className="mono muted small" title={session.id}>
-                        Session {shortId}…
+                      <span className="status-pill neutral" role="status">
+                        Session
                       </span>
                     )}
+                    <code className="inline-code mono muted small" title={session.id}>
+                      {session.id}
+                    </code>
                   </div>
                   <span className="muted small">
                     Started {formatTimeAgo(session.sessionStart)}
@@ -263,7 +258,7 @@ export function WebSessionsList() {
                     onClick={() => void handleRevoke(session.id)}
                   >
                     <Trash2 size={14} className="button-label-icon" aria-hidden="true" />
-                    {revoking === session.id ? 'Signing out…' : 'Sign out this session'}
+                    {revoking === session.id ? 'Signing out…' : 'Sign Out'}
                   </button>
                 )}
               </li>
@@ -273,9 +268,9 @@ export function WebSessionsList() {
       )}
 
       {nearCap && (
-        <p className="muted small" role="status" data-testid="web-sessions-cap-note">
-          You are at the {WEB_SESSION_CAP}-session limit. A new sign-in may evict the oldest
-          browser session (reason: cap exceeded).
+        <p className="flash flash-warn" role="status" data-testid="web-sessions-cap-note">
+          <span className="status-pill warn">At limit</span>{' '}
+          A new sign-in may evict the oldest browser session (reason: cap exceeded).
         </p>
       )}
 

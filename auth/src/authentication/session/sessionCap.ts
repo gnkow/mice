@@ -16,25 +16,26 @@ export type SessionCapActor = {
 }
 
 /**
- * When existing sessions (oldest-first) are at or over the cap, return the
- * oldest row to delete before inserting a new Session.
+ * Rows that must be deleted (oldest-first) so one new Session can be minted
+ * without exceeding `cap`. Already over-cap stores are healed in one pass.
  */
-export function sessionToEvictForCap(
+export function sessionsToEvictForCap(
   existingOldestFirst: CapSessionRow[],
   cap: number = WEB_SESSION_CAP,
-): CapSessionRow | null {
-  if (existingOldestFirst.length < cap) return null
-  return existingOldestFirst[0] ?? null
+): CapSessionRow[] {
+  const overflow = existingOldestFirst.length - (cap - 1)
+  if (overflow <= 0) return []
+  return existingOldestFirst.slice(0, overflow)
 }
 
 export type EnforceWebSessionCapResult = {
-  /** Oldest session removed to make room, or null when under the cap. */
-  evicted: CapSessionRow | null
+  /** Oldest sessions removed to make room for one mint (empty when under the cap). */
+  evicted: CapSessionRow[]
 }
 
 /**
- * Enforce the per-Principal web Session cap: if at cap, delete the oldest
- * Session and append `session.evict` with reason `cap-exceeded`.
+ * Enforce the per-Principal web Session cap: delete enough oldest Sessions that
+ * one new mint fits, appending `session.evict` / `cap-exceeded` for each.
  * Callers learn the eviction outcome from the return value — no audit side-channel.
  */
 export async function enforceWebSessionCap(input: {
@@ -50,31 +51,33 @@ export async function enforceWebSessionCap(input: {
     .where(eq(webSessions.principalId, input.principalId))
     .orderBy(asc(webSessions.sessionStart))
 
-  const oldest = sessionToEvictForCap(existingSessions)
-  if (!oldest) return { evicted: null }
+  const toEvict = sessionsToEvictForCap(existingSessions)
+  if (toEvict.length === 0) return { evicted: [] }
 
-  await getDb().delete(webSessions).where(eq(webSessions.idHash, oldest.idHash))
+  for (const oldest of toEvict) {
+    await getDb().delete(webSessions).where(eq(webSessions.idHash, oldest.idHash))
 
-  await appendAudit({
-    actor: {
-      sub: input.actor.sub,
-      iss: input.actor.iss,
-      email: input.actor.email,
-      name: input.actor.name,
-    },
-    via: 'system',
-    method: 'POST',
-    path: '/auth/session/seal',
-    status: 200,
-    action: 'session.evict',
-    message: `Session evicted: cap exceeded (${WEB_SESSION_CAP} concurrent sessions max)`,
-    detail: {
-      evictedSessionHash: oldest.idHash,
-      evictedSessionStart: oldest.sessionStart,
-      reason: 'cap-exceeded',
-      cap: WEB_SESSION_CAP,
-    },
-  })
+    await appendAudit({
+      actor: {
+        sub: input.actor.sub,
+        iss: input.actor.iss,
+        email: input.actor.email,
+        name: input.actor.name,
+      },
+      via: 'system',
+      method: 'POST',
+      path: '/auth/session/seal',
+      status: 200,
+      action: 'session.evict',
+      message: `Session evicted: cap exceeded (${WEB_SESSION_CAP} concurrent sessions max)`,
+      detail: {
+        evictedSessionHash: oldest.idHash,
+        evictedSessionStart: oldest.sessionStart,
+        reason: 'cap-exceeded',
+        cap: WEB_SESSION_CAP,
+      },
+    })
+  }
 
-  return { evicted: oldest }
+  return { evicted: toEvict }
 }
