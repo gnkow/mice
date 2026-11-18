@@ -30,7 +30,13 @@ type Row = {
   action: string
   phase?: string
   status: number
-  detail?: { authors?: string[]; reason?: string; self_merge?: boolean }
+  detail?: {
+    authors?: string[]
+    reason?: string
+    self_merge?: boolean
+    signer?: string
+    matching_authors?: string[]
+  }
 }
 const outcomes = async (action: string) =>
   (await ledger.readAll())
@@ -100,6 +106,9 @@ describe('self-merge prevention on merge proxy', () => {
     assert.equal(postMergeHits, 1)
     const o = (await outcomes('merge')).at(-1)!
     assert.equal(o.status, 200)
+    assert.equal(o.detail?.self_merge, false)
+    assert.equal(o.detail?.signer, mergerAuthor)
+    assert.ok(o.detail?.authors?.includes(otherAuthor))
   })
 
   it('rejects merge when the signer authored a commit in the range', async () => {

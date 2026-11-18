@@ -55,7 +55,8 @@ export type MergeRefusalCode =
 
 const REFUSAL_COPY: Record<string, string> = {
   not_approver: 'You need the Approver role for this repository to sign the merge.',
-  self_merge: 'You authored commits in this range, so you cannot approve this merge.',
+  self_merge:
+    'Self-merge forbidden (4-eyes): you authored commits in this range, so you cannot approve this merge.',
   head_mismatch: 'Source or target moved since this preview. Resync the merge request and try again.',
   not_open: 'This merge request is not open (it may be stale, merged, or blocked).',
   binding_mismatch: 'Content changed after display; the pending signature is invalid.',

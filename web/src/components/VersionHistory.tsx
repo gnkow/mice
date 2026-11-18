@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import type { AsyncState } from '../hooks/useAsync'
 import type { ApproverPrincipal, SeatVersionEntry } from '../lib/authzApi'
+import { toAuthorKey } from '../lib/userRef'
 import { usePrincipalProfiles } from './CommitEmail'
 import { GroupPrincipalLabel } from './GroupPrincipalLabel'
 import { StateBlock } from './StateBlock'
@@ -97,7 +98,7 @@ export function ApproverVersionSeats({
 /** Seats (user or group + role) captured in a membership or collaborator version. */
 export function SeatVersionList({ seats, emptyLabel }: { seats: SeatVersionEntry[]; emptyLabel: string }) {
   const authors = useMemo(
-    () => seats.filter((s) => s.kind === 'user').map((s) => s.key),
+    () => seats.filter((s) => s.kind === 'user').map((s) => toAuthorKey(s.key)),
     [seats],
   )
   const profiles = usePrincipalProfiles(authors)
@@ -109,7 +110,7 @@ export function SeatVersionList({ seats, emptyLabel }: { seats: SeatVersionEntry
           {s.kind === 'group' ? (
             <GroupPrincipalLabel group={s.key} inline />
           ) : (
-            <UserRef author={s.key} profiles={profiles} />
+            <UserRef author={toAuthorKey(s.key)} profiles={profiles} />
           )}{' '}
           <span className="ns-tag">{s.role}</span>
         </li>

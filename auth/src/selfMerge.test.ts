@@ -5,6 +5,7 @@ import {
   decideSelfMerge,
   evaluateSelfMergeFromCommits,
   SELF_MERGE_FORBIDDEN,
+  selfMergeAuditDetail,
 } from './selfMerge.js'
 
 describe('decideSelfMerge', () => {
@@ -61,5 +62,32 @@ describe('evaluateSelfMergeFromCommits', () => {
 
   it('ignores non-string author fields when extracting', () => {
     assert.deepEqual(authorsFromCommits([{ author: 1 }, { author: '  x  ' }, {}]), ['x'])
+  })
+})
+
+describe('selfMergeAuditDetail', () => {
+  const alice = { iss: 'https://idp.example/', sub: 'alice' }
+  const aliceAuthor = 'https://idp.example|alice'
+  const bobAuthor = 'https://idp.example|bob'
+
+  it('records signer and authors on an approved merge', () => {
+    assert.deepEqual(selfMergeAuditDetail(alice, [bobAuthor], { allow: true }), {
+      self_merge: false,
+      signer: aliceAuthor,
+      authors: [bobAuthor],
+    })
+  })
+
+  it('records reason and matching authors on a denied self-merge', () => {
+    const denied = decideSelfMerge(alice, [bobAuthor, aliceAuthor])
+    assert.equal(denied.allow, false)
+    if (denied.allow) return
+    assert.deepEqual(selfMergeAuditDetail(alice, [bobAuthor, aliceAuthor], denied), {
+      self_merge: true,
+      signer: aliceAuthor,
+      authors: [bobAuthor, aliceAuthor],
+      reason: SELF_MERGE_FORBIDDEN,
+      matching_authors: [aliceAuthor],
+    })
   })
 })

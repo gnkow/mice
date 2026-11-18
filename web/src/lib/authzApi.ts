@@ -238,7 +238,7 @@ export async function authzFetch<T>(
     method === 'GET' || method === 'HEAD'
       ? await send()
       : await withReason(send, {
-          changeSummary: summarizeMutation(method, path),
+          changeSummary: summarizeMutation(method, path, mutationBody),
           method,
           path,
           body: mutationBody,

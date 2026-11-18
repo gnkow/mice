@@ -13,7 +13,12 @@ import { isSigningBlockedByDrift } from '../compliance/idpDriftDetection.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
 import type { SessionUser } from '../session/session.js'
-import { allocateChangeControlId } from '../../changeControl.js'
+import {
+  allocateChangeControlId,
+  DuplicateChangeControlIdError,
+  isValidChangeControlId,
+  normalizeChangeControlId,
+} from '../../changeControl.js'
 import { prepareMutationDocument } from '../../mutationSignature.js'
 import { REASON_CATEGORIES } from '../../auditReason.js'
 import { requireSigningAccess, SIGNING_STEP_UP_MAX_AGE_SEC } from './signingAccess.js'
@@ -216,12 +221,22 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       )
 
       const signature = createSignature(content, meaning, session)
-      const changeControlId =
+      const rawCc =
         typeof body.changeControlId === 'string' && body.changeControlId.trim()
           ? body.changeControlId.trim()
           : typeof body.change_control_id === 'string' && body.change_control_id.trim()
             ? body.change_control_id.trim()
-            : allocateChangeControlId()
+            : ''
+      const changeControlId = rawCc || allocateChangeControlId()
+      if (!isValidChangeControlId(normalizeChangeControlId(changeControlId))) {
+        return c.json(
+          {
+            error: 'Change-control id must be 3–128 characters (letters, digits, . _ / -)',
+            code: 'change_control_id_invalid',
+          },
+          400,
+        )
+      }
       // Optional merge-result binding (gxp/06 signing ceremony UI → complete signed merge).
       const rawBinding = body.binding
       const binding =
@@ -266,6 +281,16 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
         })
       } catch (err) {
+        if (err instanceof DuplicateChangeControlIdError) {
+          return c.json(
+            {
+              error: 'This change-control id was already used',
+              code: err.code,
+              changeControlId: err.changeControlId,
+            },
+            409,
+          )
+        }
         const reason = err instanceof Error ? err.message : 'signature record unavailable'
         await audit(c, user, 'session', {
           status: 503,

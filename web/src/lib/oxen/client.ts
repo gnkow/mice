@@ -75,7 +75,7 @@ export async function oxenFetch<T>(
     method === 'GET' || method === 'HEAD'
       ? await send()
       : await withReason(send, {
-          changeSummary: summarizeMutation(method, path),
+          changeSummary: summarizeMutation(method, path, options.body),
           method,
           path,
           body: options.body,

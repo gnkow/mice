@@ -92,6 +92,13 @@
       "when": 1795100000000,
       "tag": "0012_cli_credential_device_name",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795200000000,
+      "tag": "0013_change_control_claims",
+      "breakpoints": true
     }
   ]
 }

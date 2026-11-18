@@ -8,14 +8,18 @@ import {
   type ReactNode,
 } from 'react'
 import {
-  REASON_CATEGORIES,
+  CEREMONY_NOTICE,
+  CHANGE_CONTROL_ID_HINT,
+  isValidChangeControlId,
   registerReasonOpener,
+  suggestChangeControlId,
   suggestReasonCategory,
   type ReasonCategoryValue,
   type ReasonPromptOptions,
   type ReasonSubmission,
 } from '../lib/reasonPrompt'
 import { fetchAuthMe } from '../lib/auth'
+import { UserRef } from './UserRef'
 import {
   classifySigningChallenge,
   mfaRequiredChallenge,
@@ -46,15 +50,17 @@ type Prepared = {
 const PLACEHOLDER =
   'e.g. Corrected assay plate layout after deviation DEV-12'
 
-/** One friendly notice: permanence + MFA + reason length (no API/header jargon). */
-const CEREMONY_NOTICE =
-  'Who made this change and why is kept permanently. You’ll confirm with multi-factor authentication before it runs. Enter a clear reason of at least 10 characters below.'
-
 export function ReasonPromptProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null)
-  const [category, setCategory] = useState<ReasonCategoryValue>('data_correction')
+  const [category, setCategory] = useState<ReasonCategoryValue>('other')
   const [reason, setReason] = useState('')
+  const [changeControlId, setChangeControlId] = useState('')
   const [prepared, setPrepared] = useState<Prepared | null>(null)
+  const [signer, setSigner] = useState<{
+    iss: string
+    sub: string
+    name: string
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [challenge, setChallenge] = useState<SigningChallenge | null>(null)
@@ -62,8 +68,8 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
   const titleId = useId()
   const changeId = useId()
   const noticeId = useId()
-  const categoryId = useId()
   const reasonId = useId()
+  const ccId = useId()
   const hashId = useId()
 
   useEffect(() => {
@@ -80,7 +86,9 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
               }),
           )
           setReason(draft?.reason ?? '')
+          setChangeControlId(draft?.changeControlId ?? suggestChangeControlId())
           setPrepared(null)
+          setSigner(null)
           setError(null)
           setChallenge(null)
           setBusy(false)
@@ -88,7 +96,13 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
           // Gate before reason entry: no MFA evidence → Complete MFA interstitial.
           void fetchAuthMe()
             .then((me) => {
-              if (!me.authenticated || me.user.mfaEvidenced !== false) return
+              if (!me.authenticated) return
+              setSigner({
+                iss: me.user.iss,
+                sub: me.user.sub,
+                name: me.user.name,
+              })
+              if (me.user.mfaEvidenced !== false) return
               setChallenge(mfaRequiredChallenge(pageResumePath()))
             })
             .catch(() => {
@@ -136,7 +150,9 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     pending?.resolve(value)
     setPending(null)
     setReason('')
+    setChangeControlId('')
     setPrepared(null)
+    setSigner(null)
     setError(null)
     setChallenge(null)
     setBusy(false)
@@ -197,7 +213,12 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function executeCeremony(text: string, cat: ReasonCategoryValue, prep: Prepared) {
+  async function executeCeremony(
+    text: string,
+    cat: ReasonCategoryValue,
+    prep: Prepared,
+    cc: string,
+  ) {
     setBusy(true)
     setError(null)
     setChallenge(null)
@@ -216,6 +237,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
           content: prep.content,
           meaning: 'Approved',
           expectedHash: prep.hash,
+          changeControlId: cc,
         }),
       })
       const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
@@ -236,10 +258,8 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
       finish({
         reason: text,
         category: cat,
+        changeControlId: signature.changeControlId?.trim() || cc,
         signatureId: signature.id,
-        ...(signature.changeControlId
-          ? { changeControlId: signature.changeControlId }
-          : {}),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Signature failed')
@@ -250,15 +270,18 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     const text = reason.trim()
-    if (text.length < 10 || !category || busy) return
+    const cc = changeControlId.trim()
+    if (text.length < 10 || !isValidChangeControlId(cc) || !category || busy) return
     if (!prepared) {
       void prepareCeremony(text, category)
       return
     }
-    void executeCeremony(text, category, prepared)
+    void executeCeremony(text, category, prepared, cc)
   }
 
-  const canConfirm = reason.trim().length >= 10 && !busy
+  const canConfirm =
+    reason.trim().length >= 10 && isValidChangeControlId(changeControlId) && !busy
+  const actionsSigner = prepared?.principal ?? signer
 
   return (
     <>
@@ -276,7 +299,11 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
               body: pending.options.body,
               changeSummary: pending.options.changeSummary,
               ...(reason.trim()
-                ? { draftReason: reason.trim(), draftCategory: category }
+                ? {
+                    draftReason: reason.trim(),
+                    draftCategory: category,
+                    draftChangeControlId: changeControlId.trim() || undefined,
+                  }
                 : {}),
             })
           }}
@@ -295,47 +322,24 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            aria-describedby={`${changeId} ${noticeId}`}
+            aria-describedby={
+              !prepared ? `${changeId} ${noticeId}` : changeId
+            }
             onSubmit={onSubmit}
           >
             <h2 id={titleId} className="modal-title">
-              {prepared ? 'Electronic signature' : 'Reason and signature required'}
+              {prepared ? 'Electronic signature' : 'Signature Required'}
             </h2>
 
             <section className="reason-prompt-change" aria-labelledby={changeId}>
               <h3 id={changeId} className="reason-prompt-heading">
-                What will change
+                Change
               </h3>
               <p className="reason-prompt-summary">{pending.options.changeSummary}</p>
             </section>
 
-            <p id={noticeId} className="reason-prompt-notice muted small">
-              {CEREMONY_NOTICE}
-            </p>
-
             {!prepared ? (
               <>
-                <label className="reason-prompt-label" htmlFor={categoryId}>
-                  Category
-                  <select
-                    id={categoryId}
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as ReasonCategoryValue)}
-                    required
-                    disabled={busy}
-                    aria-describedby={`${categoryId}-hint`}
-                  >
-                    {REASON_CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value} title={c.hint}>
-                        {c.label} — {c.hint}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p id={`${categoryId}-hint`} className="muted small">
-                  {REASON_CATEGORIES.find((c) => c.value === category)?.hint}
-                </p>
-
                 <label className="reason-prompt-label" htmlFor={reasonId}>
                   Reason
                   <textarea
@@ -351,6 +355,30 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
                     disabled={busy}
                   />
                 </label>
+                <p id={noticeId} className="reason-prompt-notice muted small">
+                  {CEREMONY_NOTICE}
+                </p>
+
+                <label className="reason-prompt-label" htmlFor={ccId}>
+                  Change-control id
+                  <input
+                    id={ccId}
+                    type="text"
+                    value={changeControlId}
+                    onChange={(e) => setChangeControlId(e.target.value)}
+                    placeholder="CC-YYYYMMDD-xxxxxxxx"
+                    required
+                    minLength={3}
+                    maxLength={128}
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={busy}
+                    aria-describedby={`${ccId}-hint`}
+                  />
+                  <span id={`${ccId}-hint`} className="reason-prompt-field-hint muted small">
+                    {CHANGE_CONTROL_ID_HINT}
+                  </span>
+                </label>
               </>
             ) : (
               <section className="reason-prompt-change" aria-labelledby={hashId}>
@@ -358,10 +386,14 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
                   Review before signing
                 </h3>
                 <p className="muted small">
-                  Meaning <strong>Approved</strong> · {prepared.principal.name}
+                  Meaning <strong>Approved</strong> ·{' '}
+                  <UserRef
+                    author={`${prepared.principal.iss}|${prepared.principal.sub}`}
+                    name={prepared.principal.name}
+                  />
                 </p>
                 <p className="muted small">
-                  Category {category} · action {prepared.action}
+                  Change-control {changeControlId.trim()} · action {prepared.action}
                 </p>
                 <p className="muted small" style={{ wordBreak: 'break-all' }}>
                   Content hash <code className="inline-code">{prepared.hash}</code>
@@ -376,16 +408,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
               </p>
             ) : null}
 
-            <p className="muted small">
-              A change-control id is assigned automatically and stored with the signature and audit
-              record.
-            </p>
-
             <div className="btn-row modal-actions">
-              <button type="button" className="btn ghost" onClick={() => finish(null)} disabled={busy}>
-                <ActionX size={14} aria-hidden="true" className="button-label-icon" />
-                Cancel
-              </button>
               {prepared ? (
                 <button
                   type="button"
@@ -399,10 +422,25 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
                   Back
                 </button>
               ) : null}
-              <button type="submit" className="btn primary" disabled={!canConfirm}>
-                <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
-                {prepared ? 'Sign and continue' : 'Review signature'}
+              <button type="button" className="btn ghost" onClick={() => finish(null)} disabled={busy}>
+                <ActionX size={14} aria-hidden="true" className="button-label-icon" />
+                Cancel
               </button>
+              <div className="reason-prompt-actions-signer">
+                <button type="submit" className="btn primary" disabled={!canConfirm}>
+                  <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
+                  Sign
+                </button>
+                {actionsSigner ? (
+                  <>
+                    <span className="reason-prompt-actions-as">as</span>
+                    <UserRef
+                      author={`${actionsSigner.iss}|${actionsSigner.sub}`}
+                      name={actionsSigner.name}
+                    />
+                  </>
+                ) : null}
+              </div>
             </div>
           </form>
         </div>

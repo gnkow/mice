@@ -1,11 +1,24 @@
-/** Parse a commit author stamped as canonical `iss|sub`. */
+/**
+ * Parse a Principal stamped as `iss|sub` (commit author) or `iss\u001fsub`
+ * (AuthZ storage / seat history keys).
+ */
 export function parsePrincipalAuthor(
   author: string,
 ): { iss: string; sub: string } | null {
   const trimmed = author.trim()
+  const us = trimmed.indexOf('\u001f')
+  if (us > 0 && us < trimmed.length - 1) {
+    return { iss: trimmed.slice(0, us), sub: trimmed.slice(us + 1) }
+  }
   const bar = trimmed.indexOf('|')
   if (bar <= 0 || bar === trimmed.length - 1) return null
   return { iss: trimmed.slice(0, bar), sub: trimmed.slice(bar + 1) }
+}
+
+/** Canonical display / profile lookup key (`iss|sub`). */
+export function toAuthorKey(author: string): string {
+  const parsed = parsePrincipalAuthor(author)
+  return parsed ? `${parsed.iss}|${parsed.sub}` : author.trim()
 }
 
 /** Email local-part used as a username when no IdP username is available. */

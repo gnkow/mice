@@ -51,3 +51,30 @@ export function evaluateSelfMergeFromCommits(
 ): SelfMergeDecision {
   return decideSelfMerge(signer, authorsFromCommits(commits))
 }
+
+/** Audit detail for approved and denied self-merge checks (signer + authors + reason). */
+export function selfMergeAuditDetail(
+  signer: { iss: string; sub: string },
+  authors: readonly string[],
+  decision: SelfMergeDecision,
+): {
+  self_merge: boolean
+  signer: string
+  authors: string[]
+  reason?: string
+  matching_authors?: string[]
+} {
+  const base = {
+    signer: signerAuthorKey(signer),
+    authors: [...authors],
+  }
+  if (!decision.allow) {
+    return {
+      ...base,
+      self_merge: true,
+      reason: decision.reason,
+      matching_authors: decision.matchingAuthors,
+    }
+  }
+  return { ...base, self_merge: false }
+}

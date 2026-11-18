@@ -22,6 +22,18 @@ describe('parsePrincipalAuthor', () => {
     assert.equal(parsePrincipalAuthor('|only-sub'), null)
     assert.equal(parsePrincipalAuthor('only-iss|'), null)
   })
+
+  it('splits AuthZ storage keys that use the unit separator', () => {
+    assert.deepEqual(
+      parsePrincipalAuthor(
+        'http://localhost:8180/realms/mice\u001fa0000000-0000-4000-8000-000000000002',
+      ),
+      {
+        iss: 'http://localhost:8180/realms/mice',
+        sub: 'a0000000-0000-4000-8000-000000000002',
+      },
+    )
+  })
 })
 
 describe('decideUserRefLabel', () => {

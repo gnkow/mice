@@ -5,6 +5,7 @@ import {
   decideUserRefLabel,
   decideUserRefUsername,
   parsePrincipalAuthor,
+  toAuthorKey,
 } from '../lib/userRef'
 import { AuthorAvatar } from './AuthorAvatar'
 import { UserInfo } from './UserInfo'
@@ -34,7 +35,7 @@ export function UserRef({
   /** When false, render a static chip (safe inside another button). */
   interactive?: boolean
 }) {
-  const key = author.trim()
+  const key = toAuthorKey(author)
   const parsed = parsePrincipalAuthor(key)
   const name = nameProp?.trim() || profiles?.names?.[key]
   const currentEmail = profiles?.emails?.[key]

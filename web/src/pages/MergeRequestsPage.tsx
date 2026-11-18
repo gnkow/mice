@@ -1,11 +1,13 @@
 import { GitPullRequest } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
+import { MergeRequestSignPanel } from '../components/MergeRequestSignPanel'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { listMergeRequests } from '../lib/mergeRequests'
 
-/** Lists BFF merge requests for a repository; sign link opens the ceremony UI (#92). */
+/** Lists BFF merge requests; Sign opens the shared reason/signature ceremony modal. */
 export function MergeRequestsPage() {
   const { namespace = '', repo = '' } = useParams()
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
@@ -13,6 +15,7 @@ export function MergeRequestsPage() {
     (signal) => listMergeRequests(namespace, repo, signal),
     [namespace, repo],
   )
+  const [signId, setSignId] = useState<string | null>(null)
 
   return (
     <main className="page">
@@ -65,12 +68,13 @@ export function MergeRequestsPage() {
                     </p>
                   </div>
                   {mr.status === 'open' || mr.status === 'stale' ? (
-                    <Link
+                    <button
+                      type="button"
                       className="btn primary"
-                      to={`${base}/merge-requests/${encodeURIComponent(mr.id)}`}
+                      onClick={() => setSignId(mr.id)}
                     >
                       Sign
-                    </Link>
+                    </button>
                   ) : (
                     <Link
                       className="btn ghost"
@@ -84,6 +88,17 @@ export function MergeRequestsPage() {
             </ul>
           ))}
       </StateBlock>
+
+      {signId ? (
+        <MergeRequestSignPanel
+          mergeRequestId={signId}
+          namespace={namespace}
+          repo={repo}
+          embedded
+          onDismiss={() => setSignId(null)}
+          onComplete={() => state.reload()}
+        />
+      ) : null}
     </main>
   )
 }

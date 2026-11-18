@@ -81,7 +81,7 @@ export async function openReasonPromptViaAnnouncement(page: Page): Promise<void>
   await section.getByRole('button', { name: 'Publish announcement' }).click()
 
   await expect(
-    page.getByRole('dialog', { name: /Reason and signature required/i }),
+    page.getByRole('dialog', { name: /Signature Required/i }),
   ).toBeVisible()
 }
 

@@ -74,12 +74,18 @@ export async function withReason(
   const ask = options?.ask ?? ((input) => askReason(input))
   const submission = await ask({
     detail,
-    changeSummary: options?.changeSummary ?? summarizeMutation(method, path),
+    changeSummary:
+      options?.changeSummary ?? summarizeMutation(method, path, body),
     method,
     path,
     body,
   })
-  if (!submission?.reason.trim() || !submission.category || !submission.signatureId) {
+  if (
+    !submission?.reason.trim() ||
+    !submission.category ||
+    !submission.signatureId ||
+    !submission.changeControlId?.trim()
+  ) {
     // Do not surface the BFF's reason_required body as a page flash after dismiss.
     throw new CeremonyCancelled()
   }
@@ -87,9 +93,7 @@ export async function withReason(
     reason: submission.reason.trim(),
     category: submission.category,
     signatureId: submission.signatureId,
-    ...(submission.changeControlId?.trim()
-      ? { changeControlId: submission.changeControlId.trim() }
-      : {}),
+    changeControlId: submission.changeControlId.trim(),
   })
 }
 

@@ -208,6 +208,13 @@ export const signatureIndex = pgTable(
   (t) => [index('signature_index_repo').on(t.repo), index('signature_index_signer').on(t.signerKey)],
 )
 
+/** QMS change-control ids claimed by electronic signatures — never reused. */
+export const changeControlClaims = pgTable('change_control_claims', {
+  id: text('id').primaryKey(),
+  signatureId: text('signature_id').notNull(),
+  claimedAt: ts('claimed_at').notNull().defaultNow(),
+})
+
 /** Approvers are an orthogonal grant (not a rank): they may sign merges into validated branches. */
 export const namespaceApprovers = pgTable(
   'namespace_approvers',

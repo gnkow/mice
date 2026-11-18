@@ -251,15 +251,29 @@ export function RepoSettingsPage() {
                 placeholder="New name"
                 autoComplete="off"
                 required
+                aria-invalid={newName.trim() === repo}
+                aria-describedby={
+                  newName.trim() === repo ? 'repo-rename-same-name' : undefined
+                }
               />
               <button
                 className="btn ghost"
                 type="submit"
                 disabled={busy || !newName.trim() || newName.trim() === repo}
+                title={
+                  newName.trim() === repo
+                    ? 'Choose a different name to rename'
+                    : undefined
+                }
               >
                 <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />Rename
               </button>
             </form>
+            {newName.trim() === repo ? (
+              <p id="repo-rename-same-name" className="muted small">
+                Already the current name — enter a different display name to rename.
+              </p>
+            ) : null}
           </section>
         ) : null}
 

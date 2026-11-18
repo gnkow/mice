@@ -62,7 +62,7 @@ import { renameRepository } from './repositoryStore.js'
 import {
   authorsFromCommits,
   decideSelfMerge,
-  signerAuthorKey,
+  selfMergeAuditDetail,
 } from './selfMerge.js'
 
 const HOP_BY_HOP = new Set([
@@ -418,6 +418,7 @@ export async function proxyToOxen(
   }
 
   // Repositories: 4-eyes self-merge check (authz already enforced the role floor above).
+  let mergeAuthors: string[] | undefined
   if (mutating && classified.action === 'merge') {
     const loaded = await loadMergeAuthors(pathname, reqHeaders)
     if (!loaded.ok) {
@@ -445,11 +446,7 @@ export async function proxyToOxen(
           ...fields,
           detail: {
             ...fields.detail,
-            self_merge: true,
-            reason: selfMerge.reason,
-            authors: loaded.authors,
-            matching_authors: selfMerge.matchingAuthors,
-            signer: signerAuthorKey(user),
+            ...selfMergeAuditDetail(user, loaded.authors, selfMerge),
           },
         })
       }
@@ -462,6 +459,7 @@ export async function proxyToOxen(
         { status: 403, headers: { 'content-type': 'application/json' } },
       )
     }
+    mergeAuthors = loaded.authors
   }
 
   // Display-name rename only: oxen physical keys are stable UUIDs (no in-place oxen rename).
@@ -611,7 +609,16 @@ export async function proxyToOxen(
       buffered = responseBody
     }
 
-    const auditEvent = await appendOutcome(intent.id, auditFields(upstream.status, datasetVersions.after(upstream, buffered)))
+    const outcomeFields = auditFields(upstream.status, datasetVersions.after(upstream, buffered))
+    const auditEvent = await appendOutcome(intent.id, {
+      ...outcomeFields,
+      detail: {
+        ...outcomeFields.detail,
+        ...(mergeAuthors
+          ? selfMergeAuditDetail(user, mergeAuthors, { allow: true })
+          : {}),
+      },
+    })
     await lineage.after(upstream, buffered, auditEvent?.id)
 
     // Create: AuthZ was minted before oxen; stamp id + restore display names on the answer.
