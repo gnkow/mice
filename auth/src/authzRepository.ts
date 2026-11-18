@@ -87,10 +87,11 @@ export function sessionGroups(user: { groups?: string[]; iss?: string }): string
   const seen = new Set<string>()
   for (const g of user.groups ?? []) {
     if (!g?.trim()) continue
-    const { bindingKey } = toGroupBindingKey(iss, g)
-    if (seen.has(bindingKey)) continue
-    seen.add(bindingKey)
-    out.push(bindingKey)
+    const resolved = toGroupBindingKey(iss, g)
+    if (!resolved.idBased) continue
+    if (seen.has(resolved.bindingKey)) continue
+    seen.add(resolved.bindingKey)
+    out.push(resolved.bindingKey)
   }
   return out
 }

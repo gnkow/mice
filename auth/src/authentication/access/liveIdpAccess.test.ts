@@ -19,12 +19,12 @@ describe('evaluateLiveIdpAccess (Ticket 19)', () => {
     const result = await evaluateLiveIdpAccess(user, lookup)
     assert.deepEqual(result, {
       ok: true,
-      reachable: true,
+      kind: 'allowed',
       account: { status: 'enabled', name: 'Ada Lovelace' },
     })
   })
 
-  it('returns 503 when the directory is unreachable', async () => {
+  it('returns unreachable when the directory is unreachable', async () => {
     const lookup = async (): Promise<DirectoryUserState> => ({
       status: 'error',
       name: '',
@@ -32,12 +32,12 @@ describe('evaluateLiveIdpAccess (Ticket 19)', () => {
     const result = await evaluateLiveIdpAccess(user, lookup)
     assert.equal(result.ok, false)
     if (result.ok) return
+    assert.equal(result.kind, 'unreachable')
     assert.equal(result.status, 503)
-    assert.equal(result.reachable, false)
     assert.match(result.error, /Service Unavailable|IdP/i)
   })
 
-  it('returns 503 when the user is disabled', async () => {
+  it('returns disabled when the user is disabled', async () => {
     const lookup = async (): Promise<DirectoryUserState> => ({
       status: 'disabled',
       name: 'Ada',
@@ -45,12 +45,24 @@ describe('evaluateLiveIdpAccess (Ticket 19)', () => {
     const result = await evaluateLiveIdpAccess(user, lookup)
     assert.equal(result.ok, false)
     if (result.ok) return
+    assert.equal(result.kind, 'disabled')
     assert.equal(result.status, 503)
-    assert.equal(result.reachable, true)
-    assert.equal(result.disabled, true)
   })
 
-  it('returns 403 when the enabled user has no IdP display name', async () => {
+  it('returns missing when the Principal is absent from the directory', async () => {
+    const lookup = async (): Promise<DirectoryUserState> => ({
+      status: 'missing',
+      name: '',
+    })
+    const result = await evaluateLiveIdpAccess(user, lookup)
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.kind, 'missing')
+    assert.equal(result.status, 503)
+    assert.match(result.error, /Service Unavailable|IdP/i)
+  })
+
+  it('returns nameless when the enabled user has no IdP display name', async () => {
     const lookup = async (): Promise<DirectoryUserState> => ({
       status: 'enabled',
       name: '   ',
@@ -58,6 +70,7 @@ describe('evaluateLiveIdpAccess (Ticket 19)', () => {
     const result = await evaluateLiveIdpAccess(user, lookup)
     assert.equal(result.ok, false)
     if (result.ok) return
+    assert.equal(result.kind, 'nameless')
     assert.equal(result.status, 403)
     assert.equal(result.error, 'Your account has no name in the identity provider.')
   })
@@ -69,14 +82,14 @@ describe('evaluateLiveIdpAccess (Ticket 19)', () => {
     const result = await evaluateLiveIdpAccess(user, lookup)
     assert.equal(result.ok, false)
     if (result.ok) return
-    assert.equal(result.reachable, false)
+    assert.equal(result.kind, 'unreachable')
     assert.equal(result.status, 503)
   })
 })
 
 describe('settleLiveIdpAccess (Ticket 19)', () => {
-  it('records reachability and disabled side effects for the authenticated-request gate', async () => {
-    const checks: Array<{ reachable: boolean }> = []
+  it('records reachability and disabled side effects keyed by kind', async () => {
+    const checks: Array<{ reachable: boolean; check?: string }> = []
     const disabled: string[] = []
 
     const unreachable = await settleLiveIdpAccess(user, {
@@ -84,14 +97,18 @@ describe('settleLiveIdpAccess (Ticket 19)', () => {
       now: () => 1_700_000_000_000,
       requestId: 'req-1',
       recordCheck: async (input) => {
-        checks.push({ reachable: input.reachable })
+        checks.push({
+          reachable: input.reachable,
+          ...(input.check ? { check: input.check } : {}),
+        })
       },
       recordDisabled: async (principal) => {
         disabled.push(principal.sub)
       },
     })
     assert.equal(unreachable.ok, false)
-    assert.deepEqual(checks, [{ reachable: false }])
+    if (!unreachable.ok) assert.equal(unreachable.kind, 'unreachable')
+    assert.deepEqual(checks, [{ reachable: false, check: 'authenticated-request' }])
     assert.deepEqual(disabled, [])
 
     checks.length = 0
@@ -107,8 +124,24 @@ describe('settleLiveIdpAccess (Ticket 19)', () => {
     })
     assert.equal(disabledUser.ok, false)
     if (disabledUser.ok) return
-    assert.equal(disabledUser.disabled, true)
+    assert.equal(disabledUser.kind, 'disabled')
     assert.deepEqual(checks, [{ reachable: true }])
     assert.deepEqual(disabled, ['alice'])
+
+    checks.length = 0
+    disabled.length = 0
+    const missing = await settleLiveIdpAccess(user, {
+      lookup: async () => ({ status: 'missing', name: '' }),
+      recordCheck: async (input) => {
+        checks.push({ reachable: input.reachable })
+      },
+      recordDisabled: async (principal) => {
+        disabled.push(principal.sub)
+      },
+    })
+    assert.equal(missing.ok, false)
+    if (!missing.ok) assert.equal(missing.kind, 'missing')
+    assert.deepEqual(checks, [{ reachable: true }])
+    assert.deepEqual(disabled, [])
   })
 })

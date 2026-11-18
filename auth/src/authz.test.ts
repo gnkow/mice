@@ -292,14 +292,15 @@ await describe('Phase 2–3 extras', async () => {
 
   await it('IdP group member gets base permission', async () => {
     const ns = 'tc-group-member'
+    const engineering = '11111111-1111-4111-8111-111111111111'
     await createNamespaceAuthz(admin, ns, 'read', true)
-    await setNamespaceGroupMember(ns, 'engineering', 'member')
+    await setNamespaceGroupMember(ns, engineering, 'member')
     const carol = {
       sub: 'carol',
       iss: 'test',
       email: 'carol@example.com',
       name: 'Carol',
-      groups: ['Engineering'],
+      groups: [engineering],
     }
     assert.equal(await isPendingUser(carol), true)
     await withFormalRole(carol, 'external')
@@ -310,14 +311,15 @@ await describe('Phase 2–3 extras', async () => {
 
   await it('IdP group collaborator grants repo role', async () => {
     const ns = 'tc-group-collab'
+    const contractors = '22222222-2222-4222-8222-222222222222'
     await createNamespaceAuthz(admin, ns, 'none', true)
-    await setRepoGroupCollaborator(ns, 'data', 'contractors', 'write')
+    await setRepoGroupCollaborator(ns, 'data', contractors, 'write')
     const dave = {
       sub: 'dave',
       iss: 'test',
       email: 'dave@example.com',
       name: 'Dave',
-      groups: ['contractors'],
+      groups: [contractors],
     }
     assert.equal((await hasRepoPermission(dave, ns, 'data', 'write')).ok, true)
     assert.equal((await hasRepoPermission(dave, ns, 'other', 'read')).ok, false)
@@ -325,23 +327,25 @@ await describe('Phase 2–3 extras', async () => {
 
   await it('additive user + group grants take max role', async () => {
     const ns = 'tc-group-add'
+    const leads = '33333333-3333-4333-8333-333333333333'
     await createNamespaceAuthz(admin, ns, 'read', true)
     await setNamespaceMember(ns, alice, 'member')
-    await setRepoGroupCollaborator(ns, 'repo', 'leads', 'maintain')
-    const withGroup = { ...alice, groups: ['leads'] }
+    await setRepoGroupCollaborator(ns, 'repo', leads, 'maintain')
+    const withGroup = { ...alice, groups: [leads] }
     assert.equal(await effectiveRepoRole(withGroup, ns, 'repo'), 'maintain')
   })
 
   await it('leaving IdP group loses group-derived access', async () => {
     const ns = 'tc-group-leave'
+    const temp = '44444444-4444-4444-8444-444444444444'
     await createNamespaceAuthz(admin, ns, 'read', true)
-    await setNamespaceGroupMember(ns, 'temp', 'member')
+    await setNamespaceGroupMember(ns, temp, 'member')
     const eve = {
       sub: 'eve',
       iss: 'test',
       email: 'eve@example.com',
       name: 'Eve',
-      groups: ['temp'],
+      groups: [temp],
     }
     assert.equal((await hasRepoPermission(eve, ns, 'r', 'read')).ok, true)
     const left = { ...eve, groups: [] }
@@ -351,15 +355,16 @@ await describe('Phase 2–3 extras', async () => {
 
   await it('cannot remove last Owner when only group Owner remains', async () => {
     const ns = 'tc-group-owner'
+    const owners = '55555555-5555-4555-8555-555555555555'
     await createNamespaceAuthz(admin, ns, 'none', true)
-    await setNamespaceGroupMember(ns, 'owners', 'owner')
+    await setNamespaceGroupMember(ns, owners, 'owner')
     // Remove user Owner — group Owner remains
     const r = await removeNamespaceMember(ns, admin)
     assert.equal(r.ok, true)
-    const r2 = await removeNamespaceGroupMember(ns, 'owners')
+    const r2 = await removeNamespaceGroupMember(ns, owners)
     assert.equal(r2.ok, false)
     const listed = await listNamespaceMembers(ns)
-    assert.ok(listed.some((m) => m.kind === 'group' && m.group.endsWith('|owners')))
+    assert.ok(listed.some((m) => m.kind === 'group' && m.group.endsWith(`|${owners}`)))
   })
 
   await it('training gate blocks until completed', async () => {

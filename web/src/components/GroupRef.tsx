@@ -1,12 +1,12 @@
+import { UsersRound } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { decideGroupRefLabel } from '../lib/groupRef'
-import { AuthorAvatar } from './AuthorAvatar'
 import { GroupInfo } from './GroupInfo'
 
 type PanelPos = { top: number; left: number }
 
-/** Compact IdP group reference: avatar + name; click opens GroupInfo. */
+/** Compact IdP group reference: group icon + name; click opens GroupInfo. */
 export function GroupRef({
   bindingKey,
   displayName,
@@ -83,7 +83,9 @@ export function GroupRef({
 
   const chip = (
     <>
-      <AuthorAvatar name={label} />
+      <span className="avatar-circle group-ref-avatar" aria-hidden="true" title={label}>
+        <UsersRound size={14} strokeWidth={2.25} />
+      </span>
       <span className="group-ref-label user-ref-label">{label}</span>
     </>
   )

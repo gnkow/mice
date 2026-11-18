@@ -69,6 +69,24 @@ describe('toGroupBindingKey', () => {
   })
 })
 
+describe('requireIdBasedGroupBinding', () => {
+  it('accepts object ids and refuses display names', async () => {
+    const { requireIdBasedGroupBinding, GROUP_OBJECT_ID_REQUIRED } = await import('./groupBinding.js')
+    assert.deepEqual(
+      requireIdBasedGroupBinding('http://kc.test/realms/mice', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'),
+      {
+        ok: true,
+        bindingKey: 'http://kc.test/realms/mice|aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        groupId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      },
+    )
+    assert.deepEqual(requireIdBasedGroupBinding('http://kc.test/realms/mice', 'Engineering'), {
+      ok: false,
+      error: GROUP_OBJECT_ID_REQUIRED,
+    })
+  })
+})
+
 describe('extractGroupsFromClaims', () => {
   it('treats Azure AD GUID groups as id-based', () => {
     const r = extractGroupsFromClaims(
@@ -93,34 +111,23 @@ describe('extractGroupsFromClaims', () => {
     assert.equal(r.groups[0]!.idBased, true)
   })
 
-  it('falls back to normalized names with a warning when claims are display names', () => {
+  it('drops display-name claims and flags name-based fallback', () => {
     const r = extractGroupsFromClaims(['Quality Team', 'Engineering'], {
       issuer: 'http://kc.test/realms/mice',
     })
     assert.equal(r.nameBasedFallback, true)
-    assert.deepEqual(r.groups.map((g) => ({ key: g.bindingKey, idBased: g.idBased, name: g.displayName })), [
-      {
-        key: 'http://kc.test/realms/mice|quality team',
-        idBased: false,
-        name: 'Quality Team',
-      },
-      {
-        key: 'http://kc.test/realms/mice|engineering',
-        idBased: false,
-        name: 'Engineering',
-      },
-    ])
+    assert.deepEqual(r.groups, [])
   })
 
-  it('dedupes by binding key and flags mixed id/name samples', () => {
+  it('dedupes by binding key and drops non-id samples', () => {
     const id = '11111111-1111-4111-8111-111111111111'
     const r = extractGroupsFromClaims([id, id.toUpperCase(), 'Quality Team', ''], {
       issuer: 'https://login.microsoftonline.com/t/v2.0',
     })
     assert.equal(r.nameBasedFallback, true)
-    assert.equal(r.groups.length, 2)
+    assert.equal(r.groups.length, 1)
     assert.equal(r.groups[0]!.idBased, true)
-    assert.equal(r.groups[1]!.idBased, false)
+    assert.equal(r.groups[0]!.groupId, id)
   })
 
   it('accepts a single string claim the same way as a one-element array', () => {

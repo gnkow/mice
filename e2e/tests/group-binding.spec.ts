@@ -3,15 +3,14 @@ import { mintSession } from '../helpers/session'
 
 const ID_BASED = {
   mode: 'id-based' as const,
-  message: 'Group binding mode: ID-based (recommended)',
+  message: 'Group binding mode: ID-based (required)',
   warning: false,
   checkedAt: '2026-11-13T12:00:00.000Z',
 }
 
-const NAME_BASED = {
-  mode: 'name-based' as const,
-  message:
-    'Group IDs not available. Binding uses names. IdP group rename will break access.',
+const IDS_REQUIRED = {
+  mode: 'id-based' as const,
+  message: 'Group object ids required. Name-based group grants are not allowed.',
   warning: true,
   checkedAt: '2026-11-13T12:05:00.000Z',
 }
@@ -64,7 +63,7 @@ test.describe('Group binding validation (#09)', () => {
       section.getByRole('heading', { name: /Group binding validation/i }),
     ).toBeVisible()
     await expect(
-      section.getByText(/immutable group object ids|No binding check yet|binding/i).first(),
+      section.getByText(/immutable group object ids|object ids|No binding check yet|binding/i).first(),
     ).toBeVisible()
     await expect(section.getByLabel(/Optional sample group ids/i)).toBeVisible()
 
@@ -76,7 +75,7 @@ test.describe('Group binding validation (#09)', () => {
     })
   })
 
-  test('TC-GB-02: ID-based check surfaces recommended mode badge', async ({ page }) => {
+  test('TC-GB-02: ID-based check surfaces required mode badge', async ({ page }) => {
     await mintSession(page, { sub: `e2e-gb-id-${Date.now()}`, role: 'admin' })
 
     await page.route('**/auth/instance/group-binding', async (route) => {
@@ -111,12 +110,12 @@ test.describe('Group binding validation (#09)', () => {
       'id-based',
     )
     await expect(section.getByTestId('group-binding-status')).toContainText(
-      /ID-based \(recommended\)/i,
+      /ID-based \(required\)/i,
     )
     await expect(section.getByText(/confirmed object-id group grants/i)).toBeVisible()
   })
 
-  test('TC-GB-03: name-based sample forces persistent warning copy', async ({ page }) => {
+  test('TC-GB-03: name-shaped sample fails with object-ids-required warning', async ({ page }) => {
     await mintSession(page, { sub: `e2e-gb-name-${Date.now()}`, role: 'admin' })
 
     await page.route('**/auth/instance/group-binding', async (route) => {
@@ -125,8 +124,8 @@ test.describe('Group binding validation (#09)', () => {
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            mode: 'name-based',
-            message: NAME_BASED.message,
+            mode: 'id-based',
+            message: IDS_REQUIRED.message,
             warning: true,
             checkedAt: null,
           }),
@@ -139,7 +138,7 @@ test.describe('Group binding validation (#09)', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(NAME_BASED),
+        body: JSON.stringify(IDS_REQUIRED),
       })
     })
 
@@ -153,9 +152,13 @@ test.describe('Group binding validation (#09)', () => {
     await expect(status).toHaveClass(/flash-warn/)
     await expect(section.getByTestId('group-binding-mode').first()).toHaveAttribute(
       'data-mode',
-      'name-based',
+      'id-based',
     )
-    await expect(status).toContainText(/IdP group rename will break access/i)
-    await expect(status).toContainText(/Namespace owners see this same warning/i)
+    await expect(section.getByTestId('group-binding-mode').first()).toHaveAttribute(
+      'data-warning',
+      'true',
+    )
+    await expect(status).toContainText(/Name-based group grants are not allowed/i)
+    await expect(status).toContainText(/Configure the IdP to emit group object ids/i)
   })
 })

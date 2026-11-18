@@ -1,4 +1,4 @@
-import { groupBindingKey } from '../../groupBinding.js'
+import { groupBindingKey, isGroupObjectId } from '../../groupBinding.js'
 import type { Directory } from '../directory/directoryTypes.js'
 import type { OidcClaims } from './oidcClaims.js'
 
@@ -43,8 +43,8 @@ export async function fetchDirectoryGroupBindings(
   try {
     const iss = directory.issuer || claims.iss
     const groups = (await directory.getUserGroups(claims.sub))
-      .map((group) => group.id)
-      .filter((id) => id.length > 0)
+      .map((group) => group.id.trim())
+      .filter((id) => isGroupObjectId(id))
       .map((id) => groupBindingKey(iss, id))
 
     if (groups.length === 0) {

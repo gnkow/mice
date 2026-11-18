@@ -32,7 +32,33 @@ test.describe('live IdP access gate (#19)', () => {
     ).toBeVisible()
     await expect(alert).toContainText(/IdP check failed|identity provider/i)
     await expect(page.getByRole('heading', { name: 'Sign-in check' })).toBeVisible()
+    await expect(page.getByTestId('idp-access-gate-retry')).toBeVisible()
     await expect(page.locator('header.topbar')).toHaveCount(0)
+  })
+
+  test('TC-IDP-GATE-RETRY: Try again re-checks /auth/me without leaving the gate shell', async ({
+    page,
+  }) => {
+    let hits = 0
+    await page.route('**/auth/me', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      hits += 1
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        json: {
+          authenticated: false,
+          error: 'Service Unavailable - IdP check failed',
+        },
+      })
+    })
+
+    await page.goto('/')
+    await expect(page.getByTestId('idp-access-gate')).toBeVisible()
+    await page.getByTestId('idp-access-gate-retry').click()
+    await expect(page.getByTestId('idp-access-gate')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Identity provider unavailable' })).toBeVisible()
+    expect(hits).toBeGreaterThanOrEqual(2)
   })
 
   test('TC-IDP-GATE-403: access refused shows route-level alert', async ({ page }) => {

@@ -359,11 +359,7 @@ export function NamespaceSettingsPage() {
                     >
                       <div className="ns-member-main">
                         {m.kind === 'group' ? (
-                          <GroupPrincipalLabel
-                            group={m.group}
-                            name={m.name}
-                            bindingMode={m.bindingMode}
-                          />
+                          <GroupPrincipalLabel group={m.group} name={m.name} />
                         ) : (
                           <UserRef
                             author={`${m.iss}|${m.sub}`}

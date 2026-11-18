@@ -8,6 +8,11 @@ import {
 } from '../lib/authzApi'
 
 function ModeBadge({ mode, warning }: { mode: GroupBindingStatus['mode']; warning: boolean }) {
+  const label = warning
+    ? 'Object ids required'
+    : mode === 'id-based'
+      ? 'ID-based (required)'
+      : 'Name-based (legacy)'
   return (
     <span
       className={
@@ -17,8 +22,9 @@ function ModeBadge({ mode, warning }: { mode: GroupBindingStatus['mode']; warnin
       }
       data-testid="group-binding-mode"
       data-mode={mode}
+      data-warning={warning ? 'true' : 'false'}
     >
-      {mode === 'id-based' ? 'ID-based (recommended)' : 'Name-based fallback'}
+      {label}
     </span>
   )
 }
@@ -55,7 +61,7 @@ export function GroupBindingSection() {
       setResult(next)
       setNotice(
         next.warning
-          ? 'Binding check finished with a name-based warning.'
+          ? 'Binding check failed: sample values are not group object ids.'
           : 'Binding check confirmed object-id group grants.',
       )
       state.reload()
@@ -80,9 +86,8 @@ export function GroupBindingSection() {
             Group binding validation
           </h2>
           <p className="muted small">
-            Confirm the IdP supplies immutable group object ids. Name-based bindings
-            break silently when a group is renamed in the directory. Namespace owners
-            also see a warning on any name-based grant.
+            Group grants always use IdP object ids (UUIDs). Display names are never
+            stored as grant keys. Run Check to confirm your IdP returns object ids.
           </p>
         </div>
         {hasCheck && status ? <ModeBadge mode={status.mode} warning={status.warning} /> : null}
@@ -148,8 +153,8 @@ export function GroupBindingSection() {
           <p className="group-binding-status-message">{status.message}</p>
           {status.warning ? (
             <p className="muted small group-binding-status-hint">
-              Namespace owners see this same warning on memberships that still bind by
-              display name.
+              Configure the IdP to emit group object ids. Name-based grants are not
+              allowed.
             </p>
           ) : null}
         </div>
@@ -169,8 +174,8 @@ export function GroupBindingSection() {
           />
         </label>
         <p className="muted small">
-          Prefer object ids from your IdP claims. Name-shaped samples force the
-          name-based warning so you can rehearse the fallback.
+          Prefer object ids from your IdP claims. Name-shaped samples fail the check so
+          you can confirm the IdP is misconfigured before writing grants.
         </p>
         <div className="btn-row ns-settings-actions">
           <button

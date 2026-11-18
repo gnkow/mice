@@ -19,16 +19,21 @@ type AuthState =
 export function RequireAuth() {
   const location = useLocation()
   const [state, setState] = useState<AuthState>({ kind: 'loading' })
+  const [retryBusy, setRetryBusy] = useState(false)
   const gateRef = useRef<HTMLElement>(null)
+
+  function applyMe(me: Awaited<ReturnType<typeof fetchAuthMe>>) {
+    if (me.authenticated) setState({ kind: 'in' })
+    else if (me.gate) setState({ kind: 'gate', gate: me.gate })
+    else setState({ kind: 'out' })
+  }
 
   useEffect(() => {
     let cancelled = false
     fetchAuthMe()
       .then((me) => {
         if (cancelled) return
-        if (me.authenticated) setState({ kind: 'in' })
-        else if (me.gate) setState({ kind: 'gate', gate: me.gate })
-        else setState({ kind: 'out' })
+        applyMe(me)
       })
       .catch(() => {
         if (!cancelled) setState({ kind: 'out' })
@@ -41,6 +46,18 @@ export function RequireAuth() {
   useEffect(() => {
     if (state.kind === 'gate') gateRef.current?.focus()
   }, [state])
+
+  async function onRetryGate() {
+    setRetryBusy(true)
+    setState({ kind: 'loading' })
+    try {
+      applyMe(await fetchAuthMe())
+    } catch {
+      setState({ kind: 'out' })
+    } finally {
+      setRetryBusy(false)
+    }
+  }
 
   if (state.kind === 'loading') {
     return (
@@ -70,9 +87,21 @@ export function RequireAuth() {
             <h2 id="idp-gate-title">{gate.title}</h2>
             <p>{gate.message}</p>
           </section>
-          <p className="muted small">
-            <Link to="/login">Back to sign in</Link>
-          </p>
+          <div className="btn-row auth-panel-stack">
+            <button
+              type="button"
+              className="btn primary"
+              data-testid="idp-access-gate-retry"
+              onClick={() => void onRetryGate()}
+              disabled={retryBusy}
+              aria-busy={retryBusy || undefined}
+            >
+              {retryBusy ? 'Checking…' : 'Try again'}
+            </button>
+            <Link className="btn ghost" to="/login">
+              Back to sign in
+            </Link>
+          </div>
         </main>
       </div>
     )

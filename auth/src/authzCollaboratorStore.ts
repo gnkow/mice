@@ -11,7 +11,7 @@ import {
 } from './authzTypes.js'
 import { getCustomRepoRole, isValidCollaboratorRole } from './customRoles.js'
 import * as authzRepo from './authzRepository.js'
-import { toGroupBindingKey } from './groupBinding.js'
+import { requireIdBasedGroupBinding, toGroupBindingKey } from './groupBinding.js'
 import { defaultGroupIssuer, getGroupDisplayName, upsertGroupDisplayNames } from './groupDisplayStore.js'
 
 type Result = { ok: true } | { ok: false; error: string }
@@ -43,7 +43,10 @@ export async function getRepoCollaboratorRole(ns: string, repo: string, user: Us
 
 /** Max repo collaborator role from IdP group bindings (resolved to base rank). */
 export async function getRepoCollaboratorRoleFromGroups(ns: string, repo: string, groups: string[]): Promise<RepoRole | null> {
-  const keys = groups.map((g) => toGroupBindingKey(defaultGroupIssuer(), g).bindingKey)
+  const keys = groups
+    .map((g) => toGroupBindingKey(defaultGroupIssuer(), g))
+    .filter((g) => g.idBased)
+    .map((g) => g.bindingKey)
   const rows = await authzRepo.groupCollaboratorRoles(ns, repo, keys)
   let role: BasePermission = 'none'
   for (const r of rows) role = maxRepoRole(role, await collaboratorRoleToBase(ns, r.role))
@@ -106,11 +109,14 @@ export async function setRepoGroupCollaborator(
   opts?: { iss?: string; displayName?: string },
 ): Promise<Result> {
   if (!(await isValidCollaboratorRole(ns, role))) return { ok: false, error: 'Invalid role' }
-  if (!group.trim()) return { ok: false, error: 'Group name required' }
-  const { bindingKey, idBased, groupId } = toGroupBindingKey(opts?.iss ?? defaultGroupIssuer(), group)
-  const displayName = (opts?.displayName ?? '').trim() || groupId
-  await upsertGroupDisplayNames([{ bindingKey, displayName, idBased }])
-  await authzRepo.setGroupCollaborator(ns, repoName, bindingKey, role)
+  if (!group.trim()) return { ok: false, error: 'Group id required' }
+  const bound = requireIdBasedGroupBinding(opts?.iss ?? defaultGroupIssuer(), group)
+  if (!bound.ok) return { ok: false, error: bound.error }
+  const displayName = (opts?.displayName ?? '').trim() || bound.groupId
+  await upsertGroupDisplayNames([
+    { bindingKey: bound.bindingKey, displayName, idBased: true },
+  ])
+  await authzRepo.setGroupCollaborator(ns, repoName, bound.bindingKey, role)
   return { ok: true }
 }
 

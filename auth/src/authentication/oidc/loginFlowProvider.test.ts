@@ -6,13 +6,16 @@ import { createLoginFlow } from './loginFlow.js'
 import { createFakeOidcProvider } from './oidcFake.js'
 import { createFakeDirectory } from '../directory/directoryFake.js'
 
+const DEVS = 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111'
+const ADMINS = 'aaaaaaaa-bbbb-4ccc-8ddd-222222222222'
+
 const identity = {
   sub: 'u1',
   iss: 'https://idp.test',
   email: 'u1@example.com',
   name: 'U One',
   idToken: 'id.token.jwt',
-  groups: ['devs'],
+  groups: [DEVS],
   emailVerified: true,
 }
 
@@ -22,7 +25,7 @@ function setup(claims: Partial<typeof identity> & { authTime?: number; groupsOve
   const directory = createFakeDirectory({ 
     issuer: 'https://idp.test',
     users: [{ kind: 'user', sub: 'u1', iss: 'https://idp.test', email: 'u1@example.com', name: 'U One' }],
-    userGroups: { u1: ['devs', 'admins'] },
+    userGroups: { u1: [DEVS, ADMINS] },
     statuses: { u1: 'enabled' },
   })
   return { clock, provider, directory, flow: createLoginFlow({ provider, directory, clock }) }
@@ -51,8 +54,7 @@ describe('login flow over a fake OIDC provider', () => {
       emailVerified: true,
       name: 'U One',
       idToken: 'id.token.jwt',
-      groups: ['https://idp.test|devs', 'https://idp.test|admins'],
-      groupsNameBasedFallback: true,
+      groups: [`https://idp.test|${DEVS}`, `https://idp.test|${ADMINS}`],
     })
     assert.equal(provider.lastComplete?.code, 'c')
   })
@@ -149,9 +151,9 @@ describe('login flow over a fake OIDC provider', () => {
     })
     assert.equal(res.ok, true)
     if (!res.ok) return
-    // Should have fetched groups from directory (devs, admins) instead of using empty array from IdP.
-    // Session groups are stored as binding keys (iss|id).
-    assert.deepEqual(res.user.groups, ['https://idp.test|devs', 'https://idp.test|admins'])
+    // Should have fetched groups from directory instead of using empty array from IdP.
+    // Session groups are stored as binding keys (iss|object-id).
+    assert.deepEqual(res.user.groups, [`https://idp.test|${DEVS}`, `https://idp.test|${ADMINS}`])
   })
 
   it('fails login when overage detected but directory fetch returns empty', async () => {
@@ -171,7 +173,7 @@ describe('login flow over a fake OIDC provider', () => {
   })
 
   it('completes login normally when no overage', async () => {
-    const { flow } = setup({ groupsOverage: false, groups: ['devs'] })
+    const { flow } = setup({ groupsOverage: false, groups: [DEVS] })
     const started = await flow.startLogin()
     const res = await flow.completeLogin({
       code: 'c',
@@ -180,6 +182,6 @@ describe('login flow over a fake OIDC provider', () => {
     })
     assert.equal(res.ok, true)
     if (!res.ok) return
-    assert.deepEqual(res.user.groups, ['https://idp.test|devs', 'https://idp.test|admins'])
+    assert.deepEqual(res.user.groups, [`https://idp.test|${DEVS}`, `https://idp.test|${ADMINS}`])
   })
 })

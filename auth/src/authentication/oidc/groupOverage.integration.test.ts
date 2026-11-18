@@ -14,6 +14,8 @@ import {
  */
 
 const issuer = 'https://idp.example.com'
+const ENG = '11111111-1111-4111-8111-111111111111'
+const ADMIN = '22222222-2222-4222-8222-222222222222'
 
 describe('group overage directory-fetch package seam (Ticket 18)', () => {
   it('claims overage → directory fetch binds groups and clears the overage flag', async () => {
@@ -34,19 +36,19 @@ describe('group overage directory-fetch package seam (Ticket 18)', () => {
     const directory = createFakeDirectory({
       configured: true,
       issuer,
-      userGroups: { alice: ['eng', 'admin'] },
+      userGroups: { alice: [ENG, ADMIN] },
     })
 
     const fetched = await fetchDirectoryGroupBindings(claims, directory)
     assert.deepEqual(fetched, {
       ok: true,
-      groups: [`${issuer}|eng`, `${issuer}|admin`],
+      groups: [`${issuer}|${ENG}`, `${issuer}|${ADMIN}`],
     })
 
     const resolved = await resolveGroupOverage(claims, directory)
     assert.equal(resolved.ok, true)
     if (!resolved.ok) return
-    assert.deepEqual(resolved.claims.groups, [`${issuer}|eng`, `${issuer}|admin`])
+    assert.deepEqual(resolved.claims.groups, [`${issuer}|${ENG}`, `${issuer}|${ADMIN}`])
     assert.equal(resolved.claims.groupsOverage, undefined)
     assert.equal(claims.groupsOverage, true)
     assert.deepEqual(claims.groups, [])
@@ -109,7 +111,7 @@ describe('group overage directory-fetch package seam (Ticket 18)', () => {
         iss: issuer,
         email: 'dave@example.com',
         name: 'Dave',
-        groups: ['eng'],
+        groups: [ENG],
       },
       { idToken: 'tok', fallbackIssuer: issuer, groupsClaim: 'groups' },
     )
@@ -129,6 +131,6 @@ describe('group overage directory-fetch package seam (Ticket 18)', () => {
     const resolved = await resolveGroupOverage(claims, directory)
     assert.equal(resolved.ok, true)
     assert.equal(calls, 0)
-    assert.deepEqual(claims.groups, [`${issuer}|eng`])
+    assert.deepEqual(claims.groups, [`${issuer}|${ENG}`])
   })
 })

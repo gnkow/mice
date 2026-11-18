@@ -6,13 +6,16 @@ import { createFakeDirectory } from '../directory/directoryFake.js'
 import { admitLoginAfterToken } from './loginAdmission.js'
 import type { OidcClaims } from './oidc.js'
 
+const DEVS = 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111'
+const ADMINS = 'aaaaaaaa-bbbb-4ccc-8ddd-222222222222'
+
 const claims: OidcClaims = {
   sub: 'u1',
   iss: 'https://idp.test',
   email: 'u1@example.com',
   name: 'U One',
   idToken: 'id.token.jwt',
-  groups: ['devs'],
+  groups: [DEVS],
   emailVerified: true,
 }
 
@@ -28,7 +31,7 @@ function directoryEnabled() {
         name: 'U One',
       },
     ],
-    userGroups: { u1: ['devs', 'admins'] },
+    userGroups: { u1: [DEVS, ADMINS] },
     statuses: { u1: 'enabled' },
   })
 }
@@ -52,8 +55,7 @@ describe('admitLoginAfterToken', () => {
       emailVerified: true,
       name: 'U One',
       idToken: 'id.token.jwt',
-      groups: ['https://idp.test|devs', 'https://idp.test|admins'],
-      groupsNameBasedFallback: true,
+      groups: [`https://idp.test|${DEVS}`, `https://idp.test|${ADMINS}`],
     })
   })
 

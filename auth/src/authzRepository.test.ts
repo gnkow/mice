@@ -225,18 +225,19 @@ describe('authz repository', () => {
     assert.deepEqual(await removeNamespaceMember('team-a', alice), { ok: false, error: 'Cannot remove the last namespace Owner' })
     assert.equal((await listNamespaceMembers('team-a'))[0]?.role, 'owner')
 
-    assert.deepEqual(await setNamespaceGroupMember('team-a', 'Eng', 'owner'), { ok: true })
+    const engGroup = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    assert.deepEqual(await setNamespaceGroupMember('team-a', engGroup, 'owner'), { ok: true })
     assert.deepEqual(await setNamespaceMember('team-a', alice, 'member'), { ok: true })
-    assert.deepEqual(await setNamespaceGroupMember('team-a', 'Eng', 'member'), {
+    assert.deepEqual(await setNamespaceGroupMember('team-a', engGroup, 'member'), {
       ok: false,
       error: 'Cannot demote the last namespace Owner',
     })
-    assert.deepEqual(await removeNamespaceGroupMember('team-a', 'Eng'), {
+    assert.deepEqual(await removeNamespaceGroupMember('team-a', engGroup), {
       ok: false,
       error: 'Cannot remove the last namespace Owner',
     })
     assert.deepEqual(await setNamespaceMember('team-a', alice, 'owner'), { ok: true })
-    assert.deepEqual(await removeNamespaceGroupMember('team-a', 'Eng'), { ok: true })
+    assert.deepEqual(await removeNamespaceGroupMember('team-a', engGroup), { ok: true })
   })
 
   it('delete cascades members, collaborators and custom roles, leaving no orphans', async () => {
@@ -244,7 +245,7 @@ describe('authz repository', () => {
     await createNamespaceAuthz(alice, 'team-bb', 'none')
     await setNamespaceMember('team-b', bob, 'member')
     await setRepoCollaborator('team-b', 'r1', bob, 'read')
-    await setRepoGroupCollaborator('team-b', 'r2', 'eng', 'write')
+    await setRepoGroupCollaborator('team-b', 'r2', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'write')
     await setRepoCollaborator('team-bb', 'r1', bob, 'read')
     await createCustomNamespaceRole('team-b', { name: 'Auditor', permissions: [] })
 

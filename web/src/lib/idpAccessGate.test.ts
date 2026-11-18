@@ -17,7 +17,18 @@ describe('decideIdpAccessGate', () => {
     assert.equal(gate?.kind, 'refused')
     assert.equal(gate?.status, 403)
     assert.equal(gate?.tone, 'error')
+    assert.equal(gate?.title, 'Access refused')
     assert.equal(gate?.message, 'Suspended')
+  })
+
+  it('maps empty IdP display-name 403 to a display-name title', () => {
+    const gate = decideIdpAccessGate(
+      403,
+      'Your account has no name in the identity provider.',
+    )
+    assert.equal(gate?.kind, 'refused')
+    assert.equal(gate?.title, 'Display name required')
+    assert.match(gate?.message ?? '', /no name/i)
   })
 
   it('returns null for other statuses', () => {

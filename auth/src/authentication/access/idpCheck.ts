@@ -15,16 +15,15 @@ import type { PrincipalId } from '../session/principal.js'
 
 export type LiveIdpLookup = (sub: string) => Promise<DirectoryUserState>
 
+export type LiveIdpDenial =
+  | { kind: 'unreachable'; status: 503; error: string }
+  | { kind: 'disabled'; status: 503; error: string; account: DirectoryUserState }
+  | { kind: 'missing'; status: 503; error: string; account: DirectoryUserState }
+  | { kind: 'nameless'; status: 403; error: string; account: DirectoryUserState }
+
 export type LiveIdpAccessResult =
-  | { ok: true; reachable: true; account: DirectoryUserState }
-  | {
-      ok: false
-      reachable: boolean
-      status: 503 | 403
-      error: string
-      account?: DirectoryUserState
-      disabled?: boolean
-    }
+  | { ok: true; kind: 'allowed'; account: DirectoryUserState }
+  | ({ ok: false } & LiveIdpDenial)
 
 export type SettleLiveIdpAccessDeps = {
   lookup?: LiveIdpLookup
@@ -48,30 +47,46 @@ export async function evaluateLiveIdpAccess(
   try {
     account = await lookup(user.sub)
   } catch {
-    return { ok: false, reachable: false, status: 503, error: UNAVAILABLE }
+    return { ok: false, kind: 'unreachable', status: 503, error: UNAVAILABLE }
   }
 
   if (account.status === 'error') {
-    return { ok: false, reachable: false, status: 503, error: UNAVAILABLE }
+    return { ok: false, kind: 'unreachable', status: 503, error: UNAVAILABLE }
   }
 
-  if (account.status !== 'enabled') {
+  if (account.status === 'disabled') {
     return {
       ok: false,
-      reachable: true,
+      kind: 'disabled',
       status: 503,
       error: UNAVAILABLE,
       account,
-      disabled: account.status === 'disabled',
+    }
+  }
+
+  if (account.status === 'missing') {
+    // Keep 503 to match existing live-request behaviour (login uses 403 separately).
+    return {
+      ok: false,
+      kind: 'missing',
+      status: 503,
+      error: UNAVAILABLE,
+      account,
     }
   }
 
   const nameGate = decideIdpDisplayNameGate(account.name)
   if (!nameGate.ok) {
-    return { ok: false, reachable: true, status: nameGate.status, error: nameGate.error, account }
+    return {
+      ok: false,
+      kind: 'nameless',
+      status: nameGate.status,
+      error: nameGate.error,
+      account,
+    }
   }
 
-  return { ok: true, reachable: true, account }
+  return { ok: true, kind: 'allowed', account }
 }
 
 /**
@@ -88,17 +103,17 @@ export async function settleLiveIdpAccess(
   const recordDisabled = deps.recordDisabled ?? recordIdpDisabled
 
   const live = await evaluateLiveIdpAccess(user, lookup)
-  if (live.reachable) {
-    await recordCheck({ reachable: true, at: now() })
-  } else {
+  if (live.kind === 'unreachable') {
     await recordCheck({
       reachable: false,
       at: now(),
       check: 'authenticated-request',
       requestId: deps.requestId ?? 'authenticated-request',
     })
+  } else {
+    await recordCheck({ reachable: true, at: now() })
   }
-  if (!live.ok && live.disabled) {
+  if (live.kind === 'disabled') {
     await recordDisabled(user)
   }
   return live

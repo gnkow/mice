@@ -1,6 +1,6 @@
 import { parseGroupBindingKey } from '../lib/groupRef'
 
-/** Detail panel for an IdP group binding (mirrors UserInfo). */
+/** Detail panel for an IdP group (mirrors UserInfo). */
 export function GroupInfo({
   displayName,
   bindingKey,
@@ -34,12 +34,6 @@ export function GroupInfo({
             </dd>
           </div>
         ) : null}
-        <div className="user-info-row">
-          <dt>Binding</dt>
-          <dd className="mono user-info-break" data-testid="group-info-binding">
-            {bindingKey}
-          </dd>
-        </div>
       </dl>
     </div>
   )

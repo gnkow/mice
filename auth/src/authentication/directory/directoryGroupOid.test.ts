@@ -3,12 +3,12 @@ import { describe, it } from 'node:test'
 import { directoryGroupGrantKey, mapKeycloakGroupRow } from './directoryGroupOid.js'
 
 describe('directoryGroupGrantKey', () => {
-  it('lowercases UUID object ids and normalizes display names', () => {
+  it('lowercases UUID object ids and refuses display names', () => {
     assert.equal(
       directoryGroupGrantKey('AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE'),
       'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
     )
-    assert.equal(directoryGroupGrantKey('Quality Assurance'), 'quality assurance')
+    assert.equal(directoryGroupGrantKey('Quality Assurance'), '')
     assert.equal(directoryGroupGrantKey('  '), '')
   })
 })
@@ -36,13 +36,11 @@ describe('mapKeycloakGroupRow', () => {
     assert.equal(hit?.name, 'Editors')
   })
 
-  it('falls back to the normalized leaf name when the IdP has no object id', () => {
-    const hit = mapKeycloakGroupRow({ name: 'Quality Assurance', path: '/org/Quality Assurance' })
-    assert.deepEqual(hit, {
-      kind: 'group',
-      group: 'quality assurance',
-      name: 'quality assurance',
-    })
+  it('skips rows without a UUID object id (name-based grants forbidden)', () => {
+    assert.equal(
+      mapKeycloakGroupRow({ name: 'Quality Assurance', path: '/org/Quality Assurance' }),
+      null,
+    )
   })
 
   it('returns null when neither id nor name/path can form a grant key', () => {

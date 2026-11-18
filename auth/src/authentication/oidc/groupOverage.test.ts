@@ -102,12 +102,15 @@ describe('Group Overage Detection (Ticket 18, U17)', () => {
 
     assert.equal(claims.groupsOverage, undefined)
     assert.equal(claims.groupsNameBasedFallback, true)
-    assert.deepEqual(claims.groups, [
-      'https://idp.example.com|eng',
-      'https://idp.example.com|admin',
-    ])
+    assert.deepEqual(claims.groups, [])
   })
 })
+
+const ENG = '11111111-1111-4111-8111-111111111111'
+const ADMIN = '22222222-2222-4222-8222-222222222222'
+const QA = '33333333-3333-4333-8333-333333333333'
+const SECURITY = '44444444-4444-4444-8444-444444444444'
+const PLATFORM = '55555555-5555-4555-8555-555555555555'
 
 describe('Directory API Group Fetching (Ticket 18, U17)', () => {
   it('fetches groups from directory when overage detected', async () => {
@@ -126,14 +129,14 @@ describe('Directory API Group Fetching (Ticket 18, U17)', () => {
       configured: true,
       issuer: 'https://idp.example.com',
       userGroups: {
-        alice123: ['eng', 'admin', 'qa', 'security', 'platform']
+        alice123: [ENG, ADMIN, QA, SECURITY, PLATFORM]
       }
     })
 
     const groups = await fetchGroupsOnOverage(claims, directory)
     assert.equal(groups.length, 5)
-    assert.ok(groups.includes('https://idp.example.com|eng'))
-    assert.ok(groups.includes('https://idp.example.com|admin'))
+    assert.ok(groups.includes(`https://idp.example.com|${ENG}`))
+    assert.ok(groups.includes(`https://idp.example.com|${ADMIN}`))
   })
 
   it('returns empty array when directory not configured', async () => {
@@ -185,7 +188,7 @@ describe('Directory API Group Fetching (Ticket 18, U17)', () => {
       email: 'dave@example.com',
       name: 'Dave Wilson',
       idToken: 'fake-token',
-      groups: ['eng', 'admin'],
+      groups: [ENG, ADMIN],
       emailVerified: true,
     }
 
@@ -195,7 +198,7 @@ describe('Directory API Group Fetching (Ticket 18, U17)', () => {
     })
 
     const groups = await fetchGroupsOnOverage(claims, directory)
-    assert.deepEqual(groups, ['eng', 'admin'])
+    assert.deepEqual(groups, [ENG, ADMIN])
   })
 })
 
@@ -216,7 +219,7 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       configured: true,
       issuer: 'https://idp.example.com',
       userGroups: {
-        alice123: ['eng', 'admin', 'qa']
+        alice123: [ENG, ADMIN, QA]
       }
     })
 
@@ -224,9 +227,9 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
     assert.equal(resolved.ok, true)
     if (!resolved.ok) return
     assert.deepEqual(resolved.claims.groups, [
-      'https://idp.example.com|eng',
-      'https://idp.example.com|admin',
-      'https://idp.example.com|qa',
+      `https://idp.example.com|${ENG}`,
+      `https://idp.example.com|${ADMIN}`,
+      `https://idp.example.com|${QA}`,
     ])
     assert.equal(resolved.claims.groupsOverage, undefined)
     // Input claims stay untouched
@@ -265,7 +268,7 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       email: 'charlie@example.com',
       name: 'Charlie Brown',
       idToken: 'fake-token',
-      groups: ['eng'],
+      groups: [ENG],
       emailVerified: true,
     }
 
@@ -278,7 +281,7 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
     assert.equal(resolved.ok, true)
     if (!resolved.ok) return
     assert.equal(resolved.claims, claims)
-    assert.deepEqual(resolved.claims.groups, ['eng'])
+    assert.deepEqual(resolved.claims.groups, [ENG])
   })
 
   it('returns typed failure when directory getUserGroups throws', async () => {
@@ -319,7 +322,7 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
       email: 'dave@example.com',
       name: 'Dave Wilson',
       idToken: 'fake-token',
-      groups: ['https://idp.example.com|eng'],
+      groups: [`https://idp.example.com|${ENG}`],
       emailVerified: true,
     }
     const base = createFakeDirectory({
@@ -338,6 +341,28 @@ describe('Group Overage Resolution (Ticket 18, U17)', () => {
     const resolved = await resolveGroupOverage(claims, directory)
     assert.equal(resolved.ok, true)
     assert.equal(directoryCalls, 0)
-    assert.deepEqual(claims.groups, ['https://idp.example.com|eng'])
+    assert.deepEqual(claims.groups, [`https://idp.example.com|${ENG}`])
+  })
+
+  it('treats directory name-shaped ids as empty (object ids required)', async () => {
+    const claims: OidcClaims = {
+      sub: 'frank',
+      iss: 'https://idp.example.com',
+      email: 'frank@example.com',
+      name: 'Frank',
+      idToken: 'fake-token',
+      groups: [],
+      emailVerified: true,
+      groupsOverage: true,
+    }
+    const directory = createFakeDirectory({
+      configured: true,
+      issuer: 'https://idp.example.com',
+      userGroups: { frank: ['engineering', 'admins'] },
+    })
+    assert.deepEqual(await resolveGroupOverage(claims, directory), {
+      ok: false,
+      reason: 'empty',
+    })
   })
 })

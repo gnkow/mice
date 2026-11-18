@@ -55,7 +55,9 @@ describe('directory search', () => {
       { sub: 'alice-sub', iss: 'mice-dev' },
       'member',
     )
-    await setNamespaceGroupMember('dir-ns', 'engineering', 'member')
+    await setNamespaceGroupMember('dir-ns', '77777777-7777-4777-8777-777777777777', 'member', {
+      displayName: 'engineering',
+    })
     await setRepoCollaborator(
       'dir-ns',
       'r1',

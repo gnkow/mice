@@ -30,12 +30,14 @@ export function decideIdpAccessGate(
     }
   }
   if (status === 403) {
+    const detail = error?.trim() || ''
+    const emptyName = /no name in the identity provider/i.test(detail)
     return {
       kind: 'refused',
       status: 403,
-      title: 'Access refused',
+      title: emptyName ? 'Display name required' : 'Access refused',
       message:
-        error?.trim() ||
+        detail ||
         'Your account is not allowed to use Mice right now. Contact an administrator if you believe this is a mistake.',
       tone: 'error',
     }

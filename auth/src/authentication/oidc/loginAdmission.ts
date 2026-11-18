@@ -195,7 +195,12 @@ async function sessionGroups(
   user: { sub: string; iss: string; groups: string[]; groupsNameBasedFallback?: boolean },
   directory: Directory,
 ): Promise<{ groups: string[]; nameBasedFallback: boolean }> {
-  const { groupBindingKey, parseGroupBindingKey, toGroupBindingKey } = await import('../../groupBinding.js')
+  const {
+    groupBindingKey,
+    isGroupObjectId,
+    parseGroupBindingKey,
+    toGroupBindingKey,
+  } = await import('../../groupBinding.js')
   const { upsertGroupDisplayNames } = await import('../../groupDisplayStore.js')
   const iss = user.iss
   const keys = new Set<string>()
@@ -205,12 +210,19 @@ async function sessionGroups(
   for (const g of user.groups) {
     const parsed = parseGroupBindingKey(g)
     if (parsed) {
+      if (!isGroupObjectId(parsed.groupId)) {
+        nameBasedFallback = true
+        continue
+      }
       keys.add(groupBindingKey(parsed.iss, parsed.groupId))
       continue
     }
     const resolved = toGroupBindingKey(iss, g)
+    if (!resolved.idBased) {
+      nameBasedFallback = true
+      continue
+    }
     keys.add(resolved.bindingKey)
-    if (!resolved.idBased) nameBasedFallback = true
   }
 
   if (directory.configured) {
@@ -218,7 +230,11 @@ async function sessionGroups(
       const listed = await directory.getUserGroups(user.sub)
       const dirIss = directory.issuer || iss
       for (const group of listed) {
-        if (!group.id) continue
+        if (!group.id?.trim()) continue
+        if (!isGroupObjectId(group.id)) {
+          nameBasedFallback = true
+          continue
+        }
         const bindingKey = groupBindingKey(dirIss, group.id)
         keys.add(bindingKey)
         cacheRows.push({

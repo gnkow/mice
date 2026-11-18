@@ -11,7 +11,12 @@ import {
 import { getCustomNamespaceRole, isValidMemberRole } from './customRoles.js'
 import { isInstanceAdmin } from './authzInstanceStore.js'
 import * as repo from './authzRepository.js'
-import { isGroupObjectId, parseGroupBindingKey, toGroupBindingKey } from './groupBinding.js'
+import {
+  isGroupObjectId,
+  parseGroupBindingKey,
+  requireIdBasedGroupBinding,
+  toGroupBindingKey,
+} from './groupBinding.js'
 import {
   defaultGroupIssuer,
   getGroupDisplayNames,
@@ -163,11 +168,14 @@ export async function setNamespaceGroupMember(
   opts?: { iss?: string; displayName?: string },
 ): Promise<Result> {
   if (!(await isValidMemberRole(ns, role))) return { ok: false, error: 'Invalid role' }
-  if (!group.trim()) return { ok: false, error: 'Group name required' }
-  const { bindingKey, idBased, groupId } = toGroupBindingKey(opts?.iss ?? defaultGroupIssuer(), group)
-  const displayName = (opts?.displayName ?? '').trim() || groupId
-  await upsertGroupDisplayNames([{ bindingKey, displayName, idBased }])
-  return repo.setGroupMember(ns, bindingKey, role)
+  if (!group.trim()) return { ok: false, error: 'Group id required' }
+  const bound = requireIdBasedGroupBinding(opts?.iss ?? defaultGroupIssuer(), group)
+  if (!bound.ok) return { ok: false, error: bound.error }
+  const displayName = (opts?.displayName ?? '').trim() || bound.groupId
+  await upsertGroupDisplayNames([
+    { bindingKey: bound.bindingKey, displayName, idBased: true },
+  ])
+  return repo.setGroupMember(ns, bound.bindingKey, role)
 }
 
 export async function removeNamespaceGroupMember(ns: string, group: string): Promise<Result> {

@@ -235,8 +235,9 @@ await describe('notification authorization, inbox and API', async () => {
   })
 
   await it('expires offline group snapshots and never stores PAT-scoped principals', async () => {
-    const grouped = { ...outsider, groups: ['readers'] }
-    await setRepoGroupCollaborator('team', 'group-repo', 'readers', 'read')
+    const readers = '66666666-6666-4666-8666-666666666666'
+    const grouped = { ...outsider, groups: [readers] }
+    await setRepoGroupCollaborator('team', 'group-repo', readers, 'read')
     await rememberNotificationUser(grouped)
     await event({ resource: { namespace: 'team', repo: 'group-repo' } })
     await settled(grouped, 1)

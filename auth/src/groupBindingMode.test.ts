@@ -41,27 +41,28 @@ describe('assessGroupBindingMode', () => {
     assert.equal(r.warning, false)
   })
 
-  it('warns when sample groups are display names only', () => {
+  it('fails the check when sample groups are display names only', () => {
     const r = assessGroupBindingMode(['Quality Team', 'Engineering'])
-    assert.equal(r.mode, 'name-based')
+    assert.equal(r.mode, 'id-based')
     assert.equal(r.message, GROUP_BINDING_NAME_BASED_MESSAGE)
     assert.equal(r.warning, true)
   })
 
-  it('treats an empty sample as name-based (ids unavailable)', () => {
+  it('fails the check when the sample is empty (ids unavailable)', () => {
     const r = assessGroupBindingMode([])
-    assert.equal(r.mode, 'name-based')
+    assert.equal(r.mode, 'id-based')
     assert.equal(r.message, GROUP_BINDING_NAME_BASED_MESSAGE)
     assert.equal(r.warning, true)
   })
 
-  it('is name-based when any sample value is not an object id', () => {
+  it('fails the check when any sample value is not an object id', () => {
     const r = assessGroupBindingMode([
       '11111111-1111-4111-8111-111111111111',
       'Quality Team',
     ])
-    assert.equal(r.mode, 'name-based')
+    assert.equal(r.mode, 'id-based')
     assert.equal(r.warning, true)
+    assert.equal(r.message, GROUP_BINDING_NAME_BASED_MESSAGE)
   })
 
   it('ignores blank samples when deciding mode', () => {

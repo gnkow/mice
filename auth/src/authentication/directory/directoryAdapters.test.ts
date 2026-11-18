@@ -41,7 +41,12 @@ describe('Keycloak directory adapter', () => {
           { id: 'u2', username: 'gone', enabled: false },
         ])
       }
-      if (url.includes('/groups?')) return json([{ name: 'Devs' }, { path: '/org/ops' }])
+      if (url.includes('/groups?')) {
+        return json([
+          { id: 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111', name: 'Devs' },
+          { id: 'aaaaaaaa-bbbb-4ccc-8ddd-222222222222', name: 'ops', path: '/org/ops' },
+        ])
+      }
       return json({}, 404)
     }
     return { clock, calls, directory: createKeycloakDirectory(config, { fetch: fetchFn, clock }) }
@@ -90,14 +95,15 @@ describe('Keycloak directory adapter', () => {
     ])
   })
 
-  it('searches enabled users and maps groups to their leaf name', async () => {
+  it('searches enabled users and maps groups to object ids', async () => {
     const { directory } = setup()
     assert.deepEqual(await directory.searchUsers('a', 10), [
       { kind: 'user', sub: 'u1', iss: 'http://kc.test/realms/mice', email: 'ann@x.io', name: 'Ann Lee' },
     ])
+    // Mock Keycloak returns the full group list; adapter maps object ids as grant keys.
     assert.deepEqual(await directory.searchGroups('d', 10), [
-      { kind: 'group', group: 'devs', name: 'devs' },
-      { kind: 'group', group: 'ops', name: 'ops' },
+      { kind: 'group', group: 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111', name: 'Devs' },
+      { kind: 'group', group: 'aaaaaaaa-bbbb-4ccc-8ddd-222222222222', name: 'ops' },
     ])
   })
 

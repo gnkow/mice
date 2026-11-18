@@ -194,9 +194,9 @@ await describe('group grants bind to iss|group_id', async () => {
     assert.ok(r.groups.every((g) => g.idBased))
   })
 
-  await it('flags name-based fallback when claims are display names', () => {
+  await it('drops display-name claims (name-based grants are not allowed)', () => {
     const r = extractGroupsFromClaims(['Quality Team'], { issuer: ISS })
     assert.equal(r.nameBasedFallback, true)
-    assert.equal(r.groups[0]!.idBased, false)
+    assert.deepEqual(r.groups, [])
   })
 })
