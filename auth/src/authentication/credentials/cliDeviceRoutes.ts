@@ -9,7 +9,9 @@ import { approveDevice, denyDevice, lookupDeviceByUserCode, pollDevice, startDev
 import { cliRefreshReply, logoutCliCredential, refreshCliCredential } from './cliCredentials.js'
 import { bearerToken, resolveBearer } from '../session/requireAuth.js'
 import type { SessionUser } from '../session/session.js'
-import { getDisplaySuffix, hashFromHeaders } from '../../ipHash.js'
+import { fingerprintFromRequest, getDisplaySuffix, hashIp } from '../../ipHash.js'
+import { clientIpForDeviceStart } from './deviceClientIp.js'
+import { normalizeDeviceName } from './deviceName.js'
 import { beginDeviceApproval } from './deviceApprovalRateLimit.js'
 import { decideDeviceApprovalConfirmation } from './deviceApprovalConfirmation.js'
 import { enforceIpRateLimit } from '../rateLimit/rateLimitMiddleware.js'
@@ -44,21 +46,34 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     const limited = await enforceIpRateLimit(c, RATE_LIMIT_CONFIG.deviceFlow)
     if (limited) return limited
     let raw: unknown
-    let deviceName: string | undefined
+    let deviceNameRaw: unknown
     try {
       const body = (await c.req.json()) as { scopes?: unknown; device_name?: unknown }
       raw = body.scopes
-      deviceName = typeof body.device_name === 'string' ? body.device_name : undefined
+      deviceNameRaw = body.device_name
     } catch {
       /* empty body ok */
     }
     const parsed = parseCliScopes(raw)
     if (!parsed.ok) return c.json({ error: parsed.error }, 400)
-    
-    const requestHashedIp = await hashFromHeaders(c.req.raw.headers)
+
+    const deviceName = normalizeDeviceName(deviceNameRaw)
+    if (!deviceName) {
+      return c.json({ error: 'device_name required' }, 400)
+    }
+
+    const clientIp = await clientIpForDeviceStart(c)
+    if (!clientIp) {
+      return c.json({ error: 'Client IP required' }, 400)
+    }
+    const requestHashedIp = await hashIp(clientIp)
+    if (!requestHashedIp) {
+      return c.json({ error: 'Client IP required' }, 400)
+    }
+
     const started = await startDeviceAuth(parsed.scopes, {
       deviceName,
-      requestHashedIp: requestHashedIp ?? undefined,
+      requestHashedIp,
     })
     return c.json(started)
   })
@@ -106,13 +121,19 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
       }, 429)
     }
 
-    const result = await approveDevice(userCode, session)
+    const deviceName = normalizeDeviceName(body.device_name)
+    const result = await approveDevice(userCode, session, {
+      ...(deviceName ? { deviceName } : {}),
+    })
     if (!result.ok) {
       const status = result.status === 404 ? 404 : 400
       return c.json({ error: result.error }, status)
     }
 
-    const approverHashedIp = await hashFromHeaders(c.req.raw.headers)
+    const peerIp = await clientIpForDeviceStart(c)
+    const approverHashedIp = peerIp
+      ? await hashIp(peerIp)
+      : (await fingerprintFromRequest(c.req.raw.headers))?.hash ?? null
     const { shouldAlert, count, securityWarning } = await gate.commit(
       result.userCode,
       approverHashedIp,

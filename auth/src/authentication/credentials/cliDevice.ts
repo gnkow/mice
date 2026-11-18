@@ -43,7 +43,12 @@ export interface DeviceRepository {
   approve(
     userCode: string,
     nowIso: string,
-    grant: { token: string; refreshToken: string; user: NonNullable<DeviceRecord['user']> },
+    grant: {
+      token: string
+      refreshToken: string
+      user: NonNullable<DeviceRecord['user']>
+      deviceName?: string
+    },
   ): Promise<boolean>
   /** pending and unexpired → denied. */
   deny(userCode: string, nowIso: string): Promise<boolean>
@@ -117,6 +122,7 @@ export function createPostgresDeviceRepository(): DeviceRepository {
           userIss: grant.user.iss,
           userEmail: grant.user.email,
           userName: grant.user.name,
+          ...(grant.deviceName ? { deviceName: grant.deviceName } : {}),
         })
         .where(pendingLive(userCode, nowIso))
         .returning({ hash: deviceAuthorizations.deviceCodeHash })
@@ -344,16 +350,22 @@ export function createDeviceAuthorizations(deps: DeviceDeps) {
   }
 
   /** Session user approves a pending device and mints a short-lived CLI credential. */
-  async function approve(userCode: string, user: SessionUser): Promise<ApproveResult> {
+  async function approve(
+    userCode: string,
+    user: SessionUser,
+    opts?: { deviceName?: string },
+  ): Promise<ApproveResult> {
     const code = normalize(userCode)
     const found = await pendingFor(code)
     if ('error' in found) return found.error
     const { rec } = found
+    const deviceName = opts?.deviceName?.trim() || rec.deviceName
     const minted = await deps.mint(user, rec.scopes)
     const won = await repo.approve(code, nowIso(), {
       token: minted.token,
       refreshToken: minted.refreshToken,
       user: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+      ...(deviceName ? { deviceName } : {}),
     })
     if (!won) {
       await deps.discard(user, minted.token)

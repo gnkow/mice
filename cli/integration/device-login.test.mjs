@@ -85,8 +85,11 @@ describe('CLI device login against live BFF', { skip: !up }, () => {
   it('start → session approve → poll → whoami → logout', async () => {
     const start = await fetch(`${AUTH_URL}/auth/cli/device/start`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.80',
+      },
+      body: JSON.stringify({ device_name: 'cli-integ-host' }),
     })
     assert.equal(start.status, 200)
     const started = await start.json()

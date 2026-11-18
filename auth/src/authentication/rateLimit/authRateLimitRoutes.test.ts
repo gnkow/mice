@@ -22,7 +22,7 @@ function startDevice(app: ReturnType<typeof deviceApp>, ip: string) {
       'content-type': 'application/json',
       'x-forwarded-for': ip,
     },
-    body: '{}',
+    body: JSON.stringify({ device_name: 'rate-limit-device' }),
   })
 }
 

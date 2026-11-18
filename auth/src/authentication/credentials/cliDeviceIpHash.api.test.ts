@@ -79,7 +79,7 @@ describe('hashed IP on device status (Ticket 16)', () => {
         'content-type': 'application/json',
         'x-forwarded-for': clientIp,
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ device_name: 'api-test-laptop' }),
     })
     assert.equal(start.status, 200, await start.clone().text())
     const { user_code: userCode } = (await start.json()) as { user_code: string }
@@ -90,15 +90,44 @@ describe('hashed IP on device status (Ticket 16)', () => {
       { headers: { cookie: await cookie() } },
     )
     assert.equal(status.status, 200, await status.clone().text())
-    const body = (await status.json()) as { requestHashedIp?: string }
+    const body = (await status.json()) as {
+      requestHashedIp?: string
+      deviceName?: string
+    }
 
     assert.equal(typeof body.requestHashedIp, 'string')
     assert.equal(body.requestHashedIp!.length, 4)
     assert.match(body.requestHashedIp!, /^[0-9a-f]{4}$/)
+    assert.equal(body.deviceName, 'api-test-laptop')
 
     const full = await createIpHash().hashIp(clientIp)
     assert.ok(full)
     assert.equal(body.requestHashedIp, full.slice(-4))
     assert.notEqual(body.requestHashedIp, full)
+  })
+
+  it('rejects start without a client IP', async () => {
+    const start = await app.request('/auth/cli/device/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ device_name: 'no-ip-laptop' }),
+    })
+    assert.equal(start.status, 400)
+    const body = (await start.json()) as { error?: string }
+    assert.match(body.error ?? '', /Client IP required/i)
+  })
+
+  it('rejects start without device_name', async () => {
+    const start = await app.request('/auth/cli/device/start', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-for': '203.0.113.10',
+      },
+      body: JSON.stringify({}),
+    })
+    assert.equal(start.status, 400)
+    const body = (await start.json()) as { error?: string }
+    assert.match(body.error ?? '', /device_name required/i)
   })
 })

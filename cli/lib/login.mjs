@@ -1,3 +1,4 @@
+import os from 'node:os'
 import { bffFetch } from './api.mjs'
 import {
   authHostFromRemote,
@@ -11,6 +12,14 @@ import {
 import { openBrowser } from './open.mjs'
 import { keychain } from './keychain.mjs'
 import { findOxen, oxenConfigAuth, oxenConfigUser } from './oxen.mjs'
+
+/** Default device label for approval UI (hostname, truncated). */
+export function defaultDeviceName(hostname = os.hostname()) {
+  const name = String(hostname ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+  return (name || 'mice-cli').slice(0, 64)
+}
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
@@ -48,9 +57,13 @@ export async function cmdLogin(opts = {}) {
     return
   }
 
+  const deviceName = opts.deviceName ?? defaultDeviceName()
   const started = await fetchImpl(remote, '/auth/cli/device/start', {
     method: 'POST',
-    body: opts.scopes?.length ? { scopes: opts.scopes } : {},
+    body: {
+      device_name: deviceName,
+      ...(opts.scopes?.length ? { scopes: opts.scopes } : {}),
+    },
   })
   if (!started.res.ok || !started.json?.device_code) {
     console.error(

@@ -4393,13 +4393,38 @@ p.ok {
   margin: 0 0 1.25rem;
 }
 
+.cli-device-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  margin: 0 0 1.25rem;
+}
+
+.login-page > .cli-device-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.35rem 0 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--muted) 55%, var(--fg));
+}
+
+.login-page > .cli-device-status-line.is-pending {
+  color: color-mix(in srgb, #d4a017 55%, var(--fg));
+}
+
+.login-page > .cli-device-status-line.is-expired {
+  color: color-mix(in srgb, var(--danger) 45%, var(--fg));
+}
+
 .cli-device-status {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.45rem;
-  margin: 0 0 1rem;
-  padding: 1.1rem 1rem 0.9rem;
+  justify-content: center;
+  margin: 0;
+  padding: 1.25rem 1rem;
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) + 0.05rem);
   background: var(--panel);
@@ -4426,25 +4451,6 @@ p.ok {
   line-height: 1.2;
   color: var(--fg);
   white-space: nowrap;
-}
-
-.cli-device-status-line {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.35;
-  color: color-mix(in srgb, var(--muted) 55%, var(--fg));
-}
-
-.cli-device-status.is-pending .cli-device-status-line {
-  color: color-mix(in srgb, #d4a017 55%, var(--fg));
-}
-
-.cli-device-status.is-expired .cli-device-status-line {
-  color: color-mix(in srgb, var(--danger) 45%, var(--fg));
 }
 
 .cli-device-status-dot {
@@ -4474,45 +4480,106 @@ p.ok {
   }
 }
 
-.cli-device-scope {
-  margin: 0.15rem 0 0;
+.cli-device-permissions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  text-align: left;
+}
+
+.cli-device-permissions > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+  cursor: pointer;
+  list-style: none;
   font-size: 0.875rem;
-  line-height: 1.4;
+  font-weight: 650;
   color: var(--fg);
 }
 
-.cli-device-change-code {
+.cli-device-permissions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cli-device-permissions > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 0.85rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.cli-device-permissions[open] > summary::before {
+  content: '▾';
+}
+
+.cli-device-permissions-summary {
+  font-weight: 500;
+}
+
+.cli-device-permissions-list {
+  box-sizing: border-box;
+  max-height: 9.5rem;
   margin: 0.45rem 0 0;
+  padding: 0.35rem 0.55rem 0.35rem 1.25rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--canvas-subtle) 55%, var(--panel));
+  color: color-mix(in srgb, var(--muted) 35%, var(--fg));
   font-size: 0.8125rem;
+  line-height: 1.45;
+  overscroll-behavior: contain;
+}
+
+.cli-device-permissions-list li {
+  word-break: break-word;
+}
+
+.cli-device-permissions-list li + li {
+  margin-top: 0.2rem;
+}
+
+.cli-device-footer {
+  margin-top: 0.25rem;
 }
 
 .cli-device-approve {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  margin-top: 0.25rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--line);
+  gap: 0.95rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: clip;
 }
 
 .cli-device-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 1rem;
   margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
 }
 
 .cli-device-info-row {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .cli-device-info-row dt {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 650;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -4521,18 +4588,45 @@ p.ok {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.cli-device-device-name {
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.cli-device-name-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--canvas-subtle) 75%, var(--panel));
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.cli-device-name-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .cli-hashed-ip-suffix {
   display: inline-block;
   width: fit-content;
   max-width: 100%;
-  padding: 0.2rem 0.45rem;
-  font-size: 1.15rem;
+  padding: 0.15rem 0.45rem;
+  font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   white-space: nowrap;
+  user-select: all;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
@@ -4540,63 +4634,72 @@ p.ok {
 
 .cli-hashed-ip-hint {
   line-height: 1.4;
+  font-size: 0.75rem;
 }
 
 .cli-device-security-warning {
-  margin: 0;
-  border-width: 1px 1px 1px 4px;
-  border-left-color: color-mix(in srgb, #9a6700 70%, var(--line));
-}
-
-.cli-device-security-warning-title {
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0 0 0.35rem;
-  font-weight: 650;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--muted) 40%, var(--fg));
 }
 
-.cli-device-security-warning p {
-  margin: 0;
-  line-height: 1.45;
+.cli-device-security-warning .button-label-icon {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: color-mix(in srgb, #d4a017 70%, var(--fg));
+}
+
+.cli-device-security-warning strong {
+  font-weight: 650;
+  color: color-mix(in srgb, #d4a017 45%, var(--fg));
 }
 
 .cli-confirm-label {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.55rem;
+  gap: 0.5rem;
   width: 100%;
   text-align: left;
   font-size: 0.875rem;
+  font-weight: 400;
   line-height: 1.4;
   color: color-mix(in srgb, var(--muted) 70%, var(--fg));
 }
 
-.cli-confirm-label strong {
+.cli-confirm-label .mono {
   color: var(--fg);
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .cli-device-confirm {
   box-sizing: border-box;
   width: 100%;
   margin: 0;
-  padding: 0.7rem 0.85rem;
+  padding: 0.55rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--canvas-subtle) 75%, var(--panel));
   color: var(--fg);
-  font-size: 1.05rem;
-  font-weight: 650;
-  letter-spacing: 0.14em;
-  text-align: center;
-  text-transform: uppercase;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
 }
 
 .cli-device-confirm::placeholder {
   color: color-mix(in srgb, var(--muted) 75%, transparent);
-  letter-spacing: 0.14em;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .cli-device-confirm:focus {
@@ -4614,9 +4717,38 @@ p.ok {
 }
 
 .cli-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.4rem;
   margin-top: 0.15rem;
   width: 100%;
-  justify-content: stretch;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.login-page .cli-device-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 0.35rem;
+}
+
+.login-page .cli-device-actions .btn {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 2.4rem;
+  padding-inline: 0.65rem;
+  white-space: nowrap;
+}
+
+.cli-device-actions .cli-device-change-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  font-size: 0.8125rem;
 }
 
 .cli-device-actions .btn:disabled {
@@ -4624,8 +4756,7 @@ p.ok {
   cursor: not-allowed;
 }
 
-.login-page .cli-device-status .flash-warn,
-.login-page .cli-device-security-warning {
+.login-page .cli-device-status .flash-warn {
   margin: 0;
 }
 

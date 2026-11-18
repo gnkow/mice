@@ -81,7 +81,8 @@ test.describe('CLI auth via device login (PLAT-AUTH)', () => {
     page,
   }) => {
     const start = await page.request.post(`${AUTH_URL}/auth/cli/device/start`, {
-      data: {},
+      data: { device_name: 'cli-auth-e2e' },
+      headers: { 'X-Forwarded-For': '203.0.113.70' },
     })
     expect(start.ok()).toBeTruthy()
     const started = await start.json()
@@ -98,7 +99,7 @@ test.describe('CLI auth via device login (PLAT-AUTH)', () => {
     await page.goto(`/cli/device?user_code=${encodeURIComponent(started.user_code)}`)
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
     await expect(page.locator('code.mono', { hasText: started.user_code })).toBeVisible()
-    await page.getByPlaceholder('APPROVE').fill('APPROVE')
+    await page.getByPlaceholder('Approve').fill('Approve')
     await page.getByRole('button', { name: 'Approve' }).click()
     await expect(page.getByText(/Approved/i)).toBeVisible()
 

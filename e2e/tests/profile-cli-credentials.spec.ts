@@ -13,7 +13,8 @@ async function startDevice(
   opts?: { deviceName?: string },
 ) {
   const start = await request.post(`${AUTH_URL}/auth/cli/device/start`, {
-    data: opts?.deviceName ? { device_name: opts.deviceName } : {},
+    data: { device_name: opts?.deviceName ?? 'profile-e2e-device' },
+    headers: { 'X-Forwarded-For': '203.0.113.60' },
   })
   expect(start.ok()).toBeTruthy()
   return start.json() as Promise<{

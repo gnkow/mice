@@ -1,5 +1,6 @@
 import {
   Check as ActionCheck,
+  Pencil as ActionChangeCode,
   Search as ActionSearch,
   ShieldAlert,
   TriangleAlert as IconStatusWarn,
@@ -60,7 +61,7 @@ function formatDeviceActionError(
 async function postDeviceAction(
   action: 'approve' | 'deny',
   userCode: string,
-  confirmation?: string,
+  opts?: { confirmation?: string; deviceName?: string },
 ): Promise<void> {
   const res = await fetch(`/auth/cli/device/${action}`, {
     method: 'POST',
@@ -68,7 +69,13 @@ async function postDeviceAction(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(
       action === 'approve'
-        ? { user_code: userCode, confirmation }
+        ? {
+            user_code: userCode,
+            confirmation: opts?.confirmation,
+            ...(opts?.deviceName?.trim()
+              ? { device_name: opts.deviceName.trim() }
+              : {}),
+          }
         : { user_code: userCode },
     ),
   })
@@ -96,6 +103,9 @@ export function CliDevicePage() {
   const [done, setDone] = useState<'approved' | 'denied' | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmInput, setConfirmInput] = useState('')
+  const [deviceNameInput, setDeviceNameInput] = useState('')
+  /** Seed the editable name once per looked-up code (status polls must not overwrite edits). */
+  const deviceNameSeededFor = useRef<string | null>(null)
   /** Form is for typing a code; hide it once a lookup result is on screen. */
   const [showCodeForm, setShowCodeForm] = useState(() => !preset)
   const actionErrorRef = useRef<HTMLParagraphElement>(null)
@@ -133,6 +143,13 @@ export function CliDevicePage() {
     if (status.kind === 'error' && activeCode) setShowCodeForm(true)
   }, [status.kind, activeCode])
 
+  useEffect(() => {
+    if (status.kind !== 'ok' || !status.data || !activeCode) return
+    if (deviceNameSeededFor.current === activeCode) return
+    deviceNameSeededFor.current = activeCode
+    setDeviceNameInput(status.data.deviceName ?? '')
+  }, [activeCode, status.kind, status.data])
+
   function onLookup(e: FormEvent) {
     e.preventDefault()
     const next = normalizeCode(codeInput)
@@ -140,6 +157,8 @@ export function CliDevicePage() {
     setActionError(null)
     setDone(null)
     setConfirmInput('')
+    setDeviceNameInput('')
+    deviceNameSeededFor.current = null
     // Same code does not change `activeCode`, so force a reload; then hide the form.
     if (next === activeCode) status.reload()
     else setActiveCode(next)
@@ -152,6 +171,8 @@ export function CliDevicePage() {
     setActionError(null)
     setDone(null)
     setConfirmInput('')
+    setDeviceNameInput('')
+    deviceNameSeededFor.current = null
   }
 
   async function onApprove() {
@@ -159,7 +180,10 @@ export function CliDevicePage() {
     setBusy(true)
     setActionError(null)
     try {
-      await postDeviceAction('approve', activeCode, confirmInput)
+      await postDeviceAction('approve', activeCode, {
+        confirmation: confirmInput,
+        deviceName: deviceNameInput,
+      })
       setDone('approved')
       status.reload()
     } catch (err) {
@@ -197,15 +221,58 @@ export function CliDevicePage() {
   const confirmErrorId = 'cli-device-action-error'
   const hashedIpLabelId = 'cli-hashed-ip-label'
   const securityWarningId = 'cli-device-security-warning'
+  const scopedItems = lookup?.scopes?.length
+    ? lookup.scopes.map(formatScope)
+    : null
+  const effectiveItems =
+    authz.kind === 'ok' && authz.data?.effectivePermissions.length
+      ? [...authz.data.effectivePermissions].sort((a, b) => a.localeCompare(b))
+      : null
+  /** Scoped CLI request lists scopes; unscoped inherits the approver's effective permissions. */
+  const permissionItems = scopedItems ?? effectiveItems ?? ['Full account permissions']
+  const permissionsSummary = scopedItems
+    ? scopedItems.length === 1
+      ? scopedItems[0]
+      : `${scopedItems.length} scopes`
+    : effectiveItems
+      ? `Full account · ${effectiveItems.length} permissions`
+      : 'Full account permissions'
+  const statusUnderTitle =
+    lookup && !showCodeForm
+      ? lookup.expired
+        ? 'Expired — run mice login again for a new code.'
+        : lookup.status === 'pending'
+          ? 'Waiting for your approval'
+          : `This request is ${lookup.status}.`
+      : null
 
   return (
     <div className="login-shell">
       <main className="page narrow login-page">
         <p className="login-brand">MICE</p>
         <h1>Authorize CLI</h1>
-        <p className="lede">
-          Enter the code shown in your terminal to link your command-line session to this account.
-        </p>
+        {statusUnderTitle ? (
+          <p
+            className={`cli-device-status-line${
+              lookup?.expired
+                ? ' is-expired'
+                : lookup?.status === 'pending'
+                  ? ' is-pending'
+                  : ''
+            }`}
+            role="status"
+          >
+            {lookup?.status === 'pending' && !lookup.expired ? (
+              <span className="cli-device-status-dot" aria-hidden="true" />
+            ) : null}
+            {statusUnderTitle}
+          </p>
+        ) : (
+          <p className="lede">
+            Enter the code shown in your terminal to link your command-line
+            session to this account.
+          </p>
+        )}
         {showPermissionWarn ? (
           <section
             className="login-status flash flash-warn"
@@ -262,106 +329,99 @@ export function CliDevicePage() {
         )}
 
         {lookup && !showCodeForm ? (
-          <div
-            className={`cli-device-status${lookup.expired ? ' is-expired' : ''}${
-              lookup.status === 'pending' && !lookup.expired ? ' is-pending' : ''
-            }`}
-            data-testid="cli-device-status"
-          >
-            <code className="mono cli-device-code" aria-label="Device code">
-              {lookup.userCode}
-            </code>
-            <p className="cli-device-status-line" role="status">
-              {lookup.expired ? (
-                'Expired — run mice login again for a new code.'
-              ) : lookup.status === 'pending' ? (
-                <>
-                  <span className="cli-device-status-dot" aria-hidden="true" />
-                  Waiting for your approval
-                </>
-              ) : (
-                `This request is ${lookup.status}.`
-              )}
-            </p>
-            <p className="cli-device-scope">
-              {lookup.scopes?.length
-                ? lookup.scopes.map(formatScope).join(', ')
-                : 'Full account permissions'}
-            </p>
-            <button
-              type="button"
-              className="btn ghost cli-device-change-code"
-              onClick={onChangeCode}
+          <div className="cli-device-flow" data-testid="cli-device-status">
+            <div
+              className={`cli-device-status${lookup.expired ? ' is-expired' : ''}${
+                lookup.status === 'pending' && !lookup.expired ? ' is-pending' : ''
+              }`}
             >
-              Enter another code
-            </button>
+              <code className="mono cli-device-code" aria-label="Device code">
+                {lookup.userCode}
+              </code>
+            </div>
+
+            <dl className="cli-device-info">
+              <div className="cli-device-info-row">
+                <dt id={hashedIpLabelId}>Request fingerprint</dt>
+                <dd>
+                  {lookup.requestHashedIp ? (
+                    <code
+                      className="mono cli-hashed-ip-suffix"
+                      data-testid="cli-request-fingerprint"
+                      aria-labelledby={hashedIpLabelId}
+                      title={`Salted hashed-IP suffix ${lookup.requestHashedIp} — not a raw address`}
+                    >
+                      {lookup.requestHashedIp}
+                    </code>
+                  ) : (
+                    <span
+                      className="muted small"
+                      data-testid="cli-request-fingerprint-missing"
+                    >
+                      Not provided
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div className="cli-device-info-row">
+                <dt>
+                  <label htmlFor="cli-device-name">Device name</label>
+                </dt>
+                <dd>
+                  {canAct ? (
+                    <input
+                      id="cli-device-name"
+                      className="cli-device-name-input"
+                      value={deviceNameInput}
+                      onChange={(e) => setDeviceNameInput(e.target.value)}
+                      maxLength={64}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="Laptop name"
+                    />
+                  ) : lookup.deviceName ? (
+                    <span className="cli-device-device-name">{lookup.deviceName}</span>
+                  ) : (
+                    <span className="muted small">Not provided</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            <details className="cli-device-permissions">
+              <summary>
+                Permissions
+                <span className="muted small cli-device-permissions-summary">
+                  {permissionsSummary}
+                </span>
+              </summary>
+              <ul
+                className="cli-device-permissions-list"
+                data-testid="cli-device-permissions-list"
+              >
+                {permissionItems.map((item) => (
+                  <li key={item} className="mono">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </details>
 
             {canAct ? (
               <div className="cli-device-approve">
-                <div
-                  id={securityWarningId}
-                  className="flash flash-warn cli-device-security-warning"
-                  role="status"
-                  aria-live="polite"
-                >
-                  <p className="cli-device-security-warning-title">
-                    <ShieldAlert
-                      size={16}
-                      aria-hidden="true"
-                      className="button-label-icon"
-                    />
-                    Security warning
-                  </p>
-                  <p>
-                    Only approve a code you started in your own terminal.
-                    Attackers may send codes by email or chat to steal CLI
-                    access. Approvals are limited to 5 per 10 minutes.
-                  </p>
-                </div>
-
-                {(lookup.requestHashedIp || lookup.deviceName) && (
-                  <dl className="cli-device-info">
-                    {lookup.requestHashedIp && (
-                      <div className="cli-device-info-row">
-                        <dt id={hashedIpLabelId}>Hashed IP suffix</dt>
-                        <dd>
-                          <code
-                            className="mono cli-hashed-ip-suffix"
-                            aria-labelledby={hashedIpLabelId}
-                            title={`Last 4 hex characters of the salted request IP hash: ${lookup.requestHashedIp}`}
-                          >
-                            {lookup.requestHashedIp}
-                          </code>
-                          <span className="muted small cli-hashed-ip-hint">
-                            Last 4 hex of the salted request fingerprint (not a
-                            raw IP). Compare with the machine that started this
-                            login.
-                          </span>
-                        </dd>
-                      </div>
-                    )}
-                    {lookup.deviceName && (
-                      <div className="cli-device-info-row">
-                        <dt>Device name</dt>
-                        <dd>{lookup.deviceName}</dd>
-                      </div>
-                    )}
-                  </dl>
-                )}
-
                 <label className="cli-confirm-label" htmlFor="cli-device-confirm">
                   <span>
-                    Type <strong>APPROVE</strong> or{' '}
-                    <strong className="mono">{lookup.userCode}</strong> to confirm
+                    Type Approve or{' '}
+                    <span className="mono">{lookup.userCode}</span>
                   </span>
                   <input
                     id="cli-device-confirm"
-                    className="mono cli-device-confirm"
+                    className="cli-device-confirm"
                     value={confirmInput}
                     onChange={(e) => setConfirmInput(e.target.value)}
-                    placeholder="APPROVE"
+                    placeholder="Approve"
                     autoComplete="off"
-                    autoCapitalize="characters"
+                    autoCapitalize="off"
                     spellCheck={false}
                     aria-describedby={
                       [securityWarningId, actionError ? confirmErrorId : null]
@@ -376,6 +436,18 @@ export function CliDevicePage() {
                   />
                 </label>
                 <div className="btn-row cli-device-actions">
+                  <button
+                    type="button"
+                    className="btn ghost cli-device-change-code"
+                    onClick={onChangeCode}
+                  >
+                    <ActionChangeCode
+                      size={14}
+                      aria-hidden="true"
+                      className="button-label-icon"
+                    />
+                    Change
+                  </button>
                   <button
                     type="button"
                     className="btn primary"
@@ -404,8 +476,41 @@ export function CliDevicePage() {
                     Deny
                   </button>
                 </div>
+
+                <p
+                  id={securityWarningId}
+                  className="cli-device-security-warning"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <ShieldAlert
+                    size={14}
+                    aria-hidden="true"
+                    className="button-label-icon"
+                  />
+                  <span>
+                    <strong>Security warning.</strong> Only approve a code you
+                    started in your own terminal. Approvals are limited to 5 per
+                    10 minutes.
+                  </span>
+                </p>
               </div>
-            ) : null}
+            ) : (
+              <div className="btn-row cli-device-actions">
+                <button
+                  type="button"
+                  className="btn ghost cli-device-change-code"
+                  onClick={onChangeCode}
+                >
+                  <ActionChangeCode
+                    size={14}
+                    aria-hidden="true"
+                    className="button-label-icon"
+                  />
+                  Change
+                </button>
+              </div>
+            )}
 
             {done === 'approved' && (
               <div className="flash flash-success" role="status">
@@ -434,7 +539,7 @@ export function CliDevicePage() {
           </p>
         )}
 
-        <p className="muted small">
+        <p className="muted small cli-device-footer">
           <Link to="/">Back to Mice</Link>
         </p>
       </main>

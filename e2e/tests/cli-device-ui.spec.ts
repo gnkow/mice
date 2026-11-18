@@ -20,15 +20,21 @@ async function sessionLogin(
   })
 }
 
+let deviceStartSeq = 0
+
 async function startDevice(
   request: import('@playwright/test').APIRequestContext,
   opts?: { deviceName?: string; forwardedFor?: string },
 ) {
+  deviceStartSeq += 1
+  // Unique client IP per start so device-flow rate limits do not trip mid-suite.
+  const forwardedFor =
+    opts?.forwardedFor ?? `203.0.113.${(deviceStartSeq % 200) + 1}`
   const start = await request.post(`${AUTH_URL}/auth/cli/device/start`, {
-    data: opts?.deviceName ? { device_name: opts.deviceName } : {},
-    headers: opts?.forwardedFor
-      ? { 'X-Forwarded-For': opts.forwardedFor }
-      : undefined,
+    data: { device_name: opts?.deviceName ?? 'e2e-device' },
+    headers: {
+      'X-Forwarded-For': forwardedFor,
+    },
   })
   expect(start.ok()).toBeTruthy()
   return start.json() as Promise<{
@@ -81,7 +87,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     await page.getByRole('button', { name: 'Look up' }).click()
     const statusCard = page.getByTestId('cli-device-status')
     await expect(statusCard.locator('code.cli-device-code', { hasText: started.user_code })).toBeVisible()
-    await expect(statusCard.getByText(/Waiting for your approval/i)).toBeVisible()
+    await expect(page.getByText(/Waiting for your approval/i)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Look up', exact: true })).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Deny' }).click()
@@ -109,7 +115,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     await expect(page.getByText(/Waiting for your approval/i)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Look up', exact: true })).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Enter another code' }).click()
+    await page.getByRole('button', { name: 'Change' }).click()
     await expect(page.getByRole('button', { name: 'Look up', exact: true })).toBeVisible()
     await page.getByLabel('Device code').fill(started.user_code)
     await page.getByRole('button', { name: 'Look up', exact: true }).click()
@@ -225,15 +231,40 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     expect(body.requestHashedIp).toMatch(/^[0-9a-f]{4}$/i)
     expect(body.deviceName).toBe(deviceName)
 
-    await expect(page.getByText('Hashed IP suffix', { exact: true })).toBeVisible()
-    const suffix = page.locator('code.cli-hashed-ip-suffix')
+    await expect(page.getByText('Request fingerprint', { exact: true })).toBeVisible()
+    const suffix = page.getByTestId('cli-request-fingerprint')
     await expect(suffix).toBeVisible()
     await expect(suffix).toHaveText(body.requestHashedIp!)
+    await expect(page.getByLabel('Device name')).toHaveValue(deviceName)
+  })
+
+  test('TC-CLI-16b: device name is editable before approve', async ({ page }) => {
+    const started = await startDevice(page.request, {
+      deviceName: 'original-hostname',
+      forwardedFor: '198.51.100.20',
+    })
+    await sessionLogin(page)
+    await page.goto(
+      `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
+    )
+    const name = page.getByLabel('Device name')
+    await expect(name).toHaveValue('original-hostname')
+    await name.fill('renamed-laptop')
+    await expect(page.getByTestId('cli-request-fingerprint')).toBeVisible()
+
+    await page.getByLabel(/Type Approve/i).fill('Approve')
+    await page.getByRole('button', { name: 'Approve' }).click()
     await expect(
-      page.getByText(/Last 4 hex of the salted request fingerprint/i),
+      page.getByText(/Approved\. Return to your terminal/i),
     ).toBeVisible()
-    await expect(page.getByText('Device name', { exact: true })).toBeVisible()
-    await expect(page.getByText(deviceName, { exact: true })).toBeVisible()
+
+    const status = await page.request.get(
+      `${AUTH_URL}/auth/cli/device/status?user_code=${encodeURIComponent(started.user_code)}`,
+    )
+    expect(status.ok()).toBeTruthy()
+    const body = (await status.json()) as { deviceName?: string; status?: string }
+    expect(body.status).toBe('approved')
+    expect(body.deviceName).toBe('renamed-laptop')
   })
 
   test('TC-CLI-25: phishing security warning is visible before approve', async ({
@@ -277,7 +308,7 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
       `/cli/device?user_code=${encodeURIComponent(started.user_code)}`,
     )
     await expect(page.getByRole('heading', { name: 'Authorize CLI' })).toBeVisible()
-    await page.getByLabel(/Type APPROVE/i).fill('APPROVE')
+    await page.getByLabel(/Type Approve/i).fill('Approve')
     await page.getByRole('button', { name: 'Approve' }).click()
 
     const alert = page.getByRole('alert')
@@ -298,14 +329,14 @@ test.describe('CLI device UI + BFF API (PLAT-AUTH)', () => {
     await expect(page.getByText(/Waiting for your approval/i)).toBeVisible()
 
     const approve = page.getByRole('button', { name: 'Approve' })
-    const confirm = page.getByLabel(/Type APPROVE/i)
+    const confirm = page.getByLabel(/Type Approve/i)
     await expect(approve).toBeDisabled()
 
     await confirm.fill('NOPE')
     await expect(approve).toBeDisabled()
     await expect(confirm).toHaveAttribute('aria-invalid', 'true')
 
-    await confirm.fill('APPROVE')
+    await confirm.fill('Approve')
     await expect(approve).toBeEnabled()
     await expect(confirm).not.toHaveAttribute('aria-invalid', 'true')
 

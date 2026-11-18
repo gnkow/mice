@@ -162,4 +162,36 @@ describe('Hashed IP Logging (U8)', () => {
     assert.equal(fromHeaders, direct)
     assert.equal(await hasher.hashFromHeaders(new Headers()), null)
   })
+
+  it('resolveClientIp prefers headers then falls back to the TCP peer', async () => {
+    const { resolveClientIp } = await import('./ipHash.js')
+    const headers = new Headers()
+    assert.equal(resolveClientIp(headers), null)
+    assert.equal(resolveClientIp(headers, '::ffff:127.0.0.1'), '127.0.0.1')
+    headers.set('x-forwarded-for', '203.0.113.9')
+    assert.equal(resolveClientIp(headers, '10.0.0.1'), '203.0.113.9')
+  })
+
+  it('computeIpHash is the pure SHA-256(IP + salt) formula', async () => {
+    const { computeIpHash } = await import('./ipHash.js')
+    // Independent worked example: sha256('203.0.113.50' + 'aabbccdd11223344')
+    assert.equal(
+      computeIpHash('203.0.113.50', 'aabbccdd11223344'),
+      '07ee6a7386b2b73c3c5b81d38aeb383b0d941ddeeace59dba39040898ccb9029',
+    )
+  })
+
+  it('fingerprintFromHeaders returns store hash and 4-hex display suffix together', async () => {
+    const { createIpHash } = await import('./ipHash.js')
+    const hasher = createIpHash({ utcDay: () => '2099-06-16' })
+    const headers = new Headers()
+    headers.set('x-forwarded-for', '203.0.113.50, 10.0.0.1')
+
+    const fp = await hasher.fingerprintFromHeaders(headers)
+    assert.ok(fp)
+    assert.equal(fp.hash.length, 64)
+    assert.equal(fp.suffix, fp.hash.slice(-4))
+    assert.equal(fp.hash, await hasher.hashIp('203.0.113.50'))
+    assert.equal(await hasher.fingerprintFromHeaders(new Headers()), null)
+  })
 })
