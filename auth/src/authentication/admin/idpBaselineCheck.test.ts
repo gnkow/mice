@@ -1,9 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { recordIdpBaselineCheck } from './idpBaselineCheck.js'
+import {
+  idpBaselineCheckAdminView,
+  latestIdpBaselineCheck,
+  listIdpBaselineChecks,
+  recordIdpBaselineCheck,
+} from './idpBaselineCheck.js'
 
 /**
- * Ticket 14 deepen: decode → evaluate → store behind one seam.
+ * Ticket 14 deepen: decode → evaluate → store behind one seam;
+ * status/history share the same admin view.
  */
 
 describe('recordIdpBaselineCheck', () => {
@@ -84,5 +90,91 @@ describe('recordIdpBaselineCheck', () => {
     assert.equal(result.mfaAvailable, false)
     assert.equal(result.claimsFound, null)
     assert.match(result.error ?? '', /id_token|claims/i)
+  })
+})
+
+describe('idpBaselineCheckAdminView', () => {
+  it('projects a stored row into the admin JSON shape', () => {
+    const checkedAt = new Date('2026-06-01T12:00:00.000Z')
+    assert.deepEqual(
+      idpBaselineCheckAdminView({
+        id: 9,
+        checkedAt,
+        checkedBy: 'https://idp.test|admin',
+        mfaAvailable: true,
+        claimsFound: { acr: 'mfa', amr: ['pwd', 'otp'] },
+        error: null,
+      }),
+      {
+        id: 9,
+        checkedAt,
+        checkedBy: 'https://idp.test|admin',
+        mfaAvailable: true,
+        claimsFound: { acr: 'mfa', amr: ['pwd', 'otp'] },
+        error: null,
+      },
+    )
+  })
+})
+
+describe('latestIdpBaselineCheck / listIdpBaselineChecks', () => {
+  it('returns null when no checks exist', async () => {
+    const latest = await latestIdpBaselineCheck({
+      findLatest: async () => null,
+    })
+    assert.equal(latest, null)
+  })
+
+  it('returns the latest row through the admin view', async () => {
+    const checkedAt = new Date('2026-06-02T00:00:00.000Z')
+    const latest = await latestIdpBaselineCheck({
+      findLatest: async () => ({
+        id: 3,
+        checkedAt,
+        checkedBy: 'iss|sub',
+        mfaAvailable: false,
+        claimsFound: { amr: [] },
+        error: 'IdP token does not present MFA evidence (acr/amr)',
+      }),
+    })
+    assert.deepEqual(latest, {
+      id: 3,
+      checkedAt,
+      checkedBy: 'iss|sub',
+      mfaAvailable: false,
+      claimsFound: { amr: [] },
+      error: 'IdP token does not present MFA evidence (acr/amr)',
+    })
+  })
+
+  it('lists recent checks newest-first through the admin view', async () => {
+    const a = new Date('2026-06-03T00:00:00.000Z')
+    const b = new Date('2026-06-02T00:00:00.000Z')
+    const list = await listIdpBaselineChecks(2, {
+      findRecent: async (limit) => {
+        assert.equal(limit, 2)
+        return [
+          {
+            id: 2,
+            checkedAt: a,
+            checkedBy: 'iss|a',
+            mfaAvailable: true,
+            claimsFound: { amr: ['otp'] },
+            error: null,
+          },
+          {
+            id: 1,
+            checkedAt: b,
+            checkedBy: 'iss|b',
+            mfaAvailable: false,
+            claimsFound: null,
+            error: 'No id_token claims available for baseline check',
+          },
+        ]
+      },
+    })
+    assert.equal(list.length, 2)
+    assert.equal(list[0].id, 2)
+    assert.equal(list[1].checkedBy, 'iss|b')
   })
 })

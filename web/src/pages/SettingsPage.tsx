@@ -1782,18 +1782,8 @@ function IdpBaselineStatus({ lastCheck }: { lastCheck: IdpBaselineLastCheck }) {
       <div className="ns-settings-fact">
         <dt className="ns-settings-fact-label">MFA</dt>
         <dd className="ns-settings-fact-value" role="status">
-          <span className={lastCheck.mfaAvailable ? 'ns-tag ns-tag-accent' : 'ns-tag ns-tag-warn'}>
-            {lastCheck.mfaAvailable ? (
-              <>
-                <ActionCheck size={12} aria-hidden="true" className="button-label-icon" />
-                Available
-              </>
-            ) : (
-              <>
-                <ActionX size={12} aria-hidden="true" className="button-label-icon" />
-                Not available
-              </>
-            )}
+          <span className={lastCheck.mfaAvailable ? 'status-pill ok' : 'status-pill warn'}>
+            {lastCheck.mfaAvailable ? 'Available' : 'Not available'}
           </span>
         </dd>
       </div>
@@ -1841,7 +1831,10 @@ function IdpBaselineSection() {
     setError(null)
 
     try {
-      const res = await fetch('/auth/admin/idp-baseline/check', { method: 'POST' })
+      const res = await fetch('/auth/admin/idp-baseline/check', {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
       const data = await res.json()
 
       if (!res.ok) {
@@ -1896,19 +1889,20 @@ function IdpBaselineSection() {
         )
       )}
 
+      {error && <p className="flash flash-error" role="alert">{error}</p>}
+
       <div className="btn-row ns-settings-actions">
         <button
           className="btn primary"
           type="button"
           onClick={() => void triggerCheck()}
           disabled={checking}
+          aria-busy={checking || undefined}
         >
           <ShieldAlert size={14} aria-hidden="true" className="button-label-icon" />
-          {checking ? 'Checking...' : 'Check Now'}
+          {checking ? 'Checking…' : 'Check Now'}
         </button>
       </div>
-
-      {error && <p className="flash flash-error" role="alert">{error}</p>}
     </section>
   )
 }

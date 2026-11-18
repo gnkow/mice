@@ -1,10 +1,12 @@
 import type { Hono } from 'hono'
-import { desc } from 'drizzle-orm'
 import { guarded } from '../session/routeGuard.js'
 import { isInstanceAdmin } from '../../authzInstanceStore.js'
-import { getDb } from '../../db/database.js'
-import { idpBaselineChecks } from '../../db/schema.js'
-import { recordIdpBaselineCheck } from './idpBaselineCheck.js'
+import {
+  idpBaselineCheckAdminView,
+  latestIdpBaselineCheck,
+  listIdpBaselineChecks,
+  recordIdpBaselineCheck,
+} from './idpBaselineCheck.js'
 import { env } from '../../env.js'
 import type { AuditDep } from '../../routeDeps.js'
 
@@ -61,14 +63,7 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
         detail: { checkId: check.id, issuer, mfaAvailable: check.mfaAvailable },
       })
 
-      return c.json({
-        id: check.id,
-        checkedAt: check.checkedAt,
-        checkedBy: check.checkedBy,
-        mfaAvailable: check.mfaAvailable,
-        claimsFound: check.claimsFound,
-        error: check.error,
-      })
+      return c.json(idpBaselineCheckAdminView(check))
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Baseline check failed'
 
@@ -90,29 +85,14 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
     gate: adminGate,
     mutates: false,
   }, async ({ c }) => {
-    const [lastCheck] = await getDb()
-      .select()
-      .from(idpBaselineChecks)
-      .orderBy(desc(idpBaselineChecks.checkedAt))
-      .limit(1)
-
+    const lastCheck = await latestIdpBaselineCheck()
     if (!lastCheck) {
       return c.json({
         lastCheck: null,
         message: 'No baseline checks performed yet',
       })
     }
-
-    return c.json({
-      lastCheck: {
-        id: lastCheck.id,
-        checkedAt: lastCheck.checkedAt,
-        checkedBy: lastCheck.checkedBy,
-        mfaAvailable: lastCheck.mfaAvailable,
-        claimsFound: lastCheck.claimsFound,
-        error: lastCheck.error,
-      },
-    })
+    return c.json({ lastCheck })
   }))
 
   /**
@@ -124,21 +104,6 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
     gate: adminGate,
     mutates: false,
   }, async ({ c }) => {
-    const checks = await getDb()
-      .select()
-      .from(idpBaselineChecks)
-      .orderBy(desc(idpBaselineChecks.checkedAt))
-      .limit(50)
-
-    return c.json({
-      checks: checks.map(check => ({
-        id: check.id,
-        checkedAt: check.checkedAt,
-        checkedBy: check.checkedBy,
-        mfaAvailable: check.mfaAvailable,
-        claimsFound: check.claimsFound,
-        error: check.error,
-      })),
-    })
+    return c.json({ checks: await listIdpBaselineChecks(50) })
   }))
 }

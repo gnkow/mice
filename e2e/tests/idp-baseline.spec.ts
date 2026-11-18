@@ -25,9 +25,11 @@ test.describe('IdP MFA Baseline (Admin)', () => {
     await checkButton.click()
 
     await expect(checkButton).toBeDisabled()
-    await expect(checkButton).toHaveText(/Checking/i, { timeout: 2000 })
+    await expect(checkButton).toHaveAttribute('aria-busy', 'true')
+    await expect(checkButton).toHaveText(/Checking…|Checking/i, { timeout: 2000 })
 
     await expect(checkButton).toBeEnabled({ timeout: 10_000 })
+    await expect(checkButton).not.toHaveAttribute('aria-busy', 'true')
     await expect(
       section.getByText(/Last check|Could not load IdP baseline|Check failed/i).first(),
     ).toBeVisible()
@@ -48,7 +50,9 @@ test.describe('IdP MFA Baseline (Admin)', () => {
     const lastCheckLabel = section.getByText('Last check', { exact: true })
     if (await lastCheckLabel.isVisible()) {
       await expect(section.getByText('MFA', { exact: true })).toBeVisible()
-      await expect(section.getByText(/Available|Not available/i).first()).toBeVisible()
+      const mfaPill = section.locator('.status-pill').filter({ hasText: /Available|Not available/i })
+      await expect(mfaPill).toBeVisible()
+      await expect(mfaPill).toHaveClass(/ok|warn/)
     }
   })
 })

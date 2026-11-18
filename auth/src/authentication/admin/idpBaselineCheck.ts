@@ -1,3 +1,4 @@
+import { desc } from 'drizzle-orm'
 import { getDb } from '../../db/database.js'
 import { idpBaselineChecks } from '../../db/schema.js'
 import { decodeJwtPayload } from '../oidc/oidcClaims.js'
@@ -11,10 +12,21 @@ import {
  * IdP MFA baseline check (Ticket 14).
  *
  * One deep module: decode Session id_token claims, evaluate MFA evidence,
- * and persist the storeable result. Routes stay HTTP/audit adapters.
+ * persist the storeable result, and project admin read views. Routes stay
+ * HTTP/audit adapters.
  */
 
 export type IdpBaselineCheckRow = {
+  id: number
+  checkedAt: Date
+  checkedBy: string
+  mfaAvailable: boolean
+  claimsFound: IdpBaselineClaimsFound | null
+  error: string | null
+}
+
+/** Admin JSON shape shared by POST check, GET status, and GET history. */
+export type IdpBaselineCheckAdminView = {
   id: number
   checkedAt: Date
   checkedBy: string
@@ -39,8 +51,31 @@ export type IdpBaselineCheckDeps = {
   }) => Promise<IdpBaselineCheckRow>
 }
 
+export type IdpBaselineCheckReadDeps = {
+  findLatest?: () => Promise<IdpBaselineCheckRow | null>
+  findRecent?: (limit: number) => Promise<IdpBaselineCheckRow[]>
+}
+
 function defaultDecode(idToken: string): Record<string, unknown> {
   return decodeJwtPayload(idToken)
+}
+
+function rowFromDb(check: {
+  id: number
+  checkedAt: Date
+  checkedBy: string
+  mfaAvailable: boolean
+  claimsFound: unknown
+  error: string | null
+}): IdpBaselineCheckRow {
+  return {
+    id: check.id,
+    checkedAt: check.checkedAt,
+    checkedBy: check.checkedBy,
+    mfaAvailable: check.mfaAvailable,
+    claimsFound: check.claimsFound as IdpBaselineClaimsFound | null,
+    error: check.error,
+  }
 }
 
 async function defaultStore(row: {
@@ -58,13 +93,36 @@ async function defaultStore(row: {
       error: row.error,
     })
     .returning()
+  return rowFromDb(check)
+}
+
+async function defaultFindLatest(): Promise<IdpBaselineCheckRow | null> {
+  const [check] = await getDb()
+    .select()
+    .from(idpBaselineChecks)
+    .orderBy(desc(idpBaselineChecks.checkedAt))
+    .limit(1)
+  return check ? rowFromDb(check) : null
+}
+
+async function defaultFindRecent(limit: number): Promise<IdpBaselineCheckRow[]> {
+  const checks = await getDb()
+    .select()
+    .from(idpBaselineChecks)
+    .orderBy(desc(idpBaselineChecks.checkedAt))
+    .limit(limit)
+  return checks.map(rowFromDb)
+}
+
+/** Project a stored check into the admin response body. */
+export function idpBaselineCheckAdminView(row: IdpBaselineCheckRow): IdpBaselineCheckAdminView {
   return {
-    id: check.id,
-    checkedAt: check.checkedAt,
-    checkedBy: check.checkedBy,
-    mfaAvailable: check.mfaAvailable,
-    claimsFound: check.claimsFound as IdpBaselineClaimsFound | null,
-    error: check.error,
+    id: row.id,
+    checkedAt: row.checkedAt,
+    checkedBy: row.checkedBy,
+    mfaAvailable: row.mfaAvailable,
+    claimsFound: row.claimsFound,
+    error: row.error,
   }
 }
 
@@ -97,4 +155,24 @@ export async function recordIdpBaselineCheck(
     claimsFound: evaluation.claimsFound,
     error: evaluation.error,
   })
+}
+
+/** Most recent baseline check as an admin view, or null when none exist. */
+export async function latestIdpBaselineCheck(
+  deps: IdpBaselineCheckReadDeps = {},
+): Promise<IdpBaselineCheckAdminView | null> {
+  const findLatest = deps.findLatest ?? defaultFindLatest
+  const row = await findLatest()
+  return row ? idpBaselineCheckAdminView(row) : null
+}
+
+/** Recent baseline checks (newest first) as admin views. */
+export async function listIdpBaselineChecks(
+  limit = 50,
+  deps: IdpBaselineCheckReadDeps = {},
+): Promise<IdpBaselineCheckAdminView[]> {
+  const findRecent = deps.findRecent ?? defaultFindRecent
+  const safeLimit = Math.max(1, Math.min(limit, 100))
+  const rows = await findRecent(safeLimit)
+  return rows.map(idpBaselineCheckAdminView)
 }

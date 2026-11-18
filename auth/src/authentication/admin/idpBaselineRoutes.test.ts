@@ -120,7 +120,20 @@ describe('IdP Baseline Check Routes', () => {
       headers: { Cookie: await cookie(mk('admin'), token) },
     })
     assert.equal(status.status, 200)
-    const statusBody = await status.json() as { lastCheck: { mfaAvailable: boolean } | null }
+    const statusBody = await status.json() as { lastCheck: { mfaAvailable: boolean; checkedBy: string } | null }
     assert.equal(statusBody.lastCheck?.mfaAvailable, true)
+    assert.equal(statusBody.lastCheck?.checkedBy, 'https://idp.test|admin')
+
+    const history = await app.request('/auth/admin/idp-baseline/history', {
+      headers: { Cookie: await cookie(mk('admin'), token) },
+    })
+    assert.equal(history.status, 200)
+    const historyBody = await history.json() as {
+      checks: Array<{ mfaAvailable: boolean; claimsFound: { amr: string[] } | null }>
+    }
+    assert.ok(historyBody.checks.length >= 1)
+    assert.equal(historyBody.checks[0].mfaAvailable, true)
+    assert.deepEqual(historyBody.checks[0].claimsFound?.amr, ['pwd', 'otp'])
   })
 })
+
