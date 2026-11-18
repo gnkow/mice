@@ -225,17 +225,24 @@ export type RotateSealKeyWithAuditResult =
   | { kind: 'normal'; newKey: SealKey }
   | { kind: 'emergency'; oldKey: SealKey; newKey: SealKey }
 
-/**
- * Admin/CLI rotation seam: retire-and-issue plus the matching audit event.
- * Routes and the CLI script share this so audit wording cannot drift.
- */
-export async function rotateSealKeyWithAudit(
-  input: RotateSealKeyWithAuditInput,
-): Promise<RotateSealKeyWithAuditResult> {
-  const at = input.at ?? nowSec()
+export type SealKeyRotationAuditEvent = {
+  actor: SealKeyRotationActor
+  via: RotateSealKeyWithAuditInput['via']
+  method: 'POST'
+  path: string
+  status: 200
+  action: 'seal_key.rotated' | 'seal_key.emergency_rotation'
+  message: string
+  detail: Record<string, unknown>
+}
+
+/** Pure audit payload for a completed rotation — routes/CLI/schedule share wording. */
+export function buildSealKeyRotationAudit(
+  input: Pick<RotateSealKeyWithAuditInput, 'kind' | 'actor' | 'via' | 'reason'>,
+  keys: { oldKey?: SealKey | null; newKey: SealKey },
+): SealKeyRotationAuditEvent {
   if (input.kind === 'normal') {
-    const newKey = await normalRotation(at)
-    await appendAudit({
+    return {
       actor: input.actor,
       via: input.via,
       method: 'POST',
@@ -244,17 +251,18 @@ export async function rotateSealKeyWithAudit(
       action: 'seal_key.rotated',
       message: 'Normal seal key rotation completed',
       detail: {
-        newKeyId: newKey.id,
+        newKeyId: keys.newKey.id,
         rotationType: 'normal',
-        validFrom: newKey.validFrom,
+        validFrom: keys.newKey.validFrom,
       },
-    })
-    return { kind: 'normal', newKey }
+    }
   }
-
   const reason = input.reason ?? 'Emergency rotation requested'
-  const { oldKey, newKey } = await emergencyRotation(at)
-  await appendAudit({
+  const oldKey = keys.oldKey
+  if (!oldKey) {
+    throw new Error('Emergency rotation audit requires the retired key')
+  }
+  return {
     actor: input.actor,
     via: input.via,
     method: 'POST',
@@ -266,11 +274,42 @@ export async function rotateSealKeyWithAudit(
       oldKeyId: oldKey.id,
       oldKeyRevokedAt: oldKey.revokedAt,
       oldKeyGraceUntil: oldKey.validUntil,
-      newKeyId: newKey.id,
+      newKeyId: keys.newKey.id,
       rotationType: 'emergency',
       reason,
     },
-  })
+  }
+}
+
+export type RotateSealKeyWithAuditDeps = {
+  rotate?: typeof performRotation
+  audit?: (event: SealKeyRotationAuditEvent) => Promise<unknown>
+  now?: () => number
+}
+
+/**
+ * Admin/CLI rotation seam: retire-and-issue plus the matching audit event.
+ * Routes and the CLI script share this so audit wording cannot drift.
+ */
+export async function rotateSealKeyWithAudit(
+  input: RotateSealKeyWithAuditInput,
+  deps: RotateSealKeyWithAuditDeps = {},
+): Promise<RotateSealKeyWithAuditResult> {
+  const at = input.at ?? (deps.now ?? nowSec)()
+  const rotate = deps.rotate ?? performRotation
+  const audit = deps.audit ?? ((event) => appendAudit(event))
+
+  if (input.kind === 'normal') {
+    const { newKey } = await rotate('normal', at)
+    await audit(buildSealKeyRotationAudit(input, { newKey }))
+    return { kind: 'normal', newKey }
+  }
+
+  const { oldKey, newKey } = await rotate('emergency', at)
+  if (!oldKey) {
+    throw new Error('No current seal key found for emergency rotation')
+  }
+  await audit(buildSealKeyRotationAudit(input, { oldKey, newKey }))
   return { kind: 'emergency', oldKey, newKey }
 }
 

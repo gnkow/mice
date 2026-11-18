@@ -18,6 +18,7 @@ import {
   getAllSealKeys,
   rotateSealKeyWithAudit,
   presentSealKey,
+  buildSealKeyRotationAudit,
 } from './sealKeys.js'
 import { queryAudit } from '../../audit.js'
 
@@ -340,6 +341,77 @@ describe('Seal Key Rotation (Ticket 17)', () => {
       assert.equal(view.isCurrent, true)
       assert.equal(view.status, 'current')
       assert.equal('keyMaterial' in view, false)
+    })
+
+    it('buildSealKeyRotationAudit is pure for normal and emergency wording', () => {
+      const actor = {
+        sub: 'admin',
+        iss: 'https://idp.test',
+        email: 'admin@test.io',
+        name: 'Admin',
+      }
+      const newKey = {
+        id: 'seal_new',
+        keyMaterial: 'x',
+        validFrom: 1_700_000_000,
+        validUntil: null,
+        revokedAt: null,
+        rotationType: 'normal' as const,
+        createdAt: new Date(0),
+      }
+      const normal = buildSealKeyRotationAudit(
+        { kind: 'normal', actor, via: 'session' },
+        { newKey },
+      )
+      assert.equal(normal.action, 'seal_key.rotated')
+      assert.equal(normal.detail.newKeyId, 'seal_new')
+
+      const oldKey = {
+        ...newKey,
+        id: 'seal_old',
+        validUntil: 1_700_028_800,
+        revokedAt: 1_700_000_000,
+        rotationType: 'emergency' as const,
+      }
+      const emergency = buildSealKeyRotationAudit(
+        { kind: 'emergency', actor, via: 'cli', reason: 'leak' },
+        { oldKey, newKey: { ...newKey, id: 'seal_emerg_1', rotationType: 'emergency' } },
+      )
+      assert.equal(emergency.action, 'seal_key.emergency_rotation')
+      assert.match(emergency.message, /leak/)
+      assert.equal(emergency.detail.oldKeyId, 'seal_old')
+    })
+
+    it('rotateSealKeyWithAudit accepts injectable rotate + audit', async () => {
+      const actor = {
+        sub: 'admin',
+        iss: 'https://idp.test',
+        email: 'admin@test.io',
+        name: 'Admin',
+      }
+      const newKey = {
+        id: 'seal_injected',
+        keyMaterial: 'abc',
+        validFrom: 42,
+        validUntil: null,
+        revokedAt: null,
+        rotationType: 'normal' as const,
+        createdAt: new Date(0),
+      }
+      const audited: string[] = []
+      const result = await rotateSealKeyWithAudit(
+        { kind: 'normal', actor, via: 'system', at: 42 },
+        {
+          now: () => 42,
+          rotate: async () => ({ oldKey: null, newKey }),
+          audit: async (event) => {
+            audited.push(event.action)
+          },
+        },
+      )
+      assert.equal(result.kind, 'normal')
+      assert.equal(result.newKey.id, 'seal_injected')
+      assert.deepEqual(audited, ['seal_key.rotated'])
     })
   })
 })

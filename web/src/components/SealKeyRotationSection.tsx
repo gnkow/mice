@@ -111,9 +111,10 @@ function KeyStatusIcon({ status }: { status: 'valid' | 'expired' | 'current' }) 
 export function SealKeyRotationSection() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busyAction, setBusyAction] = useState<'normal' | 'emergency' | null>(null)
   const [emergencyReason, setEmergencyReason] = useState('')
   const [showEmergencyForm, setShowEmergencyForm] = useState(false)
+  const busy = busyAction !== null
 
   const currentKey = useAsync(() => getCurrentSealKey(), [])
   const keyRing = useAsync(() => listSealKeys(), [])
@@ -126,7 +127,7 @@ export function SealKeyRotationSection() {
     e.preventDefault()
     if (busy) return
 
-    setBusy(true)
+    setBusyAction('normal')
     setError('')
     setSuccess('')
 
@@ -138,7 +139,7 @@ export function SealKeyRotationSection() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Rotation failed')
     } finally {
-      setBusy(false)
+      setBusyAction(null)
     }
   }
 
@@ -146,7 +147,7 @@ export function SealKeyRotationSection() {
     e.preventDefault()
     if (busy || !emergencyReason.trim()) return
 
-    setBusy(true)
+    setBusyAction('emergency')
     setError('')
     setSuccess('')
 
@@ -160,7 +161,7 @@ export function SealKeyRotationSection() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Emergency rotation failed')
     } finally {
-      setBusy(false)
+      setBusyAction(null)
     }
   }
 
@@ -283,7 +284,7 @@ export function SealKeyRotationSection() {
               className="btn primary"
               disabled={busy}
             >
-              {busy ? 'Rotating…' : 'Perform Normal Rotation'}
+              {busyAction === 'normal' ? 'Rotating…' : 'Perform Normal Rotation'}
             </button>
           </div>
         </form>
@@ -306,9 +307,10 @@ export function SealKeyRotationSection() {
               <strong>Emergency Rotation:</strong> Immediately revokes the current key with an 8-hour grace period.
               Use only if the current key is compromised.
             </p>
-            <label className="ns-settings-field">
+            <label className="ns-settings-field" htmlFor="seal-key-emergency-reason">
               <span className="ns-settings-label">Reason for emergency rotation</span>
               <textarea
+                id="seal-key-emergency-reason"
                 value={emergencyReason}
                 onChange={(e) => setEmergencyReason(e.target.value)}
                 placeholder="e.g., Key potentially compromised..."
@@ -323,7 +325,7 @@ export function SealKeyRotationSection() {
                 className="btn danger"
                 disabled={busy || !emergencyReason.trim()}
               >
-                {busy ? 'Rotating…' : 'Perform Emergency Rotation'}
+                {busyAction === 'emergency' ? 'Emergency rotating…' : 'Perform Emergency Rotation'}
               </button>
               <button
                 type="button"
@@ -362,7 +364,7 @@ export function SealKeyRotationSection() {
           </div>
         )}
         {keyRing.kind === 'ok' && keyRing.data.length > 0 && (
-          <div className="table-container">
+          <div className="table-container" data-testid="seal-key-ring">
             <table className="table">
               <thead>
                 <tr>
@@ -375,13 +377,18 @@ export function SealKeyRotationSection() {
               </thead>
               <tbody>
                 {keyRing.data.map((key) => (
-                  <tr key={key.id}>
+                  <tr
+                    key={key.id}
+                    data-testid={key.isCurrent ? 'seal-key-ring-current' : undefined}
+                  >
                     <td>
                       <KeyStatusIcon status={key.status} />
-                      <span className="visually-hidden">{key.status}</span>
+                      <span className="muted small"> {key.status}</span>
                     </td>
                     <td>
-                      <code className="inline-code">{key.id.split('_').pop()}</code>
+                      <code className="inline-code" title={key.id}>
+                        {key.id.split('_').pop()}
+                      </code>
                       {key.isCurrent && <span className="pill">current</span>}
                     </td>
                     <td>{key.rotationType}</td>

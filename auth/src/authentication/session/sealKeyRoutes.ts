@@ -29,22 +29,7 @@ export function registerSealKeyRoutes(app: Hono): void {
   app.get('/auth/admin/seal-keys', guarded({ gate: adminGate }, async ({ c }) => {
     const now = Math.floor(Date.now() / 1000)
     const keys = await getAllSealKeys()
-    return c.json({
-      keys: keys.map((key) => {
-        const view = presentSealKey(key, now)
-        return {
-          id: view.id,
-          validFrom: view.validFrom,
-          validUntil: view.validUntil,
-          revokedAt: view.revokedAt,
-          rotationType: view.rotationType,
-          createdAt: view.createdAt,
-          // List uses valid|expired; isCurrent marks the primary.
-          status: view.isCurrent || view.status === 'valid' ? 'valid' : 'expired',
-          isCurrent: view.isCurrent,
-        }
-      }),
-    })
+    return c.json({ keys: keys.map((key) => presentSealKey(key, now)) })
   }))
 
   /**
@@ -58,18 +43,7 @@ export function registerSealKeyRoutes(app: Hono): void {
       return c.json({ error: 'No current seal key found' }, 404)
     }
 
-    const view = presentSealKey(currentKey)
-    return c.json({
-      key: {
-        id: view.id,
-        validFrom: view.validFrom,
-        validUntil: view.validUntil,
-        revokedAt: view.revokedAt,
-        rotationType: view.rotationType,
-        createdAt: view.createdAt,
-        status: 'current',
-      },
-    })
+    return c.json({ key: presentSealKey(currentKey) })
   }))
 
   /**

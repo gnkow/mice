@@ -100,18 +100,24 @@ test.describe('Settings · Seal keys (Admin)', () => {
     await openAdminSettings(page)
     await page.getByRole('link', { name: 'Seal keys', exact: true }).click()
 
+    const section = page.locator('#seal-key-rotation')
     await expect(page.getByRole('heading', { name: 'Session cookie keys' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Current Primary Key' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Key Rotation' })).toBeVisible()
     await expect(
-      page.locator('#seal-key-rotation').getByRole('button', { name: /Perform Normal Rotation/i }),
+      section.getByRole('button', { name: /Perform Normal Rotation/i }),
     ).toBeVisible()
     await expect(
-      page.locator('#seal-key-rotation').getByRole('button', { name: /Emergency Rotation/i }),
+      section.getByRole('button', { name: /Emergency Rotation/i }),
     ).toBeVisible()
     await expect(
-      page.locator('#seal-key-rotation').getByText(/Key ID|Loading current key|Failed to load current key/i).first(),
+      section.getByText(/Key ID|Loading current key|Failed to load current key/i).first(),
     ).toBeVisible({ timeout: 10_000 })
+    await expect(section.getByTestId('seal-key-schedule-status')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(section.getByTestId('seal-key-ring')).toBeVisible({ timeout: 10_000 })
+    await expect(section.getByTestId('seal-key-ring-current')).toContainText(/current/i)
   })
 })
 
