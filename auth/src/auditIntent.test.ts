@@ -71,15 +71,16 @@ beforeEach(async () => {
   restoreUpstream = setUpstreamFetch(async (url, init) => {
     upstreamCalls.push(`${init?.method} ${String(url)}`)
     if (init?.method === 'PUT') auditSnapshotAtUpstream = await rows()
-    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' } })
+    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-change-control-id': 'CC-2026-114' } })
   })
 })
 afterEach(() => restoreUpstream())
 
 async function put(user = writer) {
-  return app.request('/api/repos/in/r/file/main/a.csv', {
+  // Non-default branch: direct tip-changing writes to validated `main` are refused.
+  return app.request('/api/repos/in/r/file/feature/a.csv', {
     method: 'PUT',
-    headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+    headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-change-control-id': 'CC-2026-114' },
     body: '{"message":"fix a"}',
   })
 }
@@ -128,9 +129,9 @@ describe('intent-first proxied mutations', () => {
     const headers = await iso.sessionHeaders(writer)
     const restore = breakAuditStore()
     try {
-      const res = await app.request('/api/repos/in/r/file/main/a.csv', {
+      const res = await app.request('/api/repos/in/r/file/feature/a.csv', {
         method: 'PUT',
-        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-change-control-id': 'CC-2026-114' },
         body: '{"message":"fix a"}',
       })
       assert.equal(res.status, 503)

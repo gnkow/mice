@@ -1,4 +1,4 @@
-import { RefreshCw, ShieldAlert } from 'lucide-react'
+import { RefreshCw, ShieldOff } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { UserRef } from './UserRef'
 
@@ -49,7 +49,7 @@ export function DisabledSignersSection() {
       <div className="ns-settings-section-head">
         <div>
           <h2 id="disabled-signers-heading">
-            <ShieldAlert size={18} className="button-label-icon" aria-hidden="true" />
+            <ShieldOff size={18} className="button-label-icon" aria-hidden="true" />
             Disabled signers
           </h2>
           <p className="muted small">

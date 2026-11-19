@@ -144,7 +144,7 @@ export async function sealedSessionCookie(
 }
 
 /**
- * Headers for a regulated mutation: reason + category + a freshly recorded signature
+ * Headers for a regulated mutation: reason + a freshly recorded signature
  * bound to this exact method/path/body (GxP ticket 27).
  */
 export async function regulatedMutationHeaders(
@@ -154,20 +154,17 @@ export async function regulatedMutationHeaders(
     path: string
     body?: unknown
     reason?: string
-    category?: string
     /** When false, omit content-type so multipart/binary requests keep their own. Default true. */
     jsonContentType?: boolean
   },
 ): Promise<Record<string, string>> {
   const reason = mutation.reason ?? 'Routine settings correction for assay batch'
-  const category = mutation.category ?? 'privileged_settings'
   const { prepareMutationDocument } = await import('./mutationSignature.js')
   const { signatureStore } = await import('./authentication/signing/signatureStore.js')
   const prepared = prepareMutationDocument({
     method: mutation.method,
     path: mutation.path,
     reason,
-    category,
     body: mutation.body ?? {},
   })
   const { id } = await (
@@ -180,7 +177,6 @@ export async function regulatedMutationHeaders(
   return {
     ...(mutation.jsonContentType === false ? {} : { 'content-type': 'application/json' }),
     'x-mice-reason': reason,
-    'x-mice-reason-category': category,
     'x-mice-signature-id': id,
   }
 }

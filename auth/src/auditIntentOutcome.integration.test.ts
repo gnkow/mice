@@ -34,7 +34,6 @@ describe('audit Intent↔Outcome integration', () => {
       action: 'bff.mutation',
       reason: 'Routine settings correction for assay batch',
       reason_source: 'explicit',
-      category: 'privileged_settings',
       change_control_id: 'CC-20261113-aabbccdd',
     })
     const outcome = await appendOutcomeFor(req, {

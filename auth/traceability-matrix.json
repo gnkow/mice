@@ -12,7 +12,7 @@
       "requirementId": "GXP-R-013",
       "requirementDescription": "Reason policy on regulated mutation classes",
       "testCases": [
-        "src/revocationReasonPolicy.test.ts :: GXP-R-013 POST /auth/admin/revoke refuses without category + free text and accepts with ceremony",
+        "src/revocationReasonPolicy.test.ts :: GXP-R-013 POST /auth/admin/revoke refuses without free text and accepts with ceremony",
         "src/revocationReasonPolicy.test.ts :: GXP-R-013 POST /auth/instance/revoke-sessions refuses without a reason and accepts past the gate"
       ]
     },

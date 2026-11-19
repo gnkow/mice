@@ -160,7 +160,6 @@ await describe('group grants bind to iss|group_id', async () => {
       path,
       body,
       reason: 'Grant the quality group',
-      category: 'privileged_settings',
     })
     const res = await app.request(path, {
       method: 'PUT',

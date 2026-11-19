@@ -24,14 +24,12 @@ describe('carryFromIntent', () => {
       phase: 'intent' as const,
       reason: 'Corrected assay layout after DEV-12',
       reason_source: 'explicit' as const,
-      category: 'data_correction',
       change_control_id: 'CC-20261113-aabbccdd',
       signature_id: 'sig-1',
     }
     assert.deepEqual(carryFromIntent(intent), {
       reason: 'Corrected assay layout after DEV-12',
       reason_source: 'explicit',
-      category: 'data_correction',
       change_control_id: 'CC-20261113-aabbccdd',
       signature_id: 'sig-1',
     })

@@ -1,4 +1,30 @@
-import { ArchiveRestore, ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound, Package, Scale } from 'lucide-react'
+import {
+  ListChecks,
+  Megaphone,
+  ShieldUser,
+  Inbox,
+  Check as ActionCheck,
+  Plug as ActionPlug,
+  Save as ActionSave,
+  Settings as ActionSettings,
+  Trash2 as ActionTrash2,
+  UserPlus as ActionUserPlus,
+  X as ActionX,
+  UserCheck,
+  ShieldAlert,
+  ShieldOff,
+  Shield,
+  Link2,
+  GitCompare,
+  FileText,
+  Ban,
+  HeartPulse,
+  Key,
+  UsersRound,
+  Package,
+  Scale,
+  DatabaseBackup,
+} from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
@@ -112,20 +138,20 @@ export function SettingsPage() {
     { title: 'General', Icon: ActionSettings, items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
     {
       title: 'Access',
-      Icon: ActionUserPlus,
+      Icon: UsersRound,
       items: [
         ...(canReviewAccess
           ? [
               { id: 'access-requests', label: 'Access requests', Icon: Inbox },
-              { id: 'users-grant', label: 'Grant access', Icon: ActionUserPlus },
+              { id: 'users-grant', label: 'Grant access', Icon: UsersRound },
             ]
           : []),
         ...(isInstanceAdmin
           ? [
               { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
-              { id: 'user-revocation', label: 'Revocations', Icon: UserX },
+              { id: 'user-revocation', label: 'User Revocation', Icon: Shield },
               { id: 're-enable', label: 'Re-enable', Icon: UserCheck },
-              { id: 'access-review', label: 'Access review', Icon: FileText },
+              { id: 'access-review', label: 'Quarterly Access Review', Icon: FileText },
             ]
           : []),
       ],
@@ -136,11 +162,11 @@ export function SettingsPage() {
             title: 'Identity',
             Icon: ShieldAlert,
             items: [
-              { id: 'idp-baseline', label: 'IdP baseline', Icon: ShieldAlert },
+              { id: 'idp-baseline', label: 'IdP MFA Baseline', Icon: ShieldAlert },
               { id: 'idp-drift', label: 'IdP drift', Icon: GitCompare },
               { id: 'disabled-signers', label: 'Disabled signers', Icon: ShieldOff },
-              { id: 'mice-suspension', label: 'Suspension', Icon: Ban },
-              { id: 'group-binding', label: 'Group binding', Icon: Link2 },
+              { id: 'mice-suspension', label: 'Mice suspension', Icon: Ban },
+              { id: 'group-binding', label: 'Group binding validation', Icon: Link2 },
             ],
           },
           {
@@ -148,8 +174,8 @@ export function SettingsPage() {
             Icon: HeartPulse,
             items: [
               { id: 'audit-health', label: 'Audit health', Icon: HeartPulse },
-              { id: 'seal-key-rotation', label: 'Seal keys', Icon: KeyRound },
-              { id: 'restore-test', label: 'Restore test', Icon: ArchiveRestore },
+              { id: 'seal-key-rotation', label: 'Session cookie keys', Icon: Key },
+              { id: 'restore-test', label: 'Restore test', Icon: DatabaseBackup },
             ],
           },
           {
@@ -158,7 +184,7 @@ export function SettingsPage() {
             items: [
               { id: 'regulated-config', label: 'Regulated config', Icon: Scale },
               { id: 'release-manifest', label: 'Release manifest', Icon: Package },
-              { id: 'instance-administrators', label: 'Administrators', Icon: ShieldUser },
+              { id: 'instance-administrators', label: 'Instance administrators', Icon: ShieldUser },
               { id: 'announcements', label: 'Announcements', Icon: Megaphone },
             ],
           },
@@ -1325,7 +1351,7 @@ type RegulatedConfigPayload = {
   config: {
     gxpStrict: true
     session: { idleSec: number; absoluteSec: number; cookieSecure: boolean }
-    reason: { minLength: number; categories: string[]; requiredActions: string[] }
+    reason: { minLength: number; requiredActions: string[] }
     changeControl: {
       requiredActions: string[]
       alsoRequiredOn: string[]
@@ -1358,6 +1384,8 @@ function RegulatedConfigSection() {
   }, [])
 
   const data = status.kind === 'ok' ? status.data : null
+  const cfg = data?.config
+  const mutationClasses = cfg?.reason.requiredActions ?? []
 
   return (
     <section id="regulated-config" className="settings-section" aria-labelledby="regulated-config-heading">
@@ -1372,81 +1400,109 @@ function RegulatedConfigSection() {
             and whenever regulated settings change.
           </p>
         </div>
+        {cfg ? (
+          <span className="status-pill ok" role="status" aria-label="GxP strict: Always on">
+            Always on
+          </span>
+        ) : null}
       </div>
 
-      {data && (
-        <div className="ns-settings-grid">
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">GxP strict</span>
-            <p className="flash flash-success">
-              <ActionCheck size={14} aria-hidden="true" /> Always on
-            </p>
+      {status.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
+
+      {data && cfg ? (
+        <dl className="ns-settings-facts" aria-label="Effective regulated configuration">
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Idle timeout</dt>
+            <dd className="ns-settings-fact-value">{cfg.session.idleSec}s</dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Absolute timeout</dt>
+            <dd className="ns-settings-fact-value">{cfg.session.absoluteSec}s</dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Cookie Secure</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={cfg.session.cookieSecure ? 'status-pill ok' : 'status-pill warn'}>
+                {cfg.session.cookieSecure ? 'Yes' : 'No'}
+              </span>
+            </dd>
           </div>
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Session</span>
-            <p className="muted small">
-              Idle {data.config.session.idleSec}s · absolute {data.config.session.absoluteSec}s ·
-              cookie Secure {data.config.session.cookieSecure ? 'yes' : 'no'}
-            </p>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Reason length</dt>
+            <dd className="ns-settings-fact-value">min {cfg.reason.minLength}</dd>
           </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Reason policy</span>
-            <p className="muted small">
-              Min length {data.config.reason.minLength} · categories{' '}
-              {data.config.reason.categories.join(', ')}
-            </p>
-            <p className="muted small">
-              Required on {data.config.reason.requiredActions.length} mutation classes
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Change-control</span>
-            <p className="muted small">
-              Ids minted server-side ({data.config.changeControl.allocation}) on{' '}
-              {data.config.changeControl.requiredActions.length} mutation classes
-            </p>
-            <p className="muted small">
-              Also on {data.config.changeControl.alsoRequiredOn.join(', ')}
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Electronic signature</span>
-            <p className="muted small">
-              Meaning {data.config.signature.meaning} via {data.config.signature.allocation} on{' '}
-              {data.config.signature.requiredActions.length} mutation classes
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Audit / backup</span>
-            <p className="muted small">
-              IMMUDB_HA {data.config.audit.immudbHaAttested ? 'attested' : 'not attested'} ·
-              verify every {data.config.audit.verifyIntervalSec}s ·
-              backup target {data.config.backup.targetConfigured ? 'configured' : 'not configured'}
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Digest</span>
-            <p className="muted small"><code className="inline-code">{data.digest}</code></p>
-            {data.recordedAt && (
-              <p className="muted small">
-                Recorded {new Date(data.recordedAt).toLocaleString()}
-                {data.changedFromPrevious === true ? ' · changed since previous start' : ''}
-                {data.changedFromPrevious === false ? ' · unchanged since previous start' : ''}
+          <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack">
+            <dt className="ns-settings-fact-label">Mutations</dt>
+            <dd className="ns-settings-fact-value">
+              <p className="ns-settings-fact-note muted">
+                {mutationClasses.length} classes require reason, change-control, and signature
               </p>
-            )}
+              {mutationClasses.length > 0 ? (
+                <ul className="ns-settings-code-list" aria-label="Mutation classes">
+                  {mutationClasses.map((action) => (
+                    <li key={action}>
+                      <code className="inline-code">{action}</code>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </dd>
           </div>
-        </div>
-      )}
 
-      {status.kind === 'ok' && !data && (
-        <p className="flash flash-warning" role="status">Could not load regulated configuration.</p>
-      )}
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">IMMUDB_HA</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={cfg.audit.immudbHaAttested ? 'status-pill ok' : 'status-pill warn'}>
+                {cfg.audit.immudbHaAttested ? 'Attested' : 'Not attested'}
+              </span>
+            </dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Verify every</dt>
+            <dd className="ns-settings-fact-value">{cfg.audit.verifyIntervalSec}s</dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Backup target</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={cfg.backup.targetConfigured ? 'status-pill ok' : 'status-pill warn'}>
+                {cfg.backup.targetConfigured ? 'Configured' : 'Not configured'}
+              </span>
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact ns-settings-fact-wide">
+            <dt className="ns-settings-fact-label">Digest</dt>
+            <dd className="ns-settings-fact-value">
+              <code className="inline-code">{data.digest}</code>
+            </dd>
+          </div>
+          {data.recordedAt ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Recorded</dt>
+              <dd className="ns-settings-fact-value">
+                <span>{new Date(data.recordedAt).toLocaleString()}</span>
+                {data.changedFromPrevious === true ? (
+                  <span className="status-pill warn">Changed since previous start</span>
+                ) : null}
+                {data.changedFromPrevious === false ? (
+                  <span className="status-pill neutral">Unchanged since previous start</span>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+
+      {status.kind === 'ok' && !data ? (
+        <p className="flash flash-warn" role="status">
+          Could not load regulated configuration.
+        </p>
+      ) : null}
     </section>
   )
 }
@@ -1500,6 +1556,18 @@ function ReleaseManifestSection() {
   }
 
   const data = status.kind === 'ok' ? status.data : null
+  const resultTone = data?.match
+    ? 'ok'
+    : data?.present === false || data?.match === false
+      ? 'warn'
+      : 'neutral'
+  const resultLabel = data?.match
+    ? 'Match'
+    : data?.present
+      ? 'Mismatch'
+      : data
+        ? 'Missing or invalid'
+        : null
 
   return (
     <section id="release-manifest" className="settings-section" aria-labelledby="release-manifest-heading">
@@ -1514,63 +1582,93 @@ function ReleaseManifestSection() {
             A mismatch is audited and shown here; it does not refuse boot by itself.
           </p>
         </div>
+        {resultLabel ? (
+          <span
+            className={`status-pill ${resultTone}`}
+            role="status"
+            aria-label={`Release manifest: ${resultLabel}${data?.releaseVersion ? `, release ${data.releaseVersion}` : ''}`}
+          >
+            {resultLabel}
+            {data?.releaseVersion ? ` · ${data.releaseVersion}` : ''}
+          </span>
+        ) : null}
       </div>
 
-      {data && (
-        <div className="ns-settings-grid">
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Result</span>
-            <p className={data.match ? 'flash flash-success' : 'flash flash-warning'}>
-              {data.match ? (
-                <><ActionCheck size={14} aria-hidden="true" /> Match{data.releaseVersion ? ` · release ${data.releaseVersion}` : ''}</>
-              ) : (
-                <><ActionX size={14} aria-hidden="true" /> {data.present ? 'Mismatch' : 'Missing or invalid'}{data.reason ? `: ${data.reason}` : ''}</>
-              )}
-            </p>
-          </div>
+      {status.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Signature</span>
-            <p className="muted small">
-              {data.signatureValid === true ? 'Valid' : data.signatureValid === false ? 'Invalid' : 'Not checked'}
-            </p>
+      {data ? (
+        <dl className="ns-settings-facts" aria-label="Release manifest status">
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Signature</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span
+                className={
+                  data.signatureValid === true
+                    ? 'status-pill ok'
+                    : data.signatureValid === false
+                      ? 'status-pill bad'
+                      : 'status-pill neutral'
+                }
+              >
+                {data.signatureValid === true
+                  ? 'Valid'
+                  : data.signatureValid === false
+                    ? 'Invalid'
+                    : 'Not checked'}
+              </span>
+            </dd>
           </div>
-
-          {data.checkedAt && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Checked</span>
-              <p className="muted small">{new Date(data.checkedAt).toLocaleString()}</p>
+          {data.checkedAt ? (
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Checked</dt>
+              <dd className="ns-settings-fact-value">
+                {new Date(data.checkedAt).toLocaleString()}
+              </dd>
             </div>
-          )}
-
-          {data.mismatches.length > 0 && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Mismatches</span>
-              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
+          ) : null}
+          {data.reason ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Detail</dt>
+              <dd className="ns-settings-fact-value">{data.reason}</dd>
+            </div>
+          ) : null}
+          {data.mismatches.length > 0 ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Mismatches</dt>
+              <dd className="ns-settings-fact-value">
                 {data.mismatches.map((m) => (
-                  <li key={m}><code className="inline-code">{m}</code></li>
+                  <code key={m} className="inline-code">
+                    {m}
+                  </code>
                 ))}
-              </ul>
+              </dd>
             </div>
-          )}
-
-          {data.components && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Components</span>
-              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
-                {Object.entries(data.components).map(([id, c]) => (
-                  <li key={id}>
-                    <code className="inline-code">{id}</code>
-                    {' · v'}
-                    {c.version}
-                    {c.expected && c.expected !== c.actual ? ' · digests differ' : ' · ok'}
-                  </li>
-                ))}
-              </ul>
+          ) : null}
+          {data.components ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Components</dt>
+              <dd className="ns-settings-fact-value">
+                {Object.entries(data.components).map(([id, c]) => {
+                  const ok = !(c.expected && c.expected !== c.actual)
+                  return (
+                    <span key={id} className="ns-tag ns-tag-muted">
+                      <code className="inline-code">{id}</code>
+                      <span className="muted">v{c.version}</span>
+                      <span className={ok ? 'status-pill ok' : 'status-pill warn'}>
+                        {ok ? 'ok' : 'digest differs'}
+                      </span>
+                    </span>
+                  )
+                })}
+              </dd>
             </div>
-          )}
-        </div>
-      )}
+          ) : null}
+        </dl>
+      ) : null}
 
       <div className="btn-row ns-settings-actions">
         <button
@@ -1584,8 +1682,16 @@ function ReleaseManifestSection() {
         </button>
       </div>
 
-      {error && <p className="flash flash-error" role="alert">{error}</p>}
-      {success && <p className="flash flash-success" role="status">{success}</p>}
+      {error ? (
+        <p className="flash flash-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {success ? (
+        <p className="flash flash-success" role="status">
+          {success}
+        </p>
+      ) : null}
     </section>
   )
 }

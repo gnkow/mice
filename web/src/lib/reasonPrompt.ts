@@ -1,37 +1,3 @@
-/**
- * Fixed v1 pick-list (must match auth `REASON_CATEGORIES` values).
- * Labels describe which operations belong in each bucket.
- */
-export const REASON_CATEGORIES = [
-  {
-    value: 'data_correction',
-    label: 'Data correction',
-    hint: 'Amend existing records, metadata, or file content',
-  },
-  {
-    value: 'destructive',
-    label: 'Destructive action',
-    hint: 'Delete repositories, branches, namespaces, or other data',
-  },
-  {
-    value: 'privileged_settings',
-    label: 'Access & settings',
-    hint: 'Grants, roles, members, instance or namespace configuration',
-  },
-  {
-    value: 'revocation',
-    label: 'Revocation',
-    hint: 'Revoke signatures, sessions, or previously granted access',
-  },
-  {
-    value: 'other',
-    label: 'Other',
-    hint: 'Does not fit the categories above',
-  },
-] as const
-
-export type ReasonCategoryValue = (typeof REASON_CATEGORIES)[number]['value']
-
 /** Short field hint under change-control id. */
 export const CHANGE_CONTROL_ID_HINT = 'e.g. CC-YYYYMMDD-xxxxxxxx · must be unique'
 
@@ -57,50 +23,8 @@ export function isValidChangeControlId(id: string): boolean {
   return CHANGE_CONTROL_ID_PATTERN.test(id.trim())
 }
 
-/**
- * Pick the category that best matches the mutation about to be signed.
- * Sent to the BFF automatically; no longer shown in the ceremony UI.
- */
-export function suggestReasonCategory(input: {
-  method: string
-  path: string
-  changeSummary?: string
-}): ReasonCategoryValue {
-  const method = input.method.toUpperCase()
-  const path = input.path.toLowerCase()
-  const summary = (input.changeSummary ?? '').toLowerCase()
-  const hay = `${path} ${summary}`
-
-  if (
-    /revok|suspend|\/deny\b/.test(hay) ||
-    /\brevoc/.test(hay) ||
-    path.includes('/signatures/') && path.includes('revoke')
-  ) {
-    return 'revocation'
-  }
-  if (
-    method === 'DELETE' ||
-    /\bdelete\b|\bdestroy\b|destructive/.test(hay)
-  ) {
-    return 'destructive'
-  }
-  if (
-    /access-request|\/grants\/|\/instance|seal-key|announcement|permission|\/members|collaborator|approver|\/role|training|group-binding|access-review/.test(
-      hay,
-    ) ||
-    /\bgrant\b|\bapprov|\baccess request|\bsettings\b/.test(summary)
-  ) {
-    return 'privileged_settings'
-  }
-  if (/correct|amend|metadata|\/file|\/files|patch|data correction/.test(hay)) {
-    return 'data_correction'
-  }
-  return 'other'
-}
-
 export type ReasonSubmission = {
   reason: string
-  category: ReasonCategoryValue
   /** Operator-supplied QMS id; claimed uniquely when the signature is recorded. */
   changeControlId: string
   /** Required for regulated mutations after the signing ceremony. */
@@ -110,7 +34,7 @@ export type ReasonSubmission = {
 export type ReasonPromptOptions = {
   /** Human-readable description of the mutation about to run. */
   changeSummary: string
-  /** Server rejection detail (min length, missing category, etc.). */
+  /** Server rejection detail (min length, etc.). */
   detail: string
   method: string
   path: string

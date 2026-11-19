@@ -193,7 +193,6 @@ export function MergeRequestSignPanel({
         signatureId: signature.id,
         manifestEntries: live.manifestEntries,
         reason: reason.trim(),
-        category: 'other',
         changeControlId:
           signature.changeControlId?.trim() || changeControlId.trim(),
       })

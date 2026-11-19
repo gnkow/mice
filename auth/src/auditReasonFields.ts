@@ -5,7 +5,6 @@
 export type TrackedReason = {
   reason?: string
   reason_source?: 'explicit' | 'commit-message'
-  category?: string
   change_control_id?: string
   signature_id?: string
 }
@@ -13,7 +12,6 @@ export type TrackedReason = {
 export type ReasonFieldSource = {
   reason: string
   reason_source: 'explicit' | 'commit-message'
-  category?: string
 }
 
 const trimId = (v: string | undefined): string | undefined => {
@@ -38,7 +36,6 @@ export function intentReasonFields(input: {
       ? {
           reason: reason.reason,
           reason_source: reason.reason_source,
-          ...(reason.category ? { category: reason.category } : {}),
         }
       : {}),
     ...(change_control_id ? { change_control_id } : {}),
@@ -49,7 +46,6 @@ export function intentReasonFields(input: {
 type ReasonCarrySource = {
   reason?: string
   reason_source?: 'explicit' | 'commit-message'
-  category?: string
   change_control_id?: string
   signature_id?: string
 }
@@ -62,7 +58,6 @@ export function carryFromIntent(intent: ReasonCarrySource): TrackedReason | unde
       ? {
           reason: intent.reason,
           reason_source: intent.reason_source ?? 'explicit',
-          ...(intent.category ? { category: intent.category } : {}),
         }
       : null,
     changeControlId: intent.change_control_id,

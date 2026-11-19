@@ -4,7 +4,6 @@ import { useAsync } from '../hooks/useAsync'
 import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import {
   CHANGE_CONTROL_HEADER,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   SIGNATURE_HEADER,
   withReason,
@@ -32,7 +31,6 @@ function ceremonyHeaders(submission?: ReasonSubmission): HeadersInit {
   return {
     'Content-Type': 'application/json',
     [REASON_HEADER]: submission.reason,
-    [REASON_CATEGORY_HEADER]: submission.category,
     [SIGNATURE_HEADER]: submission.signatureId,
     ...(submission.changeControlId
       ? { [CHANGE_CONTROL_HEADER]: submission.changeControlId }

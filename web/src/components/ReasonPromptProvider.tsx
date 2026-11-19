@@ -13,8 +13,6 @@ import {
   isValidChangeControlId,
   registerReasonOpener,
   suggestChangeControlId,
-  suggestReasonCategory,
-  type ReasonCategoryValue,
   type ReasonPromptOptions,
   type ReasonSubmission,
 } from '../lib/reasonPrompt'
@@ -52,7 +50,6 @@ const PLACEHOLDER =
 
 export function ReasonPromptProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null)
-  const [category, setCategory] = useState<ReasonCategoryValue>('other')
   const [reason, setReason] = useState('')
   const [changeControlId, setChangeControlId] = useState('')
   const [prepared, setPrepared] = useState<Prepared | null>(null)
@@ -77,14 +74,6 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
       (options) =>
         new Promise<ReasonSubmission | null>((resolve) => {
           const draft = takeCeremonyResumeDraft()
-          setCategory(
-            draft?.category ??
-              suggestReasonCategory({
-                method: options.method,
-                path: options.path,
-                changeSummary: options.changeSummary,
-              }),
-          )
           setReason(draft?.reason ?? '')
           setChangeControlId(draft?.changeControlId ?? suggestChangeControlId())
           setPrepared(null)
@@ -168,7 +157,7 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     return true
   }
 
-  async function prepareCeremony(text: string, cat: ReasonCategoryValue) {
+  async function prepareCeremony(text: string) {
     if (!pending) return
     setBusy(true)
     setError(null)
@@ -188,7 +177,6 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
           method: pending.options.method,
           path: pending.options.path.split('?')[0] ?? pending.options.path,
           reason: text,
-          category: cat,
           // Must match the mutation body exactly or the BFF rejects the signature hash.
           body:
             pending.options.body && typeof pending.options.body === 'object'
@@ -215,7 +203,6 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
 
   async function executeCeremony(
     text: string,
-    cat: ReasonCategoryValue,
     prep: Prepared,
     cc: string,
   ) {
@@ -257,7 +244,6 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
       }
       finish({
         reason: text,
-        category: cat,
         changeControlId: signature.changeControlId?.trim() || cc,
         signatureId: signature.id,
       })
@@ -271,12 +257,12 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
     e.preventDefault()
     const text = reason.trim()
     const cc = changeControlId.trim()
-    if (text.length < 10 || !isValidChangeControlId(cc) || !category || busy) return
+    if (text.length < 10 || !isValidChangeControlId(cc) || busy) return
     if (!prepared) {
-      void prepareCeremony(text, category)
+      void prepareCeremony(text)
       return
     }
-    void executeCeremony(text, category, prepared, cc)
+    void executeCeremony(text, prepared, cc)
   }
 
   const canConfirm =
@@ -301,7 +287,6 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
               ...(reason.trim()
                 ? {
                     draftReason: reason.trim(),
-                    draftCategory: category,
                     draftChangeControlId: changeControlId.trim() || undefined,
                   }
                 : {}),

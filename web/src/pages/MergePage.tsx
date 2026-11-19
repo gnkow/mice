@@ -157,7 +157,6 @@ export function MergePage() {
         const mr = await openMergeRequest(namespace, repo, {
           ...body,
           reason: ceremony.reason,
-          category: ceremony.category,
           signatureId: ceremony.signatureId,
           changeControlId: ceremony.changeControlId,
         })

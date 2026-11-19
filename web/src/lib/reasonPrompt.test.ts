@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { suggestReasonCategory, summarizeMutation } from './reasonPrompt'
+import { summarizeMutation } from './reasonPrompt'
 
 test('labels branch delete and namespace settings update', () => {
   assert.match(summarizeMutation('DELETE', '/api/repos/ns/repo/branches/main'), /Delete branch/)
@@ -58,37 +58,4 @@ test('labels grants, announcements, custom roles and admin ops', () => {
     'Lift Mice suspension for a principal',
   )
   assert.equal(summarizeMutation('DELETE', '/auth/meta'), 'Delete metadata')
-})
-
-test('suggests a reason category that matches the operation', () => {
-  assert.equal(
-    suggestReasonCategory({
-      method: 'POST',
-      path: '/auth/access-requests/abc',
-      changeSummary: 'Decide an access request',
-    }),
-    'privileged_settings',
-  )
-  assert.equal(
-    suggestReasonCategory({
-      method: 'POST',
-      path: '/auth/signatures/abcdef123456/revoke',
-    }),
-    'revocation',
-  )
-  assert.equal(
-    suggestReasonCategory({
-      method: 'DELETE',
-      path: '/auth/namespaces/demo',
-    }),
-    'destructive',
-  )
-  assert.equal(
-    suggestReasonCategory({
-      method: 'PUT',
-      path: '/api/repos/ns/repo/files/assay.csv',
-      changeSummary: 'Update assay.csv in ns/repo',
-    }),
-    'data_correction',
-  )
 })

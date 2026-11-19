@@ -20,7 +20,6 @@ import {
   normalizeChangeControlId,
 } from '../../changeControl.js'
 import { prepareMutationDocument } from '../../mutationSignature.js'
-import { REASON_CATEGORIES } from '../../auditReason.js'
 import { requireSigningAccess, SIGNING_STEP_UP_MAX_AGE_SEC } from './signingAccess.js'
 
 /**
@@ -70,7 +69,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
   // Prepare a regulated mutation for signing (canonical document + hash).
   app.post('/auth/sign/prepare-mutation', guarded({
     mutates: false,
-    body: { required: ['method', 'path', 'reason', 'category'] },
+    body: { required: ['method', 'path', 'reason'] },
   }, async ({ c, user, body }) => {
     const unavailable = await directoryFailure(user)
     if (unavailable) return unavailable
@@ -80,10 +79,6 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     const method = String(body.method)
     const path = String(body.path)
     const reason = String(body.reason)
-    const category = String(body.category)
-    if (!(REASON_CATEGORIES as readonly string[]).includes(category)) {
-      return c.json({ error: 'Invalid reason category', code: 'reason_category_invalid' }, 400)
-    }
     if (!reason.trim()) {
       return c.json({ error: 'Reason required', code: 'reason_required' }, 400)
     }
@@ -92,7 +87,6 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       method,
       path,
       reason,
-      category,
       body: body.body,
     })
 

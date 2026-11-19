@@ -82,7 +82,6 @@ async function signedAdmin(path: string, body: Record<string, unknown>) {
       path,
       body,
       reason: 'Absence exceeded thirty days',
-      category: 'privileged_settings',
     })),
   }
 }

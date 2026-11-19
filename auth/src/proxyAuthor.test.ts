@@ -37,6 +37,8 @@ const { queryAudit } = await import('./audit.js')
 const { ensurePrincipal } = await import('./authentication/session/session.js')
 const { assignRole } = await import('./rbacStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+const { ensureRepository } = await import('./repositoryStore.js')
 const { regulatedMutationHeaders } = await import('./testSupport.js')
 const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
@@ -65,9 +67,13 @@ assert.equal(
   (await assignRole({ actor: null, target: alice, role: 'manager', reason: 'test', bootstrap: true })).ok,
   true,
 )
-// Owner of namespaces exercised by author-injection writes (Admin no longer bypasses repo ACL).
+// Namespace ownership does not grant a collaborator seat (collab SoT).
 assert.equal((await createNamespaceAuthz(alice, 'a', 'none')).ok, true)
 assert.equal((await createNamespaceAuthz(alice, 'acme', 'none')).ok, true)
+assert.ok(await ensureRepository('a', 'b'))
+assert.ok(await ensureRepository('acme', 'data'))
+assert.equal((await setRepoCollaborator('a', 'b', alice, 'admin')).ok, true)
+assert.equal((await setRepoCollaborator('acme', 'data', alice, 'admin')).ok, true)
 
 const app = new Hono()
 app.all('/api/*', (c) => proxyToOxen(c, { user: actor, via: 'session' }))
@@ -91,7 +97,6 @@ async function send(
     path,
     body: signatureBody,
     reason: 'Routine test change',
-    category: 'privileged_settings',
     jsonContentType: false,
   })
   return app.request(path, {
@@ -133,13 +138,12 @@ describe('proxy author injection fails closed', () => {
     form.set('name', 'forged')
     form.set('email', 'forged@x.io')
     form.set('file', new Blob(['x']), 'a.txt')
-    const path = '/api/repos/a/b/file/main/a.txt'
+    const path = '/api/repos/a/b/file/feature/a.txt'
     const signed = await regulatedMutationHeaders(actor, {
       method: 'PUT',
       path,
       body: {},
       reason: 'Routine test change',
-      category: 'privileged_settings',
       jsonContentType: false,
     })
     const res = await app.request(path, {
@@ -156,7 +160,7 @@ describe('proxy author injection fails closed', () => {
   })
 
   it('rejects malformed multipart with 400 and sends nothing upstream', async () => {
-    const res = await send('/api/repos/a/b/file/main/a.txt', {
+    const res = await send('/api/repos/a/b/file/feature/a.txt', {
       method: 'PUT',
       contentType: 'multipart/form-data; boundary=zzz',
       body: 'not a multipart body',

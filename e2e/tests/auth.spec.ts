@@ -77,7 +77,6 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
           method: 'POST',
           path: '/auth/instance/revoke-sessions',
           body: revokeBody,
-          category: 'revocation',
           reason: 'E2E admin cut-off of signed-in user sessions',
         }),
         data: revokeBody,

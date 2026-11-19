@@ -52,7 +52,7 @@ export function RepoSessionsPage() {
     repoPerms.data.contentsWrite === true &&
     authz.kind === 'ok' &&
     !!authz.data &&
-    (!authz.data.enforce || hasEffectivePermission(authz.data, 'session:create'))
+    hasEffectivePermission(authz.data, 'session:create')
   const all = state.kind === 'ok' ? state.data.sessions : []
   const mounting = sessionsMountingRepo(all, namespace, repo)
   const [filter, setFilter] = useState('')

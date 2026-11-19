@@ -16,7 +16,6 @@ import {
   declaredChangeControlId,
   isDatasetMutation,
   mutationNeedsReason,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   resolveReason,
   type ReasonRejection,
@@ -85,7 +84,6 @@ const HOP_BY_HOP = new Set([
   'cookie',
   'authorization',
   REASON_HEADER,
-  REASON_CATEGORY_HEADER,
   CHANGE_CONTROL_HEADER,
   SIGNATURE_HEADER,
 ])
@@ -316,9 +314,7 @@ export async function proxyToOxen(
     const resolved = resolveReason({
       actor: user,
       explicit: c.req.header(REASON_HEADER),
-      category: c.req.header(REASON_CATEGORY_HEADER),
       message,
-      required: true,
     })
     if (!resolved.ok) {
       return rejectReason(user, via, method, pathname, resolved.rejection, { namespace: ns, repo })
@@ -334,7 +330,6 @@ export async function proxyToOxen(
       method,
       path: pathname,
       reason: reason.reason,
-      category: reason.category ?? '',
       body: signatureBody,
     })
     if (!signed.ok) {

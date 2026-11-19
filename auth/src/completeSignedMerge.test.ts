@@ -95,7 +95,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         'content-type': 'application/json',
         cookie: await cookie(),
         'x-mice-reason': 'Approved merge of assay feature into main',
-        'x-mice-reason-category': 'other',
       },
       body: JSON.stringify(body),
     })
@@ -148,7 +147,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         'content-type': 'application/json',
         cookie: await cookie(),
         'x-mice-reason': 'Attempt merge before restore test',
-        'x-mice-reason-category': 'other',
       },
       body: JSON.stringify({
         liveSourceHead: 'src-r',
@@ -208,7 +206,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         'content-type': 'application/json',
         cookie: await sealedSessionCookie({ ...other, sessionStart: Math.floor(Date.now() / 1000) }),
         'x-mice-reason': 'Attempted merge without approver role',
-        'x-mice-reason-category': 'other',
       },
       body: JSON.stringify({
         liveSourceHead: 's2',

@@ -11,7 +11,7 @@ import {
 describe('traceability matrix (GxP ticket 18)', () => {
   it('extracts GXP-R requirement ids from a test name', () => {
     assert.deepEqual(
-      extractGxpRequirementIds('GXP-R-013 refuses mutation without reason category'),
+      extractGxpRequirementIds('GXP-R-013 refuses mutation without reason'),
       ['GXP-R-013'],
     )
     assert.deepEqual(
@@ -23,7 +23,7 @@ describe('traceability matrix (GxP ticket 18)', () => {
 
   it('builds a matrix from tagged test names with catalog descriptions', () => {
     const matrix = buildTraceabilityMatrixFromTestNames([
-      'GXP-R-013 refuses mutation without reason category',
+      'GXP-R-013 refuses mutation without reason',
       'GXP-R-013 accepts regulated mutation with ceremony',
       'GXP-R-008 signature record is append-only in immudb',
       'untagged helper',
@@ -31,7 +31,7 @@ describe('traceability matrix (GxP ticket 18)', () => {
     assert.ok(matrix.generatedAt > 0)
     const byId = Object.fromEntries(matrix.mappings.map((m) => [m.requirementId, m]))
     assert.deepEqual(byId['GXP-R-013']?.testCases, [
-      'GXP-R-013 refuses mutation without reason category',
+      'GXP-R-013 refuses mutation without reason',
       'GXP-R-013 accepts regulated mutation with ceremony',
     ])
     assert.equal(

@@ -2,13 +2,11 @@
 
 import {
   CHANGE_CONTROL_HEADER,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   SIGNATURE_HEADER,
   withReason,
   type ReasonSubmission,
 } from './reason'
-import type { ReasonCategoryValue } from './reasonPrompt'
 
 export const SIGNING_RESUME_KEY = 'mice.signing.resume'
 
@@ -25,7 +23,6 @@ export type PendingSignedMutation = {
   body?: unknown
   changeSummary?: string
   draftReason?: string
-  draftCategory?: ReasonCategoryValue
   draftChangeControlId?: string
 }
 
@@ -76,7 +73,6 @@ export function stashPendingSignedMutation(
       ...(intent.body !== undefined ? { body: intent.body } : {}),
       ...(intent.changeSummary ? { changeSummary: intent.changeSummary } : {}),
       ...(intent.draftReason ? { draftReason: intent.draftReason } : {}),
-      ...(intent.draftCategory ? { draftCategory: intent.draftCategory } : {}),
       ...(intent.draftChangeControlId
         ? { draftChangeControlId: intent.draftChangeControlId }
         : {}),
@@ -95,7 +91,6 @@ let heldIntent: PendingSignedMutation | null | undefined
 let resumePromise: Promise<Response> | null = null
 let ceremonyDraft: {
   reason: string
-  category: ReasonCategoryValue
   changeControlId?: string
 } | null = null
 
@@ -125,10 +120,9 @@ function loadHeldIntent(): PendingSignedMutation | null {
   }
 }
 
-/** Draft reason/category/CC to prefill when the ceremony reopens after MFA. */
+/** Draft reason/CC to prefill when the ceremony reopens after MFA. */
 export function takeCeremonyResumeDraft(): {
   reason: string
-  category: ReasonCategoryValue
   changeControlId?: string
 } | null {
   const d = ceremonyDraft
@@ -154,7 +148,6 @@ export function ensureResumeSignedMutation(
   if (intent.draftReason) {
     ceremonyDraft = {
       reason: intent.draftReason,
-      category: intent.draftCategory ?? 'data_correction',
       ...(intent.draftChangeControlId
         ? { changeControlId: intent.draftChangeControlId }
         : {}),
@@ -186,7 +179,6 @@ export async function replaySignedMutation(
         ...(submission
           ? {
               [REASON_HEADER]: submission.reason,
-              [REASON_CATEGORY_HEADER]: submission.category,
               [SIGNATURE_HEADER]: submission.signatureId,
               [CHANGE_CONTROL_HEADER]: submission.changeControlId.trim(),
             }

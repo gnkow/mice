@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { appendAudit } from './audit.js'
-import { REASON_CATEGORIES, reasonRequiredActions } from './auditReason.js'
+import { reasonRequiredActions } from './auditReason.js'
 import { immudbHaAttested } from './auditOutage.js'
 import { env } from './env.js'
 
@@ -18,7 +18,6 @@ export type EffectiveRegulatedConfig = {
   }
   reason: {
     minLength: number
-    categories: readonly string[]
     requiredActions: string[]
   }
   changeControl: {
@@ -76,7 +75,6 @@ export function effectiveRegulatedConfig(
     },
     reason: {
       minLength: e.auditReasonMinLength,
-      categories: [...REASON_CATEGORIES],
       requiredActions,
     },
     changeControl: {

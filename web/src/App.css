@@ -2832,6 +2832,43 @@ p.ok {
   display: inline-flex;
 }
 
+/** Multi-line fact value: note + chip list stacked under the label. */
+.ns-settings-fact-stack {
+  align-items: start;
+}
+
+.ns-settings-fact-stack .ns-settings-fact-value {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+
+.ns-settings-fact-note {
+  margin: 0;
+  font-size: inherit;
+  line-height: 1.4;
+}
+
+.ns-settings-code-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.ns-settings-code-list .inline-code {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 0.12rem 0.45rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .ns-settings-field {
   display: flex;
   flex-direction: column;

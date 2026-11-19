@@ -15,7 +15,7 @@ async function seedApprover(
 ) {
   const res = await page.request.fetch(`${AUTH_URL}${path}`, {
     method,
-    headers: await regulatedMutationHeaders(page.request, { method, path, body, category: 'privileged_settings' }),
+    headers: await regulatedMutationHeaders(page.request, { method, path, body }),
     data: body,
   })
   expect(res.ok(), await res.text()).toBeTruthy()

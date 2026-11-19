@@ -64,7 +64,7 @@ describe('reason policy inventory (unit)', () => {
 })
 
 describe('reason policy inventory (HTTP gaps closed here)', () => {
-  it('meta write refuses without category + free text and accepts with them past the reason gate', async () => {
+  it('meta write refuses without free text and accepts with them past the reason gate', async () => {
     const path = '/auth/meta'
     const body = { ref: { type: 'repository', id: 'ns/r' }, labels: { a: '1' } }
     const bare = await app.request(path, {
@@ -88,7 +88,6 @@ describe('reason policy inventory (HTTP gaps closed here)', () => {
     // Past reason/signature; may still 4xx on authz/validation — must not be a reason code.
     const withJson = (await withReason.json().catch(() => ({}))) as { code?: string }
     assert.notEqual(withJson.code, 'reason_required')
-    assert.notEqual(withJson.code, 'reason_category_required')
     assert.notEqual(withJson.code, 'signature_required')
   })
 

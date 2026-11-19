@@ -109,7 +109,6 @@ export function MergeRequestPage() {
       if (!ceremony?.signatureId) return
       await rejectMergeRequest(mergeRequestId, {
         reason: ceremony.reason,
-        category: ceremony.category,
         signatureId: ceremony.signatureId,
         changeControlId: ceremony.changeControlId,
       })

@@ -1,6 +1,5 @@
 import {
   CHANGE_CONTROL_HEADER,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   SIGNATURE_HEADER,
 } from './reason'
@@ -177,7 +176,6 @@ export async function openMergeRequest(
     title: string
     description?: string
     reason: string
-    category: string
     signatureId: string
     changeControlId?: string
   },
@@ -191,7 +189,6 @@ export async function openMergeRequest(
         Accept: 'application/json',
         'Content-Type': 'application/json',
         [REASON_HEADER]: input.reason,
-        [REASON_CATEGORY_HEADER]: input.category,
         [SIGNATURE_HEADER]: input.signatureId,
         ...(input.changeControlId
           ? { [CHANGE_CONTROL_HEADER]: input.changeControlId }
@@ -233,7 +230,7 @@ export async function fetchSigningPreview(
 
 export async function rejectMergeRequest(
   id: string,
-  ceremony: { reason: string; category: string; signatureId: string; changeControlId?: string },
+  ceremony: { reason: string; signatureId: string; changeControlId?: string },
 ): Promise<MergeRequest> {
   const res = await fetch(`/auth/merge-requests/${encodeURIComponent(id)}/reject`, {
     method: 'POST',
@@ -242,7 +239,6 @@ export async function rejectMergeRequest(
       Accept: 'application/json',
       'Content-Type': 'application/json',
       [REASON_HEADER]: ceremony.reason,
-      [REASON_CATEGORY_HEADER]: ceremony.category,
       [SIGNATURE_HEADER]: ceremony.signatureId,
       ...(ceremony.changeControlId
         ? { [CHANGE_CONTROL_HEADER]: ceremony.changeControlId }
@@ -261,7 +257,7 @@ export async function rejectMergeRequest(
 export async function resyncMergeRequest(
   id: string,
   live: { liveSourceHead: string; liveTargetHead: string; refreshExpected?: boolean },
-  ceremony: { reason: string; category: string; signatureId: string; changeControlId?: string },
+  ceremony: { reason: string; signatureId: string; changeControlId?: string },
 ): Promise<MergeRequest> {
   const res = await fetch(`/auth/merge-requests/${encodeURIComponent(id)}/resync`, {
     method: 'POST',
@@ -270,7 +266,6 @@ export async function resyncMergeRequest(
       Accept: 'application/json',
       'Content-Type': 'application/json',
       [REASON_HEADER]: ceremony.reason,
-      [REASON_CATEGORY_HEADER]: ceremony.category,
       [SIGNATURE_HEADER]: ceremony.signatureId,
       ...(ceremony.changeControlId
         ? { [CHANGE_CONTROL_HEADER]: ceremony.changeControlId }
@@ -296,7 +291,6 @@ export async function completeSignedMergeRequest(
     signatureId: string
     manifestEntries: Array<{ path: string; contentHash: string }>
     reason: string
-    category: string
     changeControlId?: string
   },
 ): Promise<{ mergeRequest: MergeRequest; mergeCommitId: string }> {
@@ -307,7 +301,6 @@ export async function completeSignedMergeRequest(
       Accept: 'application/json',
       'Content-Type': 'application/json',
       [REASON_HEADER]: input.reason,
-      [REASON_CATEGORY_HEADER]: input.category,
       [SIGNATURE_HEADER]: input.signatureId,
       ...(input.changeControlId
         ? { [CHANGE_CONTROL_HEADER]: input.changeControlId }

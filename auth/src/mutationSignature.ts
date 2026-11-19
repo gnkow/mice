@@ -20,7 +20,6 @@ export type CanonicalMutation = {
   path: string
   action: string
   reason: string
-  category: string
   body: unknown
 }
 
@@ -67,7 +66,6 @@ export function canonicalMutationContent(input: {
   path: string
   action?: string
   reason: string
-  category: string
   body?: unknown
 }): CanonicalMutation {
   const path = normalizeMutationPath(input.path)
@@ -77,7 +75,6 @@ export function canonicalMutationContent(input: {
     path,
     action: input.action ?? mutationActionForPath(input.method, path),
     reason: input.reason.trim(),
-    category: input.category.trim(),
     body: input.body === undefined ? {} : input.body,
   }
 }
@@ -90,7 +87,6 @@ export function prepareMutationDocument(input: {
   method: string
   path: string
   reason: string
-  category: string
   body?: unknown
 }): { content: string; hash: string; action: string; document: CanonicalMutation } {
   const document = canonicalMutationContent(input)
@@ -125,7 +121,6 @@ export function evaluateMutationSignatureBinding(input: {
   method: string
   path: string
   reason: string
-  category: string
   body?: unknown
   now?: number
 }): { ok: true } | { ok: false; rejection: MutationSignatureRejection } {
@@ -165,7 +160,6 @@ export function evaluateMutationSignatureBinding(input: {
     method: input.method,
     path: input.path,
     reason: input.reason,
-    category: input.category,
     body: input.body,
   })
   if (input.record.contentHash !== expected.hash) {
@@ -190,7 +184,6 @@ export async function resolveMutationSignature(input: {
   method: string
   path: string
   reason: string
-  category: string
   body?: unknown
   now?: number
 }): Promise<{ ok: true; signatureId: string; record: SignatureRecord } | { ok: false; rejection: MutationSignatureRejection }> {
@@ -233,7 +226,6 @@ export async function resolveMutationSignature(input: {
     method: input.method,
     path: input.path,
     reason: input.reason,
-    category: input.category,
     body: input.body,
     now: input.now,
   })

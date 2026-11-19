@@ -10,7 +10,6 @@ import { auditUnavailableJson } from '../../auditFailClosed.js'
 import { AuditDetailPolicyError } from '../../auditDetailPolicy.js'
 import {
   declaredChangeControlId,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   resolveReason,
   type ResolvedReason,
@@ -126,8 +125,6 @@ export function guarded(
       const resolved = resolveReason({
         actor: user,
         explicit: c.req.header(REASON_HEADER),
-        category: c.req.header(REASON_CATEGORY_HEADER),
-        required: true,
       })
       if (!resolved.ok) {
         await appendAudit({ ...base, status: 400, action: 'request.rejected', detail: { reason: resolved.rejection.code } })
@@ -144,7 +141,6 @@ export function guarded(
         method: c.req.method,
         path: c.req.path,
         reason: reason.reason,
-        category: reason.category ?? '',
         body,
       })
       if (!signed.ok) {

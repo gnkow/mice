@@ -39,7 +39,6 @@ describe('regulated configuration', () => {
     assert.equal(config.session.absoluteSec, 28800)
     assert.equal(config.session.cookieSecure, true)
     assert.equal(config.reason.minLength, 10)
-    assert.ok(config.reason.categories.includes('privileged_settings'))
     assert.ok(config.reason.requiredActions.includes('file.delete'))
     assert.ok(config.changeControl.requiredActions.includes('merge'))
     assert.ok(config.changeControl.alsoRequiredOn.includes('merge_signature'))

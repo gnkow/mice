@@ -93,7 +93,7 @@ async function mergeAs(person: typeof merger, range = 'dev..feature') {
     headers: {
       ...(await iso.sessionHeaders(person)),
       'content-type': 'application/json',
-      'x-mice-reason': 'Independent merge review for assay data', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114',
+      'x-mice-reason': 'Independent merge review for assay data', 'x-mice-change-control-id': 'CC-2026-114',
     },
     body: JSON.stringify({ name: 'x', email: 'x@x.io' }),
   })

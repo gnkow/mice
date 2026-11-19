@@ -288,13 +288,10 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const {
         resolveReason,
         REASON_HEADER,
-        REASON_CATEGORY_HEADER,
       } = await import('./auditReason.js')
       const reason = resolveReason({
         actor: user,
         explicit: c.req.header(REASON_HEADER),
-        category: c.req.header(REASON_CATEGORY_HEADER) ?? 'revocation',
-        required: true,
       })
       if (!reason.ok) {
         return c.json({ error: reason.rejection.detail, code: reason.rejection.code }, 400)
@@ -425,13 +422,10 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const {
         resolveReason,
         REASON_HEADER,
-        REASON_CATEGORY_HEADER,
       } = await import('./auditReason.js')
       const reason = resolveReason({
         actor: user,
         explicit: c.req.header(REASON_HEADER),
-        category: c.req.header(REASON_CATEGORY_HEADER),
-        required: true,
       })
       if (!reason.ok) {
         return c.json({ error: reason.rejection.detail, code: reason.rejection.code }, 400)
@@ -501,7 +495,6 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           signatureId: result.signatureId,
           mergeCommitId: result.mergeCommitId,
           reason: reason.value.reason,
-          category: reason.value.category,
         },
       })
       return c.json({

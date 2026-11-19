@@ -50,7 +50,6 @@ const call = async (as: string | null, method: string, path: string, body?: unkn
     : {
         'content-type': 'application/json',
         'x-mice-reason': 'Routine test change',
-        'x-mice-reason-category': 'privileged_settings',
         'x-mice-change-control-id': 'CC-2026-114',
       }
   return app.request(path, {
@@ -240,7 +239,8 @@ describe('namespace routes', () => {
       permissions: { rename: boolean; contentsWrite: boolean }
     }
     assert.equal(perms.permissions.rename, true)
-    assert.equal(perms.permissions.contentsWrite, true)
+    // Owners administer settings without a collaborator seat; tip-changing writes still need one.
+    assert.equal(perms.permissions.contentsWrite, false)
 
     assert.equal(
       (await call('alice', 'PATCH', '/auth/namespaces/rename-route-ns/repos/study', { name: 'assay' })).status,

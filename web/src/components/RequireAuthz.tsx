@@ -4,7 +4,7 @@ import { fetchAuthzMe } from '../lib/auth'
 import { shouldRedirectPendingUser } from '../lib/pendingAccessShell'
 
 /**
- * When AuthZ enforce is on, users without a formal role are sent to /pending.
+ * Users without a formal role are sent to /pending (authorization is always on).
  * No escape routes (profile/notifications) — the no-access shell is the only UI (S32).
  */
 export function RequireAuthz() {
@@ -26,7 +26,7 @@ export function RequireAuthz() {
           setResult({ key: location.pathname, state: 'ok' })
           return
         }
-        setResult({ key: location.pathname, state: authz.enforce && authz.pending ? 'pending' : 'ok' })
+        setResult({ key: location.pathname, state: authz.pending ? 'pending' : 'ok' })
       })
       .catch(() => {
         if (!cancelled) setResult({ key: location.pathname, state: 'ok' })
