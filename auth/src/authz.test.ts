@@ -45,7 +45,7 @@ const {
   resolveAccessRequest,
 } = await import('./accessRequests.js')
 const { issueCliCredential, resolveCliCredential } = await import('./authentication/credentials/cliCredentials.js')
-const { OXEN_PATH_ROLE_MAP, minRoleForAction } = await import('./authzPathMap.js')
+const { minRoleForAction } = await import('./authzPathMap.js')
 const { classifyPath, interpretRequest } = await import('./authentication/index.js')
 const requiredRepoRoleForRequest = (method: string, path: string) => interpretRequest(method, path).minRole
 const { env } = await import('./env.js')
@@ -425,8 +425,7 @@ await describe('Phase 2–3 extras', async () => {
     }
   })
 
-  await it('path role map is non-empty and aligns with interpretRequest', () => {
-    assert.ok(OXEN_PATH_ROLE_MAP.length >= 8)
+  await it('interpretRequest min roles match ACTION_MIN_ROLE samples', () => {
     assert.equal(requiredRepoRoleForRequest('GET', '/api/repos/n/r'), 'read')
     assert.equal(
       requiredRepoRoleForRequest('PUT', '/api/repos/n/r/file/main/a'),
@@ -538,9 +537,6 @@ await describe('Phase 2–3 extras', async () => {
       const { action } = classifyPath(method, path)
       assert.ok(minRoleForAction(action), `${method} ${path} -> ${action} missing from table`)
       assert.equal(requiredRepoRoleForRequest(method, path), minRoleForAction(action))
-    }
-    for (const row of OXEN_PATH_ROLE_MAP) {
-      assert.ok(['read', 'triage', 'write', 'maintain', 'admin'].includes(row.minRole))
     }
   })
 
