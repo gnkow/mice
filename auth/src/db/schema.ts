@@ -248,7 +248,7 @@ export const namespaceApproverVersions = pgTable(
     namespaceId: uuid('namespace_id')
       .notNull()
       .references(() => namespaces.id, { onDelete: 'cascade' }),
-    /** Sorted `iss|sub` user keys holding the approver seat after the change. */
+    /** Sorted seat keys after the change: user `iss\u001fsub` or group `iss|group_id`. */
     approvers: jsonb('approvers').$type<string[]>().notNull(),
     validFrom: ts('valid_from').notNull(),
     validTo: ts('valid_to'),

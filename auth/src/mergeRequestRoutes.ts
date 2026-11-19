@@ -1,5 +1,5 @@
 import type { Hono } from 'hono'
-import { hasRepoPermission } from './authz.js'
+import { confirmPrivilegedGroups, hasRepoPermission } from './authz.js'
 import { readRepository } from './authzRepository.js'
 import { guarded } from './authentication/session/routeGuard.js'
 import {
@@ -308,9 +308,23 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         (typeof body.changeControlId === 'string' && body.changeControlId.trim()) ||
         c.req.header(CHANGE_CONTROL_HEADER)?.trim() ||
         allocateChangeControlId()
+      let revoker = user
+      try {
+        revoker = await confirmPrivilegedGroups(user)
+      } catch (err) {
+        if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+          return c.json({ error: 'Directory unavailable' }, 503)
+        }
+        throw err
+      }
       const result = await revokeSignature({
         signatureId: c.req.param('id'),
-        revoker: { iss: user.iss, sub: user.sub, name: user.name },
+        revoker: {
+          iss: revoker.iss,
+          sub: revoker.sub,
+          name: revoker.name,
+          groups: revoker.groups,
+        },
         reason: reason.value.reason,
         changeControlId,
         commitIds: Array.isArray(body.commitIds) ? body.commitIds.map(String) : undefined,
@@ -443,9 +457,23 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           400,
         )
       }
+      let signer = user
+      try {
+        signer = await confirmPrivilegedGroups(user)
+      } catch (err) {
+        if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+          return c.json({ error: 'Directory unavailable' }, 503)
+        }
+        throw err
+      }
       const result = await completeSignedMerge({
         mergeRequestId: c.req.param('id'),
-        signer: { iss: user.iss, sub: user.sub, name: user.name },
+        signer: {
+          iss: signer.iss,
+          sub: signer.sub,
+          name: signer.name,
+          groups: signer.groups,
+        },
         signatureId,
         liveSourceHead: body.liveSourceHead.trim(),
         liveTargetHead: body.liveTargetHead.trim(),

@@ -847,7 +847,9 @@ export function deleteCustomRepoRole(ns: string, roleId: string) {
 
 // ── Approvers (#86, #124) ───────────────────────────────────────────────────
 
-export type ApproverPrincipal = { sub: string; iss: string }
+export type ApproverPrincipal =
+  | { kind: 'user'; sub: string; iss: string }
+  | { kind: 'group'; group: string; name?: string }
 
 export type ApproverScope = { ns: string; repo?: string }
 
@@ -856,21 +858,54 @@ function approversPath(scope: ApproverScope): string {
   return scope.repo ? `${ns}/repos/${encodeURIComponent(scope.repo)}/approvers` : `${ns}/approvers`
 }
 
-export function fetchApprovers(scope: ApproverScope, signal?: AbortSignal) {
-  return authzFetch<{ approvers: ApproverPrincipal[] }>(approversPath(scope), { signal })
+function parseApproverPrincipal(raw: unknown): ApproverPrincipal | null {
+  if (!raw || typeof raw !== 'object') return null
+  const a = raw as {
+    kind?: string
+    sub?: string
+    iss?: string
+    group?: string
+    name?: string
+  }
+  if (a.kind === 'group' || (a.group && !a.sub)) {
+    if (!a.group) return null
+    const name = typeof a.name === 'string' && a.name.trim() ? a.name.trim() : undefined
+    return { kind: 'group', group: a.group, ...(name ? { name } : {}) }
+  }
+  if (!a.sub || !a.iss) return null
+  return { kind: 'user', sub: a.sub, iss: a.iss }
+}
+
+function approverBody(target: ApproverPrincipal): Record<string, string> {
+  return target.kind === 'group'
+    ? {
+        kind: 'group',
+        group: target.group,
+        ...(target.name ? { name: target.name } : {}),
+      }
+    : { kind: 'user', sub: target.sub, iss: target.iss }
+}
+
+export async function fetchApprovers(scope: ApproverScope, signal?: AbortSignal) {
+  const res = await authzFetch<{ approvers: unknown[] }>(approversPath(scope), { signal })
+  return {
+    approvers: res.approvers
+      .map(parseApproverPrincipal)
+      .filter((a): a is ApproverPrincipal => a != null),
+  }
 }
 
 export function grantApproverSeat(scope: ApproverScope, target: ApproverPrincipal) {
   return authzFetch<{ ok: boolean; approvers: ApproverPrincipal[] }>(approversPath(scope), {
     method: 'PUT',
-    body: JSON.stringify({ sub: target.sub, iss: target.iss }),
+    body: JSON.stringify(approverBody(target)),
   })
 }
 
 export function revokeApproverSeat(scope: ApproverScope, target: ApproverPrincipal) {
   return authzFetch<{ ok: boolean; approvers: ApproverPrincipal[] }>(approversPath(scope), {
     method: 'DELETE',
-    body: JSON.stringify({ sub: target.sub, iss: target.iss }),
+    body: JSON.stringify(approverBody(target)),
   })
 }
 
@@ -880,8 +915,19 @@ export type ApproverVersion = {
   approvers: ApproverPrincipal[]
 }
 
-export function fetchApproverHistory(scope: ApproverScope, signal?: AbortSignal) {
-  return authzFetch<{ versions: ApproverVersion[] }>(`${approversPath(scope)}/history`, { signal })
+export async function fetchApproverHistory(scope: ApproverScope, signal?: AbortSignal) {
+  const res = await authzFetch<{
+    versions: Array<{ validFrom: string; validTo: string | null; approvers: unknown[] }>
+  }>(`${approversPath(scope)}/history`, { signal })
+  return {
+    versions: res.versions.map((v) => ({
+      validFrom: v.validFrom,
+      validTo: v.validTo,
+      approvers: v.approvers
+        .map(parseApproverPrincipal)
+        .filter((a): a is ApproverPrincipal => a != null),
+    })),
+  }
 }
 
 // ── Entity history (#108, #109, #110) ───────────────────────────────────────

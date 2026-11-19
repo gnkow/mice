@@ -50,8 +50,11 @@ test.describe('AuthZ + GxP deep UI', () => {
       await expect(section.getByLabel('Search directory')).toBeVisible()
       await expect(section.getByRole('button', { name: 'Manual entry' })).toHaveCount(0)
 
-      await section.getByRole('button', { name: 'Approver history' }).click()
-      const history = section.getByTestId('approver-history')
+      await page
+        .getByRole('navigation', { name: 'Settings sections' })
+        .getByRole('link', { name: 'Approver history' })
+        .click()
+      const history = page.getByTestId('approver-history')
       await expect(history.getByTestId('history-version')).toHaveCount(3)
       await expect(history.getByTestId('history-version').last()).toContainText('current')
       await expect(history.getByTestId('history-version').last()).toContainText('approver-b')
@@ -99,7 +102,7 @@ test.describe('AuthZ + GxP deep UI', () => {
       await section.getByRole('button', { name: 'Assign approver' }).click()
       await expect(section.getByRole('status').filter({ hasText: 'Assigned approver role to qa-lead' })).toBeVisible()
       expect(seen.map((s) => s.method)).toEqual(['PUT', 'PUT'])
-      expect(seen[1]!.body).toEqual({ sub: 'qa-lead', iss: 'mice-e2e' })
+      expect(seen[1]!.body).toEqual({ kind: 'user', sub: 'qa-lead', iss: 'mice-e2e' })
     })
 
     test('TC-GXP-86-03: repository settings show a repo-scoped approver section', async ({

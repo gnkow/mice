@@ -38,6 +38,7 @@ const HISTORY_LINKS: Array<{
 }> = [
   { path: 'history', label: 'Settings history', requires: 'manageSettings' },
   { path: 'members/history', label: 'Membership history', requires: 'manageMembers' },
+  { path: 'approvers/history', label: 'Approver history', requires: 'manageApprovers' },
   { path: 'custom-roles/history', label: 'Custom roles history', requires: 'manageCustomRoles' },
 ]
 
@@ -54,9 +55,10 @@ export function NamespaceSettingsLayout() {
   const location = useLocation()
   const parentCtx = useOutletContext()
   const base = `/n/${encodeURIComponent(namespace)}/settings`
-  const onHistory = /\/settings\/(?:history|members\/history|custom-roles\/history)\/?$/.test(
-    location.pathname,
-  )
+  const onHistory =
+    /\/settings\/(?:history|members\/history|approvers\/history|custom-roles\/history)\/?$/.test(
+      location.pathname,
+    )
   const authz = useAsync((signal) => fetchNamespaceAuthz(namespace, signal), [namespace])
   const perms = authz.kind === 'ok' ? authz.data.permissions : null
   const navGroups = settingsNavGroups(perms)

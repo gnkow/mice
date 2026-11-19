@@ -1,9 +1,9 @@
-import { ChevronUp as ActionChevronUp, FolderGit2 as ActionFolderGit2, Plus as ActionPlus, Trash2 as ActionTrash2, X as ActionX } from 'lucide-react'
+import { ChevronUp as ActionChevronUp, FolderGit2 as ActionFolderGit2, Trash2 as ActionTrash2, X as ActionX } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { usePrincipalProfiles } from '../components/CommitEmail'
-import { DirectoryPicker } from '../components/DirectoryPicker'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
+import { PrincipalAddCard } from '../components/PrincipalAddCard'
 import {
   NamespaceCreateSettings,
   type NamespaceCreateSettingsValue,
@@ -64,14 +64,8 @@ export function NewRepoPage() {
   const [collaborators, setCollaborators] = useState<PendingCollaborator[]>(
     [],
   )
-  const [collabKind, setCollabKind] = useState<'user' | 'group'>('user')
-  const [collabSub, setCollabSub] = useState('')
-  const [collabIss, setCollabIss] = useState('mice-dev')
-  const [collabGroup, setCollabGroup] = useState('')
-  const [collabGroupName, setCollabGroupName] = useState('')
   const [collabRole, setCollabRole] = useState<RepoRole>('read')
   const [approvers, setApprovers] = useState<ApproverPrincipal[]>([])
-  const [approverKey, setApproverKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [nsDefaulted, setNsDefaulted] = useState(Boolean(presetNs))
@@ -85,26 +79,13 @@ export function NewRepoPage() {
   const collabAuthors = useMemo(
     () => [
       ...userCollaborators.map((c) => `${c.iss}|${c.sub}`),
-      ...approvers.map((a) => `${a.iss}|${a.sub}`),
+      ...approvers
+        .filter((a): a is Extract<ApproverPrincipal, { kind: 'user' }> => a.kind === 'user')
+        .map((a) => `${a.iss}|${a.sub}`),
     ],
     [userCollaborators, approvers],
   )
   const collabProfiles = usePrincipalProfiles(collabAuthors)
-
-  useEffect(() => {
-    setApprovers((prev) =>
-      prev.filter((a) =>
-        userCollaborators.some((c) => c.sub === a.sub && c.iss === a.iss),
-      ),
-    )
-    setApproverKey((key) => {
-      if (!key) return key
-      const [iss, sub] = key.split('\0')
-      return userCollaborators.some((c) => c.iss === iss && c.sub === sub)
-        ? key
-        : ''
-    })
-  }, [userCollaborators])
 
   const knownNamespaces = useMemo(() => {
     const names = new Set<string>()
@@ -145,41 +126,6 @@ export function NewRepoPage() {
     ? `/n/${encodeURIComponent(presetNs)}`
     : '/repositories'
 
-  function addCollaborator() {
-    if (collabKind === 'group') {
-      const group = collabGroup.trim()
-      if (!group) return
-      setCollaborators((prev) => {
-        const without = prev.filter(
-          (c) => !(c.kind === 'group' && c.group === group),
-        )
-        return [
-          ...without,
-          {
-            kind: 'group',
-            group,
-            name: collabGroupName.trim() || group,
-            role: collabRole,
-          },
-        ]
-      })
-      setCollabGroup('')
-      setCollabGroupName('')
-      return
-    }
-    const sub = collabSub.trim()
-    const iss = collabIss.trim()
-    if (!sub || !iss) return
-    setCollaborators((prev) => {
-      const without = prev.filter(
-        (c) => !(c.kind === 'user' && c.sub === sub && c.iss === iss),
-      )
-      return [...without, { kind: 'user', sub, iss, role: collabRole }]
-    })
-    setCollabSub('')
-    setCollabIss('mice-dev')
-  }
-
   function removeCollaborator(c: PendingCollaborator) {
     setCollaborators((prev) =>
       prev.filter((x) =>
@@ -190,19 +136,14 @@ export function NewRepoPage() {
     )
   }
 
-  function addApprover() {
-    const [iss, sub] = approverKey.split('\0')
-    if (!iss || !sub) return
-    if (!userCollaborators.some((c) => c.iss === iss && c.sub === sub)) return
-    setApprovers((prev) => {
-      if (prev.some((a) => a.iss === iss && a.sub === sub)) return prev
-      return [...prev, { iss, sub }]
-    })
-    setApproverKey('')
-  }
-
   function removeApprover(a: ApproverPrincipal) {
-    setApprovers((prev) => prev.filter((x) => !(x.iss === a.iss && x.sub === a.sub)))
+    setApprovers((prev) =>
+      prev.filter((x) =>
+        a.kind === 'group'
+          ? !(x.kind === 'group' && x.group === a.group)
+          : !(x.kind === 'user' && x.iss === a.iss && x.sub === a.sub),
+      ),
+    )
   }
 
   async function onSubmit(e: FormEvent) {
@@ -341,19 +282,19 @@ export function NewRepoPage() {
               disabled={busy}
             />
           </label>
+          <label>
+            Initial commit message
+            <input
+              value={initialCommitMessage}
+              onChange={(e) => setInitialCommitMessage(e.target.value)}
+              placeholder="Initialized Repo"
+              autoComplete="off"
+              disabled={busy}
+            />
+          </label>
 
           {showMore && (
             <div className="new-repo-more">
-              <label>
-                Initial commit message
-                <input
-                  value={initialCommitMessage}
-                  onChange={(e) => setInitialCommitMessage(e.target.value)}
-                  placeholder="Initialized Repo"
-                  autoComplete="off"
-                  disabled={busy}
-                />
-              </label>
               <div className="new-repo-collab">
                 <div className="new-repo-seat-head">
                   <h3 className="new-repo-subhead">Collaborators</h3>
@@ -402,114 +343,84 @@ export function NewRepoPage() {
                   <p className="muted small">No collaborators yet.</p>
                 )}
 
-                <div className="new-repo-add-card">
-                  <div className="new-repo-add-kind" role="group" aria-label="Principal type">
-                    <button
-                      type="button"
-                      className={
-                        collabKind === 'user'
-                          ? 'btn small new-repo-kind-btn is-active'
-                          : 'btn ghost small new-repo-kind-btn'
-                      }
-                      disabled={busy}
-                      onClick={() => setCollabKind('user')}
-                    >
-                      User
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        collabKind === 'group'
-                          ? 'btn small new-repo-kind-btn is-active'
-                          : 'btn ghost small new-repo-kind-btn'
-                      }
-                      disabled={busy}
-                      onClick={() => setCollabKind('group')}
-                    >
-                      Group
-                    </button>
-                  </div>
-                  {collabKind === 'group' ? (
-                    <DirectoryPicker
-                      kind="group"
-                      group={collabGroup}
-                      label={collabGroupName}
-                      disabled={busy}
-                      onChange={({ group, name }) => {
-                        setCollabGroup(group)
-                        setCollabGroupName(name)
-                      }}
-                    />
-                  ) : (
-                    <DirectoryPicker
-                      kind="user"
-                      sub={collabSub}
-                      iss={collabIss}
-                      defaultIss="mice-dev"
-                      disabled={busy}
-                      onChange={({ sub, iss }) => {
-                        setCollabSub(sub)
-                        setCollabIss(iss)
-                      }}
-                    />
-                  )}
-                  <div className="new-repo-add-actions">
-                    <button
-                      type="button"
-                      className="btn primary"
-                      disabled={
-                        busy ||
-                        (collabKind === 'group'
-                          ? !collabGroup.trim()
-                          : !collabSub.trim() || !collabIss.trim())
-                      }
-                      onClick={addCollaborator}
-                    >
-                      <ActionPlus size={14} aria-hidden="true" className="button-label-icon" />Add
-                    </button>
-                    <span className="new-repo-add-as" aria-hidden="true">
-                      as
-                    </span>
-                    <label className="new-repo-add-role">
-                      <span className="visually-hidden">Role</span>
-                      <select
-                        value={collabRole}
-                        onChange={(e) =>
-                          setCollabRole(e.target.value as RepoRole)
-                        }
-                        disabled={busy}
-                        aria-label="Role"
-                      >
-                        {REPO_ROLES.map((role) => (
-                          <option key={role} value={role}>
-                            {role}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
+                <PrincipalAddCard
+                  disabled={busy}
+                  role={collabRole}
+                  onRoleChange={(r) => setCollabRole(r as RepoRole)}
+                  roles={REPO_ROLES.map((r) => ({ value: r, label: r }))}
+                  onAdd={(principal) => {
+                    if (principal.kind === 'group') {
+                      setCollaborators((prev) => {
+                        const without = prev.filter(
+                          (c) =>
+                            !(c.kind === 'group' && c.group === principal.group),
+                        )
+                        return [
+                          ...without,
+                          {
+                            kind: 'group',
+                            group: principal.group,
+                            name: principal.name,
+                            role: collabRole,
+                          },
+                        ]
+                      })
+                      return
+                    }
+                    setCollaborators((prev) => {
+                      const without = prev.filter(
+                        (c) =>
+                          !(
+                            c.kind === 'user' &&
+                            c.sub === principal.sub &&
+                            c.iss === principal.iss
+                          ),
+                      )
+                      return [
+                        ...without,
+                        {
+                          kind: 'user',
+                          sub: principal.sub,
+                          iss: principal.iss,
+                          role: collabRole,
+                        },
+                      ]
+                    })
+                  }}
+                />
               </div>
 
               <div className="new-repo-collab new-repo-approvers">
                 <div className="new-repo-seat-head">
                   <h3 className="new-repo-subhead">Approvers</h3>
                   <p className="muted small new-repo-seat-lede">
-                    Collaborators who can sign merges into validated branches.
+                    Users or groups who can sign merges into validated branches.
                   </p>
                 </div>
                 {approvers.length > 0 ? (
                   <ul className="ns-member-list new-repo-seat-list">
                     {approvers.map((a) => (
                       <li
-                        key={`${a.iss}:${a.sub}`}
+                        key={
+                          a.kind === 'group'
+                            ? `group:${a.group}`
+                            : `user:${a.iss}|${a.sub}`
+                        }
                         className="ns-member-row"
                       >
                         <div className="ns-member-main">
-                          <UserRef
-                            author={`${a.iss}|${a.sub}`}
-                            profiles={collabProfiles}
-                          />
+                          {a.kind === 'group' ? (
+                            <GroupPrincipalLabel
+                              group={a.group}
+                              name={a.name}
+                              inline
+                            />
+                          ) : (
+                            <UserRef
+                              author={`${a.iss}|${a.sub}`}
+                              profiles={collabProfiles}
+                            />
+                          )}
                         </div>
                         <span className="ns-tag">approver</span>
                         <button
@@ -526,42 +437,48 @@ export function NewRepoPage() {
                 ) : (
                   <p className="muted small">No approvers yet.</p>
                 )}
-                <div className="new-repo-add-card new-repo-add-actions">
-                  <label className="new-repo-approver-pick">
-                    Collaborator
-                    <select
-                      value={approverKey}
-                      onChange={(e) => setApproverKey(e.target.value)}
-                      disabled={busy || userCollaborators.length === 0}
-                    >
-                      <option value="">
-                        {userCollaborators.length === 0
-                          ? 'Add a user collaborator first'
-                          : 'Choose a user collaborator…'}
-                      </option>
-                      {userCollaborators.map((c) => {
-                        const key = `${c.iss}\0${c.sub}`
-                        const taken = approvers.some(
-                          (a) => a.iss === c.iss && a.sub === c.sub,
+                <PrincipalAddCard
+                  disabled={busy}
+                  addLabel="Add approver"
+                  onAdd={(principal) => {
+                    if (principal.kind === 'group') {
+                      setApprovers((prev) => {
+                        if (prev.some((a) => a.kind === 'group' && a.group === principal.group)) {
+                          return prev
+                        }
+                        return [
+                          ...prev,
+                          {
+                            kind: 'group',
+                            group: principal.group,
+                            name: principal.name,
+                          },
+                        ]
+                      })
+                      return
+                    }
+                    setApprovers((prev) => {
+                      if (
+                        prev.some(
+                          (a) =>
+                            a.kind === 'user' &&
+                            a.sub === principal.sub &&
+                            a.iss === principal.iss,
                         )
-                        return (
-                          <option key={key} value={key} disabled={taken}>
-                            {c.sub}
-                            {taken ? ' (already approver)' : ''}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    disabled={busy || !approverKey}
-                    onClick={addApprover}
-                  >
-                    <ActionPlus size={14} aria-hidden="true" className="button-label-icon" />Add approver
-                  </button>
-                </div>
+                      ) {
+                        return prev
+                      }
+                      return [
+                        ...prev,
+                        {
+                          kind: 'user',
+                          sub: principal.sub,
+                          iss: principal.iss,
+                        },
+                      ]
+                    })
+                  }}
+                />
               </div>
             </div>
           )}

@@ -20,7 +20,6 @@ const GROUP_KEY = `${ISS}|${GROUP}`
 const ENGINEERING_KEY = `${ISS}|${ENGINEERING}`
 
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
-const { setNamespaceGroupMember, listNamespaceMembers } = await import('./authzMembershipStore.js')
 const { setRepoGroupCollaborator, listRepoCollaborators } = await import('./authzCollaboratorStore.js')
 const { hasRepoPermission } = await import('./authz.js')
 const { setDirectoryFetchForTests } = await import('./authentication/directory/directory.js')
@@ -62,16 +61,24 @@ const admin = {
 await describe('group grants bind to iss|group_id', async () => {
   await it('keeps access after a rename and shows the cached display name', async () => {
     const ns = 'gid'
-    assert.equal((await createNamespaceAuthz(admin, ns, 'read', true)).ok, true)
-    assert.equal((await setNamespaceGroupMember(ns, GROUP, 'member', { displayName: 'Quality Team' })).ok, true)
+    assert.equal((await createNamespaceAuthz(admin, ns, 'none', true)).ok, true)
+    // Collaborator SoT: group repo seat (not namespace membership) grants data access.
+    assert.equal(
+      (
+        await setRepoGroupCollaborator(ns, 'study', GROUP, 'read', {
+          displayName: 'Quality Team',
+        })
+      ).ok,
+      true,
+    )
 
     const holder = { sub: 'qa', iss: ISS, email: 'qa@example.com', name: 'QA', groups: [GROUP] }
     const renamedOnly = { ...holder, groups: ['Quality Team'] }
     assert.equal((await hasRepoPermission(holder, ns, 'study', 'read')).ok, true)
     assert.equal((await hasRepoPermission(renamedOnly, ns, 'study', 'read')).ok, false)
 
-    const members = await listNamespaceMembers(ns)
-    const group = members.find((member) => member.kind === 'group')
+    const collaborators = await listRepoCollaborators(ns, 'study')
+    const group = collaborators.find((member) => member.kind === 'group')
     assert.equal(group?.kind === 'group' ? group.group : undefined, GROUP_KEY)
     assert.equal(group?.kind === 'group' ? group.name : undefined, 'Quality Team')
   })

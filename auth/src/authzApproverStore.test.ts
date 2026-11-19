@@ -35,28 +35,57 @@ describe('authzApproverStore decideIsApprover', () => {
     assert.equal((await decideIsApprover(bob, 'acme', 'data')).reason, 'Approver role required')
     assert.equal((await decideIsApprover(bob, 'acme', 'data')).status, 403)
 
-    assert.equal(await grantApprover({ ns: 'acme', repo: 'data' }, bob), true)
+    assert.deepEqual(await grantApprover({ ns: 'acme', repo: 'data' }, { kind: 'user', ...bob }), {
+      ok: true,
+    })
     const allowed = await decideIsApprover(bob, 'acme', 'data')
     assert.equal(allowed.allow, true)
     assert.equal(allowed.status, 200)
     assert.equal((await decideIsApprover(bob, 'acme', 'other')).allow, false)
 
-    assert.equal(await revokeApprover({ ns: 'acme', repo: 'data' }, bob), true)
+    assert.equal(await revokeApprover({ ns: 'acme', repo: 'data' }, { kind: 'user', ...bob }), true)
     assert.equal((await decideIsApprover(bob, 'acme', 'data')).allow, false)
   })
 
   it('namespace-scope grant covers every repository in that namespace', async () => {
-    assert.equal(await grantApprover({ ns: 'acme' }, carol), true)
+    assert.deepEqual(await grantApprover({ ns: 'acme' }, { kind: 'user', ...carol }), { ok: true })
     assert.equal((await decideIsApprover(carol, 'acme', 'data')).allow, true)
     assert.equal((await decideIsApprover(carol, 'acme', 'other')).allow, true)
-    assert.equal(await revokeApprover({ ns: 'acme' }, carol), true)
+    assert.equal(await revokeApprover({ ns: 'acme' }, { kind: 'user', ...carol }), true)
     assert.equal((await decideIsApprover(carol, 'acme', 'data')).allow, false)
+  })
+
+  it('group seat grants approver to members of that IdP group', async () => {
+    const groupId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    const groupKey = `test|${groupId}`
+    assert.deepEqual(
+      await grantApprover(
+        { ns: 'acme', repo: 'data' },
+        { kind: 'group', group: groupKey, name: 'QA' },
+      ),
+      { ok: true },
+    )
+    assert.equal((await decideIsApprover(bob, 'acme', 'data')).allow, false)
+    assert.equal(
+      (await decideIsApprover({ ...bob, groups: [groupKey] }, 'acme', 'data')).allow,
+      true,
+    )
+    assert.equal(
+      await revokeApprover({ ns: 'acme', repo: 'data' }, { kind: 'group', group: groupKey }),
+      true,
+    )
+    assert.equal(
+      (await decideIsApprover({ ...bob, groups: [groupKey] }, 'acme', 'data')).allow,
+      false,
+    )
   })
 
   it('authz re-exports the same decideIsApprover seam', async () => {
     assert.equal(authz.decideIsApprover, decideIsApprover)
-    assert.equal(await grantApprover({ ns: 'acme', repo: 'data' }, bob), true)
+    assert.deepEqual(await grantApprover({ ns: 'acme', repo: 'data' }, { kind: 'user', ...bob }), {
+      ok: true,
+    })
     assert.equal((await authz.decideIsApprover(bob, 'acme', 'data')).allow, true)
-    assert.equal(await revokeApprover({ ns: 'acme', repo: 'data' }, bob), true)
+    assert.equal(await revokeApprover({ ns: 'acme', repo: 'data' }, { kind: 'user', ...bob }), true)
   })
 })

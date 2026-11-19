@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { getDb } from './db/database.js'
 import { groupDisplayNames } from './db/schema.js'
 import { directoryNow } from './authentication/directory/directory.js'
@@ -75,23 +75,41 @@ export async function getGroupDisplayNames(
   bindingKeys: string[],
 ): Promise<Map<string, { displayName: string; idBased: boolean }>> {
   const out = new Map<string, { displayName: string; idBased: boolean }>()
+  const pairs: Array<{ key: string; iss: string; groupId: string }> = []
+  const seen = new Set<string>()
   for (const key of bindingKeys) {
     const parsed = parseGroupBindingKey(key)
     if (!parsed) continue
-    const [row] = await getDb()
-      .select({
-        displayName: groupDisplayNames.displayName,
-        idBased: groupDisplayNames.idBased,
-      })
-      .from(groupDisplayNames)
-      .where(
-        and(
-          eq(groupDisplayNames.issuer, parsed.iss),
-          eq(groupDisplayNames.groupId, parsed.groupId),
-        ),
-      )
-      .limit(1)
-    if (row) out.set(key, { displayName: row.displayName, idBased: row.idBased })
+    const bindingKey = groupBindingKey(parsed.iss, parsed.groupId)
+    if (seen.has(bindingKey)) continue
+    seen.add(bindingKey)
+    pairs.push({ key: bindingKey, iss: parsed.iss, groupId: parsed.groupId })
+  }
+  if (pairs.length === 0) return out
+
+  // One round-trip for the whole page of group refs (membership / collaborator lists).
+  const issuers = [...new Set(pairs.map((p) => p.iss))]
+  const groupIds = [...new Set(pairs.map((p) => p.groupId))]
+  const rows = await getDb()
+    .select({
+      issuer: groupDisplayNames.issuer,
+      groupId: groupDisplayNames.groupId,
+      displayName: groupDisplayNames.displayName,
+      idBased: groupDisplayNames.idBased,
+    })
+    .from(groupDisplayNames)
+    .where(
+      and(
+        inArray(groupDisplayNames.issuer, issuers),
+        inArray(groupDisplayNames.groupId, groupIds),
+      ),
+    )
+
+  const wanted = new Set(pairs.map((p) => p.key))
+  for (const row of rows) {
+    const key = groupBindingKey(row.issuer, row.groupId)
+    if (!wanted.has(key)) continue
+    out.set(key, { displayName: row.displayName, idBased: row.idBased })
   }
   return out
 }

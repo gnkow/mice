@@ -1430,6 +1430,7 @@ code {
   margin: 0;
 }
 
+.principal-add-card,
 .new-repo-add-card {
   display: grid;
   gap: 0.65rem;
@@ -1439,23 +1440,25 @@ code {
   background: color-mix(in srgb, var(--canvas-subtle) 65%, transparent);
 }
 
+.principal-add-kind,
 .new-repo-add-kind {
   display: inline-flex;
   gap: 0.25rem;
   flex-wrap: wrap;
 }
 
-.new-repo-kind-btn.is-active {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
+.principal-add-actions,
 .new-repo-add-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
   align-items: center;
   justify-content: flex-end;
+}
+
+.new-repo-kind-btn.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .new-repo-add-as {

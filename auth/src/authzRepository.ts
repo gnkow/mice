@@ -1371,7 +1371,7 @@ async function approverScopeId(scope: ApproverScope, create: boolean): Promise<s
 export type ApproverVersion = {
   validFrom: string
   validTo: string | null
-  /** `iss|sub` user keys holding the approver seat in this interval. */
+  /** Seat keys in this interval: user `iss\u001fsub` or group `iss|group_id`. */
   approvers: string[]
 }
 

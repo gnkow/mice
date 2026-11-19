@@ -67,7 +67,7 @@ export function VersionHistoryList<T extends Interval>({
   )
 }
 
-/** Approver principals for one history version — always UserRef (never raw iss|sub). */
+/** Approver principals for one history version — users and groups. */
 export function ApproverVersionSeats({
   approvers,
   emptyLabel = 'No approvers',
@@ -76,7 +76,10 @@ export function ApproverVersionSeats({
   emptyLabel?: string
 }) {
   const authors = useMemo(
-    () => approvers.map((a) => `${a.iss}|${a.sub}`),
+    () =>
+      approvers
+        .filter((a): a is Extract<ApproverPrincipal, { kind: 'user' }> => a.kind === 'user')
+        .map((a) => `${a.iss}|${a.sub}`),
     [approvers],
   )
   const profiles = usePrincipalProfiles(authors)
@@ -84,6 +87,13 @@ export function ApproverVersionSeats({
   return (
     <ul className="muted small" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
       {approvers.map((a) => {
+        if (a.kind === 'group') {
+          return (
+            <li key={`group:${a.group}`}>
+              <GroupPrincipalLabel group={a.group} name={a.name} inline />
+            </li>
+          )
+        }
         const key = `${a.iss}|${a.sub}`
         return (
           <li key={key}>
