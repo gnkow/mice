@@ -85,8 +85,11 @@ describe('audit filters', () => {
 })
 
 describe('audit facets', () => {
-  it('lists distinct sessions, workspaces and jobs', async () => {
+  it('lists distinct actors, namespaces, repos, sessions, workspaces and jobs', async () => {
     const f = await auditFacets({})
+    assert.ok(f.actors.some((a) => a.id.includes('@') || a.id.length > 0))
+    assert.ok(f.namespaces.map((n) => n.id).includes('ns1'))
+    assert.ok(f.repos.map((r) => r.id).includes('r'))
     assert.deepEqual(f.sessions.map((s) => s.id).sort(), ['sess-1', 'sess-2'])
     assert.deepEqual(f.workspaces.map((s) => s.id).sort(), ['ws-1', 'ws-2', 'ws-m'])
     assert.deepEqual(f.jobs.map((s) => s.id).sort(), ['job-1', 'job-2', 'job-3'])
@@ -97,6 +100,7 @@ describe('audit facets', () => {
     const f = await auditFacets({ allowedNamespaces: ['ns2'] })
     assert.deepEqual(f.sessions, [])
     assert.deepEqual(f.jobs.map((s) => s.id).sort(), ['job-2', 'job-3'])
+    assert.deepEqual(f.namespaces.map((n) => n.id), ['ns2'])
   })
 })
 

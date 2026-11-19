@@ -83,9 +83,13 @@ export type AuditResource = {
   lastTs: string
   namespace?: string
   repo?: string
+  label?: string
 }
 export type AuditFacets = {
   actions: AuditActionOption[]
+  actors: AuditResource[]
+  namespaces: AuditResource[]
+  repos: AuditResource[]
   sessions: AuditResource[]
   workspaces: AuditResource[]
   jobs: AuditResource[]
@@ -194,7 +198,16 @@ export async function fetchAuditFacets(
     signal,
   })
   if (!res.ok) throw new Error(`Failed to load audit filters (${res.status})`)
-  return (await res.json()) as AuditFacets
+  const raw = (await res.json()) as Partial<AuditFacets>
+  return {
+    actions: raw.actions ?? [],
+    actors: raw.actors ?? [],
+    namespaces: raw.namespaces ?? [],
+    repos: raw.repos ?? [],
+    sessions: raw.sessions ?? [],
+    workspaces: raw.workspaces ?? [],
+    jobs: raw.jobs ?? [],
+  }
 }
 
 export type AuditExportFormat = 'csv' | 'pdf' | 'bundle'

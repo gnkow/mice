@@ -2675,6 +2675,11 @@ a.btn.primary:hover {
   gap: 0.6rem;
 }
 
+.btn-row.audit-actions {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
 .inline-form {
   display: flex;
   gap: 0.5rem;
@@ -5188,6 +5193,15 @@ p.ok {
   padding: 0.75rem 1rem;
 }
 
+.auditor-grant-constraints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+}
+
 .repo-shell-chrome {
   position: sticky;
   top: var(--topbar-h);
@@ -7313,9 +7327,11 @@ p.ok {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
+  overflow: visible;
 }
 
-.audit-filters label {
+.audit-filters label,
+.audit-filters .suggest-field > label {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -7334,10 +7350,72 @@ p.ok {
   padding: 0.45rem 0.6rem;
 }
 
+.suggest-field {
+  position: relative;
+  min-width: 0;
+  z-index: 1;
+}
+
+.suggest-field:focus-within {
+  z-index: 30;
+}
+
+.suggest-field-list {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 0.2rem);
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 14rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 0.5rem 1.25rem color-mix(in srgb, #000 35%, transparent);
+}
+
+.suggest-field-empty {
+  padding: 0.45rem 0.55rem;
+}
+
+.suggest-field-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 0.1rem);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggest-field-option:hover,
+.suggest-field-option.is-active,
+.suggest-field-option[aria-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+}
+
+.suggest-field-option-value {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+}
+
 .audit-filter-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 0.5rem;
+  min-width: max-content;
 }
 
 .signature-evidence {

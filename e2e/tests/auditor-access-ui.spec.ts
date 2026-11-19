@@ -45,10 +45,12 @@ test.describe('Auditor access UI (#13)', () => {
     await section.getByRole('button', { name: 'Grant Access' }).first().click()
     await section.locator('select').first().selectOption({ label: 'Auditor' })
 
-    await expect(section.getByTestId('auditor-grant-hint')).toBeVisible()
-    await expect(section.getByTestId('auditor-grant-hint')).toContainText(
-      /always expire|MFA|cannot write/i,
-    )
+    const hint = section.getByTestId('auditor-grant-hint')
+    await expect(hint).toBeVisible()
+    await expect(hint).toContainText(/always expire|MFA|cannot write/i)
+    await expect(hint.getByRole('list', { name: 'Auditor grant constraints' })).toBeVisible()
+    await expect(hint.getByText('Always expires')).toBeVisible()
+    await expect(hint.getByText('MFA every request')).toBeVisible()
     await expect(section.getByText(/Expires \(required for Auditor\)/i)).toBeVisible()
   })
 

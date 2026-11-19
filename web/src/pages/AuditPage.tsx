@@ -9,6 +9,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
 import { StateBlock } from '../components/StateBlock'
+import { SuggestField, type SuggestOption } from '../components/SuggestField'
 import { useAsync } from '../hooks/useAsync'
 import {
   actionLabel,
@@ -48,39 +49,78 @@ function shortId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 8)}…` : id
 }
 
-function resourceLabel(r: AuditResource): string {
-  const where = r.repo ? ` · ${r.namespace ?? ''}/${r.repo}` : r.namespace ? ` · ${r.namespace}` : ''
-  return `${shortId(r.id)}${where} (${r.count})`
+function resourceSuggestOptions(options: AuditResource[]): SuggestOption[] {
+  return options.map((r) => {
+    const where = r.repo
+      ? ` · ${r.namespace ?? ''}/${r.repo}`
+      : r.namespace
+        ? ` · ${r.namespace}`
+        : ''
+    const head = r.label && r.label !== r.id ? `${r.label} · ${shortId(r.id)}` : shortId(r.id)
+    return { value: r.id, label: `${head}${where} (${r.count})` }
+  })
 }
 
-function ResourceSelect({
-  name,
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  name: string
-  label: string
-  value: string
-  options: AuditResource[]
-  onChange: (v: string) => void
-}) {
-  const known = options.some((o) => o.id === value)
-  return (
-    <label>
-      {label}
-      <select name={name} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">All</option>
-        {value && !known && <option value={value}>{shortId(value)}</option>}
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {resourceLabel(o)}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
+function stringSuggestOptions(options: AuditResource[]): SuggestOption[] {
+  return options.map((r) => ({
+    value: r.id,
+    label: r.count > 1 ? `${r.id} (${r.count})` : r.id,
+  }))
+}
+
+function actorSuggestOptions(options: AuditResource[]): SuggestOption[] {
+  return options.map((r) => ({
+    value: r.id,
+    label: r.label && r.label !== r.id ? `${r.label} · ${r.id} (${r.count})` : `${r.id} (${r.count})`,
+  }))
+}
+
+function mergeSuggestOptions(...groups: SuggestOption[][]): SuggestOption[] {
+  const map = new Map<string, SuggestOption>()
+  for (const group of groups) {
+    for (const o of group) {
+      if (!map.has(o.value)) map.set(o.value, o)
+    }
+  }
+  return [...map.values()]
+}
+
+/** Fallback suggestions from the currently loaded page when facets are empty. */
+function suggestFromEvents(events: AuditEvent[]): {
+  actors: SuggestOption[]
+  namespaces: SuggestOption[]
+  repos: SuggestOption[]
+  sessions: SuggestOption[]
+  workspaces: SuggestOption[]
+  jobs: SuggestOption[]
+} {
+  const actors = new Map<string, string>()
+  const namespaces = new Set<string>()
+  const repos = new Set<string>()
+  const sessions = new Set<string>()
+  const workspaces = new Set<string>()
+  const jobs = new Set<string>()
+  for (const e of events) {
+    const actorKey = e.actor.email || e.actor.sub
+    if (actorKey) actors.set(actorKey, e.actor.name || actorKey)
+    if (e.namespace) namespaces.add(e.namespace)
+    if (e.repo) repos.add(e.repo)
+    const r = eventResources(e)
+    if (r.sessionId) sessions.add(r.sessionId)
+    if (r.workspaceId) workspaces.add(r.workspaceId)
+    for (const j of r.jobIds) jobs.add(j)
+  }
+  return {
+    actors: [...actors.entries()].map(([value, name]) => ({
+      value,
+      label: name !== value ? `${name} · ${value}` : value,
+    })),
+    namespaces: [...namespaces].map((value) => ({ value, label: value })),
+    repos: [...repos].map((value) => ({ value, label: value })),
+    sessions: [...sessions].map((value) => ({ value, label: shortId(value) })),
+    workspaces: [...workspaces].map((value) => ({ value, label: shortId(value) })),
+    jobs: [...jobs].map((value) => ({ value, label: shortId(value) })),
+  }
 }
 
 function ResourceCell({ event }: { event: AuditEvent }) {
@@ -187,15 +227,14 @@ export function AuditPage() {
   const facets: AuditFacets | null =
     facetState.kind === 'ok' ? facetState.data : null
 
-  const actionGroups = useMemo(() => {
-    const groups = new Map<string, { value: string; label: string }[]>()
-    for (const a of facets?.actions ?? []) {
-      const list = groups.get(a.group) ?? []
-      list.push(a)
-      groups.set(a.group, list)
-    }
-    return [...groups.entries()]
-  }, [facets])
+  const actionOptions = useMemo<SuggestOption[]>(
+    () =>
+      (facets?.actions ?? []).map((a) => ({
+        value: a.value,
+        label: `${a.label} · ${a.group}`,
+      })),
+    [facets],
+  )
 
   function set(key: FilterKey, value: string) {
     setDraft((d) => ({ ...d, [key]: value }))
@@ -218,6 +257,31 @@ export function AuditPage() {
 
   const denied = state.kind === 'ok' && state.data.kind === 'denied' ? state.data.reason : null
   const events = state.kind === 'ok' && state.data.kind === 'ok' ? state.data.data.events : null
+  const eventSuggest = useMemo(() => suggestFromEvents(events ?? []), [events])
+  const actorOptions = useMemo(
+    () => mergeSuggestOptions(actorSuggestOptions(facets?.actors ?? []), eventSuggest.actors),
+    [facets, eventSuggest],
+  )
+  const namespaceOptions = useMemo(
+    () => mergeSuggestOptions(stringSuggestOptions(facets?.namespaces ?? []), eventSuggest.namespaces),
+    [facets, eventSuggest],
+  )
+  const repoOptions = useMemo(
+    () => mergeSuggestOptions(stringSuggestOptions(facets?.repos ?? []), eventSuggest.repos),
+    [facets, eventSuggest],
+  )
+  const sessionOptions = useMemo(
+    () => mergeSuggestOptions(resourceSuggestOptions(facets?.sessions ?? []), eventSuggest.sessions),
+    [facets, eventSuggest],
+  )
+  const workspaceOptions = useMemo(
+    () => mergeSuggestOptions(resourceSuggestOptions(facets?.workspaces ?? []), eventSuggest.workspaces),
+    [facets, eventSuggest],
+  )
+  const jobOptions = useMemo(
+    () => mergeSuggestOptions(resourceSuggestOptions(facets?.jobs ?? []), eventSuggest.jobs),
+    [facets, eventSuggest],
+  )
   const orphanIntents = useMemo(() => unpairedIntentEvents(events ?? []), [events])
   const revoked = useMemo(() => revokedSignatureIds(events ?? []), [events])
 
@@ -262,42 +326,50 @@ export function AuditPage() {
             / which repo). Signature rows expand to show IdP MFA evidence for auditors.
           </p>
         </div>
-        <div className="btn-row" role="group" aria-label="Audit actions">
+        <div className="btn-row audit-actions" role="group" aria-label="Audit actions">
           <button
             type="button"
             className="btn"
             onClick={() => void onExport('csv')}
             disabled={exporting !== null || denied !== null}
+            aria-label="Export CSV"
             title="Download the events matching the applied filters"
           >
-            <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />{exporting === 'csv' ? 'Exporting…' : 'Export CSV'}
+            <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />
+            {exporting === 'csv' ? '…' : 'CSV'}
           </button>
           <button
             type="button"
             className="btn"
             onClick={() => void onExport('pdf')}
             disabled={exporting !== null || denied !== null}
+            aria-label="Export PDF"
             title="Download a PDF of the events matching the applied filters"
           >
-            <ActionFileText size={14} aria-hidden="true" className="button-label-icon" />{exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
+            <ActionFileText size={14} aria-hidden="true" className="button-label-icon" />
+            {exporting === 'pdf' ? '…' : 'PDF'}
           </button>
           <button
             type="button"
             className="btn"
             onClick={() => void onExport('bundle')}
             disabled={exporting !== null || denied !== null}
+            aria-label="Export signed bundle"
             title="Download the signed evidence bundle (events, manifest, CSV, PDF, verification)"
           >
-            <ActionShieldCheck size={14} aria-hidden="true" className="button-label-icon" />{exporting === 'bundle' ? 'Exporting…' : 'Export signed bundle'}
+            <ActionShieldCheck size={14} aria-hidden="true" className="button-label-icon" />
+            {exporting === 'bundle' ? '…' : 'Bundle'}
           </button>
           <button
             type="button"
             className="btn"
             onClick={() => void onVerify()}
             disabled={verifying || denied !== null}
+            aria-label="Verify chain"
             title="Re-verify the audit chain and show the tip"
           >
-            <ActionShieldCheck size={14} aria-hidden="true" className="button-label-icon" />{verifying ? 'Verifying…' : 'Verify chain'}
+            <ActionShieldCheck size={14} aria-hidden="true" className="button-label-icon" />
+            {verifying ? '…' : 'Verify'}
           </button>
         </div>
       </div>
@@ -325,76 +397,65 @@ export function AuditPage() {
       )}
 
       <form className="audit-filters" onSubmit={onFilter}>
-        <label>
-          Actor
-          <input
-            name="actor"
-            value={draft.actor}
-            onChange={(e) => set('actor', e.target.value)}
-            placeholder="email, name, or sub"
-          />
-        </label>
-        <label>
-          Namespace
-          <input
-            name="namespace"
-            value={draft.namespace}
-            onChange={(e) => set('namespace', e.target.value)}
-            placeholder="namespace"
-          />
-        </label>
-        <label>
-          Repo
-          <input
-            name="repo"
-            value={draft.repo}
-            onChange={(e) => set('repo', e.target.value)}
-            placeholder="repo"
-          />
-        </label>
-        <label>
-          Action
-          <select
-            name="action"
-            value={draft.action}
-            onChange={(e) => set('action', e.target.value)}
-          >
-            <option value="">All actions</option>
-            {draft.action &&
-              !(facets?.actions ?? []).some((a) => a.value === draft.action) && (
-                <option value={draft.action}>{draft.action}</option>
-              )}
-            {actionGroups.map(([group, items]) => (
-              <optgroup key={group} label={group}>
-                {items.map((a) => (
-                  <option key={a.value} value={a.value}>
-                    {a.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        <ResourceSelect
+        <SuggestField
+          name="actor"
+          label="Actor"
+          value={draft.actor}
+          onChange={(v) => set('actor', v)}
+          options={actorOptions}
+          placeholder="email, name, or sub"
+          emptyHint="All actors"
+        />
+        <SuggestField
+          name="namespace"
+          label="Namespace"
+          value={draft.namespace}
+          onChange={(v) => set('namespace', v)}
+          options={namespaceOptions}
+          placeholder="namespace"
+          emptyHint="All namespaces"
+        />
+        <SuggestField
+          name="repo"
+          label="Repo"
+          value={draft.repo}
+          onChange={(v) => set('repo', v)}
+          options={repoOptions}
+          placeholder="repo"
+          emptyHint="All repos"
+        />
+        <SuggestField
+          name="action"
+          label="Action"
+          value={draft.action}
+          onChange={(v) => set('action', v)}
+          options={actionOptions}
+          placeholder="All actions"
+          emptyHint="All actions"
+        />
+        <SuggestField
           name="session_id"
           label="Session"
           value={draft.session_id}
-          options={facets?.sessions ?? []}
           onChange={(v) => set('session_id', v)}
+          options={sessionOptions}
+          emptyHint="All sessions"
         />
-        <ResourceSelect
+        <SuggestField
           name="workspace_id"
           label="Stage"
           value={draft.workspace_id}
-          options={facets?.workspaces ?? []}
           onChange={(v) => set('workspace_id', v)}
+          options={workspaceOptions}
+          emptyHint="All stages"
         />
-        <ResourceSelect
+        <SuggestField
           name="job_id"
           label="Job"
           value={draft.job_id}
-          options={facets?.jobs ?? []}
           onChange={(v) => set('job_id', v)}
+          options={jobOptions}
+          emptyHint="All jobs"
         />
         <div className="audit-filter-actions">
           <button type="submit" className="btn primary">

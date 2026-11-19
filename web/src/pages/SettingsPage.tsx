@@ -45,6 +45,11 @@ import { usePrincipalProfiles } from '../components/CommitEmail'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthMe, fetchAuthzMe, hasEffectivePermission, isAdminRole, type AuthzMe } from '../lib/auth'
 import {
+  AUDITOR_GRANT_CONSTRAINTS,
+  AUDITOR_GRANT_HINT,
+  isAuditorRole,
+} from '../lib/auditorGrant'
+import {
   fetchInstance,
   grantPermissions,
   grantRole,
@@ -675,7 +680,6 @@ function UsersGrantSection({
   const [grantRoleValue, setGrantRoleValue] = useState<string | null>('user')
   const [grantPerms, setGrantPerms] = useState<string[]>([])
   const [expiresLocal, setExpiresLocal] = useState(defaultExpiryLocalValue)
-  const [notice, setNotice] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
   const users = state.kind === 'ok' ? state.data.users : []
@@ -699,7 +703,6 @@ function UsersGrantSection({
       const intent = (e as CustomEvent<PendingSignedMutation>).detail
       if (!intent?.apiPath?.includes('/auth/grants/')) return
       setGrantOpen(false)
-      setNotice('Granted access')
       reloadUsers()
       reloadInstance()
     }
@@ -723,7 +726,6 @@ function UsersGrantSection({
     setError(null)
     setAuthorityError(false)
     setAdminFloorError(false)
-    setNotice(null)
   }
 
   async function onGrant(e: FormEvent) {
@@ -757,13 +759,11 @@ function UsersGrantSection({
     setError(null)
     setAuthorityError(false)
     setAdminFloorError(false)
-    setNotice(null)
     try {
       for (const item of built.bodies) {
         if (item.kind === 'role') await grantRole(item.body)
         else await grantPermissions(item.body)
       }
-      setNotice(`Granted access to ${targetSub.trim() || 'principal'}`)
       setGrantOpen(false)
       state.reload()
       instance.reload()
@@ -821,7 +821,6 @@ function UsersGrantSection({
           {error}
         </p>
       )}
-      {notice && <p className="flash flash-success" role="status">{notice}</p>}
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {state.kind === 'error' && (
         <p className="flash flash-error" role="alert">
@@ -925,7 +924,7 @@ function UsersGrantSection({
             </label>
             <label className="ns-settings-field">
               <span className="ns-settings-label">
-                Expires{grantRoleValue === 'auditor' ? ' (required for Auditor)' : ''}
+                Expires{isAuditorRole(grantRoleValue) ? ' (required for Auditor)' : ''}
               </span>
               <input
                 type="datetime-local"
@@ -935,16 +934,24 @@ function UsersGrantSection({
               />
             </label>
           </div>
-          {grantRoleValue === 'auditor' && (
-            <p
+          {isAuditorRole(grantRoleValue) && (
+            <div
               className="flash flash-warn"
               role="status"
               data-testid="auditor-grant-hint"
             >
-              Auditor grants always expire. The principal must present MFA on every
-              request, can read across ACLs (including signature evidence on Audit), and
-              cannot write, merge, delete, or sign.
-            </p>
+              <p>{AUDITOR_GRANT_HINT}</p>
+              <ul
+                className="auditor-grant-constraints"
+                aria-label="Auditor grant constraints"
+              >
+                {AUDITOR_GRANT_CONSTRAINTS.map((c) => (
+                  <li key={c.id}>
+                    <span className="status-pill warn">{c.label}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {floorBlocksDemotion && (
             <p className="flash flash-warn" role="status">

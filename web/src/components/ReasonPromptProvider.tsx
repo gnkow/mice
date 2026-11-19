@@ -169,13 +169,20 @@ export function ReasonPromptProvider({ children }: { children: ReactNode }) {
         setBusy(false)
         return
       }
+      const method = pending.options.method?.trim()
+      const path = (pending.options.path.split('?')[0] ?? pending.options.path).trim()
+      if (!method || !path) {
+        setError('Ceremony is missing the mutation method or path. Cancel and try the action again.')
+        setBusy(false)
+        return
+      }
       const res = await fetch('/auth/sign/prepare-mutation', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          method: pending.options.method,
-          path: pending.options.path.split('?')[0] ?? pending.options.path,
+          method,
+          path,
           reason: text,
           // Must match the mutation body exactly or the BFF rejects the signature hash.
           body:

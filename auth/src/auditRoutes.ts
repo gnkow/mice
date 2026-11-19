@@ -80,6 +80,9 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     })
     return c.json({
       actions: knownAuditActions(),
+      actors: f.actors,
+      namespaces: f.namespaces,
+      repos: f.repos,
       sessions: f.sessions,
       workspaces: f.workspaces,
       jobs: f.jobs,

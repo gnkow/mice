@@ -3,6 +3,11 @@ import {
   withDirectoryGroups,
 } from './authentication/access/privilegedGroups.js'
 import { sessionHasMfaEvidence } from './authentication/signing/mfaEvidence.js'
+import {
+  AUDITOR_MFA_REASON,
+  decideAclBypassRead,
+  decideAuditorMfa,
+} from './auditorAccess.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
 import { hasCompletedTraining, isInstanceAdmin } from './authzInstanceStore.js'
@@ -161,13 +166,16 @@ export async function hasRepoPermission(
     return { ok: true, effective, bypass: false }
   }
   // Universal read: Auditor (or custom grant of repo:bypass_acl). Never for PATs.
-  if (
-    need === 'read' &&
-    !isScopedCredential(user) &&
-    await hasPermission(user, 'repo:bypass_acl') &&
-    sessionHasMfa(user)
-  ) {
-    return { ok: true, effective, bypass: true }
+  if (need === 'read' && !isScopedCredential(user)) {
+    const bypass = decideAclBypassRead({
+      need,
+      isPat: false,
+      hasBypassAcl: await hasPermission(user, 'repo:bypass_acl'),
+      hasMfa: sessionHasMfa(user),
+    })
+    if (bypass.allow) {
+      return { ok: true, effective, bypass: true }
+    }
   }
   return {
     ok: false,
@@ -176,11 +184,14 @@ export async function hasRepoPermission(
   }
 }
 
-export const AUDITOR_MFA_REASON = 'Auditor access requires MFA evidence'
+export { AUDITOR_MFA_REASON }
 
 /** The one rule: an Auditor-role principal must carry MFA evidence on every request. */
 export async function auditorMfaRefusal(user: SessionUser): Promise<string | null> {
-  return (await getUserRole(user)) === 'auditor' && !sessionHasMfa(user) ? AUDITOR_MFA_REASON : null
+  return decideAuditorMfa({
+    role: await getUserRole(user),
+    hasMfa: sessionHasMfa(user),
+  })
 }
 
 function sessionHasMfa(user: SessionUser): boolean {

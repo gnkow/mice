@@ -119,6 +119,8 @@ export type AuditResource = {
   lastTs: string
   namespace?: string
   repo?: string
+  /** Human label when `id` is opaque (e.g. actor email → display name). */
+  label?: string
 }
 
 const MAX_LIMIT = 100
@@ -650,8 +652,21 @@ function collectResources(
   return [...map.values()].slice(0, FACET_CAP)
 }
 
-/** Distinct sessions / workspaces / jobs / actions seen in the (scoped) log. */
+function collectDistinct(
+  events: AuditEvent[],
+  pick: (e: AuditEvent) => string | undefined,
+): AuditResource[] {
+  return collectResources(events, (e) => {
+    const v = pick(e)
+    return v ? [v] : []
+  })
+}
+
+/** Distinct actors / namespaces / repos / sessions / workspaces / jobs seen in the (scoped) log. */
 export async function auditFacets(scope: Pick<AuditQuery, 'allowedNamespaces' | 'namespace'>): Promise<{
+  actors: AuditResource[]
+  namespaces: AuditResource[]
+  repos: AuditResource[]
   sessions: AuditResource[]
   workspaces: AuditResource[]
   jobs: AuditResource[]
@@ -659,6 +674,17 @@ export async function auditFacets(scope: Pick<AuditQuery, 'allowedNamespaces' | 
 }> {
   const events = await filterEvents(scope)
   return {
+    // Prefer email as the filter value (substring match on actor); fall back to sub.
+    actors: collectResources(events, (e) => {
+      const key = e.actor.email || e.actor.sub
+      return key ? [key] : []
+    }).map((r) => {
+      const sample = events.find((e) => (e.actor.email || e.actor.sub) === r.id)
+      const name = sample?.actor.name?.trim()
+      return name && name !== r.id ? { ...r, label: name } : r
+    }),
+    namespaces: collectDistinct(events, (e) => e.namespace),
+    repos: collectDistinct(events, (e) => e.repo),
     sessions: collectResources(events, eventSessionIds),
     workspaces: collectResources(events, eventWorkspaceIds),
     jobs: collectResources(events, eventJobIds),
