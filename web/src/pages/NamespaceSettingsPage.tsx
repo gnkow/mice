@@ -34,12 +34,12 @@ const BASE_OPTS: BasePermission[] = [
 ]
 
 const BASE_HELP: Record<BasePermission, string> = {
-  none: 'Members need an explicit repo role to see repositories.',
-  read: 'Members can browse and pull every repository in the namespace.',
-  triage: 'Members can manage issues/PRs but not push by default.',
-  write: 'Members can push to repositories they can access.',
-  maintain: 'Members can manage most repo settings without full admin.',
-  admin: 'Members have admin on every repository (use sparingly).',
+  none: 'Unused for data access — add repository collaborators for read/write.',
+  read: 'Unused for data access — add repository collaborators for read/write.',
+  triage: 'Unused for data access — add repository collaborators for read/write.',
+  write: 'Unused for data access — add repository collaborators for read/write.',
+  maintain: 'Unused for data access — add repository collaborators for read/write.',
+  admin: 'Unused for data access — add repository collaborators for read/write.',
 }
 
 export function NamespaceSettingsPage() {
@@ -106,7 +106,7 @@ export function NamespaceSettingsPage() {
         return
       }
     } else if (!sub.trim() || !iss.trim()) {
-      setError('Choose a user from search or enter sub/iss manually')
+      setError('Choose a user from directory search')
       return
     }
     setBusy(true)
@@ -323,8 +323,9 @@ export function NamespaceSettingsPage() {
                 <div>
                   <h2 id="ns-members-heading">Members</h2>
                   <p className="muted small">
-                    Owners manage this namespace. Members inherit the base
-                    permission above.
+                    Owners manage namespace settings and repository collaborator
+                    lists. Members do not get repository data access from
+                    membership alone — add them as repository collaborators.
                   </p>
                   {state.data.unresolvedGroups.length > 0 && (
                     <p className="flash flash-error" role="status">

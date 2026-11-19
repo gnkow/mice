@@ -135,7 +135,12 @@ function MetaEditor({ type, id, scope, focus }: MetaTarget & { focus?: string })
       <button type="button" className="btn small" onClick={() => { state.reload(); setConflict(false); setErr(null) }}><ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />Load latest metadata</button>
     </div>}
     {notice && <p className="muted small" role="status" data-testid="meta-notice">{notice}</p>}
-    <StateBlock loading={state.kind === 'loading'} error={state.kind === 'error' ? state.message : null} onRetry={state.reload}>
+    <StateBlock
+      loading={state.kind === 'loading'}
+      error={state.kind === 'error' ? state.message : null}
+      errorPurpose="view metadata"
+      onRetry={state.reload}
+    >
       {view && <fieldset className="meta-editable" disabled={disabled} data-testid="meta-view">
         <div className="meta-block">
           <header className="meta-section-head"><h4>Tags</h4></header>

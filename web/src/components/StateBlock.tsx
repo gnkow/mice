@@ -1,9 +1,13 @@
 import { RefreshCw as ActionRefreshCw } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { isAccessDenial } from '../lib/accessError'
+import { AccessErrorMessage } from './AccessErrorMessage'
 
 type Props = {
   loading?: boolean
   error?: string | null
+  /** What failed, e.g. "view data" — shapes access-denial titles. */
+  errorPurpose?: string
   empty?: boolean
   emptyMessage?: string | ReactNode
   onRetry?: () => void
@@ -13,6 +17,7 @@ type Props = {
 export function StateBlock({
   loading,
   error,
+  errorPurpose,
   empty,
   emptyMessage = 'Nothing here yet.',
   onRetry,
@@ -29,10 +34,11 @@ export function StateBlock({
     )
   }
   if (error) {
+    const showRetry = Boolean(onRetry) && !isAccessDenial(error)
     return (
       <div className="flash flash-error">
-        <p className="error">{error}</p>
-        {onRetry && (
+        <AccessErrorMessage error={error} purpose={errorPurpose} />
+        {showRetry && (
           <button type="button" className="btn ghost" onClick={onRetry}>
             <ActionRefreshCw size={14} aria-hidden="true" className="button-label-icon" />Retry
           </button>

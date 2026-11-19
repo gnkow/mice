@@ -5,6 +5,7 @@ import {
   decideSelfMerge,
   evaluateSelfMergeFromCommits,
   SELF_MERGE_FORBIDDEN,
+  SELF_MERGE_REQUESTER_FORBIDDEN,
   selfMergeAuditDetail,
 } from './selfMerge.js'
 
@@ -40,6 +41,19 @@ describe('decideSelfMerge', () => {
 
   it('allows merge when the author list is empty', () => {
     assert.equal(decideSelfMerge(alice, []).allow, true)
+  })
+
+  it('denies when the signer opened the merge request', () => {
+    const d = decideSelfMerge(alice, [bobAuthor], aliceAuthor)
+    assert.equal(d.allow, false)
+    if (!d.allow) assert.equal(d.reason, SELF_MERGE_REQUESTER_FORBIDDEN)
+  })
+
+  it('matches AuthZ openedBy keys that use the unit separator', () => {
+    const openedBy = `${alice.iss}\u001f${alice.sub}`
+    const d = decideSelfMerge(alice, [bobAuthor], openedBy)
+    assert.equal(d.allow, false)
+    if (!d.allow) assert.equal(d.reason, SELF_MERGE_REQUESTER_FORBIDDEN)
   })
 })
 

@@ -256,14 +256,14 @@ test.describe('auth BFF (PLAT-AUTH)', () => {
     await signInWithSsoViaKeycloak(page)
     await expect(
       page.locator('details.profile-menu > summary'),
-    ).toHaveAttribute('title', 'Mice User')
+    ).toHaveAttribute('title', 'Regular User')
     await openAccountMenu(page)
     await page
       .locator('.profile-menu-panel')
       .getByRole('link', { name: 'Profile' })
       .click()
-    await expect(page.getByText('Mice User')).toBeVisible()
-    await expect(page.getByText('mice@example.com')).toBeVisible()
+    await expect(page.getByText('Regular User')).toBeVisible()
+    await expect(page.getByText('mice_user@mice.com')).toBeVisible()
 
     // 3) Sign out clears Mice session and IdP SSO, lands on /login
     await signOutViaUi(page)

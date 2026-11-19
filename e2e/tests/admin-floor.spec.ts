@@ -1,4 +1,5 @@
 import { test, expect, openAccountMenu } from '../fixtures'
+import { mockDirectorySearch, pickFromDirectory } from '../helpers/directory'
 import { uniqueId } from '../helpers/oxenApi'
 import { mintSession, mintSessionCookie } from '../helpers/session'
 
@@ -104,10 +105,19 @@ test.describe('Two instance admins (#39)', () => {
       await route.continue()
     })
 
+    const targetSub = `not-an-admin-${Date.now()}`
+    await mockDirectorySearch(page, [
+      {
+        kind: 'user',
+        sub: targetSub,
+        iss: 'mice-e2e',
+        name: 'Not An Admin',
+        email: `${targetSub}@mice.local`,
+      },
+    ])
+
     await users.getByRole('button', { name: 'Grant Access' }).first().click()
-    await users.getByRole('button', { name: 'Manual entry' }).click()
-    await users.getByLabel('Subject (sub)').fill(`not-an-admin-${Date.now()}`)
-    await users.getByLabel('Issuer (iss)').fill('mice-e2e')
+    await pickFromDirectory(users, targetSub, /Not An Admin|not-an-admin/)
     await users.locator('select').selectOption({ label: 'User' })
     await users.getByRole('button', { name: 'Grant', exact: true }).click()
     await expect(users.getByRole('alert')).toContainText(/Admin floor:/i)

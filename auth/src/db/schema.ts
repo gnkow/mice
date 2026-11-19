@@ -82,13 +82,14 @@ export const repositories = pgTable(
       .notNull()
       .references(() => namespaces.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    description: text('description').notNull().default(''),
     createdAt: ts('created_at').notNull(),
     updatedAt: ts('updated_at').notNull(),
   },
   (t) => [uniqueIndex('repositories_namespace_name').on(t.namespaceId, t.name)],
 )
 
-/** Successive repository settings snapshots (display name today). */
+/** Successive repository settings snapshots (display name + description). */
 export const repositorySettingsVersions = pgTable(
   'repository_settings_versions',
   {
@@ -97,6 +98,7 @@ export const repositorySettingsVersions = pgTable(
       .notNull()
       .references(() => repositories.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    description: text('description').notNull().default(''),
     validFrom: ts('valid_from').notNull(),
     validTo: ts('valid_to'),
     createdAt: ts('created_at').notNull().defaultNow(),
@@ -1085,6 +1087,8 @@ export const mergeRequests = pgTable(
     /** open | stale | merged | blocked */
     status: text('status').notNull(),
     openedBy: text('opened_by').notNull(),
+    title: text('title').notNull().default(''),
+    description: text('description').notNull().default(''),
     mergeCommitId: text('merge_commit_id'),
     createdAt: ts('created_at').notNull().defaultNow(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
@@ -1112,6 +1116,23 @@ export const commitQcStatus = pgTable(
   },
   (t) => [primaryKey({ columns: [t.repositoryId, t.commitId] })],
 )
+
+/**
+ * BFF-authoritative commit identity for empty-tip bootstrap commits.
+ * oxen-server still writes Oxen/oxen@oxen.ai (and its init message) into the
+ * blob; the proxy rewrites author/email/message from this table for every
+ * attributed tip.
+ */
+export const commitAttributions = pgTable('commit_attributions', {
+  commitId: text('commit_id').primaryKey(),
+  /** Canonical `iss|sub`. */
+  author: text('author').notNull(),
+  email: text('email').notNull(),
+  name: text('name'),
+  /** Display commit message (oxen hardcodes its own on empty-tip init). */
+  message: text('message'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+})
 
 /** Ticket 17: Session seal key ring for emergency rotation (U7, U16) */
 export const sealKeys = pgTable(

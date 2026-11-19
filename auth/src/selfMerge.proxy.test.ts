@@ -87,8 +87,8 @@ beforeEach(async () => {
 afterEach(() => restoreUpstream())
 after(() => iso.restore())
 
-async function mergeAs(person: typeof merger) {
-  return app.request('/api/repos/sm/r/merge/main..feature', {
+async function mergeAs(person: typeof merger, range = 'dev..feature') {
+  return app.request(`/api/repos/sm/r/merge/${range}`, {
     method: 'POST',
     headers: {
       ...(await iso.sessionHeaders(person)),
@@ -141,6 +141,15 @@ describe('self-merge prevention on merge proxy', () => {
     ]
     const res = await mergeAs(merger)
     assert.equal(res.status, 403)
+    assert.equal(postMergeHits, 0)
+  })
+
+  it('blocks unsigned merge into the validated default branch', async () => {
+    const res = await mergeAs(merger, 'main..feature')
+    const body = (await res.json()) as { error?: { detail?: string; code?: string } }
+    assert.equal(res.status, 403)
+    assert.equal(body.error?.code, 'validated_branch')
+    assert.match(body.error?.detail ?? '', /Validated branch/i)
     assert.equal(postMergeHits, 0)
   })
 })

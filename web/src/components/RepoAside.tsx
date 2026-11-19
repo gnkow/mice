@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
+import { fetchAuthzRepository } from '../lib/authzApi'
 import {
   getRepository,
   getRepositorySize,
@@ -12,6 +13,7 @@ import {
 import { formatBytes } from '../lib/oxen/client'
 import { lastBranch } from '../lib/lastBranch'
 import { OxenApiError } from '../lib/oxen/types'
+import { AccessErrorMessage } from './AccessErrorMessage'
 import { usePrincipalProfiles } from './CommitEmail'
 import { UserRef } from './UserRef'
 import { DataTypeIcon } from './icons'
@@ -21,6 +23,10 @@ export function RepoAside() {
   const { namespace = '', repo = '' } = useParams()
   const detail = useAsync(
     (signal) => getRepository(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const authzRepo = useAsync(
+    (signal) => fetchAuthzRepository(namespace, repo, signal),
     [namespace, repo],
   )
   const stats = useAsync(
@@ -84,6 +90,7 @@ export function RepoAside() {
         detail.reload()
         stats.reload()
         commits.reload()
+        authzRepo.reload()
       })
       .catch((err) => {
         setActionError(
@@ -122,13 +129,15 @@ export function RepoAside() {
         </div>
         {detail.kind === 'loading' && <p className="muted">Loading…</p>}
         {detail.kind === 'error' && (
-          <p className="error">{detail.message}</p>
+          <AccessErrorMessage error={detail.message} purpose="view data" compact />
         )}
         {repository && (
           <>
             <p className="hub-aside-desc muted small">
-              Self-hosted repository on oxen-server
-              {repository.is_empty ? ' · empty' : ''}.
+              {(authzRepo.kind === 'ok'
+                ? authzRepo.data.repository.description.trim()
+                : '') ||
+                `Self-hosted repository on oxen-server${repository.is_empty ? ' · empty' : ''}.`}
             </p>
             <ul className="hub-aside-meta">
               <li>

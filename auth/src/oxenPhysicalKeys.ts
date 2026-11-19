@@ -135,6 +135,9 @@ export function rewriteOxenJsonToDisplay(
   return JSON.stringify(parsed)
 }
 
+/** Mice-only create fields that must not be forwarded to oxen. */
+const MICE_CREATE_KEYS = new Set(['initial_commit_message'])
+
 /** Build oxen create body using physical keys; keep other fields. */
 export function physicalCreateBody(
   rawBody: string | undefined,
@@ -148,9 +151,20 @@ export function physicalCreateBody(
       parsed = {}
     }
   }
+  const forwarded: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!MICE_CREATE_KEYS.has(key)) forwarded[key] = value
+  }
   return JSON.stringify({
-    ...parsed,
+    ...forwarded,
     namespace: physical.namespaceId,
     name: physical.repositoryId,
   })
+}
+
+/** Read optional initial commit message from a create-repo JSON body. */
+export function initialCommitMessageFromBody(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const value = (body as Record<string, unknown>).initial_commit_message
+  return typeof value === 'string' ? value : undefined
 }

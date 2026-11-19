@@ -362,6 +362,7 @@ export function summarizeMutation(
     }
     if (parts[1] === 'merge-requests') {
       if (parts[3] === 'complete') return 'Complete a signed merge'
+      if (parts[3] === 'reject') return 'Reject a merge request'
       return 'Update a merge request'
     }
   }

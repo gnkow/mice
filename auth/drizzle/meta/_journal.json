@@ -99,6 +99,34 @@
       "when": 1795200000000,
       "tag": "0013_change_control_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795300000000,
+      "tag": "0014_merge_request_title_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1795400000000,
+      "tag": "0015_repository_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795500000000,
+      "tag": "0016_commit_attributions",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795600000000,
+      "tag": "0017_commit_attribution_message",
+      "breakpoints": true
     }
   ]
 }

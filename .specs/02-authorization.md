@@ -13,7 +13,7 @@ The BFF implements role-based access control (RBAC) with 5 formal roles (Externa
 ## User Stories
 
 1. As a repository admin, I want to grant read, write, maintain or admin to users and groups, so that access is least-privilege.
-2. As a namespace owner, I want namespace roles to flow to repositories, so that I manage access once.
+2. As a namespace owner, I want to manage namespace settings and the collaborator list for repositories, so that data access is explicit per repository.
 3. As an instance admin, I want custom roles built from an action catalog, so that I model our organisation.
 4. As an instance admin, I want delegated instance permissions, so that I can split admin duties.
 5. As a security reviewer, I want unclassified routes denied, so that new oxen endpoints are never open by accident.
@@ -410,21 +410,32 @@ The following gaps were identified between the spec decisions and current implem
 
 ### Base Role Resolution
 
+**Repository collaborator seats are the source of truth for repository data
+operations** (read, write, merge, workspaces, jobs on that repo). Namespace
+membership does not grant file/branch access.
+
 User's effective repository role is the **maximum** of:
-1. Namespace Owner → `admin`
-2. Namespace Member → `namespace.basePermission` (e.g., `read`)
-3. Custom namespace role → `customRole.baseRepositoryRole` (e.g., `write`)
-4. Direct repository collaborator → assigned role (e.g., `maintain`)
-5. Group repository collaborator → highest group-assigned role (e.g., `write`)
+1. Direct repository collaborator → assigned role (e.g., `maintain`)
+2. Group repository collaborator → highest group-assigned role (e.g., `write`)
+
+Namespace Owner / Member / custom namespace roles govern **namespace** concerns
+only (settings, membership, create repositories, assign approvers). Separately:
+
+- **Namespace Owner** may manage the collaborator list and repository lifecycle
+  (rename, transfer, delete, About) without holding a collaborator seat.
+- **Maintain or admin collaborators** (repo managers/admins) may also manage
+  other collaborators.
+- **Instance admins** change instance settings only; they have no data-plane
+  access and are not namespace members (SoD).
 
 **Hierarchy**: none < read < triage < write < maintain < admin
 
 ### Fine-Grained Permissions
 
-- Custom roles have a base role + `permissions[]` array
-- User gets **union** of all permissions from all held custom roles
-- Permissions are additive only (cannot reduce inherited base)
-- To restrict below namespace base: revoke membership, add as direct collaborator with lower role
+- Custom **repository** roles have a base role + `permissions[]` array and are
+  assigned as collaborator seats
+- User gets **union** of all permissions from held custom repo roles
+- Custom namespace `baseRepositoryRole` does not grant repository data access
 
 ### Instance Admin Bypass
 

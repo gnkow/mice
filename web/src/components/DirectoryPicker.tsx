@@ -1,4 +1,4 @@
-import { ChevronUp as ActionChevronUp, Users as ActionUsers } from 'lucide-react'
+import { Users as ActionUsers } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import {
   AuthzError,
@@ -14,6 +14,7 @@ type UserProps = {
   iss: string
   onChange: (next: { sub: string; iss: string }) => void
   disabled?: boolean
+  /** Kept for call-site compatibility; issuer comes from directory hits. */
   defaultIss?: string
 }
 
@@ -29,7 +30,7 @@ type GroupProps = {
 type Props = UserProps | GroupProps
 
 /**
- * Debounced IdP/store directory search with manual entry fallback.
+ * Debounced IdP/store directory search. Selection is always from directory hits.
  */
 export function DirectoryPicker(props: Props) {
   const listId = useId()
@@ -39,7 +40,6 @@ export function DirectoryPicker(props: Props) {
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<DirectoryUserHit[]>([])
   const [groups, setGroups] = useState<DirectoryGroupHit[]>([])
-  const [showManual, setShowManual] = useState(false)
   const [source, setSource] = useState<string>('none')
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -86,7 +86,6 @@ export function DirectoryPicker(props: Props) {
           }
           setUsers([])
           setGroups([])
-          setShowManual(true)
         })
         .finally(() => {
           if (!ac.signal.aborted) setLoading(false)
@@ -145,8 +144,7 @@ export function DirectoryPicker(props: Props) {
           Selected:{' '}
           {props.kind === 'group' && props.label && props.label !== props.group ? (
             <>
-              <span className="group-principal-name">{props.label}</span>
-              {' '}
+              <span className="group-principal-name">{props.label}</span>{' '}
               <code className="group-principal-id">{props.group}</code>
             </>
           ) : (
@@ -219,89 +217,9 @@ export function DirectoryPicker(props: Props) {
         ((props.kind === 'user' && users.length === 0) ||
           (props.kind === 'group' && groups.length === 0)) && (
           <p className="muted small">
-            No matches{source !== 'none' ? ` (${source})` : ''}. Use manual entry
-            below.
+            No matches{source !== 'none' ? ` (${source})` : ''}.
           </p>
         )}
-
-      <button
-        type="button"
-        className="btn ghost small directory-picker-manual-toggle"
-        disabled={props.disabled}
-        onClick={() => setShowManual((v) => !v)}
-      >
-        <ActionChevronUp size={14} aria-hidden="true" className="button-label-icon" />{showManual ? 'Hide manual entry' : 'Manual entry'}
-      </button>
-
-      {showManual && props.kind === 'user' && (
-        <div className="directory-picker-manual ns-member-form-fields cols-2">
-          <label>
-            Subject (sub)
-            <input
-              required
-              value={props.sub}
-              disabled={props.disabled}
-              onChange={(e) =>
-                props.onChange({ sub: e.target.value, iss: props.iss })
-              }
-              placeholder="user-sub"
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            Issuer (iss)
-            <input
-              required
-              value={props.iss}
-              disabled={props.disabled}
-              onChange={(e) =>
-                props.onChange({ sub: props.sub, iss: e.target.value })
-              }
-              placeholder={props.defaultIss ?? 'mice-dev'}
-              autoComplete="off"
-            />
-          </label>
-        </div>
-      )}
-      {showManual && props.kind === 'group' && (
-        <div className="directory-picker-manual ns-member-form-fields cols-2">
-          <label>
-            Group object id
-            <input
-              required
-              value={props.group}
-              disabled={props.disabled}
-              onChange={(e) =>
-                props.onChange({
-                  group: e.target.value,
-                  name: props.label?.trim() || e.target.value,
-                })
-              }
-              placeholder="11111111-1111-4111-8111-111111111111"
-              autoComplete="off"
-            />
-          </label>
-          <label>
-            Display name
-            <input
-              value={props.label ?? ''}
-              disabled={props.disabled}
-              onChange={(e) =>
-                props.onChange({
-                  group: props.group,
-                  name: e.target.value,
-                })
-              }
-              placeholder="Quality Assurance"
-              autoComplete="off"
-            />
-          </label>
-          <p className="muted small directory-picker-manual-hint">
-            Grants bind to the object id. The display name is cached for the UI
-            and can change in the IdP without breaking access.
-          </p>
-        </div>
-      )}
     </div>
   )
 }

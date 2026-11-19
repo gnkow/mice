@@ -76,10 +76,15 @@ export function SettingsPage() {
   const [form, setForm] = useState<OxenSettings>(loadSettings)
   const [saved, setSaved] = useState(false)
   const [probe, setProbe] = useState<string | null>(null)
+  const [probeTick, setProbeTick] = useState(0)
+  const serverInfo = useAsync(
+    (signal) => fetchServerVersion(signal),
+    [form.apiBase, probeTick],
+  )
   const isInstanceAdmin = me.kind === 'ok' && !!me.data && isAdminRole(me.data)
   const canReviewAccess =
     me.kind === 'ok' && !!me.data && hasEffectivePermission(me.data, 'access_request:list')
-  
+
   function onSave(e: FormEvent) {
     e.preventDefault()
     saveSettings(form)
@@ -94,8 +99,10 @@ export function SettingsPage() {
     try {
       const res = await fetchServerVersion()
       setProbe(`Connected · oxen-server v${res.oxen_version}`)
+      setProbeTick((t) => t + 1)
     } catch (err) {
       setProbe(err instanceof Error ? err.message : 'Connection failed')
+      setProbeTick((t) => t + 1)
     }
   }
 
@@ -198,6 +205,18 @@ export function SettingsPage() {
             </div>
             {saved && <p className="flash flash-success" role="status">Saved.</p>}
             {probe && <p className="muted">{probe}</p>}
+            <dl className="ns-settings-facts" aria-label="Server">
+              <div className="ns-settings-fact">
+                <dt className="ns-settings-fact-label">oxen-server</dt>
+                <dd className="ns-settings-fact-value" role="status">
+                  {serverInfo.kind === 'ok'
+                    ? `v${serverInfo.data.oxen_version}`
+                    : serverInfo.kind === 'error'
+                      ? 'Unreachable'
+                      : 'Checking…'}
+                </dd>
+              </div>
+            </dl>
           </form>
         </section>
 
@@ -981,7 +1000,7 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
     e.preventDefault()
     const issuer = revokeIss.trim() || signedInIss.trim()
     if (!revokeSub.trim() || !issuer) {
-      setError('Choose a user from search or enter sub/iss manually')
+      setError('Choose a user from directory search')
       return
     }
     setBusy(true)
@@ -1098,7 +1117,7 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
     e.preventDefault()
     const issuer = permIss.trim() || signedInIss.trim()
     if (!permSub.trim() || !issuer) {
-      setError('Choose a user from search or enter sub/iss manually')
+      setError('Choose a user from directory search')
       return
     }
     if (permChecks.length > 0 && !expiresLocal.trim()) {

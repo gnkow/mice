@@ -29,8 +29,11 @@ resetRestoreTestGate()
 await recordRestoreTestPassed({ recordedBy: 'test' })
 
 const approver = t.person('approver')
+const requester = t.person('requester')
 await preparePrincipal(approver)
+await preparePrincipal(requester)
 await t.grantRole(approver, 'manager')
+await t.grantRole(requester, 'user')
 assert.equal((await createNamespaceAuthz(approver, 'gxp5', 'none')).ok, true)
 const repo = await ensureRepository('gxp5', 'assay')
 assert.ok(repo)
@@ -54,7 +57,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       targetBranch: 'main',
       expectedSourceHead: 'src-head',
       expectedTargetHead: 'tgt-head',
-      openedBy: { iss: approver.iss, sub: approver.sub },
+      openedBy: { iss: requester.iss, sub: requester.sub },
     })
 
     const entries = [{ path: 'a.txt', contentHash: 'aa'.repeat(32) }]
@@ -119,7 +122,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       targetBranch: 'main',
       expectedSourceHead: 'src-r',
       expectedTargetHead: 'tgt-r',
-      openedBy: { iss: approver.iss, sub: approver.sub },
+      openedBy: { iss: requester.iss, sub: requester.sub },
     })
     const merge = buildMergeManifest([])
     const { binding, manifest } = mergeResultBinding({

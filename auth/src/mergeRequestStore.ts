@@ -16,12 +16,19 @@ export type MergeRequestRecord = {
   expectedTargetHead: string
   status: MergeRequestStatus
   openedBy: string
+  title: string
+  description: string
   mergeCommitId: string | null
   createdAt: Date
   updatedAt: Date
 }
 
+export function defaultMergeRequestTitle(sourceBranch: string, targetBranch: string): string {
+  return `${sourceBranch} → ${targetBranch}`
+}
+
 function rowToRecord(row: typeof mergeRequests.$inferSelect): MergeRequestRecord {
+  const title = row.title?.trim() || defaultMergeRequestTitle(row.sourceBranch, row.targetBranch)
   return {
     id: row.id,
     repositoryId: row.repositoryId,
@@ -33,6 +40,8 @@ function rowToRecord(row: typeof mergeRequests.$inferSelect): MergeRequestRecord
     expectedTargetHead: row.expectedTargetHead,
     status: row.status as MergeRequestStatus,
     openedBy: row.openedBy,
+    title,
+    description: row.description ?? '',
     mergeCommitId: row.mergeCommitId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -48,8 +57,14 @@ export async function openMergeRequest(input: {
   expectedSourceHead: string
   expectedTargetHead: string
   openedBy: { iss: string; sub: string }
+  title?: string
+  description?: string
 }): Promise<MergeRequestRecord> {
   const now = new Date()
+  const title =
+    input.title?.trim() ||
+    defaultMergeRequestTitle(input.sourceBranch, input.targetBranch)
+  const description = input.description?.trim() ?? ''
   const [inserted] = await getDb()
     .insert(mergeRequests)
     .values({
@@ -62,6 +77,8 @@ export async function openMergeRequest(input: {
       expectedTargetHead: input.expectedTargetHead,
       status: 'open',
       openedBy: principalKey(input.openedBy),
+      title,
+      description,
       createdAt: now,
       updatedAt: now,
     })
@@ -157,4 +174,30 @@ export async function markMergeRequestMerged(
     .returning()
   if (!updated) throw new Error('Merge request not found')
   return rowToRecord(updated)
+}
+
+/**
+ * Operator reject: open/stale → blocked. Merged MRs are left alone.
+ */
+export async function rejectMergeRequest(
+  id: string,
+): Promise<
+  | { ok: true; mergeRequest: MergeRequestRecord }
+  | { ok: false; code: 'not_found' | 'not_rejectable' }
+> {
+  const current = await getMergeRequest(id)
+  if (!current) return { ok: false, code: 'not_found' }
+  if (current.status !== 'open' && current.status !== 'stale') {
+    return { ok: false, code: 'not_rejectable' }
+  }
+  const [updated] = await getDb()
+    .update(mergeRequests)
+    .set({
+      status: 'blocked',
+      updatedAt: new Date(),
+    })
+    .where(eq(mergeRequests.id, id))
+    .returning()
+  if (!updated) return { ok: false, code: 'not_found' }
+  return { ok: true, mergeRequest: rowToRecord(updated) }
 }

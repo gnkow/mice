@@ -11,6 +11,7 @@ import { sealSessionCookie, unsealSessionCookie } from './cookieSeal.js'
 import { canonicalIssuer } from './principal.js'
 import { enforceWebSessionCap } from './sessionCap.js'
 import { decideSessionLiveness } from './sessionLiveness.js'
+import { normalizePrincipalAuthorKey } from '../../selfMerge.js'
 
 export { canonicalIssuer }
 
@@ -123,15 +124,17 @@ export async function currentProfilesByAuthor(
   const emails: Record<string, string> = {}
   const names: Record<string, string> = {}
   for (const author of authors) {
-    const bar = author.indexOf('|')
-    if (bar <= 0 || bar === author.length - 1) continue
+    // Accept commit `iss|sub` and AuthZ `iss\u001fsub` (e.g. MR openedBy); key canonically.
+    const key = normalizePrincipalAuthorKey(author)
+    const bar = key.indexOf('|')
+    if (bar <= 0 || bar === key.length - 1) continue
     const profile = await getCurrentProfile({
-      iss: author.slice(0, bar),
-      sub: author.slice(bar + 1),
+      iss: key.slice(0, bar),
+      sub: key.slice(bar + 1),
     })
     if (!profile) continue
-    if (profile.email) emails[author] = profile.email
-    if (profile.name) names[author] = profile.name
+    if (profile.email) emails[key] = profile.email
+    if (profile.name) names[key] = profile.name
   }
   return { emails, names }
 }

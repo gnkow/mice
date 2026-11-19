@@ -99,6 +99,8 @@ export type CreateRepoInput = {
   namespace: string
   name: string
   description?: string
+  /** Empty-tip commit message; BFF default is "Initialized Repo". */
+  initial_commit_message?: string
 }
 
 export type Commit = {

@@ -4,21 +4,28 @@
 
 The development environment comes pre-configured with test accounts for each formal RBAC role, plus a pending user for the `/pending` shell. Accounts are defined in `auth/keycloak/realm-mice.json` and imported when Keycloak starts. Roles (except bootstrap admin) are applied by the seed script.
 
-### Account Credentials
+### Account credentials
 
-| Email | Password | Formal role | Description |
-|-------|----------|-------------|-------------|
-| `mice_admin@mice.com` | `admin123` (+ TOTP `JBSWY3DPEHPK3PXP`) | `admin` | Bootstrap admin (`AUTHZ_BOOTSTRAP_ADMINS`). Conditional OTP; Profile MFA **Yes** after OTP. |
-| `mice_manager@mice.com` | `manage123` (+ same TOTP) | `manager` | Namespace owner / rename & other signed ceremonies — OTP so step-up can evidence MFA. |
-| `mice_auditor@mice.com` | `auditor123` (+ same TOTP) | `auditor` | Read-only / `repo:bypass_acl`; OTP required for auditor MFA gates. |
-| `mice_user@mice.com` | `user123` (+ same TOTP) | `user` | Standard collaborator; OTP for signed writes. |
-| `mice_no_mfa@mice.com` | `nomfa123` | `user` | Password-only control (no TOTP). Profile MFA stays **No**; signature ceremonies refuse. |
-| `mice@example.com` | `mice` | `user` | Default SSO / e2e (password-only; not bootstrap) |
-| `partner@partner.example` | `partner` | `user` | SAML broker e2e (password-only; not bootstrap) |
-| `mice_external@mice.com` | `external123` | `external` | Read-only guest (password-only) |
-| `mice_pending@mice.com` | `pending123` | *(none)* | No role — `/pending` request wizard |
+Accounts live in `auth/keycloak/realm-mice.json`; formal roles and the `demo` / `sample` workspace are applied by `make seed` / `seed:dev`.
 
-Shared local TOTP secret for OTP-enabled accounts: `JBSWY3DPEHPK3PXP` (UTF-8 key material). On the Keycloak OTP screen the **mice-dev** login theme shows the current code next to the input (dev only). Seed also configures Keycloak `amr` authenticator refs if realm import skipped built-in flow updates.
+| Username | Email | Password | Role | MFA | Notes |
+|----------|-------|----------|------|-----|-------|
+| `mice_admin` | `mice_admin@mice.com` | `admin123` | `admin` | TOTP | Bootstrap instance admin (`AUTHZ_BOOTSTRAP_ADMINS`) |
+| `mice_manager` | `mice_manager@mice.com` | `manage123` | `manager` | TOTP | Owns namespace `demo`; signed ceremonies |
+| `mice_auditor` | `mice_auditor@mice.com` | `auditor123` | `auditor` | TOTP | Read / `repo:bypass_acl` |
+| `mice_user` | `mice_user@mice.com` | `user123` | `user` | TOTP | Default SSO / e2e (`KEYCLOAK_E2E_USER`); `demo/sample` write |
+| `mice_user_2` | `mice_user_2@mice.com` | `user2123` | `user` | TOTP | Second MFA collaborator; `demo/sample` write |
+| `mice_user_3` | `mice_user_3@mice.com` | `user3123` | `user` | TOTP | Third MFA collaborator; `demo/sample` write |
+| `mice_no_mfa` | `mice_no_mfa@mice.com` | `nomfa123` | `user` | — | Password-only control; Profile MFA **No**; ceremonies refuse |
+| `mice_external` | `mice_external@mice.com` | `external123` | `external` | — | Guest; `demo/sample` read |
+| `mice_pending` | `mice_pending@mice.com` | `pending123` | *(none)* | — | `/pending` request wizard |
+| `partner` | `partner@partner.example` | `partner` | `user` | — | SAML broker e2e |
+
+#### Dev MFA (OTP)
+
+Shared TOTP secret for all OTP-enabled accounts: `JBSWY3DPEHPK3PXP` (UTF-8 key material, not base32).
+
+On the Keycloak OTP screen the **mice-dev** login theme shows **Dev OTP** with the live 6-digit code. **Click the code** to copy it and fill the OTP field (dev only). Seed also configures Keycloak `amr` authenticator refs if realm import skipped built-in flow updates.
 
 ### First-Time Setup
 
@@ -31,11 +38,11 @@ Shared local TOTP secret for OTP-enabled accounts: `JBSWY3DPEHPK3PXP` (UTF-8 key
    Postgres, immudb, Keycloak, and auth, then run `seed:dev` inside the auth
    container. That script:
    - Ensures principals for each account (resolving Keycloak `sub` when the Admin API is reachable)
-   - Assigns formal `manager` / `auditor` / `user` / `external` roles (including `mice@example.com`)
+   - Assigns formal `manager` / `auditor` / `user` / `external` roles
    - Leaves **only** `mice_pending` without a role (`/pending` shell)
    - Leaves `mice_admin` to bootstrap Admin on login (`AUTHZ_BOOTSTRAP_ADMINS`)
-   - Creates sample workspace `demo` / `sample` (manager owns it; `mice@example.com` +
-     `mice_user` write; external read)
+   - Creates sample workspace `demo` / `sample` (manager owns it; `mice_user` /
+     `_2` / `_3` write; external read)
 
    Re-seed anytime with `make seed` (stack must already be up).
 
@@ -61,10 +68,12 @@ Shared local TOTP secret for OTP-enabled accounts: `JBSWY3DPEHPK3PXP` (UTF-8 key
 - Read-oriented catalog including private-repo read via `repo:bypass_acl`
 - Has TOTP (auditor routes require MFA evidence)
 
-#### User (`mice_user@mice.com`)
+#### User (`mice_user@mice.com`, `mice_user_2`, `mice_user_3`)
 - Formal `user` role from seed — ready to use without an access request
-- Write in repositories where they are a collaborator
+- `mice_user` is the default local SSO / e2e login (`KEYCLOAK_E2E_USER`)
+- Write in repositories where they are a collaborator (including `demo` / `sample`)
 - Has TOTP for signed writes
+- Extra `_2` / `_3` accounts are for multi-actor flows (e.g. one opens an MR, another signs)
 
 #### External (`mice_external@mice.com`)
 - Formal `external` role from seed
@@ -80,9 +89,9 @@ Shared local TOTP secret for OTP-enabled accounts: `JBSWY3DPEHPK3PXP` (UTF-8 key
 
 | Path | Access |
 |------|--------|
-| `demo` / `sample` | Manager = namespace owner + repo admin; `mice@example.com` + `mice_user` = member + write; External = member + read |
+| `demo` / `sample` | Manager = namespace owner; `mice_user{,_2,_3}` = member + write; External = member + read |
 
-Instance admins stay out of namespace membership (separation of duties). After `make reset` / `make up`, log in as `mice@example.com` and open `/namespaces/demo` or `/namespaces/demo/sample`.
+Instance admins stay out of namespace membership (separation of duties). After `make reset` / `make up`, log in as `mice_user@mice.com` and open `/namespaces/demo` or `/namespaces/demo/sample`.
 
 ## Who becomes an instance admin
 
@@ -95,9 +104,9 @@ AUTHZ_BOOTSTRAP_ADMINS=mice_admin@mice.com
 **What happens:**
 - Login as `mice_admin@mice.com` → Admin (bootstrap; OTP)
 - Login as `mice_no_mfa@mice.com` → User (password-only; after seed)
-- Login as `mice@example.com` / `partner@partner.example` → User (after seed; not bootstrap)
+- Login as `partner@partner.example` → User (after seed; not bootstrap)
 - Login as `mice_manager@mice.com` → Manager (after seed)
-- Login as `mice_user@mice.com` → User (after seed)
+- Login as `mice_user@mice.com` / `_2` / `_3` → User (after seed; OTP)
 - Login as `mice_external@mice.com` → External (after seed)
 - Login as `mice_auditor@mice.com` → Auditor (after seed)
 - Login as `mice_pending@mice.com` → pending until an access request is approved
@@ -139,10 +148,11 @@ make seed
 # Login:
 #    - mice_admin@mice.com   → admin (bootstrap; OTP)
 #    - mice_no_mfa@mice.com  → user (password-only)
-#    - mice@example.com      → user
 #    - mice_manager@mice.com → manager
 #    - mice_auditor@mice.com → auditor
-#    - mice_user@mice.com    → user
+#    - mice_user@mice.com    → user (default SSO; OTP)
+#    - mice_user_2@mice.com  → user (OTP)
+#    - mice_user_3@mice.com  → user (OTP)
 #    - mice_external@mice.com→ external
 #    - mice_pending@mice.com → /pending shell
 ```

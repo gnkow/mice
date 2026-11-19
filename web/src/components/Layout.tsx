@@ -40,7 +40,6 @@ function useCloseDetails(ref: RefObject<HTMLDetailsElement | null>) {
 
 export function Layout() {
   const navigate = useNavigate()
-  const [version, setVersion] = useState<string | null>(null)
   const [connected, setConnected] = useState<boolean | null>(null)
   const [settings, setSettings] = useState(() => loadSettings())
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -90,14 +89,12 @@ export function Layout() {
     const probe = () => {
       const controller = new AbortController()
       fetchServerVersion(controller.signal)
-        .then((data) => {
+        .then(() => {
           if (cancelled) return
-          setVersion(data.oxen_version)
           setConnected(true)
         })
         .catch(() => {
           if (cancelled) return
-          setVersion(null)
           setConnected(false)
         })
       return controller
@@ -300,19 +297,7 @@ export function Layout() {
           <Outlet />
         </div>
         <footer className="site-footer">
-          <span className="muted small">{connected === true ? `Server v${version}` : connected === false ? 'Offline' : 'Checking connection…'}</span>
-          <NavLink to="/">Mice</NavLink>
-          <a href="https://docs.oxen.ai/" rel="noreferrer" target="_blank">
-            Oxen docs
-          </a>
-          <a
-            href="https://docs.oxen.ai/getting-started/oxen-server"
-            rel="noreferrer"
-            target="_blank"
-          >
-            oxen-server
-          </a>
-          <span className="muted small">Self-hosted UI for Oxen</span>
+          <span className="muted small">© {new Date().getFullYear()} Mice</span>
         </footer>
       </div>
     </ReasonPromptProvider>

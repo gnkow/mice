@@ -11,6 +11,7 @@ import {
   pickOtherBranch,
   resolveDefaultBranch,
 } from '../lib/lastBranch'
+import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import { openMergeRequest } from '../lib/mergeRequests'
 import {
   checkMergeable,
@@ -49,6 +50,8 @@ export function MergePage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
+  const [mrTitle, setMrTitle] = useState('')
+  const [mrDescription, setMrDescription] = useState('')
 
   const branches = useAsync(
     (signal) => listBranches(namespace, repo, signal),
@@ -131,6 +134,8 @@ export function MergePage() {
         if (!baseTip || !headTip) {
           throw new Error('Branch tips are required to open a merge request')
         }
+        const title = mrTitle.trim() || `${head} → ${base}`
+        const description = mrDescription.trim()
         const path = `/auth/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/merge-requests`
         const body = {
           sourceBranch: head,
@@ -138,18 +143,17 @@ export function MergePage() {
           expectedSourceHead: headTip,
           expectedTargetHead: baseTip,
           commitIds: mergeData?.commits.map((c) => c.id) ?? [],
+          title,
+          description,
         }
         const ceremony = await askReason({
-          changeSummary: `Open merge request ${head} → ${base}`,
+          changeSummary: `Open merge request “${title}” (${head} → ${base})`,
           detail: 'An electronic signature is required to open this merge request',
           method: 'POST',
           path,
           body,
         })
-        if (!ceremony?.signatureId) {
-          setError('Signing cancelled')
-          return
-        }
+        if (!ceremony?.signatureId) return
         const mr = await openMergeRequest(namespace, repo, {
           ...body,
           reason: ceremony.reason,
@@ -169,6 +173,7 @@ export function MergePage() {
       mergeable.reload()
       branches.reload()
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setError(
         err instanceof OxenApiError
           ? err.message
@@ -383,11 +388,39 @@ export function MergePage() {
                   </>
                 )}
 
+                {base === defaultBranch ? (
+                  <div className="mr-compose">
+                    <label className="mr-compose-field">
+                      Title
+                      <input
+                        type="text"
+                        value={mrTitle}
+                        onChange={(e) => setMrTitle(e.target.value)}
+                        placeholder={`${head} → ${base}`}
+                        maxLength={200}
+                        disabled={busy}
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label className="mr-compose-field">
+                      Description
+                      <textarea
+                        value={mrDescription}
+                        onChange={(e) => setMrDescription(e.target.value)}
+                        placeholder="What changes and why (shown on the request page)."
+                        rows={3}
+                        maxLength={4000}
+                        disabled={busy}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
                 <div className="merge-actions">
                   {base === defaultBranch ? (
                     <p className="muted small" style={{ marginRight: 'auto' }}>
                       Merges into <strong>{base}</strong> require an Approver signature
-                      on the merge-request page.
+                      on the request page.
                     </p>
                   ) : null}
                   <button
@@ -400,8 +433,8 @@ export function MergePage() {
                     {busy
                       ? 'Working…'
                       : base === defaultBranch
-                        ? `Open merge request ${head} → ${base}`
-                        : `Merge ${head} → ${base}`}
+                        ? 'Request'
+                        : 'Merge'}
                   </button>
                 </div>
               </section>

@@ -194,8 +194,10 @@ export function ApproversSection({
   const state = useAsync((signal) => fetchApprovers(scope, signal), [namespace, repo])
   const collabState = useAsync(
     (signal) =>
-      repo ? fetchRepoCollaborators(namespace, repo, signal) : Promise.resolve(null),
-    [namespace, repo],
+      canManage && repo
+        ? fetchRepoCollaborators(namespace, repo, signal)
+        : Promise.resolve(null),
+    [namespace, repo, canManage],
   )
   const [picked, setPicked] = useState<ApproverPrincipal | null>(null)
   const [sub, setSub] = useState('')
@@ -246,7 +248,7 @@ export function ApproversSection({
       setError(
         repo
           ? 'Choose a collaborator to assign as approver'
-          : 'Choose a user from search or enter sub/iss manually',
+          : 'Choose a user from directory search',
       )
       return
     }
@@ -278,9 +280,10 @@ export function ApproversSection({
             Approvers
           </h2>
           <p className="muted small">
-            Approvers {repo ? 'on this repository' : 'across this namespace'} may sign merges into validated
-            branches and revoke signatures for <code>{label}</code>. The role is an explicit grant; Owner,
-            maintain and admin never imply it. Only Owners can change it.
+            Sign merges into validated branches
+            {repo ? '' : ' across this namespace'}. Explicit grant — not implied
+            by Owner or admin
+            {!canManage ? ' (view only for you)' : ''}.
           </p>
         </div>
         <p className="muted small ns-settings-count">

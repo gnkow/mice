@@ -14,6 +14,7 @@ const mr = {
   targetBranch: 'main',
   expectedSourceHead: 'src',
   expectedTargetHead: 'tgt',
+  openedBy: 'https://idp|requester',
 }
 
 const binding = {
@@ -73,6 +74,25 @@ describe('decideSignedMergeComplete (gxp/05)', () => {
     })
     assert.equal(d.ok, false)
     if (!d.ok) assert.equal(d.code, SIGNED_MERGE_REFUSALS.self_merge)
+  })
+
+  it('refuses when the Approver signer also opened the request', () => {
+    const d = decideSignedMergeComplete({
+      mr: { ...mr, openedBy: 'https://idp|approver' },
+      isApprover: true,
+      isValidatedTarget: true,
+      liveSourceHead: 'src',
+      liveTargetHead: 'tgt',
+      authors: ['https://idp|author'],
+      signer: { iss: 'https://idp', sub: 'approver' },
+      signature: { meaning: 'Approved', binding, changeControlId: 'CC-1' },
+      expectedManifestDigest: 'deadbeef',
+    })
+    assert.equal(d.ok, false)
+    if (!d.ok) {
+      assert.equal(d.code, SIGNED_MERGE_REFUSALS.self_merge)
+      assert.match(d.detail, /opened this request/i)
+    }
   })
 
   it('refuses when live heads moved away from the expected binding', () => {

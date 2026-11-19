@@ -42,15 +42,15 @@ describe('decideUserRefLabel', () => {
 
   it('prefers display name', () => {
     assert.equal(
-      decideUserRefLabel({ author, name: 'Mice User', email: 'mice@example.com' }),
-      'Mice User',
+      decideUserRefLabel({ author, name: 'Regular User', email: 'mice_user@mice.com' }),
+      'Regular User',
     )
   })
 
   it('falls back to email local-part', () => {
     assert.equal(
-      decideUserRefLabel({ author, email: 'mice@example.com' }),
-      'mice',
+      decideUserRefLabel({ author, email: 'mice_user@mice.com' }),
+      'mice_user',
     )
   })
 
@@ -64,9 +64,9 @@ describe('decideUserRefUsername', () => {
     assert.equal(
       decideUserRefUsername({
         author: 'http://idp|sub',
-        email: 'mice@example.com',
+        email: 'alice@example.com',
       }),
-      'mice',
+      'alice',
     )
   })
 })

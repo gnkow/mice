@@ -1,6 +1,7 @@
 /* Dev-only: OTP hint beside the one-time code field. */
 .mice-dev-otp-hint {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 0.35rem;
   margin-top: 0.35rem;
@@ -14,14 +15,37 @@
 }
 
 .mice-dev-otp-hint__code {
+  appearance: none;
+  margin: 0;
+  padding: 0.1rem 0.35rem;
+  border: 1px dashed var(--pf-v5-global--BorderColor--200, #d2d2d2);
+  border-radius: 0.25rem;
+  background: var(--pf-v5-global--BackgroundColor--100, #fff);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
   font-size: 1rem;
   letter-spacing: 0.08em;
   color: var(--pf-v5-global--primary-color--100, #06c);
+  cursor: pointer;
   user-select: all;
+}
+
+.mice-dev-otp-hint__code:hover,
+.mice-dev-otp-hint__code:focus-visible {
+  border-color: var(--pf-v5-global--primary-color--100, #06c);
+  outline: 2px solid color-mix(in srgb, var(--pf-v5-global--primary-color--100, #06c) 35%, transparent);
+  outline-offset: 1px;
 }
 
 .mice-dev-otp-hint__ttl {
   opacity: 0.85;
+}
+
+.mice-dev-otp-hint__status {
+  font-weight: 500;
+  color: var(--pf-v5-global--success-color--100, #3e8635);
+}
+
+.mice-dev-otp-hint__status.is-error {
+  color: var(--pf-v5-global--danger-color--100, #c9190b);
 }

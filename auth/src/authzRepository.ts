@@ -519,6 +519,7 @@ export type RepositoryRecord = {
   namespaceId: string
   namespace: string
   name: string
+  description: string
   createdAt: string
   updatedAt: string
 }
@@ -527,6 +528,7 @@ export type RepositorySettingsVersion = {
   validFrom: string
   validTo: string | null
   name: string
+  description: string
 }
 
 async function openRepositorySettingsVersion(
@@ -534,10 +536,12 @@ async function openRepositorySettingsVersion(
   repositoryId: string,
   name: string,
   at: Date,
+  description = '',
 ): Promise<void> {
   await tx.insert(repositorySettingsVersions).values({
     repositoryId,
     name,
+    description,
     validFrom: at,
     validTo: null,
     createdAt: at,
@@ -560,17 +564,18 @@ async function closeOpenRepositorySettingsVersion(
     )
 }
 
-/** Close the open settings version and open the next with the new display name. */
+/** Close the open settings version and open the next snapshot. */
 async function recordRepositorySettingsVersion(
   tx: Tx,
   repositoryId: string,
   name: string,
+  description: string,
   at = new Date(),
 ): Promise<void> {
   await appendVersionInterval({
     at,
     closeOpen: (when) => closeOpenRepositorySettingsVersion(tx, repositoryId, when),
-    openNext: (when) => openRepositorySettingsVersion(tx, repositoryId, name, when),
+    openNext: (when) => openRepositorySettingsVersion(tx, repositoryId, name, when, description),
   })
 }
 
@@ -587,12 +592,13 @@ export async function listRepositorySettingsVersions(
     .where(eq(repositorySettingsVersions.repositoryId, repo.id))
     .orderBy(asc(repositorySettingsVersions.validFrom))
   if (rows.length === 0) {
-    // Pre-versioning rows: surface the live name as the open interval.
+    // Pre-versioning rows: surface the live settings as the open interval.
     return [
       {
         validFrom: repo.createdAt,
         validTo: null,
         name: repo.name,
+        description: repo.description,
       },
     ]
   }
@@ -600,6 +606,7 @@ export async function listRepositorySettingsVersions(
     validFrom: r.validFrom.toISOString(),
     validTo: r.validTo ? r.validTo.toISOString() : null,
     name: r.name,
+    description: r.description,
   }))
 }
 
@@ -612,6 +619,7 @@ function toRepository(
     namespaceId: r.namespaceId,
     namespace,
     name: r.name,
+    description: r.description ?? '',
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   }
@@ -659,7 +667,14 @@ export async function ensureRepository(ns: string, name: string): Promise<Reposi
   try {
     const inserted = await getDb()
       .insert(repositories)
-      .values({ id: randomUUID(), namespaceId: nsId, name, createdAt: now, updatedAt: now })
+      .values({
+        id: randomUUID(),
+        namespaceId: nsId,
+        name,
+        description: '',
+        createdAt: now,
+        updatedAt: now,
+      })
       .onConflictDoNothing()
       .returning()
     if (inserted[0]) return toRepository(inserted[0], ns)
@@ -670,14 +685,15 @@ export async function ensureRepository(ns: string, name: string): Promise<Reposi
 }
 
 /**
- * Mint a stable repository id and grant `adminKey` Admin in one transaction.
- * Shared create-seed path so the AuthZ row and creator Admin seat cannot diverge
- * (mirrors insertOwnedNamespace for repositories).
+ * Mint a stable repository AuthZ row (idempotent on name).
+ * Does **not** add a collaborator seat — repository data access is only via
+ * explicit collaborators; namespace Owners manage that list without a seat.
+ * `createdByKey` is reserved for attribution; collaborator grants stay opt-in.
  */
 export async function createOwnedRepository(
   ns: string,
   name: string,
-  adminKey: string,
+  _createdByKey: string,
 ): Promise<RepositoryRecord | null> {
   const nsId = await namespaceIdByName(ns)
   if (!nsId) return null
@@ -686,7 +702,14 @@ export async function createOwnedRepository(
     const now = new Date()
     const inserted = await tx
       .insert(repositories)
-      .values({ id: randomUUID(), namespaceId: nsId, name, createdAt: now, updatedAt: now })
+      .values({
+        id: randomUUID(),
+        namespaceId: nsId,
+        name,
+        description: '',
+        createdAt: now,
+        updatedAt: now,
+      })
       .onConflictDoNothing()
       .returning()
     let row = inserted[0]
@@ -699,24 +722,8 @@ export async function createOwnedRepository(
       row = existing[0]
       if (!row) return null
     }
-    const prev = (
-      await tx
-        .select()
-        .from(repoCollaborators)
-        .where(and(eq(repoCollaborators.repositoryId, row.id), eq(repoCollaborators.userKey, adminKey)))
-    )[0]?.role
-    if (prev !== 'admin') {
-      await tx
-        .insert(repoCollaborators)
-        .values({ repositoryId: row.id, userKey: adminKey, role: 'admin' })
-        .onConflictDoUpdate({
-          target: [repoCollaborators.repositoryId, repoCollaborators.userKey],
-          set: { role: 'admin' },
-        })
-      await recordCollaboratorVersion(tx, row.id, now)
-    }
     if (inserted[0]) {
-      await openRepositorySettingsVersion(tx, row.id, name, now)
+      await openRepositorySettingsVersion(tx, row.id, name, now, '')
     }
     return toRepository(row, ns)
   })
@@ -764,15 +771,62 @@ export async function renameRepository(ns: string, from: string, to: string): Pr
           ),
         )
         .limit(1)
+      const description = open[0]?.description ?? repo.description ?? ''
       if (!open[0]) {
-        await openRepositorySettingsVersion(tx, repo.id, from, repo.createdAt)
+        await openRepositorySettingsVersion(tx, repo.id, from, repo.createdAt, description)
       }
-      await recordRepositorySettingsVersion(tx, repo.id, next, at)
+      await recordRepositorySettingsVersion(tx, repo.id, next, description, at)
       return { ok: true } as const
     } catch (e) {
       if (isUniqueViolation(e)) return { ok: false, error: 'Repository already exists' } as const
       throw e
     }
+  })
+}
+
+/** Update the About description (versioned). Name is unchanged. */
+export async function updateRepositoryDescription(
+  ns: string,
+  name: string,
+  description: string,
+): Promise<Result> {
+  const next = description.trim()
+  return inTransaction(async (tx) => {
+    const rows = await tx
+      .select({ repo: repositories })
+      .from(repositories)
+      .innerJoin(namespaces, eq(namespaces.id, repositories.namespaceId))
+      .where(and(eq(namespaces.name, ns), eq(repositories.name, name)))
+      .for('update')
+    if (!rows[0]) return { ok: false, error: 'Repository not found' } as const
+    const { repo } = rows[0]
+    if ((repo.description ?? '') === next) return { ok: true } as const
+    const at = new Date()
+    await tx
+      .update(repositories)
+      .set({ description: next, updatedAt: at })
+      .where(eq(repositories.id, repo.id))
+    const open = await tx
+      .select()
+      .from(repositorySettingsVersions)
+      .where(
+        and(
+          eq(repositorySettingsVersions.repositoryId, repo.id),
+          isNull(repositorySettingsVersions.validTo),
+        ),
+      )
+      .limit(1)
+    if (!open[0]) {
+      await openRepositorySettingsVersion(
+        tx,
+        repo.id,
+        repo.name,
+        repo.createdAt,
+        repo.description ?? '',
+      )
+    }
+    await recordRepositorySettingsVersion(tx, repo.id, repo.name, next, at)
+    return { ok: true } as const
   })
 }
 

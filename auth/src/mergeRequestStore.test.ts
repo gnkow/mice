@@ -16,6 +16,7 @@ const {
   resyncMergeRequest,
   markMergeRequestMerged,
   decideMergeRequestComplete,
+  rejectMergeRequest,
 } = await import('./mergeRequestStore.js')
 
 const root = t.person('root')
@@ -35,14 +36,19 @@ describe('merge request store (repositories/02)', () => {
       expectedSourceHead: 'aaa111',
       expectedTargetHead: 'bbb222',
       openedBy: { iss: root.iss, sub: root.sub },
+      title: 'Ship assay fix',
+      description: 'Includes QC notes',
     })
     assert.equal(mr.status, 'open')
     assert.equal(mr.expectedSourceHead, 'aaa111')
     assert.equal(mr.expectedTargetHead, 'bbb222')
+    assert.equal(mr.title, 'Ship assay fix')
+    assert.equal(mr.description, 'Includes QC notes')
     const listed = await listMergeRequests(repo.id)
     assert.ok(listed.some((row) => row.id === mr.id))
     const got = await getMergeRequest(mr.id)
     assert.equal(got?.sourceBranch, 'feature')
+    assert.equal(got?.title, 'Ship assay fix')
   })
 
   it('resync marks stale when the target tip moved, then restores open with new heads', async () => {
@@ -114,5 +120,36 @@ describe('merge request store (repositories/02)', () => {
     const merged = await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-sha' })
     assert.equal(merged.status, 'merged')
     assert.equal(merged.mergeCommitId, 'merge-sha')
+  })
+
+  it('rejects an open MR to blocked and refuses merged', async () => {
+    const open = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'lab',
+      repo: 'assay',
+      sourceBranch: 'reject-me',
+      targetBranch: 'main',
+      expectedSourceHead: 'rs',
+      expectedTargetHead: 'rt',
+      openedBy: { iss: root.iss, sub: root.sub },
+    })
+    const rejected = await rejectMergeRequest(open.id)
+    assert.equal(rejected.ok, true)
+    if (rejected.ok) assert.equal(rejected.mergeRequest.status, 'blocked')
+
+    const merged = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'lab',
+      repo: 'assay',
+      sourceBranch: 'already-merged',
+      targetBranch: 'main',
+      expectedSourceHead: 'ms',
+      expectedTargetHead: 'mt',
+      openedBy: { iss: root.iss, sub: root.sub },
+    })
+    await markMergeRequestMerged(merged.id, { mergeCommitId: 'm1' })
+    const refuse = await rejectMergeRequest(merged.id)
+    assert.equal(refuse.ok, false)
+    if (!refuse.ok) assert.equal(refuse.code, 'not_rejectable')
   })
 })

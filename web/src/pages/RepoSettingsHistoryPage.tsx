@@ -26,7 +26,7 @@ export function RepoSettingsHistoryPage() {
           </p>
           <h1>Settings history</h1>
           <p className="lede">
-            Successive repository settings (display name) for{' '}
+            Successive repository settings (display name and description) for{' '}
             <code>
               {namespace}/{repo}
             </code>
@@ -59,6 +59,11 @@ export function RepoSettingsHistoryPage() {
                         <strong>{v.name}</strong>
                         {v.validTo === null ? <span className="ns-tag"> current</span> : null}
                       </p>
+                      {v.description?.trim() ? (
+                        <p className="muted small">{v.description.trim()}</p>
+                      ) : (
+                        <p className="muted small">No description</p>
+                      )}
                       <p className="muted small">
                         {new Date(v.validFrom).toLocaleString()}
                         {v.validTo ? ` → ${new Date(v.validTo).toLocaleString()}` : ' → present'}

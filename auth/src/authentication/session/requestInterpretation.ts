@@ -89,12 +89,20 @@ export function classifyPath(
       }
     }
     if (rest[0] === 'merge' || rest[0] === 'merges') {
-      return { action: 'merge', namespace, repo }
+      const range = rest[1] ? safeDecode(rest[1]) : undefined
+      const target = range?.split('..')[0]?.trim()
+      return {
+        action: 'merge',
+        namespace,
+        repo,
+        detail: target ? { branch: target } : undefined,
+      }
     }
     if (rest[0] === 'workspaces') {
       // All workspace.* actions share the `workspace` prefix, which authz keys on.
       const workspaceId = rest[1] ? safeDecode(rest[1]) : undefined
       const sub = rest[2]
+      const branch = rest[3] ? safeDecode(rest[3]) : undefined
       let action = 'workspace.other'
       if (method === 'POST' && rest.length === 1) action = 'workspace.create'
       else if (method === 'DELETE' && rest.length === 2) {
@@ -109,7 +117,10 @@ export function classifyPath(
         action,
         namespace,
         repo,
-        detail: workspaceId ? { workspace_id: workspaceId } : undefined,
+        detail: {
+          ...(workspaceId ? { workspace_id: workspaceId } : {}),
+          ...(branch && (sub === 'commit' || sub === 'merge') ? { branch } : {}),
+        },
       }
     }
     if (method === 'DELETE' && rest.length === 0) {

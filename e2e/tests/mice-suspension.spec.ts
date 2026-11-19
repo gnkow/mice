@@ -1,4 +1,5 @@
 import { test, expect, openAccountMenu } from '../fixtures'
+import { mockDirectorySearch, pickFromDirectory } from '../helpers/directory'
 import { uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 
@@ -33,9 +34,19 @@ test.describe('Mice suspension (#28)', () => {
       .click()
     await page.getByRole('link', { name: 'Suspension', exact: true }).click()
 
+    const targetSub = `mice-target-${Date.now()}`
+    await mockDirectorySearch(page, [
+      {
+        kind: 'user',
+        sub: targetSub,
+        iss: 'mice-e2e',
+        name: 'Mice Target',
+        email: `${targetSub}@mice.local`,
+      },
+    ])
+
     const section = page.locator('#mice-suspension')
-    await section.getByRole('button', { name: 'Manual entry' }).click()
-    await section.getByLabel('Subject (sub)').fill(`mice-target-${Date.now()}`)
+    await pickFromDirectory(section, targetSub, /Mice Target|mice-target/)
     await section.getByRole('button', { name: 'Suspend' }).click()
     await expect(section.getByRole('alert')).toContainText(/Reason must be at least 10 characters/i)
   })

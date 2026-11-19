@@ -6,6 +6,7 @@ import {
   getMergeRequest,
   listMergeRequests,
   openMergeRequest,
+  rejectMergeRequest,
   resyncMergeRequest,
 } from './mergeRequestStore.js'
 import { getCommitQc, markCommitsQc } from './commitQcStore.js'
@@ -73,6 +74,8 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         expectedSourceHead?: string
         expectedTargetHead?: string
         commitIds?: string[]
+        title?: string
+        description?: string
       }
       if (
         !body.sourceBranch?.trim() ||
@@ -91,6 +94,8 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         expectedSourceHead: body.expectedSourceHead.trim(),
         expectedTargetHead: body.expectedTargetHead.trim(),
         openedBy: { iss: user.iss, sub: user.sub },
+        title: typeof body.title === 'string' ? body.title : undefined,
+        description: typeof body.description === 'string' ? body.description : undefined,
       })
       if (Array.isArray(body.commitIds) && body.commitIds.length > 0) {
         await markCommitsQc(repo.id, body.commitIds.map(String), 'marked', {
@@ -163,6 +168,33 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         detail: { mergeRequestId: mr.id, status: next.status },
       })
       return c.json({ mergeRequest: next })
+    }),
+  )
+
+  app.post(
+    '/auth/merge-requests/:id/reject',
+    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, audit }) => {
+      const mr = await getMergeRequest(c.req.param('id'))
+      if (!mr) return c.json({ error: 'Not found' }, 404)
+      if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'write')).ok) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
+      const result = await rejectMergeRequest(mr.id)
+      if (!result.ok) {
+        if (result.code === 'not_found') return c.json({ error: 'Not found' }, 404)
+        return c.json(
+          { error: 'Merge request cannot be rejected', code: 'not_rejectable' },
+          400,
+        )
+      }
+      await audit({
+        action: 'merge_request.reject',
+        message: `Rejected MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
+        namespace: mr.namespace,
+        repo: mr.repo,
+        detail: { mergeRequestId: mr.id, status: result.mergeRequest.status },
+      })
+      return c.json({ mergeRequest: result.mergeRequest })
     }),
   )
 

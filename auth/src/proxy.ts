@@ -39,12 +39,14 @@ import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
 import { nonCanonicalPathReason } from './pathCanonical.js'
 import {
+  ensureBranchCreateSourceTip,
   filterNamespaceCatalog,
   finalizeProxiedRepoCreate,
   recordAclBypassRead,
   stampRepositoryIdOnRepoDetail,
 } from './proxyEffects.js'
 import {
+  initialCommitMessageFromBody,
   physicalCreateBody,
   rewriteNamespacePathToPhysical,
   rewriteOxenJsonToDisplay,
@@ -64,6 +66,10 @@ import {
   decideSelfMerge,
   selfMergeAuditDetail,
 } from './selfMerge.js'
+import {
+  branchTargetFromPath,
+  decideValidatedBranchWrite,
+} from './validatedBranchWrite.js'
 
 const HOP_BY_HOP = new Set([
   'connection',
@@ -417,6 +423,40 @@ export async function proxyToOxen(
     }
   }
 
+  // Validated default branch: no direct tip-changing writes (signed MR only).
+  if (mutating) {
+    const branch =
+      (typeof classified.detail?.branch === 'string'
+        ? classified.detail.branch
+        : undefined) ?? branchTargetFromPath(pathname)
+    const validated = decideValidatedBranchWrite({
+      action: classified.action,
+      branch,
+    })
+    if (!validated.allow) {
+      if (intent) {
+        const fields = auditFields(403)
+        await appendOutcome(intent.id, {
+          ...fields,
+          detail: {
+            ...fields.detail,
+            validated_branch: true,
+            branch: validated.branch,
+            reason: validated.reason,
+          },
+        })
+      }
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          status_message: 'forbidden',
+          error: { detail: validated.reason, code: 'validated_branch' },
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      )
+    }
+  }
+
   // Repositories: 4-eyes self-merge check (authz already enforced the role floor above).
   let mergeAuthors: string[] | undefined
   if (mutating && classified.action === 'merge') {
@@ -534,6 +574,7 @@ export async function proxyToOxen(
   let upstreamPath = pathname
   let upstreamBody = body
   let createdPhysical: { namespaceId: string; repositoryId: string } | null = null
+  let initialCommitMessage: string | undefined
   if (
     (classified.action === 'repo.create' || (pathname === '/api/repos' && method === 'POST')) &&
     ns &&
@@ -550,6 +591,17 @@ export async function proxyToOxen(
         { status: 403, headers: { 'content-type': 'application/json' } },
       )
     }
+    initialCommitMessage =
+      initialCommitMessageFromBody(signatureBody) ??
+      (typeof body === 'string'
+        ? (() => {
+            try {
+              return initialCommitMessageFromBody(JSON.parse(body))
+            } catch {
+              return undefined
+            }
+          })()
+        : undefined)
     upstreamBody = physicalCreateBody(
       typeof body === 'string' ? body : undefined,
       createdPhysical,
@@ -566,6 +618,26 @@ export async function proxyToOxen(
   ) {
     const namespaceId = await resolveNamespaceId(ns)
     upstreamPath = rewriteNamespacePathToPhysical(pathname, namespaceId)
+  }
+
+  // Empty-repo branch create: materialize missing `from_name` as an empty tip
+  // (oxen cannot fork without a commit). No files are seeded.
+  if (mutating && classified.action === 'branch.create' && ns && repo) {
+    let fromName: string | undefined
+    const fromSig =
+      signatureBody && typeof signatureBody === 'object' && !Array.isArray(signatureBody)
+        ? (signatureBody as Record<string, unknown>).from_name
+        : undefined
+    if (typeof fromSig === 'string') fromName = fromSig
+    else if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body) as { from_name?: unknown }
+        if (typeof parsed.from_name === 'string') fromName = parsed.from_name
+      } catch {
+        /* ignore */
+      }
+    }
+    await ensureBranchCreateSourceTip(ns, repo, fromName, user)
   }
 
   let upstream: Response
@@ -629,7 +701,9 @@ export async function proxyToOxen(
       repo &&
       typeof responseBody === 'string'
     ) {
-      responseBody = await finalizeProxiedRepoCreate(user, ns, repo, responseBody)
+      responseBody = await finalizeProxiedRepoCreate(user, ns, repo, responseBody, {
+        initialCommitMessage,
+      })
     }
   }
 
@@ -703,6 +777,8 @@ export async function proxyToOxen(
       (namespaceId, repositoryId) =>
         displayRepoCache.get(`${namespaceId}\0${repositoryId}`) ?? null,
     )
+    const { rewriteCommitAuthorsInOxenJson } = await import('./commitAttributionStore.js')
+    responseBody = await rewriteCommitAuthorsInOxenJson(responseBody)
   }
 
   const resHeaders = new Headers()

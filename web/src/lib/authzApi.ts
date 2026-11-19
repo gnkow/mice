@@ -458,7 +458,7 @@ export function deleteNamespaceAuthz(
   )
 }
 
-/** Caller-facing capabilities for repository settings chrome. */
+/** Caller-facing capabilities for repository settings chrome + file browser. */
 export type RepoViewerPermissions = {
   rename: boolean
   transfer: boolean
@@ -467,6 +467,8 @@ export type RepoViewerPermissions = {
   editMetadata: boolean
   deleteRepository: boolean
   viewSignedRecord: boolean
+  /** Tip-changing file ops (upload/rename/move/copy/delete). */
+  contentsWrite: boolean
 }
 
 const NO_REPO_PERMISSIONS: RepoViewerPermissions = {
@@ -477,6 +479,7 @@ const NO_REPO_PERMISSIONS: RepoViewerPermissions = {
   editMetadata: false,
   deleteRepository: false,
   viewSignedRecord: false,
+  contentsWrite: false,
 }
 
 export async function fetchRepoPermissions(
@@ -484,11 +487,25 @@ export async function fetchRepoPermissions(
   repo: string,
   signal?: AbortSignal,
 ) {
-  const data = await authzFetch<{ permissions?: RepoViewerPermissions }>(
+  const data = await authzFetch<{ permissions?: Partial<RepoViewerPermissions> }>(
     `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/permissions`,
     { signal },
   )
-  return data.permissions ?? NO_REPO_PERMISSIONS
+  return { ...NO_REPO_PERMISSIONS, ...(data.permissions ?? {}) }
+}
+
+export type AuthzRepository = {
+  id: string
+  namespace: string
+  name: string
+  description: string
+}
+
+export function fetchAuthzRepository(ns: string, repo: string, signal?: AbortSignal) {
+  return authzFetch<{ repository: AuthzRepository }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}`,
+    { signal },
+  )
 }
 
 /** Display-name rename; oxen path stays on the stable repository id. */
@@ -497,10 +514,23 @@ export function renameRepoAuthz(ns: string, repo: string, name: string) {
     ok: boolean
     namespace: string
     name: string
-    repository: { id: string; namespace: string; name: string } | null
+    repository: AuthzRepository | null
   }>(`/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}`, {
     method: 'PATCH',
     body: JSON.stringify({ name }),
+  })
+}
+
+/** Update the About description shown in the repo sidebar. */
+export function updateRepoDescriptionAuthz(ns: string, repo: string, description: string) {
+  return authzFetch<{
+    ok: boolean
+    namespace: string
+    name: string
+    repository: AuthzRepository | null
+  }>(`/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ description }),
   })
 }
 
@@ -888,6 +918,7 @@ export type RepoSettingsVersion = {
   validFrom: string
   validTo: string | null
   name: string
+  description: string
 }
 
 export function fetchRepoSettingsHistory(ns: string, repo: string, signal?: AbortSignal) {
