@@ -1106,9 +1106,9 @@ This allows future **wildcard permissions**:
 | `mice_admin@mice.com` | `admin` | Instance administrator (bootstrap; MFA/OTP) |
 | `mice_manager@mice.com` | `manager` | Team manager / signed ceremonies (MFA/OTP) |
 | `mice_auditor@mice.com` | `auditor` | Compliance auditor (MFA/OTP) |
-| `mice_user@mice.com` | `user` | Default SSO / e2e user (MFA/OTP) |
-| `mice_user_2@mice.com` | `user` | Second MFA collaborator |
-| `mice_user_3@mice.com` | `user` | Third MFA collaborator |
+| `mice_user@mice.com` | `user` | Default SSO / e2e user (MFA/OTP); IdP group `engineering` |
+| `mice_user_2@mice.com` | `user` | Second MFA collaborator; IdP group `engineering` |
+| `mice_user_3@mice.com` | `user` | Third MFA collaborator; IdP group `engineering` |
 | `mice_no_mfa@mice.com` | `user` | Password-only control (not admin) |
 | `partner@partner.example` | `user` | SAML broker e2e (password-only) |
 | `mice_external@mice.com` | `external` | External collaborator |

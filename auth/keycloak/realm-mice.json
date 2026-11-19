@@ -268,6 +268,7 @@
       "emailVerified": true,
       "firstName": "Regular",
       "lastName": "User Two",
+      "groups": ["/engineering"],
       "totp": true,
       "credentials": [
         {
@@ -291,6 +292,7 @@
       "emailVerified": true,
       "firstName": "Regular",
       "lastName": "User Three",
+      "groups": ["/engineering"],
       "totp": true,
       "credentials": [
         {

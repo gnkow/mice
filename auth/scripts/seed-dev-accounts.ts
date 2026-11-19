@@ -19,6 +19,7 @@
  * Sample workspace (idempotent): namespace `demo` / repo `sample`
  * - Manager is namespace Owner only (no auto repo collaborator seat)
  * - `mice_user`, `mice_user_2`, `mice_user_3` are namespace members + repo write
+ *   and share Keycloak IdP group `engineering` (realm-mice.json) for group-grant tests
  * - External is namespace member + repo read
  * - Oxen `main` exists as an empty tip (workspace init; no seed files)
  *

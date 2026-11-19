@@ -796,10 +796,19 @@ function UsersGrantSection({
             Admin to another role is refused while two or fewer instance admins remain.
           </p>
         </div>
-        <button type="button" className="btn primary small" onClick={() => openGrant()}>
-          <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />
-          Grant Access
-        </button>
+        <div className="btn-row">
+          <span
+            className="status-pill ok"
+            role="status"
+            aria-label="IdP group bootstrap: off — manual grants only"
+          >
+            Manual grants only
+          </span>
+          <button type="button" className="btn primary small" onClick={() => openGrant()}>
+            <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />
+            Grant Access
+          </button>
+        </div>
       </div>
 
       {error && (

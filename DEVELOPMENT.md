@@ -13,9 +13,9 @@ Accounts live in `auth/keycloak/realm-mice.json`; formal roles and the `demo` / 
 | `mice_admin` | `mice_admin@mice.com` | `admin123` | `admin` | TOTP | Bootstrap instance admin (`AUTHZ_BOOTSTRAP_ADMINS`) |
 | `mice_manager` | `mice_manager@mice.com` | `manage123` | `manager` | TOTP | Owns namespace `demo`; signed ceremonies |
 | `mice_auditor` | `mice_auditor@mice.com` | `auditor123` | `auditor` | TOTP | Read / `repo:bypass_acl` |
-| `mice_user` | `mice_user@mice.com` | `user123` | `user` | TOTP | Default SSO / e2e (`KEYCLOAK_E2E_USER`); `demo/sample` write |
-| `mice_user_2` | `mice_user_2@mice.com` | `user2123` | `user` | TOTP | Second MFA collaborator; `demo/sample` write |
-| `mice_user_3` | `mice_user_3@mice.com` | `user3123` | `user` | TOTP | Third MFA collaborator; `demo/sample` write |
+| `mice_user` | `mice_user@mice.com` | `user123` | `user` | TOTP | Default SSO / e2e (`KEYCLOAK_E2E_USER`); `demo/sample` write; IdP group `engineering` |
+| `mice_user_2` | `mice_user_2@mice.com` | `user2123` | `user` | TOTP | Second MFA collaborator; `demo/sample` write; IdP group `engineering` |
+| `mice_user_3` | `mice_user_3@mice.com` | `user3123` | `user` | TOTP | Third MFA collaborator; `demo/sample` write; IdP group `engineering` |
 | `mice_no_mfa` | `mice_no_mfa@mice.com` | `nomfa123` | `user` | — | Password-only control; Profile MFA **No**; ceremonies refuse |
 | `mice_external` | `mice_external@mice.com` | `external123` | `external` | — | Guest; `demo/sample` read |
 | `mice_pending` | `mice_pending@mice.com` | `pending123` | *(none)* | — | `/pending` request wizard |
