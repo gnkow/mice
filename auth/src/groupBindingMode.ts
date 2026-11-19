@@ -45,15 +45,7 @@ export function groupBindingAssessment(
 export function assessGroupBindingMode(sampleGroups: readonly string[]): GroupBindingAssessment {
   const samples = sampleGroups.map((g) => g.trim()).filter(Boolean)
   if (samples.length === 0 || samples.some((g) => !isGroupObjectId(g))) {
-    return {
-      mode: 'id-based',
-      message: GROUP_BINDING_NAME_BASED_MESSAGE,
-      warning: true,
-    }
+    return groupBindingAssessment('id-based', GROUP_BINDING_NAME_BASED_MESSAGE)
   }
-  return {
-    mode: 'id-based',
-    message: GROUP_BINDING_ID_BASED_MESSAGE,
-    warning: false,
-  }
+  return groupBindingAssessment('id-based')
 }

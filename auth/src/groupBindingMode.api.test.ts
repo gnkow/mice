@@ -1,7 +1,7 @@
 import './db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
-import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
+import { isolatedAuth } from './testSupport.js'
 import {
   GROUP_BINDING_ID_BASED_MESSAGE,
   GROUP_BINDING_NAME_BASED_MESSAGE,
@@ -26,18 +26,10 @@ await preparePrincipal(admin)
 
 after(() => iso.restore())
 
-async function checkHeaders(body: { sampleGroups: string[] }) {
-  const signed = await regulatedMutationHeaders(admin, {
-    method: 'POST',
-    path: '/auth/instance/group-binding/check',
-    body,
-    reason: 'Validate group binding mode for the instance',
-    category: 'privileged_settings',
-  })
+async function checkHeaders() {
   return {
     ...(await iso.sessionHeaders(admin)),
-    ...signed,
-    'x-mice-change-control-id': 'CC-2026-114',
+    'content-type': 'application/json',
   }
 }
 
@@ -66,7 +58,7 @@ describe('instance group-binding validation API', () => {
     const body = { sampleGroups: ['11111111-1111-4111-8111-111111111111'] }
     const res = await app.request('/auth/instance/group-binding/check', {
       method: 'POST',
-      headers: await checkHeaders(body),
+      headers: await checkHeaders(),
       body: JSON.stringify(body),
     })
     assert.equal(res.status, 200)
@@ -88,7 +80,7 @@ describe('instance group-binding validation API', () => {
     const body = { sampleGroups: ['Quality Team'] }
     const res = await app.request('/auth/instance/group-binding/check', {
       method: 'POST',
-      headers: await checkHeaders(body),
+      headers: await checkHeaders(),
       body: JSON.stringify(body),
     })
     assert.equal(res.status, 200)
@@ -102,7 +94,7 @@ describe('instance group-binding validation API', () => {
     const body = { sampleGroups: ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'] }
     const res = await app.request('/auth/instance/group-binding/check', {
       method: 'POST',
-      headers: await checkHeaders(body),
+      headers: await checkHeaders(),
       body: JSON.stringify(body),
     })
     assert.equal(res.status, 200)
