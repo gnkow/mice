@@ -79,7 +79,11 @@ import {
   type PendingSignedMutation,
 } from '../lib/signingResume'
 import { buildDirectGrantBodies } from '../lib/directGrantForm'
-import { delegatedExpiryLabel, delegatedExpiryTone } from '../lib/delegatedExpiry'
+import {
+  decideDelegatedGrantForm,
+  delegatedExpiryLabel,
+  delegatedExpiryTone,
+} from '../lib/delegatedExpiry'
 import { profileRoleBadge } from '../lib/profileRoleBadge'
 import { togglePermission } from '../lib/requestAccessForm'
 import { fetchServerVersion } from '../lib/oxen/api'
@@ -1162,13 +1166,13 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
       setError('Choose a user from directory search')
       return
     }
-    if (permChecks.length > 0 && !expiresLocal.trim()) {
-      setError('Expiry date is required for delegated permissions')
-      return
-    }
     const expiresAt = permChecks.length > 0 ? new Date(expiresLocal).getTime() : undefined
-    if (permChecks.length > 0 && (expiresAt == null || !Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
-      setError('Expiry must be a future date and time')
+    const refusal = decideDelegatedGrantForm({
+      permissions: permChecks,
+      expiresAtMs: expiresAt ?? null,
+    })
+    if (refusal) {
+      setError(refusal)
       return
     }
     setBusy(true)
