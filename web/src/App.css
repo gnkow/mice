@@ -3046,6 +3046,16 @@ p.ok {
   font-weight: 600;
 }
 
+/* Subheads after flashes/facts/forms need clear separation from prior blocks. */
+.settings-section > .ns-settings-subhead {
+  margin-top: 1.75rem;
+}
+
+.settings-section > .ns-settings-section-head + .ns-settings-subhead,
+.settings-section > .flash + .ns-settings-subhead {
+  margin-top: 1.1rem;
+}
+
 .ns-member-list {
   list-style: none;
   margin: 0;

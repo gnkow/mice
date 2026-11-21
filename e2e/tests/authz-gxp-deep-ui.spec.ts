@@ -385,7 +385,7 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.route('**/auth/admin/seal-keys/rotate', (route) => route.fulfill(ceremonyRejection))
 
       await page.goto('/settings')
-      await page.getByRole('link', { name: 'Seal keys', exact: true }).click()
+      await page.getByRole('link', { name: 'Session cookie keys', exact: true }).click()
       const section = page.locator('#seal-key-rotation')
       await section.getByRole('button', { name: 'Perform Normal Rotation' }).click()
       const dialog = page.getByRole('dialog', { name: /Reason and signature required/i })

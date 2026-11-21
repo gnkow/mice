@@ -14,3 +14,9 @@ export function instanceGate(action: InstanceAction): (user: SessionUser) => Pro
     return d.allow ? null : d.reason
   }
 }
+
+/**
+ * Admin-role-only gate (ticket 20). Prefer this over local `isInstanceAdmin` copies —
+ * same decide as `instance.admin`.
+ */
+export const adminRoleGate = instanceGate('instance.admin')

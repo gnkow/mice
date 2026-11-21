@@ -560,9 +560,13 @@ type InstancePolicy = {
   reason: string
 }
 
+/** Refusal when a non-Admin principal attempts an Admin-role-only instance action. */
+export const INSTANCE_ADMIN_REQUIRED = 'Instance admin required'
+
 /**
  * Instance-wide actions: allowed when the principal's effective RBAC permissions
- * include any listed permission. Boolean instance-admin no longer short-circuits.
+ * include any listed permission. `instance.admin` is Admin-role-only (no permission
+ * substitute, no boolean flag).
  */
 const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
   'tokens.manage': { permissions: ['tokens:create', 'tokens:list', 'tokens:revoke'], credential: 'any', reason: 'Missing permission tokens:create' },
@@ -570,7 +574,7 @@ const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
   'audit.view': { permissions: ['audit:read'], credential: 'any', reason: 'Missing permission audit:read' },
   'lineage.view': { permissions: ['lineage:read'], credential: 'any', reason: 'Missing permission lineage:read' },
   'store.admin': { permissions: ['store:gc', 'store:scrub'], credential: 'unscoped', reason: 'Missing permission store:gc' },
-  'instance.admin': { permissions: ['instance:admins:add', 'instance:settings:update'], credential: 'any', reason: 'Missing permission instance:admins:add' },
+  'instance.admin': { permissions: [], credential: 'any', reason: INSTANCE_ADMIN_REQUIRED },
   'directory.sync': { permissions: ['instance:settings:update'], credential: 'any', reason: 'Missing permission instance:settings:update' },
   'namespace.create': { permissions: ['namespace:create'], credential: 'any', reason: 'Missing permission namespace:create' },
   'access.review.all': { permissions: ['access_request:review'], credential: 'any', reason: 'Missing permission access_request:review' },
@@ -583,6 +587,10 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
   const policy = INSTANCE_ACTION_POLICY[action]
   if (policy.credential === 'unscoped' && isScopedCredential(user)) {
     return denied(policy.reason)
+  }
+  // Admin role is the only source for platform-admin actions (ticket 20).
+  if (action === 'instance.admin') {
+    return (await isInstanceAdmin(user)) ? ALLOWED : denied(INSTANCE_ADMIN_REQUIRED)
   }
   // Auditor MFA is gated once in authenticate() via auditorMfaRefusal — not repeated here.
   for (const p of policy.permissions) {

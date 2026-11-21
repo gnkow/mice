@@ -47,7 +47,7 @@ test.describe('Seal key rotation schedule (#34)', () => {
 
     await page.goto('/')
     await openSettings(page)
-    await page.getByRole('link', { name: 'Seal keys', exact: true }).click()
+    await page.getByRole('link', { name: 'Session cookie keys', exact: true }).click()
 
     const section = page.locator('#seal-key-rotation')
     await expect(section.getByRole('heading', { name: 'Automatic rotation schedule' })).toBeVisible()

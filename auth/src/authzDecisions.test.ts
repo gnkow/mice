@@ -36,7 +36,7 @@ const INSTANCE_CASES: InstanceCase[] = [
   { action: 'audit.view', grantRole: 'manager', reason: 'Missing permission audit:read', adminDenied: true },
   { action: 'lineage.view', grantRole: 'manager', reason: 'Missing permission lineage:read', adminDenied: true },
   { action: 'store.admin', grantRole: 'admin', reason: 'Missing permission store:gc', unscopedOnly: true },
-  { action: 'instance.admin', grantRole: 'admin', reason: 'Missing permission instance:admins:add' },
+  { action: 'instance.admin', grantRole: 'admin', reason: 'Instance admin required' },
   { action: 'directory.sync', grantRole: 'admin', reason: 'Missing permission instance:settings:update' },
   { action: 'namespace.create', grantRole: 'manager', reason: 'Missing permission namespace:create', adminDenied: true },
   { action: 'access.review.all', grantRole: 'manager', reason: 'Missing permission access_request:review' },

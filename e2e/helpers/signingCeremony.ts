@@ -173,7 +173,7 @@ export async function signViaLiveSealKeyRotation(page: Page): Promise<void> {
 
   try {
     await page.goto('/settings')
-    await page.getByRole('link', { name: 'Seal keys', exact: true }).click()
+    await page.getByRole('link', { name: 'Session cookie keys', exact: true }).click()
     const section = page.locator('#seal-key-rotation')
     const rotate = section.getByRole('button', { name: /Perform Normal Rotation/i })
     await expect(rotate).toBeVisible()

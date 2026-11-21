@@ -1032,16 +1032,9 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   const [revokeIss, setRevokeIss] = useState(signedInIss)
   const [notice, setNotice] = useState<string | null>(null)
 
-  if (state.kind === 'error') {
-    return (
-      <section className="settings-section">
-        <h2>Instance admin</h2>
-        <p className="flash flash-error" role="status">{state.message}</p>
-      </section>
-    )
-  }
-
   const data = state.kind === 'ok' ? state.data : null
+  const adminCount = data?.admins.length ?? 0
+  const floorMet = adminCount >= 2
 
   async function onRevokeSessions(e: FormEvent) {
     e.preventDefault()
@@ -1065,33 +1058,65 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   }
 
   return (
-    <>
-      {error && <p className="flash flash-error" role="status">{error}</p>}
-      {state.kind === 'loading' && <p className="muted">Loading…</p>}
-      {data && (
+    <section id="instance-administrators" className="settings-section" aria-labelledby="instance-administrators-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="instance-administrators-heading">
+            <ShieldUser size={18} className="button-label-icon" aria-hidden="true" />
+            Instance administrators
+          </h2>
+          <p className="muted small">
+            Admin role only (grant under Users; last two admins protected). Bootstrap re-grants on login.
+            Platform management only — no namespace membership, repository data, or audit trail.
+          </p>
+        </div>
+        {data ? (
+          <span
+            className={`status-pill ${floorMet ? 'ok' : 'warn'}`}
+            role="status"
+            aria-label={floorMet ? `Admin floor met: ${adminCount} admins` : `Admin floor short: ${adminCount} admins`}
+          >
+            {adminCount === 1 ? '1 admin' : `${adminCount} admins`}
+          </span>
+        ) : null}
+      </div>
+
+      {state.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
+
+      {state.kind === 'error' ? (
+        <p className="flash flash-error" role="alert">
+          {state.message}
+        </p>
+      ) : null}
+
+      {data ? (
         <>
-          <section id="instance-administrators" className="settings-section" aria-labelledby="instance-administrators-heading">
-          <div className="ns-settings-section-head ns-settings-section-head-tight">
-            <div>
-              <h2 id="instance-administrators-heading"><ShieldUser size={18} className="button-label-icon" aria-hidden="true" />Instance administrators</h2>
-              <p className="muted small">
-                Principals holding the Admin role. Grant or change the role under Users; the role cannot be taken from the last two admins.
-                A Bootstrap mark means this Principal is on AUTHZ_BOOTSTRAP_ADMINS and receives the Admin role again on the next login.
-                Instance admins manage the platform only — no namespace membership, repository data, or audit trail (separation of duties).
-              </p>
+          <dl className="ns-settings-facts" aria-label="Admin role floor">
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Source</dt>
+              <dd className="ns-settings-fact-value" role="status">
+                <span className="status-pill ok">Admin role</span>
+              </dd>
             </div>
-            <p className="muted small ns-settings-count">
-              {data.admins.length === 1 ? '1 admin' : `${data.admins.length} admins`}
-            </p>
-          </div>
-          <ul className="ns-member-list">
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Floor</dt>
+              <dd className="ns-settings-fact-value" role="status">
+                <span className={floorMet ? 'status-pill ok' : 'status-pill warn'}>
+                  {floorMet ? 'At least two' : 'Need two'}
+                </span>
+              </dd>
+            </div>
+          </dl>
+
+          <ul className="ns-member-list" aria-label="Administrators">
             {data.admins.map((a) => (
               <li key={`${a.iss}\0${a.sub}`} className="ns-member-row">
                 <div className="ns-member-main">
-                  <UserRef
-                    author={`${a.iss}|${a.sub}`}
-                    name={a.name || a.email || a.sub}
-                  />
+                  <UserRef author={`${a.iss}|${a.sub}`} name={a.name || a.email || a.sub} />
                   <span className="muted small">
                     {a.email ? `${a.email} · ` : ''}
                     {a.sub}
@@ -1099,11 +1124,12 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
                     {a.iss}
                   </span>
                 </div>
-                {a.bootstrap && <span className="ns-tag">bootstrap</span>}
-                <span className="ns-tag ns-tag-accent">admin</span>
+                {a.bootstrap ? <span className="status-pill neutral">bootstrap</span> : null}
+                <span className="status-pill active">admin</span>
               </li>
             ))}
           </ul>
+
           <form className="ns-member-form" onSubmit={onRevokeSessions}>
             <h3 className="ns-settings-subhead">Revoke sessions</h3>
             <p className="muted small">Signs the user out everywhere, immediately. They can sign in again.</p>
@@ -1120,15 +1146,25 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
                 }}
               />
               <div className="ns-member-form-actions">
-                <button className="btn danger" type="submit" disabled={busy}>Revoke sessions</button>
+                <button className="btn danger" type="submit" disabled={busy}>
+                  Revoke sessions
+                </button>
               </div>
             </div>
-            {notice ? <p className="muted small" role="status">{notice}</p> : null}
+            {notice ? (
+              <p className="muted small" role="status">
+                {notice}
+              </p>
+            ) : null}
+            {error ? (
+              <p className="flash flash-error" role="alert">
+                {error}
+              </p>
+            ) : null}
           </form>
-          </section>
         </>
-      )}
-    </>
+      ) : null}
+    </section>
   )
 }
 
