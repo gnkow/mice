@@ -2874,6 +2874,59 @@ p.ok {
   line-height: 1.35;
 }
 
+.settings-copy-inline,
+.settings-copy-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem 0.55rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-copy-value {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.settings-copy-pem {
+  flex: 1 1 16rem;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.settings-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--panel) 92%, var(--text));
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.settings-copy-btn:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+}
+
+.ns-settings-incident-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 .ns-settings-field {
   display: flex;
   flex-direction: column;

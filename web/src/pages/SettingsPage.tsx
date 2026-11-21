@@ -24,6 +24,7 @@ import {
   Package,
   Scale,
   DatabaseBackup,
+  Copy as ActionCopy,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -1716,6 +1717,73 @@ function ReleaseManifestSection() {
   )
 }
 
+function chainStatusPill(chain: AuditHealthStatus['readiness']['chain']): {
+  tone: 'ok' | 'warn' | 'bad' | 'neutral'
+  label: string
+} {
+  switch (chain) {
+    case 'ok':
+      return { tone: 'ok', label: 'Intact' }
+    case 'broken':
+      return { tone: 'bad', label: 'Broken' }
+    case 'acknowledged':
+      return { tone: 'warn', label: 'Acknowledged break' }
+    case 'unverified':
+      return { tone: 'neutral', label: 'Unverified' }
+  }
+}
+
+/** Copyable mono value for Settings health facts (root hash, PEM). */
+function SettingsCopyable({
+  value,
+  label,
+  testId,
+  multiline = false,
+}: {
+  value: string
+  label: string
+  testId?: string
+  multiline?: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return (
+    <div className={multiline ? 'settings-copy-block' : 'settings-copy-inline'}>
+      {multiline ? (
+        <pre
+          className="settings-copy-pem mono small"
+          tabIndex={0}
+          aria-label={label}
+          data-testid={testId}
+        >
+          {value}
+        </pre>
+      ) : (
+        <code className="inline-code settings-copy-value" data-testid={testId} title={value}>
+          {value}
+        </code>
+      )}
+      <button
+        type="button"
+        className="settings-copy-btn"
+        onClick={() => void copy()}
+        aria-label={`Copy ${label}`}
+      >
+        <ActionCopy size={12} aria-hidden="true" />
+        <span aria-live="polite">{copied ? 'Copied' : 'Copy'}</span>
+      </button>
+    </div>
+  )
+}
+
 function AuditHealthSection() {
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1753,6 +1821,7 @@ function AuditHealthSection() {
   }
 
   const data = status.kind === 'ok' ? status.data : null
+  const chain = data ? chainStatusPill(data.readiness.chain) : null
 
   return (
     <section id="audit-health" className="settings-section" aria-labelledby="audit-health-heading">
@@ -1767,119 +1836,163 @@ function AuditHealthSection() {
             When the audit store is down, mutations are refused and reads continue.
           </p>
         </div>
+        {data ? (
+          <span
+            className={`status-pill ${data.readiness.ok ? 'ok' : 'warn'}`}
+            role="status"
+            aria-label={data.readiness.ok ? 'Audit readiness: Healthy' : 'Audit readiness: Degraded'}
+          >
+            {data.readiness.ok ? 'Healthy' : 'Degraded'}
+          </span>
+        ) : null}
       </div>
 
+      {status.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
+
       {data && (
-        <div className="ns-settings-grid">
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Store</span>
-            <p className={data.readiness.store === 'ok' ? 'flash flash-success' : 'flash flash-warning'}>
-              {data.readiness.store === 'ok' ? (
-                <><ActionCheck size={14} aria-hidden="true" /> Available</>
+        <dl className="ns-settings-facts" aria-label="Audit health status">
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Store</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={data.readiness.store === 'ok' ? 'status-pill ok' : 'status-pill bad'}>
+                {data.readiness.store === 'ok' ? 'Available' : 'Unavailable'}
+              </span>
+              {data.readiness.store !== 'ok' && data.readiness.detail ? (
+                <span className="muted small">{data.readiness.detail}</span>
+              ) : null}
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Chain</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              {chain ? <span className={`status-pill ${chain.tone}`}>{chain.label}</span> : null}
+              {data.readiness.firstBreak ? (
+                <span className="muted small">{data.readiness.firstBreak.reason}</span>
+              ) : null}
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">HA</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={data.ha.attested ? 'status-pill ok' : 'status-pill warn'}>
+                {data.ha.attested ? 'Attested' : 'Not attested'}
+              </span>
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Outage</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              {data.currentOutage ? (
+                <span className="status-pill warn">Open</span>
               ) : (
-                <><ActionX size={14} aria-hidden="true" /> Unavailable{data.readiness.detail ? `: ${data.readiness.detail}` : ''}</>
+                <span className="status-pill ok">None</span>
               )}
-            </p>
+            </dd>
           </div>
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Chain</span>
-            <p className={data.readiness.chain === 'broken' ? 'flash flash-warning' : 'muted small'}>
-              {data.readiness.chain}
-              {data.readiness.firstBreak ? ` — ${data.readiness.firstBreak.reason}` : ''}
-            </p>
-          </div>
-
-          <div className="ns-settings-field" data-testid="audit-chain-tip">
-            <span className="ns-settings-label">Chain tip (IQP)</span>
-            {data.chainTip ? (
-              <>
-                <p className="small">
-                  txid <code className="inline-code" data-testid="audit-chain-tip-txid">{data.chainTip.txid}</code>
-                  {' · '}
-                  root <code className="inline-code" data-testid="audit-chain-tip-root">{data.chainTip.root || '(empty ledger)'}</code>
-                </p>
-                <p className="muted small">
-                  File with the IQP / change-control record at install; re-file after a restore.
-                  {data.chainTip.verifiedAt
-                    ? ` Verified ${new Date(data.chainTip.verifiedAt).toLocaleString()}.`
-                    : ''}
-                </p>
-              </>
-            ) : (
-              <p className="flash flash-warning">
-                Not available — the ledger has not been verified yet. Run “Check now”.
-              </p>
-            )}
-          </div>
-
-          <div className="ns-settings-field" data-testid="audit-export-public-key">
-            <span className="ns-settings-label">Export public key</span>
-            {data.exportPublicKey ? (
-              <>
-                <pre
-                  className="mono small"
-                  tabIndex={0}
-                  aria-label="Audit export signing public key (PEM)"
-                  style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
-                  data-testid="audit-export-public-key-pem"
-                >
-                  {data.exportPublicKey.trim()}
-                </pre>
-                <p className="muted small">
-                  Verifies signed audit bundles. File alongside the genesis root in IQP.
-                </p>
-              </>
-            ) : (
-              <p className="flash flash-warning">
-                Not configured — set <code className="inline-code">AUDIT_EXPORT_PRIVATE_KEY</code>; PDF and bundle exports are refused until then.
-              </p>
-            )}
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">HA attestation</span>
-            <p className={data.ha.attested ? 'flash flash-success' : 'flash flash-warning'}>
-              {data.ha.attested ? (
-                <><ActionCheck size={14} aria-hidden="true" /> IMMUDB_HA=true</>
+          <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack" data-testid="audit-chain-tip">
+            <dt className="ns-settings-fact-label">Chain tip</dt>
+            <dd className="ns-settings-fact-value">
+              {data.chainTip ? (
+                <>
+                  <div className="settings-copy-inline">
+                    <span className="muted small">txid</span>
+                    <code className="inline-code" data-testid="audit-chain-tip-txid">
+                      {data.chainTip.txid}
+                    </code>
+                  </div>
+                  <SettingsCopyable
+                    value={data.chainTip.root || '(empty ledger)'}
+                    label="chain tip root"
+                    testId="audit-chain-tip-root"
+                  />
+                  <p className="ns-settings-fact-note muted">
+                    File with the IQP / change-control record at install; re-file after a restore.
+                    {data.chainTip.verifiedAt
+                      ? ` Verified ${new Date(data.chainTip.verifiedAt).toLocaleString()}.`
+                      : ''}
+                  </p>
+                </>
               ) : (
-                <><ActionX size={14} aria-hidden="true" /> Not attested</>
+                <p className="flash flash-warn" role="status">
+                  Not available — the ledger has not been verified yet. Run “Check now”.
+                </p>
               )}
-            </p>
-            <p className="muted small">{data.ha.detail}</p>
+            </dd>
           </div>
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Open outage</span>
-            {data.currentOutage ? (
-              <p className="flash flash-warning">
-                Since {new Date(data.currentOutage.startedAt).toLocaleString()}
-                {' · '}
-                check <code className="inline-code">{data.currentOutage.check}</code>
-                {' · '}
+          <div
+            className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack"
+            data-testid="audit-export-public-key"
+          >
+            <dt className="ns-settings-fact-label">Export key</dt>
+            <dd className="ns-settings-fact-value">
+              {data.exportPublicKey ? (
+                <>
+                  <SettingsCopyable
+                    value={data.exportPublicKey.trim()}
+                    label="Audit export signing public key (PEM)"
+                    testId="audit-export-public-key-pem"
+                    multiline
+                  />
+                  <p className="ns-settings-fact-note muted">
+                    Verifies signed audit bundles. File alongside the genesis root in IQP.
+                  </p>
+                </>
+              ) : (
+                <p className="flash flash-warn" role="status">
+                  Not configured — set <code className="inline-code">AUDIT_EXPORT_PRIVATE_KEY</code>;
+                  PDF and bundle exports are refused until then.
+                </p>
+              )}
+            </dd>
+          </div>
+
+          {data.currentOutage ? (
+            <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack">
+              <dt className="ns-settings-fact-label">Open since</dt>
+              <dd className="ns-settings-fact-value">
+                <span>{new Date(data.currentOutage.startedAt).toLocaleString()}</span>
+                <span className="ns-tag ns-tag-muted">{data.currentOutage.check}</span>
                 <code className="inline-code">{data.currentOutage.paperProcedure}</code>
-              </p>
-            ) : (
-              <p className="flash flash-success"><ActionCheck size={14} aria-hidden="true" /> None</p>
-            )}
-          </div>
-
-          {data.recentOutages.length > 0 && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Recent incidents</span>
-              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
-                {data.recentOutages.slice(0, 5).map((o) => (
-                  <li key={`${o.startedAt}-${o.requestId}`}>
-                    {new Date(o.startedAt).toLocaleString()}
-                    {' · '}
-                    {o.check}
-                    {o.endedAt ? ` · closed ${new Date(o.endedAt).toLocaleString()}` : ' · open'}
-                  </li>
-                ))}
-              </ul>
+              </dd>
             </div>
-          )}
-        </div>
+          ) : null}
+
+          {data.ha.detail ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">HA detail</dt>
+              <dd className="ns-settings-fact-value">
+                <span className="muted small">{data.ha.detail}</span>
+              </dd>
+            </div>
+          ) : null}
+
+          {data.recentOutages.length > 0 ? (
+            <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack">
+              <dt className="ns-settings-fact-label">Incidents</dt>
+              <dd className="ns-settings-fact-value">
+                <ul className="ns-settings-incident-list muted small">
+                  {data.recentOutages.slice(0, 5).map((o) => (
+                    <li key={`${o.startedAt}-${o.requestId}`}>
+                      {new Date(o.startedAt).toLocaleString()}
+                      {' · '}
+                      {o.check}
+                      {o.endedAt ? ` · closed ${new Date(o.endedAt).toLocaleString()}` : ' · open'}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
       )}
 
       <div className="btn-row ns-settings-actions">
