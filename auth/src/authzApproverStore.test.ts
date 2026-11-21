@@ -12,6 +12,8 @@ const { ensureRepository } = await import('./repositoryStore.js')
 const {
   decideIsApprover,
   grantApprover,
+  mutateApproverSeat,
+  parseApproverTargetFromBody,
   revokeApprover,
 } = await import('./authzApproverStore.js')
 const authz = await import('./authz.js')
@@ -87,5 +89,57 @@ describe('authzApproverStore decideIsApprover', () => {
     })
     assert.equal((await authz.decideIsApprover(bob, 'acme', 'data')).allow, true)
     assert.equal(await revokeApprover({ ns: 'acme', repo: 'data' }, { kind: 'user', ...bob }), true)
+  })
+})
+
+describe('parseApproverTargetFromBody + mutateApproverSeat', () => {
+  it('rejects incomplete bodies and accepts user or group targets', () => {
+    assert.deepEqual(parseApproverTargetFromBody({}), { ok: false, error: 'sub and iss required' })
+    assert.deepEqual(parseApproverTargetFromBody({ kind: 'group' }), {
+      ok: false,
+      error: 'group required',
+    })
+    assert.deepEqual(parseApproverTargetFromBody({ sub: bob.sub, iss: bob.iss }), {
+      ok: true,
+      target: { kind: 'user', sub: bob.sub, iss: bob.iss },
+    })
+    assert.deepEqual(
+      parseApproverTargetFromBody({
+        kind: 'group',
+        group: 'test|aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        name: 'QA',
+      }),
+      {
+        ok: true,
+        target: {
+          kind: 'group',
+          group: 'test|aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          name: 'QA',
+        },
+      },
+    )
+  })
+
+  it('grants and revokes through one mutate seam used by the HTTP adapters', async () => {
+    const granted = await mutateApproverSeat({
+      op: 'grant',
+      scope: { ns: 'acme', repo: 'data' },
+      body: { sub: bob.sub, iss: bob.iss },
+    })
+    assert.equal(granted.ok, true)
+    if (granted.ok) {
+      assert.ok(
+        granted.approvers.some((a) => a.kind === 'user' && a.sub === bob.sub && a.iss === bob.iss),
+      )
+    }
+    assert.equal((await decideIsApprover(bob, 'acme', 'data')).allow, true)
+
+    const revoked = await mutateApproverSeat({
+      op: 'revoke',
+      scope: { ns: 'acme', repo: 'data' },
+      body: { sub: bob.sub, iss: bob.iss },
+    })
+    assert.equal(revoked.ok, true)
+    assert.equal((await decideIsApprover(bob, 'acme', 'data')).allow, false)
   })
 })

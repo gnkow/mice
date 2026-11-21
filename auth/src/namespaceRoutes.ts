@@ -9,7 +9,12 @@ import {
   hasRepoPermission,
 } from './authz.js'
 import { canEditEntity } from './metaAuthz.js'
-import { grantApprover, listApproverHistory, listApprovers, revokeApprover } from './authzApproverStore.js'
+import {
+  listApproverHistory,
+  listApprovers,
+  mutateApproverSeat,
+  type ApproverTargetBody,
+} from './authzApproverStore.js'
 import { denialResponse } from './decisionHttp.js'
 import {
   isCustomRepoRoleAssigned,
@@ -651,29 +656,9 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       const scope = scopeOf(c)
       const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
       if (denied) return denied
-      const body = raw as {
-        kind?: 'user' | 'group'
-        sub?: string
-        iss?: string
-        group?: string
-        name?: string
-      }
-      const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
-      const target =
-        kind === 'group'
-          ? ({ kind: 'group', group: body.group ?? '', ...(body.name ? { name: body.name } : {}) } as const)
-          : ({ kind: 'user', sub: body.sub ?? '', iss: body.iss ?? '' } as const)
-      if (target.kind === 'group' && !target.group) {
-        return c.json({ error: 'group required' }, 400)
-      }
-      if (target.kind === 'user' && (!target.sub || !target.iss)) {
-        return c.json({ error: 'sub and iss required' }, 400)
-      }
-      const granted = await grantApprover(scope, target)
-      if (!granted.ok) {
-        const status = granted.error === 'Not found' ? 404 : 400
-        return c.json({ error: granted.error }, status)
-      }
+      const body = raw as ApproverTargetBody
+      const result = await mutateApproverSeat({ op: 'grant', scope, body })
+      if (!result.ok) return c.json({ error: result.error }, result.status)
       await auditMutation(c, session, 'session', {
         action: 'approver.grant',
         namespace: scope.ns,
@@ -681,31 +666,16 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
         message: 'Assigned approver role',
         detail: { target: memberTarget(body) },
       })
-      return c.json({ ok: true, approvers: await listApprovers(scope) })
+      return c.json({ ok: true, approvers: result.approvers })
     }))
 
     app.delete(base, guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {
       const scope = scopeOf(c)
       const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
       if (denied) return denied
-      const body = raw as {
-        kind?: 'user' | 'group'
-        sub?: string
-        iss?: string
-        group?: string
-      }
-      const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
-      const target =
-        kind === 'group'
-          ? ({ kind: 'group', group: body.group ?? '' } as const)
-          : ({ kind: 'user', sub: body.sub ?? '', iss: body.iss ?? '' } as const)
-      if (target.kind === 'group' && !target.group) {
-        return c.json({ error: 'group required' }, 400)
-      }
-      if (target.kind === 'user' && (!target.sub || !target.iss)) {
-        return c.json({ error: 'sub and iss required' }, 400)
-      }
-      await revokeApprover(scope, target)
+      const body = raw as ApproverTargetBody
+      const result = await mutateApproverSeat({ op: 'revoke', scope, body })
+      if (!result.ok) return c.json({ error: result.error }, result.status)
       await auditMutation(c, session, 'session', {
         action: 'approver.revoke',
         namespace: scope.ns,
@@ -713,7 +683,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
         message: 'Removed approver role',
         detail: { target: memberTarget(body) },
       })
-      return c.json({ ok: true, approvers: await listApprovers(scope) })
+      return c.json({ ok: true, approvers: result.approvers })
     }))
   }
 

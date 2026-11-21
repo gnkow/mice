@@ -2,7 +2,14 @@ import { Plus as ActionPlus } from 'lucide-react'
 import { useState } from 'react'
 import { DirectoryPicker } from './DirectoryPicker'
 
-export type PrincipalAddUser = { kind: 'user'; sub: string; iss: string }
+export type PrincipalAddUser = {
+  kind: 'user'
+  sub: string
+  iss: string
+  /** IdP display name from directory search, when known. */
+  name?: string
+  email?: string
+}
 export type PrincipalAddGroup = { kind: 'group'; group: string; name: string }
 export type PrincipalAddValue = PrincipalAddUser | PrincipalAddGroup
 
@@ -48,6 +55,8 @@ export function PrincipalAddCard({
   const [kind, setKind] = useState<'user' | 'group'>('user')
   const [sub, setSub] = useState('')
   const [iss, setIss] = useState('mice-dev')
+  const [userName, setUserName] = useState('')
+  const [userEmail, setUserEmail] = useState('')
   const [group, setGroup] = useState('')
   const [groupName, setGroupName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -73,13 +82,19 @@ export function PrincipalAddCard({
         setGroup('')
         setGroupName('')
       } else {
+        const name = userName.trim()
+        const email = userEmail.trim()
         await onAdd({
           kind: 'user',
           sub: sub.trim(),
           iss: iss.trim(),
+          ...(name ? { name } : {}),
+          ...(email ? { email } : {}),
         })
         setSub('')
         setIss('mice-dev')
+        setUserName('')
+        setUserEmail('')
       }
     } catch {
       // Parent surfaces the error; keep the selection so the user can retry.
@@ -136,9 +151,11 @@ export function PrincipalAddCard({
           iss={iss}
           defaultIss="mice-dev"
           disabled={blocked}
-          onChange={({ sub: s, iss: i }) => {
+          onChange={({ sub: s, iss: i, name, email }) => {
             setSub(s)
             setIss(i)
+            setUserName(name?.trim() ?? '')
+            setUserEmail(email?.trim() ?? '')
           }}
         />
       )}

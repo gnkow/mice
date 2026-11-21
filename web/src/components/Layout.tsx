@@ -8,6 +8,7 @@ import {
   fetchAuthzMe,
   hasEffectivePermission,
   logout,
+  logoutRedirectHref,
   type AuthUser,
   type AuthzMe,
 } from '../lib/auth'
@@ -134,14 +135,10 @@ export function Layout() {
     if (menuRef.current) menuRef.current.open = false
     const result = await logout()
     setUser(null)
+    setAuthz(null)
     setConnected(false)
-    setVersion(null)
     // Full navigation clears IdP SSO so the next "Sign in with SSO" shows credentials.
-    if (result.idpLogoutUrl) {
-      window.location.assign(result.idpLogoutUrl)
-      return
-    }
-    window.location.assign('/login')
+    window.location.assign(logoutRedirectHref(result))
   }
 
   function onSearch(e: FormEvent) {

@@ -18,7 +18,7 @@ import {
   useState,
   type FormEvent,
 } from 'react'
-import { fetchAuthzMe, logout } from '../lib/auth'
+import { fetchAuthzMe, logout, logoutRedirectHref } from '../lib/auth'
 import {
   fetchOwnAccessRequest,
   submitAccessRequest,
@@ -204,8 +204,7 @@ export function PendingAccessPage() {
 
   function onSignOut() {
     void logout().then((r) => {
-      if (r.idpLogoutUrl) window.location.href = r.idpLogoutUrl
-      else window.location.href = '/login'
+      window.location.assign(logoutRedirectHref(r))
     })
   }
 

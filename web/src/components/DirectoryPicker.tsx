@@ -12,7 +12,13 @@ type UserProps = {
   kind: 'user'
   sub: string
   iss: string
-  onChange: (next: { sub: string; iss: string }) => void
+  onChange: (next: {
+    sub: string
+    iss: string
+    /** IdP display name when the hit has one. */
+    name?: string
+    email?: string
+  }) => void
   disabled?: boolean
   /** Kept for call-site compatibility; issuer comes from directory hits. */
   defaultIss?: string
@@ -162,7 +168,12 @@ export function DirectoryPicker(props: Props) {
                 type="button"
                 className="directory-picker-option"
                 onClick={() => {
-                  props.onChange({ sub: u.sub, iss: u.iss })
+                  props.onChange({
+                    sub: u.sub,
+                    iss: u.iss,
+                    ...(u.name?.trim() ? { name: u.name.trim() } : {}),
+                    ...(u.email?.trim() ? { email: u.email.trim() } : {}),
+                  })
                   setQuery(u.email || u.name || u.sub)
                   setOpen(false)
                 }}

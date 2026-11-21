@@ -9,6 +9,9 @@ import {
   type ApproverScope,
 } from '../lib/authzApi'
 import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
+import type { PrincipalProfiles } from '../lib/commitEmail'
+import { decideUserRefLabel } from '../lib/userRef'
+import { usePrincipalProfiles } from './CommitEmail'
 import { GroupPrincipalLabel } from './GroupPrincipalLabel'
 import { PrincipalAddCard } from './PrincipalAddCard'
 import { UserRef } from './UserRef'
@@ -23,6 +26,25 @@ type Props = {
 
 function approverKey(a: ApproverPrincipal): string {
   return a.kind === 'group' ? `group:${a.group}` : `user:${a.iss}|${a.sub}`
+}
+
+function userAuthorKey(a: Extract<ApproverPrincipal, { kind: 'user' }>): string {
+  return `${a.iss}|${a.sub}`
+}
+
+/** Human label for flashes / aria — never the raw UUID alone when a name/email is known. */
+export function approverWhoLabel(
+  a: ApproverPrincipal,
+  profiles: PrincipalProfiles,
+  hint?: { name?: string; email?: string },
+): string {
+  if (a.kind === 'group') return a.name?.trim() || a.group
+  const key = userAuthorKey(a)
+  return decideUserRefLabel({
+    author: key,
+    name: hint?.name?.trim() || profiles.names[key],
+    email: hint?.email?.trim() || profiles.emails[key],
+  })
 }
 
 /**
@@ -43,6 +65,12 @@ export function ApproversSection({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
+  const approvers = state.kind === 'ok' ? state.data.approvers : []
+  const userAuthors = approvers
+    .filter((a): a is Extract<ApproverPrincipal, { kind: 'user' }> => a.kind === 'user')
+    .map(userAuthorKey)
+  const profiles = usePrincipalProfiles(userAuthors)
+
   async function change(action: () => Promise<unknown>, done: string) {
     setBusy(true)
     setError(null)
@@ -61,15 +89,12 @@ export function ApproversSection({
   }
 
   function onRevoke(a: ApproverPrincipal) {
-    const who =
-      a.kind === 'group' ? a.name || a.group : a.sub
+    const who = approverWhoLabel(a, profiles)
     void change(
       () => revokeApproverSeat(scope, a),
       `Removed approver role from ${who}`,
     ).catch(() => {})
   }
-
-  const approvers = state.kind === 'ok' ? state.data.approvers : []
 
   return (
     <section
@@ -85,17 +110,21 @@ export function ApproversSection({
             Approvers
           </h2>
           <p className="muted small">
-            Sign merges into validated branches
-            {repo ? ' on this repository' : ' across this namespace'}. Explicit
-            grant — not implied by Owner or admin
-            {!canManage ? ' (view only for you)' : ''}. Users or groups.
+            Explicit seat to sign merges into validated branches
+            {repo ? ' on this repository' : ' across this namespace'}. Not implied by Owner,
+            maintain, or admin
+            {!canManage ? ' (view only)' : ''}.
           </p>
         </div>
-        <p className="muted small ns-settings-count">
-          {state.kind === 'ok'
-            ? `${approvers.length} approver${approvers.length === 1 ? '' : 's'}`
-            : null}
-        </p>
+        {state.kind === 'ok' ? (
+          <span
+            className={`status-pill ${approvers.length > 0 ? 'ok' : 'neutral'}`}
+            role="status"
+            aria-label={`${approvers.length} approver${approvers.length === 1 ? '' : 's'}`}
+          >
+            {approvers.length === 1 ? '1 approver' : `${approvers.length} approvers`}
+          </span>
+        ) : null}
       </div>
 
       {error ? (
@@ -133,20 +162,16 @@ export function ApproversSection({
                 {a.kind === 'group' ? (
                   <GroupPrincipalLabel group={a.group} name={a.name} inline />
                 ) : (
-                  <UserRef author={`${a.iss}|${a.sub}`} />
+                  <UserRef author={userAuthorKey(a)} profiles={profiles} />
                 )}
               </div>
-              <span className="ns-tag ns-tag-accent">approver</span>
+              <span className="status-pill active">approver</span>
               {canManage ? (
                 <button
                   type="button"
                   className="btn ghost small"
                   disabled={busy}
-                  aria-label={
-                    a.kind === 'group'
-                      ? `Revoke approver group ${a.name || a.group}`
-                      : `Revoke approver ${a.sub}`
-                  }
+                  aria-label={`Revoke approver ${approverWhoLabel(a, profiles)}`}
                   onClick={() => onRevoke(a)}
                 >
                   <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />
@@ -170,7 +195,12 @@ export function ApproversSection({
                   ? { kind: 'group', group: principal.group, name: principal.name }
                   : { kind: 'user', sub: principal.sub, iss: principal.iss }
               const who =
-                target.kind === 'group' ? target.name || target.group : target.sub
+                principal.kind === 'group'
+                  ? principal.name || principal.group
+                  : approverWhoLabel(target, profiles, {
+                      name: principal.name,
+                      email: principal.email,
+                    })
               await change(
                 () => grantApproverSeat(scope, target),
                 `Assigned approver role to ${who}`,

@@ -61,6 +61,67 @@ async function withGroupNames(principals: ApproverPrincipal[]): Promise<Approver
 
 export type GrantApproverResult = { ok: true } | { ok: false; error: string }
 
+/** Untrusted HTTP body for grant/revoke approver seats. */
+export type ApproverTargetBody = {
+  kind?: 'user' | 'group'
+  sub?: string
+  iss?: string
+  group?: string
+  name?: string
+}
+
+/**
+ * Parse and validate an approver principal from a route body.
+ * Shared by grant and revoke so both routes cannot drift.
+ */
+export function parseApproverTargetFromBody(
+  body: ApproverTargetBody,
+): { ok: true; target: ApproverPrincipal } | { ok: false; error: string } {
+  const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
+  if (kind === 'group') {
+    const group = (body.group ?? '').trim()
+    if (!group) return { ok: false, error: 'group required' }
+    const name = body.name?.trim()
+    return {
+      ok: true,
+      target: name ? { kind: 'group', group, name } : { kind: 'group', group },
+    }
+  }
+  const sub = (body.sub ?? '').trim()
+  const iss = (body.iss ?? '').trim()
+  if (!sub || !iss) return { ok: false, error: 'sub and iss required' }
+  return { ok: true, target: { kind: 'user', sub, iss } }
+}
+
+/**
+ * Grant or revoke an approver seat after the Owner gate has already passed.
+ * Returns the updated list so routes stay thin adapters.
+ */
+export async function mutateApproverSeat(input: {
+  op: 'grant' | 'revoke'
+  scope: authzRepo.ApproverScope
+  body: ApproverTargetBody
+}): Promise<
+  | { ok: true; approvers: ApproverPrincipal[] }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = parseApproverTargetFromBody(input.body)
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.error }
+  if (input.op === 'grant') {
+    const granted = await grantApprover(input.scope, parsed.target)
+    if (!granted.ok) {
+      return {
+        ok: false,
+        status: granted.error === 'Not found' ? 404 : 400,
+        error: granted.error,
+      }
+    }
+  } else {
+    await revokeApprover(input.scope, parsed.target)
+  }
+  return { ok: true, approvers: await listApprovers(input.scope) }
+}
+
 export async function grantApprover(
   scope: authzRepo.ApproverScope,
   target: ApproverPrincipal,
