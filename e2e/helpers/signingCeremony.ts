@@ -11,6 +11,12 @@ import {
   keycloakSubmit,
   keycloakUsername,
 } from './keycloak'
+import {
+  decideLiveSigningCeremony,
+  initialCeremonyBudget,
+  type CeremonyGate,
+  type CeremonyPhase,
+} from './liveSigningCeremonyDecide'
 
 /** Open Settings → Access review and generate a stubbed unsigned report. */
 export async function openAccessReviewForSign(
@@ -137,25 +143,101 @@ export async function completeLiveKeycloakStepUp(page: Page): Promise<void> {
 const LIVE_CEREMONY_REASON =
   'E2E auditor signature evidence with live MFA ceremony'
 
-async function fillReasonAndReview(page: Page): Promise<void> {
+async function fillReasonAndReview(page: Page, reason: string): Promise<void> {
   const reasonDialog = page.getByRole('dialog', { name: /Reason and signature required/i })
   await expect(reasonDialog).toBeVisible({ timeout: 15_000 })
-  await reasonDialog.getByLabel('Reason').fill(LIVE_CEREMONY_REASON)
+  await reasonDialog.getByLabel('Reason').fill(reason)
   await reasonDialog.getByRole('button', { name: /Review signature/i }).click()
 }
 
-async function awaitCeremonyGate(page: Page): Promise<'interstitial' | 'sign'> {
+async function observeCeremonyGate(page: Page, waitMs: number): Promise<CeremonyGate> {
   const interstitial = page.getByTestId('signing-challenge-interstitial')
   const signDialog = page.getByRole('dialog', { name: /Electronic signature/i })
-  await expect(interstitial.or(signDialog)).toBeVisible({ timeout: 20_000 })
+  if (waitMs > 0) {
+    await expect(interstitial.or(signDialog))
+      .toBeVisible({ timeout: waitMs })
+      .catch(() => undefined)
+  }
   if (await interstitial.isVisible().catch(() => false)) return 'interstitial'
-  return 'sign'
+  if (await signDialog.isVisible().catch(() => false)) return 'sign'
+  return 'absent'
 }
 
 async function clickSignAndContinue(page: Page): Promise<void> {
   const signDialog = page.getByRole('dialog', { name: /Electronic signature/i })
   await expect(signDialog).toBeVisible({ timeout: 20_000 })
   await signDialog.getByRole('button', { name: /Sign and continue/i }).click()
+}
+
+async function ceremonyDialogVisible(page: Page): Promise<boolean> {
+  return page
+    .getByRole('dialog', { name: /Electronic signature|Reason and signature/i })
+    .isVisible()
+    .catch(() => false)
+}
+
+/**
+ * Drive reason → step-up gates → Sign until `success` is visible.
+ * Owns retry after step-up when the dialog was dismissed; callers supply trigger + success.
+ */
+export async function runLiveSigningCeremony(
+  page: Page,
+  opts: {
+    trigger: () => Promise<void>
+    success: Locator
+    reason?: string
+  },
+): Promise<void> {
+  const reason = opts.reason ?? LIVE_CEREMONY_REASON
+  let phase: CeremonyPhase = 'after_trigger'
+  let budget = initialCeremonyBudget()
+  let pendingTrigger = true
+
+  for (let i = 0; i < 24; i++) {
+    if (await opts.success.isVisible().catch(() => false)) return
+
+    const gateWait =
+      phase === 'awaiting_gate' ? 20_000 : phase === 'after_sign' ? 3_000 : 0
+    const gate = await observeCeremonyGate(page, gateWait)
+    const dialogLost =
+      phase === 'after_step_up' ? !(await ceremonyDialogVisible(page)) : false
+    const successVisible = await opts.success.isVisible().catch(() => false)
+
+    const decision = decideLiveSigningCeremony({
+      phase,
+      gate,
+      dialogLost,
+      successVisible,
+      budget,
+    })
+    phase = decision.phase
+    budget = decision.budget
+
+    switch (decision.command.op) {
+      case 'fill_reason':
+        if (pendingTrigger) {
+          await opts.trigger()
+          pendingTrigger = false
+        }
+        await fillReasonAndReview(page, reason)
+        break
+      case 'step_up':
+        await completeLiveKeycloakStepUp(page)
+        break
+      case 'click_sign':
+        await clickSignAndContinue(page)
+        break
+      case 'retrigger':
+        pendingTrigger = true
+        break
+      case 'done':
+        await expect(opts.success).toBeVisible({ timeout: 30_000 })
+        return
+      case 'fail':
+        throw new Error(decision.command.reason)
+    }
+  }
+  throw new Error('Live signing ceremony loop exceeded iteration budget')
 }
 
 /**
@@ -177,55 +259,12 @@ export async function signViaLiveSealKeyRotation(page: Page): Promise<void> {
     const section = page.locator('#seal-key-rotation')
     const rotate = section.getByRole('button', { name: /Perform Normal Rotation/i })
     await expect(rotate).toBeVisible()
-    await rotate.click()
 
-    await fillReasonAndReview(page)
-
-    // Prepare may require step-up before the sign dialog.
-    if ((await awaitCeremonyGate(page)) === 'interstitial') {
-      await completeLiveKeycloakStepUp(page)
-      if (
-        !(await page
-          .getByRole('dialog', { name: /Electronic signature|Reason and signature/i })
-          .isVisible()
-          .catch(() => false))
-      ) {
+    await runLiveSigningCeremony(page, {
+      trigger: async () => {
         await rotate.click()
-        await fillReasonAndReview(page)
-      }
-      if ((await awaitCeremonyGate(page)) === 'interstitial') {
-        await completeLiveKeycloakStepUp(page)
-        await expect(page.getByRole('dialog', { name: /Electronic signature/i })).toBeVisible({
-          timeout: 20_000,
-        })
-      }
-    }
-
-    await clickSignAndContinue(page)
-
-    // Execute may require another step-up.
-    const interstitial = page.getByTestId('signing-challenge-interstitial')
-    if (await interstitial.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await completeLiveKeycloakStepUp(page)
-      if (
-        await page
-          .getByRole('dialog', { name: /Electronic signature/i })
-          .isVisible()
-          .catch(() => false)
-      ) {
-        await clickSignAndContinue(page)
-      } else {
-        await rotate.click()
-        await fillReasonAndReview(page)
-        if ((await awaitCeremonyGate(page)) === 'interstitial') {
-          await completeLiveKeycloakStepUp(page)
-        }
-        await clickSignAndContinue(page)
-      }
-    }
-
-    await expect(section.getByText(/Normal rotation completed/i)).toBeVisible({
-      timeout: 30_000,
+      },
+      success: section.getByText(/Normal rotation completed/i),
     })
   } finally {
     await ctx.setExtraHTTPHeaders({

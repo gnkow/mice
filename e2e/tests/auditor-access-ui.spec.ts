@@ -86,11 +86,11 @@ test.describe('Auditor access UI (#13)', () => {
 
     await page.goto('/audit')
     await expect(
-      page.getByText(/Signature rows expand to show IdP MFA evidence/i),
+      page.getByText(/Signature rows open IdP MFA evidence/i),
     ).toBeVisible()
 
     const evidence = page.getByTestId('signature-evidence').first()
-    await evidence.getByText('Signature evidence').click()
+    await evidence.getByRole('button', { name: 'Signature evidence' }).click()
     await expect(
       evidence.getByText(/Auditors use this to prove who signed/i),
     ).toBeVisible()

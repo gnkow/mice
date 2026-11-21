@@ -1,5 +1,6 @@
 import {
   Download as ActionDownload,
+  FileSearch as ActionFileSearch,
   FileText as ActionFileText,
   Search as ActionSearch,
   ShieldCheck as ActionShieldCheck,
@@ -7,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { Modal } from '../components/Modal'
 import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
 import { StateBlock } from '../components/StateBlock'
 import { SuggestField, type SuggestOption } from '../components/SuggestField'
@@ -26,7 +28,7 @@ import {
   type AuditResource,
   type AuditVerifyResult,
 } from '../lib/audit'
-import { signatureEvidenceRows } from '../lib/signatureEvidence'
+import { signatureEvidenceSections } from '../lib/signatureEvidence'
 import { revocableSignatureId, revokedSignatureIds } from '../lib/signatureRevoke'
 
 const FILTER_KEYS = [
@@ -323,7 +325,7 @@ export function AuditPage() {
           <h1>Audit</h1>
           <p className="lede">
             Append-only log of mutations through the auth BFF (who / what / when
-            / which repo). Signature rows expand to show IdP MFA evidence for auditors.
+            / which repo). Signature rows open IdP MFA evidence for auditors.
           </p>
         </div>
         <div className="btn-row audit-actions" role="group" aria-label="Audit actions">
@@ -567,8 +569,14 @@ export function AuditPage() {
                             : '—'}
                         </span>
                       )}
-                      <SignatureEvidence event={ev} />
-                      <SignatureRevoke event={ev} revoked={revoked} onRevoked={() => state.reload()} />
+                      <div className="audit-signature-actions btn-row">
+                        <SignatureEvidence event={ev} />
+                        <SignatureRevoke
+                          event={ev}
+                          revoked={revoked}
+                          onRevoked={() => state.reload()}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -619,25 +627,55 @@ function evidenceTestId(label: string): string | undefined {
 }
 
 function SignatureEvidence({ event }: { event: AuditEvent }) {
-  const rows = signatureEvidenceRows(event.action, event.detail)
-  if (rows.length === 0) return null
+  const [open, setOpen] = useState(false)
+  const sections = signatureEvidenceSections(event.action, event.detail)
+  if (sections.length === 0) return null
   return (
-    <details className="signature-evidence small" data-testid="signature-evidence">
-      <summary>Signature evidence</summary>
-      <p className="muted small signature-evidence-lede">
-        IdP MFA assertion and verification metadata recorded at signing. Auditors use
-        this to prove who signed and that Mice verified the token.
-      </p>
-      <dl aria-label="Signature identity and evidence">
-        {rows.map((r) => (
-          <div key={r.label} data-evidence-label={r.label}>
-            <dt className="muted">{r.label}</dt>
-            <dd className="mono" data-testid={evidenceTestId(r.label)}>
-              {r.value}
-            </dd>
+    <div className="signature-evidence-cell small" data-testid="signature-evidence">
+      <button
+        type="button"
+        className="btn ghost small signature-evidence-open"
+        aria-label="Signature evidence"
+        onClick={() => setOpen(true)}
+      >
+        <ActionFileSearch size={12} aria-hidden="true" className="button-label-icon" />
+        Evidence
+      </button>
+      {open ? (
+        <Modal title="Signature evidence" onClose={() => setOpen(false)} wide>
+          <div className="signature-evidence">
+            <p className="muted small signature-evidence-lede">
+              IdP MFA assertion and verification metadata recorded at signing. Auditors
+              use this to prove who signed and that Mice verified the token.
+            </p>
+            {sections.map((section) => (
+              <section
+                key={section.id}
+                className="signature-evidence-section"
+                data-testid={`signature-evidence-${section.id}`}
+                aria-labelledby={`signature-evidence-h-${section.id}`}
+              >
+                <h3
+                  id={`signature-evidence-h-${section.id}`}
+                  className="signature-evidence-heading muted"
+                >
+                  {section.heading}
+                </h3>
+                <dl aria-label={section.heading}>
+                  {section.rows.map((r) => (
+                    <div key={r.label} data-evidence-label={r.label}>
+                      <dt className="muted">{r.label}</dt>
+                      <dd className="mono" data-testid={evidenceTestId(r.label)}>
+                        {r.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
           </div>
-        ))}
-      </dl>
-    </details>
+        </Modal>
+      ) : null}
+    </div>
   )
 }

@@ -1,5 +1,11 @@
 export type EvidenceRow = { label: string; value: string }
 
+export type EvidenceSection = {
+  id: 'identity' | 'verification'
+  heading: string
+  rows: EvidenceRow[]
+}
+
 type Detail = Record<string, unknown> | undefined
 
 const iso = (n: unknown, unit: 'sec' | 'ms') =>
@@ -9,13 +15,18 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v : undefined
 }
 
+function rowsFromPairs(pairs: [string, string | undefined][]): EvidenceRow[] {
+  return pairs.flatMap(([label, value]) => (value ? [{ label, value }] : []))
+}
+
 const SIGNATURE_EVIDENCE_ACTIONS = new Set(['esign.created', 'signature.created'])
 
 /**
- * Labelled MFA, token-verification, and signature-identity evidence on an
- * `esign.created` audit event (Tickets 13, 26, 53).
+ * Grouped MFA, token-verification, and signature-identity evidence on an
+ * `esign.created` audit event (Tickets 13, 26, 53 / #83).
+ * Identity vs IdP verification stay separate so Auditors scan each claim set.
  */
-export function signatureEvidenceRows(action: string, detail: Detail): EvidenceRow[] {
+export function signatureEvidenceSections(action: string, detail: Detail): EvidenceSection[] {
   if (!SIGNATURE_EVIDENCE_ACTIONS.has(action) || !detail) return []
 
   const signer =
@@ -25,7 +36,7 @@ export function signatureEvidenceRows(action: string, detail: Detail): EvidenceR
   const mfa = (detail.mfaEvidence ?? {}) as Record<string, unknown>
   const ver = (detail.verificationMetadata ?? {}) as Record<string, unknown>
 
-  const identity: [string, string | undefined][] = [
+  const identity = rowsFromPairs([
     ['Signed name', str(signer?.name)],
     ['Issuer (iss)', str(signer?.iss)],
     ['Subject (sub)', str(signer?.sub)],
@@ -37,18 +48,28 @@ export function signatureEvidenceRows(action: string, detail: Detail): EvidenceR
           : undefined),
     ],
     ['Now known as', str(detail.nowKnownAs)],
-  ]
+  ])
 
-  const evidence: [string, string | undefined][] = [
+  const verification = rowsFromPairs([
     ['Auth context (acr)', typeof mfa.acr === 'string' ? mfa.acr : undefined],
     ['Auth methods (amr)', Array.isArray(mfa.amr) ? mfa.amr.join(', ') : undefined],
     ['Authenticated at', iso(mfa.auth_time, 'sec')],
     ['JWKS key id', typeof ver.jwks_key_id === 'string' ? ver.jwks_key_id : undefined],
     ['Verified at', iso(ver.token_verified_at, 'ms')],
     ['Issuer', typeof ver.idp_issuer === 'string' ? ver.idp_issuer : undefined],
-  ]
+  ])
 
-  return [...identity, ...evidence].flatMap(([label, value]) =>
-    value ? [{ label, value }] : [],
-  )
+  return [
+    ...(identity.length ? [{ id: 'identity' as const, heading: 'Signer identity', rows: identity }] : []),
+    ...(verification.length
+      ? [{ id: 'verification' as const, heading: 'IdP verification', rows: verification }]
+      : []),
+  ]
+}
+
+/**
+ * Flat labelled rows for callers that do not need section headings.
+ */
+export function signatureEvidenceRows(action: string, detail: Detail): EvidenceRow[] {
+  return signatureEvidenceSections(action, detail).flatMap((s) => s.rows)
 }

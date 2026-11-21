@@ -4,6 +4,7 @@ import {
   buildSigningSessionInfo,
   createSignature,
   prepareForSigning,
+  signatureEvidenceFields,
   type SignatureMeaning,
 } from './signingCeremony.js'
 import { verifySigningEvidence } from './signingEvidence.js'
@@ -271,8 +272,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           changeControlId,
           ...(binding ? { binding } : {}),
           ...(manifest !== undefined ? { manifest } : {}),
-          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
-          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
+          ...signatureEvidenceFields(signature),
         })
       } catch (err) {
         if (err instanceof DuplicateChangeControlIdError) {
@@ -306,9 +306,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           hash: signature.hash,
           signedAt: signature.signedAt,
           changeControlId,
-          // Ticket 26: Include evidence in audit detail
-          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
-          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
+          // Ticket 26 / #83: Auditor-visible evidence (same packing as ledger + HTTP)
+          ...signatureEvidenceFields(signature),
         },
       })
 
@@ -320,9 +319,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           signedAt: signature.signedAt,
           changeControlId,
           principal: signature.principal,
-          // Ticket 26: Return evidence in response for display/storage
-          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
-          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
+          ...signatureEvidenceFields(signature),
         },
       })
     } catch (err) {

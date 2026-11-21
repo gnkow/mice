@@ -139,6 +139,24 @@ export function buildSigningSessionInfo(
 }
 
 /**
+ * MFA + verification fields mirrored onto the ledger, esign.created audit detail,
+ * and HTTP signature body so Auditor evidence cannot diverge across those seams.
+ */
+export function signatureEvidenceFields(
+  evidence: Pick<SignatureRecord, 'mfaEvidence' | 'verificationMetadata'>,
+): {
+  mfaEvidence?: MfaEvidence
+  verificationMetadata?: VerificationMetadata
+} {
+  return {
+    ...(evidence.mfaEvidence ? { mfaEvidence: evidence.mfaEvidence } : {}),
+    ...(evidence.verificationMetadata
+      ? { verificationMetadata: evidence.verificationMetadata }
+      : {}),
+  }
+}
+
+/**
  * Check if authentication is fresh enough for signing (<5 minutes).
  */
 export function isAuthenticationFresh(authenticatedAt: number, now: number = Date.now()): boolean {
@@ -186,8 +204,7 @@ export function createSignature(
     signedAt: now,
     meaning,
     content,
-    ...(session.mfaEvidence ? { mfaEvidence: session.mfaEvidence } : {}),
-    ...(session.verificationMetadata ? { verificationMetadata: session.verificationMetadata } : {}),
+    ...signatureEvidenceFields(session),
   }
 }
 
