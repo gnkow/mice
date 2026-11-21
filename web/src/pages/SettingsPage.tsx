@@ -528,8 +528,8 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
             {formatRequestedAccess(selected)}
           </p>
           <p className="muted small" data-testid="access-request-authority-hint">
-            You can only approve grants within your authority. Expiry is required for
-            delegated roles and custom permissions.
+            Only requests within your authority appear here. Approve and deny use the
+            same gate; expiry is required for delegated roles and custom permissions.
           </p>
           <div className="ns-settings-grid">
             <label className="ns-settings-field">

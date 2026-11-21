@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { and, desc, eq } from 'drizzle-orm'
 import { getDb } from './db/database.js'
 import { accessRequests } from './db/schema.js'
-import { canApproveRole, canGrantPermissions } from './rbacAuthority.js'
+import { canReviewPendingRequest } from './rbacAuthority.js'
 import { isInstancePermission, type InstancePermission } from './rbacCatalog.js'
 import { applyAuthorizedGrant } from './rbacDirectGrant.js'
 import { isInstanceRole, type InstanceRole } from './rbacRoles.js'
@@ -166,16 +166,14 @@ export async function listAccessRequestsForReviewer(
     .where(pendingOnly ? eq(accessRequests.status, 'pending') : undefined)
     .orderBy(desc(accessRequests.createdAt))
 
-  return rows.map(toRequest).filter((req) => {
-    if (req.requestedRole) {
-      if (!canApproveRole(reviewerRole, req.requestedRole)) return false
-    }
-    if (req.requestedPermissions.length > 0) {
-      if (!canGrantPermissions(reviewerPerms, req.requestedPermissions)) return false
-    }
-    // Role-only or perms-only or both already checked; empty both cannot exist.
-    return req.requestedRole != null || req.requestedPermissions.length > 0
-  })
+  return rows.map(toRequest).filter((req) =>
+    canReviewPendingRequest({
+      reviewerRole,
+      reviewerEffective: reviewerPerms,
+      requestedRole: req.requestedRole,
+      requestedPermissions: req.requestedPermissions,
+    }),
+  )
 }
 
 export async function approveAccessRequest(input: {
@@ -242,9 +240,10 @@ export async function denyAccessRequest(input: {
   if (!reason) return { ok: false, error: 'Denial reason is required' }
 
   const reviewerRole = await getUserRole(input.reviewer)
-  if (!reviewerRole || (reviewerRole !== 'manager' && reviewerRole !== 'admin')) {
+  if (!reviewerRole) {
     return { ok: false, error: 'Forbidden' }
   }
+  const reviewerPerms = await getEffectivePermissions(input.reviewer)
 
   const [found] = await getDb()
     .select()
@@ -254,9 +253,16 @@ export async function denyAccessRequest(input: {
   if (!found) return { ok: false, error: 'Not found' }
   if (found.status !== 'pending') return { ok: false, error: 'Already resolved' }
 
-  // Reviewer must have authority over the requested role (or be admin for perms-only).
+  // Same authority gate as the reviewer's pending list (role and/or custom perms).
   const req = toRequest(found)
-  if (req.requestedRole && !canApproveRole(reviewerRole, req.requestedRole)) {
+  if (
+    !canReviewPendingRequest({
+      reviewerRole,
+      reviewerEffective: reviewerPerms,
+      requestedRole: req.requestedRole,
+      requestedPermissions: req.requestedPermissions,
+    })
+  ) {
     return { ok: false, error: 'Forbidden: insufficient approval authority' }
   }
 

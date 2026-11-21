@@ -6,7 +6,7 @@ The development environment comes pre-configured with test accounts for each for
 
 ### Account credentials
 
-Accounts live in `auth/keycloak/realm-mice.json`; formal roles and the `demo` / `sample` workspace are applied by `make seed` / `seed:dev`.
+Accounts live in `auth/keycloak/realm-mice.json`; formal roles, the `demo` / `sample` workspace, and the seeded pending User request for `mice_pending` are applied by `make seed` / `seed:dev`. New Keycloak users added to the realm file are created on seed when missing (service account needs `manage-users`); a full `make reset` re-imports the realm.
 
 | Username | Email | Password | Role | MFA | Notes |
 |----------|-------|----------|------|-----|-------|
@@ -18,7 +18,8 @@ Accounts live in `auth/keycloak/realm-mice.json`; formal roles and the `demo` / 
 | `mice_user_3` | `mice_user_3@mice.com` | `user3123` | `user` | TOTP | Third MFA collaborator; `demo/sample` write; IdP group `engineering` |
 | `mice_no_mfa` | `mice_no_mfa@mice.com` | `nomfa123` | `user` | — | Password-only control; Profile MFA **No**; ceremonies refuse |
 | `mice_external` | `mice_external@mice.com` | `external123` | `external` | — | Guest; `demo/sample` read |
-| `mice_pending` | `mice_pending@mice.com` | `pending123` | *(none)* | — | `/pending` request wizard |
+| `mice_no_access` | `mice_no_access@mice.com` | `noaccess123` | *(none)* | — | Blank `/pending` wizard (no request filed) |
+| `mice_pending` | `mice_pending@mice.com` | `pending123` | *(none)* | — | Seeded pending **User** request (visible in Settings → Access requests) |
 | `partner` | `partner@partner.example` | `partner` | `user` | — | SAML broker e2e |
 
 #### Dev MFA (OTP)
@@ -39,7 +40,8 @@ On the Keycloak OTP screen the **mice-dev** login theme shows **Dev OTP** with t
    container. That script:
    - Ensures principals for each account (resolving Keycloak `sub` when the Admin API is reachable)
    - Assigns formal `manager` / `auditor` / `user` / `external` roles
-   - Leaves **only** `mice_pending` without a role (`/pending` shell)
+   - Leaves `mice_no_access` and `mice_pending` without a role (`/pending` shell);
+     seeds a pending **User** access request for `mice_pending` only
    - Leaves `mice_admin` to bootstrap Admin on login (`AUTHZ_BOOTSTRAP_ADMINS`)
    - Creates sample workspace `demo` / `sample` (manager owns it; `mice_user` /
      `_2` / `_3` write; external read)
@@ -79,9 +81,14 @@ On the Keycloak OTP screen the **mice-dev** login theme shows **Dev OTP** with t
 - Formal `external` role from seed
 - Read-focused guest access
 
+#### No access (`mice_no_access@mice.com`)
+- No formal role and **no** access request — lands on the blank Request Access wizard
+- Use to exercise filing a new request from scratch
+
 #### Pending (`mice_pending@mice.com`)
-- No formal role — lands on `/pending`
-- Use to exercise Request Access / update-pending flows
+- No formal role — lands on `/pending` with a **seeded pending User request**
+- Visible to managers/admins under Settings → Access requests after `make seed` / `make reset`
+- Use to exercise approve / deny / update-pending flows
 
 ### Sample workspace
 
@@ -109,7 +116,8 @@ AUTHZ_BOOTSTRAP_ADMINS=mice_admin@mice.com
 - Login as `mice_user@mice.com` / `_2` / `_3` → User (after seed; OTP)
 - Login as `mice_external@mice.com` → External (after seed)
 - Login as `mice_auditor@mice.com` → Auditor (after seed)
-- Login as `mice_pending@mice.com` → pending until an access request is approved
+- Login as `mice_no_access@mice.com` → blank `/pending` wizard (no request yet)
+- Login as `mice_pending@mice.com` → `/pending` with a seeded User request until approved/denied
 
 **Permission flow:**
 ```typescript
@@ -139,22 +147,23 @@ AUTHZ_BOOTSTRAP_ADMINS=admin@company.com,ops@company.com
 ### Local setup
 
 ```bash
-# Start stack + seed formal roles (only mice_pending stays role-less)
+# Start stack + seed formal roles (mice_no_access + mice_pending stay role-less)
 make up
 
 # Or re-seed after the stack is already up:
 make seed
 
 # Login:
-#    - mice_admin@mice.com   → admin (bootstrap; OTP)
-#    - mice_no_mfa@mice.com  → user (password-only)
-#    - mice_manager@mice.com → manager
-#    - mice_auditor@mice.com → auditor
-#    - mice_user@mice.com    → user (default SSO; OTP)
-#    - mice_user_2@mice.com  → user (OTP)
-#    - mice_user_3@mice.com  → user (OTP)
-#    - mice_external@mice.com→ external
-#    - mice_pending@mice.com → /pending shell
+#    - mice_admin@mice.com     → admin (bootstrap; OTP)
+#    - mice_no_mfa@mice.com    → user (password-only)
+#    - mice_manager@mice.com   → manager
+#    - mice_auditor@mice.com   → auditor
+#    - mice_user@mice.com      → user (default SSO; OTP)
+#    - mice_user_2@mice.com    → user (OTP)
+#    - mice_user_3@mice.com    → user (OTP)
+#    - mice_external@mice.com  → external
+#    - mice_no_access@mice.com → blank /pending wizard
+#    - mice_pending@mice.com   → /pending with seeded User request
 ```
 
 ### Adding More Test Users

@@ -1112,7 +1112,8 @@ This allows future **wildcard permissions**:
 | `mice_no_mfa@mice.com` | `user` | Password-only control (not admin) |
 | `partner@partner.example` | `user` | SAML broker e2e (password-only) |
 | `mice_external@mice.com` | `external` | External collaborator |
-| `mice_pending@mice.com` | (none) | No role — `/pending` request flow |
+| `mice_no_access@mice.com` | (none) | No role — blank `/pending` wizard |
+| `mice_pending@mice.com` | (none) | No role — seeded pending User request |
 
 ### Test Scenarios
 

@@ -4,6 +4,7 @@ import {
   canApproveModifiedGrant,
   canApproveRole,
   canGrantPermissions,
+  canReviewPendingRequest,
 } from './rbacAuthority.js'
 import type { InstanceRole } from './rbacRoles.js'
 import { getRolePermissions } from './rbacRoles.js'
@@ -85,6 +86,39 @@ describe('RBAC S15 modify-before-approve', () => {
         grantedPermissions: ['namespace:create'],
       }),
       true,
+    )
+  })
+})
+
+describe('RBAC canReviewPendingRequest', () => {
+  it('matches modify-before-approve with granted === requested', () => {
+    const managerPerms = getRolePermissions('manager')
+    assert.equal(
+      canReviewPendingRequest({
+        reviewerRole: 'manager',
+        reviewerEffective: managerPerms,
+        requestedRole: 'user',
+        requestedPermissions: [],
+      }),
+      true,
+    )
+    assert.equal(
+      canReviewPendingRequest({
+        reviewerRole: 'manager',
+        reviewerEffective: managerPerms,
+        requestedRole: 'admin',
+        requestedPermissions: [],
+      }),
+      false,
+    )
+    assert.equal(
+      canReviewPendingRequest({
+        reviewerRole: 'manager',
+        reviewerEffective: managerPerms,
+        requestedRole: null,
+        requestedPermissions: ['store:gc'],
+      }),
+      false,
     )
   })
 })
