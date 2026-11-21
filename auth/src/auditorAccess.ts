@@ -18,6 +18,19 @@ export function decideAuditorMfa(input: {
 }
 
 /**
+ * Admission after bootstrap: apply the MFA gate unless the route opts out
+ * (`/auth/me` and `/auth/me/authz` so the UI can identify an Auditor who still needs OTP).
+ */
+export function decideAuditorAdmission(input: {
+  role: string | null
+  hasMfa: boolean
+  allowWithoutMfa?: boolean
+}): string | null {
+  if (input.allowWithoutMfa) return null
+  return decideAuditorMfa({ role: input.role, hasMfa: input.hasMfa })
+}
+
+/**
  * Pure ACL-bypass read decision (Auditor / custom `repo:bypass_acl`).
  * Never for PATs; MFA required; only when the need is `read`.
  */

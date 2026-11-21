@@ -12,3 +12,20 @@ export const AUDITOR_GRANT_HINT =
 export function isAuditorRole(role: string | null | undefined): boolean {
   return role === 'auditor'
 }
+
+/** Banner when /auth/me works but data routes will 403 without MFA. */
+export const AUDITOR_MFA_BANNER =
+  'Auditor access requires MFA evidence on every request. Complete OTP at the IdP (or re-sign in with MFA), then reload.'
+
+/**
+ * Show a shell banner when the signed-in principal is Auditor without MFA evidence.
+ * `/auth/me` is exempt so the UI can still identify them.
+ */
+export function decideAuditorMfaBanner(input: {
+  role: string | null | undefined
+  mfaEvidenced: boolean | undefined
+}): string | null {
+  if (!isAuditorRole(input.role)) return null
+  if (input.mfaEvidenced === true) return null
+  return AUDITOR_MFA_BANNER
+}

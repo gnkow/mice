@@ -26,6 +26,18 @@ const signatureEvent = {
 }
 
 test.describe('Auditor access UI (#13)', () => {
+  test('TC-AUDITOR-UI-00: Shell banner when Auditor session lacks MFA (#17)', async ({ page }) => {
+    await mintSession(page, {
+      role: 'auditor',
+      sub: uniqueId('auditor-no-mfa-banner'),
+      iss: 'mice-e2e',
+    })
+    await page.goto('/')
+    const banner = page.getByTestId('auditor-mfa-banner')
+    await expect(banner).toBeVisible()
+    await expect(banner).toContainText(/MFA evidence on every request/i)
+  })
+
   test('TC-AUDITOR-UI-01: Grant access shows Auditor expiry and MFA constraints', async ({
     page,
   }) => {

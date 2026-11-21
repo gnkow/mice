@@ -11,6 +11,7 @@ import {
   type AuthUser,
   type AuthzMe,
 } from '../lib/auth'
+import { decideAuditorMfaBanner } from '../lib/auditorGrant'
 import { fetchServerVersion } from '../lib/oxen/api'
 import { loadSettings, subscribeSettings } from '../lib/oxen/settings'
 import {
@@ -83,6 +84,10 @@ export function Layout() {
   }, [])
 
   const canViewAudit = authz ? hasEffectivePermission(authz, 'audit:read') : false
+  const auditorMfaBanner = decideAuditorMfaBanner({
+    role: authz?.role,
+    mfaEvidenced: user?.mfaEvidenced,
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -281,6 +286,15 @@ export function Layout() {
           </details>
         </header>
         {user && <AnnouncementBanner />}
+        {auditorMfaBanner && (
+          <div
+            className="flash flash-warn"
+            role="status"
+            data-testid="auditor-mfa-banner"
+          >
+            {auditorMfaBanner}
+          </div>
+        )}
         {connected === false && (
           <div className="offline-banner flash flash-error" role="alert">
             {user

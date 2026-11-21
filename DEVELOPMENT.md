@@ -13,6 +13,7 @@ Accounts live in `auth/keycloak/realm-mice.json`; formal roles, the `demo` / `sa
 | `mice_admin` | `mice_admin@mice.com` | `admin123` | `admin` | TOTP | Bootstrap instance admin (`AUTHZ_BOOTSTRAP_ADMINS`) |
 | `mice_manager` | `mice_manager@mice.com` | `manage123` | `manager` | TOTP | Owns namespace `demo`; signed ceremonies |
 | `mice_auditor` | `mice_auditor@mice.com` | `auditor123` | `auditor` | TOTP | Read / `repo:bypass_acl` |
+| `mice_auditor_no_mfa` | `mice_auditor_no_mfa@mice.com` | `auditornmfa123` | `auditor` | — | Password-only Auditor; MFA gate / shell banner control |
 | `mice_user` | `mice_user@mice.com` | `user123` | `user` | TOTP | Default SSO / e2e (`KEYCLOAK_E2E_USER`); `demo/sample` write; IdP group `engineering` |
 | `mice_user_2` | `mice_user_2@mice.com` | `user2123` | `user` | TOTP | Second MFA collaborator; `demo/sample` write; IdP group `engineering` |
 | `mice_user_3` | `mice_user_3@mice.com` | `user3123` | `user` | TOTP | Third MFA collaborator; `demo/sample` write; IdP group `engineering` |
@@ -70,6 +71,11 @@ On the Keycloak OTP screen the **mice-dev** login theme shows **Dev OTP** with t
 - Read-oriented catalog including private-repo read via `repo:bypass_acl`
 - Has TOTP (auditor routes require MFA evidence)
 
+#### Auditor without MFA (`mice_auditor_no_mfa@mice.com`)
+- Formal `auditor` role from seed, **password-only** (no TOTP credential)
+- After SSO: shell shows the MFA-required banner; data routes return 403 until MFA is present
+- Use to exercise ticket 17 (Auditor MFA on every request) without stripping OTP from `mice_auditor`
+
 #### User (`mice_user@mice.com`, `mice_user_2`, `mice_user_3`)
 - Formal `user` role from seed — ready to use without an access request
 - `mice_user` is the default local SSO / e2e login (`KEYCLOAK_E2E_USER`)
@@ -115,7 +121,8 @@ AUTHZ_BOOTSTRAP_ADMINS=mice_admin@mice.com
 - Login as `mice_manager@mice.com` → Manager (after seed)
 - Login as `mice_user@mice.com` / `_2` / `_3` → User (after seed; OTP)
 - Login as `mice_external@mice.com` → External (after seed)
-- Login as `mice_auditor@mice.com` → Auditor (after seed)
+- Login as `mice_auditor@mice.com` → Auditor (after seed; OTP)
+- Login as `mice_auditor_no_mfa@mice.com` → Auditor without MFA evidence (banner + 403 on data routes)
 - Login as `mice_no_access@mice.com` → blank `/pending` wizard (no request yet)
 - Login as `mice_pending@mice.com` → `/pending` with a seeded User request until approved/denied
 

@@ -237,6 +237,22 @@
       ]
     },
     {
+      "id": "a0000000-0000-4000-8000-000000000012",
+      "username": "mice_auditor_no_mfa",
+      "enabled": true,
+      "email": "mice_auditor_no_mfa@mice.com",
+      "emailVerified": true,
+      "firstName": "Auditor",
+      "lastName": "NoMfa",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "auditornmfa123",
+          "temporary": false
+        }
+      ]
+    },
+    {
       "id": "a0000000-0000-4000-8000-000000000004",
       "username": "mice_user",
       "enabled": true,

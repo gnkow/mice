@@ -6,7 +6,7 @@ import { sessionHasMfaEvidence } from './authentication/signing/mfaEvidence.js'
 import {
   AUDITOR_MFA_REASON,
   decideAclBypassRead,
-  decideAuditorMfa,
+  decideAuditorAdmission,
 } from './auditorAccess.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
@@ -186,11 +186,18 @@ export async function hasRepoPermission(
 
 export { AUDITOR_MFA_REASON }
 
-/** The one rule: an Auditor-role principal must carry MFA evidence on every request. */
-export async function auditorMfaRefusal(user: SessionUser): Promise<string | null> {
-  return decideAuditorMfa({
+/**
+ * The one rule: an Auditor-role principal must carry MFA evidence on every request.
+ * Pass `allowWithoutMfa` only for `/auth/me` and `/auth/me/authz` (UI identity without unlocking data routes).
+ */
+export async function auditorMfaRefusal(
+  user: SessionUser,
+  opts?: { allowWithoutMfa?: boolean },
+): Promise<string | null> {
+  return decideAuditorAdmission({
     role: await getUserRole(user),
     hasMfa: sessionHasMfa(user),
+    allowWithoutMfa: opts?.allowWithoutMfa,
   })
 }
 

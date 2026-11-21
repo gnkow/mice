@@ -4,6 +4,7 @@ import {
   AUDITOR_CANNOT_SIGN,
   AUDITOR_MFA_REASON,
   decideAclBypassRead,
+  decideAuditorAdmission,
   decideAuditorCannotSign,
   decideAuditorMfa,
 } from './auditorAccess.js'
@@ -14,6 +15,20 @@ describe('decideAuditorMfa', () => {
     assert.equal(decideAuditorMfa({ role: 'auditor', hasMfa: true }), null)
     assert.equal(decideAuditorMfa({ role: 'user', hasMfa: false }), null)
     assert.equal(decideAuditorMfa({ role: null, hasMfa: false }), null)
+  })
+})
+
+describe('decideAuditorAdmission', () => {
+  it('honours the /auth/me exemption without weakening the MFA rule', () => {
+    assert.equal(
+      decideAuditorAdmission({ role: 'auditor', hasMfa: false, allowWithoutMfa: true }),
+      null,
+    )
+    assert.equal(
+      decideAuditorAdmission({ role: 'auditor', hasMfa: false, allowWithoutMfa: false }),
+      AUDITOR_MFA_REASON,
+    )
+    assert.equal(decideAuditorAdmission({ role: 'auditor', hasMfa: false }), AUDITOR_MFA_REASON)
   })
 })
 

@@ -8,7 +8,8 @@
  * | mice_admin@mice.com       | admin123 (+ TOTP) | admin (AUTHZ_BOOTSTRAP_ADMINS on login) |
  * | mice_no_mfa@mice.com      | nomfa123     | user (password-only control) |
  * | mice_manager@mice.com     | manage123    | manager  |
- * | mice_auditor@mice.com     | auditor123   | auditor  |
+ * | mice_auditor@mice.com     | auditor123   | auditor (TOTP) |
+ * | mice_auditor_no_mfa@mice.com | auditornmfa123 | auditor (password-only; MFA gate control) |
  * | mice_user@mice.com        | user123      | user (default SSO / e2e; MFA) |
  * | mice_user_2@mice.com      | user2123     | user (MFA collaborator) |
  * | mice_user_3@mice.com      | user3123     | user (MFA collaborator) |
@@ -95,6 +96,15 @@ const ACCOUNTS: readonly DevAccount[] = [
     name: 'Auditor User',
     password: 'auditor123',
     stableSub: 'a0000000-0000-4000-8000-000000000003',
+    role: 'auditor',
+  },
+  {
+    // Password-only Auditor: Conditional OTP skipped (no TOTP). Use to test MFA-every-request gate / shell banner.
+    username: 'mice_auditor_no_mfa',
+    email: 'mice_auditor_no_mfa@mice.com',
+    name: 'Auditor NoMfa',
+    password: 'auditornmfa123',
+    stableSub: 'a0000000-0000-4000-8000-000000000012',
     role: 'auditor',
   },
   {

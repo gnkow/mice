@@ -58,7 +58,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
   })
 
   /** Effective AuthZ summary for UI (RBAC role + effective permissions). */
-  app.get('/auth/me/authz', guarded({}, async ({ c, user: session }) => {
+  app.get('/auth/me/authz', guarded({ allowAuditorWithoutMfa: true }, async ({ c, user: session }) => {
     const pending = await isPendingUser(session)
     const role = await getUserRole(session)
     const rolePermissions = Object.fromEntries(
