@@ -247,6 +247,47 @@ describe('namespace routes', () => {
       (await call('manager', 'GET', '/auth/namespaces/rename-route-ns/repos/assay/permissions')).status,
       200,
     )
+
+    // #148: read collaborator sees no mutate chrome; Owner/admin does.
+    assert.equal(
+      (
+        await call('manager', 'PUT', '/auth/namespaces/rename-route-ns/repos/assay/collaborators', {
+          sub: alice.sub,
+          iss: alice.iss,
+          role: 'read',
+        })
+      ).status,
+      200,
+    )
+    const readerPerms = (await (
+      await call('alice', 'GET', '/auth/namespaces/rename-route-ns/repos/assay/permissions')
+    ).json()) as {
+      permissions: {
+        rename: boolean
+        transfer: boolean
+        manageCollaborators: boolean
+        manageApprovers: boolean
+        editMetadata: boolean
+        deleteRepository: boolean
+        viewSignedRecord: boolean
+      }
+    }
+    assert.deepEqual(readerPerms.permissions, {
+      rename: false,
+      transfer: false,
+      manageCollaborators: false,
+      manageApprovers: false,
+      editMetadata: false,
+      deleteRepository: false,
+      viewSignedRecord: true,
+    })
+    const ownerPerms = (await (
+      await call('manager', 'GET', '/auth/namespaces/rename-route-ns/repos/assay/permissions')
+    ).json()) as { permissions: typeof readerPerms.permissions }
+    assert.equal(ownerPerms.permissions.rename, true)
+    assert.equal(ownerPerms.permissions.manageCollaborators, true)
+    assert.equal(ownerPerms.permissions.manageApprovers, true)
+    assert.equal(ownerPerms.permissions.deleteRepository, true)
   })
 
   it('custom roles: catalog, create, update and delete for a namespace role', async () => {

@@ -522,6 +522,11 @@ export function RepoSettingsPage() {
             aria-labelledby="repo-meta-heading"
           >
             <h2 id="repo-meta-heading">Metadata</h2>
+            {!perms.editMetadata ? (
+              <p className="muted small">
+                You can view metadata for this repository. Editing requires write access.
+              </p>
+            ) : null}
             <MetaBody type="repo" id={`${namespace}/${repo}`} />
           </section>
         ) : null}

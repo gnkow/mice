@@ -7,7 +7,7 @@ import {
   decideNamespaceAction,
   hasRepoPermission,
 } from './authz.js'
-import { canEditEntity } from './metaAuthz.js'
+import { decideRepoViewerPermissions } from './repoViewerPermissions.js'
 import { grantApprover, listApproverHistory, listApprovers, revokeApprover } from './authzApproverStore.js'
 import { denialResponse } from './decisionHttp.js'
 import {
@@ -437,29 +437,13 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ versions })
   }))
 
-  /** Caller-facing capabilities for repository settings chrome. */
+  /** Caller-facing capabilities for repository settings chrome (#148). */
   app.get('/auth/namespaces/:ns/repos/:repo/permissions', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
-    const read = await hasRepoPermission(session, ns, repo, 'read')
-    if (!read.ok) return c.json({ error: 'Forbidden' }, 403)
-    const admin = await hasRepoPermission(session, ns, repo, 'admin')
-    const [manageCollaborators, manageApprovers, editMetadata] = await Promise.all([
-      decideManageRepoCollaborators(session, ns, repo),
-      decideManageApprovers(session, ns),
-      canEditEntity(session, { type: 'repo', id: `${ns}/${repo}`, namespace: ns, repo }),
-    ])
-    return c.json({
-      permissions: {
-        rename: admin.ok && !admin.bypass,
-        transfer: admin.ok && !admin.bypass,
-        manageCollaborators: manageCollaborators.allow,
-        manageApprovers: manageApprovers.allow,
-        editMetadata,
-        deleteRepository: admin.ok && !admin.bypass,
-        viewSignedRecord: true,
-      },
-    })
+    const decided = await decideRepoViewerPermissions(session, ns, repo)
+    if (!decided.ok) return c.json({ error: 'Forbidden' }, decided.status)
+    return c.json({ permissions: decided.permissions })
   }))
 
   app.get('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
