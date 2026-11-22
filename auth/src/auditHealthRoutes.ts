@@ -8,14 +8,10 @@ import {
   listAuditOutages,
   reportAuditDegradation,
 } from './auditOutage.js'
-import { isInstanceAdmin } from './authzInstanceStore.js'
 import { currentClock } from './clock.js'
 import type { AuditDep } from './routeDeps.js'
 import { guarded } from './authentication/session/routeGuard.js'
-
-const adminGate = async (u: { principalId?: number; sub: string; iss: string }) => {
-  return (await isInstanceAdmin(u)) ? null : 'Instance admin required'
-}
+import { adminRoleGate } from './decisionHttp.js'
 
 async function statusPayload() {
   const [readiness, outage, recentOutages] = await Promise.all([
@@ -45,7 +41,7 @@ async function statusPayload() {
 export function registerAuditHealthRoutes(app: Hono, _deps: AuditDep): void {
   app.get(
     '/auth/admin/audit-health/status',
-    guarded({ gate: adminGate, mutates: false }, async ({ c }) => c.json(await statusPayload())),
+    guarded({ gate: adminRoleGate, mutates: false }, async ({ c }) => c.json(await statusPayload())),
   )
 
   /**
@@ -54,7 +50,7 @@ export function registerAuditHealthRoutes(app: Hono, _deps: AuditDep): void {
    */
   app.post(
     '/auth/admin/audit-health/check',
-    guarded({ gate: adminGate, mutates: false }, async ({ c }) => {
+    guarded({ gate: adminRoleGate, mutates: false }, async ({ c }) => {
       const at = currentClock.now()
       const requestId = c.req.header('x-request-id') || `audit-health-${at}`
       let verification: Awaited<ReturnType<typeof verifyAudit>>

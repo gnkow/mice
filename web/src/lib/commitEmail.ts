@@ -1,3 +1,5 @@
+import { toAuthorKey } from './userRef'
+
 /** Which addresses a commit view should show. The oxen commit keeps the stored value. */
 export type CommitEmailDisplay = {
   /** Address rendered inside `&lt;…&gt;` — the submission-time (stored) email when present. */
@@ -39,7 +41,10 @@ export async function fetchPrincipalProfiles(
   authors: string[],
   signal?: AbortSignal,
 ): Promise<PrincipalProfiles> {
-  const unique = [...new Set(authors.map((a) => a.trim()).filter(Boolean))]
+  // Canonical `iss|sub` so AuthZ `iss\u001fsub` keys (MR openedBy, seats) resolve.
+  const unique = [
+    ...new Set(authors.map((a) => toAuthorKey(a)).filter(Boolean)),
+  ]
   if (unique.length === 0) return { emails: {}, names: {} }
   const res = await fetch('/auth/principals/emails', {
     method: 'POST',

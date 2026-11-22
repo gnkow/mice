@@ -129,7 +129,9 @@ test.describe('RBAC web UI (#16)', () => {
     await users.locator('select').selectOption({ label: 'User' })
     await users.locator('label', { hasText: 'repo:bypass_acl' }).getByRole('checkbox').uncheck()
     await users.getByRole('button', { name: 'Grant', exact: true }).click()
-    await expect(users.getByRole('status')).toContainText(/Granted access/i)
+    // Success closes the form; no toast — list reload is the confirmation.
+    await expect(users.getByRole('button', { name: 'Grant', exact: true })).toHaveCount(0)
+    await expect(users.getByRole('button', { name: 'Grant Access' }).first()).toBeVisible()
   })
 
   test('TC-RBAC-E4: request wizard footnotes Admin/Auditor as grant-only', async ({ page }) => {

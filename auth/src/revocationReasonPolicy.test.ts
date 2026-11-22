@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { isolatedAuth, regulatedMutationHeaders } from './testSupport.js'
 
 /**
- * GxP ticket 03 — revocation-class BFF routes must refuse without category + free text
+ * GxP ticket 03 — revocation-class BFF routes must refuse without free text
  * and accept past the reason/signature gate with ceremony headers.
  */
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
@@ -37,7 +37,7 @@ const cookie = async () =>
   sealedSessionCookie({ ...admin, sessionStart: Math.floor(Date.now() / 1000) })
 
 describe('revocation reason policy (HTTP)', () => {
-  it('GXP-R-013 POST /auth/admin/revoke refuses without category + free text and accepts with ceremony', async () => {
+  it('GXP-R-013 POST /auth/admin/revoke refuses without free text and accepts with ceremony', async () => {
     const path = '/auth/admin/revoke'
     const body = { principal: 'idp|victim', reason: 'Security incident cut-off' }
 
@@ -57,7 +57,6 @@ describe('revocation reason policy (HTTP)', () => {
       path,
       body,
       reason: 'Security incident cut-off for compromised credentials',
-      category: 'revocation',
     })
     const ok = await app.request(path, {
       method: 'POST',
@@ -66,7 +65,6 @@ describe('revocation reason policy (HTTP)', () => {
     })
     const okJson = (await ok.json().catch(() => ({}))) as { code?: string }
     assert.notEqual(okJson.code, 'reason_required')
-    assert.notEqual(okJson.code, 'reason_category_required')
     assert.notEqual(okJson.code, 'signature_required')
   })
 
@@ -90,7 +88,6 @@ describe('revocation reason policy (HTTP)', () => {
       path,
       body,
       reason: 'Offboard sessions after role removal',
-      category: 'revocation',
     })
     const ok = await app.request(path, {
       method: 'POST',

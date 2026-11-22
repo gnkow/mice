@@ -11,6 +11,7 @@ const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { appendAudit, useAuditLedger, verifyAudit } = await import('./audit.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
+const { ledgerEventsSince, ledgerHeadSeq } = await import('./auditTestIsolation.js')
 
 const real = await openLedger(immudbConfig())
 let failAppends = false
@@ -38,23 +39,11 @@ await setRepoCollaborator('in', 'r', writer, 'write')
 await preparePrincipal(writer)
 await iso.grantRole(writer, 'user')
 
-type Row = {
-  id: string
-  action: string
-  phase?: string
-  intent_id?: string
-  status: number
-  path: string
-  actor: { sub: string }
-}
+type Row = Awaited<ReturnType<typeof ledgerEventsSince>>[number]
 let since = 0
 const ownActors = new Set([writer.sub, admin.sub])
 /** Events this file's principals wrote since the current test began, oldest first. */
-const rows = async () =>
-  (await real.readAll())
-    .filter((r) => r.seq > since)
-    .map((r) => JSON.parse(r.value) as Row)
-    .filter((r) => ownActors.has(r.actor?.sub))
+const rows = async () => ledgerEventsSince(real, since, { actors: ownActors })
 const mutationRows = rows
 
 let upstreamCalls: string[]
@@ -63,7 +52,7 @@ let auditSnapshotAtUpstream: Row[] = []
 const app = createApp()
 
 beforeEach(async () => {
-  since = (await real.readAll()).reduce((m, r) => Math.max(m, r.seq), 0)
+  since = await ledgerHeadSeq(real)
   failAppends = false
   altered = new Set()
   upstreamCalls = []
@@ -71,15 +60,16 @@ beforeEach(async () => {
   restoreUpstream = setUpstreamFetch(async (url, init) => {
     upstreamCalls.push(`${init?.method} ${String(url)}`)
     if (init?.method === 'PUT') auditSnapshotAtUpstream = await rows()
-    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' } })
+    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-change-control-id': 'CC-2026-114' } })
   })
 })
 afterEach(() => restoreUpstream())
 
 async function put(user = writer) {
-  return app.request('/api/repos/in/r/file/main/a.csv', {
+  // Non-default branch: direct tip-changing writes to validated `main` are refused.
+  return app.request('/api/repos/in/r/file/feature/a.csv', {
     method: 'PUT',
-    headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+    headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-change-control-id': 'CC-2026-114' },
     body: '{"message":"fix a"}',
   })
 }
@@ -128,9 +118,9 @@ describe('intent-first proxied mutations', () => {
     const headers = await iso.sessionHeaders(writer)
     const restore = breakAuditStore()
     try {
-      const res = await app.request('/api/repos/in/r/file/main/a.csv', {
+      const res = await app.request('/api/repos/in/r/file/feature/a.csv', {
         method: 'PUT',
-        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' },
+        headers: { ...headers, 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-change-control-id': 'CC-2026-114' },
         body: '{"message":"fix a"}',
       })
       assert.equal(res.status, 503)

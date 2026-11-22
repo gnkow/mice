@@ -101,7 +101,7 @@ Examples:
 | `repo:tags:create` | Create tag | POST `/api/repos/:ns/:repo/tags` |
 | `repo:tags:delete` | Delete tag | DELETE `/api/repos/:ns/:repo/tags/*` |
 | `repo:merge` | Merge branches | POST `/api/repos/:ns/:repo/merge` |
-| `repo:collaborators:list` | List repository collaborators | GET `/auth/namespaces/:ns/repos/:repo/collaborators` |
+| `repo:collaborators:list` | List repository collaborators (any caller with repo read or administer) | GET `/auth/namespaces/:ns/repos/:repo/collaborators` |
 | `repo:collaborators:add` | Add repository collaborator | PUT `/auth/namespaces/:ns/repos/:repo/collaborators` |
 | `repo:collaborators:update` | Update collaborator role | PUT `/auth/namespaces/:ns/repos/:repo/collaborators` |
 | `repo:collaborators:remove` | Remove repository collaborator | DELETE `/auth/namespaces/:ns/repos/:repo/collaborators` |
@@ -1106,12 +1106,15 @@ This allows future **wildcard permissions**:
 | `mice_admin@mice.com` | `admin` | Instance administrator (bootstrap; MFA/OTP) |
 | `mice_manager@mice.com` | `manager` | Team manager / signed ceremonies (MFA/OTP) |
 | `mice_auditor@mice.com` | `auditor` | Compliance auditor (MFA/OTP) |
-| `mice_user@mice.com` | `user` | Standard user (MFA/OTP) |
+| `mice_auditor_no_mfa@mice.com` | `auditor` | Auditor without TOTP (MFA gate control) |
+| `mice_user@mice.com` | `user` | Default SSO / e2e user (MFA/OTP); IdP group `engineering` |
+| `mice_user_2@mice.com` | `user` | Second MFA collaborator; IdP group `engineering` |
+| `mice_user_3@mice.com` | `user` | Third MFA collaborator; IdP group `engineering` |
 | `mice_no_mfa@mice.com` | `user` | Password-only control (not admin) |
-| `mice@example.com` | `user` | Default SSO / e2e user (password-only) |
 | `partner@partner.example` | `user` | SAML broker e2e (password-only) |
 | `mice_external@mice.com` | `external` | External collaborator |
-| `mice_pending@mice.com` | (none) | No role — `/pending` request flow |
+| `mice_no_access@mice.com` | (none) | No role — blank `/pending` wizard |
+| `mice_pending@mice.com` | (none) | No role — seeded pending User request |
 
 ### Test Scenarios
 

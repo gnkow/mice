@@ -40,4 +40,23 @@ describe('Principal current email', () => {
     ])
     assert.deepEqual(emails, { 'https://idp.example|view-alice': 'alice@lab.test' })
   })
+
+  it('resolves AuthZ unit-separator keys (MR openedBy) to the canonical iss|sub map', async () => {
+    await ensurePrincipal({
+      iss: 'https://idp.example/',
+      sub: 'mr-opener',
+      email: 'opener@lab.test',
+      name: 'MR Opener',
+    })
+    const { currentProfilesByAuthor } = await import('./session.js')
+    const profiles = await currentProfilesByAuthor([
+      'https://idp.example\u001fmr-opener',
+    ])
+    assert.deepEqual(profiles.emails, {
+      'https://idp.example|mr-opener': 'opener@lab.test',
+    })
+    assert.deepEqual(profiles.names, {
+      'https://idp.example|mr-opener': 'MR Opener',
+    })
+  })
 })

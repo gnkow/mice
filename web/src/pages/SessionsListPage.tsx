@@ -49,8 +49,7 @@ export function SessionsListPage() {
   const canCreateSession =
     authz.kind === 'ok' &&
     !!authz.data &&
-    (!authz.data.enforce ||
-      hasEffectivePermission(authz.data, 'session:create') ||
+    (hasEffectivePermission(authz.data, 'session:create') ||
       hasEffectivePermission(authz.data, 'session:delete'))
 
   function goPage(next: number) {

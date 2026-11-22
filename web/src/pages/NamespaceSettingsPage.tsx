@@ -1,12 +1,12 @@
-import { Pencil as ActionPencil, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
+import { Pencil as ActionPencil, Trash2 as ActionTrash2 } from 'lucide-react'
 import { MetaBody } from '../components/MetaPanel'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApproversSection } from '../components/ApproversSection'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import { CustomRolesSection } from '../components/CustomRolesSection'
-import { DirectoryPicker } from '../components/DirectoryPicker'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
+import { PrincipalAddCard } from '../components/PrincipalAddCard'
 import { StateBlock } from '../components/StateBlock'
 import { UserRef } from '../components/UserRef'
 import { useAsync } from '../hooks/useAsync'
@@ -34,12 +34,12 @@ const BASE_OPTS: BasePermission[] = [
 ]
 
 const BASE_HELP: Record<BasePermission, string> = {
-  none: 'Members need an explicit repo role to see repositories.',
-  read: 'Members can browse and pull every repository in the namespace.',
-  triage: 'Members can manage issues/PRs but not push by default.',
-  write: 'Members can push to repositories they can access.',
-  maintain: 'Members can manage most repo settings without full admin.',
-  admin: 'Members have admin on every repository (use sparingly).',
+  none: 'Unused for data access — add repository collaborators for read/write.',
+  read: 'Unused for data access — add repository collaborators for read/write.',
+  triage: 'Unused for data access — add repository collaborators for read/write.',
+  write: 'Unused for data access — add repository collaborators for read/write.',
+  maintain: 'Unused for data access — add repository collaborators for read/write.',
+  admin: 'Unused for data access — add repository collaborators for read/write.',
 }
 
 export function NamespaceSettingsPage() {
@@ -55,11 +55,6 @@ export function NamespaceSettingsPage() {
   )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [principalKind, setPrincipalKind] = useState<'user' | 'group'>('user')
-  const [sub, setSub] = useState('')
-  const [iss, setIss] = useState('mice-dev')
-  const [group, setGroup] = useState('')
-  const [groupName, setGroupName] = useState('')
   const [role, setRole] = useState<MemberRoleRef>('member')
   const [renameTo, setRenameTo] = useState(namespace)
   const memberAuthors =
@@ -93,47 +88,6 @@ export function NamespaceSettingsPage() {
     } catch (e) {
       if (isCeremonyCancelled(e)) return
       setError(e instanceof Error ? e.message : 'Update failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onAddMember(e: FormEvent) {
-    e.preventDefault()
-    if (principalKind === 'group') {
-      if (!group.trim()) {
-        setError('Choose a group from search or enter one manually')
-        return
-      }
-    } else if (!sub.trim() || !iss.trim()) {
-      setError('Choose a user from search or enter sub/iss manually')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      if (principalKind === 'group') {
-        await putNamespaceMember(namespace, {
-          kind: 'group',
-          group: group.trim(),
-          name: groupName.trim() || group.trim(),
-          role,
-        })
-        setGroup('')
-        setGroupName('')
-      } else {
-        await putNamespaceMember(namespace, {
-          kind: 'user',
-          sub: sub.trim(),
-          iss: iss.trim(),
-          role,
-        })
-        setSub('')
-      }
-      state.reload()
-    } catch (err) {
-      if (isCeremonyCancelled(err)) return
-      setError(err instanceof Error ? err.message : 'Add failed')
     } finally {
       setBusy(false)
     }
@@ -323,8 +277,9 @@ export function NamespaceSettingsPage() {
                 <div>
                   <h2 id="ns-members-heading">Members</h2>
                   <p className="muted small">
-                    Owners manage this namespace. Members inherit the base
-                    permission above.
+                    Owners manage namespace settings and repository collaborator
+                    lists. Members do not get repository data access from
+                    membership alone — add them as repository collaborators.
                   </p>
                   {state.data.unresolvedGroups.length > 0 && (
                     <p className="flash flash-error" role="status">
@@ -392,83 +347,67 @@ export function NamespaceSettingsPage() {
               )}
 
               {perms.manageMembers ? (
-              <form className="ns-member-form" onSubmit={onAddMember}>
-                <h3 className="ns-settings-subhead">Add member</h3>
-                <div className="ns-member-form-fields">
-                  <label>
-                    Identity
-                    <select
-                      className="ns-select"
-                      value={principalKind}
-                      onChange={(e) =>
-                        setPrincipalKind(e.target.value as 'user' | 'group')
-                      }
-                    >
-                      <option value="user">User</option>
-                      <option value="group">Group</option>
-                    </select>
-                  </label>
-                  {principalKind === 'group' ? (
-                    <DirectoryPicker
-                      kind="group"
-                      group={group}
-                      label={groupName}
-                      disabled={busy}
-                      onChange={({ group: g, name }) => {
-                        setGroup(g)
-                        setGroupName(name)
-                      }}
-                    />
-                  ) : (
-                    <DirectoryPicker
-                      kind="user"
-                      sub={sub}
-                      iss={iss}
-                      defaultIss="mice-dev"
-                      disabled={busy}
-                      onChange={({ sub: s, iss: i }) => {
-                        setSub(s)
-                        setIss(i)
-                      }}
-                    />
-                  )}
-                  <label>
-                    Role
-                    <select
-                      className="ns-select"
-                      value={role}
-                      onChange={(e) =>
-                        setRole(e.target.value as MemberRoleRef)
-                      }
-                    >
-                      <optgroup label="Namespace roles">
-                        <option value="member">Member</option>
-                        <option value="owner">Owner</option>
-                      </optgroup>
-                      {customRoles.kind === 'ok' &&
+                <div className="ns-member-form">
+                  <h3 className="ns-settings-subhead">Add member</h3>
+                  <PrincipalAddCard
+                    disabled={busy}
+                    role={role}
+                    onRoleChange={(r) => setRole(r as MemberRoleRef)}
+                    addLabel="Add member"
+                    roles={[
+                      {
+                        label: 'Namespace roles',
+                        options: [
+                          { value: 'member', label: 'Member' },
+                          { value: 'owner', label: 'Owner' },
+                        ],
+                      },
+                      ...(customRoles.kind === 'ok' &&
                       customRoles.data &&
-                      customRoles.data.namespaceRoles.length > 0 ? (
-                        <optgroup label="Custom roles">
-                          {customRoles.data.namespaceRoles.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null}
-                    </select>
-                  </label>
-                  <div className="ns-member-form-actions">
-                    <button
-                      className="btn primary"
-                      type="submit"
-                      disabled={busy}
-                    >
-                      <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add member
-                    </button>
-                  </div>
+                      customRoles.data.namespaceRoles.length > 0
+                        ? [
+                            {
+                              label: 'Custom roles',
+                              options: customRoles.data.namespaceRoles.map(
+                                (r) => ({ value: r.id, label: r.name }),
+                              ),
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onAdd={async (principal) => {
+                      setBusy(true)
+                      setError(null)
+                      try {
+                        if (principal.kind === 'group') {
+                          await putNamespaceMember(namespace, {
+                            kind: 'group',
+                            group: principal.group,
+                            name: principal.name,
+                            role,
+                          })
+                        } else {
+                          await putNamespaceMember(namespace, {
+                            kind: 'user',
+                            sub: principal.sub,
+                            iss: principal.iss,
+                            role,
+                          })
+                        }
+                        state.reload()
+                      } catch (err) {
+                        if (!isCeremonyCancelled(err)) {
+                          setError(
+                            err instanceof Error ? err.message : 'Add failed',
+                          )
+                        }
+                        throw err
+                      } finally {
+                        setBusy(false)
+                      }
+                    }}
+                  />
                 </div>
-              </form>
               ) : null}
             </section>
 

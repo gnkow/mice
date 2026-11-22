@@ -68,7 +68,7 @@ test.describe('upload (unified size-aware flow)', () => {
     }
   })
 
-  test('L-02: large upload staged in stage', async ({
+  test('L-02: large upload staged in stage section', async ({
     page,
     seededRepo,
   }) => {
@@ -80,14 +80,19 @@ test.describe('upload (unified size-aware flow)', () => {
     )
     const chunky = makeChunkyTemp()
     try {
-      const dialog = await openUploadModal(page, seededRepo)
-      await dialog.locator('input[name="file"]').setInputFiles(chunky)
-      await dialog.getByLabel('Target stage').selectOption(ws.id)
-      await dialog.getByRole('button', { name: 'Upload' }).click()
+      await page.goto(
+        repoPath(seededRepo, `/stages/${encodeURIComponent(ws.id)}`),
+      )
+      const form = page.locator('section.panel', { hasText: 'Upload file' })
+      await expect(form.getByRole('button', { name: 'Stage upload' })).toBeVisible({
+        timeout: 30_000,
+      })
+      await form.locator('input[name="file"]').setInputFiles(chunky)
+      await form.getByRole('button', { name: 'Stage upload' }).click()
 
       await expect(
-        page.locator('.manage-files-toast.flash-success, .flash-success').first(),
-      ).toContainText(/staged in stage/i, { timeout: 120_000 })
+        page.locator('.flash-success, [role="status"]').first(),
+      ).toContainText(/Staged/i, { timeout: 120_000 })
     } finally {
       fs.unlinkSync(chunky)
     }

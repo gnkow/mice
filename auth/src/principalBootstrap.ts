@@ -8,9 +8,27 @@
  * records that group.
  */
 import type { SessionUser } from './authentication/index.js'
+import { matchesBootstrap } from './authzRepository.js'
 import { maybeBootstrapInstanceAdmin } from './authzInstanceStore.js'
 
-/** Run allowlist-only bootstrap. Returns whether the Principal is (now) an Admin. */
+/** Pure policy: whether this Principal may receive Admin from the allowlist. */
+export type PrincipalBootstrapDecision =
+  | { action: 'grant_admin' }
+  | { action: 'none'; reason: 'not_on_allowlist' }
+
+/**
+ * Allowlist-only bootstrap decision. IdP `groups` never influence the outcome.
+ */
+export function decidePrincipalBootstrap(user: SessionUser): PrincipalBootstrapDecision {
+  if (matchesBootstrap(user)) return { action: 'grant_admin' }
+  return { action: 'none', reason: 'not_on_allowlist' }
+}
+
+/**
+ * Run allowlist-only bootstrap. Returns whether the Principal is (now) an Admin.
+ * Groups on the session are ignored — only `AUTHZ_BOOTSTRAP_ADMINS` can grant.
+ */
 export async function runPrincipalBootstrap(user: SessionUser): Promise<boolean> {
+  if (decidePrincipalBootstrap(user).action !== 'grant_admin') return false
   return maybeBootstrapInstanceAdmin(user)
 }

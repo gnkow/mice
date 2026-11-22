@@ -29,7 +29,13 @@ const {
   isPendingUser,
   preparePrincipal,
 } = await import('./authz.js')
-const { isCustomRepoRoleAssigned, removeRepoCollaborator, setRepoCollaborator, setRepoGroupCollaborator } = await import('./authzCollaboratorStore.js')
+const {
+  getRepoCollaboratorRole,
+  isCustomRepoRoleAssigned,
+  removeRepoCollaborator,
+  setRepoCollaborator,
+  setRepoGroupCollaborator,
+} = await import('./authzCollaboratorStore.js')
 const { hasInstancePermission, isInstanceAdmin, setInstancePermissions, setTrainingCompletedSelf, hasCompletedTraining, writeInstancePermissions } = await import('./authzInstanceStore.js')
 const { hasNamespaceCapability, isCustomNamespaceRoleAssigned, setNamespaceMember, setNamespaceGroupMember, removeNamespaceMember, removeNamespaceGroupMember, listNamespaceMembers } = await import('./authzMembershipStore.js')
 const { createNamespaceAuthz, deleteNamespaceAuthz, updateNamespaceSettings, getNamespace } = await import('./authzNamespaceStore.js')
@@ -39,7 +45,7 @@ const {
   resolveAccessRequest,
 } = await import('./accessRequests.js')
 const { issueCliCredential, resolveCliCredential } = await import('./authentication/credentials/cliCredentials.js')
-const { OXEN_PATH_ROLE_MAP, minRoleForAction } = await import('./authzPathMap.js')
+const { minRoleForAction } = await import('./authzPathMap.js')
 const { classifyPath, interpretRequest } = await import('./authentication/index.js')
 const requiredRepoRoleForRequest = (method: string, path: string) => interpretRequest(method, path).minRole
 const { env } = await import('./env.js')
@@ -135,18 +141,22 @@ await describe('TC-AUTHO matrix', async () => {
     assert.equal((await hasRepoPermission(alice, ns, 'r', 'read')).ok, false)
   })
 
-  await it('TC-AUTHO-04: member base read can read not write', async () => {
+  await it('TC-AUTHO-04: Member does not inherit basePermission onto repos', async () => {
     const ns = 'tc04'
     await createNamespaceAuthz(admin, ns, 'read', true)
     await setNamespaceMember(ns, alice, 'member')
+    assert.equal((await hasRepoPermission(alice, ns, 'r', 'read')).ok, false)
+    await setRepoCollaborator(ns, 'r', alice, 'read')
     assert.equal((await hasRepoPermission(alice, ns, 'r', 'read')).ok, true)
     assert.equal((await hasRepoPermission(alice, ns, 'r', 'write')).ok, false)
   })
 
-  await it('TC-AUTHO-05: Owner implicit admin', async () => {
+  await it('TC-AUTHO-05: Owner has no repo role without collaborator seat', async () => {
     const ns = 'tc05'
     await createNamespaceAuthz(admin, ns, 'none', true)
-    assert.equal(await effectiveRepoRole(admin, ns, 'any'), 'admin')
+    assert.equal(await effectiveRepoRole(admin, ns, 'any'), 'none')
+    assert.equal((await hasRepoPermission(admin, ns, 'any', 'write')).ok, false)
+    assert.equal(await canManageRepoCollaborators(admin, ns, 'any'), true)
   })
 
   await it('TC-AUTHO-06: outside collaborator write only that repo', async () => {
@@ -161,10 +171,11 @@ await describe('TC-AUTHO matrix', async () => {
     assert.equal((await hasRepoPermission(bob, ns, 'other', 'read')).ok, false)
   })
 
-  await it('TC-AUTHO-07: additive base read + direct write', async () => {
+  await it('TC-AUTHO-07: collaborator seat alone defines write', async () => {
     const ns = 'tc07'
     await createNamespaceAuthz(admin, ns, 'read', true)
     await setNamespaceMember(ns, alice, 'member')
+    assert.equal(await effectiveRepoRole(alice, ns, 'repo'), 'none')
     await setRepoCollaborator(ns, 'repo', alice, 'write')
     assert.equal(await effectiveRepoRole(alice, ns, 'repo'), 'write')
   })
@@ -240,8 +251,9 @@ await describe('TC-AUTHO matrix', async () => {
 
   await it('TC-AUTHO-13: PAT scopes cannot exceed / widen access', async () => {
     const ns = 'tc13'
-    await createNamespaceAuthz(admin, ns, 'write', true)
+    await createNamespaceAuthz(admin, ns, 'none', true)
     await setNamespaceMember(ns, alice, 'member')
+    await setRepoCollaborator(ns, 'r1', alice, 'write')
     const { accessToken } = await issueCliCredential(alice, [
       { namespace: ns, repo: 'r1', maxRole: 'read' },
     ])
@@ -290,7 +302,7 @@ await describe('Phase 2–3 extras', async () => {
     assert.equal(await isPendingUser(stranger), true)
   })
 
-  await it('IdP group member gets base permission', async () => {
+  await it('IdP group namespace member does not inherit basePermission onto repos', async () => {
     const ns = 'tc-group-member'
     const engineering = '11111111-1111-4111-8111-111111111111'
     await createNamespaceAuthz(admin, ns, 'read', true)
@@ -305,6 +317,8 @@ await describe('Phase 2–3 extras', async () => {
     assert.equal(await isPendingUser(carol), true)
     await withFormalRole(carol, 'external')
     assert.equal(await isPendingUser(carol), false)
+    assert.equal((await hasRepoPermission(carol, ns, 'r', 'read')).ok, false)
+    await setRepoGroupCollaborator(ns, 'r', engineering, 'read')
     assert.equal((await hasRepoPermission(carol, ns, 'r', 'read')).ok, true)
     assert.equal((await hasRepoPermission(carol, ns, 'r', 'write')).ok, false)
   })
@@ -335,11 +349,11 @@ await describe('Phase 2–3 extras', async () => {
     assert.equal(await effectiveRepoRole(withGroup, ns, 'repo'), 'maintain')
   })
 
-  await it('leaving IdP group loses group-derived access', async () => {
+  await it('leaving IdP group loses group collaborator access', async () => {
     const ns = 'tc-group-leave'
     const temp = '44444444-4444-4444-8444-444444444444'
-    await createNamespaceAuthz(admin, ns, 'read', true)
-    await setNamespaceGroupMember(ns, temp, 'member')
+    await createNamespaceAuthz(admin, ns, 'none', true)
+    await setRepoGroupCollaborator(ns, 'r', temp, 'read')
     const eve = {
       sub: 'eve',
       iss: 'test',
@@ -350,7 +364,6 @@ await describe('Phase 2–3 extras', async () => {
     assert.equal((await hasRepoPermission(eve, ns, 'r', 'read')).ok, true)
     const left = { ...eve, groups: [] }
     assert.equal((await hasRepoPermission(left, ns, 'r', 'read')).ok, false)
-    assert.equal(await isPendingUser(left), true)
   })
 
   await it('cannot remove last Owner when only group Owner remains', async () => {
@@ -370,8 +383,10 @@ await describe('Phase 2–3 extras', async () => {
   await it('training gate blocks until completed', async () => {
     const trainee = mkUser('trainee-gate')
     const ns = 'tc-train'
-    await createNamespaceAuthz(admin, ns, 'read', true)
+    await createNamespaceAuthz(admin, ns, 'none', true)
     await setNamespaceMember(ns, trainee, 'member')
+    await setRepoCollaborator(ns, 'r', trainee, 'read')
+    await setRepoCollaborator(ns, 'r', admin, 'read')
     await withFormalRole(trainee, 'user')
     await setTrainingCompletedSelf(trainee, false)
 
@@ -396,7 +411,7 @@ await describe('Phase 2–3 extras', async () => {
       })
       assert.equal(allowed.allow, true)
 
-      // Instance admins skip the training gate
+      // Instance admins skip the training gate (still need a collaborator seat)
       const adminOk = await authorizeApiRequest({
         user: admin,
         via: 'session',
@@ -410,8 +425,7 @@ await describe('Phase 2–3 extras', async () => {
     }
   })
 
-  await it('path role map is non-empty and aligns with interpretRequest', () => {
-    assert.ok(OXEN_PATH_ROLE_MAP.length >= 8)
+  await it('interpretRequest min roles match ACTION_MIN_ROLE samples', () => {
     assert.equal(requiredRepoRoleForRequest('GET', '/api/repos/n/r'), 'read')
     assert.equal(
       requiredRepoRoleForRequest('PUT', '/api/repos/n/r/file/main/a'),
@@ -523,9 +537,6 @@ await describe('Phase 2–3 extras', async () => {
       const { action } = classifyPath(method, path)
       assert.ok(minRoleForAction(action), `${method} ${path} -> ${action} missing from table`)
       assert.equal(requiredRepoRoleForRequest(method, path), minRoleForAction(action))
-    }
-    for (const row of OXEN_PATH_ROLE_MAP) {
-      assert.ok(['read', 'triage', 'write', 'maintain', 'admin'].includes(row.minRole))
     }
   })
 
@@ -662,7 +673,7 @@ await describe('access requests', async () => {
 
   await it('approve with namespace+role grants membership but RBAC pending needs a formal role', async () => {
     const ns = 'tc-ar-ns'
-    await createNamespaceAuthz(admin, ns, 'read', true)
+    await createNamespaceAuthz(admin, ns, 'none', true)
     const u = mkUser('ar-member')
     const req = await submitAccessRequest(u, 'join')
     const resolved = await resolveAccessRequest(admin, req.id, 'approve', {
@@ -673,6 +684,8 @@ await describe('access requests', async () => {
     assert.equal(await isPendingUser(u), true)
     await withFormalRole(u, 'user')
     assert.equal(await isPendingUser(u), false)
+    assert.equal((await hasRepoPermission(u, ns, 'r', 'read')).ok, false)
+    await setRepoCollaborator(ns, 'r', u, 'read')
     assert.equal((await hasRepoPermission(u, ns, 'r', 'read')).ok, true)
   })
 
@@ -740,7 +753,7 @@ await describe('access requests', async () => {
 })
 
 await describe('custom roles CRUD and capabilities', async () => {
-  await it('custom ns role baseRepositoryRole is additive', async () => {
+  await it('custom ns role baseRepositoryRole does not grant repo data access', async () => {
     const ns = 'tc-base-repo'
     await createNamespaceAuthz(admin, ns, 'none', true)
     const created = await createCustomNamespaceRole(ns, {
@@ -753,7 +766,7 @@ await describe('custom roles CRUD and capabilities', async () => {
     const u = mkUser('base-writer')
     await setNamespaceMember(ns, u, created.role.id)
     await withFormalRole(u, 'user')
-    assert.equal(await effectiveRepoRole(u, ns, 'any'), 'write')
+    assert.equal(await effectiveRepoRole(u, ns, 'any'), 'none')
     assert.equal(await hasNamespaceCapability(ns, u, 'create_repos'), true)
     const d = await authorizeApiRequest({
       user: u,
@@ -988,7 +1001,7 @@ await describe('lineage ACL', async () => {
     assert.equal((await authorizeLineageQuery(bob, undefined, undefined)).allow, true)
   })
 
-  await it('authorizeLineageRebuild: requires repo admin (or owner / instance admin)', async () => {
+  await it('authorizeLineageRebuild: requires admin collaborator seat', async () => {
     const ns = 'tc-lineage-rebuild'
     const repo = 'r1'
     await createNamespaceAuthz(admin, ns, 'none', true)
@@ -996,11 +1009,14 @@ await describe('lineage ACL', async () => {
     await setRepoCollaborator(ns, repo, bob, 'write')
 
     assert.equal((await authorizeLineageRebuild(bob, ns, repo)).allow, false)
-    assert.equal((await authorizeLineageRebuild(alice, ns, repo)).allow, true)
-    assert.equal((await authorizeLineageRebuild(admin, ns, repo)).allow, true)
+    // Namespace Owner without collaborator seat cannot rebuild lineage.
+    assert.equal((await authorizeLineageRebuild(alice, ns, repo)).allow, false)
+    assert.equal((await authorizeLineageRebuild(admin, ns, repo)).allow, false)
 
     await setRepoCollaborator(ns, repo, bob, 'admin')
+    await setRepoCollaborator(ns, repo, alice, 'admin')
     assert.equal((await authorizeLineageRebuild(bob, ns, repo)).allow, true)
+    assert.equal((await authorizeLineageRebuild(alice, ns, repo)).allow, true)
     assert.equal((await authorizeLineageRebuild(mkUser('stranger'), ns, repo)).allow, false)
   })
 })
@@ -1163,9 +1179,32 @@ await describe('repo / namespace API decisions', async () => {
     assert.equal(await isPendingUser(u), true)
   })
 
+  await it('removing an Owner collaborator seat drops repo write; Owner still manages collaborators', async () => {
+    const ns = 'tc-rm-owner-collab'
+    await createNamespaceAuthz(admin, ns, 'none', true)
+    await setRepoCollaborator(ns, 'assay', admin, 'admin')
+    assert.equal(await removeRepoCollaborator(ns, 'assay', admin), true)
+    assert.equal(await getRepoCollaboratorRole(ns, 'assay', admin), null)
+    assert.equal(await effectiveRepoRole(admin, ns, 'assay'), 'none')
+    assert.equal((await hasRepoPermission(admin, ns, 'assay', 'write')).ok, false)
+    assert.equal(await canManageRepoCollaborators(admin, ns, 'assay'), true)
+  })
+
+  await it('maintain collaborator can manage collaborators; write cannot', async () => {
+    const ns = 'tc-maintain-collab'
+    await createNamespaceAuthz(admin, ns, 'none', true)
+    const mgr = mkUser('repo-mgr')
+    const writer = mkUser('repo-writer')
+    await setRepoCollaborator(ns, 'assay', mgr, 'maintain')
+    await setRepoCollaborator(ns, 'assay', writer, 'write')
+    assert.equal(await canManageRepoCollaborators(mgr, ns, 'assay'), true)
+    assert.equal(await canManageRepoCollaborators(writer, ns, 'assay'), false)
+  })
+
   await it('PAT scopes on instance admin do not widen beyond maxRole', async () => {
     const ns = 'tc-pat-admin'
     await createNamespaceAuthz(admin, ns, 'none', true)
+    await setRepoCollaborator(ns, 'r1', admin, 'admin')
     const { accessToken } = await issueCliCredential(admin, [
       { namespace: ns, repo: 'r1', maxRole: 'read' },
     ])
@@ -1207,14 +1246,15 @@ await describe('repo / namespace API decisions', async () => {
     assert.equal((await hasRepoPermission(pat!, ns, 'r', 'write')).ok, false)
   })
 
-  await it('updateNamespaceSettings basePermission affects members', async () => {
+  await it('updateNamespaceSettings basePermission does not grant repo access alone', async () => {
     const ns = 'tc-base-patch'
     await createNamespaceAuthz(admin, ns, 'none', true)
     const u = mkUser('base-patch-user')
     await setNamespaceMember(ns, u, 'member')
     assert.equal((await hasRepoPermission(u, ns, 'r', 'read')).ok, false)
     await updateNamespaceSettings(ns, { basePermission: 'read' })
+    assert.equal((await hasRepoPermission(u, ns, 'r', 'read')).ok, false)
+    await setRepoCollaborator(ns, 'r', u, 'read')
     assert.equal((await hasRepoPermission(u, ns, 'r', 'read')).ok, true)
-    assert.equal((await hasRepoPermission(u, ns, 'r', 'write')).ok, false)
   })
 })

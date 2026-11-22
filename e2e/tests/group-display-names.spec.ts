@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures'
+import { mockDirectorySearch, pickFromDirectory } from '../helpers/directory'
 import { uniqueId } from '../helpers/oxenApi'
 import { mintSession } from '../helpers/session'
 
@@ -68,25 +69,25 @@ test.describe('Group display names (#08)', () => {
     await expect(row.locator('code.ns-member-sub')).toHaveCount(0)
   })
 
-  test('TC-GROUP-DN-02: directory manual entry keeps object id and display name distinct', async ({
+  test('TC-GROUP-DN-02: directory search keeps object id and display name distinct', async ({
     page,
   }) => {
     const ns = uniqueId('grp-dn-ui')
     await mintSession(page)
     await claimNamespace(page, ns)
+    await mockDirectorySearch(page, [
+      {
+        kind: 'group',
+        group: GROUP_ID,
+        name: DISPLAY_NAME,
+      },
+    ])
 
     await page.goto(`/n/${encodeURIComponent(ns)}/settings`)
     await expect(page.getByRole('heading', { name: 'Members' })).toBeVisible()
 
     await page.getByLabel('Identity').selectOption('group')
-    await page.getByRole('button', { name: /Manual entry/i }).click()
-
-    await expect(page.getByLabel('Group object id')).toBeVisible()
-    await expect(page.getByLabel('Display name')).toBeVisible()
-    await expect(page.getByText(/Grants bind to the object id/i)).toBeVisible()
-
-    await page.getByLabel('Group object id').fill(GROUP_ID)
-    await page.getByLabel('Display name').fill(DISPLAY_NAME)
+    await pickFromDirectory(page, DISPLAY_NAME, DISPLAY_NAME)
 
     await expect(page.locator('.directory-picker-selected')).toContainText(DISPLAY_NAME)
     await expect(page.locator('.directory-picker-selected .group-principal-id')).toContainText(

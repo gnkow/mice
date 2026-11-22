@@ -5,6 +5,7 @@ import { createOwnedRepository, ensureRepository } from './repositoryStore.js'
 import { userKey } from './authzTypes.js'
 import { visibleNamespaceNames } from './authzVisibility.js'
 import { type SessionUser } from './authentication/index.js'
+import { ensureEmptyOxenBranch } from './oxenEmptyBranch.js'
 import { isPhysicalOxenKey } from './oxenPhysicalKeys.js'
 import { displayNamespaceName, resolvePhysicalRepo } from './oxenPhysicalResolve.js'
 import { readRepositoryById } from './repositoryStore.js'
@@ -66,8 +67,8 @@ export async function filterNamespaceCatalog(
 export type SeededRepository = { repositoryId: string }
 
 /**
- * After a successful repo create: seed the AuthZ namespace (privileged callers) and make the creator
- * repo Admin. Returns the stable AuthZ repository id when a row was ensured.
+ * After a successful repo create: seed the AuthZ namespace (privileged callers) and mint the
+ * repository row. Does not grant a collaborator seat. Returns the stable AuthZ repository id.
  */
 export async function seedRepoCreate(
   user: SessionUser,
@@ -99,6 +100,11 @@ export function attachRepositoryId(body: string, repositoryId: string): string {
   }
 }
 
+export type FinalizeRepoCreateOptions = {
+  /** Empty-tip commit message (BFF rewrite; default "Initialized Repo"). */
+  initialCommitMessage?: string
+}
+
 /**
  * After a successful proxied repo create: seed AuthZ and stamp `repository_id`
  * onto the upstream JSON body. Returns the body unchanged when seeding cannot run.
@@ -108,10 +114,36 @@ export async function finalizeProxiedRepoCreate(
   namespace: string,
   repo: string,
   responseBody: string,
+  options?: FinalizeRepoCreateOptions,
 ): Promise<string> {
   const seeded = await seedRepoCreate(user, namespace, repo)
   if (!seeded) return responseBody
+  // Default branch starts empty (GxP): materialize oxen tip with no files.
+  const physical = await resolvePhysicalRepo(namespace, repo)
+  if (physical) {
+    await ensureEmptyOxenBranch(physical.namespaceId, physical.repositoryId, 'main', user, {
+      message: options?.initialCommitMessage,
+    })
+  }
   return attachRepositoryId(responseBody, seeded.repositoryId)
+}
+
+/**
+ * Before oxen POST /branches: if `from_name` is missing on an empty (or
+ * otherwise tip-less) repo, create that source as an empty tip so the fork
+ * succeeds without seeding files.
+ */
+export async function ensureBranchCreateSourceTip(
+  namespace: string,
+  repo: string,
+  fromName: string | undefined,
+  actor: SessionUser,
+): Promise<void> {
+  const source = fromName?.trim()
+  if (!source) return
+  const physical = await resolvePhysicalRepo(namespace, repo)
+  if (!physical) return
+  await ensureEmptyOxenBranch(physical.namespaceId, physical.repositoryId, source, actor)
 }
 
 const REPO_DETAIL_PATH = /^\/api\/repos\/([^/]+)\/([^/]+)$/

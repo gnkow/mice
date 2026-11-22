@@ -388,6 +388,11 @@ Challenges: "Testing seam: BFF HTTP boundary, black-box, real containers".
 - **Depends on 04 (GxP Compliance)**: Legal-retention stance (Q13/00 Q8). Signature record format and size (04 Q8).
 - **Depends on 16 (Operations)**: Availability targets (Q5 alert threshold). Backup and restore as start gate (Q17/04 Q16/16 Q2). immudb pinning and auditor tool (Q11).
 
+## Open follow-ups (from authorization deep-manual #83)
+
+- **[#154](https://github.com/gnkow/mice/issues/154)** — Revisit the comprehensive audit event catalog (signal vs noise: `auth.login`, session lifecycle, `audit.browse`, etc.).
+- **[#155](https://github.com/gnkow/mice/issues/155)** — Fix Audit UI for investigation (filters, density; signature evidence modal pattern from #83).
+
 ## Cross-cutting impacts
 - **01 (Authentication)**: Audit of authentication events (login, logout, refresh, step-up, failure, revocation) with request id and Principal (authentication T7). No tokens/cookies logged; redaction tested (Q25).
 - **02 (Authorization)**: Summarization strategy for routine reads (Q15/02 Q9). Bypass mutations audited individually; listing reads summarized.

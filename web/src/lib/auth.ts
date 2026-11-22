@@ -92,3 +92,11 @@ export async function logout(): Promise<LogoutResult> {
   }
 }
 
+/**
+ * Where Sign out must send the browser after `/auth/logout`.
+ * Prefer IdP end-session (clears SSO); otherwise the Mice login page.
+ */
+export function logoutRedirectHref(result: Pick<LogoutResult, 'idpLogoutUrl'>): string {
+  return result.idpLogoutUrl || '/login'
+}
+

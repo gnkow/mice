@@ -51,11 +51,12 @@ export function RevokeSignatureButton({ signatureId, onRevoked }: Props) {
         type="button"
         className="btn danger small"
         disabled={busy}
+        aria-label={busy ? 'Revoking signature' : 'Revoke signature'}
         aria-describedby={error ? errorId : undefined}
         onClick={() => void onClick()}
       >
-        <ActionShieldOff size={14} aria-hidden="true" className="button-label-icon" />
-        {busy ? 'Revoking…' : 'Revoke signature'}
+        <ActionShieldOff size={12} aria-hidden="true" className="button-label-icon" />
+        {busy ? 'Revoking…' : 'Revoke'}
       </button>
       {error ? (
         <p id={errorId} className="flash flash-error small" role="alert">

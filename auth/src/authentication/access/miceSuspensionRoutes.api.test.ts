@@ -75,7 +75,6 @@ async function signedAdmin(path: string, body: Record<string, unknown>, reason =
       path,
       body,
       reason,
-      category: 'privileged_settings',
     })),
   }
 }

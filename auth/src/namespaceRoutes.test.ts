@@ -50,7 +50,6 @@ const call = async (as: string | null, method: string, path: string, body?: unkn
     : {
         'content-type': 'application/json',
         'x-mice-reason': 'Routine test change',
-        'x-mice-reason-category': 'privileged_settings',
         'x-mice-change-control-id': 'CC-2026-114',
       }
   return app.request(path, {
@@ -184,16 +183,37 @@ describe('namespace routes', () => {
     assert.equal((await call('manager', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200)
   })
 
-  it('collaborators: managers list, set and remove', async () => {
+  it('collaborators: readers list; managers set and remove', async () => {
     const path = '/auth/namespaces/acme/repos/data/collaborators'
     assert.equal((await call(null, 'GET', path)).status, 401)
+    // Namespace member without a collaborator seat cannot read the repo → 403.
     assert.equal((await call('alice', 'GET', path)).status, 403)
     assert.equal((await call('manager', 'PUT', path, { sub: 'bob', iss: 'test' })).status, 400)
 
     assert.equal((await call('manager', 'PUT', path, { sub: 'bob', iss: 'test', role: 'write' })).status, 200)
     const list = (await (await call('manager', 'GET', path)).json()) as { collaborators: unknown[] }
     assert.equal(list.collaborators.length, 1)
+    // Write collaborator may list seats but cannot change them.
+    assert.equal(
+      (
+        await call('manager', 'PUT', path, {
+          sub: alice.sub,
+          iss: alice.iss,
+          role: 'write',
+        })
+      ).status,
+      200,
+    )
+    assert.equal((await call('alice', 'GET', path)).status, 200)
+    assert.equal(
+      (await call('alice', 'DELETE', path, { sub: 'bob', iss: 'test' })).status,
+      403,
+    )
     assert.equal((await call('manager', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200)
+    assert.equal(
+      (await call('manager', 'DELETE', path, { sub: alice.sub, iss: alice.iss })).status,
+      200,
+    )
   })
 
   it('repo rename is AuthZ-only and preserves the stable id', async () => {
@@ -215,8 +235,12 @@ describe('namespace routes', () => {
     )
     const before = await call('manager', 'GET', '/auth/namespaces/rename-route-ns/repos/study/permissions')
     assert.equal(before.status, 200)
-    const perms = (await before.json()) as { permissions: { rename: boolean } }
+    const perms = (await before.json()) as {
+      permissions: { rename: boolean; contentsWrite: boolean }
+    }
     assert.equal(perms.permissions.rename, true)
+    // Owners administer settings without a collaborator seat; tip-changing writes still need one.
+    assert.equal(perms.permissions.contentsWrite, false)
 
     assert.equal(
       (await call('alice', 'PATCH', '/auth/namespaces/rename-route-ns/repos/study', { name: 'assay' })).status,

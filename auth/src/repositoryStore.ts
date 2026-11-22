@@ -4,6 +4,7 @@ export {
   readRepository,
   readRepositoryById,
   renameRepository,
+  updateRepositoryDescription,
   deleteRepositoryRecord,
   listRepositorySettingsVersions,
   type RepositoryRecord,

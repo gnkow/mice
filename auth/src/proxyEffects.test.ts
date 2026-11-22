@@ -75,10 +75,10 @@ describe('filterNamespaceCatalog', async () => {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 describe('seedRepoCreate', () => {
-  it('makes the creator repo admin and seeds the namespace for an instance admin', async () => {
+  it('seeds the AuthZ repository without a creator collaborator seat', async () => {
     await seedRepoCreate(admin, 'pe-new', 'repo1')
     assert.ok(await getNamespace('pe-new'))
-    assert.equal(await getRepoCollaboratorRole('pe-new', 'repo1', admin), 'admin')
+    assert.equal(await getRepoCollaboratorRole('pe-new', 'repo1', admin), null)
   })
   it('does not seed a namespace for a plain member', async () => {
     const u = person('pe-plain')
@@ -124,7 +124,7 @@ describe('finalizeProxiedRepoCreate', () => {
     assert.match(body.repository_id, UUID_RE)
     assert.equal(body.repository.repository_id, body.repository_id)
     assert.equal(body.repository.repo_uuid, 'oxen-1')
-    assert.equal(await getRepoCollaboratorRole('pe-finalize', 'assay', admin), 'admin')
+    assert.equal(await getRepoCollaboratorRole('pe-finalize', 'assay', admin), null)
   })
 
   it('returns the upstream body unchanged when AuthZ cannot seed', async () => {

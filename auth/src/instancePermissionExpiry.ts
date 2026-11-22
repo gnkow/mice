@@ -3,6 +3,12 @@ import {
   type RevokedInstancePermissionGrant,
 } from './authzInstanceStore.js'
 
+export {
+  DELEGATED_EXPIRY_MUST_BE_FUTURE,
+  DELEGATED_EXPIRY_REQUIRED,
+  decideDelegatedInstanceExpiry,
+} from './delegatedInstanceExpiry.js'
+
 const dayMs = 24 * 60 * 60 * 1000
 
 export type InstancePermissionExpiryAudit = (event: {

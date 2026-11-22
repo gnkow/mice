@@ -91,9 +91,10 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
     guarded({ gate: adminOnly }, async ({ c }) => c.json(await getGroupBindingStatus())),
   )
 
+  // Diagnostic: persists readiness only. Not an access grant — no e-sign / reason ceremony.
   app.post(
     '/auth/instance/group-binding/check',
-    guarded({ mutates: true, reason: true, gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
+    guarded({ mutates: true, gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
       const sample =
         body && typeof body === 'object' && Array.isArray((body as { sampleGroups?: unknown }).sampleGroups)
           ? ((body as { sampleGroups: unknown[] }).sampleGroups.filter((g): g is string => typeof g === 'string'))

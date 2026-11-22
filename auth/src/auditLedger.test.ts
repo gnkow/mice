@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { randomBytes } from 'node:crypto'
 import { describe, it } from 'node:test'
 import { immudbConfig, openLedger, type Ledger } from './auditLedger.js'
+import { openIsolatedTestLedger } from './auditTestIsolation.js'
 
-const prefix = `ledger-test/${randomBytes(4).toString('hex')}/`
+const { ledger: seed, prefix } = await openIsolatedTestLedger()
+await seed.close()
 const open = () => openLedger({ ...immudbConfig(), prefix })
 
 describe('audit ledger on immudb', () => {
@@ -60,10 +61,7 @@ describe('audit ledger on immudb', () => {
 
   it('verifies while another client appends to the same database', async () => {
     const ledger = await open()
-    const sibling = await openLedger({
-      ...immudbConfig(),
-      prefix: `ledger-test/${randomBytes(4).toString('hex')}/`,
-    })
+    const { ledger: sibling } = await openIsolatedTestLedger()
     await ledger.append('concurrent-base', '{"ok":true}')
     const failures: string[] = []
     await Promise.all([

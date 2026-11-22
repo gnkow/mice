@@ -2,13 +2,11 @@
 
 import {
   CHANGE_CONTROL_HEADER,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   SIGNATURE_HEADER,
   withReason,
   type ReasonSubmission,
 } from './reason'
-import type { ReasonCategoryValue } from './reasonPrompt'
 
 export const SIGNING_RESUME_KEY = 'mice.signing.resume'
 
@@ -25,7 +23,7 @@ export type PendingSignedMutation = {
   body?: unknown
   changeSummary?: string
   draftReason?: string
-  draftCategory?: ReasonCategoryValue
+  draftChangeControlId?: string
 }
 
 export type SigningResumeIntent = PendingSignedMutation
@@ -75,7 +73,9 @@ export function stashPendingSignedMutation(
       ...(intent.body !== undefined ? { body: intent.body } : {}),
       ...(intent.changeSummary ? { changeSummary: intent.changeSummary } : {}),
       ...(intent.draftReason ? { draftReason: intent.draftReason } : {}),
-      ...(intent.draftCategory ? { draftCategory: intent.draftCategory } : {}),
+      ...(intent.draftChangeControlId
+        ? { draftChangeControlId: intent.draftChangeControlId }
+        : {}),
     }
     sessionStorage.setItem(SIGNING_RESUME_KEY, JSON.stringify(payload))
   } catch {
@@ -89,7 +89,10 @@ export function stashPendingSignedMutation(
  */
 let heldIntent: PendingSignedMutation | null | undefined
 let resumePromise: Promise<Response> | null = null
-let ceremonyDraft: { reason: string; category: ReasonCategoryValue } | null = null
+let ceremonyDraft: {
+  reason: string
+  changeControlId?: string
+} | null = null
 
 function loadHeldIntent(): PendingSignedMutation | null {
   if (heldIntent !== undefined) return heldIntent
@@ -117,10 +120,10 @@ function loadHeldIntent(): PendingSignedMutation | null {
   }
 }
 
-/** Draft reason/category to prefill when the ceremony reopens after MFA. */
+/** Draft reason/CC to prefill when the ceremony reopens after MFA. */
 export function takeCeremonyResumeDraft(): {
   reason: string
-  category: ReasonCategoryValue
+  changeControlId?: string
 } | null {
   const d = ceremonyDraft
   ceremonyDraft = null
@@ -142,12 +145,12 @@ export function ensureResumeSignedMutation(
   const intent = loadHeldIntent()
   if (!intent || !pathBasesMatch(intent.path, path)) return null
 
-  if (intent.draftReason && intent.draftCategory) {
-    ceremonyDraft = { reason: intent.draftReason, category: intent.draftCategory }
-  } else if (intent.draftReason) {
+  if (intent.draftReason) {
     ceremonyDraft = {
       reason: intent.draftReason,
-      category: intent.draftCategory ?? 'data_correction',
+      ...(intent.draftChangeControlId
+        ? { changeControlId: intent.draftChangeControlId }
+        : {}),
     }
   }
 
@@ -176,11 +179,8 @@ export async function replaySignedMutation(
         ...(submission
           ? {
               [REASON_HEADER]: submission.reason,
-              [REASON_CATEGORY_HEADER]: submission.category,
               [SIGNATURE_HEADER]: submission.signatureId,
-              ...(submission.changeControlId?.trim()
-                ? { [CHANGE_CONTROL_HEADER]: submission.changeControlId.trim() }
-                : {}),
+              [CHANGE_CONTROL_HEADER]: submission.changeControlId.trim(),
             }
           : {}),
       },

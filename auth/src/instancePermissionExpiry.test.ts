@@ -16,9 +16,41 @@ const {
   writeInstancePermissions,
 } = await import('./authzInstanceStore.js')
 const {
+  DELEGATED_EXPIRY_MUST_BE_FUTURE,
+  DELEGATED_EXPIRY_REQUIRED,
+  decideDelegatedInstanceExpiry,
   runInstancePermissionExpiry,
   startInstancePermissionExpirySchedule,
 } = await import('./instancePermissionExpiry.js')
+
+await describe('decideDelegatedInstanceExpiry', async () => {
+  await it('allows clearing without expiry', () => {
+    assert.equal(decideDelegatedInstanceExpiry({ permissions: [], expiresAt: null }), null)
+  })
+
+  await it('requires a future expiresAt for non-empty grants', () => {
+    assert.equal(
+      decideDelegatedInstanceExpiry({ permissions: ['view_audit'], expiresAt: null }),
+      DELEGATED_EXPIRY_REQUIRED,
+    )
+    assert.equal(
+      decideDelegatedInstanceExpiry({
+        permissions: ['view_audit'],
+        expiresAt: 100,
+        now: 200,
+      }),
+      DELEGATED_EXPIRY_MUST_BE_FUTURE,
+    )
+    assert.equal(
+      decideDelegatedInstanceExpiry({
+        permissions: ['view_audit'],
+        expiresAt: 300,
+        now: 200,
+      }),
+      null,
+    )
+  })
+})
 
 await describe('runInstancePermissionExpiry', async () => {
   await it('audits each revoked grant through the expiry seam', async () => {

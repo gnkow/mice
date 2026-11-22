@@ -3,10 +3,7 @@ import { describe, it } from 'node:test'
 import { overrideEnv } from './env.js'
 import {
   createExemptActions,
-  isReasonCategory,
   mutationNeedsReason,
-  REASON_CATEGORIES,
-  requireReasonCategory,
   resolveReason,
 } from './auditReason.js'
 
@@ -49,57 +46,19 @@ await describe('mutationNeedsReason', async () => {
   })
 })
 
-await describe('requireReasonCategory (module seam)', async () => {
-  await it('accepts each pick-list category and refuses missing or unknown', () => {
-    for (const category of REASON_CATEGORIES) {
-      assert.equal(isReasonCategory(category), true)
-      const ok = requireReasonCategory(category)
-      assert.equal(ok.ok, true)
-      if (ok.ok) assert.equal(ok.category, category)
-    }
-    const missing = requireReasonCategory('')
-    assert.equal(missing.ok, false)
-    if (!missing.ok) assert.equal(missing.rejection.code, 'reason_category_required')
-    const bad = requireReasonCategory('not_a_category')
-    assert.equal(bad.ok, false)
-    if (!bad.ok) assert.equal(bad.rejection.code, 'reason_category_invalid')
-  })
-})
-
-await describe('resolveReason category + free text', async () => {
+await describe('resolveReason free text', async () => {
   const actor = { iss: 'https://idp.test', sub: 'reason-policy' }
 
-  await it('rejects a required reason with no category', () => {
-    const resolved = resolveReason({
-      actor,
-      explicit: 'Instrument recalibrated for assay batch 12',
-      category: undefined,
-      required: true,
-    })
+  await it('rejects a missing reason', () => {
+    const resolved = resolveReason({ actor })
     assert.equal(resolved.ok, false)
-    if (!resolved.ok) assert.equal(resolved.rejection.code, 'reason_category_required')
+    if (!resolved.ok) assert.equal(resolved.rejection.code, 'reason_required')
   })
 
-  await it('rejects an unknown category', () => {
-    const resolved = resolveReason({
-      actor,
-      explicit: 'Instrument recalibrated for assay batch 12',
-      category: 'not-a-real-category',
-      required: true,
-    })
-    assert.equal(resolved.ok, false)
-    if (!resolved.ok) assert.equal(resolved.rejection.code, 'reason_category_invalid')
-  })
-
-  await it('rejects a required reason that is too short even with a valid category', () => {
+  await it('rejects a reason that is too short', () => {
     const restore = overrideEnv({ auditReasonMinLength: 10 })
     try {
-      const resolved = resolveReason({
-        actor,
-        explicit: 'short',
-        category: 'data_correction',
-        required: true,
-      })
+      const resolved = resolveReason({ actor, explicit: 'short' })
       assert.equal(resolved.ok, false)
       if (!resolved.ok) assert.equal(resolved.rejection.code, 'reason_too_short')
     } finally {
@@ -107,26 +66,15 @@ await describe('resolveReason category + free text', async () => {
     }
   })
 
-  await it('accepts a valid category and long-enough free text', () => {
+  await it('accepts long-enough free text', () => {
     const resolved = resolveReason({
       actor,
       explicit: 'Instrument recalibrated for assay batch 12',
-      category: 'data_correction',
-      required: true,
     })
     assert.equal(resolved.ok, true)
     if (resolved.ok) {
       assert.equal(resolved.value.reason, 'Instrument recalibrated for assay batch 12')
-      assert.equal(resolved.value.category, 'data_correction')
       assert.equal(resolved.value.reason_source, 'explicit')
     }
-  })
-
-  await it('exposes the fixed v1 pick-list', () => {
-    assert.ok(REASON_CATEGORIES.includes('data_correction'))
-    assert.ok(REASON_CATEGORIES.includes('destructive'))
-    assert.ok(REASON_CATEGORIES.includes('privileged_settings'))
-    assert.ok(REASON_CATEGORIES.includes('revocation'))
-    assert.ok(REASON_CATEGORIES.includes('other'))
   })
 })

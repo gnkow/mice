@@ -9,6 +9,8 @@ import { CommitSelector } from '../components/CommitSelector'
 import { Modal } from '../components/Modal'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
+import { fetchRepoPermissions } from '../lib/authzApi'
+import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import { confirmDelete } from '../lib/confirmDelete'
 import { resolveDefaultBranch } from '../lib/lastBranch'
 import {
@@ -73,6 +75,12 @@ export function BranchesPage() {
     (signal) => listBranches(namespace, repo, signal),
     [namespace, repo],
   )
+  const repoPerms = useAsync(
+    (signal) => fetchRepoPermissions(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const canWrite =
+    repoPerms.kind === 'ok' && repoPerms.data.contentsWrite === true
 
   const [filter, setFilter] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -99,7 +107,10 @@ export function BranchesPage() {
   )
 
   useEffect(() => {
-    if (branchNames.length === 0) return
+    if (branchNames.length === 0) {
+      setFromName(defaultBranch)
+      return
+    }
     setFromName((prev) => (branchNames.includes(prev) ? prev : defaultBranch))
   }, [branchNames, defaultBranch])
 
@@ -187,23 +198,31 @@ export function BranchesPage() {
 
   const nameValid = newName.trim().length >= 2
   const nameTaken = branchNames.includes(newName.trim())
+  const sourceBranch = fromName.trim() || defaultBranch
   const commitOk = sourceType !== 'commit' || fromCommit.length > 0
-  const canCreate = nameValid && !nameTaken && commitOk && !busy
+  const canCreate = nameValid && !nameTaken && commitOk && !!sourceBranch && !busy
 
-  async function run(action: () => Promise<void>) {
+  function createErrorMessage(err: unknown, source: string): string {
+    if (err instanceof OxenApiError) {
+      const raw = err.message.trim()
+      if (/resource_not_found/i.test(raw)) {
+        return `Source branch “${source}” was not found.`
+      }
+      return raw || 'Action failed'
+    }
+    if (err instanceof Error) return err.message
+    return 'Action failed'
+  }
+
+  async function run(action: () => Promise<void>, sourceForError = sourceBranch) {
     setBusy(true)
     setError(null)
     try {
       await action()
       branches.reload()
     } catch (err) {
-      setError(
-        err instanceof OxenApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Action failed',
-      )
+      if (isCeremonyCancelled(err)) return
+      setError(createErrorMessage(err, sourceForError))
     } finally {
       setBusy(false)
     }
@@ -212,25 +231,21 @@ export function BranchesPage() {
   function onCreate(e: FormEvent) {
     e.preventDefault()
     if (!canCreate) return
+    const source = sourceBranch
     void run(async () => {
       if (sourceType === 'commit') {
         const name = newName.trim()
-        await createBranch(namespace, repo, name, fromName.trim() || defaultBranch)
+        await createBranch(namespace, repo, name, source)
         await updateBranch(namespace, repo, name, fromCommit)
       } else {
-        await createBranch(
-          namespace,
-          repo,
-          newName.trim(),
-          fromName.trim() || defaultBranch,
-        )
+        await createBranch(namespace, repo, newName.trim(), source)
       }
       setNewName('')
       setFromCommit('')
       setSourceType('branch')
       setFromName(defaultBranch)
       setCreateOpen(false)
-    })
+    }, source)
   }
 
   async function onDelete(name: string) {
@@ -275,13 +290,15 @@ export function BranchesPage() {
             other&apos;s toes.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => setCreateOpen(true)}
-        >
-          <ActionGitBranch size={14} aria-hidden="true" className="button-label-icon" />New branch
-        </button>
+        {canWrite ? (
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setCreateOpen(true)}
+          >
+            <ActionGitBranch size={14} aria-hidden="true" className="button-label-icon" />New branch
+          </button>
+        ) : null}
       </div>
 
       <ListToolbar
@@ -293,6 +310,7 @@ export function BranchesPage() {
       <StateBlock
         loading={branches.kind === 'loading'}
         error={branches.kind === 'error' ? branches.message : null}
+        errorPurpose="view branches"
         empty={branches.kind === 'ok' && branchList.length === 0}
         emptyMessage="No branches yet."
       >
@@ -331,32 +349,34 @@ export function BranchesPage() {
                         <td className="branches-col-name">
                           <div className="branch-title-row">
                             <FavoriteStar type="branch" id={`${namespace}/${repo}@${b.name}`} label={b.name} />
-                            <Link className="branch-pill" to={branchHref}>
-                              <BranchIcon />
-                              <span className="mono">{b.name}</span>
-                            </Link>
+                            <span className="branch-pill">
+                              <Link className="branch-pill-link" to={branchHref}>
+                                <BranchIcon />
+                                <span className="mono">{b.name}</span>
+                              </Link>
+                              <button
+                                type="button"
+                                className="branch-copy"
+                                title={
+                                  copied === b.name
+                                    ? 'Copied'
+                                    : 'Copy branch name'
+                                }
+                                aria-label={
+                                  copied === b.name
+                                    ? `Copied ${b.name}`
+                                    : `Copy branch name ${b.name}`
+                                }
+                                onClick={() => void copyName(b.name)}
+                              >
+                                <CopyIcon size={12} />
+                              </button>
+                            </span>
                             {isDefault && (
                               <span className="pill default-branch">
                                 default
                               </span>
                             )}
-                            <button
-                              type="button"
-                              className="icon-round branch-copy"
-                              title={
-                                copied === b.name
-                                  ? 'Copied'
-                                  : 'Copy branch name'
-                              }
-                              aria-label={
-                                copied === b.name
-                                  ? `Copied ${b.name}`
-                                  : `Copy branch name ${b.name}`
-                              }
-                              onClick={() => void copyName(b.name)}
-                            >
-                              <CopyIcon size={12} />
-                            </button>
                           </div>
                         </td>
                         <td
@@ -374,14 +394,12 @@ export function BranchesPage() {
                                 storedEmail={commit.email}
                                 profiles={profiles}
                               />
-                              <div className="branch-updated-text">
-                                <span
-                                  className="branch-updated-time muted"
-                                  title={commit.timestamp}
-                                >
-                                  {formatRelativeTime(commit.timestamp)}
-                                </span>
-                              </div>
+                              <span
+                                className="branch-updated-time muted"
+                                title={commit.timestamp}
+                              >
+                                {formatRelativeTime(commit.timestamp)}
+                              </span>
                               <span className="sr-only mono">
                                 {b.commit_id.slice(0, 12)}
                               </span>
@@ -427,7 +445,15 @@ export function BranchesPage() {
                             >
                               <Tags size={14} aria-hidden />
                             </Link>
-                            {!isDefault && (
+                            {isDefault ? (
+                              <span
+                                className="icon-round branch-action-faded"
+                                aria-disabled="true"
+                                title="Compare is for other branches against the default"
+                              >
+                                <ArrowLeftRight size={14} aria-hidden />
+                              </span>
+                            ) : (
                               <Link
                                 className="icon-round"
                                 to={compareHref}
@@ -437,32 +463,28 @@ export function BranchesPage() {
                                 <ArrowLeftRight size={14} aria-hidden />
                               </Link>
                             )}
-                            <Link
-                              className="icon-round"
-                              to={`${branchHref}#power-tools`}
-                              aria-label={`Power tools for ${b.name}`}
-                              title={`Power tools for ${b.name}`}
-                            >
-                              <Wrench size={14} aria-hidden />
-                            </Link>
-                            <button
-                              type="button"
-                              className="icon-round branch-delete"
-                              disabled={busy || isDefault}
-                              title={
-                                isDefault
-                                  ? 'You cannot delete your default branch'
-                                  : `Delete ${b.name}`
-                              }
-                              aria-label={
-                                isDefault
-                                  ? 'Cannot delete default branch'
-                                  : `Delete branch ${b.name}`
-                              }
-                              onClick={() => void onDelete(b.name)}
-                            >
-                              <TrashIcon />
-                            </button>
+                            {canWrite ? (
+                              <Link
+                                className="icon-round"
+                                to={`${branchHref}#power-tools`}
+                                aria-label={`Power tools for ${b.name}`}
+                                title={`Power tools for ${b.name}`}
+                              >
+                                <Wrench size={14} aria-hidden />
+                              </Link>
+                            ) : null}
+                            {canWrite && !isDefault ? (
+                              <button
+                                type="button"
+                                className="icon-round branch-delete"
+                                disabled={busy}
+                                title={`Delete ${b.name}`}
+                                aria-label={`Delete branch ${b.name}`}
+                                onClick={() => void onDelete(b.name)}
+                              >
+                                <TrashIcon />
+                              </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -528,7 +550,9 @@ export function BranchesPage() {
                     </option>
                   ))
                 ) : (
-                  <option value={fromName}>{fromName}</option>
+                  <option value={fromName || defaultBranch}>
+                    {fromName || defaultBranch}
+                  </option>
                 )}
               </select>
             </label>

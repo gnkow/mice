@@ -25,6 +25,7 @@ import { MergeRequestPage } from './pages/MergeRequestPage'
 import { MergeRequestsPage } from './pages/MergeRequestsPage'
 import { NamespaceLayout } from './components/NamespaceLayout'
 import { NamespaceSettingsLayout } from './components/NamespaceSettingsLayout'
+import { NamespaceApproverHistoryPage } from './pages/NamespaceApproverHistoryPage'
 import { NamespaceCustomRolesHistoryPage } from './pages/NamespaceCustomRolesHistoryPage'
 import { NamespaceMembershipHistoryPage } from './pages/NamespaceMembershipHistoryPage'
 import { NamespaceSettingsHistoryPage } from './pages/NamespaceSettingsHistoryPage'
@@ -102,6 +103,10 @@ export default function App() {
                   <Route
                     path="members/history"
                     element={<NamespaceMembershipHistoryPage />}
+                  />
+                  <Route
+                    path="approvers/history"
+                    element={<NamespaceApproverHistoryPage />}
                   />
                   <Route
                     path="custom-roles/history"

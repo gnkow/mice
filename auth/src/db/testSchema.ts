@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { postgresConfig } from './connection.js'
 import { useTestSchema } from './testDatabase.js'
+import { installAuditKeyPrefix } from '../auditTestIsolation.js'
 
 /**
  * Import first in a test file: gives the file a private schema on the live PostgreSQL and drops it
@@ -13,9 +13,7 @@ import { useTestSchema } from './testDatabase.js'
 process.env.IMMUDB_DATABASE ??= 'audit_test'
 /** Private immudb key space for this test file (call again before openLedger when isolation=none). */
 export function isolateAuditKeyPrefix(): string {
-  const prefix = `audit/${randomUUID()}/`
-  process.env.IMMUDB_KEY_PREFIX = prefix
-  return prefix
+  return installAuditKeyPrefix()
 }
 isolateAuditKeyPrefix()
 await useTestSchema()

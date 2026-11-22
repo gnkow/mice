@@ -124,7 +124,7 @@ export type AuthPolicy = {
   originCheck?: boolean
   /** Cookie Sessions on unsafe methods must send application/json. */
   jsonOnly?: boolean
-  /** Skips the Auditor MFA rule so the caller can still see who it is (only `/auth/me`). */
+  /** Skips the Auditor MFA rule so the caller can still see who it is (`/auth/me`, `/auth/me/authz`). */
   allowAuditorWithoutMfa?: boolean
 }
 
@@ -216,9 +216,9 @@ async function admitPrincipal(
   policy: AuthPolicy,
 ): Promise<AuthOutcome> {
   await preparePrincipal(user)
-  if (!policy.allowAuditorWithoutMfa) {
-    const mfaRefusal = await auditorMfaRefusal(user)
-    if (mfaRefusal) return deny(403, mfaRefusal)
-  }
+  const mfaRefusal = await auditorMfaRefusal(user, {
+    allowWithoutMfa: policy.allowAuditorWithoutMfa,
+  })
+  if (mfaRefusal) return deny(403, mfaRefusal)
   return { ok: true, user, via }
 }

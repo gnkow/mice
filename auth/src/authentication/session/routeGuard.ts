@@ -10,7 +10,6 @@ import { auditUnavailableJson } from '../../auditFailClosed.js'
 import { AuditDetailPolicyError } from '../../auditDetailPolicy.js'
 import {
   declaredChangeControlId,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   resolveReason,
   type ResolvedReason,
@@ -86,8 +85,12 @@ async function parseBody(c: Context, spec: BodySpec, invalid = 'Invalid body'): 
   if (spec === 'optional') {
     return { ok: true, body: body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {} }
   }
-  if (spec !== 'json' && spec.required.some((f) => !(body as Record<string, unknown> | null)?.[f])) {
-    return { ok: false, res: c.json({ error: `${spec.required.join(' and ')} required` }, 400) }
+  if (spec !== 'json') {
+    const record = body as Record<string, unknown> | null
+    const missing = spec.required.filter((f) => !record?.[f])
+    if (missing.length) {
+      return { ok: false, res: c.json({ error: `${missing.join(' and ')} required` }, 400) }
+    }
   }
   return { ok: true, body: body as Record<string, unknown> }
 }
@@ -126,8 +129,6 @@ export function guarded(
       const resolved = resolveReason({
         actor: user,
         explicit: c.req.header(REASON_HEADER),
-        category: c.req.header(REASON_CATEGORY_HEADER),
-        required: true,
       })
       if (!resolved.ok) {
         await appendAudit({ ...base, status: 400, action: 'request.rejected', detail: { reason: resolved.rejection.code } })
@@ -144,7 +145,6 @@ export function guarded(
         method: c.req.method,
         path: c.req.path,
         reason: reason.reason,
-        category: reason.category ?? '',
         body,
       })
       if (!signed.ok) {

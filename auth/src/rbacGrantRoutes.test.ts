@@ -197,7 +197,6 @@ describe('RBAC S30 Direct-grant routes', () => {
         ...(await cookie(user)),
         'content-type': 'application/json',
         'x-mice-reason': 'Routine test change',
-        'x-mice-reason-category': 'privileged_settings',
       },
       body: JSON.stringify(deniedBody),
     })

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   allocateChangeControlId,
+  isValidChangeControlId,
   mutationNeedsChangeControl,
   resolveChangeControl,
 } from './changeControl.js'
@@ -10,6 +11,15 @@ describe('allocateChangeControlId', () => {
   it('mints a CC-YYYYMMDD-hex id', () => {
     const id = allocateChangeControlId(new Date('2026-11-13T12:00:00Z'))
     assert.match(id, /^CC-20261113-[0-9a-f]{8}$/)
+  })
+})
+
+describe('isValidChangeControlId', () => {
+  it('accepts the suggested CC-YYYYMMDD-hex shape and legacy QMS ids', () => {
+    assert.equal(isValidChangeControlId('CC-20261113-abcd1234'), true)
+    assert.equal(isValidChangeControlId('CC-2026-114'), true)
+    assert.equal(isValidChangeControlId('ab'), false)
+    assert.equal(isValidChangeControlId('bad id'), false)
   })
 })
 

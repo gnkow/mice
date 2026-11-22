@@ -3,7 +3,7 @@
  */
 
 import type { Hono } from 'hono'
-import { isInstanceAdmin } from '../../authzInstanceStore.js'
+import { adminRoleGate } from '../../decisionHttp.js'
 import { guarded } from '../index.js'
 import {
   getAllSealKeys,
@@ -12,11 +12,8 @@ import {
   rotateSealKeyWithAudit,
 } from './sealKeys.js'
 
-const adminGate = async (u: { sub: string; iss: string }) =>
-  (await isInstanceAdmin(u)) ? null : 'Instance admin required'
-
 const requireInstanceAdmin = {
-  gate: adminGate,
+  gate: adminRoleGate,
   originCheck: true,
   jsonOnly: true,
 } as const
@@ -26,7 +23,7 @@ export function registerSealKeyRoutes(app: Hono): void {
    * GET /auth/admin/seal-keys
    * List all seal keys (admin only)
    */
-  app.get('/auth/admin/seal-keys', guarded({ gate: adminGate }, async ({ c }) => {
+  app.get('/auth/admin/seal-keys', guarded({ gate: adminRoleGate }, async ({ c }) => {
     const now = Math.floor(Date.now() / 1000)
     const keys = await getAllSealKeys()
     return c.json({ keys: keys.map((key) => presentSealKey(key, now)) })
@@ -36,7 +33,7 @@ export function registerSealKeyRoutes(app: Hono): void {
    * GET /auth/admin/seal-keys/current
    * Get current primary seal key info (admin only)
    */
-  app.get('/auth/admin/seal-keys/current', guarded({ gate: adminGate }, async ({ c }) => {
+  app.get('/auth/admin/seal-keys/current', guarded({ gate: adminRoleGate }, async ({ c }) => {
     const currentKey = await getCurrentSealKey()
 
     if (!currentKey) {

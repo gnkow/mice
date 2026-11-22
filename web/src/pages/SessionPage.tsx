@@ -44,8 +44,7 @@ export function SessionPage() {
   const mayConnect =
     authz.kind === 'ok' &&
     !!authz.data &&
-    (!authz.data.enforce ||
-      hasEffectivePermission(authz.data, 'session:connect') ||
+    (hasEffectivePermission(authz.data, 'session:connect') ||
       hasEffectivePermission(authz.data, 'session:delete'))
 
   const reload = useCallback(async () => {

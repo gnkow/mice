@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import type { AsyncState } from '../hooks/useAsync'
 import type { ApproverPrincipal, SeatVersionEntry } from '../lib/authzApi'
+import { toAuthorKey } from '../lib/userRef'
 import { usePrincipalProfiles } from './CommitEmail'
 import { GroupPrincipalLabel } from './GroupPrincipalLabel'
 import { StateBlock } from './StateBlock'
@@ -66,7 +67,7 @@ export function VersionHistoryList<T extends Interval>({
   )
 }
 
-/** Approver principals for one history version — always UserRef (never raw iss|sub). */
+/** Approver principals for one history version — users and groups. */
 export function ApproverVersionSeats({
   approvers,
   emptyLabel = 'No approvers',
@@ -75,7 +76,10 @@ export function ApproverVersionSeats({
   emptyLabel?: string
 }) {
   const authors = useMemo(
-    () => approvers.map((a) => `${a.iss}|${a.sub}`),
+    () =>
+      approvers
+        .filter((a): a is Extract<ApproverPrincipal, { kind: 'user' }> => a.kind === 'user')
+        .map((a) => `${a.iss}|${a.sub}`),
     [approvers],
   )
   const profiles = usePrincipalProfiles(authors)
@@ -83,6 +87,13 @@ export function ApproverVersionSeats({
   return (
     <ul className="muted small" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
       {approvers.map((a) => {
+        if (a.kind === 'group') {
+          return (
+            <li key={`group:${a.group}`}>
+              <GroupPrincipalLabel group={a.group} name={a.name} inline />
+            </li>
+          )
+        }
         const key = `${a.iss}|${a.sub}`
         return (
           <li key={key}>
@@ -97,7 +108,7 @@ export function ApproverVersionSeats({
 /** Seats (user or group + role) captured in a membership or collaborator version. */
 export function SeatVersionList({ seats, emptyLabel }: { seats: SeatVersionEntry[]; emptyLabel: string }) {
   const authors = useMemo(
-    () => seats.filter((s) => s.kind === 'user').map((s) => s.key),
+    () => seats.filter((s) => s.kind === 'user').map((s) => toAuthorKey(s.key)),
     [seats],
   )
   const profiles = usePrincipalProfiles(authors)
@@ -109,7 +120,7 @@ export function SeatVersionList({ seats, emptyLabel }: { seats: SeatVersionEntry
           {s.kind === 'group' ? (
             <GroupPrincipalLabel group={s.key} inline />
           ) : (
-            <UserRef author={s.key} profiles={profiles} />
+            <UserRef author={toAuthorKey(s.key)} profiles={profiles} />
           )}{' '}
           <span className="ns-tag">{s.role}</span>
         </li>

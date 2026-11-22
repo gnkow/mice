@@ -152,22 +152,6 @@
   ],
   "users": [
     {
-      "username": "mice",
-      "enabled": true,
-      "email": "mice@example.com",
-      "emailVerified": true,
-      "firstName": "Mice",
-      "lastName": "User",
-      "groups": ["/engineering"],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "mice",
-          "temporary": false
-        }
-      ]
-    },
-    {
       "id": "a0000000-0000-4000-8000-000000000001",
       "username": "mice_admin",
       "enabled": true,
@@ -253,6 +237,22 @@
       ]
     },
     {
+      "id": "a0000000-0000-4000-8000-000000000012",
+      "username": "mice_auditor_no_mfa",
+      "enabled": true,
+      "email": "mice_auditor_no_mfa@mice.com",
+      "emailVerified": true,
+      "firstName": "Auditor",
+      "lastName": "NoMfa",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "auditornmfa123",
+          "temporary": false
+        }
+      ]
+    },
+    {
       "id": "a0000000-0000-4000-8000-000000000004",
       "username": "mice_user",
       "enabled": true,
@@ -260,11 +260,60 @@
       "emailVerified": true,
       "firstName": "Regular",
       "lastName": "User",
+      "groups": ["/engineering"],
       "totp": true,
       "credentials": [
         {
           "type": "password",
           "value": "user123",
+          "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "e2e-totp",
+          "secretData": "{\"value\":\"JBSWY3DPEHPK3PXP\"}",
+          "credentialData": "{\"subType\":\"totp\",\"algorithm\":\"HmacSHA1\",\"digits\":6,\"period\":30}"
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000008",
+      "username": "mice_user_2",
+      "enabled": true,
+      "email": "mice_user_2@mice.com",
+      "emailVerified": true,
+      "firstName": "Regular",
+      "lastName": "User Two",
+      "groups": ["/engineering"],
+      "totp": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user2123",
+          "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "e2e-totp",
+          "secretData": "{\"value\":\"JBSWY3DPEHPK3PXP\"}",
+          "credentialData": "{\"subType\":\"totp\",\"algorithm\":\"HmacSHA1\",\"digits\":6,\"period\":30}"
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000009",
+      "username": "mice_user_3",
+      "enabled": true,
+      "email": "mice_user_3@mice.com",
+      "emailVerified": true,
+      "firstName": "Regular",
+      "lastName": "User Three",
+      "groups": ["/engineering"],
+      "totp": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user3123",
           "temporary": false
         },
         {
@@ -287,6 +336,22 @@
         {
           "type": "password",
           "value": "external123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-4000-8000-000000000011",
+      "username": "mice_no_access",
+      "enabled": true,
+      "email": "mice_no_access@mice.com",
+      "emailVerified": true,
+      "firstName": "No Access",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "noaccess123",
           "temporary": false
         }
       ]
@@ -331,6 +396,7 @@
         "realm-management": [
           "view-users",
           "query-users",
+          "manage-users",
           "view-groups",
           "query-groups"
         ]

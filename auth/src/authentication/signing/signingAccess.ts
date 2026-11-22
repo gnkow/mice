@@ -1,4 +1,5 @@
 import type { Context } from 'hono'
+import { AUDITOR_CANNOT_SIGN, decideAuditorCannotSign } from '../../auditorAccess.js'
 import { getUserRole } from '../../rbacStore.js'
 import { env } from '../../env.js'
 import { reauthenticate } from '../oidc/stepUp.js'
@@ -8,7 +9,7 @@ import { checkSigningIdleTimeout } from './idleTimeout.js'
 /** Signing ceremony step-up window (Ticket 09 / story 9). */
 export const SIGNING_STEP_UP_MAX_AGE_SEC = 60
 
-export const AUDITOR_CANNOT_SIGN = 'Auditor role cannot sign'
+export { AUDITOR_CANNOT_SIGN }
 
 export type SigningAccessResult =
   | { ok: true; user: SessionUser }
@@ -27,10 +28,11 @@ export async function requireSigningAccess(
     nowSec?: number
   },
 ): Promise<SigningAccessResult> {
-  if ((await getUserRole(user)) === 'auditor') {
+  const auditorBlock = decideAuditorCannotSign(await getUserRole(user))
+  if (auditorBlock) {
     return {
       ok: false,
-      response: Response.json({ error: AUDITOR_CANNOT_SIGN }, { status: 403 }),
+      response: Response.json({ error: auditorBlock }, { status: 403 }),
     }
   }
   const stepUp = await reauthenticate(c, opts?.freshnessSec ?? SIGNING_STEP_UP_MAX_AGE_SEC)

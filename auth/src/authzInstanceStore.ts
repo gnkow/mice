@@ -3,6 +3,7 @@ import { ALL_INSTANCE_PERMISSIONS, parseUserKey, userKey, type InstancePermissio
 import * as repo from './authzRepository.js'
 import { assignRole, getUserRole, listAdminPrincipals } from './rbacStore.js'
 import { matchesBootstrap } from './authzRepository.js'
+import { decideDelegatedInstanceExpiry } from './delegatedInstanceExpiry.js'
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -76,13 +77,9 @@ export async function setInstancePermissions(
     }
   }
   if (perms.length > 0) {
-    if (expiresAt == null) {
-      return { ok: false, error: 'expiresAt is required for delegated instance permissions' }
-    }
-    const when = typeof expiresAt === 'number' ? expiresAt : expiresAt.getTime()
-    if (!Number.isFinite(when) || when <= Date.now()) {
-      return { ok: false, error: 'expiresAt must be a future time' }
-    }
+    const refusal = decideDelegatedInstanceExpiry({ permissions: perms, expiresAt })
+    if (refusal) return { ok: false, error: refusal }
+    const when = typeof expiresAt === 'number' ? expiresAt! : (expiresAt as Date).getTime()
     await writeInstancePermissions(target, perms, when)
   } else {
     await writeInstancePermissions(target, [])

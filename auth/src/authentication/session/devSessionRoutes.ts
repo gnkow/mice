@@ -96,15 +96,13 @@ export function registerDevSessionRoutes(app: Hono): void {
     const method = typeof body.method === 'string' ? body.method : ''
     const path = typeof body.path === 'string' ? body.path : ''
     const reason = typeof body.reason === 'string' ? body.reason : ''
-    const category = typeof body.category === 'string' ? body.category : ''
-    if (!method || !path || !reason || !category) {
-      return c.json({ error: 'method, path, reason, and category are required' }, 400)
+    if (!method || !path || !reason) {
+      return c.json({ error: 'method, path, and reason are required' }, 400)
     }
     const prepared = prepareMutationDocument({
       method,
       path,
       reason,
-      category,
       body: body.body ?? {},
     })
     const { id } = await (
@@ -121,7 +119,6 @@ export function registerDevSessionRoutes(app: Hono): void {
     return c.json({
       signatureId: id,
       reason,
-      category,
       hash: prepared.hash,
     })
   })

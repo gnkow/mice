@@ -2,6 +2,7 @@ import { Settings, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAsync } from '../hooks/useAsync'
+import { formatAccessError } from '../lib/accessError'
 import { deleteRepository, getRepository, listCommitHistory, listWorkspaces } from '../lib/oxen/api'
 import { formatBytes } from '../lib/oxen/client'
 import { confirmDelete } from '../lib/confirmDelete'
@@ -69,6 +70,8 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
   const href = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(name)}/tree/${encodeURIComponent(lastBranch(namespace, name, 'main'))}`
   const summary =
     detail.kind === 'ok' ? summarize(detail.data) : detail.kind === 'loading' ? '…' : null
+  const noAccess =
+    detail.kind === 'error' ? formatAccessError(detail.message) : null
   const repositoryId =
     detail.kind === 'ok'
       ? detail.data.repository.repository_id ?? detail.data.repository_id ?? null
@@ -83,6 +86,7 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
   ]
     .filter(Boolean)
     .join(' · ')
+  const cardMeta = meta || noAccess || 'Open repository →'
 
   const repoBase = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(name)}`
 
@@ -118,7 +122,7 @@ export function RepoSummaryCard({ namespace, name, showNamespace, onDeleted }: P
           {name}
         </span>
         {repositoryId ? <EntityIdInline kind="repository" id={repositoryId} /> : null}
-        <span className="card-meta">{meta || 'Open repository →'}</span>
+        <span className={`card-meta${noAccess ? ' error' : ''}`}>{cardMeta}</span>
         {dataTypes.length > 0 && (
           <span className="repo-summary-types small muted">
             {dataTypes.map((d) => `${d.count} ${d.data_type}`).join(' · ')}

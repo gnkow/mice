@@ -8,9 +8,11 @@ import {
   fetchAuthzMe,
   hasEffectivePermission,
   logout,
+  logoutRedirectHref,
   type AuthUser,
   type AuthzMe,
 } from '../lib/auth'
+import { decideAuditorMfaBanner } from '../lib/auditorGrant'
 import { fetchServerVersion } from '../lib/oxen/api'
 import { loadSettings, subscribeSettings } from '../lib/oxen/settings'
 import {
@@ -40,7 +42,6 @@ function useCloseDetails(ref: RefObject<HTMLDetailsElement | null>) {
 
 export function Layout() {
   const navigate = useNavigate()
-  const [version, setVersion] = useState<string | null>(null)
   const [connected, setConnected] = useState<boolean | null>(null)
   const [settings, setSettings] = useState(() => loadSettings())
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -84,20 +85,22 @@ export function Layout() {
   }, [])
 
   const canViewAudit = authz ? hasEffectivePermission(authz, 'audit:read') : false
+  const auditorMfaBanner = decideAuditorMfaBanner({
+    role: authz?.role,
+    mfaEvidenced: user?.mfaEvidenced,
+  })
 
   useEffect(() => {
     let cancelled = false
     const probe = () => {
       const controller = new AbortController()
       fetchServerVersion(controller.signal)
-        .then((data) => {
+        .then(() => {
           if (cancelled) return
-          setVersion(data.oxen_version)
           setConnected(true)
         })
         .catch(() => {
           if (cancelled) return
-          setVersion(null)
           setConnected(false)
         })
       return controller
@@ -132,14 +135,10 @@ export function Layout() {
     if (menuRef.current) menuRef.current.open = false
     const result = await logout()
     setUser(null)
+    setAuthz(null)
     setConnected(false)
-    setVersion(null)
     // Full navigation clears IdP SSO so the next "Sign in with SSO" shows credentials.
-    if (result.idpLogoutUrl) {
-      window.location.assign(result.idpLogoutUrl)
-      return
-    }
-    window.location.assign('/login')
+    window.location.assign(logoutRedirectHref(result))
   }
 
   function onSearch(e: FormEvent) {
@@ -284,6 +283,15 @@ export function Layout() {
           </details>
         </header>
         {user && <AnnouncementBanner />}
+        {auditorMfaBanner && (
+          <div
+            className="flash flash-warn"
+            role="status"
+            data-testid="auditor-mfa-banner"
+          >
+            {auditorMfaBanner}
+          </div>
+        )}
         {connected === false && (
           <div className="offline-banner flash flash-error" role="alert">
             {user
@@ -300,19 +308,7 @@ export function Layout() {
           <Outlet />
         </div>
         <footer className="site-footer">
-          <span className="muted small">{connected === true ? `Server v${version}` : connected === false ? 'Offline' : 'Checking connection…'}</span>
-          <NavLink to="/">Mice</NavLink>
-          <a href="https://docs.oxen.ai/" rel="noreferrer" target="_blank">
-            Oxen docs
-          </a>
-          <a
-            href="https://docs.oxen.ai/getting-started/oxen-server"
-            rel="noreferrer"
-            target="_blank"
-          >
-            oxen-server
-          </a>
-          <span className="muted small">Self-hosted UI for Oxen</span>
+          <span className="muted small">© {new Date().getFullYear()} Mice</span>
         </footer>
       </div>
     </ReasonPromptProvider>

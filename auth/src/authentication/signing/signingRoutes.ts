@@ -4,6 +4,7 @@ import {
   buildSigningSessionInfo,
   createSignature,
   prepareForSigning,
+  signatureEvidenceFields,
   type SignatureMeaning,
 } from './signingCeremony.js'
 import { verifySigningEvidence } from './signingEvidence.js'
@@ -13,9 +14,13 @@ import { isSigningBlockedByDrift } from '../compliance/idpDriftDetection.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
 import type { SessionUser } from '../session/session.js'
-import { allocateChangeControlId } from '../../changeControl.js'
+import {
+  allocateChangeControlId,
+  DuplicateChangeControlIdError,
+  isValidChangeControlId,
+  normalizeChangeControlId,
+} from '../../changeControl.js'
 import { prepareMutationDocument } from '../../mutationSignature.js'
-import { REASON_CATEGORIES } from '../../auditReason.js'
 import { requireSigningAccess, SIGNING_STEP_UP_MAX_AGE_SEC } from './signingAccess.js'
 
 /**
@@ -65,7 +70,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
   // Prepare a regulated mutation for signing (canonical document + hash).
   app.post('/auth/sign/prepare-mutation', guarded({
     mutates: false,
-    body: { required: ['method', 'path', 'reason', 'category'] },
+    body: { required: ['method', 'path', 'reason'] },
   }, async ({ c, user, body }) => {
     const unavailable = await directoryFailure(user)
     if (unavailable) return unavailable
@@ -75,10 +80,6 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     const method = String(body.method)
     const path = String(body.path)
     const reason = String(body.reason)
-    const category = String(body.category)
-    if (!(REASON_CATEGORIES as readonly string[]).includes(category)) {
-      return c.json({ error: 'Invalid reason category', code: 'reason_category_invalid' }, 400)
-    }
     if (!reason.trim()) {
       return c.json({ error: 'Reason required', code: 'reason_required' }, 400)
     }
@@ -87,7 +88,6 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       method,
       path,
       reason,
-      category,
       body: body.body,
     })
 
@@ -216,12 +216,22 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
       )
 
       const signature = createSignature(content, meaning, session)
-      const changeControlId =
+      const rawCc =
         typeof body.changeControlId === 'string' && body.changeControlId.trim()
           ? body.changeControlId.trim()
           : typeof body.change_control_id === 'string' && body.change_control_id.trim()
             ? body.change_control_id.trim()
-            : allocateChangeControlId()
+            : ''
+      const changeControlId = rawCc || allocateChangeControlId()
+      if (!isValidChangeControlId(normalizeChangeControlId(changeControlId))) {
+        return c.json(
+          {
+            error: 'Change-control id must be 3–128 characters (letters, digits, . _ / -)',
+            code: 'change_control_id_invalid',
+          },
+          400,
+        )
+      }
       // Optional merge-result binding (gxp/06 signing ceremony UI → complete signed merge).
       const rawBinding = body.binding
       const binding =
@@ -262,10 +272,19 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           changeControlId,
           ...(binding ? { binding } : {}),
           ...(manifest !== undefined ? { manifest } : {}),
-          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
-          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
+          ...signatureEvidenceFields(signature),
         })
       } catch (err) {
+        if (err instanceof DuplicateChangeControlIdError) {
+          return c.json(
+            {
+              error: 'This change-control id was already used',
+              code: err.code,
+              changeControlId: err.changeControlId,
+            },
+            409,
+          )
+        }
         const reason = err instanceof Error ? err.message : 'signature record unavailable'
         await audit(c, user, 'session', {
           status: 503,
@@ -287,9 +306,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           hash: signature.hash,
           signedAt: signature.signedAt,
           changeControlId,
-          // Ticket 26: Include evidence in audit detail
-          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
-          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
+          // Ticket 26 / #83: Auditor-visible evidence (same packing as ledger + HTTP)
+          ...signatureEvidenceFields(signature),
         },
       })
 
@@ -301,9 +319,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           signedAt: signature.signedAt,
           changeControlId,
           principal: signature.principal,
-          // Ticket 26: Return evidence in response for display/storage
-          ...(signature.mfaEvidence ? { mfaEvidence: signature.mfaEvidence } : {}),
-          ...(signature.verificationMetadata ? { verificationMetadata: signature.verificationMetadata } : {}),
+          ...signatureEvidenceFields(signature),
         },
       })
     } catch (err) {

@@ -85,7 +85,6 @@ async function signedAdmin(
       path,
       body,
       reason,
-      category: 'privileged_settings',
     })),
   }
 }

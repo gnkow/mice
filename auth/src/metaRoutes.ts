@@ -232,7 +232,7 @@ export function registerMetaRoutes(app: Hono) {
     if (!q) return c.json({ error: 'type and id are required' }, 400)
     const ref = await resolveRef(q.type, q.id, queryScope(c))
     if (!await canReadEntity(user, ref, lookup)) {
-      return c.json({ error: 'Forbidden' }, 403)
+      return c.json({ error: 'Read access required to view metadata' }, 403)
     }
     if (c.req.query('trace')) throw new MetaError(400, 'Metadata inheritance traces are no longer supported')
     const eff = await resolveEffective(ref, getOwnRecord)
@@ -327,7 +327,7 @@ export function registerMetaRoutes(app: Hono) {
     const ref = parseRef(q.type, q.id, queryScope(c))
     const full = ref.type === 'job' ? await resolveRef(q.type, q.id).catch(() => ref) : ref
     if (!await canReadEntity(user, full, lookup)) {
-      return c.json({ error: 'Forbidden' }, 403)
+      return c.json({ error: 'Read access required to view metadata' }, 403)
     }
     return c.json({ history: await listHistory(ref) })
   }))

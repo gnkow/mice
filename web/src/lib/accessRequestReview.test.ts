@@ -5,6 +5,7 @@ import {
   approvableRoles,
   buildApproveBody,
   buildDenyBody,
+  canReviewPendingRequest,
   extrasBeyondRole,
   filterAccessRequests,
   formatRequestedAccess,
@@ -169,5 +170,36 @@ describe('RBAC S35 access request review helpers', () => {
     assert.equal(isAdminFloorError('At least two instance admins must remain'), true)
     assert.equal(isAdminFloorError('Grant failed'), false)
     assert.equal(isAdminFloorError('Already resolved'), false)
+  })
+
+  it('mirrors server canReviewPendingRequest for list/deny gates', () => {
+    const managerEffective = ['namespace:create', 'access_request:review']
+    assert.equal(
+      canReviewPendingRequest({
+        reviewerRole: 'manager',
+        reviewerEffective: managerEffective,
+        requestedRole: 'user',
+        requestedPermissions: [],
+      }),
+      true,
+    )
+    assert.equal(
+      canReviewPendingRequest({
+        reviewerRole: 'manager',
+        reviewerEffective: managerEffective,
+        requestedRole: 'admin',
+        requestedPermissions: [],
+      }),
+      false,
+    )
+    assert.equal(
+      canReviewPendingRequest({
+        reviewerRole: 'user',
+        reviewerEffective: managerEffective,
+        requestedRole: 'user',
+        requestedPermissions: [],
+      }),
+      false,
+    )
   })
 })

@@ -28,7 +28,11 @@ export type SignedMergeDecision =
 export function decideSignedMergeComplete(input: {
   mr: Pick<
     MergeRequestRecord,
-    'status' | 'expectedSourceHead' | 'expectedTargetHead' | 'targetBranch'
+    | 'status'
+    | 'expectedSourceHead'
+    | 'expectedTargetHead'
+    | 'targetBranch'
+    | 'openedBy'
   >
   isApprover: boolean
   isValidatedTarget: boolean
@@ -60,7 +64,7 @@ export function decideSignedMergeComplete(input: {
       detail: 'Approver role required',
     }
   }
-  const self = decideSelfMerge(input.signer, input.authors)
+  const self = decideSelfMerge(input.signer, input.authors, input.mr.openedBy)
   if (!self.allow) {
     return { ok: false, code: SIGNED_MERGE_REFUSALS.self_merge, detail: self.reason }
   }

@@ -251,7 +251,7 @@ describe('Access Review Routes (Issue #12)', () => {
     })
     const text = await res.text()
     assert.equal(res.status, 403, text)
-    assert.match(text, /Admin required/)
+    assert.match(text, /Instance admin required/)
     const opened = JSON.parse(await (await app.request('/auth/admin/access-review/2026-Q5', {
       headers: { cookie: await cookie(admin) },
     })).text()) as { report: { reviewerSignature?: unknown } }

@@ -1,7 +1,6 @@
 import type { AuthUser } from './auth'
 import {
   CHANGE_CONTROL_HEADER,
-  REASON_CATEGORY_HEADER,
   REASON_HEADER,
   SIGNATURE_HEADER,
   summarizeMutation,
@@ -200,7 +199,6 @@ export async function authzFetch<T>(
 ): Promise<T> {
   const send = (submission?: {
     reason: string
-    category: string
     changeControlId?: string
     signatureId?: string
   }) =>
@@ -214,7 +212,6 @@ export async function authzFetch<T>(
         ...(submission
           ? {
               [REASON_HEADER]: submission.reason,
-              [REASON_CATEGORY_HEADER]: submission.category,
               [SIGNATURE_HEADER]: submission.signatureId!,
               ...(submission.changeControlId
                 ? { [CHANGE_CONTROL_HEADER]: submission.changeControlId }
@@ -238,7 +235,7 @@ export async function authzFetch<T>(
     method === 'GET' || method === 'HEAD'
       ? await send()
       : await withReason(send, {
-          changeSummary: summarizeMutation(method, path),
+          changeSummary: summarizeMutation(method, path, mutationBody),
           method,
           path,
           body: mutationBody,
@@ -458,7 +455,7 @@ export function deleteNamespaceAuthz(
   )
 }
 
-/** Caller-facing capabilities for repository settings chrome. */
+/** Caller-facing capabilities for repository settings chrome + file browser. */
 export type RepoViewerPermissions = {
   rename: boolean
   transfer: boolean
@@ -467,6 +464,8 @@ export type RepoViewerPermissions = {
   editMetadata: boolean
   deleteRepository: boolean
   viewSignedRecord: boolean
+  /** Tip-changing file ops (upload/rename/move/copy/delete). */
+  contentsWrite: boolean
 }
 
 const NO_REPO_PERMISSIONS: RepoViewerPermissions = {
@@ -477,6 +476,7 @@ const NO_REPO_PERMISSIONS: RepoViewerPermissions = {
   editMetadata: false,
   deleteRepository: false,
   viewSignedRecord: false,
+  contentsWrite: false,
 }
 
 export async function fetchRepoPermissions(
@@ -484,11 +484,25 @@ export async function fetchRepoPermissions(
   repo: string,
   signal?: AbortSignal,
 ) {
-  const data = await authzFetch<{ permissions?: RepoViewerPermissions }>(
+  const data = await authzFetch<{ permissions?: Partial<RepoViewerPermissions> }>(
     `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/permissions`,
     { signal },
   )
-  return data.permissions ?? NO_REPO_PERMISSIONS
+  return { ...NO_REPO_PERMISSIONS, ...(data.permissions ?? {}) }
+}
+
+export type AuthzRepository = {
+  id: string
+  namespace: string
+  name: string
+  description: string
+}
+
+export function fetchAuthzRepository(ns: string, repo: string, signal?: AbortSignal) {
+  return authzFetch<{ repository: AuthzRepository }>(
+    `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}`,
+    { signal },
+  )
 }
 
 /** Display-name rename; oxen path stays on the stable repository id. */
@@ -497,10 +511,23 @@ export function renameRepoAuthz(ns: string, repo: string, name: string) {
     ok: boolean
     namespace: string
     name: string
-    repository: { id: string; namespace: string; name: string } | null
+    repository: AuthzRepository | null
   }>(`/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}`, {
     method: 'PATCH',
     body: JSON.stringify({ name }),
+  })
+}
+
+/** Update the About description shown in the repo sidebar. */
+export function updateRepoDescriptionAuthz(ns: string, repo: string, description: string) {
+  return authzFetch<{
+    ok: boolean
+    namespace: string
+    name: string
+    repository: AuthzRepository | null
+  }>(`/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ description }),
   })
 }
 
@@ -817,7 +844,9 @@ export function deleteCustomRepoRole(ns: string, roleId: string) {
 
 // ── Approvers (#86, #124) ───────────────────────────────────────────────────
 
-export type ApproverPrincipal = { sub: string; iss: string }
+export type ApproverPrincipal =
+  | { kind: 'user'; sub: string; iss: string }
+  | { kind: 'group'; group: string; name?: string }
 
 export type ApproverScope = { ns: string; repo?: string }
 
@@ -826,21 +855,54 @@ function approversPath(scope: ApproverScope): string {
   return scope.repo ? `${ns}/repos/${encodeURIComponent(scope.repo)}/approvers` : `${ns}/approvers`
 }
 
-export function fetchApprovers(scope: ApproverScope, signal?: AbortSignal) {
-  return authzFetch<{ approvers: ApproverPrincipal[] }>(approversPath(scope), { signal })
+function parseApproverPrincipal(raw: unknown): ApproverPrincipal | null {
+  if (!raw || typeof raw !== 'object') return null
+  const a = raw as {
+    kind?: string
+    sub?: string
+    iss?: string
+    group?: string
+    name?: string
+  }
+  if (a.kind === 'group' || (a.group && !a.sub)) {
+    if (!a.group) return null
+    const name = typeof a.name === 'string' && a.name.trim() ? a.name.trim() : undefined
+    return { kind: 'group', group: a.group, ...(name ? { name } : {}) }
+  }
+  if (!a.sub || !a.iss) return null
+  return { kind: 'user', sub: a.sub, iss: a.iss }
+}
+
+function approverBody(target: ApproverPrincipal): Record<string, string> {
+  return target.kind === 'group'
+    ? {
+        kind: 'group',
+        group: target.group,
+        ...(target.name ? { name: target.name } : {}),
+      }
+    : { kind: 'user', sub: target.sub, iss: target.iss }
+}
+
+export async function fetchApprovers(scope: ApproverScope, signal?: AbortSignal) {
+  const res = await authzFetch<{ approvers: unknown[] }>(approversPath(scope), { signal })
+  return {
+    approvers: res.approvers
+      .map(parseApproverPrincipal)
+      .filter((a): a is ApproverPrincipal => a != null),
+  }
 }
 
 export function grantApproverSeat(scope: ApproverScope, target: ApproverPrincipal) {
   return authzFetch<{ ok: boolean; approvers: ApproverPrincipal[] }>(approversPath(scope), {
     method: 'PUT',
-    body: JSON.stringify({ sub: target.sub, iss: target.iss }),
+    body: JSON.stringify(approverBody(target)),
   })
 }
 
 export function revokeApproverSeat(scope: ApproverScope, target: ApproverPrincipal) {
   return authzFetch<{ ok: boolean; approvers: ApproverPrincipal[] }>(approversPath(scope), {
     method: 'DELETE',
-    body: JSON.stringify({ sub: target.sub, iss: target.iss }),
+    body: JSON.stringify(approverBody(target)),
   })
 }
 
@@ -850,8 +912,19 @@ export type ApproverVersion = {
   approvers: ApproverPrincipal[]
 }
 
-export function fetchApproverHistory(scope: ApproverScope, signal?: AbortSignal) {
-  return authzFetch<{ versions: ApproverVersion[] }>(`${approversPath(scope)}/history`, { signal })
+export async function fetchApproverHistory(scope: ApproverScope, signal?: AbortSignal) {
+  const res = await authzFetch<{
+    versions: Array<{ validFrom: string; validTo: string | null; approvers: unknown[] }>
+  }>(`${approversPath(scope)}/history`, { signal })
+  return {
+    versions: res.versions.map((v) => ({
+      validFrom: v.validFrom,
+      validTo: v.validTo,
+      approvers: v.approvers
+        .map(parseApproverPrincipal)
+        .filter((a): a is ApproverPrincipal => a != null),
+    })),
+  }
 }
 
 // ── Entity history (#108, #109, #110) ───────────────────────────────────────
@@ -888,6 +961,7 @@ export type RepoSettingsVersion = {
   validFrom: string
   validTo: string | null
   name: string
+  description: string
 }
 
 export function fetchRepoSettingsHistory(ns: string, repo: string, signal?: AbortSignal) {

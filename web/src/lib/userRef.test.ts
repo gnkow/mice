@@ -22,6 +22,18 @@ describe('parsePrincipalAuthor', () => {
     assert.equal(parsePrincipalAuthor('|only-sub'), null)
     assert.equal(parsePrincipalAuthor('only-iss|'), null)
   })
+
+  it('splits AuthZ storage keys that use the unit separator', () => {
+    assert.deepEqual(
+      parsePrincipalAuthor(
+        'http://localhost:8180/realms/mice\u001fa0000000-0000-4000-8000-000000000002',
+      ),
+      {
+        iss: 'http://localhost:8180/realms/mice',
+        sub: 'a0000000-0000-4000-8000-000000000002',
+      },
+    )
+  })
 })
 
 describe('decideUserRefLabel', () => {
@@ -30,15 +42,15 @@ describe('decideUserRefLabel', () => {
 
   it('prefers display name', () => {
     assert.equal(
-      decideUserRefLabel({ author, name: 'Mice User', email: 'mice@example.com' }),
-      'Mice User',
+      decideUserRefLabel({ author, name: 'Regular User', email: 'mice_user@mice.com' }),
+      'Regular User',
     )
   })
 
   it('falls back to email local-part', () => {
     assert.equal(
-      decideUserRefLabel({ author, email: 'mice@example.com' }),
-      'mice',
+      decideUserRefLabel({ author, email: 'mice_user@mice.com' }),
+      'mice_user',
     )
   })
 
@@ -52,9 +64,9 @@ describe('decideUserRefUsername', () => {
     assert.equal(
       decideUserRefUsername({
         author: 'http://idp|sub',
-        email: 'mice@example.com',
+        email: 'alice@example.com',
       }),
-      'mice',
+      'alice',
     )
   })
 })

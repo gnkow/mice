@@ -15,14 +15,12 @@ describe('canonical mutation content', () => {
       method: 'patch',
       path: '/auth/namespaces/acme?x=1',
       reason: 'Routine settings correction for assay batch',
-      category: 'privileged_settings',
       body: { b: 1, a: 2 },
     })
     const b = prepareMutationDocument({
       method: 'PATCH',
       path: '/auth/namespaces/acme',
       reason: 'Routine settings correction for assay batch',
-      category: 'privileged_settings',
       body: { a: 2, b: 1 },
     })
     assert.equal(a.hash, b.hash)
@@ -35,7 +33,6 @@ describe('canonical mutation content', () => {
       method: 'PATCH',
       path: '/auth/namespaces/acme',
       reason: 'Routine settings correction for assay batch',
-      category: 'privileged_settings',
     }
     const h1 = mutationContentHash(canonicalMutationContent({ ...base, body: { membersCanCreateRepos: false } }))
     const h2 = mutationContentHash(canonicalMutationContent({ ...base, body: { membersCanCreateRepos: true } }))
@@ -51,7 +48,6 @@ describe('canonical mutation content', () => {
       method: 'PATCH',
       path: '/auth/namespaces/acme',
       reason: 'Routine settings correction for assay batch',
-      category: 'privileged_settings',
       body: { a: 1 },
     })
     const base = {
@@ -59,7 +55,6 @@ describe('canonical mutation content', () => {
       method: 'PATCH',
       path: '/auth/namespaces/acme',
       reason: 'Routine settings correction for assay batch',
-      category: 'privileged_settings',
       body: { a: 1 },
       now: Date.now(),
     }
@@ -114,20 +109,17 @@ describe('canonical mutation content', () => {
 
   it('normalizes encoded paths so client and server hashes match', () => {
     const reason = 'Routine settings correction for assay batch'
-    const category = 'privileged_settings'
     const body = { description: 'Assay study namespace' }
     const encoded = prepareMutationDocument({
       method: 'PATCH',
       path: '/auth/namespaces/acme%2Dlab',
       reason,
-      category,
       body,
     })
     const plain = prepareMutationDocument({
       method: 'PATCH',
       path: '/auth/namespaces/acme-lab',
       reason,
-      category,
       body,
     })
     assert.equal(encoded.hash, plain.hash)

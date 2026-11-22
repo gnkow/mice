@@ -37,7 +37,9 @@ import {
   triggerDownload,
   uploadFile,
 } from '../lib/oxen/api'
+import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import { confirmDelete } from '../lib/confirmDelete'
+import { fetchRepoPermissions } from '../lib/authzApi'
 import {
   lastBranch,
   resolveDefaultBranch,
@@ -129,17 +131,24 @@ export function BlobPage() {
       ? branches.data.branches.map((b) => b.name)
       : []
   const onCommitRef = looksLikeCommitId(branch)
-  const writeBranch = onCommitRef
-    ? resolveDefaultBranch(
-        branchNames.length > 0
-          ? branchNames
-          : [lastBranch(namespace, repo, 'main')].filter(
-              (b) => !looksLikeCommitId(b),
-            ),
-        namespace,
-        repo,
-      )
-    : branch
+  const defaultBranch = resolveDefaultBranch(
+    branchNames.length > 0
+      ? branchNames
+      : [lastBranch(namespace, repo, 'main')].filter((b) => !looksLikeCommitId(b)),
+    namespace,
+    repo,
+  )
+  const writeBranch = onCommitRef ? defaultBranch : branch
+  const onValidatedBranch = !onCommitRef && writeBranch === defaultBranch
+  const repoPerms = useAsync(
+    (signal) => fetchRepoPermissions(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const canMutateFile =
+    repoPerms.kind === 'ok' &&
+    repoPerms.data.contentsWrite === true &&
+    !onValidatedBranch &&
+    !onCommitRef
 
   const tipPresence = useAsync(async (signal) => {
     try {
@@ -334,6 +343,7 @@ export function BlobPage() {
         `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/tree/${encodeURIComponent(writeBranch)}${parent ? `/${parent}` : ''}`,
       )
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setActionError(
         err instanceof OxenApiError
           ? err.message
@@ -373,6 +383,7 @@ export function BlobPage() {
         )
       }
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setActionError(
         err instanceof OxenApiError
           ? err.message
@@ -474,6 +485,7 @@ export function BlobPage() {
       history.reload()
       setLineageTick((t) => t + 1)
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setActionError(
         err instanceof OxenApiError
           ? err.message
@@ -560,11 +572,11 @@ export function BlobPage() {
               <span>Table</span>
             </Link>
           )}
-          {missingAtTip && preview.kind === 'ok' && (
+          {missingAtTip && preview.kind === 'ok' && canMutateFile && (
             <button
               type="button"
               className="blob-tool"
-              disabled={busy || looksLikeCommitId(writeBranch)}
+              disabled={busy}
               title={`Restore this version to ${writeBranch}`}
               onClick={() =>
                 void onRestore(
@@ -629,16 +641,20 @@ export function BlobPage() {
                 <GraphIcon size={15} />
                 View lineage
               </button>
-              <hr className="blob-ops-sep" />
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                onClick={() => void onDelete()}
-              >
-                <TrashIcon size={15} />
-                Delete file
-              </button>
+              {canMutateFile ? (
+                <>
+                  <hr className="blob-ops-sep" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => void onDelete()}
+                  >
+                    <TrashIcon size={15} />
+                    Delete file
+                  </button>
+                </>
+              ) : null}
             </div>
           </details>
         </div>
@@ -684,17 +700,19 @@ export function BlobPage() {
               </p>
               {history.kind === 'ok' && history.data.versions[0] && (
                 <div className="btn-row">
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={busy}
-                    onClick={() =>
-                      void onRestore(history.data.versions[0]!.commit.id)
-                    }
-                  >
-                    <RestoreIcon size={14} />
-                    Restore latest version
-                  </button>
+                  {canMutateFile ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      onClick={() =>
+                        void onRestore(history.data.versions[0]!.commit.id)
+                      }
+                    >
+                      <RestoreIcon size={14} />
+                      Restore latest version
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="btn ghost"
@@ -951,18 +969,18 @@ export function BlobPage() {
                         </time>
                       </span>
                     </Link>
-                    {missingAtTip && (
+                    {missingAtTip && canMutateFile ? (
                       <button
                         type="button"
                         className="btn ghost small"
-                        disabled={busy || looksLikeCommitId(writeBranch)}
+                        disabled={busy}
                         title={`Restore this version to ${writeBranch}`}
                         onClick={() => void onRestore(v.commit.id)}
                       >
                         <RestoreIcon size={13} />
                         Restore
                       </button>
-                    )}
+                    ) : null}
                   </li>
                 ))}
               </ul>

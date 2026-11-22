@@ -30,7 +30,6 @@ describe('signing resume after MFA step-up', () => {
       body: { action: 'approve', expiresAt: 1 },
       changeSummary: 'Decide an access request',
       draftReason: 'Approved after directory check',
-      draftCategory: 'privileged_settings',
     })
 
     const fetchMock = mock.method(globalThis, 'fetch', async () => {
@@ -50,7 +49,6 @@ describe('signing resume after MFA step-up', () => {
     const draft = takeCeremonyResumeDraft()
     assert.deepEqual(draft, {
       reason: 'Approved after directory check',
-      category: 'privileged_settings',
     })
     assert.equal(takeCeremonyResumeDraft(), null)
 

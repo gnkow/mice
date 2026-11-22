@@ -61,7 +61,6 @@ describe('PUT /auth/favorites stores entity UUIDs', () => {
         ...(await iso.sessionHeaders(owner)),
         'content-type': 'application/json',
         'x-mice-reason': 'Routine test change',
-        'x-mice-reason-category': 'privileged_settings',
         'x-mice-change-control-id': 'CC-2026-114',
       },
       body: JSON.stringify({ type: 'namespace', id: 'fav-http' }),

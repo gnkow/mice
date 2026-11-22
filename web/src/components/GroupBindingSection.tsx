@@ -1,4 +1,4 @@
-import { Link2, ShieldAlert } from 'lucide-react'
+import { Link2 } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useAsync } from '../hooks/useAsync'
 import {
@@ -82,7 +82,7 @@ export function GroupBindingSection() {
       <div className="ns-settings-section-head">
         <div>
           <h2 id="group-binding-heading">
-            <ShieldAlert size={18} className="button-label-icon" aria-hidden="true" />
+            <Link2 size={18} className="button-label-icon" aria-hidden="true" />
             Group binding validation
           </h2>
           <p className="muted small">

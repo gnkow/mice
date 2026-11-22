@@ -3,7 +3,6 @@ import { askReason, summarizeMutation, type ReasonSubmission } from './reasonPro
 
 /** Carries the reason for a change; the BFF requires one on update/delete and privileged mutations. */
 export const REASON_HEADER = 'X-Mice-Reason'
-export const REASON_CATEGORY_HEADER = 'X-Mice-Reason-Category'
 export const CHANGE_CONTROL_HEADER = 'X-Mice-Change-Control-Id'
 export const SIGNATURE_HEADER = 'X-Mice-Signature-Id'
 
@@ -12,8 +11,6 @@ export { CeremonyCancelled, isCeremonyCancelled } from './ceremonyCancelled'
 const CEREMONY_CODES = new Set([
   'reason_required',
   'reason_too_short',
-  'reason_category_required',
-  'reason_category_invalid',
   'signature_required',
   'signature_invalid',
 ])
@@ -74,22 +71,24 @@ export async function withReason(
   const ask = options?.ask ?? ((input) => askReason(input))
   const submission = await ask({
     detail,
-    changeSummary: options?.changeSummary ?? summarizeMutation(method, path),
+    changeSummary:
+      options?.changeSummary ?? summarizeMutation(method, path, body),
     method,
     path,
     body,
   })
-  if (!submission?.reason.trim() || !submission.category || !submission.signatureId) {
+  if (
+    !submission?.reason.trim() ||
+    !submission.signatureId ||
+    !submission.changeControlId?.trim()
+  ) {
     // Do not surface the BFF's reason_required body as a page flash after dismiss.
     throw new CeremonyCancelled()
   }
   return send({
     reason: submission.reason.trim(),
-    category: submission.category,
     signatureId: submission.signatureId,
-    ...(submission.changeControlId?.trim()
-      ? { changeControlId: submission.changeControlId.trim() }
-      : {}),
+    changeControlId: submission.changeControlId.trim(),
   })
 }
 

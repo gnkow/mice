@@ -2,7 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { and, eq, or } from 'drizzle-orm'
 import type { Ledger, LedgerProof } from '../../auditLedger.js'
 import { immudbConfig, openLedger } from '../../auditLedger.js'
-import { allocateChangeControlId } from '../../changeControl.js'
+import {
+  allocateChangeControlId,
+  claimChangeControlId,
+  DuplicateChangeControlIdError,
+} from '../../changeControl.js'
 import { getDb } from '../../db/database.js'
 import { signatureIndex, principals } from '../../db/schema.js'
 import { principalKey } from '../session/principal.js'
@@ -51,6 +55,8 @@ export type SignatureQuery = {
 }
 
 export type IndexedSignature = { id: string; seq: number; repo?: string; signerKey: string; meaning: SignatureMeaning; signedAt: string }
+
+export { DuplicateChangeControlIdError }
 
 export type SignatureStore = {
   record(input: NewSignature): Promise<{ id: string; seq: number }>
@@ -150,6 +156,9 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
         }
         if (!trimmedCc) trimmedCc = allocateChangeControlId()
         await ledger.append(`manifest/${input.binding.manifestDigest}`, manifest)
+      }
+      if (trimmedCc) {
+        await claimChangeControlId(trimmedCc, id)
       }
       const record: SignatureRecord = {
         id,

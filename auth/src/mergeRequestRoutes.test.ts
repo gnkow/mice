@@ -81,4 +81,40 @@ describe('merge request HTTP (repositories/02+03)', () => {
     const staleJson = JSON.parse(staleText) as { mergeRequest?: { status: string } }
     assert.equal(staleJson.mergeRequest?.status, 'stale')
   })
+
+  it('rejects an open MR to blocked', async () => {
+    const path = '/auth/repos/mr-ns/study/merge-requests'
+    const body = {
+      sourceBranch: 'reject-branch',
+      targetBranch: 'main',
+      expectedSourceHead: 'rsrc',
+      expectedTargetHead: 'rtgt',
+    }
+    const headers = await regulatedMutationHeaders(manager, { method: 'POST', path, body })
+    const created = await app.request(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: await cookie() },
+      body: JSON.stringify(body),
+    })
+    assert.equal(created.status, 201)
+    const mr = ((await created.json()) as { mergeRequest: { id: string } }).mergeRequest
+
+    const rejectPath = `/auth/merge-requests/${mr.id}/reject`
+    const rejectHeaders = await regulatedMutationHeaders(manager, {
+      method: 'POST',
+      path: rejectPath,
+      body: {},
+    })
+    const rejected = await app.request(rejectPath, {
+      method: 'POST',
+      headers: { ...rejectHeaders, cookie: await cookie() },
+      body: JSON.stringify({}),
+    })
+    const rejectedJson = (await rejected.json()) as {
+      mergeRequest?: { status: string }
+      error?: string
+    }
+    assert.equal(rejected.status, 200, JSON.stringify(rejectedJson))
+    assert.equal(rejectedJson.mergeRequest?.status, 'blocked')
+  })
 })

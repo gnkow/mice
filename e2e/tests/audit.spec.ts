@@ -240,17 +240,24 @@ test.describe('audit log (PLAT-AUDIT)', () => {
       expect(events.length).toBeGreaterThan(0)
     })
 
-    test('TC-AUDIT-11: UI shows labels, populated dropdowns, filters and exports', async ({ page }) => {
+    test('TC-AUDIT-11: UI shows labels, populated suggestions, filters and exports', async ({ page }) => {
       await sessionLogin(page)
       const { ns, workspaceId, jobId } = await seed(page)
       await page.goto('/audit')
       await page.getByLabel('Namespace', { exact: true }).fill(ns)
-      await expect(page.locator('select[name="job_id"]').locator(`option[value="${jobId}"]`)).toHaveCount(1, { timeout: 15_000 })
-      await expect(page.locator('select[name="workspace_id"]').locator(`option[value="${workspaceId}"]`)).toHaveCount(1)
-      await expect(page.locator('.audit-filters select[name="session_id"]')).toBeVisible()
-      await expect(page.locator('select[name="action"]').locator('optgroup').first()).toBeAttached()
+      await page.getByLabel('Job', { exact: true }).click()
+      await expect(
+        page.getByRole('listbox', { name: 'Job suggestions' }).getByRole('option', { name: new RegExp(jobId) }),
+      ).toBeVisible({ timeout: 15_000 })
+      await page.getByLabel('Stage', { exact: true }).click()
+      await expect(
+        page.getByRole('listbox', { name: 'Stage suggestions' }).getByRole('option', { name: new RegExp(workspaceId) }),
+      ).toBeVisible()
+      await expect(page.locator('.audit-filters input[name="session_id"]')).toBeVisible()
+      await page.getByLabel('Action', { exact: true }).click()
+      await expect(page.getByRole('listbox', { name: 'Action suggestions' }).getByRole('option').first()).toBeVisible()
 
-      await page.locator('select[name="job_id"]').selectOption(jobId)
+      await page.getByLabel('Job', { exact: true }).fill(jobId)
       await page.getByRole('button', { name: 'Filter' }).click()
       await expect(page).toHaveURL(new RegExp(`job_id=${jobId}`))
       const rows = page.locator('.audit-table tbody tr')

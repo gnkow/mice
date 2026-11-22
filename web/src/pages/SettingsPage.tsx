@@ -1,4 +1,31 @@
-import { ArchiveRestore, ListChecks, Megaphone, ShieldUser, Inbox, Check as ActionCheck, Plug as ActionPlug, Save as ActionSave, Settings as ActionSettings, Trash2 as ActionTrash2, UserPlus as ActionUserPlus, X as ActionX, UserX, UserCheck, ShieldAlert, ShieldOff, GitCompare, FileText, Ban, Link2, HeartPulse, KeyRound, UsersRound, Package, Scale } from 'lucide-react'
+import {
+  ListChecks,
+  Megaphone,
+  ShieldUser,
+  Inbox,
+  Check as ActionCheck,
+  Plug as ActionPlug,
+  Save as ActionSave,
+  Settings as ActionSettings,
+  Trash2 as ActionTrash2,
+  UserPlus as ActionUserPlus,
+  X as ActionX,
+  UserCheck,
+  ShieldAlert,
+  ShieldOff,
+  Shield,
+  Link2,
+  GitCompare,
+  FileText,
+  Ban,
+  HeartPulse,
+  Key,
+  UsersRound,
+  Package,
+  Scale,
+  DatabaseBackup,
+  Copy as ActionCopy,
+} from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
@@ -18,6 +45,11 @@ import { DirectoryPicker } from '../components/DirectoryPicker'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthMe, fetchAuthzMe, hasEffectivePermission, isAdminRole, type AuthzMe } from '../lib/auth'
+import {
+  AUDITOR_GRANT_CONSTRAINTS,
+  AUDITOR_GRANT_HINT,
+  isAuditorRole,
+} from '../lib/auditorGrant'
 import {
   fetchInstance,
   grantPermissions,
@@ -48,7 +80,11 @@ import {
   type PendingSignedMutation,
 } from '../lib/signingResume'
 import { buildDirectGrantBodies } from '../lib/directGrantForm'
-import { delegatedExpiryLabel, delegatedExpiryTone } from '../lib/delegatedExpiry'
+import {
+  decideDelegatedGrantForm,
+  delegatedExpiryLabel,
+  delegatedExpiryTone,
+} from '../lib/delegatedExpiry'
 import { profileRoleBadge } from '../lib/profileRoleBadge'
 import { togglePermission } from '../lib/requestAccessForm'
 import { fetchServerVersion } from '../lib/oxen/api'
@@ -76,10 +112,15 @@ export function SettingsPage() {
   const [form, setForm] = useState<OxenSettings>(loadSettings)
   const [saved, setSaved] = useState(false)
   const [probe, setProbe] = useState<string | null>(null)
+  const [probeTick, setProbeTick] = useState(0)
+  const serverInfo = useAsync(
+    (signal) => fetchServerVersion(signal),
+    [form.apiBase, probeTick],
+  )
   const isInstanceAdmin = me.kind === 'ok' && !!me.data && isAdminRole(me.data)
   const canReviewAccess =
     me.kind === 'ok' && !!me.data && hasEffectivePermission(me.data, 'access_request:list')
-  
+
   function onSave(e: FormEvent) {
     e.preventDefault()
     saveSettings(form)
@@ -94,8 +135,10 @@ export function SettingsPage() {
     try {
       const res = await fetchServerVersion()
       setProbe(`Connected · oxen-server v${res.oxen_version}`)
+      setProbeTick((t) => t + 1)
     } catch (err) {
       setProbe(err instanceof Error ? err.message : 'Connection failed')
+      setProbeTick((t) => t + 1)
     }
   }
 
@@ -105,20 +148,20 @@ export function SettingsPage() {
     { title: 'General', Icon: ActionSettings, items: [{ id: 'connection', label: 'Connection', Icon: ActionPlug }] },
     {
       title: 'Access',
-      Icon: ActionUserPlus,
+      Icon: UsersRound,
       items: [
         ...(canReviewAccess
           ? [
               { id: 'access-requests', label: 'Access requests', Icon: Inbox },
-              { id: 'users-grant', label: 'Grant access', Icon: ActionUserPlus },
+              { id: 'users-grant', label: 'Grant access', Icon: UsersRound },
             ]
           : []),
         ...(isInstanceAdmin
           ? [
               { id: 'delegated-permissions', label: 'Delegated permissions', Icon: ListChecks },
-              { id: 'user-revocation', label: 'Revocations', Icon: UserX },
+              { id: 'user-revocation', label: 'User Revocation', Icon: Shield },
               { id: 're-enable', label: 'Re-enable', Icon: UserCheck },
-              { id: 'access-review', label: 'Access review', Icon: FileText },
+              { id: 'access-review', label: 'Quarterly Access Review', Icon: FileText },
             ]
           : []),
       ],
@@ -129,11 +172,11 @@ export function SettingsPage() {
             title: 'Identity',
             Icon: ShieldAlert,
             items: [
-              { id: 'idp-baseline', label: 'IdP baseline', Icon: ShieldAlert },
+              { id: 'idp-baseline', label: 'IdP MFA Baseline', Icon: ShieldAlert },
               { id: 'idp-drift', label: 'IdP drift', Icon: GitCompare },
               { id: 'disabled-signers', label: 'Disabled signers', Icon: ShieldOff },
-              { id: 'mice-suspension', label: 'Suspension', Icon: Ban },
-              { id: 'group-binding', label: 'Group binding', Icon: Link2 },
+              { id: 'mice-suspension', label: 'Mice suspension', Icon: Ban },
+              { id: 'group-binding', label: 'Group binding validation', Icon: Link2 },
             ],
           },
           {
@@ -141,8 +184,8 @@ export function SettingsPage() {
             Icon: HeartPulse,
             items: [
               { id: 'audit-health', label: 'Audit health', Icon: HeartPulse },
-              { id: 'seal-key-rotation', label: 'Seal keys', Icon: KeyRound },
-              { id: 'restore-test', label: 'Restore test', Icon: ArchiveRestore },
+              { id: 'seal-key-rotation', label: 'Session cookie keys', Icon: Key },
+              { id: 'restore-test', label: 'Restore test', Icon: DatabaseBackup },
             ],
           },
           {
@@ -151,7 +194,7 @@ export function SettingsPage() {
             items: [
               { id: 'regulated-config', label: 'Regulated config', Icon: Scale },
               { id: 'release-manifest', label: 'Release manifest', Icon: Package },
-              { id: 'instance-administrators', label: 'Administrators', Icon: ShieldUser },
+              { id: 'instance-administrators', label: 'Instance administrators', Icon: ShieldUser },
               { id: 'announcements', label: 'Announcements', Icon: Megaphone },
             ],
           },
@@ -198,6 +241,18 @@ export function SettingsPage() {
             </div>
             {saved && <p className="flash flash-success" role="status">Saved.</p>}
             {probe && <p className="muted">{probe}</p>}
+            <dl className="ns-settings-facts" aria-label="Server">
+              <div className="ns-settings-fact">
+                <dt className="ns-settings-fact-label">oxen-server</dt>
+                <dd className="ns-settings-fact-value" role="status">
+                  {serverInfo.kind === 'ok'
+                    ? `v${serverInfo.data.oxen_version}`
+                    : serverInfo.kind === 'error'
+                      ? 'Unreachable'
+                      : 'Checking…'}
+                </dd>
+              </div>
+            </dl>
           </form>
         </section>
 
@@ -474,8 +529,8 @@ function AccessRequestsSection({ authz }: { authz: AuthzMe }) {
             {formatRequestedAccess(selected)}
           </p>
           <p className="muted small" data-testid="access-request-authority-hint">
-            You can only approve grants within your authority. Expiry is required for
-            delegated roles and custom permissions.
+            Only requests within your authority appear here. Approve and deny use the
+            same gate; expiry is required for delegated roles and custom permissions.
           </p>
           <div className="ns-settings-grid">
             <label className="ns-settings-field">
@@ -630,7 +685,6 @@ function UsersGrantSection({
   const [grantRoleValue, setGrantRoleValue] = useState<string | null>('user')
   const [grantPerms, setGrantPerms] = useState<string[]>([])
   const [expiresLocal, setExpiresLocal] = useState(defaultExpiryLocalValue)
-  const [notice, setNotice] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
   const users = state.kind === 'ok' ? state.data.users : []
@@ -654,7 +708,6 @@ function UsersGrantSection({
       const intent = (e as CustomEvent<PendingSignedMutation>).detail
       if (!intent?.apiPath?.includes('/auth/grants/')) return
       setGrantOpen(false)
-      setNotice('Granted access')
       reloadUsers()
       reloadInstance()
     }
@@ -678,7 +731,6 @@ function UsersGrantSection({
     setError(null)
     setAuthorityError(false)
     setAdminFloorError(false)
-    setNotice(null)
   }
 
   async function onGrant(e: FormEvent) {
@@ -712,13 +764,11 @@ function UsersGrantSection({
     setError(null)
     setAuthorityError(false)
     setAdminFloorError(false)
-    setNotice(null)
     try {
       for (const item of built.bodies) {
         if (item.kind === 'role') await grantRole(item.body)
         else await grantPermissions(item.body)
       }
-      setNotice(`Granted access to ${targetSub.trim() || 'principal'}`)
       setGrantOpen(false)
       state.reload()
       instance.reload()
@@ -751,10 +801,19 @@ function UsersGrantSection({
             Admin to another role is refused while two or fewer instance admins remain.
           </p>
         </div>
-        <button type="button" className="btn primary small" onClick={() => openGrant()}>
-          <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />
-          Grant Access
-        </button>
+        <div className="btn-row">
+          <span
+            className="status-pill ok"
+            role="status"
+            aria-label="IdP group bootstrap: off — manual grants only"
+          >
+            Manual grants only
+          </span>
+          <button type="button" className="btn primary small" onClick={() => openGrant()}>
+            <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />
+            Grant Access
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -767,7 +826,6 @@ function UsersGrantSection({
           {error}
         </p>
       )}
-      {notice && <p className="flash flash-success" role="status">{notice}</p>}
       {state.kind === 'loading' && <p className="muted">Loading…</p>}
       {state.kind === 'error' && (
         <p className="flash flash-error" role="alert">
@@ -871,7 +929,7 @@ function UsersGrantSection({
             </label>
             <label className="ns-settings-field">
               <span className="ns-settings-label">
-                Expires{grantRoleValue === 'auditor' ? ' (required for Auditor)' : ''}
+                Expires{isAuditorRole(grantRoleValue) ? ' (required for Auditor)' : ''}
               </span>
               <input
                 type="datetime-local"
@@ -881,16 +939,24 @@ function UsersGrantSection({
               />
             </label>
           </div>
-          {grantRoleValue === 'auditor' && (
-            <p
+          {isAuditorRole(grantRoleValue) && (
+            <div
               className="flash flash-warn"
               role="status"
               data-testid="auditor-grant-hint"
             >
-              Auditor grants always expire. The principal must present MFA on every
-              request, can read across ACLs (including signature evidence on Audit), and
-              cannot write, merge, delete, or sign.
-            </p>
+              <p>{AUDITOR_GRANT_HINT}</p>
+              <ul
+                className="auditor-grant-constraints"
+                aria-label="Auditor grant constraints"
+              >
+                {AUDITOR_GRANT_CONSTRAINTS.map((c) => (
+                  <li key={c.id}>
+                    <span className="status-pill warn">{c.label}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {floorBlocksDemotion && (
             <p className="flash flash-warn" role="status">
@@ -966,22 +1032,15 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   const [revokeIss, setRevokeIss] = useState(signedInIss)
   const [notice, setNotice] = useState<string | null>(null)
 
-  if (state.kind === 'error') {
-    return (
-      <section className="settings-section">
-        <h2>Instance admin</h2>
-        <p className="flash flash-error" role="status">{state.message}</p>
-      </section>
-    )
-  }
-
   const data = state.kind === 'ok' ? state.data : null
+  const adminCount = data?.admins.length ?? 0
+  const floorMet = adminCount >= 2
 
   async function onRevokeSessions(e: FormEvent) {
     e.preventDefault()
     const issuer = revokeIss.trim() || signedInIss.trim()
     if (!revokeSub.trim() || !issuer) {
-      setError('Choose a user from search or enter sub/iss manually')
+      setError('Choose a user from directory search')
       return
     }
     setBusy(true)
@@ -999,33 +1058,65 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
   }
 
   return (
-    <>
-      {error && <p className="flash flash-error" role="status">{error}</p>}
-      {state.kind === 'loading' && <p className="muted">Loading…</p>}
-      {data && (
+    <section id="instance-administrators" className="settings-section" aria-labelledby="instance-administrators-heading">
+      <div className="ns-settings-section-head">
+        <div>
+          <h2 id="instance-administrators-heading">
+            <ShieldUser size={18} className="button-label-icon" aria-hidden="true" />
+            Instance administrators
+          </h2>
+          <p className="muted small">
+            Admin role only (grant under Users; last two admins protected). Bootstrap re-grants on login.
+            Platform management only — no namespace membership, repository data, or audit trail.
+          </p>
+        </div>
+        {data ? (
+          <span
+            className={`status-pill ${floorMet ? 'ok' : 'warn'}`}
+            role="status"
+            aria-label={floorMet ? `Admin floor met: ${adminCount} admins` : `Admin floor short: ${adminCount} admins`}
+          >
+            {adminCount === 1 ? '1 admin' : `${adminCount} admins`}
+          </span>
+        ) : null}
+      </div>
+
+      {state.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
+
+      {state.kind === 'error' ? (
+        <p className="flash flash-error" role="alert">
+          {state.message}
+        </p>
+      ) : null}
+
+      {data ? (
         <>
-          <section id="instance-administrators" className="settings-section" aria-labelledby="instance-administrators-heading">
-          <div className="ns-settings-section-head ns-settings-section-head-tight">
-            <div>
-              <h2 id="instance-administrators-heading"><ShieldUser size={18} className="button-label-icon" aria-hidden="true" />Instance administrators</h2>
-              <p className="muted small">
-                Principals holding the Admin role. Grant or change the role under Users; the role cannot be taken from the last two admins.
-                A Bootstrap mark means this Principal is on AUTHZ_BOOTSTRAP_ADMINS and receives the Admin role again on the next login.
-                Instance admins manage the platform only — no namespace membership, repository data, or audit trail (separation of duties).
-              </p>
+          <dl className="ns-settings-facts" aria-label="Admin role floor">
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Source</dt>
+              <dd className="ns-settings-fact-value" role="status">
+                <span className="status-pill ok">Admin role</span>
+              </dd>
             </div>
-            <p className="muted small ns-settings-count">
-              {data.admins.length === 1 ? '1 admin' : `${data.admins.length} admins`}
-            </p>
-          </div>
-          <ul className="ns-member-list">
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Floor</dt>
+              <dd className="ns-settings-fact-value" role="status">
+                <span className={floorMet ? 'status-pill ok' : 'status-pill warn'}>
+                  {floorMet ? 'At least two' : 'Need two'}
+                </span>
+              </dd>
+            </div>
+          </dl>
+
+          <ul className="ns-member-list" aria-label="Administrators">
             {data.admins.map((a) => (
               <li key={`${a.iss}\0${a.sub}`} className="ns-member-row">
                 <div className="ns-member-main">
-                  <UserRef
-                    author={`${a.iss}|${a.sub}`}
-                    name={a.name || a.email || a.sub}
-                  />
+                  <UserRef author={`${a.iss}|${a.sub}`} name={a.name || a.email || a.sub} />
                   <span className="muted small">
                     {a.email ? `${a.email} · ` : ''}
                     {a.sub}
@@ -1033,11 +1124,12 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
                     {a.iss}
                   </span>
                 </div>
-                {a.bootstrap && <span className="ns-tag">bootstrap</span>}
-                <span className="ns-tag ns-tag-accent">admin</span>
+                {a.bootstrap ? <span className="status-pill neutral">bootstrap</span> : null}
+                <span className="status-pill active">admin</span>
               </li>
             ))}
           </ul>
+
           <form className="ns-member-form" onSubmit={onRevokeSessions}>
             <h3 className="ns-settings-subhead">Revoke sessions</h3>
             <p className="muted small">Signs the user out everywhere, immediately. They can sign in again.</p>
@@ -1054,15 +1146,25 @@ function InstanceAdminSection({ signedInIss }: { signedInIss: string }) {
                 }}
               />
               <div className="ns-member-form-actions">
-                <button className="btn danger" type="submit" disabled={busy}>Revoke sessions</button>
+                <button className="btn danger" type="submit" disabled={busy}>
+                  Revoke sessions
+                </button>
               </div>
             </div>
-            {notice ? <p className="muted small" role="status">{notice}</p> : null}
+            {notice ? (
+              <p className="muted small" role="status">
+                {notice}
+              </p>
+            ) : null}
+            {error ? (
+              <p className="flash flash-error" role="alert">
+                {error}
+              </p>
+            ) : null}
           </form>
-          </section>
         </>
-      )}
-    </>
+      ) : null}
+    </section>
   )
 }
 
@@ -1098,16 +1200,16 @@ function DelegatedPermissionsSection({ signedInIss }: { signedInIss: string }) {
     e.preventDefault()
     const issuer = permIss.trim() || signedInIss.trim()
     if (!permSub.trim() || !issuer) {
-      setError('Choose a user from search or enter sub/iss manually')
-      return
-    }
-    if (permChecks.length > 0 && !expiresLocal.trim()) {
-      setError('Expiry date is required for delegated permissions')
+      setError('Choose a user from directory search')
       return
     }
     const expiresAt = permChecks.length > 0 ? new Date(expiresLocal).getTime() : undefined
-    if (permChecks.length > 0 && (expiresAt == null || !Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
-      setError('Expiry must be a future date and time')
+    const refusal = decideDelegatedGrantForm({
+      permissions: permChecks,
+      expiresAtMs: expiresAt ?? null,
+    })
+    if (refusal) {
+      setError(refusal)
       return
     }
     setBusy(true)
@@ -1306,7 +1408,7 @@ type RegulatedConfigPayload = {
   config: {
     gxpStrict: true
     session: { idleSec: number; absoluteSec: number; cookieSecure: boolean }
-    reason: { minLength: number; categories: string[]; requiredActions: string[] }
+    reason: { minLength: number; requiredActions: string[] }
     changeControl: {
       requiredActions: string[]
       alsoRequiredOn: string[]
@@ -1339,6 +1441,8 @@ function RegulatedConfigSection() {
   }, [])
 
   const data = status.kind === 'ok' ? status.data : null
+  const cfg = data?.config
+  const mutationClasses = cfg?.reason.requiredActions ?? []
 
   return (
     <section id="regulated-config" className="settings-section" aria-labelledby="regulated-config-heading">
@@ -1353,81 +1457,109 @@ function RegulatedConfigSection() {
             and whenever regulated settings change.
           </p>
         </div>
+        {cfg ? (
+          <span className="status-pill ok" role="status" aria-label="GxP strict: Always on">
+            Always on
+          </span>
+        ) : null}
       </div>
 
-      {data && (
-        <div className="ns-settings-grid">
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">GxP strict</span>
-            <p className="flash flash-success">
-              <ActionCheck size={14} aria-hidden="true" /> Always on
-            </p>
+      {status.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
+
+      {data && cfg ? (
+        <dl className="ns-settings-facts" aria-label="Effective regulated configuration">
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Idle timeout</dt>
+            <dd className="ns-settings-fact-value">{cfg.session.idleSec}s</dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Absolute timeout</dt>
+            <dd className="ns-settings-fact-value">{cfg.session.absoluteSec}s</dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Cookie Secure</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={cfg.session.cookieSecure ? 'status-pill ok' : 'status-pill warn'}>
+                {cfg.session.cookieSecure ? 'Yes' : 'No'}
+              </span>
+            </dd>
           </div>
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Session</span>
-            <p className="muted small">
-              Idle {data.config.session.idleSec}s · absolute {data.config.session.absoluteSec}s ·
-              cookie Secure {data.config.session.cookieSecure ? 'yes' : 'no'}
-            </p>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Reason length</dt>
+            <dd className="ns-settings-fact-value">min {cfg.reason.minLength}</dd>
           </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Reason policy</span>
-            <p className="muted small">
-              Min length {data.config.reason.minLength} · categories{' '}
-              {data.config.reason.categories.join(', ')}
-            </p>
-            <p className="muted small">
-              Required on {data.config.reason.requiredActions.length} mutation classes
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Change-control</span>
-            <p className="muted small">
-              Ids minted server-side ({data.config.changeControl.allocation}) on{' '}
-              {data.config.changeControl.requiredActions.length} mutation classes
-            </p>
-            <p className="muted small">
-              Also on {data.config.changeControl.alsoRequiredOn.join(', ')}
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Electronic signature</span>
-            <p className="muted small">
-              Meaning {data.config.signature.meaning} via {data.config.signature.allocation} on{' '}
-              {data.config.signature.requiredActions.length} mutation classes
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Audit / backup</span>
-            <p className="muted small">
-              IMMUDB_HA {data.config.audit.immudbHaAttested ? 'attested' : 'not attested'} ·
-              verify every {data.config.audit.verifyIntervalSec}s ·
-              backup target {data.config.backup.targetConfigured ? 'configured' : 'not configured'}
-            </p>
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Digest</span>
-            <p className="muted small"><code className="inline-code">{data.digest}</code></p>
-            {data.recordedAt && (
-              <p className="muted small">
-                Recorded {new Date(data.recordedAt).toLocaleString()}
-                {data.changedFromPrevious === true ? ' · changed since previous start' : ''}
-                {data.changedFromPrevious === false ? ' · unchanged since previous start' : ''}
+          <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack">
+            <dt className="ns-settings-fact-label">Mutations</dt>
+            <dd className="ns-settings-fact-value">
+              <p className="ns-settings-fact-note muted">
+                {mutationClasses.length} classes require reason, change-control, and signature
               </p>
-            )}
+              {mutationClasses.length > 0 ? (
+                <ul className="ns-settings-code-list" aria-label="Mutation classes">
+                  {mutationClasses.map((action) => (
+                    <li key={action}>
+                      <code className="inline-code">{action}</code>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </dd>
           </div>
-        </div>
-      )}
 
-      {status.kind === 'ok' && !data && (
-        <p className="flash flash-warning" role="status">Could not load regulated configuration.</p>
-      )}
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">IMMUDB_HA</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={cfg.audit.immudbHaAttested ? 'status-pill ok' : 'status-pill warn'}>
+                {cfg.audit.immudbHaAttested ? 'Attested' : 'Not attested'}
+              </span>
+            </dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Verify every</dt>
+            <dd className="ns-settings-fact-value">{cfg.audit.verifyIntervalSec}s</dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Backup target</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={cfg.backup.targetConfigured ? 'status-pill ok' : 'status-pill warn'}>
+                {cfg.backup.targetConfigured ? 'Configured' : 'Not configured'}
+              </span>
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact ns-settings-fact-wide">
+            <dt className="ns-settings-fact-label">Digest</dt>
+            <dd className="ns-settings-fact-value">
+              <code className="inline-code">{data.digest}</code>
+            </dd>
+          </div>
+          {data.recordedAt ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Recorded</dt>
+              <dd className="ns-settings-fact-value">
+                <span>{new Date(data.recordedAt).toLocaleString()}</span>
+                {data.changedFromPrevious === true ? (
+                  <span className="status-pill warn">Changed since previous start</span>
+                ) : null}
+                {data.changedFromPrevious === false ? (
+                  <span className="status-pill neutral">Unchanged since previous start</span>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+
+      {status.kind === 'ok' && !data ? (
+        <p className="flash flash-warn" role="status">
+          Could not load regulated configuration.
+        </p>
+      ) : null}
     </section>
   )
 }
@@ -1481,6 +1613,18 @@ function ReleaseManifestSection() {
   }
 
   const data = status.kind === 'ok' ? status.data : null
+  const resultTone = data?.match
+    ? 'ok'
+    : data?.present === false || data?.match === false
+      ? 'warn'
+      : 'neutral'
+  const resultLabel = data?.match
+    ? 'Match'
+    : data?.present
+      ? 'Mismatch'
+      : data
+        ? 'Missing or invalid'
+        : null
 
   return (
     <section id="release-manifest" className="settings-section" aria-labelledby="release-manifest-heading">
@@ -1495,63 +1639,93 @@ function ReleaseManifestSection() {
             A mismatch is audited and shown here; it does not refuse boot by itself.
           </p>
         </div>
+        {resultLabel ? (
+          <span
+            className={`status-pill ${resultTone}`}
+            role="status"
+            aria-label={`Release manifest: ${resultLabel}${data?.releaseVersion ? `, release ${data.releaseVersion}` : ''}`}
+          >
+            {resultLabel}
+            {data?.releaseVersion ? ` · ${data.releaseVersion}` : ''}
+          </span>
+        ) : null}
       </div>
 
-      {data && (
-        <div className="ns-settings-grid">
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Result</span>
-            <p className={data.match ? 'flash flash-success' : 'flash flash-warning'}>
-              {data.match ? (
-                <><ActionCheck size={14} aria-hidden="true" /> Match{data.releaseVersion ? ` · release ${data.releaseVersion}` : ''}</>
-              ) : (
-                <><ActionX size={14} aria-hidden="true" /> {data.present ? 'Mismatch' : 'Missing or invalid'}{data.reason ? `: ${data.reason}` : ''}</>
-              )}
-            </p>
-          </div>
+      {status.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Signature</span>
-            <p className="muted small">
-              {data.signatureValid === true ? 'Valid' : data.signatureValid === false ? 'Invalid' : 'Not checked'}
-            </p>
+      {data ? (
+        <dl className="ns-settings-facts" aria-label="Release manifest status">
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Signature</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span
+                className={
+                  data.signatureValid === true
+                    ? 'status-pill ok'
+                    : data.signatureValid === false
+                      ? 'status-pill bad'
+                      : 'status-pill neutral'
+                }
+              >
+                {data.signatureValid === true
+                  ? 'Valid'
+                  : data.signatureValid === false
+                    ? 'Invalid'
+                    : 'Not checked'}
+              </span>
+            </dd>
           </div>
-
-          {data.checkedAt && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Checked</span>
-              <p className="muted small">{new Date(data.checkedAt).toLocaleString()}</p>
+          {data.checkedAt ? (
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Checked</dt>
+              <dd className="ns-settings-fact-value">
+                {new Date(data.checkedAt).toLocaleString()}
+              </dd>
             </div>
-          )}
-
-          {data.mismatches.length > 0 && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Mismatches</span>
-              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
+          ) : null}
+          {data.reason ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Detail</dt>
+              <dd className="ns-settings-fact-value">{data.reason}</dd>
+            </div>
+          ) : null}
+          {data.mismatches.length > 0 ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Mismatches</dt>
+              <dd className="ns-settings-fact-value">
                 {data.mismatches.map((m) => (
-                  <li key={m}><code className="inline-code">{m}</code></li>
+                  <code key={m} className="inline-code">
+                    {m}
+                  </code>
                 ))}
-              </ul>
+              </dd>
             </div>
-          )}
-
-          {data.components && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Components</span>
-              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
-                {Object.entries(data.components).map(([id, c]) => (
-                  <li key={id}>
-                    <code className="inline-code">{id}</code>
-                    {' · v'}
-                    {c.version}
-                    {c.expected && c.expected !== c.actual ? ' · digests differ' : ' · ok'}
-                  </li>
-                ))}
-              </ul>
+          ) : null}
+          {data.components ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">Components</dt>
+              <dd className="ns-settings-fact-value">
+                {Object.entries(data.components).map(([id, c]) => {
+                  const ok = !(c.expected && c.expected !== c.actual)
+                  return (
+                    <span key={id} className="ns-tag ns-tag-muted">
+                      <code className="inline-code">{id}</code>
+                      <span className="muted">v{c.version}</span>
+                      <span className={ok ? 'status-pill ok' : 'status-pill warn'}>
+                        {ok ? 'ok' : 'digest differs'}
+                      </span>
+                    </span>
+                  )
+                })}
+              </dd>
             </div>
-          )}
-        </div>
-      )}
+          ) : null}
+        </dl>
+      ) : null}
 
       <div className="btn-row ns-settings-actions">
         <button
@@ -1565,9 +1739,84 @@ function ReleaseManifestSection() {
         </button>
       </div>
 
-      {error && <p className="flash flash-error" role="alert">{error}</p>}
-      {success && <p className="flash flash-success" role="status">{success}</p>}
+      {error ? (
+        <p className="flash flash-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {success ? (
+        <p className="flash flash-success" role="status">
+          {success}
+        </p>
+      ) : null}
     </section>
+  )
+}
+
+function chainStatusPill(chain: AuditHealthStatus['readiness']['chain']): {
+  tone: 'ok' | 'warn' | 'bad' | 'neutral'
+  label: string
+} {
+  switch (chain) {
+    case 'ok':
+      return { tone: 'ok', label: 'Intact' }
+    case 'broken':
+      return { tone: 'bad', label: 'Broken' }
+    case 'acknowledged':
+      return { tone: 'warn', label: 'Acknowledged break' }
+    case 'unverified':
+      return { tone: 'neutral', label: 'Unverified' }
+  }
+}
+
+/** Copyable mono value for Settings health facts (root hash, PEM). */
+function SettingsCopyable({
+  value,
+  label,
+  testId,
+  multiline = false,
+}: {
+  value: string
+  label: string
+  testId?: string
+  multiline?: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return (
+    <div className={multiline ? 'settings-copy-block' : 'settings-copy-inline'}>
+      {multiline ? (
+        <pre
+          className="settings-copy-pem mono small"
+          tabIndex={0}
+          aria-label={label}
+          data-testid={testId}
+        >
+          {value}
+        </pre>
+      ) : (
+        <code className="inline-code settings-copy-value" data-testid={testId} title={value}>
+          {value}
+        </code>
+      )}
+      <button
+        type="button"
+        className="settings-copy-btn"
+        onClick={() => void copy()}
+        aria-label={`Copy ${label}`}
+      >
+        <ActionCopy size={12} aria-hidden="true" />
+        <span aria-live="polite">{copied ? 'Copied' : 'Copy'}</span>
+      </button>
+    </div>
   )
 }
 
@@ -1608,6 +1857,7 @@ function AuditHealthSection() {
   }
 
   const data = status.kind === 'ok' ? status.data : null
+  const chain = data ? chainStatusPill(data.readiness.chain) : null
 
   return (
     <section id="audit-health" className="settings-section" aria-labelledby="audit-health-heading">
@@ -1622,119 +1872,163 @@ function AuditHealthSection() {
             When the audit store is down, mutations are refused and reads continue.
           </p>
         </div>
+        {data ? (
+          <span
+            className={`status-pill ${data.readiness.ok ? 'ok' : 'warn'}`}
+            role="status"
+            aria-label={data.readiness.ok ? 'Audit readiness: Healthy' : 'Audit readiness: Degraded'}
+          >
+            {data.readiness.ok ? 'Healthy' : 'Degraded'}
+          </span>
+        ) : null}
       </div>
 
+      {status.kind === 'loading' && !data ? (
+        <p className="muted small" aria-live="polite">
+          Loading…
+        </p>
+      ) : null}
+
       {data && (
-        <div className="ns-settings-grid">
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Store</span>
-            <p className={data.readiness.store === 'ok' ? 'flash flash-success' : 'flash flash-warning'}>
-              {data.readiness.store === 'ok' ? (
-                <><ActionCheck size={14} aria-hidden="true" /> Available</>
+        <dl className="ns-settings-facts" aria-label="Audit health status">
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Store</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={data.readiness.store === 'ok' ? 'status-pill ok' : 'status-pill bad'}>
+                {data.readiness.store === 'ok' ? 'Available' : 'Unavailable'}
+              </span>
+              {data.readiness.store !== 'ok' && data.readiness.detail ? (
+                <span className="muted small">{data.readiness.detail}</span>
+              ) : null}
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Chain</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              {chain ? <span className={`status-pill ${chain.tone}`}>{chain.label}</span> : null}
+              {data.readiness.firstBreak ? (
+                <span className="muted small">{data.readiness.firstBreak.reason}</span>
+              ) : null}
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">HA</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className={data.ha.attested ? 'status-pill ok' : 'status-pill warn'}>
+                {data.ha.attested ? 'Attested' : 'Not attested'}
+              </span>
+            </dd>
+          </div>
+
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Outage</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              {data.currentOutage ? (
+                <span className="status-pill warn">Open</span>
               ) : (
-                <><ActionX size={14} aria-hidden="true" /> Unavailable{data.readiness.detail ? `: ${data.readiness.detail}` : ''}</>
+                <span className="status-pill ok">None</span>
               )}
-            </p>
+            </dd>
           </div>
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Chain</span>
-            <p className={data.readiness.chain === 'broken' ? 'flash flash-warning' : 'muted small'}>
-              {data.readiness.chain}
-              {data.readiness.firstBreak ? ` — ${data.readiness.firstBreak.reason}` : ''}
-            </p>
-          </div>
-
-          <div className="ns-settings-field" data-testid="audit-chain-tip">
-            <span className="ns-settings-label">Chain tip (IQP)</span>
-            {data.chainTip ? (
-              <>
-                <p className="small">
-                  txid <code className="inline-code" data-testid="audit-chain-tip-txid">{data.chainTip.txid}</code>
-                  {' · '}
-                  root <code className="inline-code" data-testid="audit-chain-tip-root">{data.chainTip.root || '(empty ledger)'}</code>
-                </p>
-                <p className="muted small">
-                  File with the IQP / change-control record at install; re-file after a restore.
-                  {data.chainTip.verifiedAt
-                    ? ` Verified ${new Date(data.chainTip.verifiedAt).toLocaleString()}.`
-                    : ''}
-                </p>
-              </>
-            ) : (
-              <p className="flash flash-warning">
-                Not available — the ledger has not been verified yet. Run “Check now”.
-              </p>
-            )}
-          </div>
-
-          <div className="ns-settings-field" data-testid="audit-export-public-key">
-            <span className="ns-settings-label">Export public key</span>
-            {data.exportPublicKey ? (
-              <>
-                <pre
-                  className="mono small"
-                  tabIndex={0}
-                  aria-label="Audit export signing public key (PEM)"
-                  style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
-                  data-testid="audit-export-public-key-pem"
-                >
-                  {data.exportPublicKey.trim()}
-                </pre>
-                <p className="muted small">
-                  Verifies signed audit bundles. File alongside the genesis root in IQP.
-                </p>
-              </>
-            ) : (
-              <p className="flash flash-warning">
-                Not configured — set <code className="inline-code">AUDIT_EXPORT_PRIVATE_KEY</code>; PDF and bundle exports are refused until then.
-              </p>
-            )}
-          </div>
-
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">HA attestation</span>
-            <p className={data.ha.attested ? 'flash flash-success' : 'flash flash-warning'}>
-              {data.ha.attested ? (
-                <><ActionCheck size={14} aria-hidden="true" /> IMMUDB_HA=true</>
+          <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack" data-testid="audit-chain-tip">
+            <dt className="ns-settings-fact-label">Chain tip</dt>
+            <dd className="ns-settings-fact-value">
+              {data.chainTip ? (
+                <>
+                  <div className="settings-copy-inline">
+                    <span className="muted small">txid</span>
+                    <code className="inline-code" data-testid="audit-chain-tip-txid">
+                      {data.chainTip.txid}
+                    </code>
+                  </div>
+                  <SettingsCopyable
+                    value={data.chainTip.root || '(empty ledger)'}
+                    label="chain tip root"
+                    testId="audit-chain-tip-root"
+                  />
+                  <p className="ns-settings-fact-note muted">
+                    File with the IQP / change-control record at install; re-file after a restore.
+                    {data.chainTip.verifiedAt
+                      ? ` Verified ${new Date(data.chainTip.verifiedAt).toLocaleString()}.`
+                      : ''}
+                  </p>
+                </>
               ) : (
-                <><ActionX size={14} aria-hidden="true" /> Not attested</>
+                <p className="flash flash-warn" role="status">
+                  Not available — the ledger has not been verified yet. Run “Check now”.
+                </p>
               )}
-            </p>
-            <p className="muted small">{data.ha.detail}</p>
+            </dd>
           </div>
 
-          <div className="ns-settings-field">
-            <span className="ns-settings-label">Open outage</span>
-            {data.currentOutage ? (
-              <p className="flash flash-warning">
-                Since {new Date(data.currentOutage.startedAt).toLocaleString()}
-                {' · '}
-                check <code className="inline-code">{data.currentOutage.check}</code>
-                {' · '}
+          <div
+            className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack"
+            data-testid="audit-export-public-key"
+          >
+            <dt className="ns-settings-fact-label">Export key</dt>
+            <dd className="ns-settings-fact-value">
+              {data.exportPublicKey ? (
+                <>
+                  <SettingsCopyable
+                    value={data.exportPublicKey.trim()}
+                    label="Audit export signing public key (PEM)"
+                    testId="audit-export-public-key-pem"
+                    multiline
+                  />
+                  <p className="ns-settings-fact-note muted">
+                    Verifies signed audit bundles. File alongside the genesis root in IQP.
+                  </p>
+                </>
+              ) : (
+                <p className="flash flash-warn" role="status">
+                  Not configured — set <code className="inline-code">AUDIT_EXPORT_PRIVATE_KEY</code>;
+                  PDF and bundle exports are refused until then.
+                </p>
+              )}
+            </dd>
+          </div>
+
+          {data.currentOutage ? (
+            <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack">
+              <dt className="ns-settings-fact-label">Open since</dt>
+              <dd className="ns-settings-fact-value">
+                <span>{new Date(data.currentOutage.startedAt).toLocaleString()}</span>
+                <span className="ns-tag ns-tag-muted">{data.currentOutage.check}</span>
                 <code className="inline-code">{data.currentOutage.paperProcedure}</code>
-              </p>
-            ) : (
-              <p className="flash flash-success"><ActionCheck size={14} aria-hidden="true" /> None</p>
-            )}
-          </div>
-
-          {data.recentOutages.length > 0 && (
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Recent incidents</span>
-              <ul className="muted small" style={{ margin: 0, paddingLeft: '1.25rem' }}>
-                {data.recentOutages.slice(0, 5).map((o) => (
-                  <li key={`${o.startedAt}-${o.requestId}`}>
-                    {new Date(o.startedAt).toLocaleString()}
-                    {' · '}
-                    {o.check}
-                    {o.endedAt ? ` · closed ${new Date(o.endedAt).toLocaleString()}` : ' · open'}
-                  </li>
-                ))}
-              </ul>
+              </dd>
             </div>
-          )}
-        </div>
+          ) : null}
+
+          {data.ha.detail ? (
+            <div className="ns-settings-fact ns-settings-fact-wide">
+              <dt className="ns-settings-fact-label">HA detail</dt>
+              <dd className="ns-settings-fact-value">
+                <span className="muted small">{data.ha.detail}</span>
+              </dd>
+            </div>
+          ) : null}
+
+          {data.recentOutages.length > 0 ? (
+            <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack">
+              <dt className="ns-settings-fact-label">Incidents</dt>
+              <dd className="ns-settings-fact-value">
+                <ul className="ns-settings-incident-list muted small">
+                  {data.recentOutages.slice(0, 5).map((o) => (
+                    <li key={`${o.startedAt}-${o.requestId}`}>
+                      {new Date(o.startedAt).toLocaleString()}
+                      {' · '}
+                      {o.check}
+                      {o.endedAt ? ` · closed ${new Date(o.endedAt).toLocaleString()}` : ' · open'}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
       )}
 
       <div className="btn-row ns-settings-actions">

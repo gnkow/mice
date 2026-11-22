@@ -79,14 +79,59 @@ describe('approver role', () => {
     assert.equal((await decideIsApprover(owner, 'acme', 'data')).allow, false)
     assert.equal((await decideIsApprover(root, 'acme', 'data')).allow, false)
   })
+
+  it('Owner can grant and revoke a group approver seat', async () => {
+    const groupId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+    const groupKey = `test|${groupId}`
+    const put = await call('owner', 'PUT', repoPath, {
+      kind: 'group',
+      group: groupKey,
+      name: 'QA',
+    })
+    assert.equal(put.status, 200)
+    const listed = (await put.json()) as {
+      approvers: Array<{ kind: string; group?: string; name?: string }>
+    }
+    assert.ok(
+      listed.approvers.some(
+        (a) => a.kind === 'group' && a.group === groupKey && a.name === 'QA',
+      ),
+    )
+    assert.equal(
+      (await decideIsApprover({ ...bob, groups: [groupKey] }, 'acme', 'data')).allow,
+      true,
+    )
+    assert.equal(
+      (await call('owner', 'DELETE', repoPath, { kind: 'group', group: groupKey })).status,
+      200,
+    )
+    assert.equal(
+      (await decideIsApprover({ ...bob, groups: [groupKey] }, 'acme', 'data')).allow,
+      false,
+    )
+  })
 })
 
 describe('approver seat entity versions (#124)', () => {
   const historyOf = async (as: keyof typeof people, path: string) => {
     const res = await call(as, 'GET', `${path}/history`)
-    return { status: res.status, body: (await res.json()) as { versions?: Array<{ validFrom: string; validTo: string | null; approvers: Array<{ sub: string; iss: string }> }> } }
+    return {
+      status: res.status,
+      body: (await res.json()) as {
+        versions?: Array<{
+          validFrom: string
+          validTo: string | null
+          approvers: Array<{ kind?: string; sub?: string; iss?: string; group?: string }>
+        }>
+      },
+    }
   }
-  const subs = (v: { approvers: Array<{ sub: string }> }) => v.approvers.map((a) => a.sub).sort()
+  const subs = (v: {
+    approvers: Array<{ kind?: string; sub?: string; iss?: string; group?: string }>
+  }) =>
+    v.approvers
+      .map((a) => (a.kind === 'group' ? a.group ?? '' : a.sub ?? ''))
+      .sort()
 
   it('appends one version per effective namespace change and keeps closed intervals', async () => {
     await call('owner', 'POST', '/auth/namespaces', { name: 'versions-ns', basePermission: 'read' })

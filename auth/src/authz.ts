@@ -3,11 +3,16 @@ import {
   withDirectoryGroups,
 } from './authentication/access/privilegedGroups.js'
 import { sessionHasMfaEvidence } from './authentication/signing/mfaEvidence.js'
+import {
+  AUDITOR_MFA_REASON,
+  decideAclBypassRead,
+  decideAuditorAdmission,
+} from './auditorAccess.js'
 import { interpretRequest, isScopedCredential, type SessionUser } from './authentication/index.js'
 import { customRepoRoleIdsForUser, getRepoCollaboratorRole, getRepoCollaboratorRoleFromGroups } from './authzCollaboratorStore.js'
 import { hasCompletedTraining, isInstanceAdmin } from './authzInstanceStore.js'
 import { runPrincipalBootstrap } from './principalBootstrap.js'
-import { customNamespaceRoleIds, hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
+import { hasNamespaceCapability, namespacesWithCapability, resolveNamespaceRole } from './authzMembershipStore.js'
 import { getNamespace } from './authzNamespaceStore.js'
 export { decideIsApprover } from './authzApproverStore.js'
 import { userCanSeeNamespace } from './authzVisibility.js'
@@ -26,7 +31,6 @@ import { env } from './env.js'
 import {
   customRepoRoleCoversFine,
   finePermissionForAction,
-  getCustomNamespaceRole,
   getCustomRepoRole,
 } from './customRoles.js'
 
@@ -84,8 +88,10 @@ export async function isPendingUser(user: SessionUser): Promise<boolean> {
 }
 
 /**
- * Additive effective repo role for user on ns/repo.
- * Owner ⇒ admin; base perms for members; user + IdP group collaborators; max of all.
+ * Effective repo role for user on ns/repo.
+ * Source of truth: repository collaborator seats only (direct user + IdP group).
+ * Namespace Owner/Member and custom namespace roles do not grant repo data access —
+ * those govern namespace settings, membership, and creating repositories.
  * Instance admin has no ACL bypass.
  */
 export async function effectiveRepoRole(
@@ -93,21 +99,7 @@ export async function effectiveRepoRole(
   ns: string,
   repo: string,
 ): Promise<BasePermission> {
-
   let role: BasePermission = 'none'
-  const nsRole = await resolveNamespaceRole(ns, user)
-  if (nsRole === 'owner') role = maxRepoRole(role, 'admin')
-  if (nsRole === 'member') {
-    const settings = await getNamespace(ns)
-    const base = settings?.basePermission ?? 'none'
-    role = maxRepoRole(role, base)
-  }
-  for (const id of await customNamespaceRoleIds(ns, user)) {
-    const custom = await getCustomNamespaceRole(ns, id)
-    if (custom?.baseRepositoryRole) {
-      role = maxRepoRole(role, custom.baseRepositoryRole)
-    }
-  }
   const direct = await getRepoCollaboratorRole(ns, repo, user)
   if (direct) role = maxRepoRole(role, direct)
   const groupCollab = await getRepoCollaboratorRoleFromGroups(
@@ -174,13 +166,16 @@ export async function hasRepoPermission(
     return { ok: true, effective, bypass: false }
   }
   // Universal read: Auditor (or custom grant of repo:bypass_acl). Never for PATs.
-  if (
-    need === 'read' &&
-    !isScopedCredential(user) &&
-    await hasPermission(user, 'repo:bypass_acl') &&
-    sessionHasMfa(user)
-  ) {
-    return { ok: true, effective, bypass: true }
+  if (need === 'read' && !isScopedCredential(user)) {
+    const bypass = decideAclBypassRead({
+      need,
+      isPat: false,
+      hasBypassAcl: await hasPermission(user, 'repo:bypass_acl'),
+      hasMfa: sessionHasMfa(user),
+    })
+    if (bypass.allow) {
+      return { ok: true, effective, bypass: true }
+    }
   }
   return {
     ok: false,
@@ -189,11 +184,21 @@ export async function hasRepoPermission(
   }
 }
 
-export const AUDITOR_MFA_REASON = 'Auditor access requires MFA evidence'
+export { AUDITOR_MFA_REASON }
 
-/** The one rule: an Auditor-role principal must carry MFA evidence on every request. */
-export async function auditorMfaRefusal(user: SessionUser): Promise<string | null> {
-  return (await getUserRole(user)) === 'auditor' && !sessionHasMfa(user) ? AUDITOR_MFA_REASON : null
+/**
+ * The one rule: an Auditor-role principal must carry MFA evidence on every request.
+ * Pass `allowWithoutMfa` only for `/auth/me` and `/auth/me/authz` (UI identity without unlocking data routes).
+ */
+export async function auditorMfaRefusal(
+  user: SessionUser,
+  opts?: { allowWithoutMfa?: boolean },
+): Promise<string | null> {
+  return decideAuditorAdmission({
+    role: await getUserRole(user),
+    hasMfa: sessionHasMfa(user),
+    allowWithoutMfa: opts?.allowWithoutMfa,
+  })
 }
 
 function sessionHasMfa(user: SessionUser): boolean {
@@ -213,7 +218,25 @@ export async function decideManageApprovers(user: SessionUser, ns: string): Prom
   }
 }
 
-/** Repo Admin, Owner, manage_collaborators fine grant, or instance admin. */
+/**
+ * Namespace Owner (or admin collaborator) may rename, transfer, delete, or
+ * edit About — lifecycle admin, not a data-plane write grant.
+ */
+export async function canAdministerRepository(
+  user: SessionUser,
+  ns: string,
+  repo: string,
+): Promise<boolean> {
+  if ((await resolveNamespaceRole(ns, user)) === 'owner') return true
+  const check = await hasRepoPermission(user, ns, repo, 'admin')
+  return check.ok && !check.bypass
+}
+
+/**
+ * Who may edit the collaborator list (not a data-plane grant by itself):
+ * namespace Owner (bootstrap / access admin), maintain+ collaborators
+ * (repo managers/admins), or a custom fine `manage_collaborators` seat.
+ */
 export async function canManageRepoCollaborators(
   user: SessionUser,
   ns: string,
@@ -242,8 +265,10 @@ async function manageRepoCollaborators(
   ns: string,
   repo: string,
 ): Promise<boolean> {
-  if (await resolveNamespaceRole(ns, user) === 'owner') return true
-  const check = await hasRepoPermission(user, ns, repo, 'admin')
+  // Namespace Owner administers access without needing a collaborator seat.
+  if ((await resolveNamespaceRole(ns, user)) === 'owner') return true
+  // Repo maintain/admin collaborators (managers) manage other collaborators.
+  const check = await hasRepoPermission(user, ns, repo, 'maintain')
   if (check.ok && !check.bypass) return true
   for (const id of await customRepoRoleIdsForUser(ns, repo, user)) {
     const role = await getCustomRepoRole(ns, id)
@@ -251,7 +276,6 @@ async function manageRepoCollaborators(
       return true
     }
   }
-  if (check.bypass) return true
   return false
 }
 
@@ -364,7 +388,32 @@ export async function authorizeApiRequest(input: AuthorizeInput): Promise<AuthzD
       effectiveRole: check.effective,
     }
   }
-  return deny(`Requires repo role ${need}`, {
+  // Lifecycle admin (not file/branch data): namespace Owner without a collaborator seat.
+  if (
+    need === 'admin' &&
+    (action === 'repo.delete' || action === 'repo.metadata') &&
+    (await resolveNamespaceRole(ns, actor)) === 'owner'
+  ) {
+    return {
+      allow: true,
+      status: 403,
+      reason: 'ok',
+      aclBypass: false,
+      requiredRole: need,
+      effectiveRole: 'admin',
+    }
+  }
+  const role =
+    need === 'read'
+      ? 'Read'
+      : need === 'triage'
+        ? 'Triage'
+        : need === 'write'
+          ? 'Write'
+          : need === 'maintain'
+            ? 'Maintain'
+            : 'Admin'
+  return deny(`${role} access required`, {
     requiredRole: need,
     effectiveRole: check.effective,
   })
@@ -429,12 +478,36 @@ const REPO_ACTION_POLICY: Record<
   RepoAction,
   { need: RepoRole; method: string; reason: string }
 > = {
-  'job.submit': { need: 'write', method: 'POST', reason: 'job.submit requires repository write or job_submit' },
-  'job.read': { need: 'read', method: 'GET', reason: 'job.read requires repository read or job_read' },
-  'job.cancel': { need: 'write', method: 'POST', reason: 'job.cancel requires repository write or job_cancel' },
-  'job.complete': { need: 'write', method: 'POST', reason: 'job.complete requires repository write or job_complete' },
-  'workspace.read': { need: 'read', method: 'GET', reason: 'Requires repository read' },
-  'workspace.write': { need: 'write', method: 'POST', reason: 'Requires repository write' },
+  'job.submit': {
+    need: 'write',
+    method: 'POST',
+    reason: 'Write access required to submit jobs',
+  },
+  'job.read': {
+    need: 'read',
+    method: 'GET',
+    reason: 'Read access required to view jobs',
+  },
+  'job.cancel': {
+    need: 'write',
+    method: 'POST',
+    reason: 'Write access required to cancel jobs',
+  },
+  'job.complete': {
+    need: 'write',
+    method: 'POST',
+    reason: 'Write access required to complete jobs',
+  },
+  'workspace.read': {
+    need: 'read',
+    method: 'GET',
+    reason: 'Read access required to view workspaces',
+  },
+  'workspace.write': {
+    need: 'write',
+    method: 'POST',
+    reason: 'Write access required to change workspaces',
+  },
 }
 
 /** One decision for repo-scoped Mice actions (jobs, Mice Workspaces). */
@@ -487,9 +560,13 @@ type InstancePolicy = {
   reason: string
 }
 
+/** Refusal when a non-Admin principal attempts an Admin-role-only instance action. */
+export const INSTANCE_ADMIN_REQUIRED = 'Instance admin required'
+
 /**
  * Instance-wide actions: allowed when the principal's effective RBAC permissions
- * include any listed permission. Boolean instance-admin no longer short-circuits.
+ * include any listed permission. `instance.admin` is Admin-role-only (no permission
+ * substitute, no boolean flag).
  */
 const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
   'tokens.manage': { permissions: ['tokens:create', 'tokens:list', 'tokens:revoke'], credential: 'any', reason: 'Missing permission tokens:create' },
@@ -497,7 +574,7 @@ const INSTANCE_ACTION_POLICY: Record<InstanceAction, InstancePolicy> = {
   'audit.view': { permissions: ['audit:read'], credential: 'any', reason: 'Missing permission audit:read' },
   'lineage.view': { permissions: ['lineage:read'], credential: 'any', reason: 'Missing permission lineage:read' },
   'store.admin': { permissions: ['store:gc', 'store:scrub'], credential: 'unscoped', reason: 'Missing permission store:gc' },
-  'instance.admin': { permissions: ['instance:admins:add', 'instance:settings:update'], credential: 'any', reason: 'Missing permission instance:admins:add' },
+  'instance.admin': { permissions: [], credential: 'any', reason: INSTANCE_ADMIN_REQUIRED },
   'directory.sync': { permissions: ['instance:settings:update'], credential: 'any', reason: 'Missing permission instance:settings:update' },
   'namespace.create': { permissions: ['namespace:create'], credential: 'any', reason: 'Missing permission namespace:create' },
   'access.review.all': { permissions: ['access_request:review'], credential: 'any', reason: 'Missing permission access_request:review' },
@@ -510,6 +587,10 @@ export async function decideInstanceAction(user: SessionUser, action: InstanceAc
   const policy = INSTANCE_ACTION_POLICY[action]
   if (policy.credential === 'unscoped' && isScopedCredential(user)) {
     return denied(policy.reason)
+  }
+  // Admin role is the only source for platform-admin actions (ticket 20).
+  if (action === 'instance.admin') {
+    return (await isInstanceAdmin(user)) ? ALLOWED : denied(INSTANCE_ADMIN_REQUIRED)
   }
   // Auditor MFA is gated once in authenticate() via auditorMfaRefusal — not repeated here.
   for (const p of policy.permissions) {

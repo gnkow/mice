@@ -21,6 +21,8 @@ const writer = iso.person('reason-writer')
 const manager = iso.person('reason-manager')
 await createNamespaceAuthz(admin, 'rs', 'none', true)
 await setRepoCollaborator('rs', 'r', writer, 'write')
+// Instance admin is not an implicit repo collaborator (collab SoT); grant for delete tests.
+await setRepoCollaborator('rs', 'r', admin, 'admin')
 await preparePrincipal(writer)
 await iso.grantRole(writer, 'user')
 await iso.grantRole(manager, 'manager')
@@ -33,7 +35,6 @@ type Row = {
   message?: string
   reason?: string
   reason_source?: string
-  category?: string
 }
 const rows = async () =>
   (await ledger.readAll()).filter((r) => r.seq > since).map((r) => JSON.parse(r.value) as Row)
@@ -54,7 +55,8 @@ beforeEach(async () => {
 afterEach(() => restoreUpstream())
 
 async function putJson(message: string | undefined, extra: Record<string, string> = {}, user = writer) {
-  return app.request('/api/repos/rs/r/file/main/a.csv', {
+  // Non-default branch: direct writes to validated `main` are refused for everyone.
+  return app.request('/api/repos/rs/r/file/feature/a.csv', {
     method: 'PUT',
     headers: { ...(await iso.sessionHeaders(user)), 'content-type': 'application/json', ...extra },
     body: JSON.stringify(message === undefined ? {} : { message }),
@@ -92,27 +94,13 @@ await describe('mandatory reason on proxied dataset mutations', async () => {
     assert.equal(upstream.length, 0)
   })
 
-  await it('rejects a branch delete with free text but no category', async () => {
-    const del = await app.request('/api/repos/rs/r/branches/old', {
-      method: 'DELETE',
-      headers: {
-        ...(await iso.sessionHeaders(admin)),
-        'x-mice-reason': 'Branch merged and obsolete',
-      },
-    })
-    assert.equal(del.status, 400)
-    assert.equal(((await del.json()) as { status_message: string }).status_message, 'reason_category_required')
-    assert.equal(upstream.length, 0)
-  })
-
-  await it('accepts a branch delete with category and free text and records both', async () => {
+  await it('accepts a branch delete with free text and records it', async () => {
     const path = '/api/repos/rs/r/branches/old'
     const signed = await regulatedMutationHeaders(admin, {
       method: 'DELETE',
       path,
       body: {},
       reason: 'Branch merged and obsolete',
-      category: 'destructive',
     })
     const ok = await app.request(path, {
       method: 'DELETE',
@@ -126,18 +114,16 @@ await describe('mandatory reason on proxied dataset mutations', async () => {
     const o = (await outcomes())[0]!
     assert.equal(o.reason, 'Branch merged and obsolete')
     assert.equal(o.reason_source, 'explicit')
-    assert.equal(o.category, 'destructive')
     assert.equal(upstream[0]!.headers.get('x-mice-reason'), null)
-    assert.equal(upstream[0]!.headers.get('x-mice-reason-category'), null)
   })
 
-  await it('rejects a too-short reason on a delete even with a valid category', async () => {
+  await it('rejects a too-short reason on a delete', async () => {
     const del = await app.request('/api/repos/rs/r/branches/old', {
       method: 'DELETE',
       headers: {
         ...(await iso.sessionHeaders(admin)),
         'x-mice-reason': 'short',
-        'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+        'x-mice-change-control-id': 'CC-2026-114',
       },
     })
     assert.equal(del.status, 400)
@@ -153,7 +139,7 @@ await describe('mandatory reason on proxied dataset mutations', async () => {
         headers: {
           ...(await iso.sessionHeaders(admin)),
           'x-mice-reason': 'Branch merged and obsolete',
-          'x-mice-reason-category': 'destructive', 'x-mice-change-control-id': 'CC-2026-114',
+          'x-mice-change-control-id': 'CC-2026-114',
         },
       })
       assert.equal(short.status, 400)
@@ -166,7 +152,6 @@ await describe('mandatory reason on proxied dataset mutations', async () => {
       path,
       body: {},
       reason: 'Branch merged and obsolete',
-      category: 'destructive',
     })
     const ok = await app.request(path, {
       method: 'DELETE',
@@ -195,7 +180,7 @@ const adminHeaders = async (reason?: string) => ({
   ...(await iso.sessionHeaders(admin)),
   'content-type': 'application/json',
   ...(reason
-    ? { 'x-mice-reason': reason, 'x-mice-reason-category': 'privileged_settings', 'x-mice-change-control-id': 'CC-2026-114' }
+    ? { 'x-mice-reason': reason, 'x-mice-change-control-id': 'CC-2026-114' }
     : {}),
 })
 
@@ -216,7 +201,7 @@ await describe('mandatory reason on admin and permission changes', async () => {
     assert.equal(o.reason, undefined)
   })
 
-  await it('requires category and free text on a namespace settings update', async () => {
+  await it('requires free text on a namespace settings update', async () => {
     await createNamespaceAuthz(admin, 'upd', 'none', true)
     // Seed ownership so the manager can patch (createNamespaceAuthz with admin may need a manager-owned ns).
     const create = await app.request('/auth/namespaces', {
@@ -226,17 +211,16 @@ await describe('mandatory reason on admin and permission changes', async () => {
     })
     assert.equal(create.status, 200)
 
-    const noCat = await app.request('/auth/namespaces/upd-mgr', {
+    const noReason = await app.request('/auth/namespaces/upd-mgr', {
       method: 'PATCH',
       headers: {
         ...(await iso.sessionHeaders(manager)),
         'content-type': 'application/json',
-        'x-mice-reason': 'Tighten default access after review',
       },
       body: JSON.stringify({ basePermission: 'read' }),
     })
-    assert.equal(noCat.status, 400)
-    assert.equal(((await noCat.json()) as { code: string }).code, 'reason_category_required')
+    assert.equal(noReason.status, 400)
+    assert.equal(((await noReason.json()) as { code: string }).code, 'reason_required')
 
     const path = '/auth/namespaces/upd-mgr'
     const body = { basePermission: 'read' }
@@ -245,7 +229,6 @@ await describe('mandatory reason on admin and permission changes', async () => {
       path,
       body,
       reason: 'Tighten default access after review',
-      category: 'privileged_settings',
     })
     const ok = await app.request(path, {
       method: 'PATCH',
@@ -259,7 +242,6 @@ await describe('mandatory reason on admin and permission changes', async () => {
     assert.equal(ok.status, 200)
     const o = (await outcomes()).find((r) => r.action === 'namespace.settings.update')!
     assert.equal(o.reason, 'Tighten default access after review')
-    assert.equal(o.category, 'privileged_settings')
   })
 
   await it('applies to instance permission changes and access-request decisions', async () => {
@@ -301,18 +283,16 @@ await describe('declared reason for clients that cannot send a header', async ()
   const declare = async (
     reason: string,
     ttlSec?: number,
-    category = 'data_correction',
     changeControlId = 'CC-2026-114',
   ) =>
     app.request('/auth/reason', {
       method: 'POST',
       headers: { ...(await iso.sessionHeaders(writer)), 'content-type': 'application/json' },
-      body: JSON.stringify({ reason, ttlSec, category, changeControlId }),
+      body: JSON.stringify({ reason, ttlSec, changeControlId }),
     })
-  const pushLike = async (opts?: { reason?: string; category?: string; withSignature?: boolean }) => {
+  const pushLike = async (opts?: { reason?: string; withSignature?: boolean }) => {
     const path = '/api/repos/rs/r/commits/abc123/complete'
     const reason = opts?.reason ?? 'Upload of plate run 42'
-    const category = opts?.category ?? 'data_correction'
     const session = await iso.sessionHeaders(writer)
     if (!opts?.withSignature) {
       return app.request(path, { method: 'POST', headers: session })
@@ -322,7 +302,6 @@ await describe('declared reason for clients that cannot send a header', async ()
       path,
       body: {},
       reason,
-      category,
     })
     // Signature only — reason comes from the prior /auth/reason declaration.
     return app.request(path, {
@@ -342,7 +321,7 @@ await describe('declared reason for clients that cannot send a header', async ()
       assert.equal((await declare('Upload of plate run 42', 60)).status, 200)
       assert.equal((await pushLike({ withSignature: true })).status, 200)
       const o = (await outcomes()).at(-1)!
-      assert.deepEqual([o.reason, o.reason_source, o.category], ['Upload of plate run 42', 'explicit', 'data_correction'])
+      assert.deepEqual([o.reason, o.reason_source], ['Upload of plate run 42', 'explicit'])
       clock.advance(61_000)
       assert.equal((await pushLike({ withSignature: true })).status, 400)
     } finally {
@@ -369,14 +348,13 @@ await describe('declared reason for clients that cannot send a header', async ()
 })
 
 await describe('reason in the audit views', async () => {
-  await it('shows reason, source and category in the CSV export', async () => {
+  await it('shows reason and source in the CSV export', async () => {
     const path = '/api/repos/rs/r/branches/old'
     const signed = await regulatedMutationHeaders(admin, {
       method: 'DELETE',
       path,
       body: {},
       reason: 'Correct the plate layout',
-      category: 'data_correction',
     })
     await app.request(path, {
       method: 'DELETE',
@@ -390,7 +368,7 @@ await describe('reason in the audit views', async () => {
     const [header, ...lines] = csv.trim().split('\r\n')
     const cols = header!.split(',')
     const row = lines.find((l) => l.includes('branch.delete'))!
-    assert.ok(cols.includes('reason') && cols.includes('reason_source') && cols.includes('category'))
-    assert.match(row, /Correct the plate layout,explicit,data_correction/)
+    assert.ok(cols.includes('reason') && cols.includes('reason_source'))
+    assert.match(row, /Correct the plate layout,explicit,/)
   })
 })
