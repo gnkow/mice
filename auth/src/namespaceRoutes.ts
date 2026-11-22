@@ -8,7 +8,7 @@ import {
   decideNamespaceAction,
   hasRepoPermission,
 } from './authz.js'
-import { canEditEntity } from './metaAuthz.js'
+import { decideRepoViewerPermissions } from './repoViewerPermissions.js'
 import {
   listApproverHistory,
   listApprovers,
@@ -497,33 +497,13 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ versions })
   }))
 
-  /** Caller-facing capabilities for repository settings chrome + file browser. */
+  /** Caller-facing capabilities for repository settings chrome + file browser (#148). */
   app.get('/auth/namespaces/:ns/repos/:repo/permissions', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
-    const read = await hasRepoPermission(session, ns, repo, 'read')
-    const administer = await canAdministerRepository(session, ns, repo)
-    // Owners may open settings without a collaborator seat; data plane still needs read.
-    if (!read.ok && !administer) return c.json({ error: 'Forbidden' }, 403)
-    const write = await hasRepoPermission(session, ns, repo, 'write')
-    const [manageCollaborators, manageApprovers, editMetadata] = await Promise.all([
-      decideManageRepoCollaborators(session, ns, repo),
-      decideManageApprovers(session, ns),
-      canEditEntity(session, { type: 'repo', id: `${ns}/${repo}`, namespace: ns, repo }),
-    ])
-    return c.json({
-      permissions: {
-        rename: administer,
-        transfer: administer,
-        manageCollaborators: manageCollaborators.allow,
-        manageApprovers: manageApprovers.allow,
-        editMetadata,
-        deleteRepository: administer,
-        viewSignedRecord: true,
-        /** Tip-changing file ops (upload/rename/move/copy/delete) need write collaborator. */
-        contentsWrite: write.ok && !write.bypass,
-      },
-    })
+    const decided = await decideRepoViewerPermissions(session, ns, repo)
+    if (!decided.ok) return c.json({ error: 'Forbidden' }, decided.status)
+    return c.json({ permissions: decided.permissions })
   }))
 
   app.get('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {

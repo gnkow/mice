@@ -139,6 +139,7 @@ export function RepoSettingsLayout() {
                 editMetadata: false,
                 deleteRepository: false,
                 viewSignedRecord: false,
+                contentsWrite: false,
               },
             } satisfies RepoSettingsOutletContext
           }
