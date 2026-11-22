@@ -29,6 +29,9 @@ test.describe('Grant access / no IdP bootstrap (#11)', () => {
 
     await expect(section.getByRole('heading', { name: 'Grant access' })).toBeVisible()
     await expect(
+      section.getByRole('status', { name: /IdP group bootstrap: off/i }),
+    ).toHaveText(/Manual grants only/i)
+    await expect(
       section.getByText(/IdP groups do not bootstrap instance access/i),
     ).toBeVisible()
     await expect(

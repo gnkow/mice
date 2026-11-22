@@ -103,7 +103,6 @@ describe('Seal key rotation HTTP seam (Ticket 17)', () => {
       path,
       body: {},
       reason: 'Scheduled seal-key rotation after quarterly review',
-      category: 'privileged_settings',
     })
     const res = await api.request(path, {
       method: 'POST',
@@ -152,7 +151,6 @@ describe('Seal key rotation HTTP seam (Ticket 17)', () => {
       path,
       body: reqBody,
       reason: 'Compromise suspected in lab - emergency seal rotation',
-      category: 'privileged_settings',
     })
     const res = await api.request(path, {
       method: 'POST',

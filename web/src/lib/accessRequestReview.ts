@@ -54,6 +54,30 @@ export function approvableRoles(reviewerRole: string | null | undefined): string
   return []
 }
 
+/**
+ * Mirror of auth `canReviewPendingRequest`: whether this reviewer may act on the
+ * request as filed (list / deny / open approve).
+ */
+export function canReviewPendingRequest(input: {
+  reviewerRole: string | null | undefined
+  reviewerEffective: readonly string[]
+  requestedRole: string | null | undefined
+  requestedPermissions: readonly string[]
+}): boolean {
+  const role = input.reviewerRole
+  if (role !== 'admin' && role !== 'manager') return false
+  const requestedRole = input.requestedRole ?? null
+  if (requestedRole != null && !approvableRoles(role).includes(requestedRole)) {
+    return false
+  }
+  const perms = input.requestedPermissions.filter(Boolean)
+  if (perms.length > 0) {
+    const have = new Set(input.reviewerEffective)
+    if (!perms.every((p) => have.has(p))) return false
+  }
+  return requestedRole != null || perms.length > 0
+}
+
 /** Role bundle ∪ extras for the grant checklist (role perms are pre-checked). */
 export function selectGrantRolePermissions(input: {
   role: string | null

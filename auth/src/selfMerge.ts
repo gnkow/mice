@@ -9,10 +9,16 @@
 import { canonicalIssuer } from './authentication/session/principal.js'
 
 export const SELF_MERGE_FORBIDDEN = 'Self-merge forbidden (4-eyes principle)'
+export const SELF_MERGE_REQUESTER_FORBIDDEN =
+  'Self-merge forbidden (4-eyes): you opened this request, so you cannot approve it'
 
 export type SelfMergeDecision =
   | { allow: true }
-  | { allow: false; reason: typeof SELF_MERGE_FORBIDDEN; matchingAuthors: string[] }
+  | {
+      allow: false
+      reason: typeof SELF_MERGE_FORBIDDEN | typeof SELF_MERGE_REQUESTER_FORBIDDEN
+      matchingAuthors: string[]
+    }
 
 /** Same string written into oxen commit `author` for a Principal. */
 export function signerAuthorKey(signer: { iss: string; sub: string }): string {
@@ -20,14 +26,52 @@ export function signerAuthorKey(signer: { iss: string; sub: string }): string {
 }
 
 /**
- * Deny when the Principal performing the merge authored any commit in the merge.
+ * Normalize AuthZ `iss\\u001fsub` keys and commit `iss|sub` authors to the same
+ * comparison form used for the merge signer.
+ */
+export function normalizePrincipalAuthorKey(raw: string): string {
+  const trimmed = raw.trim()
+  const us = trimmed.indexOf('\u001f')
+  if (us > 0 && us < trimmed.length - 1) {
+    return signerAuthorKey({
+      iss: trimmed.slice(0, us),
+      sub: trimmed.slice(us + 1),
+    })
+  }
+  const bar = trimmed.indexOf('|')
+  if (bar > 0 && bar < trimmed.length - 1) {
+    return signerAuthorKey({
+      iss: trimmed.slice(0, bar),
+      sub: trimmed.slice(bar + 1),
+    })
+  }
+  return trimmed
+}
+
+/**
+ * Deny when the Principal performing the merge authored any commit in the merge,
+ * or (for signed MR complete) is the requester who opened the merge request.
  */
 export function decideSelfMerge(
   signer: { iss: string; sub: string },
   authors: readonly string[],
+  openedBy?: string | null,
 ): SelfMergeDecision {
   const key = signerAuthorKey(signer)
-  const matchingAuthors = [...new Set(authors.filter((a) => a === key))]
+  if (openedBy?.trim() && normalizePrincipalAuthorKey(openedBy) === key) {
+    return {
+      allow: false,
+      reason: SELF_MERGE_REQUESTER_FORBIDDEN,
+      matchingAuthors: [],
+    }
+  }
+  const matchingAuthors = [
+    ...new Set(
+      authors
+        .map((a) => normalizePrincipalAuthorKey(a))
+        .filter((a) => a === key),
+    ),
+  ]
   if (matchingAuthors.length > 0) {
     return { allow: false, reason: SELF_MERGE_FORBIDDEN, matchingAuthors }
   }
@@ -50,4 +94,31 @@ export function evaluateSelfMergeFromCommits(
   commits: readonly { author?: unknown }[],
 ): SelfMergeDecision {
   return decideSelfMerge(signer, authorsFromCommits(commits))
+}
+
+/** Audit detail for approved and denied self-merge checks (signer + authors + reason). */
+export function selfMergeAuditDetail(
+  signer: { iss: string; sub: string },
+  authors: readonly string[],
+  decision: SelfMergeDecision,
+): {
+  self_merge: boolean
+  signer: string
+  authors: string[]
+  reason?: string
+  matching_authors?: string[]
+} {
+  const base = {
+    signer: signerAuthorKey(signer),
+    authors: [...authors],
+  }
+  if (!decision.allow) {
+    return {
+      ...base,
+      self_merge: true,
+      reason: decision.reason,
+      matching_authors: decision.matchingAuthors,
+    }
+  }
+  return { ...base, self_merge: false }
 }

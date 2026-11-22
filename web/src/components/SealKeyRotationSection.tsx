@@ -1,4 +1,11 @@
-import { Key, AlertCircle, Clock, CheckCircle, XCircle } from 'lucide-react'
+import {
+  Key,
+  AlertCircle,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Copy as ActionCopy,
+} from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useAsync } from '../hooks/useAsync'
 import { authzFetch } from '../lib/authzApi'
@@ -100,12 +107,36 @@ function formatRelativeTime(epochSec: number): string {
 function KeyStatusIcon({ status }: { status: 'valid' | 'expired' | 'current' }) {
   switch (status) {
     case 'current':
-      return <CheckCircle size={16} aria-hidden="true" />
+      return <CheckCircle size={14} aria-hidden="true" />
     case 'valid':
-      return <Clock size={16} aria-hidden="true" />
+      return <Clock size={14} aria-hidden="true" />
     case 'expired':
-      return <XCircle size={16} aria-hidden="true" />
+      return <XCircle size={14} aria-hidden="true" />
   }
+}
+
+function CopyKeyId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(id)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return (
+    <div className="settings-copy-inline">
+      <code className="inline-code settings-copy-value" title={id}>
+        {id}
+      </code>
+      <button type="button" className="settings-copy-btn" onClick={() => void copy()} aria-label="Copy key ID">
+        <ActionCopy size={12} aria-hidden="true" />
+        <span aria-live="polite">{copied ? 'Copied' : 'Copy'}</span>
+      </button>
+    </div>
+  )
 }
 
 export function SealKeyRotationSection() {
@@ -174,243 +205,259 @@ export function SealKeyRotationSection() {
             Session cookie keys
           </h2>
           <p className="muted small">
-            Seal keys encrypt session cookies using AES-256-GCM. Normal rotation happens on a{' '}
-            {SEAL_KEY_ROTATION_DAYS}-day schedule with 7-day overlap (no user logout). Emergency rotation
-            revokes the current key immediately with 8-hour grace period.
+            AES-256-GCM seal keys for session cookies. Normal: {SEAL_KEY_ROTATION_DAYS}-day schedule,
+            7-day overlap. Emergency: immediate revoke with 8-hour grace.
           </p>
         </div>
-      </div>
-
-      {error && (
-        <p className="flash flash-error" role="alert">{error}</p>
-      )}
-
-      {success && (
-        <p className="flash flash-success" role="status">{success}</p>
-      )}
-
-      <div className="ns-settings-subsection">
-        <h3>Current Primary Key</h3>
-        {currentKey.kind === 'loading' && (
-          <p role="status" aria-live="polite">Loading current key…</p>
-        )}
-        {currentKey.kind === 'error' && (
-          <div className="flash flash-error" role="alert">
-            <p>Failed to load current key</p>
-            <button type="button" className="btn ghost" onClick={() => currentKey.reload()}>
-              Try again
-            </button>
-          </div>
-        )}
-        {currentKey.kind === 'ok' && currentKey.data && (
-          <div className="ns-settings-grid">
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Key ID</span>
-              <p className="muted small"><code className="inline-code">{currentKey.data.id}</code></p>
-            </div>
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Type</span>
-              <p className="muted small">{currentKey.data.rotationType}</p>
-            </div>
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Valid From</span>
-              <p className="muted small">{formatTimestamp(currentKey.data.validFrom)}</p>
-            </div>
-            <div className="ns-settings-field">
-              <span className="ns-settings-label">Created</span>
-              <p className="muted small">{new Date(currentKey.data.createdAt).toLocaleString()}</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="ns-settings-subsection">
-        <h3>Automatic rotation schedule</h3>
         {schedule ? (
-          <div
-            className={schedule.due ? 'flash flash-warn' : 'flash flash-info'}
+          <span
+            className={`status-pill ${schedule.due ? 'warn' : 'ok'}`}
             role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            data-testid="seal-key-schedule-status"
+            aria-label={schedule.due ? 'Automatic rotation due' : 'Automatic rotation on schedule'}
           >
-            <p>
-              <Clock size={16} aria-hidden="true" className="button-label-icon" />
-              {schedule.summary}
-            </p>
-            <dl className="ns-settings-grid">
-              <div className="ns-settings-field">
-                <dt className="ns-settings-label">Schedule basis (key issued)</dt>
-                <dd className="muted small">
-                  <time dateTime={new Date(schedule.lastScheduledFrom * 1000).toISOString()}>
-                    {formatTimestamp(schedule.lastScheduledFrom)}
-                  </time>
-                </dd>
-              </div>
-              <div className="ns-settings-field">
-                <dt className="ns-settings-label">Next eligible automatic run</dt>
-                <dd className="muted small">
-                  <time dateTime={new Date(schedule.nextEligibleAt * 1000).toISOString()}>
-                    {formatTimestamp(schedule.nextEligibleAt)}
-                  </time>
-                  {schedule.due ? ' (due now)' : null}
-                </dd>
-              </div>
-            </dl>
-            <p className="muted small">
-              The process checks about once a minute. A restart does not reset the{' '}
-              {SEAL_KEY_ROTATION_DAYS}-day wait. Manual normal rotation is always available below.
-            </p>
-          </div>
-        ) : (
-          <p className="muted small" role="status" aria-live="polite">
-            Load the current primary key to see the {SEAL_KEY_ROTATION_DAYS}-day automatic rotation
-            schedule.
-          </p>
-        )}
+            {schedule.due ? 'Due now' : 'On schedule'}
+          </span>
+        ) : null}
       </div>
 
-      <div className="ns-settings-subsection">
-        <h3>Key Rotation</h3>
+      {error ? (
+        <p className="flash flash-error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
-        <form onSubmit={handleNormalRotation} className="ns-member-form">
-          <p className="muted small">
-            <strong>Normal Rotation:</strong> Creates a new key and marks the current key to expire in 7 days.
-            Users are not logged out during the overlap period.
+      {success ? (
+        <p className="flash flash-success" role="status">
+          {success}
+        </p>
+      ) : null}
+
+      <h3 className="ns-settings-subhead">Current Primary Key</h3>
+      {currentKey.kind === 'loading' ? (
+        <p className="muted small" role="status" aria-live="polite">
+          Loading current key…
+        </p>
+      ) : null}
+      {currentKey.kind === 'error' ? (
+        <div className="flash flash-error" role="alert">
+          <p>Failed to load current key</p>
+          <button type="button" className="btn ghost" onClick={() => currentKey.reload()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
+      {currentKey.kind === 'ok' && currentKey.data ? (
+        <dl className="ns-settings-facts" aria-label="Current primary seal key">
+          <div className="ns-settings-fact ns-settings-fact-wide ns-settings-fact-stack">
+            <dt className="ns-settings-fact-label">Key ID</dt>
+            <dd className="ns-settings-fact-value">
+              <CopyKeyId id={currentKey.data.id} />
+            </dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Type</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span
+                className={
+                  currentKey.data.rotationType === 'emergency' ? 'status-pill warn' : 'status-pill ok'
+                }
+              >
+                {currentKey.data.rotationType}
+              </span>
+            </dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Status</dt>
+            <dd className="ns-settings-fact-value" role="status">
+              <span className="status-pill active">{currentKey.data.status}</span>
+            </dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Valid from</dt>
+            <dd className="ns-settings-fact-value">{formatTimestamp(currentKey.data.validFrom)}</dd>
+          </div>
+          <div className="ns-settings-fact">
+            <dt className="ns-settings-fact-label">Created</dt>
+            <dd className="ns-settings-fact-value">
+              {new Date(currentKey.data.createdAt).toLocaleString()}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+
+      <h3 className="ns-settings-subhead">Automatic rotation schedule</h3>
+      {schedule ? (
+        <div
+          className={schedule.due ? 'flash flash-warn' : 'flash flash-info'}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="seal-key-schedule-status"
+        >
+          <p className="ns-settings-fact-note">
+            <Clock size={14} aria-hidden="true" className="button-label-icon" />
+            {schedule.summary}
           </p>
+          <dl className="ns-settings-facts">
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Schedule basis (key issued)</dt>
+              <dd className="ns-settings-fact-value">
+                <time dateTime={new Date(schedule.lastScheduledFrom * 1000).toISOString()}>
+                  {formatTimestamp(schedule.lastScheduledFrom)}
+                </time>
+              </dd>
+            </div>
+            <div className="ns-settings-fact">
+              <dt className="ns-settings-fact-label">Next eligible automatic run</dt>
+              <dd className="ns-settings-fact-value">
+                <time dateTime={new Date(schedule.nextEligibleAt * 1000).toISOString()}>
+                  {formatTimestamp(schedule.nextEligibleAt)}
+                </time>
+                {schedule.due ? <span className="status-pill warn">due now</span> : null}
+              </dd>
+            </div>
+          </dl>
+          <p className="muted small">
+            Checks about once a minute; restart does not reset the {SEAL_KEY_ROTATION_DAYS}-day wait.
+            Manual normal rotation is always available below.
+          </p>
+        </div>
+      ) : (
+        <p className="muted small" role="status" aria-live="polite">
+          Load the current primary key to see the {SEAL_KEY_ROTATION_DAYS}-day automatic rotation
+          schedule.
+        </p>
+      )}
+
+      <h3 className="ns-settings-subhead">Key Rotation</h3>
+      <form onSubmit={handleNormalRotation} className="ns-member-form">
+        <p className="muted small">
+          <strong>Normal Rotation:</strong> New key; current expires in 7 days. No logout during overlap.
+        </p>
+        <div className="btn-row ns-settings-actions">
+          <button type="submit" className="btn primary" disabled={busy}>
+            {busyAction === 'normal' ? 'Rotating…' : 'Perform Normal Rotation'}
+          </button>
+        </div>
+      </form>
+
+      {!showEmergencyForm ? (
+        <div className="btn-row ns-settings-actions">
+          <button type="button" className="btn ghost" onClick={() => setShowEmergencyForm(true)}>
+            <AlertCircle size={16} aria-hidden="true" className="button-label-icon" />
+            Emergency Rotation
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleEmergencyRotation} className="ns-member-form">
+          <p className="flash flash-warn" role="status">
+            <AlertCircle size={16} aria-hidden="true" className="button-label-icon" />
+            <strong>Emergency Rotation:</strong> Immediate revoke with 8-hour grace. Use only if
+            compromised.
+          </p>
+          <label className="ns-settings-field" htmlFor="seal-key-emergency-reason">
+            <span className="ns-settings-label">Reason for emergency rotation</span>
+            <textarea
+              id="seal-key-emergency-reason"
+              value={emergencyReason}
+              onChange={(e) => setEmergencyReason(e.target.value)}
+              placeholder="e.g., Key potentially compromised..."
+              rows={3}
+              required
+              disabled={busy}
+            />
+          </label>
           <div className="btn-row ns-settings-actions">
             <button
               type="submit"
-              className="btn primary"
-              disabled={busy}
+              className="btn danger"
+              disabled={busy || !emergencyReason.trim()}
             >
-              {busyAction === 'normal' ? 'Rotating…' : 'Perform Normal Rotation'}
+              {busyAction === 'emergency' ? 'Emergency rotating…' : 'Perform Emergency Rotation'}
             </button>
-          </div>
-        </form>
-
-        {!showEmergencyForm ? (
-          <div className="btn-row ns-settings-actions">
             <button
               type="button"
               className="btn ghost"
-              onClick={() => setShowEmergencyForm(true)}
+              onClick={() => {
+                setShowEmergencyForm(false)
+                setEmergencyReason('')
+              }}
+              disabled={busy}
             >
-              <AlertCircle size={16} aria-hidden="true" className="button-label-icon" />
-              Emergency Rotation
+              Cancel
             </button>
           </div>
-        ) : (
-          <form onSubmit={handleEmergencyRotation} className="ns-member-form">
-            <p className="flash flash-warn" role="status">
-              <AlertCircle size={16} aria-hidden="true" className="button-label-icon" />
-              <strong>Emergency Rotation:</strong> Immediately revokes the current key with an 8-hour grace period.
-              Use only if the current key is compromised.
-            </p>
-            <label className="ns-settings-field" htmlFor="seal-key-emergency-reason">
-              <span className="ns-settings-label">Reason for emergency rotation</span>
-              <textarea
-                id="seal-key-emergency-reason"
-                value={emergencyReason}
-                onChange={(e) => setEmergencyReason(e.target.value)}
-                placeholder="e.g., Key potentially compromised..."
-                rows={3}
-                required
-                disabled={busy}
-              />
-            </label>
-            <div className="btn-row ns-settings-actions">
-              <button
-                type="submit"
-                className="btn danger"
-                disabled={busy || !emergencyReason.trim()}
-              >
-                {busyAction === 'emergency' ? 'Emergency rotating…' : 'Perform Emergency Rotation'}
-              </button>
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => {
-                  setShowEmergencyForm(false)
-                  setEmergencyReason('')
-                }}
-                disabled={busy}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
+        </form>
+      )}
 
-      <div className="ns-settings-subsection">
-        <h3>Key Ring ({keyRing.kind === 'ok' ? keyRing.data.length : '…'} keys)</h3>
-        {keyRing.kind === 'loading' && (
-          <p role="status" aria-live="polite">Loading key ring…</p>
-        )}
-        {keyRing.kind === 'error' && (
-          <div className="flash flash-error" role="alert">
-            <p>Failed to load key ring</p>
-            <button type="button" className="btn ghost" onClick={() => keyRing.reload()}>
-              Try again
-            </button>
-          </div>
-        )}
-        {keyRing.kind === 'ok' && keyRing.data.length === 0 && (
-          <div className="empty-state" role="status">
-            <span className="empty-state-icon" aria-hidden="true" />
-            <p className="muted">No seal keys in the ring.</p>
-            <p className="muted small">Bootstrap or rotate a key to populate the ring.</p>
-          </div>
-        )}
-        {keyRing.kind === 'ok' && keyRing.data.length > 0 && (
-          <div className="table-container" data-testid="seal-key-ring">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Key ID</th>
-                  <th>Type</th>
-                  <th>Valid From</th>
-                  <th>Expires / Grace Period</th>
-                </tr>
-              </thead>
-              <tbody>
-                {keyRing.data.map((key) => (
-                  <tr
-                    key={key.id}
-                    data-testid={key.isCurrent ? 'seal-key-ring-current' : undefined}
-                  >
-                    <td>
-                      <KeyStatusIcon status={key.status} />
-                      <span className="muted small"> {key.status}</span>
-                    </td>
-                    <td>
-                      <code className="inline-code" title={key.id}>
-                        {key.id.split('_').pop()}
-                      </code>
-                      {key.isCurrent && <span className="pill">current</span>}
-                    </td>
-                    <td>{key.rotationType}</td>
-                    <td className="muted small">{formatTimestamp(key.validFrom)}</td>
-                    <td className="muted small">
-                      {key.validUntil ? (
-                        <>
-                          {formatTimestamp(key.validUntil)}
-                          <br />
-                          {formatRelativeTime(key.validUntil)}
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <h3 className="ns-settings-subhead">
+        Key Ring ({keyRing.kind === 'ok' ? keyRing.data.length : '…'} keys)
+      </h3>
+      {keyRing.kind === 'loading' ? (
+        <p className="muted small" role="status" aria-live="polite">
+          Loading key ring…
+        </p>
+      ) : null}
+      {keyRing.kind === 'error' ? (
+        <div className="flash flash-error" role="alert">
+          <p>Failed to load key ring</p>
+          <button type="button" className="btn ghost" onClick={() => keyRing.reload()}>
+            Try again
+          </button>
+        </div>
+      ) : null}
+      {keyRing.kind === 'ok' && keyRing.data.length === 0 ? (
+        <div className="empty-state" role="status">
+          <span className="empty-state-icon" aria-hidden="true" />
+          <p className="muted">No seal keys in the ring.</p>
+          <p className="muted small">Bootstrap or rotate a key to populate the ring.</p>
+        </div>
+      ) : null}
+      {keyRing.kind === 'ok' && keyRing.data.length > 0 ? (
+        <ul className="ns-member-list" data-testid="seal-key-ring" aria-label="Seal key ring">
+          {keyRing.data.map((key) => (
+            <li
+              key={key.id}
+              className="ns-member-row"
+              data-testid={key.isCurrent ? 'seal-key-ring-current' : undefined}
+            >
+              <div className="ns-member-main">
+                <span className="settings-copy-inline">
+                  <KeyStatusIcon status={key.status} />
+                  <code className="inline-code" title={key.id}>
+                    {key.id.split('_').pop()}
+                  </code>
+                </span>
+                <span className="muted small">
+                  {formatTimestamp(key.validFrom)}
+                  {key.validUntil
+                    ? ` · expires ${formatTimestamp(key.validUntil)} (${formatRelativeTime(key.validUntil)})`
+                    : ''}
+                </span>
+              </div>
+              <span
+                className={
+                  key.rotationType === 'emergency' ? 'status-pill warn' : 'status-pill neutral'
+                }
+              >
+                {key.rotationType}
+              </span>
+              {key.isCurrent ? <span className="status-pill active">current</span> : null}
+              <span
+                className={
+                  key.status === 'expired'
+                    ? 'status-pill bad'
+                    : key.status === 'current'
+                      ? 'status-pill ok'
+                      : 'status-pill neutral'
+                }
+              >
+                {key.status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   )
 }

@@ -85,12 +85,12 @@ describe('stable repository ids', () => {
     assert.equal((await readRepository('repo-ns', 'study-v3'))?.id, created.id)
   })
 
-  it('createOwnedRepository mints a stable id and grants the creator Admin in one path', async () => {
+  it('createOwnedRepository mints a stable id without a creator collaborator seat', async () => {
     await createNamespaceAuthz(alice, 'owned-ns', 'none')
     const created = await createOwnedRepository('owned-ns', 'assay', userKey(alice))
     assert.ok(created)
     assert.match(created.id, UUID_RE)
-    assert.equal((await listRepoCollaborators('owned-ns', 'assay')).some((c) => c.kind === 'user' && c.sub === 'alice' && c.role === 'admin'), true)
+    assert.equal((await listRepoCollaborators('owned-ns', 'assay')).length, 0)
 
     const again = await createOwnedRepository('owned-ns', 'assay', userKey(alice))
     assert.equal(again?.id, created.id)

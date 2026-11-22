@@ -11,6 +11,7 @@ import { PAGE_SIZE, Pagination, paginate } from '../components/Pagination'
 import { StateBlock } from '../components/StateBlock'
 import { SubmitJobBox } from '../components/SubmitJobBox'
 import { useAsync } from '../hooks/useAsync'
+import { fetchRepoPermissions } from '../lib/authzApi'
 import {
   JOB_STATUSES,
   collectJobBranches,
@@ -32,6 +33,12 @@ export function JobsPage() {
   const { namespace = '', repo = '' } = useParams()
   const [params, setParams] = useSearchParams()
   const [submitMode, setSubmitMode] = useState<SubmitMode | null>(null)
+  const repoPerms = useAsync(
+    (signal) => fetchRepoPermissions(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const canSubmitJobs =
+    repoPerms.kind === 'ok' && repoPerms.data.contentsWrite === true
   const pageParam = Number(params.get('page') || '1')
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
 
@@ -153,11 +160,13 @@ export function JobsPage() {
             Run computational tasks on your data — execute locally on your computer or remotely on the server. View status, logs, and results for each job.
           </p>
         </div>
-        <div className="btn-row">
-          <button type="button" className="btn primary" onClick={() => setSubmitMode('local')}>
-            <ActionTerminal size={14} aria-hidden="true" className="button-label-icon" />New job
-          </button>
-        </div>
+        {canSubmitJobs ? (
+          <div className="btn-row">
+            <button type="button" className="btn primary" onClick={() => setSubmitMode('local')}>
+              <ActionTerminal size={14} aria-hidden="true" className="button-label-icon" />New job
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {hasJobs && (
@@ -246,9 +255,14 @@ export function JobsPage() {
       <StateBlock
         loading={list.kind === 'loading' && !jobs.length}
         error={list.kind === 'error' && !jobs.length ? list.message : null}
+        errorPurpose="view jobs"
         onRetry={() => listReload()}
         empty={list.kind === 'ok' && jobs.length === 0}
-        emptyMessage="No jobs yet. Use the New job button above to get started."
+        emptyMessage={
+          canSubmitJobs
+            ? 'No jobs yet. Use the New job button above to get started.'
+            : 'No jobs yet.'
+        }
       >
         {list.kind === 'ok' && jobs.length > 0 && filtered.length === 0 && (
           <p className="muted">No jobs match these filters.</p>

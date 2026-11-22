@@ -26,6 +26,18 @@ const signatureEvent = {
 }
 
 test.describe('Auditor access UI (#13)', () => {
+  test('TC-AUDITOR-UI-00: Shell banner when Auditor session lacks MFA (#17)', async ({ page }) => {
+    await mintSession(page, {
+      role: 'auditor',
+      sub: uniqueId('auditor-no-mfa-banner'),
+      iss: 'mice-e2e',
+    })
+    await page.goto('/')
+    const banner = page.getByTestId('auditor-mfa-banner')
+    await expect(banner).toBeVisible()
+    await expect(banner).toContainText(/MFA evidence on every request/i)
+  })
+
   test('TC-AUDITOR-UI-01: Grant access shows Auditor expiry and MFA constraints', async ({
     page,
   }) => {
@@ -45,10 +57,12 @@ test.describe('Auditor access UI (#13)', () => {
     await section.getByRole('button', { name: 'Grant Access' }).first().click()
     await section.locator('select').first().selectOption({ label: 'Auditor' })
 
-    await expect(section.getByTestId('auditor-grant-hint')).toBeVisible()
-    await expect(section.getByTestId('auditor-grant-hint')).toContainText(
-      /always expire|MFA|cannot write/i,
-    )
+    const hint = section.getByTestId('auditor-grant-hint')
+    await expect(hint).toBeVisible()
+    await expect(hint).toContainText(/always expire|MFA|cannot write/i)
+    await expect(hint.getByRole('list', { name: 'Auditor grant constraints' })).toBeVisible()
+    await expect(hint.getByText('Always expires')).toBeVisible()
+    await expect(hint.getByText('MFA every request')).toBeVisible()
     await expect(section.getByText(/Expires \(required for Auditor\)/i)).toBeVisible()
   })
 
@@ -72,11 +86,11 @@ test.describe('Auditor access UI (#13)', () => {
 
     await page.goto('/audit')
     await expect(
-      page.getByText(/Signature rows expand to show IdP MFA evidence/i),
+      page.getByText(/Signature rows open IdP MFA evidence/i),
     ).toBeVisible()
 
     const evidence = page.getByTestId('signature-evidence').first()
-    await evidence.getByText('Signature evidence').click()
+    await evidence.getByRole('button', { name: 'Signature evidence' }).click()
     await expect(
       evidence.getByText(/Auditors use this to prove who signed/i),
     ).toBeVisible()

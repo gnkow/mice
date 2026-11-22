@@ -9,7 +9,7 @@ import {
   selfSuspend,
   SuspensionConfirmError,
 } from '../access/revocation.js'
-import { isInstanceAdmin } from '../../authzInstanceStore.js'
+import { adminRoleGate } from '../../decisionHttp.js'
 import type { AuditDep } from '../../routeDeps.js'
 
 /**
@@ -18,14 +18,10 @@ import type { AuditDep } from '../../routeDeps.js'
  * Exposes revocation and suspension functionality for admins.
  */
 
-const adminGate = async (u: { principalId?: number; sub: string; iss: string }) => {
-  return (await isInstanceAdmin(u)) ? null : 'Instance admin required'
-}
-
 export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): void {
   // Admin revoke-all (GxP ticket 03: revocation class → reason + ceremony)
   app.post('/auth/admin/revoke', guarded({ 
-    gate: adminGate, 
+    gate: adminRoleGate, 
     mutates: true,
     reason: true,
     body: { required: ['principal', 'reason'] } 
@@ -63,7 +59,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
 
   // Security-role suspension (requires confirmation within 24h)
   app.post('/auth/admin/suspend', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
     reason: true,
     body: { required: ['principal', 'reason'] }
@@ -102,7 +98,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
 
   // Confirm suspension (second admin)
   app.post('/auth/admin/suspend/:requestId/confirm', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
     reason: true,
     body: { required: ['reason'] }
@@ -156,7 +152,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
 
   // List pending suspensions
   app.get('/auth/admin/suspensions/pending', guarded({
-    gate: adminGate
+    gate: adminRoleGate
   }, async ({ c }) => {
     const pending = await listPendingSuspensions()
     return c.json({

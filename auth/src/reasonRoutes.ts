@@ -9,7 +9,6 @@ export function registerReasonRoutes(app: Hono): void {
       user,
       body.reason,
       typeof body.ttlSec === 'number' ? body.ttlSec : undefined,
-      typeof body.category === 'string' ? body.category : undefined,
       typeof body.changeControlId === 'string'
         ? body.changeControlId
         : typeof body.change_control_id === 'string'
@@ -17,8 +16,7 @@ export function registerReasonRoutes(app: Hono): void {
           : undefined,
     )
     if (!r.ok) {
-      const code = r.error.includes('category') ? 'reason_category_invalid' : 'reason_too_short'
-      return c.json({ error: r.error, code }, 400)
+      return c.json({ error: r.error, code: 'reason_too_short' }, 400)
     }
     return c.json({ ok: true, expiresAt: r.expiresAt })
   }))

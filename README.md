@@ -33,11 +33,11 @@ cd auth && npm install && cd ..   # host tooling / IDE; Compose installs Linux d
 docker compose up --build
 # → UI        http://localhost:5173
 # → Auth BFF  http://localhost:8080
-# → Keycloak  http://localhost:8180  (admin/admin; user mice / mice)
+# → Keycloak  http://localhost:8180  (admin/admin; user mice_user / user123 + TOTP)
 # → oxen API  http://localhost:3001  (dev override only; browser uses BFF)
 ```
 
-Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (Keycloak user `mice` / `mice`). Sign out clears the Mice session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or users to grant a role, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
+Sign in: open **http://localhost:5173/login** (use `localhost`, not `127.0.0.1`, so OIDC redirects match) → **Sign in with SSO** (`mice_user` / `user123`). When Keycloak asks for OTP, the **mice-dev** theme shows a **Dev OTP** code — click it to copy and fill. Full account table: [DEVELOPMENT.md](DEVELOPMENT.md#account-credentials). Sign out clears the Mice session and the Keycloak SSO session so the next SSO prompt asks for credentials again. When adding namespace members, repo collaborators, or users to grant a role, Settings supports **IdP directory search** (Keycloak Admin API when `KEYCLOAK_ADMIN_URL` is set, plus known AuthZ principals).
 
 Browser path: `web` → `/api` & `/auth` → **auth BFF** → **oxen-server**. Commit author `name`/`email` are injected from the session. Mutating calls append attributable events to the immudb audit trail (see **Audit** in the UI). Day-to-day CLI auth uses **`mice login`** (browser device pairing). Automation may still mint **CLI PATs** (`Profile → CLI tokens`).
 

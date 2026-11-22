@@ -1,12 +1,10 @@
 import { Download as ActionDownload, FileArchive as ActionFileArchive, Files as ActionFiles, FolderPlus as ActionFolderPlus, Import as ActionImport, Link as ActionLink, Plus as ActionPlus, Upload as ActionUpload, X as ActionX } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { useAsync } from '../hooks/useAsync'
+import { useSearchParams } from 'react-router-dom'
 import {
   createFolder,
   exportZip,
   importFromUrl,
-  listWorkspaces,
   triggerDownload,
   uploadFile,
   uploadLargeFile,
@@ -47,7 +45,6 @@ export function ManageFilesMenu({
   // Upload (size-aware)
   const [uploadMessage, setUploadMessage] = useState('')
   const [dstDir, setDstDir] = useState(path)
-  const [workspaceId, setWorkspaceId] = useState('')
   const [progress, setProgress] = useState<LargeUploadProgress | null>(null)
   const [currentFile, setCurrentFile] = useState<string | null>(null)
 
@@ -64,11 +61,6 @@ export function ManageFilesMenu({
 
   // Export
   const [exportPath, setExportPath] = useState(path)
-
-  const workspaces = useAsync(
-    (signal) => listWorkspaces(namespace, repo, signal),
-    [namespace, repo],
-  )
 
   useEffect(() => {
     const manage = searchParams.get('manage')
@@ -146,13 +138,10 @@ export function ManageFilesMenu({
         if (file.size >= UPLOAD_LARGE_THRESHOLD) {
           const result = await uploadLargeFile(namespace, repo, file, {
             dstDir: destRoot,
-            workspaceId: workspaceId || undefined,
             onProgress: setProgress,
           })
           results.push(
-            workspaceId
-              ? `${file.name} (chunked, ${formatBytes(file.size)}) staged in stage → ${result.versionId.slice(0, 12)}…`
-              : `${file.name} (chunked, ${formatBytes(file.size)}, ${result.numChunks} chunks) → ${result.versionId.slice(0, 12)}…`,
+            `${file.name} (chunked, ${formatBytes(file.size)}, ${result.numChunks} chunks) → ${result.versionId.slice(0, 12)}…`,
           )
         } else {
           setProgress(null)
@@ -244,7 +233,6 @@ export function ManageFilesMenu({
     })
   }
 
-  const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
   const pct =
     progress && progress.totalBytes > 0
       ? Math.round((progress.bytesSent / progress.totalBytes) * 100)
@@ -300,32 +288,6 @@ export function ManageFilesMenu({
                 disabled={busy}
               />
             </label>
-            <label>
-              Target stage
-              <select
-                value={workspaceId}
-                onChange={(e) => setWorkspaceId(e.target.value)}
-                disabled={busy}
-              >
-                <option value="">— commit / store only —</option>
-                {workspaces.kind === 'ok' &&
-                  workspaces.data.workspaces.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name || w.id.slice(0, 8)} · {w.commit.id.slice(0, 8)}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {workspaces.kind === 'ok' &&
-              workspaces.data.workspaces.length === 0 && (
-                <p className="muted small">
-                  No stages yet.{' '}
-                  <Link to={`${base}/stages`} onClick={close}>
-                    Create one
-                  </Link>{' '}
-                  to stage large uploads without committing.
-                </p>
-              )}
             {busy && currentFile && (
               <p className="muted small">
                 Uploading <strong>{currentFile}</strong>

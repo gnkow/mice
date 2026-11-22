@@ -113,10 +113,8 @@ export function CliDevicePage() {
   const canApprove =
     authz.kind === 'ok' &&
     !!authz.data &&
-    (!authz.data.enforce ||
-      hasEffectivePermission(authz.data, 'cli_device:approve'))
-  const showPermissionWarn =
-    !canApprove && authz.kind === 'ok' && !!authz.data?.enforce
+    hasEffectivePermission(authz.data, 'cli_device:approve')
+  const showPermissionWarn = !canApprove && authz.kind === 'ok' && !!authz.data
   const permissionHint =
     authz.kind === 'ok' && authz.data && isAdminRole(authz.data)
       ? 'Instance admins cannot approve device logins (separation of duties). Sign in with a standard user or manager account that started this code.'

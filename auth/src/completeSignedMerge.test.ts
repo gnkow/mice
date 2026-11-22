@@ -29,8 +29,11 @@ resetRestoreTestGate()
 await recordRestoreTestPassed({ recordedBy: 'test' })
 
 const approver = t.person('approver')
+const requester = t.person('requester')
 await preparePrincipal(approver)
+await preparePrincipal(requester)
 await t.grantRole(approver, 'manager')
+await t.grantRole(requester, 'user')
 assert.equal((await createNamespaceAuthz(approver, 'gxp5', 'none')).ok, true)
 const repo = await ensureRepository('gxp5', 'assay')
 assert.ok(repo)
@@ -54,7 +57,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       targetBranch: 'main',
       expectedSourceHead: 'src-head',
       expectedTargetHead: 'tgt-head',
-      openedBy: { iss: approver.iss, sub: approver.sub },
+      openedBy: { iss: requester.iss, sub: requester.sub },
     })
 
     const entries = [{ path: 'a.txt', contentHash: 'aa'.repeat(32) }]
@@ -92,7 +95,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         'content-type': 'application/json',
         cookie: await cookie(),
         'x-mice-reason': 'Approved merge of assay feature into main',
-        'x-mice-reason-category': 'other',
       },
       body: JSON.stringify(body),
     })
@@ -119,7 +121,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       targetBranch: 'main',
       expectedSourceHead: 'src-r',
       expectedTargetHead: 'tgt-r',
-      openedBy: { iss: approver.iss, sub: approver.sub },
+      openedBy: { iss: requester.iss, sub: requester.sub },
     })
     const merge = buildMergeManifest([])
     const { binding, manifest } = mergeResultBinding({
@@ -145,7 +147,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         'content-type': 'application/json',
         cookie: await cookie(),
         'x-mice-reason': 'Attempt merge before restore test',
-        'x-mice-reason-category': 'other',
       },
       body: JSON.stringify({
         liveSourceHead: 'src-r',
@@ -205,7 +206,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         'content-type': 'application/json',
         cookie: await sealedSessionCookie({ ...other, sessionStart: Math.floor(Date.now() / 1000) }),
         'x-mice-reason': 'Attempted merge without approver role',
-        'x-mice-reason-category': 'other',
       },
       body: JSON.stringify({
         liveSourceHead: 's2',

@@ -2,7 +2,7 @@
  * GxP ticket 26 / #112 — reason-policy operation inventory.
  *
  * Every mutating BFF route and every proxied dataset action class is listed once.
- * `required` means category + free text (and the regulated signature ceremony on
+ * `required` means free text (and the regulated signature ceremony on
  * native BFF routes that use `guarded({ reason: true })`). `exempt` needs a rationale.
  */
 

@@ -47,6 +47,20 @@ describe('oxenPhysicalKeys', () => {
     )
   })
 
+  it('strips Mice-only initial_commit_message from create bodies', () => {
+    assert.equal(
+      physicalCreateBody(
+        JSON.stringify({
+          namespace: 'demo',
+          name: 'assay',
+          initial_commit_message: 'Bootstrapped',
+        }),
+        { namespaceId: NS, repositoryId: REPO },
+      ),
+      JSON.stringify({ namespace: NS, name: REPO }),
+    )
+  })
+
   it('rewrites oxen JSON catalogs and repository objects to display names', () => {
     const resolveNamespace = (id: string) => (id === NS ? 'demo' : null)
     const resolveRepo = (namespaceId: string, repositoryId: string) =>

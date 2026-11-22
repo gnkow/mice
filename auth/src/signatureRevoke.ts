@@ -25,7 +25,8 @@ export type SignatureRevocation = {
 export type RevokeSignatureInput = {
   signatureId: string
   commitIds?: string[]
-  revoker: { iss: string; sub: string; name?: string }
+  /** Session identity; include IdP groups so group approver seats resolve. */
+  revoker: { iss: string; sub: string; name?: string; groups?: string[] }
   reason: string
   changeControlId: string
   mergeRequestId?: string

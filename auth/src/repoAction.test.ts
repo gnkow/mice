@@ -58,11 +58,11 @@ describe('authorizeRepoAction', () => {
   it('keeps the denial reasons callers surface', async () => {
     assert.equal(
       (await authorizeRepoAction(reader, ns, 'r', 'job.submit')).reason,
-      'job.submit requires repository write or job_submit',
+      'Write access required to submit jobs',
     )
     assert.equal(
       (await authorizeRepoAction(outsider, ns, 'r', 'workspace.write')).reason,
-      'Requires repository write',
+      'Write access required to change workspaces',
     )
   })
 

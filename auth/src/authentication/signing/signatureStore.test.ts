@@ -7,7 +7,7 @@ import { immudbConfig, openLedger } from '../../auditLedger.js'
 import { getDb } from '../../db/database.js'
 import { signatureIndex, principals } from '../../db/schema.js'
 import { buildMergeManifest, mergeResultBinding } from './mergeManifest.js'
-import { openSignatureStore, type NewSignature } from './signatureStore.js'
+import { DuplicateChangeControlIdError, openSignatureStore, type NewSignature } from './signatureStore.js'
 
 const db = getDb()
 
@@ -16,6 +16,7 @@ const ledger = await openLedger({ ...immudbConfig(), prefix })
 const store = openSignatureStore(ledger)
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
+const uniqueCc = () => `CC-TEST-${randomBytes(4).toString('hex')}`
 const signer = { iss: 'https://idp.test', sub: `alice-${randomBytes(3).toString('hex')}`, name: 'Alice Anders' }
 const evidence = {
   mfaEvidence: { acr: 'mfa', amr: ['pwd', 'otp'], auth_time: 1_767_225_600 },
@@ -28,13 +29,18 @@ const binding = {
   targetHead: 'tgt222',
   manifestDigest: sha(manifest),
 }
-const changeControlId = 'CC-2026-114'
 const base: NewSignature = { signer, meaning: 'Approved', contentHash: sha('content'), ...evidence }
-const withBinding: NewSignature = { ...base, binding, manifest, changeControlId }
+const withBinding = (): NewSignature => ({
+  ...base,
+  binding,
+  manifest,
+  changeControlId: uniqueCc(),
+})
 
 describe('authoritative signature record', () => {
   it('GXP-R-008 stores the full record in the ledger with a server timestamp and no way to change it', async () => {
-    const saved = await store.record(withBinding)
+    const input = withBinding()
+    const saved = await store.record(input)
     const back = await store.get(saved.id)
     assert.equal(back?.record.signer.name, 'Alice Anders')
     assert.equal(back?.record.signer.iss, signer.iss)
@@ -42,26 +48,35 @@ describe('authoritative signature record', () => {
     assert.equal(back?.record.meaning, 'Approved')
     assert.deepEqual(back?.record.verificationMetadata, evidence.verificationMetadata)
     assert.deepEqual(back?.record.binding, binding)
-    assert.equal(back?.record.changeControlId, changeControlId)
+    assert.equal(back?.record.changeControlId, input.changeControlId)
     assert.ok(!Number.isNaN(Date.parse(back!.record.signedAt)))
   })
 
+  it('refuses a change-control id that was already claimed', async () => {
+    const cc = uniqueCc()
+    await store.record({ ...base, changeControlId: cc })
+    await assert.rejects(
+      store.record({ ...base, changeControlId: cc }),
+      (err: unknown) => err instanceof DuplicateChangeControlIdError,
+    )
+  })
+
   it('stores the manifest before the signature and refuses one that does not match the digest', async () => {
-    await assert.rejects(store.record({ ...withBinding, manifest: 'tampered' }), /manifest/i)
+    await assert.rejects(store.record({ ...withBinding(), manifest: 'tampered' }), /manifest/i)
     await assert.rejects(store.record({ ...base, binding }), /manifest/i)
 
     const minted = await store.record({ ...base, binding, manifest })
     const mintedBack = await store.get(minted.id)
     assert.match(mintedBack?.record.changeControlId ?? '', /^CC-\d{8}-[0-9a-f]{8}$/)
 
-    const saved = await store.record(withBinding)
+    const saved = await store.record(withBinding())
     const stored = await store.getManifest(binding.manifestDigest)
     assert.equal(stored?.manifest, manifest)
     assert.ok(stored!.seq < saved.seq)
   })
 
   it('binds the merge via manifestDigest; source/target heads are informational only', async () => {
-    const saved = await store.record(withBinding)
+    const saved = await store.record(withBinding())
     const back = await store.get(saved.id)
     assert.equal(back?.record.binding?.manifestDigest, binding.manifestDigest)
     assert.equal(back?.record.binding?.manifestDigest, sha(manifest))
@@ -83,7 +98,12 @@ describe('authoritative signature record', () => {
       targetHead: 'tgt-tip',
       merge,
     })
-    const saved = await store.record({ ...base, binding: bound, manifest: text, changeControlId })
+    const saved = await store.record({
+      ...base,
+      binding: bound,
+      manifest: text,
+      changeControlId: uniqueCc(),
+    })
     const back = await store.get(saved.id)
     assert.equal(back?.record.binding?.manifestDigest, merge.digest)
     assert.equal((await store.getManifest(merge.digest))?.manifest, text)
@@ -103,7 +123,7 @@ describe('authoritative signature record', () => {
   })
 
   it('point-reads signature, manifest and consume markers through Ledger.get', async () => {
-    const saved = await store.record(withBinding)
+    const saved = await store.record(withBinding())
     const byId = await store.get(saved.id)
     assert.equal(byId?.seq, saved.seq)
     assert.equal(byId?.record.id, saved.id)
@@ -117,8 +137,8 @@ describe('authoritative signature record', () => {
   it('finds signatures through the Postgres index and rebuilds the index from the ledger', async () => {
     const own = { ...binding, repo: `ns/own-${randomBytes(3).toString('hex')}` }
     const other = { ...signer, sub: `bob-${randomBytes(3).toString('hex')}`, name: 'Bob' }
-    const mine = await store.record({ ...withBinding, binding: own })
-    await store.record({ ...withBinding, signer: other, binding: own })
+    const mine = await store.record({ ...withBinding(), binding: own })
+    await store.record({ ...withBinding(), signer: other, binding: own })
 
     assert.equal((await store.find({ repo: own.repo })).length, 2)
     const byCommit = await store.find({ repo: own.repo, commit: 'src111', signer: { iss: signer.iss, sub: signer.sub } })

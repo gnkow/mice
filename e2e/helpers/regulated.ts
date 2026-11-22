@@ -13,17 +13,14 @@ export async function regulatedMutationHeaders(
     path: string
     body?: unknown
     reason?: string
-    category?: string
   },
 ): Promise<Record<string, string>> {
   const reason = mutation.reason ?? 'E2E regulated mutation for automated coverage'
-  const category = mutation.category ?? 'revocation'
   const res = await request.post(`${AUTH_URL}/auth/dev/mutation-signature`, {
     data: {
       method: mutation.method,
       path: mutation.path,
       reason,
-      category,
       body: mutation.body ?? {},
     },
   })
@@ -34,7 +31,6 @@ export async function regulatedMutationHeaders(
   return {
     'content-type': 'application/json',
     'x-mice-reason': reason,
-    'x-mice-reason-category': category,
     'x-mice-signature-id': body.signatureId,
   }
 }

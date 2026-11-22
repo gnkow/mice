@@ -9,7 +9,6 @@ export type IntentOutcomeEvent = {
   intent_id?: string
   reason?: string
   reason_source?: 'explicit' | 'commit-message'
-  category?: string
   change_control_id?: string
   signature_id?: string
 }

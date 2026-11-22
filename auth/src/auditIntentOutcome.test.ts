@@ -13,7 +13,6 @@ type FakeInput = {
   action?: string
   reason?: string
   reason_source?: 'explicit' | 'commit-message'
-  category?: string
   change_control_id?: string
   signature_id?: string
 }
@@ -30,7 +29,6 @@ function fakeStore() {
       ...extra,
       reason: partial.reason,
       reason_source: partial.reason_source,
-      category: partial.category,
       change_control_id: partial.change_control_id,
       signature_id: partial.signature_id,
     }
@@ -54,14 +52,12 @@ describe('carryFromIntent', () => {
       carryFromIntent({
         reason: 'Corrected assay layout after DEV-12',
         reason_source: 'explicit',
-        category: 'data_correction',
         change_control_id: 'CC-20261113-aabbccdd',
         signature_id: 'sig-1',
       }),
       {
         reason: 'Corrected assay layout after DEV-12',
         reason_source: 'explicit',
-        category: 'data_correction',
         change_control_id: 'CC-20261113-aabbccdd',
         signature_id: 'sig-1',
       },
@@ -93,7 +89,6 @@ describe('createAuditIntentOutcome', () => {
     const intent = await io.beginTrackedIntent(req, {
       reason: 'Routine settings correction for assay batch',
       reason_source: 'explicit',
-      category: 'privileged_settings',
       change_control_id: 'CC-20261113-aabbccdd',
       signature_id: 'sig-9',
     })

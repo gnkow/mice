@@ -137,7 +137,7 @@ test.describe('audit GxP deny paths', () => {
 
   test('TC-AUDIT-GXP-03: the audit trail verifies against the ledger and exports an unsigned bundle', async ({ browser }) => {
     test.skip(!dockerStack, 'needs the compose stack and docker')
-    const admin = await bareSession(browser, 'gxp-admin', 'mice@example.com')
+    const admin = await bareSession(browser, 'gxp-admin', 'mice_user@mice.com')
     try {
       const ready = await waitForReadyz((status) => status === 200)
       expect(ready.audit.chain).toBe('ok')

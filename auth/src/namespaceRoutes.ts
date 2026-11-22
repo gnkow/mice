@@ -1,6 +1,7 @@
 import type { Hono } from 'hono'
 import { env } from './env.js'
 import {
+  canAdministerRepository,
   decideInstanceAction,
   decideManageApprovers,
   decideManageRepoCollaborators,
@@ -8,7 +9,12 @@ import {
   hasRepoPermission,
 } from './authz.js'
 import { decideRepoViewerPermissions } from './repoViewerPermissions.js'
-import { grantApprover, listApproverHistory, listApprovers, revokeApprover } from './authzApproverStore.js'
+import {
+  listApproverHistory,
+  listApprovers,
+  mutateApproverSeat,
+  type ApproverTargetBody,
+} from './authzApproverStore.js'
 import { denialResponse } from './decisionHttp.js'
 import {
   isCustomRepoRoleAssigned,
@@ -34,6 +40,7 @@ import {
   readRepository,
   readRepositoryById,
   renameRepository,
+  updateRepositoryDescription,
 } from './repositoryStore.js'
 import {
   ALL_NAMESPACE_CAPABILITIES,
@@ -388,38 +395,92 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ ok: true, members: await listNamespaceMembers(ns) })
   }))
 
+  /** Read AuthZ repository record (description for About, etc.). Requires read. */
+  app.get('/auth/namespaces/:ns/repos/:repo', guarded({}, async ({ c, user: session }) => {
+    const ns = c.req.param('ns')
+    const repo = c.req.param('repo')
+    const read = await hasRepoPermission(session, ns, repo, 'read')
+    if (!read.ok) return c.json({ error: 'Forbidden' }, 403)
+    const record = await readRepository(ns, repo)
+    if (!record) return c.json({ error: 'Not found' }, 404)
+    return c.json({
+      repository: {
+        id: record.id,
+        namespace: record.namespace,
+        name: record.name,
+        description: record.description,
+      },
+    })
+  }))
+
   /**
-   * Display-name rename only (oxen physical keys are stable UUIDs).
-   * Body: { name: string }
+   * Display-name rename and/or About description (oxen physical keys are stable UUIDs).
+   * Body: { name?: string, description?: string } — at least one required.
    */
   app.patch(
     '/auth/namespaces/:ns/repos/:repo',
     guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {
       const ns = c.req.param('ns')
       const repo = c.req.param('repo')
-      const admin = await hasRepoPermission(session, ns, repo, 'admin')
-      if (!admin.ok || admin.bypass) {
+      if (!(await canAdministerRepository(session, ns, repo))) {
         return c.json({ error: 'Forbidden' }, 403)
       }
-      const body = raw as { name?: string }
-      const next = typeof body.name === 'string' ? body.name.trim() : ''
-      if (!next) return c.json({ error: 'Repository name required' }, 400)
-      const result = await renameRepository(ns, repo, next)
-      if (!result.ok) return c.json({ error: result.error }, 400)
-      const updated = await readRepository(ns, next)
-      await auditMutation(c, session, 'session', {
-        action: 'repo.rename',
-        namespace: ns,
-        repo: next,
-        message: `Renamed repository ${ns}/${repo} → ${next}`,
-        detail: { previous_name: repo, name: next, repository_id: updated?.id },
-      })
+      const body = raw as { name?: string; description?: string }
+      const hasName = typeof body.name === 'string'
+      const hasDescription = typeof body.description === 'string'
+      if (!hasName && !hasDescription) {
+        return c.json({ error: 'name or description required' }, 400)
+      }
+
+      let currentName = repo
+      if (hasName) {
+        const next = body.name!.trim()
+        if (!next) return c.json({ error: 'Repository name required' }, 400)
+        if (next !== repo) {
+          const result = await renameRepository(ns, repo, next)
+          if (!result.ok) return c.json({ error: result.error }, 400)
+          currentName = next
+          const updated = await readRepository(ns, next)
+          await auditMutation(c, session, 'session', {
+            action: 'repo.rename',
+            namespace: ns,
+            repo: next,
+            message: `Renamed repository ${ns}/${repo} → ${next}`,
+            detail: { previous_name: repo, name: next, repository_id: updated?.id },
+          })
+        }
+      }
+
+      if (hasDescription) {
+        const description = body.description!.trim()
+        const before = await readRepository(ns, currentName)
+        const result = await updateRepositoryDescription(ns, currentName, description)
+        if (!result.ok) return c.json({ error: result.error }, 400)
+        await auditMutation(c, session, 'session', {
+          action: 'repo.settings.update',
+          namespace: ns,
+          repo: currentName,
+          message: `Updated description for ${ns}/${currentName}`,
+          detail: {
+            previous_description: before?.description ?? '',
+            description,
+            repository_id: before?.id,
+          },
+        })
+      }
+
+      const updated = await readRepository(ns, currentName)
       return c.json({
         ok: true,
         namespace: ns,
-        name: next,
+        name: currentName,
         repository: updated
-          ? { id: updated.id, namespace: updated.namespace, name: updated.name }
+          ? {
+              id: updated.id,
+              namespace: updated.namespace,
+              name: updated.name,
+              description: updated.description,
+            }
           : null,
       })
     }),
@@ -428,8 +489,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.get('/auth/namespaces/:ns/repos/:repo/settings/history', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
-    const admin = await hasRepoPermission(session, ns, repo, 'admin')
-    if (!admin.ok || admin.bypass) {
+    if (!(await canAdministerRepository(session, ns, repo))) {
       return c.json({ error: 'Forbidden' }, 403)
     }
     const versions = await listRepositorySettingsVersions(ns, repo)
@@ -437,7 +497,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     return c.json({ versions })
   }))
 
-  /** Caller-facing capabilities for repository settings chrome (#148). */
+  /** Caller-facing capabilities for repository settings chrome + file browser (#148). */
   app.get('/auth/namespaces/:ns/repos/:repo/permissions', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
@@ -449,8 +509,10 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.get('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({}, async ({ c, user: session }) => {
     const ns = c.req.param('ns')
     const repo = c.req.param('repo')
-    const denied = denialResponse(c, await decideManageRepoCollaborators(session, ns, repo))
-    if (denied) return denied
+    // Read-only visibility for anyone who can open the repo (or administer settings).
+    const read = await hasRepoPermission(session, ns, repo, 'read')
+    const administer = await canAdministerRepository(session, ns, repo)
+    if (!read.ok && !administer) return c.json({ error: 'Forbidden' }, 403)
     return c.json({ collaborators: await listRepoCollaborators(ns, repo) })
   }))
 
@@ -546,8 +608,18 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
     app.get(base, guarded({}, async ({ c, user: session }) => {
       const scope = scopeOf(c)
-      const denied = denialResponse(c, await decideNamespaceAction(session, scope.ns, 'namespace.view'))
-      if (denied) return denied
+      if (scope.repo) {
+        const read = await hasRepoPermission(session, scope.ns, scope.repo, 'read')
+        const administer = await canAdministerRepository(session, scope.ns, scope.repo)
+        if (!read.ok && !administer) {
+          const nsView = await decideNamespaceAction(session, scope.ns, 'namespace.view')
+          const denied = denialResponse(c, nsView)
+          if (denied) return denied
+        }
+      } else {
+        const denied = denialResponse(c, await decideNamespaceAction(session, scope.ns, 'namespace.view'))
+        if (denied) return denied
+      }
       return c.json({ approvers: await listApprovers(scope) })
     }))
 
@@ -564,9 +636,9 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       const scope = scopeOf(c)
       const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
       if (denied) return denied
-      const body = raw as { sub?: string; iss?: string }
-      if (!body.sub || !body.iss) return c.json({ error: 'sub and iss required' }, 400)
-      if (!(await grantApprover(scope, { sub: body.sub, iss: body.iss }))) return c.json({ error: 'Not found' }, 404)
+      const body = raw as ApproverTargetBody
+      const result = await mutateApproverSeat({ op: 'grant', scope, body })
+      if (!result.ok) return c.json({ error: result.error }, result.status)
       await auditMutation(c, session, 'session', {
         action: 'approver.grant',
         namespace: scope.ns,
@@ -574,16 +646,16 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
         message: 'Assigned approver role',
         detail: { target: memberTarget(body) },
       })
-      return c.json({ ok: true, approvers: await listApprovers(scope) })
+      return c.json({ ok: true, approvers: result.approvers })
     }))
 
     app.delete(base, guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {
       const scope = scopeOf(c)
       const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
       if (denied) return denied
-      const body = raw as { sub?: string; iss?: string }
-      if (!body.sub || !body.iss) return c.json({ error: 'sub and iss required' }, 400)
-      await revokeApprover(scope, { sub: body.sub, iss: body.iss })
+      const body = raw as ApproverTargetBody
+      const result = await mutateApproverSeat({ op: 'revoke', scope, body })
+      if (!result.ok) return c.json({ error: result.error }, result.status)
       await auditMutation(c, session, 'session', {
         action: 'approver.revoke',
         namespace: scope.ns,
@@ -591,7 +663,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
         message: 'Removed approver role',
         detail: { target: memberTarget(body) },
       })
-      return c.json({ ok: true, approvers: await listApprovers(scope) })
+      return c.json({ ok: true, approvers: result.approvers })
     }))
   }
 

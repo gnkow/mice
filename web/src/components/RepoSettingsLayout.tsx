@@ -1,4 +1,5 @@
 import {
+  AlignLeft as ActionAlignLeft,
   FileSignature as ActionFileSignature,
   History as ActionHistory,
   MoveRight as ActionMoveRight,
@@ -22,15 +23,12 @@ type NavItem = SectionNavGroup['items'][number] & {
 }
 
 const SETTINGS_NAV_ITEMS: NavItem[] = [
+  { id: 'repo-about', label: 'About', Icon: ActionAlignLeft, requires: 'rename' },
   { id: 'repo-rename', label: 'Rename', Icon: ActionPencil, requires: 'rename' },
   { id: 'repo-transfer', label: 'Transfer', Icon: ActionMoveRight, requires: 'transfer' },
-  {
-    id: 'repo-collaborators',
-    label: 'Collaborators',
-    Icon: ActionUsers,
-    requires: 'manageCollaborators',
-  },
-  { id: 'repo-approvers', label: 'Approvers', Icon: ActionShieldCheck, requires: 'viewSignedRecord' },
+  // Always listed: seats are visible read-only when the caller cannot change them.
+  { id: 'repo-collaborators', label: 'Collaborators', Icon: ActionUsers },
+  { id: 'repo-approvers', label: 'Approvers', Icon: ActionShieldCheck },
   {
     id: 'repo-signed-record',
     label: 'Signed-record report',
@@ -141,6 +139,7 @@ export function RepoSettingsLayout() {
                 editMetadata: false,
                 deleteRepository: false,
                 viewSignedRecord: false,
+                contentsWrite: false,
               },
             } satisfies RepoSettingsOutletContext
           }

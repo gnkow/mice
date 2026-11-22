@@ -1,5 +1,5 @@
 import type { Hono } from 'hono'
-import { isInstanceAdmin } from '../../authzInstanceStore.js'
+import { adminRoleGate } from '../../decisionHttp.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { canonicalIssuer } from '../session/principal.js'
 import { guarded } from '../session/routeGuard.js'
@@ -12,18 +12,15 @@ function principalFrom(raw: string): { iss: string; sub: string } | null {
   return { iss: canonicalIssuer(raw.slice(0, bar)), sub: raw.slice(bar + 1) }
 }
 
-const adminGate = async (user: { sub: string; iss: string }) =>
-  (await isInstanceAdmin(user)) ? null : 'Instance admin required'
-
 export function registerReenableRoutes(app: Hono, _deps: AuditDep): void {
   app.get('/auth/admin/re-enable', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
   }, async ({ c }) => {
     return c.json({ periods: await listReenablePeriods() })
   }))
 
   app.post('/auth/admin/re-enable', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
     reason: true,
     body: { required: ['principal'] },

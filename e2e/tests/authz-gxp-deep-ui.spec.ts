@@ -1,4 +1,5 @@
 import { test, expect, repoPath } from '../fixtures'
+import { mockDirectorySearch, pickFromDirectory } from '../helpers/directory'
 import { createBranch, putFile, uniqueId } from '../helpers/oxenApi'
 import { regulatedMutationHeaders } from '../helpers/regulated'
 import { mintSession } from '../helpers/session'
@@ -14,7 +15,7 @@ async function seedApprover(
 ) {
   const res = await page.request.fetch(`${AUTH_URL}${path}`, {
     method,
-    headers: await regulatedMutationHeaders(page.request, { method, path, body, category: 'privileged_settings' }),
+    headers: await regulatedMutationHeaders(page.request, { method, path, body }),
     data: body,
   })
   expect(res.ok(), await res.text()).toBeTruthy()
@@ -47,12 +48,13 @@ test.describe('AuthZ + GxP deep UI', () => {
       await expect(section.getByTestId('approver-row')).toHaveCount(1)
       await expect(section.getByTestId('approver-row')).toContainText('approver-b')
       await expect(section.getByLabel('Search directory')).toBeVisible()
-      await section.getByRole('button', { name: 'Manual entry' }).click()
-      await expect(section.getByLabel('Subject (sub)')).toBeVisible()
-      await expect(section.getByLabel('Issuer (iss)')).toBeVisible()
+      await expect(section.getByRole('button', { name: 'Manual entry' })).toHaveCount(0)
 
-      await section.getByRole('button', { name: 'Approver history' }).click()
-      const history = section.getByTestId('approver-history')
+      await page
+        .getByRole('navigation', { name: 'Settings sections' })
+        .getByRole('link', { name: 'Approver history' })
+        .click()
+      const history = page.getByTestId('approver-history')
       await expect(history.getByTestId('history-version')).toHaveCount(3)
       await expect(history.getByTestId('history-version').last()).toContainText('current')
       await expect(history.getByTestId('history-version').last()).toContainText('approver-b')
@@ -80,11 +82,19 @@ test.describe('AuthZ + GxP deep UI', () => {
         return route.fulfill({ json: { ok: true, approvers: [] } })
       })
 
+      await mockDirectorySearch(page, [
+        {
+          kind: 'user',
+          sub: 'qa-lead',
+          iss: 'mice-e2e',
+          name: 'QA Lead',
+          email: 'qa-lead@example.com',
+        },
+      ])
+
       await page.goto(`/n/${encodeURIComponent(ns)}/settings`)
       const section = page.getByTestId('approvers-section')
-      await section.getByRole('button', { name: 'Manual entry' }).click()
-      await section.getByLabel('Subject (sub)').fill('qa-lead')
-      await section.getByLabel('Issuer (iss)').fill('mice-e2e')
+      await pickFromDirectory(section, 'qa-lead', /QA Lead|qa-lead/)
       await section.getByRole('button', { name: 'Assign approver' }).click()
       await expect(section.getByRole('alert')).toContainText('Only a namespace Owner')
 
@@ -92,7 +102,7 @@ test.describe('AuthZ + GxP deep UI', () => {
       await section.getByRole('button', { name: 'Assign approver' }).click()
       await expect(section.getByRole('status').filter({ hasText: 'Assigned approver role to qa-lead' })).toBeVisible()
       expect(seen.map((s) => s.method)).toEqual(['PUT', 'PUT'])
-      expect(seen[1]!.body).toEqual({ sub: 'qa-lead', iss: 'mice-e2e' })
+      expect(seen[1]!.body).toEqual({ kind: 'user', sub: 'qa-lead', iss: 'mice-e2e' })
     })
 
     test('TC-GXP-86-03: repository settings show a repo-scoped approver section', async ({
@@ -375,7 +385,7 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.route('**/auth/admin/seal-keys/rotate', (route) => route.fulfill(ceremonyRejection))
 
       await page.goto('/settings')
-      await page.getByRole('link', { name: 'Seal keys', exact: true }).click()
+      await page.getByRole('link', { name: 'Session cookie keys', exact: true }).click()
       const section = page.locator('#seal-key-rotation')
       await section.getByRole('button', { name: 'Perform Normal Rotation' }).click()
       const dialog = page.getByRole('dialog', { name: /Reason and signature required/i })

@@ -7,7 +7,7 @@ const iso = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'bootstrap@mice.local' })
 import './db/testSchema.js'
 
 const { preparePrincipal, isPendingUser } = await import('./authz.js')
-const { runPrincipalBootstrap } = await import('./principalBootstrap.js')
+const { decidePrincipalBootstrap, runPrincipalBootstrap } = await import('./principalBootstrap.js')
 const { hasInstancePermission, isInstanceAdmin } = await import('./authzInstanceStore.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { listNamespaceMembers, setNamespaceGroupMember } = await import('./authzMembershipStore.js')
@@ -37,6 +37,23 @@ describe('principal bootstrap (#11): IdP groups never autoprovision', () => {
   it('env no longer exposes AUTHZ_GROUP_BOOTSTRAP', () => {
     assert.equal('authzGroupBootstrap' in env, false)
     assert.equal('AUTHZ_GROUP_BOOTSTRAP' in process.env, false)
+  })
+
+  it('decidePrincipalBootstrap ignores IdP groups and only honors the allowlist', () => {
+    assert.deepEqual(decidePrincipalBootstrap(groupedStranger), {
+      action: 'none',
+      reason: 'not_on_allowlist',
+    })
+    assert.deepEqual(decidePrincipalBootstrap(bootstrapAdmin), { action: 'grant_admin' })
+    assert.deepEqual(
+      decidePrincipalBootstrap({
+        ...groupedStranger,
+        email: 'bootstrap@mice.local',
+        emailVerified: true,
+        groups: ['super-admins'],
+      }),
+      { action: 'grant_admin' },
+    )
   })
 
   it('preparePrincipal delegates only to allowlist bootstrap', async () => {

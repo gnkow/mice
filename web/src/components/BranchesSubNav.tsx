@@ -55,7 +55,7 @@ export function BranchesSubNav() {
         className={() => (onMergeRequests ? 'active' : undefined)}
       >
         <GitPullRequest size={14} aria-hidden="true" className="button-label-icon" />
-        Merge requests
+        Requests
       </NavLink>
       <NavLink
         to={`${base}/stages`}

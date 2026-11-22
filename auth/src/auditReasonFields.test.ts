@@ -9,7 +9,6 @@ describe('intentReasonFields', () => {
         reason: {
           reason: 'Corrected assay layout after DEV-12',
           reason_source: 'explicit',
-          category: 'data_correction',
         },
         changeControlId: 'CC-20261113-aabbccdd',
         signatureId: 'sig-1',
@@ -17,7 +16,6 @@ describe('intentReasonFields', () => {
       {
         reason: 'Corrected assay layout after DEV-12',
         reason_source: 'explicit',
-        category: 'data_correction',
         change_control_id: 'CC-20261113-aabbccdd',
         signature_id: 'sig-1',
       },
@@ -27,14 +25,13 @@ describe('intentReasonFields', () => {
   it('drops blank change-control and signature ids', () => {
     assert.deepEqual(
       intentReasonFields({
-        reason: { reason: 'Routine settings change', reason_source: 'explicit', category: 'privileged_settings' },
+        reason: { reason: 'Routine settings change', reason_source: 'explicit' },
         changeControlId: '  ',
         signatureId: '',
       }),
       {
         reason: 'Routine settings change',
         reason_source: 'explicit',
-        category: 'privileged_settings',
       },
     )
   })
@@ -53,14 +50,12 @@ describe('carryFromIntent', () => {
       carryFromIntent({
         reason: 'Corrected assay layout after DEV-12',
         reason_source: 'explicit',
-        category: 'data_correction',
         change_control_id: 'CC-20261113-aabbccdd',
         signature_id: 'sig-1',
       }),
       {
         reason: 'Corrected assay layout after DEV-12',
         reason_source: 'explicit',
-        category: 'data_correction',
         change_control_id: 'CC-20261113-aabbccdd',
         signature_id: 'sig-1',
       },

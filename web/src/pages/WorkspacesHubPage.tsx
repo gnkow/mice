@@ -8,6 +8,7 @@ import { Modal } from '../components/Modal'
 import { useListSort, type SortFields } from '../components/SortControl'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
+import { fetchRepoPermissions } from '../lib/authzApi'
 import { loadCatalog } from '../lib/catalog'
 import { confirmDelete } from '../lib/confirmDelete'
 import { EntityIdInline } from '../components/EntityId'
@@ -51,6 +52,16 @@ export function WorkspacesHubPage() {
     (signal) => listMiceWorkspaces(scoped ? { namespace: scopeNs, repo: scopeRepo } : undefined, signal),
     [scopeNs, scopeRepo, scoped],
   )
+  const repoPerms = useAsync(
+    (signal) =>
+      scoped && scopeNs && scopeRepo
+        ? fetchRepoPermissions(scopeNs, scopeRepo, signal)
+        : Promise.resolve(null),
+    [scopeNs, scopeRepo, scoped],
+  )
+  const canCreateWorkspace =
+    !scoped ||
+    (repoPerms.kind === 'ok' && repoPerms.data?.contentsWrite === true)
   const catalog = useAsync((signal) => loadCatalog(signal), [])
   const [params, setParams] = useSearchParams()
   const [createOpen, setCreateOpen] = useState(false)
@@ -79,11 +90,11 @@ export function WorkspacesHubPage() {
 
   useEffect(() => {
     if (params.get('new') !== '1') return
-    setCreateOpen(true)
+    if (canCreateWorkspace) setCreateOpen(true)
     const next = new URLSearchParams(params)
     next.delete('new')
     setParams(next, { replace: true })
-  }, [params, setParams])
+  }, [params, setParams, canCreateWorkspace])
 
   async function onDelete(w: MiceWorkspace) {
     if (
@@ -129,11 +140,13 @@ export function WorkspacesHubPage() {
             Writable working trees over a shared checkout of a repository, for sessions and cluster jobs.
           </p>
         </div>
-        <div className="btn-row">
-          <button type="button" className="btn primary" onClick={() => setCreateOpen(true)}>
-            <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />New workspace
-          </button>
-        </div>
+        {canCreateWorkspace ? (
+          <div className="btn-row">
+            <button type="button" className="btn primary" onClick={() => setCreateOpen(true)}>
+              <ActionLayers size={14} aria-hidden="true" className="button-label-icon" />New workspace
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {error && <p className="flash flash-error" role="status">{error}</p>}
@@ -141,6 +154,7 @@ export function WorkspacesHubPage() {
       <StateBlock
         loading={list.kind === 'loading'}
         error={list.kind === 'error' ? list.message : null}
+        errorPurpose="view workspaces"
         onRetry={() => list.reload()}
         empty={list.kind === 'ok' && all.length === 0}
         emptyMessage={all.length === 0 ? 'No workspaces yet.' : 'No matching workspaces.'}
@@ -252,7 +266,7 @@ export function WorkspacesHubPage() {
         </div>
       </StateBlock>
 
-      {createOpen && (
+      {createOpen && canCreateWorkspace ? (
         <CreateWorkspaceModal
           scoped={scoped}
           repos={
@@ -268,7 +282,7 @@ export function WorkspacesHubPage() {
             list.reload()
           }}
         />
-      )}
+      ) : null}
     </main>
   )
 }

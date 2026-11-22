@@ -266,108 +266,111 @@ export function CommitsPage() {
         scope={mode === 'history' ? `the history of ${revisionLabel}` : 'this repository'}
       />
 
-      <div className="history-layout">
-        <section className="history-list" aria-label="Commit list">
-          <StateBlock
-            loading={active.kind === 'loading'}
-            error={active.kind === 'error' ? active.message : null}
-            empty={active.kind === 'ok' && active.data.commits.length === 0}
-            emptyMessage={
-              mode === 'history' && pathFilter.trim()
-                ? `No commits touch “${pathFilter.trim()}” on ${revisionLabel}.`
-                : 'No commits yet.'
-            }
-          >
-            {active.kind === 'ok' && (
-              <CommitList
-                namespace={namespace}
-                repo={repo}
-                commits={active.data.commits}
-                selectedId={commitId || undefined}
-                linkSearch={linkSearch}
-                qcFailed={qcFailed}
-                qcDescendants={qcDescendants}
-              />
-            )}
-          </StateBlock>
-        </section>
-
-        {commitId && (
-          <aside className="history-detail" aria-label="Commit detail">
-            <Link className="history-detail-back muted small" to={listHref}>
-              ← All commits
-            </Link>
-
+      {active.kind === 'error' ? (
+        <StateBlock error={active.message} errorPurpose="view commits" />
+      ) : (
+        <div className="history-layout">
+          <section className="history-list" aria-label="Commit list">
             <StateBlock
-              loading={detail.kind === 'loading'}
-              error={detail.kind === 'error' ? detail.message : null}
+              loading={active.kind === 'loading'}
+              empty={active.kind === 'ok' && active.data.commits.length === 0}
+              emptyMessage={
+                mode === 'history' && pathFilter.trim()
+                  ? `No commits touch “${pathFilter.trim()}” on ${revisionLabel}.`
+                  : 'No commits yet.'
+              }
             >
-              {commit && (
-                <>
-                  <div className="history-detail-top">
-                    <h2 className="history-detail-title">{commit.message}</h2>
-                    <Link
-                      className="btn ghost small"
-                      to={`${base}/tree/${commit.id}`}
-                    >
-                      <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />Browse tree
-                    </Link>
-                  </div>
-
-                  <div className="history-detail-identity">
-                    <UserRef
-                      author={commit.author}
-                      storedEmail={commit.email}
-                    />
-                    <p className="history-detail-byline muted small">
-                      <time
-                        dateTime={commit.timestamp}
-                        title={new Date(commit.timestamp).toLocaleString()}
-                      >
-                        {formatRelativeTime(commit.timestamp)}
-                      </time>
-                    </p>
-                  </div>
-
-                  <p className="history-detail-meta muted small">
-                    <span className="commit-sha mono" title={commitId}>
-                      {commitId.slice(0, 12)}
-                    </span>
-                    <span className="history-parents">
-                      <span>Parents</span>
-                      {commit.parent_ids.length === 0 ? (
-                        <span>—</span>
-                      ) : (
-                        <span className="history-parent-links">
-                          {commit.parent_ids.map((id) => (
-                            <Link
-                              key={id}
-                              className="mono"
-                              to={`${base}/commits/${encodeURIComponent(id)}${linkSearch}`}
-                            >
-                              {id.slice(0, 8)}
-                            </Link>
-                          ))}
-                        </span>
-                      )}
-                    </span>
-                  </p>
-                  {qc[commit.id] === 'failed' ? (
-                    <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-failed">
-                      This commit is <strong>QC Failed</strong>: a signature covering it was revoked.
-                    </p>
-                  ) : qcDescendants.has(commit.id) ? (
-                    <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-descendant">
-                      This commit descends from a <strong>QC Failed</strong> commit.
-                    </p>
-                  ) : null}
-                  <MetaPanel key={commit.id} type="commit" id={`${namespace}/${repo}#${commit.id}`} />
-                </>
+              {active.kind === 'ok' && (
+                <CommitList
+                  namespace={namespace}
+                  repo={repo}
+                  commits={active.data.commits}
+                  selectedId={commitId || undefined}
+                  linkSearch={linkSearch}
+                  qcFailed={qcFailed}
+                  qcDescendants={qcDescendants}
+                />
               )}
             </StateBlock>
-          </aside>
-        )}
-      </div>
+          </section>
+
+          {commitId && (
+            <aside className="history-detail" aria-label="Commit detail">
+              <Link className="history-detail-back muted small" to={listHref}>
+                ← All commits
+              </Link>
+
+              <StateBlock
+                loading={detail.kind === 'loading'}
+                error={detail.kind === 'error' ? detail.message : null}
+              >
+                {commit && (
+                  <>
+                    <div className="history-detail-top">
+                      <h2 className="history-detail-title">{commit.message}</h2>
+                      <Link
+                        className="btn ghost small"
+                        to={`${base}/tree/${commit.id}`}
+                      >
+                        <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />Browse tree
+                      </Link>
+                    </div>
+
+                    <div className="history-detail-identity">
+                      <UserRef
+                        author={commit.author}
+                        storedEmail={commit.email}
+                      />
+                      <p className="history-detail-byline muted small">
+                        <time
+                          dateTime={commit.timestamp}
+                          title={new Date(commit.timestamp).toLocaleString()}
+                        >
+                          {formatRelativeTime(commit.timestamp)}
+                        </time>
+                      </p>
+                    </div>
+
+                    <p className="history-detail-meta muted small">
+                      <span className="commit-sha mono" title={commitId}>
+                        {commitId.slice(0, 12)}
+                      </span>
+                      <span className="history-parents">
+                        <span>Parents</span>
+                        {commit.parent_ids.length === 0 ? (
+                          <span>—</span>
+                        ) : (
+                          <span className="history-parent-links">
+                            {commit.parent_ids.map((id) => (
+                              <Link
+                                key={id}
+                                className="mono"
+                                to={`${base}/commits/${encodeURIComponent(id)}${linkSearch}`}
+                              >
+                                {id.slice(0, 8)}
+                              </Link>
+                            ))}
+                          </span>
+                        )}
+                      </span>
+                    </p>
+                    {qc[commit.id] === 'failed' ? (
+                      <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-failed">
+                        This commit is <strong>QC Failed</strong>: a signature covering it was revoked.
+                      </p>
+                    ) : qcDescendants.has(commit.id) ? (
+                      <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-descendant">
+                        This commit descends from a <strong>QC Failed</strong> commit.
+                      </p>
+                    ) : null}
+                    <MetaPanel key={commit.id} type="commit" id={`${namespace}/${repo}#${commit.id}`} />
+                  </>
+                )}
+              </StateBlock>
+            </aside>
+          )}
+        </div>
+      )}
     </main>
   )
 }

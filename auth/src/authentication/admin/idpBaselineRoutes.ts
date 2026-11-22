@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
-import { isInstanceAdmin } from '../../authzInstanceStore.js'
+import { adminRoleGate } from '../../decisionHttp.js'
 import {
   idpBaselineCheckAdminView,
   latestIdpBaselineCheck,
@@ -22,10 +22,6 @@ import type { AuditDep } from '../../routeDeps.js'
  * - .scratch/authentication/issues/14-idp-mfa-baseline-validation.md
  */
 
-const adminGate = async (u: { principalId?: number; sub: string; iss: string }) => {
-  return (await isInstanceAdmin(u)) ? null : 'Instance admin required'
-}
-
 export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void {
   /**
    * POST /auth/admin/idp-baseline/check
@@ -33,7 +29,7 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
    * Evaluate MFA evidence on the admin's current Session id_token and store the result.
    */
   app.post('/auth/admin/idp-baseline/check', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
   }, async ({ c, user }) => {
     try {
@@ -82,7 +78,7 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
    * View the most recent IdP baseline check result.
    */
   app.get('/auth/admin/idp-baseline/status', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: false,
   }, async ({ c }) => {
     const lastCheck = await latestIdpBaselineCheck()
@@ -101,7 +97,7 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
    * View all baseline check history (last 50 checks).
    */
   app.get('/auth/admin/idp-baseline/history', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: false,
   }, async ({ c }) => {
     return c.json({ checks: await listIdpBaselineChecks(50) })

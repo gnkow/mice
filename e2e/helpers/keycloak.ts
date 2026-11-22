@@ -3,8 +3,8 @@ import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { openAccountMenu } from '../fixtures'
 
-const KC_USER = process.env.KEYCLOAK_E2E_USER ?? 'mice'
-const KC_PASSWORD = process.env.KEYCLOAK_E2E_PASSWORD ?? 'mice'
+const KC_USER = process.env.KEYCLOAK_E2E_USER ?? 'mice_user'
+const KC_PASSWORD = process.env.KEYCLOAK_E2E_PASSWORD ?? 'user123'
 
 /** Pre-seeded TOTP for bootstrap admin `mice_admin` in `auth/keycloak/realm-mice.json`. */
 export const KEYCLOAK_MFA_USER = process.env.KEYCLOAK_E2E_MFA_USER ?? 'mice_admin'

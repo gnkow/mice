@@ -40,3 +40,22 @@ export function canApproveModifiedGrant(input: {
   }
   return input.grantedRole != null
 }
+
+/**
+ * Whether a reviewer may see / deny / act on a pending request as filed
+ * (requested role + permissions). Same shape as modify-before-approve with
+ * granted === requested.
+ */
+export function canReviewPendingRequest(input: {
+  reviewerRole: InstanceRole
+  reviewerEffective: readonly InstancePermission[]
+  requestedRole: InstanceRole | null
+  requestedPermissions: readonly string[]
+}): boolean {
+  return canApproveModifiedGrant({
+    reviewerRole: input.reviewerRole,
+    reviewerEffective: input.reviewerEffective,
+    grantedRole: input.requestedRole,
+    grantedPermissions: input.requestedPermissions,
+  })
+}

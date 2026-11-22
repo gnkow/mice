@@ -10,7 +10,11 @@ import { SessionSummaryCard } from '../components/SessionSummaryCard'
 import { StateBlock } from '../components/StateBlock'
 import { useListSort, type SortFields } from '../components/SortControl'
 import { useAsync } from '../hooks/useAsync'
+import { isAccessDenial } from '../lib/accessError'
+import { fetchAuthzMe, hasEffectivePermission } from '../lib/auth'
+import { fetchRepoPermissions } from '../lib/authzApi'
 import { useFavorites } from '../lib/favorites'
+import { getRepository } from '../lib/oxen/api'
 import {
   listSessions,
   sessionsMountingRepo,
@@ -27,8 +31,28 @@ export function RepoSessionsPage() {
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
   const [createOpen, setCreateOpen] = useState(false)
 
+  const repoAccess = useAsync(
+    (signal) => getRepository(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const repoPerms = useAsync(
+    (signal) => fetchRepoPermissions(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const authz = useAsync((signal) => fetchAuthzMe(signal), [])
   const state = useAsync((signal) => listSessions(signal), [namespace, repo])
   const mayConnect = useMaySessionConnect()
+  const accessError =
+    repoAccess.kind === 'error' && isAccessDenial(repoAccess.message)
+      ? repoAccess.message
+      : null
+  const canCreateSession =
+    !accessError &&
+    repoPerms.kind === 'ok' &&
+    repoPerms.data.contentsWrite === true &&
+    authz.kind === 'ok' &&
+    !!authz.data &&
+    hasEffectivePermission(authz.data, 'session:create')
   const all = state.kind === 'ok' ? state.data.sessions : []
   const mounting = sessionsMountingRepo(all, namespace, repo)
   const [filter, setFilter] = useState('')
@@ -63,32 +87,51 @@ export function RepoSessionsPage() {
             . Open a session to connect, stop, or remove it.
           </p>
         </div>
-        <div className="btn-row">
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setCreateOpen(true)}
-          >
-            <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />New session
-          </button>
-        </div>
+        {canCreateSession ? (
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setCreateOpen(true)}
+            >
+              <ActionMonitor size={14} aria-hidden="true" className="button-label-icon" />New session
+            </button>
+          </div>
+        ) : null}
       </header>
 
-      {createOpen && (
+      {createOpen && canCreateSession ? (
         <SessionCreateModal
           onClose={() => setCreateOpen(false)}
           filterRepo={{ namespace, repo }}
         />
-      )}
+      ) : null}
 
       <StateBlock
-        loading={state.kind === 'loading'}
-        error={state.kind === 'error' ? state.message : null}
-        onRetry={() => state.reload()}
-        empty={state.kind === 'ok' && mounting.length === 0}
-        emptyMessage="No sessions mount a workspace of this repository yet. Use the New session button above to get started."
+        loading={
+          repoAccess.kind === 'loading' ||
+          (!accessError && state.kind === 'loading')
+        }
+        error={
+          accessError ?? (state.kind === 'error' ? state.message : null)
+        }
+        errorPurpose="view sessions"
+        onRetry={
+          accessError
+            ? undefined
+            : () => {
+                state.reload()
+                repoAccess.reload()
+              }
+        }
+        empty={!accessError && state.kind === 'ok' && mounting.length === 0}
+        emptyMessage={
+          canCreateSession
+            ? 'No sessions mount a workspace of this repository yet. Use the New session button above to get started.'
+            : 'No sessions mount a workspace of this repository yet.'
+        }
       >
-        {state.kind === 'ok' && mounting.length > 0 && (
+        {!accessError && state.kind === 'ok' && mounting.length > 0 && (
           <>
             <ListToolbar
               id="repo-sessions"

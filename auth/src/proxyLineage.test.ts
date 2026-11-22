@@ -13,11 +13,16 @@ const { queryLineage } = await import('./lineage.js')
 const { queryAudit } = await import('./audit.js')
 
 const admin = ctx.admin
-// File writes need a data role + namespace ownership (Admin no longer bypasses repo ACL).
+// File writes need a data role + explicit collaborator seat (Admin/owner no longer bypass repo ACL).
 await ctx.grantRole(admin, 'manager')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 assert.equal((await createNamespaceAuthz(admin, 'lin', 'none')).ok, true)
 const { ensureRepository } = await import('./repositoryStore.js')
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+async function ensureWriteAccess(repo: string) {
+  assert.ok(await ensureRepository('lin', repo))
+  assert.equal((await setRepoCollaborator('lin', repo, admin, 'write')).ok, true)
+}
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -41,7 +46,9 @@ function fakeOxen(opts: { entries: Array<unknown | null>; write: () => Response 
 const app = new Hono()
 app.all('/api/*', (c) => proxyToOxen(c, { user: admin, via: 'session' }))
 const put = async (repo: string) => {
-  const path = `/api/repos/lin/${repo}/file/main/data.csv`
+  await ensureWriteAccess(repo)
+  // Non-default branch: validated `main` refuses direct tip-changing writes.
+  const path = `/api/repos/lin/${repo}/file/feature/data.csv`
   const form = new FormData()
   form.append('file', new Blob(['a,b\n1,2\n']), 'data.csv')
   const signed = await regulatedMutationHeaders(admin, {
@@ -49,7 +56,6 @@ const put = async (repo: string) => {
     path,
     body: {},
     reason: 'Routine test change',
-    category: 'privileged_settings',
     jsonContentType: false,
   })
   return app.request(path, {
@@ -113,6 +119,7 @@ await describe('proxy lineage capture', async () => {
   })
 
   await it('does not capture reads', async () => {
+    await ensureWriteAccess('reads')
     const record = await ensureRepository('lin', 'reads')
     assert.ok(record)
     const oxen = fakeOxen({ entries: [null], write: () => json({ status: 'ok' }) })

@@ -50,7 +50,6 @@ describe('electronic signature on regulated namespace mutations', () => {
       headers: {
         'content-type': 'application/json',
         'x-mice-reason': 'Routine settings correction for assay batch',
-        'x-mice-reason-category': 'privileged_settings',
         cookie: await cookie(),
       },
       body: JSON.stringify({ membersCanCreateRepos: false }),

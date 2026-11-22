@@ -28,7 +28,6 @@ describe('Outcome inherits Intent reason and change-control', () => {
       action: 'bff.mutation',
       reason: 'Adjusted namespace visibility for audit review',
       reason_source: 'explicit',
-      category: 'privileged_settings',
       change_control_id: 'CC-20261113-deadbeef',
       signature_id: 'sig-integration-1',
     })
@@ -43,7 +42,6 @@ describe('Outcome inherits Intent reason and change-control', () => {
     assert.equal(outcome!.intent_id, intent.id)
     assert.equal(outcome!.reason, intent.reason)
     assert.equal(outcome!.reason_source, intent.reason_source)
-    assert.equal(outcome!.category, intent.category)
     assert.equal(outcome!.change_control_id, intent.change_control_id)
     assert.equal(outcome!.signature_id, intent.signature_id)
 

@@ -26,8 +26,7 @@ export function useMaySessionConnect(): boolean {
   return (
     authz.kind === 'ok' &&
     !!authz.data &&
-    (!authz.data.enforce ||
-      hasEffectivePermission(authz.data, 'session:connect') ||
+    (hasEffectivePermission(authz.data, 'session:connect') ||
       hasEffectivePermission(authz.data, 'session:delete'))
   )
 }

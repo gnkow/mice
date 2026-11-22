@@ -34,7 +34,9 @@ describe('decideRepoViewerPermissions (#148)', () => {
     assert.equal(r.permissions.manageApprovers, true)
     assert.equal(r.permissions.deleteRepository, true)
     assert.equal(r.permissions.viewSignedRecord, true)
-    assert.equal(r.permissions.editMetadata, true)
+    // Owner without a collaborator write seat: settings admin yes, tip/metadata writes no.
+    assert.equal(r.permissions.editMetadata, false)
+    assert.equal(r.permissions.contentsWrite, false)
   })
 
   it('hides mutate chrome for a read-only collaborator (approvers stay non-writable)', async () => {
@@ -48,6 +50,7 @@ describe('decideRepoViewerPermissions (#148)', () => {
     assert.equal(r.permissions.deleteRepository, false)
     assert.equal(r.permissions.editMetadata, false)
     assert.equal(r.permissions.viewSignedRecord, true)
+    assert.equal(r.permissions.contentsWrite, false)
   })
 
   it('refuses a principal with no repo read', async () => {

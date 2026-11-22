@@ -27,6 +27,7 @@ test.describe('Repo settings viewer permissions (#148)', () => {
       editMetadata: false,
       deleteRepository: false,
       viewSignedRecord: true,
+      contentsWrite: false,
     }
     await page.route(
       `**/auth/namespaces/${ns}/repos/${repo}/permissions`,
@@ -88,6 +89,7 @@ test.describe('Repo settings viewer permissions (#148)', () => {
       editMetadata: true,
       deleteRepository: true,
       viewSignedRecord: true,
+      contentsWrite: true,
     }
     await page.unroute(`**/auth/namespaces/${ns}/repos/${repo}/permissions`)
     await page.route(

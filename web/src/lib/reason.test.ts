@@ -7,7 +7,7 @@ const json = (status: number, body: unknown) =>
 
 const submission: ReasonSubmission = {
   reason: 'Quarterly access review',
-  category: 'privileged_settings',
+  changeControlId: 'CC-20261118-testhash',
   signatureId: 'sig-test-1',
 }
 

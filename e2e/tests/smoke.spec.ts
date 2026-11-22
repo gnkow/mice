@@ -21,13 +21,16 @@ test.describe('smoke (P/N/R/F)', () => {
   }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible()
-    await expect(page.locator('.site-footer')).toContainText(/Server v/)
+    await expect(page.locator('.site-footer')).toHaveText(/© \d{4} Mice/)
     await openAccountMenu(page)
     await page
       .locator('.profile-menu-panel')
       .getByRole('link', { name: 'Settings' })
       .click()
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+    await expect(page.locator('#connection').getByText(/v\d+\.\d+/)).toBeVisible({
+      timeout: 30_000,
+    })
     await page.getByRole('button', { name: 'Test connection' }).click()
     await expect(page.locator('main').getByText(/Connected · oxen-server v/)).toBeVisible()
   })

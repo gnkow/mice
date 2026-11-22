@@ -16,12 +16,12 @@ export const NAMESPACE_BASE_OPTS: BasePermission[] = [
 ]
 
 export const NAMESPACE_BASE_HELP: Record<BasePermission, string> = {
-  none: 'Members need an explicit repo role to see repositories.',
-  read: 'Members can browse and pull every repository in the namespace.',
-  triage: 'Members can manage issues/PRs but not push by default.',
-  write: 'Members can push to repositories they can access.',
-  maintain: 'Members can manage most repo settings without full admin.',
-  admin: 'Members have admin on every repository (use sparingly).',
+  none: 'Unused for data access — repository collaborators grant read/write.',
+  read: 'Unused for data access — repository collaborators grant read/write.',
+  triage: 'Unused for data access — repository collaborators grant read/write.',
+  write: 'Unused for data access — repository collaborators grant read/write.',
+  maintain: 'Unused for data access — repository collaborators grant read/write.',
+  admin: 'Unused for data access — repository collaborators grant read/write.',
 }
 
 export type PendingNamespaceMember = {

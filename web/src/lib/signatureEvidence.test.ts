@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { signatureEvidenceRows } from './signatureEvidence.js'
+import { signatureEvidenceRows, signatureEvidenceSections } from './signatureEvidence.js'
 
 describe('signature evidence rows (#13 auditor view + #53 identity)', () => {
   it('labels MFA and verification evidence from a esign.created detail', () => {
@@ -16,6 +16,22 @@ describe('signature evidence rows (#13 auditor view + #53 identity)', () => {
       { label: 'Verified at', value: '2026-01-01T00:00:00.000Z' },
       { label: 'Issuer', value: 'https://idp.test' },
     ])
+  })
+
+  it('groups identity and IdP verification into separate sections', () => {
+    const sections = signatureEvidenceSections('esign.created', {
+      signer: { iss: 'https://idp.test', sub: 'jane', name: 'Jane' },
+      mfaEvidence: { acr: 'mfa', amr: ['pwd', 'otp'] },
+      verificationMetadata: { jwks_key_id: 'kid-1', token_verified_at: 1_767_225_600_000, idp_issuer: 'https://idp.test' },
+    })
+    assert.deepEqual(
+      sections.map((s) => s.id),
+      ['identity', 'verification'],
+    )
+    assert.equal(sections[0]?.heading, 'Signer identity')
+    assert.equal(sections[1]?.heading, 'IdP verification')
+    assert.ok(sections[0]?.rows.some((r) => r.label === 'Signed name'))
+    assert.ok(sections[1]?.rows.some((r) => r.label === 'JWKS key id'))
   })
 
   it('includes the signed snapshot and now-known-as when present', () => {

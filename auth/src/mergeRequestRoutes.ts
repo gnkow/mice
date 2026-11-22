@@ -1,11 +1,12 @@
 import type { Hono } from 'hono'
-import { hasRepoPermission } from './authz.js'
+import { confirmPrivilegedGroups, hasRepoPermission } from './authz.js'
 import { readRepository } from './authzRepository.js'
 import { guarded } from './authentication/session/routeGuard.js'
 import {
   getMergeRequest,
   listMergeRequests,
   openMergeRequest,
+  rejectMergeRequest,
   resyncMergeRequest,
 } from './mergeRequestStore.js'
 import { getCommitQc, markCommitsQc } from './commitQcStore.js'
@@ -73,6 +74,8 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         expectedSourceHead?: string
         expectedTargetHead?: string
         commitIds?: string[]
+        title?: string
+        description?: string
       }
       if (
         !body.sourceBranch?.trim() ||
@@ -91,6 +94,8 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         expectedSourceHead: body.expectedSourceHead.trim(),
         expectedTargetHead: body.expectedTargetHead.trim(),
         openedBy: { iss: user.iss, sub: user.sub },
+        title: typeof body.title === 'string' ? body.title : undefined,
+        description: typeof body.description === 'string' ? body.description : undefined,
       })
       if (Array.isArray(body.commitIds) && body.commitIds.length > 0) {
         await markCommitsQc(repo.id, body.commitIds.map(String), 'marked', {
@@ -163,6 +168,33 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         detail: { mergeRequestId: mr.id, status: next.status },
       })
       return c.json({ mergeRequest: next })
+    }),
+  )
+
+  app.post(
+    '/auth/merge-requests/:id/reject',
+    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, audit }) => {
+      const mr = await getMergeRequest(c.req.param('id'))
+      if (!mr) return c.json({ error: 'Not found' }, 404)
+      if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'write')).ok) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
+      const result = await rejectMergeRequest(mr.id)
+      if (!result.ok) {
+        if (result.code === 'not_found') return c.json({ error: 'Not found' }, 404)
+        return c.json(
+          { error: 'Merge request cannot be rejected', code: 'not_rejectable' },
+          400,
+        )
+      }
+      await audit({
+        action: 'merge_request.reject',
+        message: `Rejected MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
+        namespace: mr.namespace,
+        repo: mr.repo,
+        detail: { mergeRequestId: mr.id, status: result.mergeRequest.status },
+      })
+      return c.json({ mergeRequest: result.mergeRequest })
     }),
   )
 
@@ -256,13 +288,10 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const {
         resolveReason,
         REASON_HEADER,
-        REASON_CATEGORY_HEADER,
       } = await import('./auditReason.js')
       const reason = resolveReason({
         actor: user,
         explicit: c.req.header(REASON_HEADER),
-        category: c.req.header(REASON_CATEGORY_HEADER) ?? 'revocation',
-        required: true,
       })
       if (!reason.ok) {
         return c.json({ error: reason.rejection.detail, code: reason.rejection.code }, 400)
@@ -276,9 +305,23 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         (typeof body.changeControlId === 'string' && body.changeControlId.trim()) ||
         c.req.header(CHANGE_CONTROL_HEADER)?.trim() ||
         allocateChangeControlId()
+      let revoker = user
+      try {
+        revoker = await confirmPrivilegedGroups(user)
+      } catch (err) {
+        if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+          return c.json({ error: 'Directory unavailable' }, 503)
+        }
+        throw err
+      }
       const result = await revokeSignature({
         signatureId: c.req.param('id'),
-        revoker: { iss: user.iss, sub: user.sub, name: user.name },
+        revoker: {
+          iss: revoker.iss,
+          sub: revoker.sub,
+          name: revoker.name,
+          groups: revoker.groups,
+        },
         reason: reason.value.reason,
         changeControlId,
         commitIds: Array.isArray(body.commitIds) ? body.commitIds.map(String) : undefined,
@@ -379,13 +422,10 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const {
         resolveReason,
         REASON_HEADER,
-        REASON_CATEGORY_HEADER,
       } = await import('./auditReason.js')
       const reason = resolveReason({
         actor: user,
         explicit: c.req.header(REASON_HEADER),
-        category: c.req.header(REASON_CATEGORY_HEADER),
-        required: true,
       })
       if (!reason.ok) {
         return c.json({ error: reason.rejection.detail, code: reason.rejection.code }, 400)
@@ -411,9 +451,23 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           400,
         )
       }
+      let signer = user
+      try {
+        signer = await confirmPrivilegedGroups(user)
+      } catch (err) {
+        if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+          return c.json({ error: 'Directory unavailable' }, 503)
+        }
+        throw err
+      }
       const result = await completeSignedMerge({
         mergeRequestId: c.req.param('id'),
-        signer: { iss: user.iss, sub: user.sub, name: user.name },
+        signer: {
+          iss: signer.iss,
+          sub: signer.sub,
+          name: signer.name,
+          groups: signer.groups,
+        },
         signatureId,
         liveSourceHead: body.liveSourceHead.trim(),
         liveTargetHead: body.liveTargetHead.trim(),
@@ -441,7 +495,6 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           signatureId: result.signatureId,
           mergeCommitId: result.mergeCommitId,
           reason: reason.value.reason,
-          category: reason.value.category,
         },
       })
       return c.json({

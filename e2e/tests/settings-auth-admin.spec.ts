@@ -98,7 +98,7 @@ test.describe('Settings · Access review (Admin)', () => {
 test.describe('Settings · Seal keys (Admin)', () => {
   test('admin can open Seal keys and see current key + rotation actions', async ({ page }) => {
     await openAdminSettings(page)
-    await page.getByRole('link', { name: 'Seal keys', exact: true }).click()
+    await page.getByRole('link', { name: 'Session cookie keys', exact: true }).click()
 
     const section = page.locator('#seal-key-rotation')
     await expect(page.getByRole('heading', { name: 'Session cookie keys' })).toBeVisible()

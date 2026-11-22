@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
-import { fetchAuthzMe } from './auth'
+import { fetchAuthzMe, logoutRedirectHref } from './auth'
 
 const realFetch = globalThis.fetch
 afterEach(() => {
@@ -34,5 +34,19 @@ describe('fetchAuthzMe', () => {
   it('returns null for a non-object payload', async () => {
     respondWith('nope')
     assert.equal(await fetchAuthzMe(), null)
+  })
+})
+
+describe('logoutRedirectHref', () => {
+  it('prefers IdP end-session when present', () => {
+    assert.equal(
+      logoutRedirectHref({ idpLogoutUrl: 'http://idp.example/logout' }),
+      'http://idp.example/logout',
+    )
+  })
+
+  it('falls back to /login when IdP URL is missing', () => {
+    assert.equal(logoutRedirectHref({ idpLogoutUrl: null }), '/login')
+    assert.equal(logoutRedirectHref({ idpLogoutUrl: '' }), '/login')
   })
 })

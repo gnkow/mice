@@ -30,10 +30,9 @@ export function RepoTitleBar() {
             <h2 className="repo-title-name">{repo}</h2>
             {repositoryId ? <EntityIdInline kind="repository" id={repositoryId} /> : null}
           </div>
-          <FavoriteStar type="repo" id={repoId} />
-          <VisibilityPill />
         </div>
         <div className="repo-title-actions">
+          <FavoriteStar type="repo" id={repoId} />
           <details className="clone-dropdown">
             <summary className="btn ghost"><ActionCopy size={14} aria-hidden="true" className="button-label-icon" />Clone</summary>
             <div className="clone-dropdown-panel">
@@ -42,25 +41,28 @@ export function RepoTitleBar() {
           </details>
         </div>
       </div>
-      {repository && (
-        <div className="repo-stat-chips" aria-label="Repository stats">
+      <div className="repo-stat-chips" aria-label="Repository stats">
+        {repository ? (
           <span className="repo-stat-chip">
             <SizeIcon size={13} className="dtype-icon dtype-size" />
             {formatBytes(repository.size)}
           </span>
-          {repository.data_types.map((dt) => (
-            <span
-              key={dt.data_type}
-              className={`repo-stat-chip dtype-chip dtype-count-only dtype-${dt.data_type.toLowerCase()}`}
-              title={`${dt.data_type}: ${dt.count}`}
-              aria-label={`${dt.data_type}: ${dt.count}`}
-            >
-              <DataTypeIcon type={dt.data_type} size={13} />
-              <span className="repo-stat-chip-num">{dt.count}</span>
-            </span>
-          ))}
-        </div>
-      )}
+        ) : null}
+        <VisibilityPill />
+        {repository
+          ? repository.data_types.map((dt) => (
+              <span
+                key={dt.data_type}
+                className={`repo-stat-chip dtype-chip dtype-count-only dtype-${dt.data_type.toLowerCase()}`}
+                title={`${dt.data_type}: ${dt.count}`}
+                aria-label={`${dt.data_type}: ${dt.count}`}
+              >
+                <DataTypeIcon type={dt.data_type} size={13} />
+                <span className="repo-stat-chip-num">{dt.count}</span>
+              </span>
+            ))
+          : null}
+      </div>
     </div>
   )
 }

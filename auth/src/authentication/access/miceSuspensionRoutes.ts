@@ -1,12 +1,9 @@
 import type { Hono } from 'hono'
-import { isInstanceAdmin } from '../../authzInstanceStore.js'
+import { adminRoleGate } from '../../decisionHttp.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { canonicalIssuer } from '../session/principal.js'
 import { guarded } from '../session/routeGuard.js'
 import { liftSuspension, suspendPrincipal, suspensionHistory } from './miceSuspension.js'
-
-const adminGate = async (user: { sub: string; iss: string }) =>
-  (await isInstanceAdmin(user)) ? null : 'Instance admin required'
 
 /** Split `iss|sub` on the first bar. */
 function principalFrom(raw: string): { iss: string; sub: string } | null {
@@ -17,7 +14,7 @@ function principalFrom(raw: string): { iss: string; sub: string } | null {
 
 export function registerMiceSuspensionRoutes(app: Hono, _deps: AuditDep): void {
   app.post('/auth/admin/mice-suspension', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
     reason: true,
     body: { required: ['principal', 'reason'] },
@@ -39,7 +36,7 @@ export function registerMiceSuspensionRoutes(app: Hono, _deps: AuditDep): void {
   }))
 
   app.post('/auth/admin/mice-suspension/lift', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
     reason: true,
     body: { required: ['principal', 'reason'] },
@@ -61,7 +58,7 @@ export function registerMiceSuspensionRoutes(app: Hono, _deps: AuditDep): void {
   }))
 
   app.get('/auth/admin/mice-suspension', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
   }, async ({ c }) => {
     const principal = principalFrom(c.req.query('principal') ?? '')
     if (!principal) return c.json({ error: 'Invalid principal format (use iss|sub)' }, 400)

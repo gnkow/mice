@@ -18,7 +18,8 @@ import { decideRestoreTestGate } from './restoreTestGate.js'
 
 export type CompleteSignedMergeInput = {
   mergeRequestId: string
-  signer: { iss: string; sub: string; name?: string }
+  /** Session identity; include IdP groups so group approver seats resolve. */
+  signer: { iss: string; sub: string; name?: string; groups?: string[] }
   signatureId: string
   liveSourceHead: string
   liveTargetHead: string

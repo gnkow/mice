@@ -63,15 +63,21 @@ describe('Auditor MFA on every decision path (#17)', () => {
     assert.match(await withEvidence.text(), /Auditor role cannot sign/)
   })
 
-  it('still lets an Auditor without MFA read /auth/me so the UI can explain', async () => {
-    const res = await app.request('/auth/me', { headers: await iso.sessionHeaders(auditor) })
-    assert.equal(res.status, 200)
-    const body = (await res.json()) as {
+  it('still lets an Auditor without MFA read /auth/me and /auth/me/authz so the UI can explain', async () => {
+    const headers = await iso.sessionHeaders(auditor)
+    const me = await app.request('/auth/me', { headers })
+    assert.equal(me.status, 200)
+    const meBody = (await me.json()) as {
       authenticated: boolean
       user?: { mfaEvidenced?: boolean }
     }
-    assert.equal(body.authenticated, true)
-    assert.equal(body.user?.mfaEvidenced, false)
+    assert.equal(meBody.authenticated, true)
+    assert.equal(meBody.user?.mfaEvidenced, false)
+
+    const authz = await app.request('/auth/me/authz', { headers })
+    assert.equal(authz.status, 200)
+    const authzBody = (await authz.json()) as { role?: string | null }
+    assert.equal(authzBody.role, 'auditor')
   })
 
   it('exposes mfaEvidenced true on /auth/me when the session id_token has MFA claims', async () => {

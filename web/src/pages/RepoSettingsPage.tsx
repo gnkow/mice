@@ -1,4 +1,4 @@
-import { History as ActionHistory, MoveRight as ActionMoveRight, Pencil as ActionPencil, Trash2 as ActionTrash2, UserPlus as ActionUserPlus } from 'lucide-react'
+import { MoveRight as ActionMoveRight, Pencil as ActionPencil, Trash2 as ActionTrash2 } from 'lucide-react'
 import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom'
@@ -6,8 +6,8 @@ import { ApproversSection } from '../components/ApproversSection'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import type { RepoSettingsOutletContext } from '../components/RepoSettingsLayout'
 import { SignedRecordReportButton } from '../components/SignedRecordReportButton'
-import { DirectoryPicker } from '../components/DirectoryPicker'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
+import { PrincipalAddCard } from '../components/PrincipalAddCard'
 import { UserRef } from '../components/UserRef'
 import { deleteRepository, transferRepository } from '../lib/oxen/api'
 import { confirmDelete } from '../lib/confirmDelete'
@@ -16,13 +16,16 @@ import { OxenApiError } from '../lib/oxen/types'
 import {
   AuthzError,
   deleteRepoCollaborator,
+  fetchAuthzRepository,
   fetchCustomRoles,
   fetchRepoCollaborators,
   putRepoCollaborator,
   renameRepoAuthz,
+  updateRepoDescriptionAuthz,
   type CollaboratorPrincipal,
   type CollaboratorRoleRef,
 } from '../lib/authzApi'
+import { useAsync } from '../hooks/useAsync'
 import {
   SIGNED_MUTATION_COMPLETE_EVENT,
   type PendingSignedMutation,
@@ -89,15 +92,19 @@ export function RepoSettingsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [newName, setNewName] = useState(repo)
+  const [description, setDescription] = useState('')
+  const [descriptionSaved, setDescriptionSaved] = useState(false)
   const [targetNs, setTargetNs] = useState('')
-  const [collaborators, setCollaborators] = useState<CollaboratorPrincipal[]>(
-    [],
+  const authzRepo = useAsync(
+    (signal) => fetchAuthzRepository(namespace, repo, signal),
+    [namespace, repo],
   )
-  const [collabKind, setCollabKind] = useState<'user' | 'group'>('user')
-  const [collabSub, setCollabSub] = useState('')
-  const [collabIss, setCollabIss] = useState('mice-dev')
-  const [collabGroup, setCollabGroup] = useState('')
-  const [collabGroupName, setCollabGroupName] = useState('')
+  const collabState = useAsync(
+    (signal) => fetchRepoCollaborators(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const collaborators =
+    collabState.kind === 'ok' ? collabState.data.collaborators : []
   const [collabRole, setCollabRole] = useState<CollaboratorRoleRef>('read')
   const [customRepoRoles, setCustomRepoRoles] = useState<
     Array<{ id: string; name: string }>
@@ -115,6 +122,12 @@ export function RepoSettingsPage() {
     setNewName(repo)
   }, [repo])
 
+  const loadedDescription =
+    authzRepo.kind === 'ok' ? (authzRepo.data.repository.description ?? '') : null
+  useEffect(() => {
+    if (loadedDescription !== null) setDescription(loadedDescription)
+  }, [loadedDescription])
+
   useEffect(() => {
     function onComplete(e: Event) {
       const intent = (e as CustomEvent<PendingSignedMutation>).detail
@@ -128,13 +141,6 @@ export function RepoSettingsPage() {
   useEffect(() => {
     let cancelled = false
     if (perms.manageCollaborators) {
-      fetchRepoCollaborators(namespace, repo)
-        .then((data) => {
-          if (!cancelled) setCollaborators(data.collaborators)
-        })
-        .catch(() => {
-          if (!cancelled) setCollaborators([])
-        })
       fetchCustomRoles(namespace)
         .then((data) => {
           if (!cancelled) {
@@ -147,13 +153,12 @@ export function RepoSettingsPage() {
           if (!cancelled) setCustomRepoRoles([])
         })
     } else {
-      setCollaborators([])
       setCustomRepoRoles([])
     }
     return () => {
       cancelled = true
     }
-  }, [namespace, repo, perms.manageCollaborators])
+  }, [namespace, perms.manageCollaborators])
 
   async function run(action: () => Promise<void>) {
     setBusy(true)
@@ -172,6 +177,16 @@ export function RepoSettingsPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  function onSaveDescription(e: FormEvent) {
+    e.preventDefault()
+    void run(async () => {
+      await updateRepoDescriptionAuthz(namespace, repo, description)
+      authzRepo.reload()
+      setDescriptionSaved(true)
+      window.setTimeout(() => setDescriptionSaved(false), 1500)
+    })
   }
 
   function onRename(e: FormEvent) {
@@ -236,6 +251,51 @@ export function RepoSettingsPage() {
         {perms.rename ? (
           <section
             className="settings-section"
+            id="repo-about"
+            aria-labelledby="repo-about-heading"
+          >
+            <h2 id="repo-about-heading">About</h2>
+            <p className="muted small">
+              Short description shown in the repository sidebar.
+            </p>
+            <form className="form" onSubmit={onSaveDescription}>
+              <label>
+                Description
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="What is this repository for?"
+                  disabled={busy || authzRepo.kind === 'loading'}
+                />
+              </label>
+              <div className="btn-row">
+                <button
+                  className="btn primary"
+                  type="submit"
+                  disabled={busy || authzRepo.kind === 'loading'}
+                >
+                  Save description
+                </button>
+                {authzRepo.kind === 'error' ? (
+                  <p className="flash flash-error" role="status">
+                    {authzRepo.message}
+                  </p>
+                ) : null}
+                {descriptionSaved ? (
+                  <p className="flash flash-success" role="status">
+                    Saved.
+                  </p>
+                ) : null}
+              </div>
+            </form>
+          </section>
+        ) : null}
+
+        {perms.rename ? (
+          <section
+            className="settings-section"
             id="repo-rename"
             aria-labelledby="repo-rename-heading"
           >
@@ -251,15 +311,29 @@ export function RepoSettingsPage() {
                 placeholder="New name"
                 autoComplete="off"
                 required
+                aria-invalid={newName.trim() === repo}
+                aria-describedby={
+                  newName.trim() === repo ? 'repo-rename-same-name' : undefined
+                }
               />
               <button
                 className="btn ghost"
                 type="submit"
                 disabled={busy || !newName.trim() || newName.trim() === repo}
+                title={
+                  newName.trim() === repo
+                    ? 'Choose a different name to rename'
+                    : undefined
+                }
               >
                 <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />Rename
               </button>
             </form>
+            {newName.trim() === repo ? (
+              <p id="repo-rename-same-name" className="muted small">
+                Already the current name — enter a different display name to rename.
+              </p>
+            ) : null}
           </section>
         ) : null}
 
@@ -290,61 +364,72 @@ export function RepoSettingsPage() {
           </section>
         ) : null}
 
-        {perms.manageCollaborators ? (
-          <section
-            className="settings-section"
-            id="repo-collaborators"
-            aria-labelledby="repo-collab-heading"
-          >
-            <div className="ns-settings-section-head">
-              <div>
-                <h2 id="repo-collab-heading">Collaborators</h2>
-                <p className="muted small">
-                  Direct repository access for users or groups (including outside
-                  collaborators without namespace membership).
-                </p>
-              </div>
-              <div>
-                <p className="muted small ns-settings-count">
-                  {collaborators.length} collaborator
-                  {collaborators.length === 1 ? '' : 's'}
-                </p>
-                <Link
-                  className="btn ghost small"
-                  to={`${base}/settings/collaborators/history`}
-                >
-                  <ActionHistory size={14} aria-hidden="true" className="button-label-icon" />Collaborator history
-                </Link>
-              </div>
+        <section
+          className="settings-section"
+          id="repo-collaborators"
+          aria-labelledby="repo-collab-heading"
+        >
+          <div className="ns-settings-section-head">
+            <div>
+              <h2 id="repo-collab-heading">Collaborators</h2>
+              <p className="muted small">
+                Who can read, write, and merge. Managed by Owners and
+                maintain/admin seats
+                {!perms.manageCollaborators ? ' (view only for you)' : null}.
+              </p>
             </div>
+            <p className="muted small ns-settings-count">
+              {collaborators.length} collaborator
+              {collaborators.length === 1 ? '' : 's'}
+            </p>
+          </div>
 
-            {collaborators.length === 0 ? (
-              <p className="muted small">No collaborators yet.</p>
-            ) : (
-              <ul className="ns-member-list">
-                {collaborators.map((c) => {
-                  const roleLabel =
-                    customRepoRoles.find((r) => r.id === c.role)?.name ?? c.role
-                  return (
-                    <li
-                      key={
-                        c.kind === 'group'
-                          ? `group:${c.group}`
-                          : `${c.iss}:${c.sub}`
-                      }
-                      className="ns-member-row"
-                    >
-                      <div className="ns-member-main">
-                        {c.kind === 'group' ? (
-                          <GroupPrincipalLabel group={c.group} name={c.name} />
-                        ) : (
-                          <UserRef
-                            author={`${c.iss}|${c.sub}`}
-                            profiles={collaboratorProfiles}
-                          />
-                        )}
-                      </div>
-                      <span className="ns-tag">{roleLabel}</span>
+          {collabState.kind === 'loading' ? (
+            <p className="muted small" role="status" aria-live="polite">
+              Loading collaborators…
+            </p>
+          ) : null}
+          {collabState.kind === 'error' ? (
+            <div className="flash flash-error" role="alert">
+              <p>{collabState.message}</p>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => collabState.reload()}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {collabState.kind === 'ok' && collaborators.length === 0 ? (
+            <p className="muted small">No collaborators yet.</p>
+          ) : null}
+          {collaborators.length > 0 ? (
+            <ul className="ns-member-list">
+              {collaborators.map((c) => {
+                const roleLabel =
+                  customRepoRoles.find((r) => r.id === c.role)?.name ?? c.role
+                return (
+                  <li
+                    key={
+                      c.kind === 'group'
+                        ? `group:${c.group}`
+                        : `${c.iss}:${c.sub}`
+                    }
+                    className="ns-member-row"
+                  >
+                    <div className="ns-member-main">
+                      {c.kind === 'group' ? (
+                        <GroupPrincipalLabel group={c.group} name={c.name} />
+                      ) : (
+                        <UserRef
+                          author={`${c.iss}|${c.sub}`}
+                          profiles={collaboratorProfiles}
+                        />
+                      )}
+                    </div>
+                    <span className="ns-tag">{roleLabel}</span>
+                    {perms.manageCollaborators ? (
                       <button
                         type="button"
                         className="btn ghost small"
@@ -358,147 +443,97 @@ export function RepoSettingsPage() {
                                 ? { kind: 'group', group: c.group }
                                 : { kind: 'user', sub: c.sub, iss: c.iss },
                             )
-                            setCollaborators(
-                              (await fetchRepoCollaborators(namespace, repo))
-                                .collaborators,
-                            )
+                            collabState.reload()
                           })
                         }}
                       >
                         <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Remove
                       </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-
-            <form
-              className="ns-member-form"
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (collabKind === 'group') {
-                  if (!collabGroup.trim()) {
-                    setActionError(
-                      'Choose a group from search or enter one manually',
-                    )
-                    return
-                  }
-                } else if (!collabSub.trim() || !collabIss.trim()) {
-                  setActionError(
-                    'Choose a user from search or enter sub/iss manually',
-                  )
-                  return
-                }
-                void run(async () => {
-                  if (collabKind === 'group') {
-                    await putRepoCollaborator(namespace, repo, {
-                      kind: 'group',
-                      group: collabGroup.trim(),
-                      name: collabGroupName.trim() || collabGroup.trim(),
-                      role: collabRole,
-                    })
-                    setCollabGroup('')
-                    setCollabGroupName('')
-                  } else {
-                    await putRepoCollaborator(namespace, repo, {
-                      kind: 'user',
-                      sub: collabSub.trim(),
-                      iss: collabIss.trim(),
-                      role: collabRole,
-                    })
-                    setCollabSub('')
-                  }
-                  setCollaborators(
-                    (await fetchRepoCollaborators(namespace, repo)).collaborators,
-                  )
-                })
-              }}
-            >
-              <h3 className="ns-settings-subhead">Add collaborator</h3>
-              <div className="ns-member-form-fields">
-                <label>
-                  Identity
-                  <select
-                    className="ns-select"
-                    value={collabKind}
-                    onChange={(e) =>
-                      setCollabKind(e.target.value as 'user' | 'group')
-                    }
-                  >
-                    <option value="user">User</option>
-                    <option value="group">Group</option>
-                  </select>
-                </label>
-                {collabKind === 'group' ? (
-                  <DirectoryPicker
-                    kind="group"
-                    group={collabGroup}
-                    label={collabGroupName}
-                    disabled={busy}
-                    onChange={({ group, name }) => {
-                      setCollabGroup(group)
-                      setCollabGroupName(name)
-                    }}
-                  />
-                ) : (
-                  <DirectoryPicker
-                    kind="user"
-                    sub={collabSub}
-                    iss={collabIss}
-                    defaultIss="mice-dev"
-                    disabled={busy}
-                    onChange={({ sub, iss }) => {
-                      setCollabSub(sub)
-                      setCollabIss(iss)
-                    }}
-                  />
-                )}
-                <label>
-                  Role
-                  <select
-                    className="ns-select"
-                    value={collabRole}
-                    onChange={(e) =>
-                      setCollabRole(e.target.value as CollaboratorRoleRef)
-                    }
-                  >
-                    <optgroup label="Repository roles">
-                      <option value="read">Read</option>
-                      <option value="triage">Triage</option>
-                      <option value="write">Write</option>
-                      <option value="maintain">Maintain</option>
-                      <option value="admin">Admin</option>
-                    </optgroup>
-                    {customRepoRoles.length > 0 ? (
-                      <optgroup label="Custom roles">
-                        {customRepoRoles.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </optgroup>
                     ) : null}
-                  </select>
-                </label>
-                <div className="ns-member-form-actions">
-                  <button className="btn primary" type="submit" disabled={busy}>
-                    <ActionUserPlus size={14} aria-hidden="true" className="button-label-icon" />Add collaborator
-                  </button>
-                </div>
-              </div>
-            </form>
-          </section>
-        ) : null}
+                  </li>
+                )
+              })}
+            </ul>
+          ) : null}
 
-        {perms.viewSignedRecord ? (
-          <ApproversSection
-            namespace={namespace}
-            repo={repo}
-            canManage={perms.manageApprovers}
-            historyTo={`${base}/settings/approvers/history`}
-          />
-        ) : null}
+          {perms.manageCollaborators ? (
+            <div className="ns-member-form">
+              <h3 className="ns-settings-subhead">Add collaborator</h3>
+              <PrincipalAddCard
+                disabled={busy}
+                role={collabRole}
+                onRoleChange={(r) =>
+                  setCollabRole(r as CollaboratorRoleRef)
+                }
+                addLabel="Add collaborator"
+                roles={[
+                  {
+                    label: 'Repository roles',
+                    options: [
+                      { value: 'read', label: 'Read' },
+                      { value: 'triage', label: 'Triage' },
+                      { value: 'write', label: 'Write' },
+                      { value: 'maintain', label: 'Maintain' },
+                      { value: 'admin', label: 'Admin' },
+                    ],
+                  },
+                  ...(customRepoRoles.length > 0
+                    ? [
+                        {
+                          label: 'Custom roles',
+                          options: customRepoRoles.map((r) => ({
+                            value: r.id,
+                            label: r.name,
+                          })),
+                        },
+                      ]
+                    : []),
+                ]}
+                onAdd={async (principal) => {
+                  setBusy(true)
+                  setActionError(null)
+                  try {
+                    if (principal.kind === 'group') {
+                      await putRepoCollaborator(namespace, repo, {
+                        kind: 'group',
+                        group: principal.group,
+                        name: principal.name,
+                        role: collabRole,
+                      })
+                    } else {
+                      await putRepoCollaborator(namespace, repo, {
+                        kind: 'user',
+                        sub: principal.sub,
+                        iss: principal.iss,
+                        role: collabRole,
+                      })
+                    }
+                    collabState.reload()
+                  } catch (err) {
+                    if (!isCeremonyCancelled(err)) {
+                      setActionError(
+                        err instanceof OxenApiError || err instanceof AuthzError
+                          ? err.message
+                          : err instanceof Error
+                            ? err.message
+                            : 'Action failed',
+                      )
+                    }
+                    throw err
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              />
+            </div>
+          ) : null}
+        </section>
+
+        <ApproversSection
+          namespace={namespace}
+          repo={repo}
+          canManage={perms.manageApprovers}
+        />
 
         {perms.viewSignedRecord ? (
           <section

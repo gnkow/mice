@@ -26,7 +26,9 @@ import {
   restoreFile,
   triggerDownload,
 } from '../lib/oxen/api'
+import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import { confirmDelete } from '../lib/confirmDelete'
+import { fetchRepoPermissions } from '../lib/authzApi'
 import { formatBytes } from '../lib/oxen/client'
 import {
   lastBranch,
@@ -157,6 +159,7 @@ export function TreePage() {
       branches.reload()
       setMutateTick((t) => t + 1)
     } catch (err) {
+      if (isCeremonyCancelled(err)) return
       setError(
         err instanceof OxenApiError
           ? err.message
@@ -345,17 +348,26 @@ export function TreePage() {
 
   /** URL ref may be a commit hash; mutations must target a real branch. */
   const onCommitRef = looksLikeCommitId(branch)
-  const writeBranch = onCommitRef
-    ? resolveDefaultBranch(
-        branchNames.length > 0
-          ? branchNames
-          : [lastBranch(namespace, repo, 'main')].filter(
-              (b) => !looksLikeCommitId(b),
-            ),
-        namespace,
-        repo,
-      )
-    : branch
+  const defaultBranch = resolveDefaultBranch(
+    branchNames.length > 0
+      ? branchNames
+      : [lastBranch(namespace, repo, 'main')].filter((b) => !looksLikeCommitId(b)),
+    namespace,
+    repo,
+  )
+  const writeBranch = onCommitRef ? defaultBranch : branch
+  const onValidatedBranch = !onCommitRef && writeBranch === defaultBranch
+
+  const repoPerms = useAsync(
+    (signal) => fetchRepoPermissions(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const canWriteContents =
+    repoPerms.kind === 'ok' && repoPerms.data.contentsWrite === true
+  const canEditMetadata =
+    repoPerms.kind === 'ok' && repoPerms.data.editMetadata === true
+  const canManageFiles = canWriteContents && !onValidatedBranch && !onCommitRef
+  const canMutatePaths = canManageFiles
 
   /** Files removed in the viewed revision (vs its parent) in this directory. */
   const deletedHint = useAsync(
@@ -440,14 +452,31 @@ export function TreePage() {
     <div>
       <p className="muted">This repository is empty.</p>
       <p className="muted small">
-        Use <strong>Manage Files</strong> to upload a file and create the first
-        commit on <code>{branch}</code>.
+        {canManageFiles ? (
+          <>
+            Use <strong>Manage Files</strong> to upload a file and create the first
+            commit on <code>{writeBranch}</code>.
+          </>
+        ) : onValidatedBranch ? (
+          <>
+            The validated branch <code>{defaultBranch}</code> cannot be written
+            directly. Open a request from another branch to add the first files.
+          </>
+        ) : (
+          <>You need write access to upload files to this repository.</>
+        )}
       </p>
     </div>
   ) : (
     <div>
       <p className="muted">This directory is empty.</p>
-      <p className="muted small">Use Manage Files to upload or import.</p>
+      <p className="muted small">
+        {canManageFiles
+          ? 'Use Manage Files to upload or import.'
+          : onValidatedBranch
+            ? 'Validated branch is write-protected; change files on another branch and open a request.'
+            : 'You need write access to change files here.'}
+      </p>
     </div>
   )
 
@@ -474,22 +503,24 @@ export function TreePage() {
           )}
         </div>
         <div className="btn-row code-toolbar-actions">
-          {path && (
+          {path && canEditMetadata && (
             <button type="button" className="btn ghost" onClick={() => setMetaTarget({ type: 'directory', path })}>
               <ActionTags size={14} aria-hidden="true" className="button-label-icon" />Metadata
             </button>
           )}
-          <ManageFilesMenu
-            namespace={namespace}
-            repo={repo}
-            branch={branch}
-            path={path}
-            onDone={() => {
-              listing.reload()
-              repoDetail.reload()
-              setMutateTick((t) => t + 1)
-            }}
-          />
+          {canManageFiles ? (
+            <ManageFilesMenu
+              namespace={namespace}
+              repo={repo}
+              branch={writeBranch}
+              path={path}
+              onDone={() => {
+                listing.reload()
+                repoDetail.reload()
+                setMutateTick((t) => t + 1)
+              }}
+            />
+          ) : null}
           <div className="view-toggle" role="group" aria-label="Directory view">
             <button
               type="button"
@@ -601,6 +632,7 @@ export function TreePage() {
           (listing.kind === 'loading' || deletedPending) && !hasDeleted
         }
         error={listingError}
+        errorPurpose="view data"
         onRetry={() => {
           listing.reload()
           repoDetail.reload()
@@ -739,74 +771,122 @@ export function TreePage() {
                             <span className="file-type-label">{dtype}</span>
                           </span>
                         )}
-                        <details className="row-more">
-                          <summary
-                            className="file-row-icon-btn"
-                            aria-label={`More actions for ${entry.filename}`}
-                            title="More"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
-                              <path
-                                fill="currentColor"
-                                d="M3 8a1.25 1.25 0 1 1 2.5 0A1.25 1.25 0 0 1 3 8Zm4.75 0a1.25 1.25 0 1 1 2.5 0 1.25 1.25 0 0 1-2.5 0ZM11.25 8A1.25 1.25 0 1 1 14 8a1.25 1.25 0 0 1-2.75 0Z"
-                              />
-                            </svg>
-                          </summary>
-                          <div className="row-more-menu">
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.currentTarget.closest('details')?.removeAttribute('open')
-                                setMetaTarget({ type: entry.is_dir ? 'directory' : 'file', path: entryPath })
-                              }}
-                            >
-                              <ActionTags size={14} aria-hidden="true" className="button-label-icon" />Edit Metadata
-                            </button>
-                            {!entry.is_dir && entry.data_type === 'tabular' && (
-                              <Link
-                                to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/df/${encodeURIComponent(branch)}/${entryPath}`}
+                        {(() => {
+                          const showTable =
+                            !entry.is_dir && entry.data_type === 'tabular'
+                          const showMeta = canEditMetadata
+                          const showMutate = canMutatePaths && !entry.is_dir
+                          const showDelete = canMutatePaths
+                          if (!showTable && !showMeta && !showMutate && !showDelete) {
+                            return null
+                          }
+                          return (
+                            <details className="row-more">
+                              <summary
+                                className="file-row-icon-btn"
+                                aria-label={`More actions for ${entry.filename}`}
+                                title="More"
                               >
-                                Table
-                              </Link>
-                            )}
-                            {!entry.is_dir && (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => openPathChange('rename', entryPath)}
-                              >
-                                <ActionPencil size={14} aria-hidden="true" className="button-label-icon" />Rename
-                              </button>
-                            )}
-                            {!entry.is_dir && (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => openPathChange('move', entryPath)}
-                              >
-                                <ActionMoveRight size={14} aria-hidden="true" className="button-label-icon" />Move
-                              </button>
-                            )}
-                            {!entry.is_dir && (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => openPathChange('copy', entryPath)}
-                              >
-                                <ActionCopy size={14} aria-hidden="true" className="button-label-icon" />Copy
-                              </button>
-                            )}
-                            <hr className="menu-sep" />
-                            <button
-                              type="button"
-                              className="danger-text"
-                              disabled={busy}
-                              onClick={() => onDelete(entryPath, entry.is_dir)}
-                            >
-                              <ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Delete
-                            </button>
-                          </div>
-                        </details>
+                                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+                                  <path
+                                    fill="currentColor"
+                                    d="M3 8a1.25 1.25 0 1 1 2.5 0A1.25 1.25 0 0 1 3 8Zm4.75 0a1.25 1.25 0 1 1 2.5 0 1.25 1.25 0 0 1-2.5 0ZM11.25 8A1.25 1.25 0 1 1 14 8a1.25 1.25 0 0 1-2.75 0Z"
+                                  />
+                                </svg>
+                              </summary>
+                              <div className="row-more-menu">
+                                {showMeta ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.currentTarget
+                                        .closest('details')
+                                        ?.removeAttribute('open')
+                                      setMetaTarget({
+                                        type: entry.is_dir ? 'directory' : 'file',
+                                        path: entryPath,
+                                      })
+                                    }}
+                                  >
+                                    <ActionTags
+                                      size={14}
+                                      aria-hidden="true"
+                                      className="button-label-icon"
+                                    />
+                                    Edit Metadata
+                                  </button>
+                                ) : null}
+                                {showTable ? (
+                                  <Link
+                                    to={`/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/df/${encodeURIComponent(branch)}/${entryPath}`}
+                                  >
+                                    Table
+                                  </Link>
+                                ) : null}
+                                {showMutate ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => openPathChange('rename', entryPath)}
+                                    >
+                                      <ActionPencil
+                                        size={14}
+                                        aria-hidden="true"
+                                        className="button-label-icon"
+                                      />
+                                      Rename
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => openPathChange('move', entryPath)}
+                                    >
+                                      <ActionMoveRight
+                                        size={14}
+                                        aria-hidden="true"
+                                        className="button-label-icon"
+                                      />
+                                      Move
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => openPathChange('copy', entryPath)}
+                                    >
+                                      <ActionCopy
+                                        size={14}
+                                        aria-hidden="true"
+                                        className="button-label-icon"
+                                      />
+                                      Copy
+                                    </button>
+                                  </>
+                                ) : null}
+                                {showDelete ? (
+                                  <>
+                                    {(showMeta || showTable || showMutate) && (
+                                      <hr className="menu-sep" />
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="danger-text"
+                                      disabled={busy}
+                                      onClick={() => onDelete(entryPath, entry.is_dir)}
+                                    >
+                                      <ActionTrash2
+                                        size={14}
+                                        aria-hidden="true"
+                                        className="button-label-icon"
+                                      />
+                                      Delete
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            </details>
+                          )
+                        })()}
                       </span>
                       <span className="file-row-age muted">
                         {commit?.timestamp ? (
@@ -849,18 +929,20 @@ export function TreePage() {
                       Removed in this commit
                     </span>
                     <span className="file-row-actions">
-                      <button
-                        type="button"
-                        className="btn ghost small file-restore-btn"
-                        disabled={busy}
-                        title={`Restore to ${writeBranch}`}
-                        onClick={() =>
-                          onRestoreDeleted(d.path, d.sourceRevision)
-                        }
-                      >
-                        <RestoreIcon size={13} />
-                        Restore
-                      </button>
+                      {canMutatePaths ? (
+                        <button
+                          type="button"
+                          className="btn ghost small file-restore-btn"
+                          disabled={busy}
+                          title={`Restore to ${writeBranch}`}
+                          onClick={() =>
+                            onRestoreDeleted(d.path, d.sourceRevision)
+                          }
+                        >
+                          <RestoreIcon size={13} />
+                          Restore
+                        </button>
+                      ) : null}
                     </span>
                     <span className="file-row-age muted">—</span>
                   </li>
@@ -899,17 +981,19 @@ export function TreePage() {
                         {d.filename}
                       </span>
                       <span className="file-deleted-badge">Deleted</span>
-                      <button
-                        type="button"
-                        className="btn ghost small file-restore-btn"
-                        disabled={busy}
-                        onClick={() =>
-                          onRestoreDeleted(d.path, d.sourceRevision)
-                        }
-                      >
-                        <RestoreIcon size={13} />
-                        Restore
-                      </button>
+                      {canMutatePaths ? (
+                        <button
+                          type="button"
+                          className="btn ghost small file-restore-btn"
+                          disabled={busy}
+                          onClick={() =>
+                            onRestoreDeleted(d.path, d.sourceRevision)
+                          }
+                        >
+                          <RestoreIcon size={13} />
+                          Restore
+                        </button>
+                      ) : null}
                     </div>
                   </li>
                 ))}

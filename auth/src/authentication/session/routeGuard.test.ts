@@ -79,7 +79,9 @@ await describe('route guard', async () => {
     const bad = await app.request('/admin', { method: 'POST', headers: h, body: 'nope' })
     assert.deepEqual([bad.status, await bad.json()], [400, { error: 'Invalid body' }])
     const missing = await app.request('/admin', { method: 'POST', headers: h, body: JSON.stringify({ sub: 'x' }) })
-    assert.deepEqual([missing.status, await missing.json()], [400, { error: 'sub and iss required' }])
+    assert.deepEqual([missing.status, await missing.json()], [400, { error: 'iss required' }])
+    const none = await app.request('/admin', { method: 'POST', headers: h, body: JSON.stringify({}) })
+    assert.deepEqual([none.status, await none.json()], [400, { error: 'sub and iss required' }])
   })
 
   await it('hands the handler a prepared Principal, via and the parsed body', async () => {

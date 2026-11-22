@@ -16,20 +16,17 @@ import { extractVerificationMetadata } from '../oidc/tokenVerificationMetadata.j
 import { isSigningBlockedByDrift } from './idpDriftDetection.js'
 import { confirmPrivilegedGroups } from '../../authz.js'
 import { env } from '../../env.js'
-import { isInstanceAdmin } from '../../authzInstanceStore.js'
+import { adminRoleGate } from '../../decisionHttp.js'
 import type { AuditDep } from '../../routeDeps.js'
-import type { SessionUser } from '../session/session.js'
 
 /**
  * Admin endpoints for quarterly access review reports.
  */
 
-const adminGate = async (u: SessionUser) => (await isInstanceAdmin(u) ? null : 'Admin required')
-
 export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void {
   // Generate quarterly access review report
   app.post('/auth/admin/access-review/generate', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
     body: { required: ['quarter'] },
   }, async ({ c, body, audit }) => {
@@ -55,13 +52,13 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
   }))
 
   app.get('/auth/admin/access-review/overdue', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
   }, async ({ c }) => {
     return c.json({ overdue: await listOverdueAccessReviews() })
   }))
 
   app.get('/auth/admin/access-review/:quarter', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
   }, async ({ c, audit }) => {
     const quarter = c.req.param('quarter')
     const report = await getStoredAccessReview(quarter)
@@ -75,7 +72,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
   }))
 
   app.post('/auth/admin/access-review/sign', guarded({
-    gate: adminGate,
+    gate: adminRoleGate,
     mutates: true,
     body: { required: ['quarter', 'expectedHash'] },
   }, async ({ c, user, body, audit }) => {

@@ -8,17 +8,22 @@
  * | mice_admin@mice.com       | admin123 (+ TOTP) | admin (AUTHZ_BOOTSTRAP_ADMINS on login) |
  * | mice_no_mfa@mice.com      | nomfa123     | user (password-only control) |
  * | mice_manager@mice.com     | manage123    | manager  |
- * | mice_auditor@mice.com     | auditor123   | auditor  |
- * | mice_user@mice.com        | user123      | user     |
+ * | mice_auditor@mice.com     | auditor123   | auditor (TOTP) |
+ * | mice_auditor_no_mfa@mice.com | auditornmfa123 | auditor (password-only; MFA gate control) |
+ * | mice_user@mice.com        | user123      | user (default SSO / e2e; MFA) |
+ * | mice_user_2@mice.com      | user2123     | user (MFA collaborator) |
+ * | mice_user_3@mice.com      | user3123     | user (MFA collaborator) |
  * | mice_external@mice.com    | external123  | external |
- * | mice_pending@mice.com     | pending123   | (none — /pending shell) |
+ * | mice_no_access@mice.com   | noaccess123  | (none — blank /pending wizard) |
+ * | mice_pending@mice.com     | pending123   | (none — pending User request already filed) |
  * | partner@partner.example   | partner      | user (SAML broker e2e; not bootstrap admin) |
  *
  * Sample workspace (idempotent): namespace `demo` / repo `sample`
- * - Manager is namespace Owner and repo Admin (admins stay out of data SoD)
- * - Default SSO `mice@example.com` is namespace member + repo write (local UI)
- * - `mice_user` is namespace member + repo write
+ * - Manager is namespace Owner only (no auto repo collaborator seat)
+ * - `mice_user`, `mice_user_2`, `mice_user_3` are namespace members + repo write
+ *   and share Keycloak IdP group `engineering` (realm-mice.json) for group-grant tests
  * - External is namespace member + repo read
+ * - Oxen `main` exists as an empty tip (workspace init; no seed files)
  *
  * Keycloak users (stable ids) live in auth/keycloak/realm-mice.json.
  * If the realm was imported before these renames, recreate the keycloak
@@ -28,10 +33,11 @@
 import { ensureBootstrapKey } from '../src/authentication/session/sealKeys.js'
 import { canonicalIssuer } from '../src/authentication/session/principal.js'
 import { ensurePrincipal, type SessionUser } from '../src/authentication/session/session.js'
-import { setRepoCollaborator } from '../src/authzCollaboratorStore.js'
+import { removeRepoCollaborator, setRepoCollaborator } from '../src/authzCollaboratorStore.js'
 import { setNamespaceMember } from '../src/authzMembershipStore.js'
 import { createNamespaceAuthz, getNamespace } from '../src/authzNamespaceStore.js'
 import { ensureRepository } from '../src/repositoryStore.js'
+import { submitAccessRequest } from '../src/rbacAccessRequests.js'
 import { assignRole } from '../src/rbacStore.js'
 import { isInstanceRole, type InstanceRole } from '../src/rbacRoles.js'
 
@@ -46,10 +52,15 @@ type DevAccount = {
   password: string
   /** Matches `id` in realm-mice.json when Keycloak Admin lookup is unavailable. */
   stableSub: string
-  /** Formal role to seed, or null for the pending /pending shell account. */
+  /** Formal role to seed, or null for a no-role /pending shell account. */
   role: InstanceRole | null
   /** Admin is granted on login via AUTHZ_BOOTSTRAP_ADMINS — do not double-assign here. */
   bootstrapAdmin?: boolean
+  /**
+   * When set (and `role` is null), seed a pending access request so managers/admins
+   * see it under Settings → Access requests after `make reset` / `make seed`.
+   */
+  pendingRequest?: { role: InstanceRole; message: string }
 }
 
 const ACCOUNTS: readonly DevAccount[] = [
@@ -72,15 +83,6 @@ const ACCOUNTS: readonly DevAccount[] = [
     role: 'user',
   },
   {
-    // Default SSO e2e user (`KEYCLOAK_E2E_USER=mice`): granted User, not instance Admin.
-    username: 'mice',
-    email: 'mice@example.com',
-    name: 'Mice User',
-    password: 'mice',
-    stableSub: 'a0000000-0000-4000-8000-000000000000',
-    role: 'user',
-  },
-  {
     username: 'mice_manager',
     email: 'mice_manager@mice.com',
     name: 'Manager User',
@@ -97,11 +99,36 @@ const ACCOUNTS: readonly DevAccount[] = [
     role: 'auditor',
   },
   {
+    // Password-only Auditor: Conditional OTP skipped (no TOTP). Use to test MFA-every-request gate / shell banner.
+    username: 'mice_auditor_no_mfa',
+    email: 'mice_auditor_no_mfa@mice.com',
+    name: 'Auditor NoMfa',
+    password: 'auditornmfa123',
+    stableSub: 'a0000000-0000-4000-8000-000000000012',
+    role: 'auditor',
+  },
+  {
     username: 'mice_user',
     email: 'mice_user@mice.com',
     name: 'Regular User',
     password: 'user123',
     stableSub: 'a0000000-0000-4000-8000-000000000004',
+    role: 'user',
+  },
+  {
+    username: 'mice_user_2',
+    email: 'mice_user_2@mice.com',
+    name: 'Regular User Two',
+    password: 'user2123',
+    stableSub: 'a0000000-0000-4000-8000-000000000008',
+    role: 'user',
+  },
+  {
+    username: 'mice_user_3',
+    email: 'mice_user_3@mice.com',
+    name: 'Regular User Three',
+    password: 'user3123',
+    stableSub: 'a0000000-0000-4000-8000-000000000009',
     role: 'user',
   },
   {
@@ -113,12 +140,24 @@ const ACCOUNTS: readonly DevAccount[] = [
     role: 'external',
   },
   {
+    username: 'mice_no_access',
+    email: 'mice_no_access@mice.com',
+    name: 'No Access User',
+    password: 'noaccess123',
+    stableSub: 'a0000000-0000-4000-8000-000000000011',
+    role: null,
+  },
+  {
     username: 'mice_pending',
     email: 'mice_pending@mice.com',
     name: 'Pending User',
     password: 'pending123',
     stableSub: 'a0000000-0000-4000-8000-000000000006',
     role: null,
+    pendingRequest: {
+      role: 'user',
+      message: 'Dev seed: please grant User so I can exercise approve/deny in Settings',
+    },
   },
   {
     // SAML broker e2e (`partner-saml` → mice). Granted User so SSO sees topbar; not instance Admin.
@@ -139,12 +178,13 @@ function defaultIssuer(): string {
   )
 }
 
-async function lookupKeycloakSub(username: string): Promise<string | null> {
+type KeycloakAdmin = { adminUrl: string; realm: string; token: string }
+
+async function keycloakAdmin(): Promise<KeycloakAdmin | null> {
   const adminUrl = (process.env.KEYCLOAK_ADMIN_URL || 'http://localhost:8180').replace(/\/$/, '')
   const realm = process.env.KEYCLOAK_REALM || 'mice'
   const clientId = process.env.OIDC_CLIENT_ID || 'mice-auth'
   const clientSecret = process.env.OIDC_CLIENT_SECRET || 'mice-auth-secret'
-
   try {
     const tokenRes = await fetch(
       `${adminUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`,
@@ -159,29 +199,82 @@ async function lookupKeycloakSub(username: string): Promise<string | null> {
       },
     )
     if (!tokenRes.ok) {
-      console.warn(`⚠ Keycloak token failed (${tokenRes.status}); using stable sub for ${username}`)
+      console.warn(`⚠ Keycloak token failed (${tokenRes.status})`)
       return null
     }
     const tokenJson = (await tokenRes.json()) as { access_token?: string }
     if (!tokenJson.access_token) return null
+    return { adminUrl, realm, token: tokenJson.access_token }
+  } catch (err) {
+    console.warn(`⚠ Keycloak unreachable (${String(err)})`)
+    return null
+  }
+}
 
-    const url = new URL(`${adminUrl}/admin/realms/${encodeURIComponent(realm)}/users`)
+async function lookupKeycloakSub(
+  username: string,
+  admin?: KeycloakAdmin | null,
+): Promise<string | null> {
+  const kc = admin === undefined ? await keycloakAdmin() : admin
+  if (!kc) return null
+  try {
+    const url = new URL(`${kc.adminUrl}/admin/realms/${encodeURIComponent(kc.realm)}/users`)
     url.searchParams.set('username', username)
     url.searchParams.set('exact', 'true')
     const usersRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+      headers: { Authorization: `Bearer ${kc.token}` },
     })
     if (!usersRes.ok) {
       console.warn(`⚠ Keycloak user lookup failed (${usersRes.status}) for ${username}`)
       return null
     }
     const users = (await usersRes.json()) as Array<{ id?: string }>
-    const id = users[0]?.id?.trim()
-    return id || null
+    return users[0]?.id?.trim() || null
   } catch (err) {
-    console.warn(`⚠ Keycloak unreachable (${String(err)}); using stable sub for ${username}`)
+    console.warn(`⚠ Keycloak lookup failed for ${username} (${String(err)})`)
     return null
   }
+}
+
+/** Create a missing realm user (e.g. after adding accounts without recreating Keycloak). */
+async function ensureKeycloakUser(
+  account: DevAccount,
+  admin?: KeycloakAdmin | null,
+): Promise<string | null> {
+  const kc = admin === undefined ? await keycloakAdmin() : admin
+  if (!kc) return null
+  const existing = await lookupKeycloakSub(account.username, kc)
+  if (existing) return existing
+
+  const [firstName, ...rest] = account.name.split(' ')
+  const createRes = await fetch(
+    `${kc.adminUrl}/admin/realms/${encodeURIComponent(kc.realm)}/users`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${kc.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: account.stableSub,
+        username: account.username,
+        email: account.email,
+        enabled: true,
+        emailVerified: true,
+        firstName: firstName || account.username,
+        lastName: rest.join(' ') || 'User',
+        credentials: [{ type: 'password', value: account.password, temporary: false }],
+      }),
+    },
+  )
+  if (!createRes.ok && createRes.status !== 409) {
+    console.warn(
+      `⚠ Could not create Keycloak user ${account.username} (${createRes.status}); using stable sub`,
+    )
+    return null
+  }
+  console.log(`✓ Created Keycloak user ${account.email} (${account.stableSub})`)
+  return (await lookupKeycloakSub(account.username, kc)) ?? account.stableSub
 }
 
 /**
@@ -189,9 +282,14 @@ async function lookupKeycloakSub(username: string): Promise<string | null> {
  * Never reuse "first principal with this email" — orphaned rows from earlier
  * Keycloak ids would steal the role and leave the real login still pending.
  */
-async function resolveIdentity(account: DevAccount): Promise<{ iss: string; sub: string }> {
+async function resolveIdentity(
+  account: DevAccount,
+  admin?: KeycloakAdmin | null,
+): Promise<{ iss: string; sub: string }> {
   const iss = defaultIssuer()
-  const kcSub = await lookupKeycloakSub(account.username)
+  const kcSub =
+    (await lookupKeycloakSub(account.username, admin)) ??
+    (await ensureKeycloakUser(account, admin))
   const sub = kcSub ?? account.stableSub
   if (!kcSub) {
     console.log(
@@ -220,8 +318,11 @@ function asSessionUser(
   }
 }
 
-async function seedAccount(account: DevAccount): Promise<SessionUser> {
-  const identity = await resolveIdentity(account)
+async function seedAccount(
+  account: DevAccount,
+  admin?: KeycloakAdmin | null,
+): Promise<SessionUser> {
+  const identity = await resolveIdentity(account, admin)
   await ensurePrincipal({
     ...identity,
     email: account.email,
@@ -230,7 +331,21 @@ async function seedAccount(account: DevAccount): Promise<SessionUser> {
   const user = asSessionUser(account, identity)
 
   if (account.role == null) {
-    console.log(`ℹ ${account.email} → no role (/pending shell)`)
+    if (account.pendingRequest) {
+      const filed = await submitAccessRequest({
+        user,
+        message: account.pendingRequest.message,
+        requestedRole: account.pendingRequest.role,
+      })
+      if (!filed.ok) {
+        throw new Error(`Failed to seed access request for ${account.email}: ${filed.error}`)
+      }
+      console.log(
+        `ℹ ${account.email} → no role + pending ${account.pendingRequest.role} request (${filed.request.id})`,
+      )
+    } else {
+      console.log(`ℹ ${account.email} → no role (blank /pending wizard)`)
+    }
     return user
   }
 
@@ -288,7 +403,7 @@ async function purgeUuidNamedRepos(namespace: string, keepId: string): Promise<v
 }
 
 /** Create the oxen-server repo (namespaces appear when the first repo is created). */
-async function ensureOxenRepo(namespace: string, name: string): Promise<void> {
+async function ensureOxenRepo(namespace: string, name: string): Promise<boolean> {
   const url = `${oxenUpstream()}/api/repos`
   try {
     const res = await fetch(url, {
@@ -298,29 +413,32 @@ async function ensureOxenRepo(namespace: string, name: string): Promise<void> {
     })
     if (res.ok) {
       console.log(`✓ Oxen repo ${namespace}/${name} ready`)
-      return
+      return true
     }
     const body = await res.text().catch(() => '')
     // Idempotent: oxen may return 4xx when the repo already exists.
     if (res.status === 409 || /already|exists|resource_found/i.test(body)) {
       console.log(`✓ Oxen repo ${namespace}/${name} already present`)
-      return
+      return true
     }
     console.warn(`⚠ Oxen create ${namespace}/${name} failed (${res.status}): ${body.slice(0, 200)}`)
+    return false
   } catch (err) {
     console.warn(`⚠ Oxen unreachable at ${oxenUpstream()} (${String(err)}); AuthZ rows still seeded`)
+    return false
   }
 }
 
 /**
  * One namespace + one repo for local testing.
  * Manager owns the namespace (instance admins stay out of data membership SoD).
- * Default SSO `mice` gets write so `make reset` leaves a usable workspace.
+ * Default SSO `mice_user` gets write so `make reset` leaves a usable workspace.
  */
 async function seedSampleWorkspace(users: {
   manager: SessionUser
-  mice: SessionUser
   user: SessionUser
+  user2: SessionUser
+  user3: SessionUser
   external: SessionUser
 }): Promise<void> {
   console.log(`\nSeeding sample workspace ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}…`)
@@ -337,8 +455,9 @@ async function seedSampleWorkspace(users: {
   }
 
   for (const [label, target, role] of [
-    ['mice', users.mice, 'member'],
     ['user', users.user, 'member'],
+    ['user_2', users.user2, 'member'],
+    ['user_3', users.user3, 'member'],
     ['external', users.external, 'member'],
   ] as const) {
     const member = await setNamespaceMember(SAMPLE_NAMESPACE, target, role)
@@ -355,15 +474,35 @@ async function seedSampleWorkspace(users: {
     throw new Error(`Failed to ensure AuthZ repository ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}`)
   }
   await purgeUuidNamedRepos(SAMPLE_NAMESPACE, repo.id)
-  await ensureOxenRepo(repo.namespaceId, repo.id)
+  const oxenReady = await ensureOxenRepo(repo.namespaceId, repo.id)
   console.log(
     `✓ Oxen physical path ${repo.namespaceId}/${repo.id} ↔ display ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}`,
   )
+  if (oxenReady) {
+    const { ensureEmptyOxenBranch } = await import('../src/oxenEmptyBranch.js')
+    // Attribute empty tip to the namespace owner (manager), not oxen's hardcoded author.
+    const emptyMain = await ensureEmptyOxenBranch(
+      repo.namespaceId,
+      repo.id,
+      'main',
+      users.manager,
+    )
+    if (emptyMain.ok) {
+      console.log('✓ Oxen sample branch main ready (empty tip, attributed to manager)')
+    } else {
+      console.warn(`⚠ Oxen empty main failed: ${emptyMain.error}`)
+    }
+  }
 
+  // Collaborators are opt-in (source of truth for data access). Manager stays
+  // Owner-only so they manage seats without an automatic Admin grant.
+  if (await removeRepoCollaborator(SAMPLE_NAMESPACE, SAMPLE_REPO, users.manager)) {
+    console.log('✓ Cleared leftover manager collaborator seat on sample')
+  }
   for (const [label, target, role] of [
-    ['manager', users.manager, 'admin'],
-    ['mice', users.mice, 'write'],
     ['user', users.user, 'write'],
+    ['user_2', users.user2, 'write'],
+    ['user_3', users.user3, 'write'],
     ['external', users.external, 'read'],
   ] as const) {
     const collab = await setRepoCollaborator(SAMPLE_NAMESPACE, SAMPLE_REPO, target, role)
@@ -493,31 +632,39 @@ async function main() {
   await ensureKeycloakAmrAuthenticatorRefs()
   console.log('')
 
+  const kcAdmin = await keycloakAdmin()
   const byUsername = new Map<string, SessionUser>()
   for (const account of ACCOUNTS) {
-    byUsername.set(account.username, await seedAccount(account))
+    byUsername.set(account.username, await seedAccount(account, kcAdmin))
   }
 
   const manager = byUsername.get('mice_manager')
-  const mice = byUsername.get('mice')
   const user = byUsername.get('mice_user')
+  const user2 = byUsername.get('mice_user_2')
+  const user3 = byUsername.get('mice_user_3')
   const external = byUsername.get('mice_external')
-  if (!manager || !mice || !user || !external) {
-    throw new Error('Missing manager/mice/user/external identities for sample workspace seed')
+  if (!manager || !user || !user2 || !user3 || !external) {
+    throw new Error(
+      'Missing manager/user/user_2/user_3/external identities for sample workspace seed',
+    )
   }
-  await seedSampleWorkspace({ manager, mice, user, external })
+  await seedSampleWorkspace({ manager, user, user2, user3, external })
 
   const pad = (s: string, n: number) => s.padEnd(n)
   console.log('\n✅ Development seed complete!\n')
   console.log('Default accounts:')
   for (const a of ACCOUNTS) {
-    const roleLabel = a.bootstrapAdmin ? 'admin (bootstrap)' : a.role ?? '(none / pending)'
+    const roleLabel = a.bootstrapAdmin
+      ? 'admin (bootstrap)'
+      : a.role ??
+        (a.pendingRequest
+          ? `(none — pending ${a.pendingRequest.role} request)`
+          : '(none — blank /pending wizard)')
     console.log(`  ${pad(a.email, 28)} / ${pad(a.password, 12)} → ${roleLabel}`)
   }
   console.log(`\nSample workspace: ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}`)
-  console.log('  manager           → namespace owner + repo admin')
-  console.log('  mice@example.com  → namespace member + repo write (default SSO)')
-  console.log('  mice_user         → namespace member + repo write')
+  console.log('  manager           → namespace owner (no auto collaborator seat)')
+  console.log('  mice_user{,_2,_3} → namespace member + repo write (default SSO / MFA)')
   console.log('  mice_external     → namespace member + repo read')
   console.log('\nNote: Keycloak users are imported from auth/keycloak/realm-mice.json')
   console.log('If accounts are missing after a rename, recreate the keycloak service so the realm re-imports.')

@@ -148,9 +148,9 @@ describe('directory search', () => {
           JSON.stringify([
             {
               id: 'kc-uuid-1',
-              username: 'mice',
-              email: 'mice@example.com',
-              firstName: 'Mice',
+              username: 'mice_user',
+              email: 'mice_user@mice.com',
+              firstName: 'Regular',
               lastName: 'User',
               enabled: true,
             },
