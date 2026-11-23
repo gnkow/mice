@@ -14,7 +14,11 @@ const { preparePrincipal } = await import('./authz.js')
 const { grantApprover } = await import('./authzApproverStore.js')
 const { openMergeRequest } = await import('./mergeRequestStore.js')
 const { getCommitQc } = await import('./commitQcStore.js')
-const { registerMergeRequestRoutes, setMergeExecutorForTests } = await import('./mergeRequestRoutes.js')
+const {
+  registerMergeRequestRoutes,
+  setMergeExecutorForTests,
+  setMergeManifestResolverForTests,
+} = await import('./mergeRequestRoutes.js')
 const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
 const { buildMergeManifest, mergeResultBinding } = await import('./authentication/signing/mergeManifest.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
@@ -42,7 +46,10 @@ await grantApprover({ ns: 'gxp5', repo: 'assay' }, approver)
 const app = new Hono()
 registerMergeRequestRoutes(app, { audit: async () => {} })
 setMergeExecutorForTests(async () => ({ mergeCommitId: 'merge-sha-1' }))
-after(() => setMergeExecutorForTests(null))
+after(() => {
+  setMergeExecutorForTests(null)
+  setMergeManifestResolverForTests(null)
+})
 
 const cookie = async () =>
   sealedSessionCookie({ ...approver, sessionStart: Math.floor(Date.now() / 1000) })
@@ -68,6 +75,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       targetHead: 'tgt-head',
       merge,
     })
+    setMergeManifestResolverForTests(async () => merge)
     const { signatureStore } = await import('./authentication/signing/signatureStore.js')
     const { id } = await (
       await signatureStore()
@@ -87,7 +95,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       authors: ['https://other|scientist'],
       commitIds: ['c1', 'c2'],
       signatureId: id,
-      manifestEntries: entries,
     }
     const res = await app.request(path, {
       method: 'POST',
@@ -130,6 +137,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       targetHead: 'tgt-r',
       merge,
     })
+    setMergeManifestResolverForTests(async () => merge)
     const { signatureStore } = await import('./authentication/signing/signatureStore.js')
     const { id } = await (
       await signatureStore()
@@ -153,7 +161,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         liveTargetHead: 'tgt-r',
         authors: ['https://other|scientist'],
         signatureId: id,
-        manifestEntries: [],
       }),
     })
     const json = (await res.json()) as { code?: string; error?: string }
@@ -188,6 +195,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       targetHead: 't2',
       merge,
     })
+    setMergeManifestResolverForTests(async () => merge)
     const { signatureStore } = await import('./authentication/signing/signatureStore.js')
     const { id } = await (
       await signatureStore()
@@ -212,7 +220,6 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         liveTargetHead: 't2',
         authors: ['https://idp|x'],
         signatureId: id,
-        manifestEntries: [],
       }),
     })
     const json = (await res.json()) as { code?: string }

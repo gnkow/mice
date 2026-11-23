@@ -89,7 +89,13 @@ async function parseBody(c: Context, spec: BodySpec, invalid = 'Invalid body'): 
   }
   if (spec !== 'json') {
     const record = body as Record<string, unknown> | null
-    const missing = spec.required.filter((f) => !record?.[f])
+    // Present keys with empty string / 0 / false are valid; only absent/null/undefined are missing.
+    // Empty merge-result manifests sign `content: ""` (sha256 of empty tree).
+    const missing = spec.required.filter((f) => {
+      if (!record || !Object.prototype.hasOwnProperty.call(record, f)) return true
+      const v = record[f]
+      return v === undefined || v === null
+    })
     if (missing.length) {
       return { ok: false, res: c.json({ error: `${missing.join(' and ')} required` }, 400) }
     }

@@ -17,6 +17,7 @@ const {
   markMergeRequestMerged,
   decideMergeRequestComplete,
   rejectMergeRequest,
+  MergeRequestAlreadyOpenError,
 } = await import('./mergeRequestStore.js')
 
 const root = t.person('root')
@@ -49,6 +50,52 @@ describe('merge request store (repositories/02)', () => {
     const got = await getMergeRequest(mr.id)
     assert.equal(got?.sourceBranch, 'feature')
     assert.equal(got?.title, 'Ship assay fix')
+  })
+
+  it('refuses a second open MR for the same source→target while one is open or stale', async () => {
+    const first = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'lab',
+      repo: 'assay',
+      sourceBranch: 'test',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-dup',
+      expectedTargetHead: 'tgt-dup',
+      openedBy: { iss: root.iss, sub: root.sub },
+    })
+    await assert.rejects(
+      () =>
+        openMergeRequest({
+          repositoryId: repo.id,
+          namespace: 'lab',
+          repo: 'assay',
+          sourceBranch: 'test',
+          targetBranch: 'main',
+          expectedSourceHead: 'src-dup',
+          expectedTargetHead: 'tgt-dup',
+          openedBy: { iss: root.iss, sub: root.sub },
+        }),
+      (err: unknown) =>
+        err instanceof MergeRequestAlreadyOpenError && err.existingId === first.id,
+    )
+    await resyncMergeRequest(first.id, {
+      liveSourceHead: 'src-dup',
+      liveTargetHead: 'tgt-moved',
+    })
+    await assert.rejects(
+      () =>
+        openMergeRequest({
+          repositoryId: repo.id,
+          namespace: 'lab',
+          repo: 'assay',
+          sourceBranch: 'test',
+          targetBranch: 'main',
+          expectedSourceHead: 'src-2',
+          expectedTargetHead: 'tgt-2',
+          openedBy: { iss: root.iss, sub: root.sub },
+        }),
+      (err: unknown) => err instanceof MergeRequestAlreadyOpenError,
+    )
   })
 
   it('resync marks stale when the target tip moved, then restores open with new heads', async () => {

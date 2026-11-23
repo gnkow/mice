@@ -8,9 +8,11 @@ after(() => t.restore())
 
 const {
   decideRestoreTestGate,
+  loadRestoreTestStatus,
   recordRestoreTestPassed,
   resetRestoreTestGate,
   restoreTestStatus,
+  simulateRestoreTestProcessRestart,
   RESTORE_TEST_REQUIRED,
 } = await import('./restoreTestGate.js')
 const { queryAudit } = await import('./audit.js')
@@ -28,5 +30,17 @@ describe('restore test gate (gxp/15)', () => {
 
     const { events } = await queryAudit({ action: 'system.restore_test.passed', limit: 5 })
     assert.ok(events.some((e) => e.action === 'system.restore_test.passed'))
+  })
+
+  it('recovers a prior pass from the audit trail after process reset', async () => {
+    resetRestoreTestGate()
+    await recordRestoreTestPassed({ recordedBy: 'ops-persist' })
+    simulateRestoreTestProcessRestart()
+    assert.equal(restoreTestStatus().passed, false)
+
+    const loaded = await loadRestoreTestStatus()
+    assert.equal(loaded.passed, true)
+    assert.equal(loaded.recordedBy, 'ops-persist')
+    assert.equal(decideRestoreTestGate(loaded).allow, true)
   })
 })

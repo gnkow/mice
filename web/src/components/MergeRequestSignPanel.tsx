@@ -130,10 +130,10 @@ export function MergeRequestSignPanel({
       let signature: { id: string; changeControlId?: string }
       try {
         signature = await executeMergeSignature({
-          content: data.content,
+          content: data.manifest ?? data.content ?? '',
           expectedHash: data.hash,
           binding: data.binding,
-          manifest: data.manifest,
+          manifest: data.manifest ?? data.content ?? '',
           changeControlId: changeControlId.trim(),
         })
       } catch (err) {
@@ -191,7 +191,6 @@ export function MergeRequestSignPanel({
         authors: [],
         commitIds: [],
         signatureId: signature.id,
-        manifestEntries: live.manifestEntries,
         reason: reason.trim(),
         changeControlId:
           signature.changeControlId?.trim() || changeControlId.trim(),
@@ -210,21 +209,14 @@ export function MergeRequestSignPanel({
         err && typeof err === 'object' && 'status' in err
           ? Number((err as { status: number }).status)
           : 0
-      if (status === 503) {
-        setError(
-          mergeRefusalMessage(
-            'audit_unavailable',
-            err instanceof Error ? err.message : 'Audit unavailable',
-          ),
-        )
-      } else {
-        setError(
-          mergeRefusalMessage(
-            code,
-            err instanceof Error ? err.message : 'Signed merge failed',
-          ),
-        )
-      }
+      // Prefer the refusal code from complete (e.g. restore_test_required). Only
+      // fall back to audit_unavailable for opaque 503s with no code.
+      setError(
+        mergeRefusalMessage(
+          code ?? (status === 503 ? 'audit_unavailable' : undefined),
+          err instanceof Error ? err.message : 'Signed merge failed',
+        ),
+      )
     } finally {
       setBusy(false)
     }

@@ -56,6 +56,12 @@ app.post(
 )
 app.get('/me', guarded({ credential: 'session' }, ({ user }) => Response.json({ sub: user.sub })))
 app.post('/optional', guarded({ body: 'optional' }, ({ body }) => Response.json({ body })))
+app.post(
+  '/sign-like',
+  guarded({ body: { required: ['content', 'meaning', 'expectedHash'] } }, ({ body }) =>
+    Response.json({ content: body.content, meaning: body.meaning }),
+  ),
+)
 
 await describe('route guard', async () => {
   await it('answers 401 without credentials', async () => {
@@ -92,5 +98,22 @@ await describe('route guard', async () => {
   await it('treats an empty body as {} when optional', async () => {
     const r = await app.request('/optional', { method: 'POST', headers: await cookie('root') })
     assert.deepEqual(await r.json(), { body: {} })
+  })
+
+  await it('accepts required fields that are present as empty string (empty merge manifest)', async () => {
+    const h = { ...(await cookie('root')), ...json }
+    const r = await app.request('/sign-like', {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({ content: '', meaning: 'Approved', expectedHash: 'abc' }),
+    })
+    assert.equal(r.status, 200)
+    assert.deepEqual(await r.json(), { content: '', meaning: 'Approved' })
+    const missing = await app.request('/sign-like', {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({ meaning: 'Approved', expectedHash: 'abc' }),
+    })
+    assert.deepEqual([missing.status, await missing.json()], [400, { error: 'content required' }])
   })
 })

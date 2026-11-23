@@ -66,6 +66,8 @@ const REFUSAL_COPY: Record<string, string> = {
     'Self-merge forbidden (4-eyes): you cannot approve this merge if you opened the request or authored commits in the range.',
   head_mismatch: 'Source or target moved since this preview. Resync the merge request and try again.',
   not_open: 'This merge request is not open (it may be stale, merged, or blocked).',
+  already_open:
+    'A merge request for this source and target branch is already open. Open that request instead of creating another.',
   binding_mismatch: 'Content changed after display; the pending signature is invalid.',
   restore_test_required: 'A restore test must pass before the first regulated merge.',
   not_validated: 'Target branch is not validated; use the unsigned merge path.',
@@ -289,7 +291,6 @@ export async function completeSignedMergeRequest(
     authors: string[]
     commitIds: string[]
     signatureId: string
-    manifestEntries: Array<{ path: string; contentHash: string }>
     reason: string
     changeControlId?: string
   },
@@ -312,7 +313,6 @@ export async function completeSignedMergeRequest(
       authors: input.authors,
       commitIds: input.commitIds,
       signatureId: input.signatureId,
-      manifestEntries: input.manifestEntries,
     }),
   })
   if (!res.ok) {
@@ -337,11 +337,12 @@ export async function executeMergeSignature(input: {
     credentials: 'same-origin',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      content: input.content,
+      // Always send a string — JSON omits `undefined`, which the BFF reports as "content required".
+      content: input.content ?? input.manifest ?? '',
       meaning: 'Approved',
       expectedHash: input.expectedHash,
       binding: input.binding,
-      manifest: input.manifest,
+      manifest: input.manifest ?? '',
       ...(input.changeControlId ? { changeControlId: input.changeControlId } : {}),
     }),
   })

@@ -5,7 +5,9 @@ import {
   buildMergeManifest,
   createManifestCache,
   manifestForCommit,
+  manifestForMergeResult,
   mergeResultBinding,
+  mergeResultEntries,
   type ManifestEntry,
   type TreeLister,
 } from './mergeManifest.js'
@@ -82,5 +84,58 @@ describe('mergeResultBinding', () => {
     assert.notEqual(binding.manifestDigest, binding.targetHead)
     assert.ok(!manifest.includes(binding.sourceHead))
     assert.ok(!manifest.includes(binding.targetHead))
+  })
+})
+
+describe('mergeResultEntries', () => {
+  it('keeps target-only paths and lets source overlay shared paths', () => {
+    const entries = mergeResultEntries(
+      [
+        { path: 'keep.csv', contentHash: 'tgt1' },
+        { path: 'shared.csv', contentHash: 'tgt2' },
+      ],
+      [
+        { path: 'shared.csv', contentHash: 'src2' },
+        { path: 'new.csv', contentHash: 'src3' },
+      ],
+    )
+    assert.deepEqual(
+      [...entries].sort((a, b) => a.path.localeCompare(b.path)),
+      [
+        { path: 'keep.csv', contentHash: 'tgt1' },
+        { path: 'new.csv', contentHash: 'src3' },
+        { path: 'shared.csv', contentHash: 'src2' },
+      ],
+    )
+  })
+})
+
+describe('manifestForMergeResult', () => {
+  it('builds the overlay digest and caches by source+target tip pair', async () => {
+    let calls = 0
+    const trees = new Map<string, ManifestEntry[]>([
+      ['tgt', [{ path: 'keep.csv', contentHash: 't1' }, { path: 'shared.csv', contentHash: 'told' }]],
+      ['src', [{ path: 'shared.csv', contentHash: 'snew' }, { path: 'add.csv', contentHash: 's2' }]],
+    ])
+    const listTree: TreeLister = async (_ns, _repo, commit) => {
+      calls += 1
+      return trees.get(commit) ?? []
+    }
+    const cache = createManifestCache()
+    const repo = { namespace: 'ns', repo: 'data' }
+
+    const first = await manifestForMergeResult(repo, 'src', 'tgt', { listTree, cache })
+    assert.equal(first.manifest, 'add.csv s2\nkeep.csv t1\nshared.csv snew\n')
+    assert.equal(first.digest, sha(first.manifest))
+    assert.equal(calls, 2)
+
+    const cached = await manifestForMergeResult(repo, 'src', 'tgt', { listTree, cache })
+    assert.equal(cached.digest, first.digest)
+    assert.equal(calls, 2)
+
+    // Per-commit cache still reused when the pair is new but tips were listed.
+    const flipped = await manifestForMergeResult(repo, 'tgt', 'src', { listTree, cache })
+    assert.equal(flipped.manifest, 'add.csv s2\nkeep.csv t1\nshared.csv told\n')
+    assert.equal(calls, 2)
   })
 })

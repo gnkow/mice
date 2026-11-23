@@ -650,6 +650,18 @@ async function main() {
   }
   await seedSampleWorkspace({ manager, user, user2, user3, external })
 
+  // GxP restore-test gate: after reset, audit is empty so regulated merges refuse.
+  // Record a pass so local/dev can sign into validated branches without a manual Settings step.
+  const { recordRestoreTestPassed, restoreTestStatus } = await import(
+    '../src/restoreTestGate.js'
+  )
+  if (!restoreTestStatus().passed) {
+    await recordRestoreTestPassed({ recordedBy: 'seed:dev' })
+    console.log('✓ Restore test recorded as passed (unlocks regulated merges)')
+  } else {
+    console.log('✓ Restore test already passed')
+  }
+
   const pad = (s: string, n: number) => s.padEnd(n)
   console.log('\n✅ Development seed complete!\n')
   console.log('Default accounts:')

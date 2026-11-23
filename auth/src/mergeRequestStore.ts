@@ -1,9 +1,18 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { getDb } from './db/database.js'
 import { mergeRequests } from './db/schema.js'
 import { principalKey } from './authentication/session/principal.js'
 
 export type MergeRequestStatus = 'open' | 'stale' | 'merged' | 'blocked'
+
+/** An open or stale MR already covers this source→target pair. */
+export class MergeRequestAlreadyOpenError extends Error {
+  readonly code = 'already_open' as const
+  constructor(readonly existingId: string) {
+    super('An open merge request already exists for this source and target branch')
+    this.name = 'MergeRequestAlreadyOpenError'
+  }
+}
 
 export type MergeRequestRecord = {
   id: string
@@ -60,6 +69,22 @@ export async function openMergeRequest(input: {
   title?: string
   description?: string
 }): Promise<MergeRequestRecord> {
+  const existing = await getDb()
+    .select({ id: mergeRequests.id })
+    .from(mergeRequests)
+    .where(
+      and(
+        eq(mergeRequests.repositoryId, input.repositoryId),
+        eq(mergeRequests.sourceBranch, input.sourceBranch),
+        eq(mergeRequests.targetBranch, input.targetBranch),
+        inArray(mergeRequests.status, ['open', 'stale']),
+      ),
+    )
+    .limit(1)
+  if (existing[0]) {
+    throw new MergeRequestAlreadyOpenError(existing[0].id)
+  }
+
   const now = new Date()
   const title =
     input.title?.trim() ||

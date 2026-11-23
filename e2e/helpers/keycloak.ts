@@ -118,22 +118,58 @@ export async function completeKeycloakLogin(
   await expect(page.locator('header.topbar')).toBeVisible({ timeout: 20_000 })
 }
 
-/** Mice login → SSO → Keycloak password + TOTP (mice_admin) → Mice app. */
-export async function signInWithKeycloakMfa(page: Page) {
+/** Dev-seeded Keycloak accounts used by multi-user GxP flows (realm-mice.json). */
+export const KEYCLOAK_MANAGER = {
+  user: process.env.KEYCLOAK_E2E_MANAGER_USER ?? 'mice_manager',
+  password: process.env.KEYCLOAK_E2E_MANAGER_PASSWORD ?? 'manage123',
+  totpSecret: KEYCLOAK_MFA_TOTP_SECRET,
+} as const
+
+export const KEYCLOAK_REGULAR_USER = {
+  user: process.env.KEYCLOAK_E2E_USER ?? 'mice_user',
+  password: process.env.KEYCLOAK_E2E_PASSWORD ?? 'user123',
+  totpSecret: KEYCLOAK_MFA_TOTP_SECRET,
+} as const
+
+export const KEYCLOAK_REGULAR_USER_2 = {
+  user: process.env.KEYCLOAK_E2E_USER_2 ?? 'mice_user_2',
+  password: process.env.KEYCLOAK_E2E_USER_2_PASSWORD ?? 'user2123',
+  totpSecret: KEYCLOAK_MFA_TOTP_SECRET,
+} as const
+
+/** Mice login → SSO → Keycloak password + TOTP → Mice app. */
+export async function signInWithKeycloakUser(
+  page: Page,
+  account: { user: string; password: string; totpSecret?: string } = {
+    user: KEYCLOAK_MFA_USER,
+    password: KEYCLOAK_MFA_PASSWORD,
+    totpSecret: KEYCLOAK_MFA_TOTP_SECRET,
+  },
+) {
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   await page.getByRole('link', { name: 'Sign in with SSO' }).click()
-  await completeKeycloakLogin(page, KEYCLOAK_MFA_USER, KEYCLOAK_MFA_PASSWORD, {
+  await completeKeycloakLogin(page, account.user, account.password, {
+    totpSecret: account.totpSecret ?? KEYCLOAK_MFA_TOTP_SECRET,
+  })
+}
+
+/** Mice login → SSO → Keycloak password + TOTP (mice_admin) → Mice app. */
+export async function signInWithKeycloakMfa(page: Page) {
+  await signInWithKeycloakUser(page, {
+    user: KEYCLOAK_MFA_USER,
+    password: KEYCLOAK_MFA_PASSWORD,
     totpSecret: KEYCLOAK_MFA_TOTP_SECRET,
   })
 }
 
 /** Full UI path: Mice login → SSO → IdP credentials → Mice app. */
 export async function signInWithSsoViaKeycloak(page: Page) {
-  await page.goto('/login')
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
-  await page.getByRole('link', { name: 'Sign in with SSO' }).click()
-  await completeKeycloakLogin(page)
+  await signInWithKeycloakUser(page, {
+    user: KC_USER,
+    password: KC_PASSWORD,
+    totpSecret: KEYCLOAK_MFA_TOTP_SECRET,
+  })
 }
 
 /** Account menu → Sign out (follows IdP end-session back to /login). */

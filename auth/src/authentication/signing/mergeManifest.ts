@@ -87,8 +87,8 @@ export async function listCommitTree(
 }
 
 /**
- * Resolve (and cache) the merge-result manifest for a commit tip.
- * The digest is the authoritative content evidence for a signature binding.
+ * Resolve (and cache) the per-commit tree manifest.
+ * Pair this with {@link manifestForMergeResult} for the binding content evidence.
  */
 export async function manifestForCommit(
   repo: RepoRef,
@@ -102,6 +102,69 @@ export async function manifestForCommit(
   if (hit) return hit
   const built = buildMergeManifest(await listTree(repo.namespace, repo.repo, commit))
   cache.set(key, built)
+  return built
+}
+
+function entriesFromManifest(manifest: string): ManifestEntry[] {
+  return manifest
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const sp = line.lastIndexOf(' ')
+      return { path: line.slice(0, sp), contentHash: line.slice(sp + 1) }
+    })
+}
+
+/**
+ * Merge-result file set: target tree, then source overlays shared paths.
+ * Models the tree that lands when source is merged into target (additive + theirs-wins).
+ */
+export function mergeResultEntries(
+  target: ManifestEntry[],
+  source: ManifestEntry[],
+): ManifestEntry[] {
+  const map = new Map<string, string>()
+  for (const e of target) {
+    const path = e.path.replace(/^\/+/, '')
+    const hash = e.contentHash.trim()
+    if (path && hash) map.set(path, hash)
+  }
+  for (const e of source) {
+    const path = e.path.replace(/^\/+/, '')
+    const hash = e.contentHash.trim()
+    if (path && hash) map.set(path, hash)
+  }
+  return [...map.entries()].map(([path, contentHash]) => ({ path, contentHash }))
+}
+
+function mergePairKey(repo: RepoRef, sourceHead: string, targetHead: string): string {
+  return `${repo.namespace}\0${repo.repo}\0merge\0${sourceHead}\0${targetHead}`
+}
+
+/**
+ * SHA-256 manifest of the merge result (target tree overlaid by source), incrementally
+ * cached per tip pair. Per-commit trees reuse {@link manifestForCommit}'s cache.
+ */
+export async function manifestForMergeResult(
+  repo: RepoRef,
+  sourceHead: string,
+  targetHead: string,
+  opts: ManifestForCommitOptions = {},
+): Promise<MergeManifest> {
+  const cache = opts.cache ?? defaultCache
+  const pairKey = mergePairKey(repo, sourceHead, targetHead)
+  const hit = cache.get(pairKey)
+  if (hit) return hit
+
+  const [source, target] = await Promise.all([
+    manifestForCommit(repo, sourceHead, opts),
+    manifestForCommit(repo, targetHead, opts),
+  ])
+  const built = buildMergeManifest(
+    mergeResultEntries(entriesFromManifest(target.manifest), entriesFromManifest(source.manifest)),
+  )
+  cache.set(pairKey, built)
   return built
 }
 

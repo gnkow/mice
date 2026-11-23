@@ -109,10 +109,19 @@ export async function expectSigningChallenge(
 }
 
 /**
- * Drive the live Keycloak step-up (password + TOTP for mice_admin) from a signing
- * challenge interstitial, then return to Mice.
+ * Drive the live Keycloak step-up (password + TOTP) from a signing challenge
+ * interstitial, then return to Mice. Defaults to mice_admin; pass the signing
+ * principal for multi-user ceremonies.
  */
-export async function completeLiveKeycloakStepUp(page: Page): Promise<void> {
+export async function completeLiveKeycloakStepUp(
+  page: Page,
+  account: { user: string; password: string; totpSecret?: string } = {
+    user: KEYCLOAK_MFA_USER,
+    password: KEYCLOAK_MFA_PASSWORD,
+    totpSecret: KEYCLOAK_MFA_TOTP_SECRET,
+  },
+): Promise<void> {
+  const totpSecret = account.totpSecret ?? KEYCLOAK_MFA_TOTP_SECRET
   const continueBtn = page.getByTestId('signing-challenge-continue')
   if (await continueBtn.isVisible().catch(() => false)) {
     await continueBtn.click()
@@ -122,18 +131,18 @@ export async function completeLiveKeycloakStepUp(page: Page): Promise<void> {
   })
   // Fresh authorize may show password and/or OTP depending on Keycloak session.
   if (await keycloakUsername(page).isVisible().catch(() => false)) {
-    await keycloakUsername(page).fill(KEYCLOAK_MFA_USER)
-    await keycloakPassword(page).fill(KEYCLOAK_MFA_PASSWORD)
+    await keycloakUsername(page).fill(account.user)
+    await keycloakPassword(page).fill(account.password)
     await keycloakSubmit(page).click()
   }
   if (await keycloakOtpInput(page).isVisible().catch(() => false)) {
-    await completeKeycloakOtp(page, KEYCLOAK_MFA_TOTP_SECRET)
+    await completeKeycloakOtp(page, totpSecret)
   } else if (await keycloakPassword(page).isVisible().catch(() => false)) {
     // Password-only prompt without username (SSO session hint).
-    await keycloakPassword(page).fill(KEYCLOAK_MFA_PASSWORD)
+    await keycloakPassword(page).fill(account.password)
     await keycloakSubmit(page).click()
     if (await keycloakOtpInput(page).isVisible().catch(() => false)) {
-      await completeKeycloakOtp(page, KEYCLOAK_MFA_TOTP_SECRET)
+      await completeKeycloakOtp(page, totpSecret)
     }
   }
   await expect(page).toHaveURL(/localhost:5173|127\.0\.0\.1:5173/, { timeout: 30_000 })

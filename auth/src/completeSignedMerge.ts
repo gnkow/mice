@@ -1,6 +1,12 @@
 import { decideIsApprover } from './authzApproverStore.js'
 import { signatureStore } from './authentication/signing/signatureStore.js'
-import { buildMergeManifest, mergeResultBinding } from './authentication/signing/mergeManifest.js'
+import {
+  buildMergeManifest,
+  manifestForMergeResult,
+  mergeResultBinding,
+  type ManifestEntry,
+  type MergeManifest,
+} from './authentication/signing/mergeManifest.js'
 import {
   getMergeRequest,
   markMergeRequestMerged,
@@ -14,7 +20,7 @@ import {
   type SignedMergeRefusalCode,
 } from './signedMergeComplete.js'
 import { anyCommitQcFailed } from './signatureRevoke.js'
-import { decideRestoreTestGate } from './restoreTestGate.js'
+import { decideRestoreTestGate, loadRestoreTestStatus } from './restoreTestGate.js'
 
 export type CompleteSignedMergeInput = {
   mergeRequestId: string
@@ -27,8 +33,18 @@ export type CompleteSignedMergeInput = {
   authors: string[]
   /** Commits to mark QC Passed (range + merge commit after success). */
   commitIds: string[]
-  /** Optional precomputed merge-result file digests (tests); otherwise empty tree. */
-  manifestEntries?: Array<{ path: string; contentHash: string }>
+  /**
+   * Test-only override of the merge-result manifest. Production callers omit this so the
+   * server computes the overlay of live source/target tip trees.
+   */
+  manifestEntries?: ManifestEntry[]
+  /** Optional injector for merge-result resolution (tests); defaults to {@link manifestForMergeResult}. */
+  resolveMergeManifest?: (input: {
+    namespace: string
+    repo: string
+    sourceHead: string
+    targetHead: string
+  }) => Promise<MergeManifest>
   /** Perform the oxen merge; returns the merge commit id. */
   executeMerge: (mr: MergeRequestRecord) => Promise<{ mergeCommitId: string }>
 }
@@ -40,7 +56,12 @@ export type CompleteSignedMergeResult =
       signatureId: string
       mergeCommitId: string
     }
-  | { ok: false; status: number; code: SignedMergeRefusalCode | 'signature_invalid'; detail: string }
+  | {
+      ok: false
+      status: number
+      code: SignedMergeRefusalCode | 'signature_invalid' | 'manifest_unavailable'
+      detail: string
+    }
 
 /**
  * Orchestrate gxp/05: gate → consume bound signature → oxen merge → MR merged + QC Passed.
@@ -59,7 +80,30 @@ export async function completeSignedMerge(
   }
 
   const approver = await decideIsApprover(input.signer, mr.namespace, mr.repo)
-  const merge = buildMergeManifest(input.manifestEntries ?? [])
+  let merge: MergeManifest
+  try {
+    merge = input.manifestEntries
+      ? buildMergeManifest(input.manifestEntries)
+      : await (input.resolveMergeManifest ??
+          ((heads) =>
+            manifestForMergeResult(
+              { namespace: heads.namespace, repo: heads.repo },
+              heads.sourceHead,
+              heads.targetHead,
+            )))({
+          namespace: mr.namespace,
+          repo: mr.repo,
+          sourceHead: input.liveSourceHead,
+          targetHead: input.liveTargetHead,
+        })
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      code: 'manifest_unavailable',
+      detail: `Merge-result manifest unavailable: ${String((err as Error)?.message ?? err)}`,
+    }
+  }
   const { binding } = mergeResultBinding({
     repo: `${mr.namespace}/${mr.repo}`,
     sourceHead: input.liveSourceHead,
@@ -86,7 +130,7 @@ export async function completeSignedMerge(
     }
   }
 
-  const restore = decideRestoreTestGate()
+  const restore = decideRestoreTestGate(await loadRestoreTestStatus())
   if (!restore.allow) {
     return {
       ok: false,

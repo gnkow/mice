@@ -7,14 +7,60 @@ export type RestoreTestStatus = {
 }
 
 let status: RestoreTestStatus = { passed: false }
+/** Once we have checked the audit trail for a prior pass, skip re-querying. */
+let hydratedFromAudit = false
 
-/** Test / boot helper to clear the in-process gate. */
+/**
+ * Test helper: clear the in-process gate and **do not** re-read audit on the next
+ * {@link loadRestoreTestStatus}. Use {@link simulateRestoreTestProcessRestart} when
+ * the test needs hydration from a prior audit pass.
+ */
 export function resetRestoreTestGate(): void {
   status = { passed: false }
+  hydratedFromAudit = true
+}
+
+/** Test helper: forget in-memory state as if the auth process just restarted. */
+export function simulateRestoreTestProcessRestart(): void {
+  status = { passed: false }
+  hydratedFromAudit = false
 }
 
 export function restoreTestStatus(): RestoreTestStatus {
   return { ...status }
+}
+
+/**
+ * Prefer the in-process flag; if unset, recover a prior pass from the audit trail
+ * so auth restarts do not re-lock regulated merges after an operator already recorded one.
+ */
+export async function loadRestoreTestStatus(): Promise<RestoreTestStatus> {
+  if (status.passed || hydratedFromAudit) return restoreTestStatus()
+  hydratedFromAudit = true
+  try {
+    const { queryAudit } = await import('./audit.js')
+    const { events } = await queryAudit({
+      action: 'system.restore_test.passed',
+      limit: 1,
+    })
+    const ev = events[0]
+    if (!ev) return restoreTestStatus()
+    const detail = (ev.detail ?? {}) as { passedAt?: string; recordedBy?: string }
+    status = {
+      passed: true,
+      passedAt:
+        typeof detail.passedAt === 'string' && detail.passedAt
+          ? detail.passedAt
+          : ev.ts,
+      recordedBy:
+        typeof detail.recordedBy === 'string' && detail.recordedBy
+          ? detail.recordedBy
+          : 'system',
+    }
+  } catch {
+    // Audit unavailable: leave closed; callers that need the gate will 503 separately.
+  }
+  return restoreTestStatus()
 }
 
 /**
@@ -30,6 +76,7 @@ export async function recordRestoreTestPassed(input?: {
     passedAt: input?.at ?? new Date().toISOString(),
     recordedBy: input?.recordedBy ?? 'system',
   }
+  hydratedFromAudit = true
   await appendAudit({
     actor: { sub: 'system', iss: 'mice', email: 'system@mice', name: 'Mice' },
     via: 'system',

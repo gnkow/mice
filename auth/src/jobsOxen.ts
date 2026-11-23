@@ -12,6 +12,7 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { env } from './env.js'
 import type { JobPathRef } from './jobsTypes.js'
+import { resolvePhysicalRepo } from './oxenPhysicalResolve.js'
 
 type DirEntry = {
   filename?: string
@@ -52,6 +53,13 @@ export async function listDirEntries(
     const res = await oxenFetch(
       `/api/repos/${encSeg(namespace)}/${encSeg(repo)}/dir/${resource}?page=${page}&page_size=${pageSize}`,
     )
+    // Empty commits / missing dirs: oxen answers 404 with no entries (validated default
+    // branch starts empty). Treat as an empty listing so merge-result manifests can
+    // overlay a non-empty source onto an empty target tip.
+    if (res.status === 404) {
+      await res.body?.cancel().catch(() => undefined)
+      return out
+    }
     if (!res.ok) {
       throw new Error(`oxen list dir failed (${res.status}) at ${path || '/'}`)
     }
@@ -92,11 +100,19 @@ export async function materializeCommitClone(
   pinCommit: string,
   destDir: string,
 ): Promise<Map<string, string>> {
+  // Oxen stores UUID namespace/repo keys; MR/UI paths use display names.
+  const physical = await resolvePhysicalRepo(namespace, repo)
+  if (!physical) {
+    throw new Error(`unknown repository ${namespace}/${repo}`)
+  }
+  const oxenNs = physical.namespaceId
+  const oxenRepo = physical.repositoryId
+
   mkdirSync(destDir, { recursive: true })
   const hashes = new Map<string, string>()
 
   async function walk(dirPath: string) {
-    const entries = await listDirEntries(namespace, repo, pinCommit, dirPath)
+    const entries = await listDirEntries(oxenNs, oxenRepo, pinCommit, dirPath)
     for (const e of entries) {
       const name = e.filename ?? e.resource?.path?.split('/').pop()
       if (!name || name === '.oxen' || name.startsWith('.oxen')) continue
@@ -107,7 +123,7 @@ export async function materializeCommitClone(
         continue
       }
       const dest = join(destDir, rel)
-      await downloadToFile(namespace, repo, pinCommit, rel, dest)
+      await downloadToFile(oxenNs, oxenRepo, pinCommit, rel, dest)
       // Always content-hash locally so diffTrees matches snapshotTree (sha256).
       // Oxen entry hashes are not comparable to hashFile().
       hashes.set(rel.replace(/\\/g, '/'), hashFile(dest))
@@ -288,9 +304,11 @@ export async function mergeBranch(
   head: string,
   author: { name: string; email: string },
 ): Promise<string | undefined> {
+  const physical = await resolvePhysicalRepo(namespace, repo)
+  if (!physical) throw new Error(`unknown repository ${namespace}/${repo}`)
   const range = mergeRangePath(base, head)
   const res = await oxenFetch(
-    `/api/repos/${encSeg(namespace)}/${encSeg(repo)}/merge/${range}`,
+    `/api/repos/${encSeg(physical.namespaceId)}/${encSeg(physical.repositoryId)}/merge/${range}`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

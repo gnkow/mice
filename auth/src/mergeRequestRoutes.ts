@@ -5,6 +5,7 @@ import { guarded } from './authentication/session/routeGuard.js'
 import {
   getMergeRequest,
   listMergeRequests,
+  MergeRequestAlreadyOpenError,
   openMergeRequest,
   rejectMergeRequest,
   resyncMergeRequest,
@@ -12,7 +13,6 @@ import {
 import { getCommitQc, markCommitsQc } from './commitQcStore.js'
 import { completeSignedMerge } from './completeSignedMerge.js'
 import { allocateChangeControlId, CHANGE_CONTROL_HEADER } from './changeControl.js'
-import { env } from './env.js'
 import { revokeSignature } from './signatureRevoke.js'
 import type { AuditDep } from './routeDeps.js'
 
@@ -29,11 +29,27 @@ let mergeExecutor:
     ) => Promise<{ mergeCommitId: string }>)
   | null = null
 
+type MergeManifestResolver = (input: {
+  namespace: string
+  repo: string
+  sourceHead: string
+  targetHead: string
+}) => Promise<{ manifest: string; digest: string }>
+
+let mergeManifestResolver: MergeManifestResolver | null = null
+
 /** Tests replace the oxen merge call. */
 export function setMergeExecutorForTests(
   next: typeof mergeExecutor,
 ): void {
   mergeExecutor = next
+}
+
+/** Tests replace merge-result tree materialization with a fixed digest. */
+export function setMergeManifestResolverForTests(
+  next: MergeManifestResolver | null,
+): void {
+  mergeManifestResolver = next
 }
 
 async function defaultExecuteMerge(mr: {
@@ -42,13 +58,15 @@ async function defaultExecuteMerge(mr: {
   sourceBranch: string
   targetBranch: string
 }): Promise<{ mergeCommitId: string }> {
-  const path = `/api/repos/${encodeURIComponent(mr.namespace)}/${encodeURIComponent(mr.repo)}/merge/${encodeURIComponent(mr.targetBranch)}..${encodeURIComponent(mr.sourceBranch)}`
-  const res = await fetch(`${env.oxenUpstream}${path}`, { method: 'POST' })
-  if (!res.ok) {
-    throw new Error(`oxen merge failed: ${res.status}`)
-  }
-  const body = (await res.json().catch(() => ({}))) as { commit?: { id?: string }; id?: string }
-  const mergeCommitId = body.commit?.id ?? body.id
+  // Same oxen merge path as jobs: physical UUID keys, unencoded branch range, author body.
+  const { mergeBranch } = await import('./jobsOxen.js')
+  const mergeCommitId = await mergeBranch(
+    mr.namespace,
+    mr.repo,
+    mr.targetBranch,
+    mr.sourceBranch,
+    { name: 'Mice', email: 'merge@mice.local' },
+  )
   if (!mergeCommitId) throw new Error('oxen merge response missing commit id')
   return { mergeCommitId }
 }
@@ -85,18 +103,33 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       ) {
         return c.json({ error: 'sourceBranch, targetBranch, and expected heads required' }, 400)
       }
-      const mr = await openMergeRequest({
-        repositoryId: repo.id,
-        namespace: ns,
-        repo: repoName,
-        sourceBranch: body.sourceBranch.trim(),
-        targetBranch: body.targetBranch.trim(),
-        expectedSourceHead: body.expectedSourceHead.trim(),
-        expectedTargetHead: body.expectedTargetHead.trim(),
-        openedBy: { iss: user.iss, sub: user.sub },
-        title: typeof body.title === 'string' ? body.title : undefined,
-        description: typeof body.description === 'string' ? body.description : undefined,
-      })
+      let mr
+      try {
+        mr = await openMergeRequest({
+          repositoryId: repo.id,
+          namespace: ns,
+          repo: repoName,
+          sourceBranch: body.sourceBranch.trim(),
+          targetBranch: body.targetBranch.trim(),
+          expectedSourceHead: body.expectedSourceHead.trim(),
+          expectedTargetHead: body.expectedTargetHead.trim(),
+          openedBy: { iss: user.iss, sub: user.sub },
+          title: typeof body.title === 'string' ? body.title : undefined,
+          description: typeof body.description === 'string' ? body.description : undefined,
+        })
+      } catch (err) {
+        if (err instanceof MergeRequestAlreadyOpenError) {
+          return c.json(
+            {
+              error: err.message,
+              code: err.code,
+              mergeRequestId: err.existingId,
+            },
+            409,
+          )
+        }
+        throw err
+      }
       if (Array.isArray(body.commitIds) && body.commitIds.length > 0) {
         await markCommitsQc(repo.id, body.commitIds.map(String), 'marked', {
           mergeRequestId: mr.id,
@@ -237,8 +270,8 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
     guarded({}, async ({ c, user }) => {
       const { isInstanceAdmin } = await import('./authzInstanceStore.js')
       if (!(await isInstanceAdmin(user))) return c.json({ error: 'Instance admin required' }, 403)
-      const { restoreTestStatus } = await import('./restoreTestGate.js')
-      return c.json({ restoreTest: restoreTestStatus() })
+      const { loadRestoreTestStatus } = await import('./restoreTestGate.js')
+      return c.json({ restoreTest: await loadRestoreTestStatus() })
     }),
   )
 
@@ -363,33 +396,38 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'read')).ok) {
         return c.json({ error: 'Forbidden' }, 403)
       }
-      const { buildMergeManifest, mergeResultBinding, manifestForCommit } = await import(
+      const { mergeResultBinding, manifestForMergeResult } = await import(
         './authentication/signing/mergeManifest.js'
       )
       const { isValidatedBranch } = await import('./signedMergeComplete.js')
-      let merge = buildMergeManifest([])
-      let manifestEntries: Array<{ path: string; contentHash: string }> = []
+      let merge
       try {
-        // Prefer the source tip tree as the proposed merge-result content evidence.
-        const built = await manifestForCommit(
+        merge = await manifestForMergeResult(
           { namespace: mr.namespace, repo: mr.repo },
           mr.expectedSourceHead,
+          mr.expectedTargetHead,
         )
-        merge = built
-        const lines = built.manifest
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean)
-        manifestEntries = lines.map((line) => {
+      } catch (err) {
+        return c.json(
+          {
+            error: 'Merge-result manifest unavailable',
+            code: 'manifest_unavailable',
+            detail: String((err as Error)?.message ?? err),
+          },
+          503,
+        )
+      }
+      const manifestEntries = merge.manifest
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((line) => {
           const sp = line.lastIndexOf(' ')
           return {
             path: line.slice(0, sp),
             contentHash: line.slice(sp + 1),
           }
         })
-      } catch {
-        // Oxen unavailable in some test/dev paths — empty tree is still a stable digest.
-      }
       const { binding, manifest } = mergeResultBinding({
         repo: `${mr.namespace}/${mr.repo}`,
         sourceHead: mr.expectedSourceHead,
@@ -436,7 +474,6 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         authors?: string[]
         commitIds?: string[]
         signatureId?: string
-        manifestEntries?: Array<{ path: string; contentHash: string }>
       }
       const signatureId =
         (typeof body.signatureId === 'string' && body.signatureId.trim()) ||
@@ -460,22 +497,35 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         }
         throw err
       }
-      const result = await completeSignedMerge({
-        mergeRequestId: c.req.param('id'),
-        signer: {
-          iss: signer.iss,
-          sub: signer.sub,
-          name: signer.name,
-          groups: signer.groups,
-        },
-        signatureId,
-        liveSourceHead: body.liveSourceHead.trim(),
-        liveTargetHead: body.liveTargetHead.trim(),
-        authors: Array.isArray(body.authors) ? body.authors.map(String) : [],
-        commitIds: Array.isArray(body.commitIds) ? body.commitIds.map(String) : [],
-        manifestEntries: body.manifestEntries,
-        executeMerge: mergeExecutor ?? defaultExecuteMerge,
-      })
+      // Server computes the merge-result manifest from live tips — never trust a client body digest.
+      let result
+      try {
+        result = await completeSignedMerge({
+          mergeRequestId: c.req.param('id'),
+          signer: {
+            iss: signer.iss,
+            sub: signer.sub,
+            name: signer.name,
+            groups: signer.groups,
+          },
+          signatureId,
+          liveSourceHead: body.liveSourceHead.trim(),
+          liveTargetHead: body.liveTargetHead.trim(),
+          authors: Array.isArray(body.authors) ? body.authors.map(String) : [],
+          commitIds: Array.isArray(body.commitIds) ? body.commitIds.map(String) : [],
+          ...(mergeManifestResolver ? { resolveMergeManifest: mergeManifestResolver } : {}),
+          executeMerge: mergeExecutor ?? defaultExecuteMerge,
+        })
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : 'Signed merge failed'
+        await audit({
+          action: 'merge_request.complete_denied',
+          status: 502,
+          message: detail,
+          detail: { mergeRequestId: c.req.param('id'), reason: reason.value.reason },
+        })
+        return c.json({ error: detail, code: 'merge_failed' }, 502)
+      }
       if (!result.ok) {
         await audit({
           action: 'merge_request.complete_denied',
@@ -483,7 +533,10 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           message: result.detail,
           detail: { code: result.code, mergeRequestId: c.req.param('id'), reason: reason.value.reason },
         })
-        return c.json({ error: result.detail, code: result.code }, result.status as 400 | 403 | 404 | 409)
+        return c.json(
+          { error: result.detail, code: result.code },
+          result.status as 400 | 403 | 404 | 409 | 503,
+        )
       }
       await audit({
         action: 'merge_request.complete',
