@@ -297,6 +297,67 @@ export function mergeRangePath(base: string, head: string): string {
   return `${base}..${head}`
 }
 
+async function withPhysical(
+  namespace: string,
+  repo: string,
+): Promise<{ namespaceId: string; repositoryId: string }> {
+  const physical = await resolvePhysicalRepo(namespace, repo)
+  if (!physical) throw new Error(`unknown repository ${namespace}/${repo}`)
+  return physical
+}
+
+/** Tip commit id for a branch (display ns/repo → physical oxen keys). */
+export async function getBranchTip(
+  namespace: string,
+  repo: string,
+  branch: string,
+): Promise<string | undefined> {
+  const physical = await withPhysical(namespace, repo)
+  const res = await oxenFetch(
+    `/api/repos/${encSeg(physical.namespaceId)}/${encSeg(physical.repositoryId)}/branches/${encSeg(branch)}`,
+  )
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined)
+    return undefined
+  }
+  const body = (await res.json()) as {
+    branch?: { commit_id?: string; commit?: { id?: string } }
+    commit_id?: string
+  }
+  return body.branch?.commit_id ?? body.branch?.commit?.id ?? body.commit_id
+}
+
+/**
+ * Commits oxen would bring in for `base..head` (target..source for a merge).
+ * Used for 4-eyes author checks and QC marking on signed complete.
+ */
+export async function listMergeCommits(
+  namespace: string,
+  repo: string,
+  base: string,
+  head: string,
+): Promise<Array<{ id: string; author: string }>> {
+  const physical = await withPhysical(namespace, repo)
+  const range = mergeRangePath(base, head)
+  const res = await oxenFetch(
+    `/api/repos/${encSeg(physical.namespaceId)}/${encSeg(physical.repositoryId)}/merge/${range}`,
+  )
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`oxen merge preview failed (${res.status})${text ? `: ${text}` : ''}`)
+  }
+  const body = (await res.json()) as {
+    commits?: Array<{ id?: string; author?: unknown }>
+  }
+  const out: Array<{ id: string; author: string }> = []
+  for (const c of body.commits ?? []) {
+    const id = typeof c.id === 'string' ? c.id.trim() : ''
+    const author = typeof c.author === 'string' ? c.author.trim() : ''
+    if (id) out.push({ id, author })
+  }
+  return out
+}
+
 export async function mergeBranch(
   namespace: string,
   repo: string,

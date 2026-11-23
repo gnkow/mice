@@ -186,10 +186,6 @@ export function MergeRequestSignPanel({
       }
 
       const result = await completeSignedMergeRequest(mergeRequestId, {
-        liveSourceHead: live.mergeRequest.expectedSourceHead,
-        liveTargetHead: live.mergeRequest.expectedTargetHead,
-        authors: [],
-        commitIds: [],
         signatureId: signature.id,
         reason: reason.trim(),
         changeControlId:

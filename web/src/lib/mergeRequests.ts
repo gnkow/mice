@@ -59,6 +59,7 @@ export type MergeRefusalCode =
   | 'restore_test_required'
   | 'signature_invalid'
   | 'audit_unavailable'
+  | 'merge_failed'
 
 const REFUSAL_COPY: Record<string, string> = {
   not_approver: 'You need the Approver role for this repository to sign the merge.',
@@ -73,6 +74,8 @@ const REFUSAL_COPY: Record<string, string> = {
   not_validated: 'Target branch is not validated; use the unsigned merge path.',
   signature_invalid: 'The signature is missing, expired, or does not match this merge.',
   audit_unavailable: 'Audit is unavailable; nothing was saved. Try again when audit is healthy.',
+  merge_failed:
+    'The signature was used but the merge failed. Open a new signing ceremony to retry.',
 }
 
 export function mergeRefusalMessage(code: string | undefined, fallback: string): string {
@@ -286,10 +289,6 @@ export async function resyncMergeRequest(
 export async function completeSignedMergeRequest(
   id: string,
   input: {
-    liveSourceHead: string
-    liveTargetHead: string
-    authors: string[]
-    commitIds: string[]
     signatureId: string
     reason: string
     changeControlId?: string
@@ -307,11 +306,8 @@ export async function completeSignedMergeRequest(
         ? { [CHANGE_CONTROL_HEADER]: input.changeControlId }
         : {}),
     },
+    // Heads, authors and commit ids are server-derived from oxen — never send them.
     body: JSON.stringify({
-      liveSourceHead: input.liveSourceHead,
-      liveTargetHead: input.liveTargetHead,
-      authors: input.authors,
-      commitIds: input.commitIds,
       signatureId: input.signatureId,
     }),
   })

@@ -14,6 +14,7 @@ import { getCommitQc, markCommitsQc } from './commitQcStore.js'
 import { completeSignedMerge } from './completeSignedMerge.js'
 import { allocateChangeControlId, CHANGE_CONTROL_HEADER } from './changeControl.js'
 import { revokeSignature } from './signatureRevoke.js'
+import { signerAuthorKey } from './selfMerge.js'
 import type { AuditDep } from './routeDeps.js'
 
 let mergeExecutor:
@@ -38,6 +39,29 @@ type MergeManifestResolver = (input: {
 
 let mergeManifestResolver: MergeManifestResolver | null = null
 
+type MergeRangeResolver = (input: {
+  mr: {
+    namespace: string
+    repo: string
+    sourceBranch: string
+    targetBranch: string
+  }
+  sourceHead: string
+  targetHead: string
+}) => Promise<{ authors: string[]; commitIds: string[] }>
+
+type LiveHeadsResolver = (mr: {
+  namespace: string
+  repo: string
+  sourceBranch: string
+  targetBranch: string
+  expectedSourceHead: string
+  expectedTargetHead: string
+}) => Promise<{ sourceHead: string; targetHead: string }>
+
+let mergeRangeResolver: MergeRangeResolver | null = null
+let liveHeadsResolver: LiveHeadsResolver | null = null
+
 /** Tests replace the oxen merge call. */
 export function setMergeExecutorForTests(
   next: typeof mergeExecutor,
@@ -52,13 +76,27 @@ export function setMergeManifestResolverForTests(
   mergeManifestResolver = next
 }
 
+/** Tests replace oxen merge-range author/commit resolution. */
+export function setMergeRangeResolverForTests(next: MergeRangeResolver | null): void {
+  mergeRangeResolver = next
+}
+
+/** Tests replace oxen live branch tip resolution. */
+export function setLiveHeadsResolverForTests(next: LiveHeadsResolver | null): void {
+  liveHeadsResolver = next
+}
+
 async function defaultExecuteMerge(mr: {
   namespace: string
   repo: string
   sourceBranch: string
   targetBranch: string
+  expectedSourceHead: string
+  expectedTargetHead: string
 }): Promise<{ mergeCommitId: string }> {
-  // Same oxen merge path as jobs: physical UUID keys, unencoded branch range, author body.
+  // Oxen 0.67 merge/{base}..{head} accepts branch names only — raw tip SHAs
+  // 404 ("Could not find branch or commit"). Live tips are still gated against
+  // expectedSourceHead/expectedTargetHead + signature binding before this runs.
   const { mergeBranch } = await import('./jobsOxen.js')
   const mergeCommitId = await mergeBranch(
     mr.namespace,
@@ -469,20 +507,26 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         return c.json({ error: reason.rejection.detail, code: reason.rejection.code }, 400)
       }
       const body = raw as {
-        liveSourceHead?: string
-        liveTargetHead?: string
-        authors?: string[]
-        commitIds?: string[]
         signatureId?: string
       }
       const signatureId =
         (typeof body.signatureId === 'string' && body.signatureId.trim()) ||
         c.req.header('x-mice-signature-id')?.trim() ||
         ''
-      if (!body.liveSourceHead?.trim() || !body.liveTargetHead?.trim() || !signatureId) {
+      if (!signatureId) {
+        await audit({
+          action: 'merge_request.complete_denied',
+          status: 400,
+          message: 'signature id required',
+          detail: {
+            code: 'signature_invalid',
+            mergeRequestId: c.req.param('id'),
+            reason: reason.value.reason,
+          },
+        })
         return c.json(
           {
-            error: 'liveSourceHead, liveTargetHead, and signature id required',
+            error: 'signature id required',
             code: 'signature_invalid',
           },
           400,
@@ -497,7 +541,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         }
         throw err
       }
-      // Server computes the merge-result manifest from live tips — never trust a client body digest.
+      // Live tips, authors, commit ids and merge-result manifest are server-derived.
       let result
       try {
         result = await completeSignedMerge({
@@ -509,11 +553,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
             groups: signer.groups,
           },
           signatureId,
-          liveSourceHead: body.liveSourceHead.trim(),
-          liveTargetHead: body.liveTargetHead.trim(),
-          authors: Array.isArray(body.authors) ? body.authors.map(String) : [],
-          commitIds: Array.isArray(body.commitIds) ? body.commitIds.map(String) : [],
           ...(mergeManifestResolver ? { resolveMergeManifest: mergeManifestResolver } : {}),
+          ...(liveHeadsResolver ? { resolveLiveHeads: liveHeadsResolver } : {}),
+          ...(mergeRangeResolver ? { resolveMergeRange: mergeRangeResolver } : {}),
           executeMerge: mergeExecutor ?? defaultExecuteMerge,
         })
       } catch (err) {
@@ -531,11 +573,18 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           action: 'merge_request.complete_denied',
           status: result.status,
           message: result.detail,
-          detail: { code: result.code, mergeRequestId: c.req.param('id'), reason: reason.value.reason },
+          detail: {
+            code: result.code,
+            mergeRequestId: c.req.param('id'),
+            reason: reason.value.reason,
+            signatureId,
+            ...(result.signatureConsumed ? { signatureConsumed: true } : {}),
+            ...(result.authors ? { authors: result.authors, signer: signerAuthorKey(signer) } : {}),
+          },
         })
         return c.json(
           { error: result.detail, code: result.code },
-          result.status as 400 | 403 | 404 | 409 | 503,
+          result.status as 400 | 403 | 404 | 409 | 502 | 503,
         )
       }
       await audit({
