@@ -599,7 +599,7 @@ function SignatureRevoke({
   revoked: Set<string>
   onRevoked: () => void
 }) {
-  const signatureId = revocableSignatureId(event.action, event.detail)
+  const signatureId = revocableSignatureId(event.action, event.detail, event.signature_id)
   if (!signatureId) return null
   if (revoked.has(signatureId)) {
     return (

@@ -21,13 +21,25 @@ function rowsFromPairs(pairs: [string, string | undefined][]): EvidenceRow[] {
 
 const SIGNATURE_EVIDENCE_ACTIONS = new Set(['esign.created', 'signature.created'])
 
+function hasCeremonyEvidence(detail: Record<string, unknown>): boolean {
+  return Boolean(
+    detail.mfaEvidence ||
+      detail.verificationMetadata ||
+      detail.signer ||
+      detail.signatureId ||
+      detail.signedAt,
+  )
+}
+
 /**
- * Grouped MFA, token-verification, and signature-identity evidence on an
- * `esign.created` audit event (Tickets 13, 26, 53 / #83).
+ * Grouped MFA, token-verification, and signature-identity evidence.
+ * Shown on legacy `esign.created` rows and on mutation rows that carry ceremony
+ * evidence in `detail` (Tickets 13, 26, 53 / #83; #87 Phase 3 same-row).
  * Identity vs IdP verification stay separate so Auditors scan each claim set.
  */
 export function signatureEvidenceSections(action: string, detail: Detail): EvidenceSection[] {
-  if (!SIGNATURE_EVIDENCE_ACTIONS.has(action) || !detail) return []
+  if (!detail) return []
+  if (!SIGNATURE_EVIDENCE_ACTIONS.has(action) && !hasCeremonyEvidence(detail)) return []
 
   const signer =
     detail.signer && typeof detail.signer === 'object'

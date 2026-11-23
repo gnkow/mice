@@ -1,6 +1,6 @@
 import { AuthzError } from './authzApi'
 
-/** Audit actions that carry a signature id the UI can revoke or mark as revoked. */
+/** Legacy standalone ceremony actions (pre same-row audit). */
 export const SIGNATURE_CREATED_ACTIONS = new Set(['esign.created', 'signature.created'])
 export const SIGNATURE_REVOKED_ACTION = 'esign.revoked'
 
@@ -8,10 +8,19 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v : undefined
 }
 
-/** Signature id on an `esign.created` audit event, when it can be revoked. */
-export function revocableSignatureId(action: string, detail: Record<string, unknown> | undefined): string | undefined {
-  if (!SIGNATURE_CREATED_ACTIONS.has(action)) return undefined
-  return str(detail?.signatureId)
+/**
+ * Signature id the UI can revoke: legacy `esign.created` rows, or mutation rows
+ * that recorded `detail.signatureId` / top-level `signature_id`.
+ */
+export function revocableSignatureId(
+  action: string,
+  detail: Record<string, unknown> | undefined,
+  signatureId?: string | null,
+): string | undefined {
+  const fromDetail = str(detail?.signatureId)
+  if (fromDetail) return fromDetail
+  if (SIGNATURE_CREATED_ACTIONS.has(action)) return undefined
+  return str(signatureId ?? undefined)
 }
 
 /** Signature ids already revoked according to the loaded audit events. */

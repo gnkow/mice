@@ -124,8 +124,12 @@ describe('Seal key rotation HTTP seam (Ticket 17)', () => {
     assert.ok(retired?.validUntil, 'previous key keeps 7-day overlap')
 
     const { events } = await queryAudit({ action: 'seal_key.rotated', limit: 10 })
-    assert.ok(events.some((e) => e.detail?.newKeyId === body.key.id))
+    const rotated = events.find((e) => e.detail?.newKeyId === body.key.id)
+    assert.ok(rotated)
+    assert.ok(rotated.signature_id, 'ceremony signature_id is on the mutation row')
+    assert.equal(rotated.detail?.signatureId, rotated.signature_id)
   })
+
 
   it('GXP-R-013 POST /auth/admin/seal-keys/rotate/emergency refuses without ceremony and accepts with it', async () => {
     const api = app()

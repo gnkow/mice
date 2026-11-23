@@ -3,10 +3,15 @@ import { test } from 'node:test'
 import { AuthzError } from './authzApi'
 import { revocableSignatureId, revokedSignatureIds, revokeFailureMessage } from './signatureRevoke'
 
-test('revocable only on signature-created events with an id', () => {
+test('revocable from ceremony detail.signatureId or mutation signature_id', () => {
   assert.equal(revocableSignatureId('esign.created', { signatureId: 'sig-1' }), 'sig-1')
   assert.equal(revocableSignatureId('esign.created', {}), undefined)
-  assert.equal(revocableSignatureId('esign.failed', { signatureId: 'sig-1' }), undefined)
+  assert.equal(
+    revocableSignatureId('merge_request.complete', { signatureId: 'sig-2' }),
+    'sig-2',
+  )
+  assert.equal(revocableSignatureId('file.write', {}, 'sig-3'), 'sig-3')
+  assert.equal(revocableSignatureId('esign.failed', {}), undefined)
 })
 
 test('collects ids from esign.revoked events', () => {

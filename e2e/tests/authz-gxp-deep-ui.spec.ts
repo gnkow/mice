@@ -227,12 +227,13 @@ test.describe('AuthZ + GxP deep UI', () => {
       actor: { sub: 'signer', iss: 'mice-e2e', name: 'Sig Signer', email: 'signer@mice.local' },
       via: 'session',
       method: 'POST',
-      path: '/auth/sign/execute',
+      path: '/auth/admin/seal-keys/rotate',
       status: 200,
-      action: 'esign.created',
-      action_label: 'Electronic signature recorded',
-      message: 'Electronic signature created: Approved',
-      detail: { signatureId: id, meaning: 'Approved' },
+      action: 'seal_key.rotated',
+      action_label: 'Seal key rotated',
+      message: 'Normal seal key rotation completed',
+      signature_id: id,
+      detail: { signatureId: id, meaning: 'Approved', newKeyId: 'key-93' },
     })
 
     test('TC-GXP-93-01: non-approver gets a clear not_approver alert', async ({ page }) => {

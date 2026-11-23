@@ -180,17 +180,14 @@ describe('Ticket 26 — signature evidence on execute', () => {
     assert.equal(stored?.record.verificationMetadata?.idp_issuer, 'https://idp.test')
     assert.equal(stored?.record.verificationMetadata?.idp_session_id, 'sess-integ')
 
+    // Success evidence rides on the consuming mutation row, not a standalone esign.created.
     const created = (await queryAudit({ action: 'esign.created', actor: alice.sub, limit: 50 })).events.find(
       (e) => e.detail?.signatureId === body.signature.id,
     )
-    assert.ok(created)
-    assert.deepEqual(created.detail?.mfaEvidence, body.signature.mfaEvidence)
-    assert.equal(
-      (created.detail?.verificationMetadata as { jwks_key_id?: string } | undefined)?.jwks_key_id,
-      'kid-integ',
-    )
+    assert.equal(created, undefined)
   })
 })
+
 
 describe('Ticket 52 — incomplete signing evidence refused on execute', () => {
   async function prepareAndExecute(

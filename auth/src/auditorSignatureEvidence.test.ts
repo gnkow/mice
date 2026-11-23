@@ -14,10 +14,19 @@ await appendAudit({
   actor: { iss: signer.iss, sub: signer.sub, email: signer.email, name: signer.name },
   via: 'session',
   method: 'POST',
-  path: '/auth/sign/execute',
+  path: '/auth/admin/seal-keys/rotate',
   status: 200,
-  action: 'esign.created',
-  detail: { meaning: 'approve', hash: 'h1', signedAt: 't', mfaEvidence: evidence, verificationMetadata: verification },
+  action: 'seal_key.rotated',
+  signature_id: 'sig-h1',
+  detail: {
+    signatureId: 'sig-h1',
+    meaning: 'Approved',
+    hash: 'h1',
+    signedAt: 't',
+    newKeyId: 'key-1',
+    mfaEvidence: evidence,
+    verificationMetadata: verification,
+  },
 })
 
 const auditor = iso.person('sig-auditor')
@@ -25,17 +34,17 @@ await iso.grantRole(auditor, 'auditor')
 const jwt = (claims: object) =>
   ['e30', Buffer.from(JSON.stringify(claims)).toString('base64url'), 's'].join('.')
 const query = async (idToken?: string) =>
-  createApp().request('/auth/audit?action=esign.created', {
+  createApp().request('/auth/audit?action=seal_key.rotated', {
     headers: await iso.sessionHeaders({ ...auditor, ...(idToken ? { idToken } : {}) } as typeof auditor),
   })
 
 describe('Auditor opens signature evidence (#13)', () => {
-  it('returns the stored MFA and verification evidence on signature events', async () => {
+  it('returns the stored MFA and verification evidence on the mutation row', async () => {
     const res = await query(jwt({ acr: 'mfa', amr: ['pwd', 'otp'] }))
     assert.equal(res.status, 200)
     const body = (await res.json()) as { events: { action?: string; detail?: Record<string, unknown> }[] }
     const hit = body.events.find((e) => e.detail?.hash === 'h1')
-    assert.ok(hit, `expected esign.created with hash h1; got ${JSON.stringify(body.events.slice(0, 5))}`)
+    assert.ok(hit, `expected seal_key.rotated with hash h1; got ${JSON.stringify(body.events.slice(0, 5))}`)
     assert.deepEqual(hit.detail?.mfaEvidence, evidence)
     assert.deepEqual(hit.detail?.verificationMetadata, verification)
   })

@@ -49,24 +49,40 @@ export function registerSealKeyRoutes(app: Hono): void {
    */
   app.post(
     '/auth/admin/seal-keys/rotate',
-    guarded({ ...requireInstanceAdmin, reason: true, body: 'optional' }, async ({ c, user }) => {
-      const { newKey } = await rotateSealKeyWithAudit({
-        kind: 'normal',
-        actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
-        via: 'session',
-      })
+    guarded(
+      { ...requireInstanceAdmin, reason: true, body: 'optional', mutates: true },
+      async ({ c, user, audit }) => {
+        const { newKey } = await rotateSealKeyWithAudit(
+          {
+            kind: 'normal',
+            actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+            via: 'session',
+          },
+          {
+            // Route-guard audit merges ceremony evidence onto this mutation row.
+            audit: async (event) => {
+              await audit({
+                action: event.action,
+                message: event.message,
+                detail: event.detail,
+                status: event.status,
+              })
+            },
+          },
+        )
 
-      return c.json({
-        success: true,
-        key: {
-          id: newKey.id,
-          validFrom: newKey.validFrom,
-          validUntil: newKey.validUntil,
-          rotationType: newKey.rotationType,
-          createdAt: newKey.createdAt.toISOString(),
-        },
-      })
-    }),
+        return c.json({
+          success: true,
+          key: {
+            id: newKey.id,
+            validFrom: newKey.validFrom,
+            validUntil: newKey.validUntil,
+            rotationType: newKey.rotationType,
+            createdAt: newKey.createdAt.toISOString(),
+          },
+        })
+      },
+    ),
   )
 
   /**
@@ -75,35 +91,50 @@ export function registerSealKeyRoutes(app: Hono): void {
    */
   app.post(
     '/auth/admin/seal-keys/rotate/emergency',
-    guarded({ ...requireInstanceAdmin, reason: true, body: 'optional' }, async ({ c, user, body }) => {
-      const reason =
-        typeof body?.reason === 'string' ? body.reason : 'Emergency rotation requested'
+    guarded(
+      { ...requireInstanceAdmin, reason: true, body: 'optional', mutates: true },
+      async ({ c, user, body, audit }) => {
+        const reason =
+          typeof body?.reason === 'string' ? body.reason : 'Emergency rotation requested'
 
-      const result = await rotateSealKeyWithAudit({
-        kind: 'emergency',
-        actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
-        via: 'session',
-        reason,
-      })
-      if (result.kind !== 'emergency') {
-        throw new Error('expected emergency rotation result')
-      }
-      const { oldKey, newKey } = result
+        const result = await rotateSealKeyWithAudit(
+          {
+            kind: 'emergency',
+            actor: { sub: user.sub, iss: user.iss, email: user.email, name: user.name },
+            via: 'session',
+            reason,
+          },
+          {
+            audit: async (event) => {
+              await audit({
+                action: event.action,
+                message: event.message,
+                detail: event.detail,
+                status: event.status,
+              })
+            },
+          },
+        )
+        if (result.kind !== 'emergency') {
+          throw new Error('expected emergency rotation result')
+        }
+        const { oldKey, newKey } = result
 
-      return c.json({
-        success: true,
-        oldKey: {
-          id: oldKey.id,
-          revokedAt: oldKey.revokedAt,
-          gracePeriodUntil: oldKey.validUntil,
-        },
-        newKey: {
-          id: newKey.id,
-          validFrom: newKey.validFrom,
-          rotationType: newKey.rotationType,
-          createdAt: newKey.createdAt.toISOString(),
-        },
-      })
-    }),
+        return c.json({
+          success: true,
+          oldKey: {
+            id: oldKey.id,
+            revokedAt: oldKey.revokedAt,
+            gracePeriodUntil: oldKey.validUntil,
+          },
+          newKey: {
+            id: newKey.id,
+            validFrom: newKey.validFrom,
+            rotationType: newKey.rotationType,
+            createdAt: newKey.createdAt.toISOString(),
+          },
+        })
+      },
+    ),
   )
 }

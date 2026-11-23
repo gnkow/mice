@@ -15,6 +15,8 @@ import {
   type ResolvedReason,
 } from '../../auditReason.js'
 import { intentReasonFields } from '../../auditReasonFields.js'
+import { mutationSignatureAuditDetail } from '../signing/signingCeremony.js'
+import type { SignatureRecord as StoredSignature } from '../signing/signatureStore.js'
 import {
   allocateChangeControlId,
   CHANGE_CONTROL_HEADER,
@@ -125,6 +127,7 @@ export function guarded(
     let reason: ResolvedReason | undefined
     let changeControlId: string | undefined
     let signatureId: string | undefined
+    let signatureRecord: StoredSignature | undefined
     if (needsReason) {
       const resolved = resolveReason({
         actor: user,
@@ -157,6 +160,7 @@ export function guarded(
         return c.json({ error: signed.rejection.detail, code: signed.rejection.code }, 400)
       }
       signatureId = signed.signatureId
+      signatureRecord = signed.record
       changeControlId =
         changeControlId || signed.record.changeControlId || allocateChangeControlId()
     }
@@ -165,9 +169,23 @@ export function guarded(
       changeControlId,
       signatureId,
     })
+    const signatureDetail =
+      signatureId && signatureRecord
+        ? mutationSignatureAuditDetail(signatureId, signatureRecord)
+        : undefined
+    const withSignatureDetail = (detail?: Record<string, unknown>) =>
+      signatureDetail || detail
+        ? { detail: { ...signatureDetail, ...detail } }
+        : {}
     if (mutates) {
       try {
-        await beginTrackedIntent(c.req.raw, { ...base, ...reasonFields, status: 0, action: 'bff.mutation' })
+        await beginTrackedIntent(c.req.raw, {
+          ...base,
+          ...reasonFields,
+          ...withSignatureDetail(),
+          status: 0,
+          action: 'bff.mutation',
+        })
       } catch (err) {
         if (err instanceof AuditDetailPolicyError) {
           return c.json({ error: err.message, code: err.code }, 400)
@@ -190,7 +208,7 @@ export function guarded(
           ...(f.message ? { message: f.message } : {}),
           ...(f.namespace ? { namespace: f.namespace } : {}),
           ...(f.repo ? { repo: f.repo } : {}),
-          ...(f.detail ? { detail: f.detail } : {}),
+          ...withSignatureDetail(f.detail),
         })
       },
       deny: (d) => denialResponse(c, d),
@@ -200,7 +218,13 @@ export function guarded(
     const closeIntent = async (status: number) => {
       const tracked = trackedIntent(c.req.raw)
       if (tracked && tracked.outcomes === 0) {
-        await appendOutcomeFor(c.req.raw, { ...base, ...reasonFields, status, action: 'bff.mutation' })
+        await appendOutcomeFor(c.req.raw, {
+          ...base,
+          ...reasonFields,
+          ...withSignatureDetail(),
+          status,
+          action: 'bff.mutation',
+        })
       }
     }
     let res: Response

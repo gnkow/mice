@@ -42,7 +42,7 @@ const auditFor = async (action: string) =>
   (await queryAudit({ action, actor: alice.sub, limit: 50 })).events
 
 describe('POST /auth/sign/execute writes the authoritative record', () => {
-  it('stores the signature in the ledger, indexes it and audits esign.created', async () => {
+  it('stores the signature in the ledger and indexes it without a standalone esign.created audit', async () => {
     const claims = { iss: 'https://idp.test', sub: alice.sub, auth_time: nowSec() - 5, acr: 'mfa', amr: ['pwd', 'otp'], sid: 'sess-1' }
     const res = await execute({ ...alice, idToken: idToken(claims), authTime: nowSec() - 5 })
     assert.equal(res.status, 200)
@@ -56,8 +56,9 @@ describe('POST /auth/sign/execute writes the authoritative record', () => {
     assert.equal(stored?.record.verificationMetadata?.idp_session_id, 'sess-1')
     assert.equal((await store.find({ signer: alice })).some((s) => s.id === body.signature.id), true)
 
+    // Success lives on the mutation audit row (signature_id + evidence), not a separate esign.created.
     const created = (await auditFor('esign.created')).find((e) => e.detail?.signatureId === body.signature.id)
-    assert.ok(created)
+    assert.equal(created, undefined)
   })
 
   it('writes esign.failed and returns no signature when the record cannot be stored', async () => {

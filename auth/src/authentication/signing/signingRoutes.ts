@@ -295,22 +295,8 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
         return c.json({ error: 'Signature could not be recorded' }, 503)
       }
 
-      await audit(c, user, 'session', {
-        status: 200,
-        action: 'esign.created',
-        message: `Electronic signature created: ${meaning}`,
-        detail: {
-          signatureId: saved.id,
-          ledgerSeq: saved.seq,
-          meaning,
-          hash: signature.hash,
-          signedAt: signature.signedAt,
-          changeControlId,
-          // Ticket 26 / #83: Auditor-visible evidence (same packing as ledger + HTTP)
-          ...signatureEvidenceFields(signature),
-        },
-      })
-
+      // No standalone esign.created audit: evidence rides on the mutation outcome via signature_id.
+      // Failures still audit as esign.failed (no mutation row to attach to).
       return c.json({
         signature: {
           id: saved.id,

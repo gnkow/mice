@@ -33,6 +33,10 @@ import {
   SIGNATURE_HEADER,
   type MutationSignatureRejection,
 } from './mutationSignature.js'
+import { mutationSignatureAuditDetail } from './authentication/signing/signingCeremony.js'
+import type { SignatureRecord as StoredSignature } from './authentication/signing/signatureStore.js'
+import { mutationSignatureAuditDetail } from './authentication/signing/signingCeremony.js'
+import type { SignatureRecord as StoredSignature } from './authentication/signing/signatureStore.js'
 import { createDatasetCapture, createLineageCapture, type DatasetVersions } from './proxyLineage.js'
 import { authorizeApiRequest } from './authz.js'
 import { interpretRequestBody } from './proxyBody.js'
@@ -310,6 +314,7 @@ export async function proxyToOxen(
   let reason: ResolvedReason | undefined
   let changeControlId: string | undefined
   let signatureId: string | undefined
+  let signatureRecord: StoredSignature | undefined
   if (mutating && mutationNeedsReason(classified.action)) {
     const resolved = resolveReason({
       actor: user,
@@ -336,6 +341,7 @@ export async function proxyToOxen(
       return rejectSignature(user, via, method, pathname, signed.rejection, { namespace: ns, repo })
     }
     signatureId = signed.signatureId
+    signatureRecord = signed.record
     changeControlId =
       changeControlId || signed.record.changeControlId || allocateChangeControlId()
   } else if (mutating && mutationNeedsChangeControl(classified.action)) {
@@ -395,6 +401,9 @@ export async function proxyToOxen(
       ...(copyFrom ? { copy_from: copyFrom } : {}),
       ...(restoreFrom ? { restore_from: restoreFrom } : {}),
       ...(lineage.kind() ? { lineage_kind: lineage.kind() } : {}),
+      ...(signatureId && signatureRecord
+        ? mutationSignatureAuditDetail(signatureId, signatureRecord)
+        : {}),
     },
   })
 

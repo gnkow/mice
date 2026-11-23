@@ -38,7 +38,7 @@ test.describe('Auditor signature evidence (#13 / #18)', () => {
     page,
   }) => {
     // Signer: Keycloak bootstrap admin with Conditional OTP (mice_admin) so the step-up id_token
-    // carries acr/amr/auth_time and JWKS verification metadata into esign.created.
+    // carries acr/amr/auth_time and JWKS verification metadata onto the mutation audit row.
     try {
       await signInWithKeycloakMfa(page)
     } catch (err) {

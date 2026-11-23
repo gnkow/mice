@@ -242,7 +242,7 @@ export async function runLiveSigningCeremony(
 
 /**
  * Drive a real reason + signing ceremony via seal-key normal rotation (no response injection).
- * Announcements do not require a signature; seal-key rotate does and records `esign.created`.
+ * Announcements do not require a signature; seal-key rotate does and puts ceremony evidence on `seal_key.rotated`.
  * Caller must already be signed in as an admin who can complete Keycloak MFA step-up.
  *
  * Clears Playwright's suite-wide `x-mice-reason` extra header for the ceremony so the signed

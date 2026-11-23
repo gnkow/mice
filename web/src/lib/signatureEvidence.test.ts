@@ -57,9 +57,24 @@ describe('signature evidence rows (#13 auditor view + #53 identity)', () => {
     )
   })
 
-  it('returns no rows for other actions or when evidence is absent', () => {
-    assert.deepEqual(signatureEvidenceRows('file.write', { mfaEvidence: { acr: 'mfa', amr: [] } }), [])
+  it('returns no rows when evidence is absent', () => {
+    assert.deepEqual(signatureEvidenceRows('file.write', { path: '/x' }), [])
     assert.deepEqual(signatureEvidenceRows('esign.created', undefined), [])
+  })
+
+  it('shows evidence on the mutation row that consumed the signature', () => {
+    const rows = signatureEvidenceRows('namespace.settings.update', {
+      signatureId: 'sig-1',
+      signer: { iss: 'https://idp.test', sub: 'jane', name: 'Jane' },
+      mfaEvidence: { acr: 'mfa', amr: ['pwd', 'otp'], auth_time: 1_700_000_000 },
+      verificationMetadata: {
+        jwks_key_id: 'kid-1',
+        token_verified_at: 1_767_225_600_000,
+        idp_issuer: 'https://idp.test',
+      },
+    })
+    assert.ok(rows.some((r) => r.label === 'Signed name' && r.value === 'Jane'))
+    assert.ok(rows.some((r) => r.label === 'Auth context (acr)' && r.value === 'mfa'))
   })
 
   it('also labels evidence for signature.created (auditor alias)', () => {

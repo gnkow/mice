@@ -139,7 +139,7 @@ export function buildSigningSessionInfo(
 }
 
 /**
- * MFA + verification fields mirrored onto the ledger, esign.created audit detail,
+ * MFA + verification fields mirrored onto the ledger, mutation audit detail,
  * and HTTP signature body so Auditor evidence cannot diverge across those seams.
  */
 export function signatureEvidenceFields(
@@ -153,6 +153,31 @@ export function signatureEvidenceFields(
     ...(evidence.verificationMetadata
       ? { verificationMetadata: evidence.verificationMetadata }
       : {}),
+  }
+}
+
+/**
+ * Packs ceremony evidence onto the mutation audit row (replaces standalone esign.created).
+ * Accepts the immudb SignatureStore record shape (signer / contentHash / ISO signedAt).
+ */
+export function mutationSignatureAuditDetail(
+  signatureId: string,
+  record: {
+    signer: { iss: string; sub: string; name: string }
+    meaning: SignatureMeaning
+    contentHash: string
+    signedAt: string
+    mfaEvidence?: MfaEvidence
+    verificationMetadata?: VerificationMetadata
+  },
+): Record<string, unknown> {
+  return {
+    signatureId,
+    meaning: record.meaning,
+    hash: record.contentHash,
+    signedAt: record.signedAt,
+    signer: record.signer,
+    ...signatureEvidenceFields(record),
   }
 }
 

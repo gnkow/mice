@@ -29,6 +29,8 @@ export type AuditEvent = {
   category?: string
   /** Change-control record id for regulated mutations. */
   change_control_id?: string
+  /** Electronic signature id when the mutation consumed a ceremony result. */
+  signature_id?: string
   /** Dataset commit ids before and after a dataset mutation. */
   dataset?: AuditDataset
   detail?: Record<string, unknown>
