@@ -1,6 +1,6 @@
 import { test, expect, repoPath } from '../fixtures'
 import { mockDirectorySearch, pickFromDirectory } from '../helpers/directory'
-import { createBranch, putFile, uniqueId } from '../helpers/oxenApi'
+import { createBranch, listBranches, putFile, uniqueId } from '../helpers/oxenApi'
 import { regulatedMutationHeaders } from '../helpers/regulated'
 import { mintSession } from '../helpers/session'
 
@@ -561,7 +561,10 @@ test.describe('AuthZ + GxP deep UI', () => {
       await expect(page.getByTestId('commit-detail-qc-failed')).toBeVisible()
 
       await page.goto(repoPath(seededRepo, '/merge?base=main&head=feature'))
-      await expect(page.getByTestId('qc-failed-warning')).toContainText(/commits to merge/, { timeout: 30_000 })
+      await expect(page.getByTestId('qc-failed-warning')).toContainText(/commits to merge/, {
+        timeout: 30_000,
+      })
+      await expect(page.getByTestId('qc-failed-warning')).toContainText(/Review the revoked signature/)
 
       await page.goto(repoPath(seededRepo, '/branches/feature'))
       await expect(page.getByTestId('qc-failed-warning')).toContainText(/branch feature/)
@@ -574,6 +577,89 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.goto(repoPath(seededRepo, '/commits'))
       await expect(page.locator('.commit-row').first()).toBeVisible()
       await expect(page.getByTestId('qc-failed-warning')).toHaveCount(0)
+    })
+
+    test('TC-GXP-94-03: merge request warns and blocks Approve when range has QC Failed', async ({
+      page,
+      seededRepo,
+    }) => {
+      // Default suite session (e2e-user) already has admin collaborator + opens the MR.
+      const approver = uniqueId('gxp94-appr')
+      await createBranch(seededRepo.namespace, seededRepo.repo, 'feature-94', 'main')
+      await putFile(
+        seededRepo.namespace,
+        seededRepo.repo,
+        'feature-94',
+        'qc94.txt',
+        'qc94\n',
+        'qc failed for mr',
+      )
+      const branches = await listBranches(seededRepo.namespace, seededRepo.repo)
+      const tip = (name: string) => {
+        const id = branches.find((b) => b.name === name)?.commit_id
+        expect(id, `${name} tip`).toBeTruthy()
+        return id!
+      }
+      const createPath = `/auth/repos/${encodeURIComponent(seededRepo.namespace)}/${encodeURIComponent(seededRepo.repo)}/merge-requests`
+      const createBody = {
+        sourceBranch: 'feature-94',
+        targetBranch: 'main',
+        expectedSourceHead: tip('feature-94'),
+        expectedTargetHead: tip('main'),
+        title: 'QC Failed MR',
+      }
+      const createRes = await page.request.fetch(`${AUTH_URL}${createPath}`, {
+        method: 'POST',
+        headers: await regulatedMutationHeaders(page.request, {
+          method: 'POST',
+          path: createPath,
+          body: createBody,
+          reason: 'E2E: open MR for QC Failed warn coverage',
+        }),
+        data: createBody,
+      })
+      expect(createRes.ok(), await createRes.text()).toBeTruthy()
+      const created = (await createRes.json()) as { mergeRequest: { id: string } }
+
+      await seedApprover(
+        page,
+        `/auth/namespaces/${encodeURIComponent(seededRepo.namespace)}/repos/${encodeURIComponent(seededRepo.repo)}/approvers`,
+        'PUT',
+        { sub: approver, iss: 'mice-e2e' },
+      )
+      // Read seat so Approver can load the range; Approver≠opener avoids self-merge mask.
+      const collabPath = `/auth/namespaces/${encodeURIComponent(seededRepo.namespace)}/repos/${encodeURIComponent(seededRepo.repo)}/collaborators`
+      const collabBody = {
+        kind: 'user' as const,
+        sub: approver,
+        iss: 'mice-e2e',
+        role: 'read' as const,
+      }
+      const collabRes = await page.request.fetch(`${AUTH_URL}${collabPath}`, {
+        method: 'PUT',
+        headers: await regulatedMutationHeaders(page.request, {
+          method: 'PUT',
+          path: collabPath,
+          body: collabBody,
+          reason: 'E2E: grant Approver read for QC Failed MR warn',
+        }),
+        data: collabBody,
+      })
+      expect(collabRes.ok(), await collabRes.text()).toBeTruthy()
+      await mintSession(page, { role: 'admin', sub: approver, iss: 'mice-e2e' })
+      await page.route('**/auth/repos/*/*/commits/*/qc', (route) =>
+        route.fulfill({ json: { commitId: 'x', status: 'failed' } }),
+      )
+
+      await page.goto(repoPath(seededRepo, `/merge-requests/${created.mergeRequest.id}`))
+      const warning = page.getByTestId('qc-failed-warning')
+      await expect(warning).toBeVisible({ timeout: 30_000 })
+      await expect(warning).toContainText(/this request/)
+      await expect(warning).toContainText(/Approve is blocked/)
+      await expect(page.getByTestId('commit-qc-failed').first()).toBeVisible()
+      const approve = page.getByRole('button', { name: 'Approve' })
+      await expect(approve).toBeDisabled()
+      await expect(approve).toHaveAttribute('title', /QC Failed commits in range/)
     })
   })
 

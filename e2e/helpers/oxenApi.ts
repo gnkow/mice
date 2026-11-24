@@ -1,10 +1,35 @@
-/** Direct oxen-server helpers for setup / teardown (not mocked). */
+/**
+ * Repo setup helpers for e2e.
+ * Mutating calls go through the BFF (AuthZ + physical UUID rewrite).
+ * Direct oxen is used only for health checks and validated-branch seeds.
+ */
+
+import { mintSessionCookie, type MintedSession } from './session'
 
 const OXEN_URL = process.env.OXEN_URL ?? 'http://127.0.0.1:3001'
+const BFF_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 
 export type Json = Record<string, unknown>
 
-async function api<T = Json>(
+/** One suite cookie for BFF helpers — reminting per call invalidates the Playwright page session. */
+let suiteSession: MintedSession | null = null
+
+async function suiteCookieHeader(): Promise<string> {
+  if (!suiteSession) suiteSession = await mintSessionCookie()
+  return `${suiteSession.cookieName}=${suiteSession.cookieValue}`
+}
+
+/** Share the Playwright page cookie with BFF helpers. */
+export function plantSuiteSession(session: MintedSession): void {
+  suiteSession = session
+}
+
+/** Drop the cached suite cookie (e.g. after an intentional remint of e2e-user). */
+export function clearSuiteSessionCache(): void {
+  suiteSession = null
+}
+
+async function oxenApi<T = Json>(
   path: string,
   init: RequestInit = {},
 ): Promise<{ status: number; body: T }> {
@@ -30,12 +55,41 @@ async function api<T = Json>(
   return { status: res.status, body }
 }
 
+async function bffApi<T = Json>(
+  path: string,
+  init: RequestInit = {},
+): Promise<{ status: number; body: T }> {
+  const cookie = await suiteCookieHeader()
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    cookie,
+    origin: BFF_URL,
+    'x-mice-reason': 'e2e: oxenApi via BFF',
+    ...(init.headers as Record<string, string> | undefined),
+  }
+  if (init.body && !(init.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+  const res = await fetch(`${BFF_URL}${path}`, { ...init, headers })
+  const text = await res.text()
+  let body = {} as T
+  if (text) {
+    try {
+      body = JSON.parse(text) as T
+    } catch {
+      body = { raw: text } as T
+    }
+  }
+  return { status: res.status, body }
+}
+
 export function uniqueId(prefix = 'mice-e2e'): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+/** Create via BFF so AuthZ physical UUID keys match oxen. Namespace must already exist. */
 export async function createRepo(namespace: string, name: string) {
-  const { status, body } = await api('/api/repos', {
+  const { status, body } = await bffApi('/api/repos', {
     method: 'POST',
     body: JSON.stringify({ namespace, name }),
   })
@@ -46,10 +100,76 @@ export async function createRepo(namespace: string, name: string) {
 }
 
 export async function deleteRepo(namespace: string, name: string) {
-  await api(
+  await bffApi(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
     { method: 'DELETE' },
   )
+}
+
+/**
+ * Seed a file on a validated branch (e.g. main) by writing oxen physical keys
+ * directly — BFF blocks tip writes on validated branches.
+ */
+export async function putFileOnPhysical(
+  namespaceId: string,
+  repositoryId: string,
+  branch: string,
+  path: string,
+  content: string | Buffer | Uint8Array,
+  message: string,
+  filename?: string,
+) {
+  const form = new FormData()
+  const name = filename ?? path.split('/').pop() ?? 'file.txt'
+  const bytes =
+    typeof content === 'string'
+      ? new Blob([content], { type: 'text/plain' })
+      : new Blob([content])
+  form.append('file', bytes, name)
+  form.append('message', message)
+  form.append('name', 'Mice E2E')
+  form.append('email', 'e2e@mice.local')
+  const resource = [branch, ...path.split('/').filter(Boolean)].join('/')
+  const { status, body } = await oxenApi(
+    `/api/repos/${encodeURIComponent(namespaceId)}/${encodeURIComponent(repositoryId)}/file/${resource}`,
+    { method: 'PUT', body: form },
+  )
+  if (status >= 400) {
+    throw new Error(`putFileOnPhysical failed ${status}: ${JSON.stringify(body)}`)
+  }
+  return body as { commit?: { id: string } }
+}
+
+/** Resolve AuthZ namespace id + repository id for physical oxen paths. */
+export async function resolvePhysicalIds(
+  namespace: string,
+  repo: string,
+): Promise<{ namespaceId: string; repositoryId: string }> {
+  const cookie = await suiteCookieHeader()
+  const headers = { Accept: 'application/json', cookie, origin: BFF_URL }
+  const nsRes = await fetch(`${BFF_URL}/auth/namespaces/${encodeURIComponent(namespace)}`, {
+    headers,
+  })
+  if (!nsRes.ok) {
+    throw new Error(`resolvePhysicalIds namespace failed ${nsRes.status}: ${await nsRes.text()}`)
+  }
+  const nsBody = (await nsRes.json()) as { id: string }
+  const repoRes = await fetch(
+    `${BFF_URL}/auth/namespaces/${encodeURIComponent(namespace)}/repos/${encodeURIComponent(repo)}`,
+    { headers },
+  )
+  if (!repoRes.ok) {
+    throw new Error(`resolvePhysicalIds repo failed ${repoRes.status}: ${await repoRes.text()}`)
+  }
+  const repoBody = (await repoRes.json()) as {
+    repository?: { id?: string }
+    id?: string
+  }
+  const repositoryId = repoBody.repository?.id ?? repoBody.id
+  if (!repositoryId) {
+    throw new Error(`resolvePhysicalIds missing repository id: ${JSON.stringify(repoBody)}`)
+  }
+  return { namespaceId: nsBody.id, repositoryId }
 }
 
 export async function putFile(
@@ -72,10 +192,25 @@ export async function putFile(
   form.append('name', 'Mice E2E')
   form.append('email', 'e2e@mice.local')
   const resource = [branch, ...path.split('/').filter(Boolean)].join('/')
-  const { status, body } = await api(
+  const { status, body } = await bffApi(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/file/${resource}`,
     { method: 'PUT', body: form },
   )
+  if (status === 403) {
+    const detail = (body as { error?: { code?: string } }).error?.code
+    if (detail === 'validated_branch') {
+      const ids = await resolvePhysicalIds(namespace, repo)
+      return putFileOnPhysical(
+        ids.namespaceId,
+        ids.repositoryId,
+        branch,
+        path,
+        content,
+        message,
+        filename,
+      )
+    }
+  }
   if (status >= 400) {
     throw new Error(`putFile failed ${status}: ${JSON.stringify(body)}`)
   }
@@ -88,7 +223,7 @@ export async function createBranch(
   name: string,
   fromBranch = 'main',
 ) {
-  const { status, body } = await api(
+  const { status, body } = await bffApi(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/branches`,
     {
       method: 'POST',
@@ -102,7 +237,7 @@ export async function createBranch(
 }
 
 export async function listBranches(namespace: string, repo: string) {
-  const { body } = await api<{
+  const { body } = await bffApi<{
     branches?: { name: string; commit_id: string }[]
   }>(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/branches`,
@@ -116,7 +251,7 @@ export async function updateBranchTip(
   branch: string,
   commitId: string,
 ) {
-  const { status, body } = await api(
+  const { status, body } = await bffApi(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`,
     {
       method: 'PUT',
@@ -136,7 +271,7 @@ export async function getFileEntry(
   path: string,
 ) {
   const resource = [branch, ...path.split('/').filter(Boolean)].join('/')
-  const { status, body } = await api<{
+  const { status, body } = await bffApi<{
     entry?: { hash?: string; filename?: string; size?: number }
   }>(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/meta/${resource}`,
@@ -152,7 +287,7 @@ export async function getCommit(
   repo: string,
   commitId: string,
 ) {
-  const { status, body } = await api<{
+  const { status, body } = await bffApi<{
     commit?: { id: string; author: string; email: string; message: string }
   }>(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(commitId)}`,
@@ -170,7 +305,7 @@ export async function createWorkspace(
   name: string,
 ) {
   const workspaceId = crypto.randomUUID()
-  const { status, body } = await api<{
+  const { status, body } = await bffApi<{
     workspace?: { id: string; name?: string }
   }>(
     `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/workspaces`,
@@ -193,7 +328,7 @@ export async function waitForOxen(timeoutMs = 30_000) {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
-      const { status } = await api('/api/version')
+      const { status } = await oxenApi('/api/version')
       if (status === 200) return
     } catch {
       /* retry */
@@ -203,4 +338,4 @@ export async function waitForOxen(timeoutMs = 30_000) {
   throw new Error(`oxen-server not reachable at ${OXEN_URL}`)
 }
 
-export { OXEN_URL, api }
+export { OXEN_URL, oxenApi as api }

@@ -21,7 +21,13 @@ export function QcFailedWarning({ namespace, repo, summary, scope, advice }: Pro
   if (!hasQcFailures(summary)) return null
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
   return (
-    <div className="flash flash-warn qc-failed-warning" role="status" data-testid="qc-failed-warning">
+    <div
+      className="flash flash-warn qc-failed-warning"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="qc-failed-warning"
+    >
       <p>
         <ActionTriangleAlert size={16} aria-hidden="true" className="button-label-icon" />
         <strong>QC Failed:</strong>{' '}

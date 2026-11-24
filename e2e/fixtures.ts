@@ -1,13 +1,15 @@
 import { test as base, expect, type Page } from '@playwright/test'
 import {
+  clearSuiteSessionCache,
   createRepo,
   deleteRepo,
+  plantSuiteSession,
   putFile,
   uniqueId,
   waitForOxen,
 } from './helpers/oxenApi'
 import { cleanupContext, cleanupSince, revokeTokensSince, snapshot, trackSessionCookies } from './helpers/cleanup'
-import { mintSession, mintSessionCookie } from './helpers/session'
+import { mintSessionCookie, type MintedSession } from './helpers/session'
 
 export type RepoFixture = {
   namespace: string
@@ -22,14 +24,26 @@ type Fixtures = {
 
 const BASE_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
 
+const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
+/** Default suite principal from mintSession / mintSessionCookie. */
+const SUITE_IDENTITY = { sub: 'e2e-user', iss: 'mice-e2e' } as const
+
+/** Prefer the Playwright page cookie; fall back to a single cached suite mint. */
+let fixtureSession: MintedSession | null = null
+
+async function fixtureCookieHeader(): Promise<string> {
+  if (!fixtureSession) fixtureSession = await mintSessionCookie()
+  return `${fixtureSession.cookieName}=${fixtureSession.cookieValue}`
+}
+
 /** Oxen create alone is invisible under RBAC; claim AuthZ ownership for the suite identity. */
 async function claimNamespace(namespace: string): Promise<void> {
-  const minted = await mintSessionCookie()
+  const cookie = await fixtureCookieHeader()
   const res = await fetch(`${BASE_URL}/auth/namespaces`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      cookie: `${minted.cookieName}=${minted.cookieValue}`,
+      cookie,
       origin: BASE_URL,
       'x-mice-reason': 'e2e: claim seeded namespace',
     },
@@ -45,12 +59,58 @@ async function claimNamespace(namespace: string): Promise<void> {
   }
 }
 
+/**
+ * Namespace Owner does not imply repo data access — seat the suite identity as
+ * admin collaborator so History / Branches / file APIs work under RBAC.
+ */
+async function grantSuiteRepoAccess(namespace: string, repo: string): Promise<void> {
+  const cookie = await fixtureCookieHeader()
+  const path = `/auth/namespaces/${encodeURIComponent(namespace)}/repos/${encodeURIComponent(repo)}/collaborators`
+  const body = {
+    kind: 'user' as const,
+    sub: SUITE_IDENTITY.sub,
+    iss: SUITE_IDENTITY.iss,
+    role: 'admin' as const,
+  }
+  const reason = 'e2e: seat suite identity as admin collaborator for data access'
+  const sigRes = await fetch(`${AUTH_URL}/auth/dev/mutation-signature`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      cookie,
+      origin: BASE_URL,
+      'x-mice-reason': reason,
+    },
+    body: JSON.stringify({ method: 'PUT', path, reason, body }),
+  })
+  if (!sigRes.ok) {
+    throw new Error(`mutation-signature failed ${sigRes.status}: ${await sigRes.text()}`)
+  }
+  const { signatureId } = (await sigRes.json()) as { signatureId: string }
+  const put = await fetch(`${AUTH_URL}${path}`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      cookie,
+      origin: BASE_URL,
+      'x-mice-reason': reason,
+      'x-mice-signature-id': signatureId,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!put.ok) {
+    throw new Error(`grantSuiteRepoAccess failed ${put.status}: ${await put.text()}`)
+  }
+}
+
 async function makeRepo(seeded: boolean): Promise<RepoFixture> {
   const namespace = uniqueId('mice-e2e')
   const repo = 'repo'
-  await createRepo(namespace, repo)
   await claimNamespace(namespace)
+  await createRepo(namespace, repo)
+  await grantSuiteRepoAccess(namespace, repo)
   if (seeded) {
+    // main is write-protected via BFF; putFile falls back to physical oxen keys.
     await putFile(
       namespace,
       repo,
@@ -86,20 +146,46 @@ export const cleanTest = base.extend<{ bffCleanup: void }>({
 /** Establish a BFF session before UI tests hit /api. */
 export const test = cleanTest.extend<Fixtures>({
   page: async ({ page }, use) => {
-    await mintSession(page)
+    clearSuiteSessionCache()
+    fixtureSession = await mintSessionCookie()
+    plantSuiteSession(fixtureSession)
+    const url = new URL(BASE_URL)
+    const hostPrefixed = fixtureSession.cookieName.startsWith('__Host-')
+    await page.context().addCookies([
+      hostPrefixed
+        ? {
+            name: fixtureSession.cookieName,
+            value: fixtureSession.cookieValue,
+            url: BASE_URL,
+            httpOnly: true,
+            sameSite: 'Lax' as const,
+            secure: true,
+          }
+        : {
+            name: fixtureSession.cookieName,
+            value: fixtureSession.cookieValue,
+            domain: url.hostname,
+            path: '/',
+            httpOnly: true,
+            sameSite: 'Lax' as const,
+            secure: false,
+          },
+    ])
     await use(page)
+    fixtureSession = null
+    clearSuiteSessionCache()
   },
   emptyRepo: async ({}, use) => {
     await waitForOxen()
     const ctx = await makeRepo(false)
     await use(ctx)
-    await deleteRepo(ctx.namespace, ctx.repo)
+    await deleteRepo(ctx.namespace, ctx.repo).catch(() => undefined)
   },
   seededRepo: async ({}, use) => {
     await waitForOxen()
     const ctx = await makeRepo(true)
     await use(ctx)
-    await deleteRepo(ctx.namespace, ctx.repo)
+    await deleteRepo(ctx.namespace, ctx.repo).catch(() => undefined)
   },
 })
 

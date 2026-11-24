@@ -5,12 +5,15 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
 import { CommitList } from '../components/CommitList'
 import { MergeRequestSignPanel } from '../components/MergeRequestSignPanel'
+import { QcFailedWarning } from '../components/QcFailedWarning'
 import { StateBlock } from '../components/StateBlock'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import { UserRef } from '../components/UserRef'
 import { useAsync } from '../hooks/useAsync'
+import { useCommitQc } from '../hooks/useCommitQc'
 import { fetchAuthMe } from '../lib/auth'
 import { fetchRepoPermissions } from '../lib/authzApi'
+import { hasQcFailures } from '../lib/commitQc'
 import {
   cancelMergeRequest,
   getMergeRequest,
@@ -63,6 +66,14 @@ export function MergeRequestPage() {
         : Promise.resolve(null),
     [namespace, repo, source, target, canCompare],
   )
+  const { summary: qcSummary } = useCommitQc(
+    namespace,
+    repo,
+    commits.kind === 'ok' && commits.data ? commits.data.compare.commits : null,
+  )
+  const qcFailed = useMemo(() => new Set(qcSummary.failed), [qcSummary])
+  const qcDescendants = useMemo(() => new Set(qcSummary.descendants), [qcSummary])
+  const qcBlocksApprove = hasQcFailures(qcSummary)
 
   const selfSignBlocked = useMemo(() => {
     if (mrState.kind !== 'ok') return false
@@ -345,11 +356,22 @@ export function MergeRequestPage() {
                   commits.data.compare.commits.length === 0 ? (
                     <p className="muted">No commits in this range.</p>
                   ) : (
-                    <CommitList
-                      namespace={namespace}
-                      repo={repo}
-                      commits={commits.data.compare.commits}
-                    />
+                    <>
+                      <QcFailedWarning
+                        namespace={namespace}
+                        repo={repo}
+                        summary={qcSummary}
+                        scope="this request"
+                        advice="Approve is blocked until a new signature restores QC Passed."
+                      />
+                      <CommitList
+                        namespace={namespace}
+                        repo={repo}
+                        commits={commits.data.compare.commits}
+                        qcFailed={qcFailed}
+                        qcDescendants={qcDescendants}
+                      />
+                    </>
                   )
                 ) : null}
               </StateBlock>
@@ -521,15 +543,22 @@ export function MergeRequestPage() {
                     <button
                       type="button"
                       className={
-                        selfSignBlocked || mrState.data.status === 'stale'
+                        selfSignBlocked ||
+                        mrState.data.status === 'stale' ||
+                        qcBlocksApprove
                           ? 'btn primary is-disabled'
                           : 'btn primary'
                       }
                       disabled={
-                        busy || selfSignBlocked || mrState.data.status === 'stale'
+                        busy ||
+                        selfSignBlocked ||
+                        mrState.data.status === 'stale' ||
+                        qcBlocksApprove
                       }
                       aria-disabled={
-                        selfSignBlocked || mrState.data.status === 'stale'
+                        selfSignBlocked ||
+                        mrState.data.status === 'stale' ||
+                        qcBlocksApprove
                           ? true
                           : undefined
                       }
@@ -544,10 +573,17 @@ export function MergeRequestPage() {
                                 'self_merge',
                                 'Self-merge forbidden (4-eyes principle)',
                               )
-                            : undefined
+                            : qcBlocksApprove
+                              ? 'QC Failed commits in range — Approve is blocked until a new signature restores Passed'
+                              : undefined
                       }
                       onClick={() => {
-                        if (selfSignBlocked || mrState.data.status === 'stale') return
+                        if (
+                          selfSignBlocked ||
+                          mrState.data.status === 'stale' ||
+                          qcBlocksApprove
+                        )
+                          return
                         setSigning(true)
                       }}
                     >
