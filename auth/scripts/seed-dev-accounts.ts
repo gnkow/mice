@@ -22,6 +22,7 @@
  * - Manager is namespace Owner only (no auto repo collaborator seat)
  * - `mice_user`, `mice_user_2`, `mice_user_3` are namespace members + repo write
  *   and share Keycloak IdP group `engineering` (realm-mice.json) for group-grant tests
+ * - `mice_user_2` is also repo Approver on `sample` (signed-merge / GxP local testing)
  * - External is namespace member + repo read
  * - Oxen `main` exists as an empty tip (workspace init; no seed files)
  *
@@ -33,6 +34,7 @@
 import { ensureBootstrapKey } from '../src/authentication/session/sealKeys.js'
 import { canonicalIssuer } from '../src/authentication/session/principal.js'
 import { ensurePrincipal, type SessionUser } from '../src/authentication/session/session.js'
+import { grantApprover } from '../src/authzApproverStore.js'
 import { removeRepoCollaborator, setRepoCollaborator } from '../src/authzCollaboratorStore.js'
 import { setNamespaceMember } from '../src/authzMembershipStore.js'
 import { createNamespaceAuthz, getNamespace } from '../src/authzNamespaceStore.js'
@@ -511,6 +513,16 @@ async function seedSampleWorkspace(users: {
     } else {
       console.log(`✓ Repo collaborator ${label} → ${role}`)
     }
+  }
+
+  const approver = await grantApprover(
+    { ns: SAMPLE_NAMESPACE, repo: SAMPLE_REPO },
+    { kind: 'user', iss: users.user2.iss, sub: users.user2.sub },
+  )
+  if (!approver.ok) {
+    console.warn(`⚠ Could not grant user_2 Approver on sample: ${approver.error}`)
+  } else {
+    console.log('✓ Repo Approver user_2 → sample')
   }
 }
 
