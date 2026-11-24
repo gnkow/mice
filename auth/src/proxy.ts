@@ -72,6 +72,7 @@ import {
 import {
   branchTargetFromPath,
   decideValidatedBranchWrite,
+  isTipChangingAction,
 } from './validatedBranchWrite.js'
 
 const HOP_BY_HOP = new Set([
@@ -696,6 +697,38 @@ export async function proxyToOxen(
       },
     })
     await lineage.after(upstream, buffered, auditEvent?.id)
+
+    // Tip moved → mark open MRs that pin this branch as stale (#158).
+    if (
+      upstream.ok &&
+      mutating &&
+      ns &&
+      repo &&
+      isTipChangingAction(classified.action)
+    ) {
+      const branch =
+        (typeof classified.detail?.branch === 'string'
+          ? classified.detail.branch
+          : undefined) ?? branchTargetFromPath(pathname)
+      if (branch) {
+        try {
+          const { readRepository } = await import('./authzRepository.js')
+          const { getBranchTip } = await import('./jobsOxen.js')
+          const { markOpenMergeRequestsStaleForTip } = await import('./mergeRequestStore.js')
+          const repoRow = await readRepository(ns, repo)
+          const tip = await getBranchTip(ns, repo, branch)
+          if (repoRow && tip) {
+            await markOpenMergeRequestsStaleForTip({
+              repositoryId: repoRow.id,
+              branch,
+              newTip: tip,
+            })
+          }
+        } catch {
+          /* best-effort; list/detail reconcile is the safety net */
+        }
+      }
+    }
 
     // Create: AuthZ was minted before oxen; stamp id + restore display names on the answer.
     if (

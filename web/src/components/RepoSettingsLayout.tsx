@@ -30,6 +30,12 @@ const SETTINGS_NAV_ITEMS: NavItem[] = [
   { id: 'repo-collaborators', label: 'Collaborators', Icon: ActionUsers },
   { id: 'repo-approvers', label: 'Approvers', Icon: ActionShieldCheck },
   {
+    id: 'repo-signatures',
+    label: 'Signatures',
+    Icon: ActionFileSignature,
+    requires: 'viewSignedRecord',
+  },
+  {
     id: 'repo-signed-record',
     label: 'Signed-record report',
     Icon: ActionFileSignature,
@@ -140,6 +146,7 @@ export function RepoSettingsLayout() {
                 deleteRepository: false,
                 viewSignedRecord: false,
                 contentsWrite: false,
+                isApprover: false,
               },
             } satisfies RepoSettingsOutletContext
           }

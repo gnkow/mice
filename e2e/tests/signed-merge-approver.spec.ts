@@ -313,7 +313,7 @@ test.describe('Signed merge with repo approver (live Keycloak)', () => {
     await signInWithKeycloakUser(page, KEYCLOAK_REGULAR_USER_2)
     await skipIfOidcUnreachable(page)
     await page.goto(`/n/${NS}/r/${REPO}/merge-requests/${encodeURIComponent(mr.id)}`)
-    await page.getByRole('button', { name: /^Sign$/ }).click()
+    await page.getByRole('button', { name: /^Approve$/ }).click()
     await approveMergeViaCeremony(
       page,
       KEYCLOAK_REGULAR_USER_2,

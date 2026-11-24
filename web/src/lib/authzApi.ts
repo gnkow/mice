@@ -466,6 +466,8 @@ export type RepoViewerPermissions = {
   viewSignedRecord: boolean
   /** Tip-changing file ops (upload/rename/move/copy/delete). */
   contentsWrite: boolean
+  /** Explicit Approver seat; gates Approve/Reject chrome. */
+  isApprover: boolean
 }
 
 const NO_REPO_PERMISSIONS: RepoViewerPermissions = {
@@ -477,6 +479,7 @@ const NO_REPO_PERMISSIONS: RepoViewerPermissions = {
   deleteRepository: false,
   viewSignedRecord: false,
   contentsWrite: false,
+  isApprover: false,
 }
 
 export async function fetchRepoPermissions(
@@ -1012,6 +1015,48 @@ export function revokeSignature(signatureId: string, input?: { commitIds?: strin
   return authzFetch<SignatureRevocationResult>(
     `/auth/signatures/${encodeURIComponent(signatureId)}/revoke`,
     { method: 'POST', body: JSON.stringify({ ...(input ?? {}) }) },
+  )
+}
+
+export type RepoSignatureRow = {
+  id: string
+  meaning: string
+  signedAt: string
+  signer: { iss: string; sub: string; name?: string }
+  binding?: {
+    repo: string
+    sourceHead: string
+    targetHead: string
+    manifestDigest: string
+  }
+  changeControlId?: string
+  revoked: boolean
+  revocationCount: number
+}
+
+/** Repo-scoped signature index for Approver revoke chrome (#93). */
+export function fetchRepoSignatures(ns: string, repo: string, signal?: AbortSignal) {
+  return authzFetch<{ signatures: RepoSignatureRow[] }>(
+    `/auth/repos/${encodeURIComponent(ns)}/${encodeURIComponent(repo)}/signatures`,
+    { signal },
+  )
+}
+
+export type CoveringSignature = {
+  signatureId: string
+  revoked: boolean
+}
+
+/** Signature that covers a commit (for validated-branch history revoke). */
+export function fetchCoveringSignature(
+  ns: string,
+  repo: string,
+  commitId: string,
+  signal?: AbortSignal,
+) {
+  return authzFetch<{ signature: CoveringSignature | null }>(
+    `/auth/repos/${encodeURIComponent(ns)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(commitId)}/covering-signature`,
+    { signal },
   )
 }
 

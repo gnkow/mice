@@ -32,6 +32,7 @@ const repo = await ensureRepository('rev-ns', 'data')
 assert.ok(repo)
 await grantApprover({ ns: 'rev-ns', repo: 'data' }, approver)
 
+let sigCcSeq = 0
 async function recordBoundSignature(heads: { source: string; target: string }) {
   const merge = buildMergeManifest([])
   const { binding, manifest } = mergeResultBinding({
@@ -41,6 +42,7 @@ async function recordBoundSignature(heads: { source: string; target: string }) {
     merge,
   })
   const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+  sigCcSeq += 1
   return (
     await signatureStore()
   ).record({
@@ -49,7 +51,7 @@ async function recordBoundSignature(heads: { source: string; target: string }) {
     contentHash: binding.manifestDigest,
     binding,
     manifest,
-    changeControlId: 'CC-REV-1',
+    changeControlId: `CC-REV-SIG-${sigCcSeq}`,
   })
 }
 
@@ -107,7 +109,39 @@ describe('signature revoke (gxp/07/08/09)', () => {
     assert.equal(result.ok, true)
     if (!result.ok) return
     assert.ok(result.blockedMergeRequestIds.includes(mr.id))
-    assert.equal((await getMergeRequest(mr.id))?.status, 'blocked')
+    assert.equal((await getMergeRequest(mr.id))?.status, 'rejected')
+  })
+
+  it('whole-signature revoke marks merge-range and merge commit QC Failed, not only tip heads', async () => {
+    const { markMergeRequestMerged } = await import('./mergeRequestStore.js')
+    const { id } = await recordBoundSignature({ source: 'src-ws', target: 'tgt-ws' })
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'rev-ns',
+      repo: 'data',
+      sourceBranch: 'feature-ws',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-ws',
+      expectedTargetHead: 'tgt-ws',
+      openedBy: approver,
+    })
+    await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-ws' })
+    await markCommitsQc(repo.id, ['src-ws', 'c-mid', 'merge-ws'], 'passed', {
+      mergeRequestId: mr.id,
+      allowFailedToPassed: true,
+    })
+    const result = await revokeSignature({
+      signatureId: id,
+      revoker: approver,
+      reason: 'Whole-signature revoke after merged assay',
+      changeControlId: 'CC-REV-WS',
+      notify: async () => {},
+    })
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.deepEqual(new Set(result.revocation.commitIds), new Set(['src-ws', 'c-mid', 'merge-ws']))
+    assert.equal(await getCommitQc(repo.id, 'c-mid'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 'merge-ws'), 'failed')
   })
 
   it('does not propagate failure to unlisted commits of the same signature', async () => {
@@ -124,5 +158,94 @@ describe('signature revoke (gxp/07/08/09)', () => {
     assert.equal(result.ok, true)
     assert.equal(await getCommitQc(repo.id, 'only-a'), 'failed')
     assert.equal(await getCommitQc(repo.id, 'sibling'), 'passed')
+  })
+
+  it('revoking individual commits leaves the merge commit QC unchanged (gxp/08)', async () => {
+    const { markMergeRequestMerged } = await import('./mergeRequestStore.js')
+    const { id } = await recordBoundSignature({ source: 'src-ind', target: 'tgt-ind' })
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'rev-ns',
+      repo: 'data',
+      sourceBranch: 'feature-ind',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-ind',
+      expectedTargetHead: 'tgt-ind',
+      openedBy: approver,
+    })
+    await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-ind' })
+    await markCommitsQc(repo.id, ['src-ind', 'merge-ind'], 'passed', {
+      mergeRequestId: mr.id,
+      allowFailedToPassed: true,
+    })
+    const result = await revokeSignature({
+      signatureId: id,
+      revoker: approver,
+      reason: 'Revoke range tip only',
+      changeControlId: 'CC-REV-IND',
+      commitIds: ['src-ind'],
+      notify: async () => {},
+    })
+    assert.equal(result.ok, true)
+    assert.equal(await getCommitQc(repo.id, 'src-ind'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 'merge-ind'), 'passed')
+  })
+
+  it('resolveSignatureForMergeRequest finds the bound approval signature', async () => {
+    const { resolveSignatureForMergeRequest } = await import('./signatureRevoke.js')
+    const { markMergeRequestMerged } = await import('./mergeRequestStore.js')
+    const { id } = await recordBoundSignature({ source: 'src-res', target: 'tgt-res' })
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'rev-ns',
+      repo: 'data',
+      sourceBranch: 'feature-res',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-res',
+      expectedTargetHead: 'tgt-res',
+      openedBy: approver,
+    })
+    await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-res' })
+    const found = await resolveSignatureForMergeRequest(await getMergeRequest(mr.id)!)
+    assert.ok(found)
+    assert.equal(found.signatureId, id)
+    assert.equal(found.revoked, false)
+  })
+
+  it('resolveSignatureCoveringCommit resolves via QC merge-request link', async () => {
+    const { resolveSignatureCoveringCommit } = await import('./signatureRevoke.js')
+    const { markMergeRequestMerged } = await import('./mergeRequestStore.js')
+    const { id } = await recordBoundSignature({ source: 'src-cov', target: 'tgt-cov' })
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'rev-ns',
+      repo: 'data',
+      sourceBranch: 'feature-cov',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-cov',
+      expectedTargetHead: 'tgt-cov',
+      openedBy: approver,
+    })
+    await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-cov' })
+    await markCommitsQc(repo.id, ['src-cov', 'merge-cov'], 'passed', {
+      mergeRequestId: mr.id,
+      allowFailedToPassed: true,
+    })
+    const viaRange = await resolveSignatureCoveringCommit({
+      repositoryId: repo.id,
+      namespace: 'rev-ns',
+      repo: 'data',
+      commitId: 'src-cov',
+    })
+    assert.ok(viaRange)
+    assert.equal(viaRange.signatureId, id)
+    const viaMerge = await resolveSignatureCoveringCommit({
+      repositoryId: repo.id,
+      namespace: 'rev-ns',
+      repo: 'data',
+      commitId: 'merge-cov',
+    })
+    assert.ok(viaMerge)
+    assert.equal(viaMerge.signatureId, id)
   })
 })

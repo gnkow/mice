@@ -11,10 +11,12 @@ import { UserRef } from '../components/UserRef'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
 import { CommitList } from '../components/CommitList'
 import { QcFailedWarning } from '../components/QcFailedWarning'
+import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
 import { SignedRecordReportButton } from '../components/SignedRecordReportButton'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { useCommitQc } from '../hooks/useCommitQc'
+import { fetchCoveringSignature, fetchRepoPermissions } from '../lib/authzApi'
 import {
   getCommit,
   getRootCommit,
@@ -51,6 +53,13 @@ export function CommitsPage() {
       ? branchNames.includes(revision)
       : !looksLikeCommitId(revision)
 
+  const repoPerms = useAsync(
+    (signal) => fetchRepoPermissions(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const canRevoke =
+    repoPerms.kind === 'ok' && repoPerms.data.isApprover === true
+
   const history = useAsync(
     (signal) =>
       listCommitHistory(
@@ -72,7 +81,11 @@ export function CommitsPage() {
   )
 
   const active = mode === 'history' ? history : all
-  const { qc, summary: qcSummary } = useCommitQc(
+  const {
+    qc,
+    summary: qcSummary,
+    reload: reloadQc,
+  } = useCommitQc(
     namespace,
     repo,
     active.kind === 'ok' ? active.data.commits : null,
@@ -117,6 +130,50 @@ export function CommitsPage() {
         : Promise.resolve(null),
     [namespace, repo, commitId],
   )
+
+  /** Detail pane: any validated commit (signed), on any branch. */
+  const covering = useAsync(
+    (signal) =>
+      commitId && canRevoke
+        ? fetchCoveringSignature(namespace, repo, commitId, signal)
+        : Promise.resolve(null),
+    [namespace, repo, commitId, canRevoke],
+  )
+
+  const listCommits =
+    active.kind === 'ok' ? active.data.commits : null
+  const passedCommitKey = useMemo(() => {
+    if (!canRevoke || !listCommits) return ''
+    return listCommits
+      .filter((c) => qc[c.id] === 'passed')
+      .map((c) => c.id)
+      .join(',')
+  }, [canRevoke, listCommits, qc])
+
+  /** List rows: covering signatures for QC Passed commits (branch-invariant). */
+  const listCovering = useAsync(
+    async (signal) => {
+      const ids = passedCommitKey ? passedCommitKey.split(',').filter(Boolean) : []
+      const map = new Map<string, { signatureId: string; revoked: boolean }>()
+      if (!canRevoke || ids.length === 0) return map
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const res = await fetchCoveringSignature(namespace, repo, id, signal)
+            if (res.signature && !res.signature.revoked) {
+              map.set(id, res.signature)
+            }
+          } catch {
+            /* ignore — row simply omits revoke */
+          }
+        }),
+      )
+      return map
+    },
+    [namespace, repo, canRevoke, passedCommitKey],
+  )
+  const coveringByCommit =
+    listCovering.kind === 'ok' ? listCovering.data : undefined
 
   function setHistoryParams(nextRevision: string, nextPath: string) {
     const next: Record<string, string> = { branch: nextRevision }
@@ -289,6 +346,13 @@ export function CommitsPage() {
                   linkSearch={linkSearch}
                   qcFailed={qcFailed}
                   qcDescendants={qcDescendants}
+                  canRevoke={canRevoke}
+                  coveringByCommit={coveringByCommit}
+                  onRevoked={() => {
+                    covering.reload()
+                    listCovering.reload()
+                    reloadQc()
+                  }}
                 />
               )}
             </StateBlock>
@@ -308,12 +372,37 @@ export function CommitsPage() {
                   <>
                     <div className="history-detail-top">
                       <h2 className="history-detail-title">{commit.message}</h2>
-                      <Link
-                        className="btn ghost small"
-                        to={`${base}/tree/${commit.id}`}
-                      >
-                        <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />Browse tree
-                      </Link>
+                      <div className="history-detail-actions">
+                        <Link
+                          className="btn ghost small"
+                          to={`${base}/tree/${commit.id}`}
+                        >
+                          <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />
+                          Browse tree
+                        </Link>
+                        {canRevoke &&
+                        covering.kind === 'ok' &&
+                        covering.data?.signature &&
+                        !covering.data.signature.revoked &&
+                        qc[commit.id] !== 'failed' ? (
+                          <div
+                            className="history-commit-revoke"
+                            data-testid="history-commit-revoke"
+                          >
+                            <RevokeSignatureButton
+                              signatureId={covering.data.signature.signatureId}
+                              namespace={namespace}
+                              repo={repo}
+                              commitIds={[commit.id]}
+                              onRevoked={() => {
+                                covering.reload()
+                                listCovering.reload()
+                                reloadQc()
+                              }}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className="history-detail-identity">

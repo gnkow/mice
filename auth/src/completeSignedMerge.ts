@@ -10,6 +10,7 @@ import {
 import {
   getMergeRequest,
   markMergeRequestMerged,
+  markOpenMergeRequestsStaleForTip,
   type MergeRequestRecord,
 } from './mergeRequestStore.js'
 import { markCommitsQc } from './commitQcStore.js'
@@ -316,6 +317,12 @@ export async function completeSignedMerge(
       allowFailedToPassed: true,
     })
   }
+  // Other open MRs into this target are now stale (tips moved).
+  await markOpenMergeRequestsStaleForTip({
+    repositoryId: mr.repositoryId,
+    branch: mr.targetBranch,
+    newTip: mergeCommitId,
+  })
   return {
     ok: true,
     mergeRequest: merged,

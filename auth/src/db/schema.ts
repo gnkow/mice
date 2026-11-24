@@ -1084,7 +1084,7 @@ export const mergeRequests = pgTable(
     targetBranch: text('target_branch').notNull(),
     expectedSourceHead: text('expected_source_head').notNull(),
     expectedTargetHead: text('expected_target_head').notNull(),
-    /** open | stale | merged | blocked */
+    /** open | stale | merged | rejected | cancelled (legacy: blocked → rejected) */
     status: text('status').notNull(),
     openedBy: text('opened_by').notNull(),
     title: text('title').notNull().default(''),

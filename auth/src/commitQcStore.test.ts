@@ -47,4 +47,16 @@ describe('commit QC status (repositories/03)', () => {
     assert.equal(await getCommitQc(repo.id, 'm1'), 'passed')
     assert.equal(await getCommitQc(repo.id, 'merge-sha'), 'passed')
   })
+
+  it('keeps QC Failed until a new signature allows Failed→Passed (gxp/08)', async () => {
+    await markCommitsQc(repo.id, ['fail-1'], 'failed')
+    await markCommitsQc(repo.id, ['fail-1'], 'marked')
+    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'failed')
+
+    await markCommitsQc(repo.id, ['fail-1'], 'passed')
+    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'failed')
+
+    await markCommitsQc(repo.id, ['fail-1'], 'passed', { allowFailedToPassed: true })
+    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'passed')
+  })
 })

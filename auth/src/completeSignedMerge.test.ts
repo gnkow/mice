@@ -13,7 +13,7 @@ const { ensureRepository } = await import('./repositoryStore.js')
 const { preparePrincipal } = await import('./authz.js')
 const { grantApprover } = await import('./authzApproverStore.js')
 const { openMergeRequest } = await import('./mergeRequestStore.js')
-const { getCommitQc } = await import('./commitQcStore.js')
+const { getCommitQc, markCommitsQc } = await import('./commitQcStore.js')
 const {
   registerMergeRequestRoutes,
   setMergeExecutorForTests,
@@ -442,5 +442,60 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
     const json = (await res.json()) as { code?: string }
     assert.equal(res.status, 403)
     assert.equal(json.code, 'not_approver')
+  })
+
+  it('refuses complete when a range commit is QC Failed (gxp/08)', async () => {
+    let executed = 0
+    setMergeExecutorForTests(async () => {
+      executed += 1
+      return { mergeCommitId: 'should-not-run' }
+    })
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'gxp5',
+      repo: 'assay',
+      sourceBranch: 'feature-qc-fail',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-qf',
+      expectedTargetHead: 'tgt-qf',
+      openedBy: { iss: requester.iss, sub: requester.sub },
+    })
+    await markCommitsQc(repo.id, ['c-qf'], 'failed')
+    const merge = buildMergeManifest([])
+    const { binding, manifest } = mergeResultBinding({
+      repo: 'gxp5/assay',
+      sourceHead: 'src-qf',
+      targetHead: 'tgt-qf',
+      merge,
+    })
+    setMergeManifestResolverForTests(async () => merge)
+    pinHeads('src-qf', 'tgt-qf')
+    pinRange(['https://other|scientist'], ['c-qf'])
+    const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+    const store = await signatureStore()
+    const { id } = await store.record({
+      signer: { iss: approver.iss, sub: approver.sub, name: approver.name },
+      meaning: 'Approved',
+      contentHash: binding.manifestDigest,
+      binding,
+      manifest,
+      changeControlId: 'CC-qf',
+    })
+    const res = await app.request(`/auth/merge-requests/${mr.id}/complete`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: await cookie(),
+        'x-mice-reason': 'Merge with QC Failed commit must be refused',
+      },
+      body: JSON.stringify({ signatureId: id }),
+    })
+    const json = (await res.json()) as { code?: string; error?: string }
+    assert.equal(res.status, 409, JSON.stringify(json))
+    assert.equal(json.code, 'not_open')
+    assert.match(json.error ?? '', /QC Failed/i)
+    assert.equal(executed, 0)
+    assert.equal(await store.isConsumed(id), false)
+    setMergeExecutorForTests(async () => ({ mergeCommitId: 'merge-sha-1' }))
   })
 })

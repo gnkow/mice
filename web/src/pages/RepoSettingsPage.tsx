@@ -5,6 +5,7 @@ import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom
 import { ApproversSection } from '../components/ApproversSection'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import type { RepoSettingsOutletContext } from '../components/RepoSettingsLayout'
+import { RepoSignaturesSection } from '../components/RepoSignaturesSection'
 import { SignedRecordReportButton } from '../components/SignedRecordReportButton'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import { PrincipalAddCard } from '../components/PrincipalAddCard'
@@ -534,6 +535,14 @@ export function RepoSettingsPage() {
           repo={repo}
           canManage={perms.manageApprovers}
         />
+
+        {perms.viewSignedRecord ? (
+          <RepoSignaturesSection
+            namespace={namespace}
+            repo={repo}
+            canRevoke={perms.isApprover === true}
+          />
+        ) : null}
 
         {perms.viewSignedRecord ? (
           <section

@@ -444,6 +444,13 @@ const BFF: ReasonPolicyEntry[] = [
     coverage: 'signingRoutes',
   },
   {
+    id: 'bff.signature.revoke',
+    surface: 'bff',
+    key: 'POST /auth/signatures/:id/revoke',
+    reason: 'required',
+    coverage: 'auth/src/signatureRevoke.http.test.ts; guarded reason:true (#93)',
+  },
+  {
     id: 'bff.admin.revoke',
     surface: 'bff',
     key: 'POST /auth/admin/revoke|/auth/admin/suspend|...confirm|/auth/me/suspend|/auth/instance/revoke-sessions',

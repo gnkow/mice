@@ -10,6 +10,7 @@ const { preparePrincipal } = await import('./authz.js')
 const { createNamespaceAuthz } = await import('./authzNamespaceStore.js')
 const { setNamespaceMember } = await import('./authzMembershipStore.js')
 const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+const { grantApprover } = await import('./authzApproverStore.js')
 const { decideRepoViewerPermissions } = await import('./repoViewerPermissions.js')
 
 const NS = 'viewer-perms-ns'
@@ -17,11 +18,15 @@ const REPO = 'study'
 
 const owner = t.person('viewer-owner')
 const reader = t.person('viewer-reader')
+const approver = t.person('viewer-approver')
 await preparePrincipal(owner)
 await preparePrincipal(reader)
+await preparePrincipal(approver)
 assert.equal((await createNamespaceAuthz(owner, NS, 'none', true)).ok, true)
 assert.equal((await setNamespaceMember(NS, owner, 'owner')).ok, true)
 assert.equal((await setRepoCollaborator(NS, REPO, reader, 'read')).ok, true)
+assert.equal((await setRepoCollaborator(NS, REPO, approver, 'write')).ok, true)
+assert.equal((await grantApprover({ ns: NS, repo: REPO }, approver)).ok, true)
 
 describe('decideRepoViewerPermissions (#148)', () => {
   it('gives the Owner mutate chrome for rename/transfer/collaborators/approvers/delete', async () => {
@@ -37,6 +42,8 @@ describe('decideRepoViewerPermissions (#148)', () => {
     // Owner without a collaborator write seat: settings admin yes, tip/metadata writes no.
     assert.equal(r.permissions.editMetadata, false)
     assert.equal(r.permissions.contentsWrite, false)
+    // Owner does not imply Approver.
+    assert.equal(r.permissions.isApprover, false)
   })
 
   it('hides mutate chrome for a read-only collaborator (approvers stay non-writable)', async () => {
@@ -51,6 +58,15 @@ describe('decideRepoViewerPermissions (#148)', () => {
     assert.equal(r.permissions.editMetadata, false)
     assert.equal(r.permissions.viewSignedRecord, true)
     assert.equal(r.permissions.contentsWrite, false)
+    assert.equal(r.permissions.isApprover, false)
+  })
+
+  it('sets isApprover only for an explicit Approver seat', async () => {
+    const r = await decideRepoViewerPermissions(approver, NS, REPO)
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.equal(r.permissions.contentsWrite, true)
+    assert.equal(r.permissions.isApprover, true)
   })
 
   it('refuses a principal with no repo read', async () => {

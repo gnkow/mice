@@ -39,7 +39,8 @@ export async function listCommitQcForRepo(repositoryId: string): Promise<CommitQ
 
 /**
  * Upsert QC status for many commits (branch-invariant).
- * QC Failed → Passed is only allowed via `allowFailedToPassed` (signed merge / gxp/08).
+ * QC Failed stays Failed except Failed→Passed via `allowFailedToPassed` (new signed merge / gxp/08).
+ * Opening an MR must not clear Failed by writing Marked.
  */
 export async function markCommitsQc(
   repositoryId: string,
@@ -49,9 +50,10 @@ export async function markCommitsQc(
 ): Promise<void> {
   const now = new Date()
   for (const commitId of commitIds) {
-    if (status === 'passed' && !opts?.allowFailedToPassed) {
-      const current = await getCommitQc(repositoryId, commitId)
-      if (current === 'failed') continue
+    const current = await getCommitQc(repositoryId, commitId)
+    if (current === 'failed' && status !== 'failed') {
+      const restorePassed = status === 'passed' && opts?.allowFailedToPassed === true
+      if (!restorePassed) continue
     }
     await getDb()
       .insert(commitQcStatus)

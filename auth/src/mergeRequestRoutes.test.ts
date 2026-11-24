@@ -27,6 +27,10 @@ await t.grantRole(manager, 'manager')
 assert.equal((await createNamespaceAuthz(manager, 'mr-ns', 'none')).ok, true)
 const repo = await ensureRepository('mr-ns', 'study')
 assert.ok(repo)
+const { setRepoCollaborator } = await import('./authzCollaboratorStore.js')
+const { grantApprover } = await import('./authzApproverStore.js')
+await setRepoCollaborator('mr-ns', 'study', manager, 'maintain')
+await grantApprover({ ns: 'mr-ns', repo: 'study' }, manager)
 
 const app = new Hono()
 registerMergeRequestRoutes(app, { audit: async () => {} })
@@ -82,7 +86,7 @@ describe('merge request HTTP (repositories/02+03)', () => {
     assert.equal(staleJson.mergeRequest?.status, 'stale')
   })
 
-  it('rejects an open MR to blocked', async () => {
+  it('rejects an open MR to rejected', async () => {
     const path = '/auth/repos/mr-ns/study/merge-requests'
     const body = {
       sourceBranch: 'reject-branch',
@@ -115,6 +119,109 @@ describe('merge request HTTP (repositories/02+03)', () => {
       error?: string
     }
     assert.equal(rejected.status, 200, JSON.stringify(rejectedJson))
-    assert.equal(rejectedJson.mergeRequest?.status, 'blocked')
+    assert.equal(rejectedJson.mergeRequest?.status, 'rejected')
+
+    const dup = await app.request(path, {
+      method: 'POST',
+      headers: {
+        ...(await regulatedMutationHeaders(manager, { method: 'POST', path, body })),
+        cookie: await cookie(),
+      },
+      body: JSON.stringify(body),
+    })
+    assert.equal(dup.status, 409)
+    assert.equal(((await dup.json()) as { code?: string }).code, 'already_open')
+
+    const reopenPath = `/auth/merge-requests/${mr.id}/reopen`
+    const reopenHeaders = await regulatedMutationHeaders(manager, {
+      method: 'POST',
+      path: reopenPath,
+      body: { refreshExpected: true },
+    })
+    const reverted = await app.request(reopenPath, {
+      method: 'POST',
+      headers: { ...reopenHeaders, cookie: await cookie() },
+      body: JSON.stringify({ refreshExpected: true }),
+    })
+    const revertedJson = (await reverted.json()) as {
+      mergeRequest?: { status: string }
+      error?: string
+    }
+    assert.equal(reverted.status, 200, JSON.stringify(revertedJson))
+    assert.equal(revertedJson.mergeRequest?.status, 'open')
+  })
+
+  it('cancels an open MR to cancelled with write (no Approver required)', async () => {
+    const writer = t.person('writer')
+    await preparePrincipal(writer)
+    await t.grantRole(writer, 'user')
+    await setRepoCollaborator('mr-ns', 'study', writer, 'write')
+
+    const path = '/auth/repos/mr-ns/study/merge-requests'
+    const body = {
+      sourceBranch: 'cancel-branch',
+      targetBranch: 'main',
+      expectedSourceHead: 'csrc',
+      expectedTargetHead: 'ctgt',
+    }
+    const writerCookie = async () =>
+      sealedSessionCookie({ ...writer, sessionStart: Math.floor(Date.now() / 1000) })
+    const headers = await regulatedMutationHeaders(writer, { method: 'POST', path, body })
+    const created = await app.request(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: await writerCookie() },
+      body: JSON.stringify(body),
+    })
+    assert.equal(created.status, 201, await created.clone().text())
+    const mr = ((await created.json()) as { mergeRequest: { id: string } }).mergeRequest
+
+    const cancelPath = `/auth/merge-requests/${mr.id}/cancel`
+    const cancelHeaders = await regulatedMutationHeaders(writer, {
+      method: 'POST',
+      path: cancelPath,
+      body: {},
+    })
+    const cancelled = await app.request(cancelPath, {
+      method: 'POST',
+      headers: { ...cancelHeaders, cookie: await writerCookie() },
+      body: JSON.stringify({}),
+    })
+    const cancelledJson = (await cancelled.json()) as {
+      mergeRequest?: { status: string }
+      error?: string
+    }
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelledJson))
+    assert.equal(cancelledJson.mergeRequest?.status, 'cancelled')
+
+    const rejectPath = `/auth/merge-requests/${mr.id}/reject`
+    const rejectHeaders = await regulatedMutationHeaders(writer, {
+      method: 'POST',
+      path: rejectPath,
+      body: {},
+    })
+    const rejectDenied = await app.request(rejectPath, {
+      method: 'POST',
+      headers: { ...rejectHeaders, cookie: await writerCookie() },
+      body: JSON.stringify({}),
+    })
+    assert.equal(rejectDenied.status, 403)
+
+    const reopenPath = `/auth/merge-requests/${mr.id}/reopen`
+    const reopenHeaders = await regulatedMutationHeaders(writer, {
+      method: 'POST',
+      path: reopenPath,
+      body: { refreshExpected: true },
+    })
+    const reopened = await app.request(reopenPath, {
+      method: 'POST',
+      headers: { ...reopenHeaders, cookie: await writerCookie() },
+      body: JSON.stringify({ refreshExpected: true }),
+    })
+    const reopenedJson = (await reopened.json()) as {
+      mergeRequest?: { status: string }
+      error?: string
+    }
+    assert.equal(reopened.status, 200, JSON.stringify(reopenedJson))
+    assert.equal(reopenedJson.mergeRequest?.status, 'open')
   })
 })

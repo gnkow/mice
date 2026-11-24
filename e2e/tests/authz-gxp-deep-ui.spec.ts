@@ -220,75 +220,325 @@ test.describe('AuthZ + GxP deep UI', () => {
   })
 
   test.describe('signature revoke (#93)', () => {
-    const signatureEvent = (id: string) => ({
-      id: `evt-${id}`,
-      seq: 1,
-      ts: new Date().toISOString(),
-      actor: { sub: 'signer', iss: 'mice-e2e', name: 'Sig Signer', email: 'signer@mice.local' },
-      via: 'session',
-      method: 'POST',
-      path: '/auth/admin/seal-keys/rotate',
-      status: 200,
-      action: 'seal_key.rotated',
-      action_label: 'Seal key rotated',
-      message: 'Normal seal key rotation completed',
-      signature_id: id,
-      detail: { signatureId: id, meaning: 'Approved', newKeyId: 'key-93' },
+    const ns = 'demo'
+    const repo = 'sample'
+    const settingsPath = `/n/${ns}/r/${repo}/settings`
+
+    function mockRepoChrome(
+      page: import('@playwright/test').Page,
+      opts: { isApprover: boolean; signatures: unknown[] },
+    ) {
+      return Promise.all([
+        page.route(`**/auth/namespaces/${ns}/repos/${repo}/permissions`, (route) =>
+          route.fulfill({
+            json: {
+              permissions: {
+                rename: false,
+                transfer: false,
+                manageCollaborators: false,
+                manageApprovers: false,
+                editMetadata: false,
+                deleteRepository: false,
+                viewSignedRecord: true,
+                contentsWrite: true,
+                isApprover: opts.isApprover,
+              },
+            },
+          }),
+        ),
+        page.route(`**/auth/repos/${ns}/${repo}/signatures**`, (route) =>
+          route.fulfill({ json: { signatures: opts.signatures } }),
+        ),
+        page.route(`**/auth/namespaces/${ns}/repos/${repo}`, (route) =>
+          route.fulfill({
+            json: {
+              repository: { id: 'r1', namespace: ns, name: repo, description: '' },
+            },
+          }),
+        ),
+        page.route(`**/auth/namespaces/${ns}/repos/${repo}/collaborators**`, (route) =>
+          route.fulfill({ json: { collaborators: [] } }),
+        ),
+        page.route(`**/auth/namespaces/${ns}/repos/${repo}/approvers**`, (route) =>
+          route.fulfill({ json: { approvers: [] } }),
+        ),
+      ])
+    }
+
+    const signatureRow = (id: string, revoked = false) => ({
+      id,
+      meaning: 'Approved',
+      signedAt: new Date().toISOString(),
+      signer: { iss: 'mice-e2e', sub: 'signer', name: 'Sig Signer' },
+      binding: {
+        repo: `${ns}/${repo}`,
+        sourceHead: 'aaaaaaaa',
+        targetHead: 'bbbbbbbb',
+        manifestDigest: 'cc'.repeat(32),
+      },
+      changeControlId: 'CC-93',
+      revoked,
+      revocationCount: revoked ? 1 : 0,
     })
 
-    test('TC-GXP-93-01: non-approver gets a clear not_approver alert', async ({ page }) => {
-      await mintSession(page, { role: 'admin', sub: uniqueId('revoke-admin'), iss: 'mice-e2e' })
-      await page.route('**/auth/audit?*', (route) =>
-        route.fulfill({ json: { events: [signatureEvent('sig-93-a')], nextCursor: null } }),
-      )
-      await page.route('**/auth/signatures/sig-93-a/revoke', (route) =>
-        route.fulfill({
-          status: 403,
-          json: { error: 'Approver role required', code: 'not_approver' },
-        }),
-      )
-      await page.goto('/audit')
-      const row = page.locator('.audit-table tbody tr').first()
-      await row.getByRole('button', { name: 'Revoke signature' }).click()
-      await expect(row.getByRole('alert')).toContainText(/not an approver/i)
-      await expect(row.getByRole('alert')).toContainText(/namespace Owner/i)
+    test('TC-GXP-93-01: non-approver does not see revoke on Settings → Signatures', async ({
+      page,
+    }) => {
+      await mintSession(page, { role: 'user', sub: uniqueId('revoke-writer'), iss: 'mice-e2e' })
+      await mockRepoChrome(page, {
+        isApprover: false,
+        signatures: [signatureRow('sig-93-a')],
+      })
+      await page.goto(settingsPath)
+      await expect(page.getByRole('heading', { name: 'Signatures' })).toBeVisible()
+      await expect(page.getByTestId('repo-signature-row')).toHaveCount(1)
+      await expect(page.getByRole('button', { name: 'Revoke signature' })).toHaveCount(0)
     })
 
-    test('TC-GXP-93-02: revoke collects a reason through the signing ceremony', async ({ page }) => {
-      await mintSession(page, { role: 'admin', sub: uniqueId('revoke-admin'), iss: 'mice-e2e' })
-      await page.route('**/auth/audit?*', (route) =>
-        route.fulfill({ json: { events: [signatureEvent('sig-93-b')], nextCursor: null } }),
+    test('TC-GXP-93-07: Signatures list is searchable and paginated', async ({ page }) => {
+      const many = Array.from({ length: 7 }, (_, i) =>
+        signatureRow(`sig-93-page-${i}`, i === 6),
       )
-      await page.route('**/auth/signatures/sig-93-b/revoke', (route) => route.fulfill(ceremonyRejection))
-      await page.goto('/audit')
-      await page.locator('.audit-table tbody tr').first().getByRole('button', { name: 'Revoke signature' }).click()
-      const dialog = page.getByRole('dialog', { name: /Reason and signature required/i })
+      await mintSession(page, { role: 'user', sub: uniqueId('revoke-page'), iss: 'mice-e2e' })
+      await mockRepoChrome(page, { isApprover: true, signatures: many })
+      await page.goto(settingsPath)
+      const signatures = page.locator('#repo-signatures')
+      await expect(page.getByRole('heading', { name: 'Signatures' })).toBeVisible()
+      await signatures.scrollIntoViewIfNeeded()
+      await expect(page.getByTestId('repo-signatures-search')).toBeVisible()
+      await expect(page.getByTestId('repo-signature-row')).toHaveCount(5)
+      await expect(page.getByRole('navigation', { name: 'Signatures pagination' })).toBeVisible()
+      await page.getByRole('button', { name: 'Next' }).click()
+      await expect(page.getByTestId('repo-signature-row')).toHaveCount(2)
+      await page.getByTestId('repo-signatures-search').fill('sig-93-page-6')
+      await expect(page.getByTestId('repo-signature-row')).toHaveCount(1)
+      await expect(page.getByTestId('signature-revoked-tag')).toBeVisible()
+    })
+
+    test('TC-GXP-93-02: Approver revoke opens the signing ceremony', async ({ page }) => {
+      await mintSession(page, { role: 'user', sub: uniqueId('revoke-approver'), iss: 'mice-e2e' })
+      await mockRepoChrome(page, {
+        isApprover: true,
+        signatures: [signatureRow('sig-93-b')],
+      })
+      await page.route('**/auth/signatures/sig-93-b/revoke', (route) =>
+        route.fulfill(ceremonyRejection),
+      )
+      await page.goto(settingsPath)
+      await page.getByRole('button', { name: 'Revoke signature' }).click()
+      await expect(page.getByTestId('signature-revoke-modal')).toBeVisible()
+      await expect(page.getByRole('dialog', { name: 'Revoke signature' })).toBeVisible()
+      await Promise.all([
+        page.waitForResponse(
+          (res) =>
+            res.url().includes('/auth/signatures/sig-93-b/revoke') && res.status() === 400,
+        ),
+        page.getByTestId('signature-revoke-confirm').click(),
+      ])
+      const dialog = page.getByRole('dialog', { name: /Signature Required/i })
       await expect(dialog).toBeVisible()
       await expect(dialog).toContainText(/Revoke signature sig-93-b/)
       await expect(dialog.getByLabel('Reason')).toBeVisible()
     })
 
-    test('TC-GXP-93-03: an esign.revoked event marks the signature Revoked and hides the button', async ({ page }) => {
-      await mintSession(page, { role: 'admin', sub: uniqueId('revoke-admin'), iss: 'mice-e2e' })
+    test('TC-GXP-93-03: revoked signatures show Revoked and hide the button', async ({ page }) => {
+      await mintSession(page, { role: 'user', sub: uniqueId('revoke-approver'), iss: 'mice-e2e' })
+      await mockRepoChrome(page, {
+        isApprover: true,
+        signatures: [signatureRow('sig-93-c', true)],
+      })
+      await page.goto(settingsPath)
+      await expect(page.getByTestId('signature-revoked-tag')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Revoke signature' })).toHaveCount(0)
+    })
+
+    test('TC-GXP-93-04: Auditor audit trail shows Revoked without a revoke control', async ({
+      page,
+    }) => {
+      await mintSession(page, { role: 'auditor', sub: uniqueId('revoke-auditor'), iss: 'mice-e2e' })
       await page.route('**/auth/audit?*', (route) =>
         route.fulfill({
           json: {
             events: [
               {
-                ...signatureEvent('sig-93-c'),
                 id: 'evt-revoked',
+                seq: 2,
+                ts: new Date().toISOString(),
+                actor: { sub: 'approver', iss: 'mice-e2e', name: 'Approver', email: 'a@mice.local' },
+                via: 'session',
+                method: 'POST',
+                path: '/auth/signatures/sig-93-d/revoke',
+                status: 200,
                 action: 'esign.revoked',
                 action_label: 'Electronic signature revoked',
+                message: 'Revoked signature',
+                signature_id: 'sig-93-d',
+                detail: { signatureId: 'sig-93-d' },
               },
-              signatureEvent('sig-93-c'),
+              {
+                id: 'evt-sig',
+                seq: 1,
+                ts: new Date().toISOString(),
+                actor: { sub: 'approver', iss: 'mice-e2e', name: 'Approver', email: 'a@mice.local' },
+                via: 'session',
+                method: 'POST',
+                path: '/auth/merge-requests/x/complete',
+                status: 200,
+                action: 'merge_request.complete',
+                action_label: 'Merge request completed',
+                message: 'Merged',
+                signature_id: 'sig-93-d',
+                detail: { signatureId: 'sig-93-d', meaning: 'Approved' },
+              },
             ],
             nextCursor: null,
           },
         }),
       )
       await page.goto('/audit')
-      await expect(page.getByTestId('signature-revoked-tag')).toBeVisible()
+      await expect(page.getByTestId('signature-revoked-tag').first()).toBeVisible()
       await expect(page.getByRole('button', { name: 'Revoke signature' })).toHaveCount(0)
+    })
+
+    test('TC-GXP-93-05: Approver can revoke from Merged requests', async ({ page }) => {
+      await mintSession(page, { role: 'user', sub: uniqueId('revoke-merged'), iss: 'mice-e2e' })
+      await page.route(`**/auth/namespaces/${ns}/repos/${repo}/permissions`, (route) =>
+        route.fulfill({
+          json: {
+            permissions: {
+              rename: false,
+              transfer: false,
+              manageCollaborators: false,
+              manageApprovers: false,
+              editMetadata: false,
+              deleteRepository: false,
+              viewSignedRecord: true,
+              contentsWrite: true,
+              isApprover: true,
+            },
+          },
+        }),
+      )
+      await page.route(`**/auth/repos/${ns}/${repo}/merge-requests**`, (route) => {
+        if (route.request().method() !== 'GET') return route.continue()
+        return route.fulfill({
+          json: {
+            mergeRequests: [
+              {
+                id: 'mr-merged-93',
+                repositoryId: 'r1',
+                namespace: ns,
+                repo,
+                sourceBranch: 'feature',
+                targetBranch: 'main',
+                expectedSourceHead: 'aaaaaaaa',
+                expectedTargetHead: 'bbbbbbbb',
+                title: 'Merged for revoke',
+                description: '',
+                status: 'merged',
+                openedBy: 'author@mice-e2e',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                mergeCommitId: 'cccccccc',
+                signatureId: 'sig-93-merged',
+                signatureRevoked: false,
+              },
+            ],
+          },
+        })
+      })
+      await page.route('**/auth/signatures/sig-93-merged/revoke', (route) =>
+        route.fulfill(ceremonyRejection),
+      )
+      await page.goto(`/n/${ns}/r/${repo}/merge-requests?status=merged`)
+      await expect(page.getByTestId('mr-merged-revoke')).toBeVisible()
+      await page.getByRole('button', { name: 'Revoke signature' }).click()
+      await expect(page.getByTestId('signature-revoke-modal')).toBeVisible()
+      await Promise.all([
+        page.waitForResponse(
+          (res) =>
+            res.url().includes('/auth/signatures/sig-93-merged/revoke') &&
+            res.status() === 400,
+        ),
+        page.getByTestId('signature-revoke-confirm').click(),
+      ])
+      await expect(page.getByRole('dialog', { name: /Signature Required/i })).toBeVisible()
+    })
+
+    test('TC-GXP-93-06: Approver can revoke a commit on validated-branch history', async ({
+      page,
+    }) => {
+      const commitId = 'deadbeefcafebabe'
+      const commit = {
+        id: commitId,
+        message: 'signed merge',
+        author: 'Approver',
+        email: 'a@mice.local',
+        timestamp: new Date().toISOString(),
+        parent_ids: [] as string[],
+      }
+      await mintSession(page, { role: 'user', sub: uniqueId('revoke-hist'), iss: 'mice-e2e' })
+      await page.route(`**/auth/namespaces/${ns}/repos/${repo}/permissions`, (route) =>
+        route.fulfill({
+          json: {
+            permissions: {
+              rename: false,
+              transfer: false,
+              manageCollaborators: false,
+              manageApprovers: false,
+              editMetadata: false,
+              deleteRepository: false,
+              viewSignedRecord: true,
+              contentsWrite: true,
+              isApprover: true,
+            },
+          },
+        }),
+      )
+      await page.route(
+        `**/auth/repos/${ns}/${repo}/commits/${commitId}/covering-signature**`,
+        (route) =>
+          route.fulfill({
+            json: { signature: { signatureId: 'sig-93-hist', revoked: false } },
+          }),
+      )
+      await page.route('**/auth/signatures/sig-93-hist/revoke', (route) =>
+        route.fulfill(ceremonyRejection),
+      )
+      await page.route(`**/api/repos/${ns}/${repo}/branches**`, (route) =>
+        route.fulfill({
+          json: { status: 'success', status_message: 'ok', branches: [{ name: 'main', commit_id: commitId }] },
+        }),
+      )
+      await page.route(`**/api/repos/${ns}/${repo}/commits/history/**`, (route) =>
+        route.fulfill({
+          json: { status: 'success', status_message: 'ok', commits: [commit] },
+        }),
+      )
+      await page.route(`**/api/repos/${ns}/${repo}/commits/${commitId}**`, (route) => {
+        if (route.request().url().includes('/covering-signature')) return route.fallback()
+        return route.fulfill({
+          json: { status: 'success', status_message: 'ok', commit },
+        })
+      })
+      await page.route(`**/auth/repos/${ns}/${repo}/commits/*/qc**`, (route) =>
+        route.fulfill({ json: { commitId, status: 'passed' } }),
+      )
+      await page.goto(
+        `/n/${ns}/r/${repo}/commits/${encodeURIComponent(commitId)}?branch=main`,
+      )
+      await expect(page.getByTestId('history-commit-revoke')).toBeVisible()
+      await page.getByRole('button', { name: 'Revoke commit' }).click()
+      await expect(page.getByTestId('signature-revoke-modal')).toBeVisible()
+      await Promise.all([
+        page.waitForResponse(
+          (res) =>
+            res.url().includes('/auth/signatures/sig-93-hist/revoke') &&
+            res.status() === 400,
+        ),
+        page.getByTestId('signature-revoke-confirm').click(),
+      ])
+      await expect(page.getByRole('dialog', { name: /Signature Required/i })).toBeVisible()
     })
   })
 

@@ -306,6 +306,7 @@ describe('namespace routes', () => {
       deleteRepository: false,
       viewSignedRecord: true,
       contentsWrite: false,
+      isApprover: false,
     })
     const ownerPerms = (await (
       await call('manager', 'GET', '/auth/namespaces/rename-route-ns/repos/assay/permissions')

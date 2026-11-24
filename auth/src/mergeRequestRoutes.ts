@@ -2,18 +2,27 @@ import type { Hono } from 'hono'
 import { confirmPrivilegedGroups, hasRepoPermission } from './authz.js'
 import { readRepository } from './authzRepository.js'
 import { guarded } from './authentication/session/routeGuard.js'
+import { decideIsApprover } from './authzApproverStore.js'
 import {
+  cancelMergeRequest,
   getMergeRequest,
   listMergeRequests,
   MergeRequestAlreadyOpenError,
   openMergeRequest,
+  reconcileMergeRequestAgainstLiveTips,
   rejectMergeRequest,
+  reopenMergeRequest,
   resyncMergeRequest,
+  type MergeRequestRecord,
 } from './mergeRequestStore.js'
 import { getCommitQc, markCommitsQc } from './commitQcStore.js'
 import { completeSignedMerge } from './completeSignedMerge.js'
 import { allocateChangeControlId, CHANGE_CONTROL_HEADER } from './changeControl.js'
-import { revokeSignature } from './signatureRevoke.js'
+import {
+  resolveSignatureCoveringCommit,
+  resolveSignatureForMergeRequest,
+  revokeSignature,
+} from './signatureRevoke.js'
 import { signerAuthorKey } from './selfMerge.js'
 import type { AuditDep } from './routeDeps.js'
 
@@ -84,6 +93,45 @@ export function setMergeRangeResolverForTests(next: MergeRangeResolver | null): 
 /** Tests replace oxen live branch tip resolution. */
 export function setLiveHeadsResolverForTests(next: LiveHeadsResolver | null): void {
   liveHeadsResolver = next
+}
+
+async function liveTipsFor(mr: Pick<MergeRequestRecord, 'namespace' | 'repo' | 'sourceBranch' | 'targetBranch'>): Promise<
+  | { sourceHead: string; targetHead: string }
+  | null
+> {
+  const { getBranchTip } = await import('./jobsOxen.js')
+  const [sourceHead, targetHead] = await Promise.all([
+    getBranchTip(mr.namespace, mr.repo, mr.sourceBranch),
+    getBranchTip(mr.namespace, mr.repo, mr.targetBranch),
+  ])
+  if (!sourceHead || !targetHead) return null
+  return { sourceHead, targetHead }
+}
+
+async function reconcileOne(mr: MergeRequestRecord): Promise<MergeRequestRecord> {
+  if (mr.status !== 'open' && mr.status !== 'stale') return mr
+  try {
+    const tips = await liveTipsFor(mr)
+    if (!tips) return mr
+    return await reconcileMergeRequestAgainstLiveTips(mr, tips)
+  } catch {
+    return mr
+  }
+}
+
+/** Public MR JSON plus optional signature ref for Approver revoke on Merged (#93). */
+async function publicMergeRequest(
+  mr: MergeRequestRecord,
+  revokedIds?: Set<string>,
+) {
+  if (mr.status !== 'merged') return mr
+  const sig = await resolveSignatureForMergeRequest(mr, revokedIds)
+  if (!sig) return mr
+  return {
+    ...mr,
+    signatureId: sig.signatureId,
+    signatureRevoked: sig.revoked,
+  }
 }
 
 async function defaultExecuteMerge(mr: {
@@ -194,7 +242,19 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       }
       const repo = await readRepository(ns, repoName)
       if (!repo) return c.json({ error: 'Not found' }, 404)
-      return c.json({ mergeRequests: await listMergeRequests(repo.id) })
+      const rows = await listMergeRequests(repo.id)
+      const hasMerged = rows.some((mr) => mr.status === 'merged')
+      let revokedIds: Set<string> | undefined
+      if (hasMerged) {
+        const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+        revokedIds = await (await signatureStore()).listRevokedSignatureIds()
+      }
+      const mergeRequests = await Promise.all(
+        rows.map(async (mr) =>
+          publicMergeRequest(await reconcileOne(mr), revokedIds),
+        ),
+      )
+      return c.json({ mergeRequests })
     }),
   )
 
@@ -206,7 +266,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'read')).ok) {
         return c.json({ error: 'Forbidden' }, 403)
       }
-      return c.json({ mergeRequest: mr })
+      return c.json({
+        mergeRequest: await publicMergeRequest(await reconcileOne(mr)),
+      })
     }),
   )
 
@@ -223,32 +285,191 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         liveTargetHead?: string
         refreshExpected?: boolean
       }
-      if (!body.liveSourceHead?.trim() || !body.liveTargetHead?.trim()) {
+      const refreshExpected = body.refreshExpected === true
+      let liveSourceHead = body.liveSourceHead?.trim() ?? ''
+      let liveTargetHead = body.liveTargetHead?.trim() ?? ''
+      // Update (refreshExpected): server resolves live tips so the client cannot forge pins.
+      if ((!liveSourceHead || !liveTargetHead) && refreshExpected) {
+        const tips = await liveTipsFor(mr)
+        if (!tips) {
+          return c.json({ error: 'Could not resolve live branch tips', code: 'tips_unavailable' }, 503)
+        }
+        liveSourceHead = tips.sourceHead
+        liveTargetHead = tips.targetHead
+      }
+      if (!liveSourceHead || !liveTargetHead) {
         return c.json({ error: 'liveSourceHead and liveTargetHead required' }, 400)
       }
       const next = await resyncMergeRequest(mr.id, {
-        liveSourceHead: body.liveSourceHead.trim(),
-        liveTargetHead: body.liveTargetHead.trim(),
-        refreshExpected: body.refreshExpected === true,
+        liveSourceHead,
+        liveTargetHead,
+        refreshExpected,
       })
       await audit({
         action: 'merge_request.resync',
         message: `Resynced MR ${mr.id} → ${next.status}`,
         namespace: mr.namespace,
         repo: mr.repo,
-        detail: { mergeRequestId: mr.id, status: next.status },
+        detail: {
+          mergeRequestId: mr.id,
+          status: next.status,
+          refreshExpected,
+        },
       })
       return c.json({ mergeRequest: next })
     }),
   )
 
+  // Writer withdraws the request (does not need Approver).
   app.post(
-    '/auth/merge-requests/:id/reject',
+    '/auth/merge-requests/:id/cancel',
     guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, audit }) => {
       const mr = await getMergeRequest(c.req.param('id'))
       if (!mr) return c.json({ error: 'Not found' }, 404)
       if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'write')).ok) {
         return c.json({ error: 'Forbidden' }, 403)
+      }
+      const result = await cancelMergeRequest(mr.id)
+      if (!result.ok) {
+        if (result.code === 'not_found') return c.json({ error: 'Not found' }, 404)
+        return c.json(
+          { error: 'Merge request cannot be cancelled', code: 'not_cancellable' },
+          400,
+        )
+      }
+      await audit({
+        action: 'merge_request.cancel',
+        message: `Cancelled MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
+        namespace: mr.namespace,
+        repo: mr.repo,
+        detail: { mergeRequestId: mr.id, status: result.mergeRequest.status },
+      })
+      return c.json({ mergeRequest: result.mergeRequest })
+    }),
+  )
+
+  // Cancelled → writer reopen. Rejected → Approver reverts refuse (then may Approve).
+  app.post(
+    '/auth/merge-requests/:id/reopen',
+    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+      const mr = await getMergeRequest(c.req.param('id'))
+      if (!mr) return c.json({ error: 'Not found' }, 404)
+      if (mr.status === 'cancelled') {
+        if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'write')).ok) {
+          return c.json({ error: 'Forbidden' }, 403)
+        }
+      } else if (mr.status === 'rejected') {
+        let actor = user
+        try {
+          actor = await confirmPrivilegedGroups(user)
+        } catch (err) {
+          if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+            return c.json({ error: 'Directory unavailable' }, 503)
+          }
+          throw err
+        }
+        const approver = await decideIsApprover(actor, mr.namespace, mr.repo)
+        if (!approver.allow) {
+          await audit({
+            action: 'merge_request.reopen_denied',
+            status: 403,
+            message: approver.reason ?? 'Approver role required',
+            detail: { mergeRequestId: mr.id, code: 'not_approver', fromStatus: 'rejected' },
+          })
+          return c.json(
+            { error: approver.reason ?? 'Approver role required', code: 'not_approver' },
+            403,
+          )
+        }
+      } else {
+        return c.json(
+          { error: 'Merge request cannot be reopened', code: 'not_reopenable' },
+          400,
+        )
+      }
+      const body = raw as {
+        liveSourceHead?: string
+        liveTargetHead?: string
+        refreshExpected?: boolean
+      }
+      // Default: adopt live tips so a reopen is current (same as Update).
+      const refreshExpected = body.refreshExpected !== false
+      let liveSourceHead = body.liveSourceHead?.trim() ?? ''
+      let liveTargetHead = body.liveTargetHead?.trim() ?? ''
+      if ((!liveSourceHead || !liveTargetHead) && refreshExpected) {
+        const tips = await liveTipsFor(mr)
+        if (tips) {
+          liveSourceHead = tips.sourceHead
+          liveTargetHead = tips.targetHead
+        }
+      }
+      const result = await reopenMergeRequest(mr.id, {
+        liveSourceHead: liveSourceHead || undefined,
+        liveTargetHead: liveTargetHead || undefined,
+        refreshExpected: Boolean(liveSourceHead && liveTargetHead && refreshExpected),
+      })
+      if (!result.ok) {
+        if (result.code === 'not_found') return c.json({ error: 'Not found' }, 404)
+        if (result.code === 'already_open') {
+          return c.json(
+            {
+              error:
+                'A merge request for this source and target branch already exists. Open, reopen, or revert that request instead of creating another.',
+              code: 'already_open',
+              existingId: result.existingId,
+            },
+            409,
+          )
+        }
+        return c.json(
+          { error: 'Merge request cannot be reopened', code: 'not_reopenable' },
+          400,
+        )
+      }
+      const fromStatus = mr.status
+      await audit({
+        action:
+          fromStatus === 'rejected' ? 'merge_request.reject_reverted' : 'merge_request.reopen',
+        message:
+          fromStatus === 'rejected'
+            ? `Reverted reject on MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`
+            : `Reopened MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
+        namespace: mr.namespace,
+        repo: mr.repo,
+        detail: {
+          mergeRequestId: mr.id,
+          fromStatus,
+          status: result.mergeRequest.status,
+        },
+      })
+      return c.json({ mergeRequest: result.mergeRequest })
+    }),
+  )
+
+  // Approver refuses the request (Approver seat required).
+  app.post(
+    '/auth/merge-requests/:id/reject',
+    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, audit }) => {
+      const mr = await getMergeRequest(c.req.param('id'))
+      if (!mr) return c.json({ error: 'Not found' }, 404)
+      let actor = user
+      try {
+        actor = await confirmPrivilegedGroups(user)
+      } catch (err) {
+        if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+          return c.json({ error: 'Directory unavailable' }, 503)
+        }
+        throw err
+      }
+      const approver = await decideIsApprover(actor, mr.namespace, mr.repo)
+      if (!approver.allow) {
+        await audit({
+          action: 'merge_request.reject_denied',
+          status: 403,
+          message: approver.reason ?? 'Approver role required',
+          detail: { mergeRequestId: mr.id, code: 'not_approver' },
+        })
+        return c.json({ error: approver.reason ?? 'Approver role required', code: 'not_approver' }, 403)
       }
       const result = await rejectMergeRequest(mr.id)
       if (!result.ok) {
@@ -266,6 +487,28 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         detail: { mergeRequestId: mr.id, status: result.mergeRequest.status },
       })
       return c.json({ mergeRequest: result.mergeRequest })
+    }),
+  )
+
+  // Covering signature for a commit — Approver history revoke (#93).
+  app.get(
+    '/auth/repos/:ns/:repo/commits/:commitId/covering-signature',
+    guarded({}, async ({ c, user }) => {
+      const ns = c.req.param('ns')
+      const repoName = c.req.param('repo')
+      const commitId = c.req.param('commitId')
+      if (!(await hasRepoPermission(user, ns, repoName, 'read')).ok) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
+      const repo = await readRepository(ns, repoName)
+      if (!repo) return c.json({ error: 'Not found' }, 404)
+      const sig = await resolveSignatureCoveringCommit({
+        repositoryId: repo.id,
+        namespace: ns,
+        repo: repoName,
+        commitId,
+      })
+      return c.json({ signature: sig })
     }),
   )
 
@@ -352,21 +595,46 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
     }),
   )
 
+  // GxP #93 — list signatures for Approver revoke chrome (read: any repo reader).
+  app.get(
+    '/auth/repos/:ns/:repo/signatures',
+    guarded({}, async ({ c, user }) => {
+      const ns = c.req.param('ns')
+      const repoName = c.req.param('repo')
+      if (!(await hasRepoPermission(user, ns, repoName, 'read')).ok) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
+      const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+      const store = await signatureStore()
+      const indexed = await store.find({ repo: `${ns}/${repoName}` })
+      const signatures = []
+      for (const row of indexed) {
+        const found = await store.get(row.id)
+        if (!found) continue
+        const revs = await store.listRevocations(row.id)
+        signatures.push({
+          id: found.record.id,
+          meaning: found.record.meaning,
+          signedAt: found.record.signedAt,
+          signer: found.record.signer,
+          binding: found.record.binding,
+          changeControlId: found.record.changeControlId,
+          revoked: revs.length > 0,
+          revocationCount: revs.length,
+        })
+      }
+      signatures.sort((a, b) => (a.signedAt < b.signedAt ? 1 : -1))
+      return c.json({ signatures })
+    }),
+  )
+
   // GxP ticket 07 — revoke signature / commits → QC Failed (linked append-only record).
+  // reason:true enforces free-text reason + mutation e-signature (step-up via /auth/sign/*).
   app.post(
     '/auth/signatures/:id/revoke',
-    guarded({ mutates: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
-      const {
-        resolveReason,
-        REASON_HEADER,
-      } = await import('./auditReason.js')
-      const reason = resolveReason({
-        actor: user,
-        explicit: c.req.header(REASON_HEADER),
-      })
-      if (!reason.ok) {
-        return c.json({ error: reason.rejection.detail, code: reason.rejection.code }, 400)
-      }
+    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+      const { REASON_HEADER } = await import('./auditReason.js')
+      const reasonText = c.req.header(REASON_HEADER)?.trim() || ''
       const body = raw as {
         commitIds?: string[]
         mergeRequestId?: string
@@ -393,7 +661,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           name: revoker.name,
           groups: revoker.groups,
         },
-        reason: reason.value.reason,
+        reason: reasonText,
         changeControlId,
         commitIds: Array.isArray(body.commitIds) ? body.commitIds.map(String) : undefined,
         mergeRequestId: typeof body.mergeRequestId === 'string' ? body.mergeRequestId : undefined,

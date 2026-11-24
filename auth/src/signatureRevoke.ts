@@ -4,10 +4,14 @@ import { readRepository } from './authzRepository.js'
 import { parseUserKey } from './authzTypes.js'
 import { principalKey } from './authentication/session/principal.js'
 import { signatureStore, type SignatureRecord } from './authentication/signing/signatureStore.js'
-import { getCommitQc, markCommitsQc } from './commitQcStore.js'
+import { getCommitQc, listCommitQcForRepo, markCommitsQc } from './commitQcStore.js'
 import { getDb } from './db/database.js'
-import { mergeRequests, namespaceMembers, namespaces } from './db/schema.js'
-import { getMergeRequest, listMergeRequests } from './mergeRequestStore.js'
+import { mergeRequests, namespaceMembers, namespaces, signatureIndex } from './db/schema.js'
+import {
+  getMergeRequest,
+  listMergeRequests,
+  type MergeRequestRecord,
+} from './mergeRequestStore.js'
 import { emitNotification } from './notifications.js'
 import type { NotificationEvent } from './notificationsTypes.js'
 
@@ -63,10 +67,13 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
     return { ok: false, status: 403, code: 'not_approver', detail: approver.reason }
   }
 
-  const commitIds =
-    input.commitIds && input.commitIds.length > 0
-      ? [...new Set(input.commitIds)]
-      : [record.binding!.sourceHead, record.binding!.targetHead].filter(Boolean)
+  const repositoryId = await resolveRepositoryId(ns, repoName, input.mergeRequestId)
+  const commitIds = await resolveAffectedCommitIds({
+    explicit: input.commitIds,
+    binding: record.binding!,
+    repositoryId,
+    mergeRequestId: input.mergeRequestId,
+  })
 
   const saved = await store.revoke({
     signatureId: input.signatureId,
@@ -88,7 +95,6 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
     commitIds,
   }
 
-  const repositoryId = await resolveRepositoryId(ns, repoName, input.mergeRequestId)
   if (repositoryId) {
     await markCommitsQc(repositoryId, commitIds, 'failed')
   }
@@ -121,6 +127,52 @@ async function resolveRepositoryId(
   return (await readRepository(ns, repo))?.id ?? null
 }
 
+/**
+ * Explicit commit set wins. Otherwise prefer QC rows recorded for the signed
+ * merge (range + merge commit), falling back to binding tip heads.
+ */
+async function resolveAffectedCommitIds(input: {
+  explicit?: string[]
+  binding: { sourceHead: string; targetHead: string }
+  repositoryId: string | null
+  mergeRequestId?: string
+}): Promise<string[]> {
+  if (input.explicit && input.explicit.length > 0) {
+    return [...new Set(input.explicit)]
+  }
+  const fromQc = await commitIdsFromSignedMergeQc(input)
+  if (fromQc.length > 0) return fromQc
+  return [input.binding.sourceHead, input.binding.targetHead].filter(Boolean)
+}
+
+async function commitIdsFromSignedMergeQc(input: {
+  binding: { sourceHead: string; targetHead: string }
+  repositoryId: string | null
+  mergeRequestId?: string
+}): Promise<string[]> {
+  if (!input.repositoryId) return []
+  let mr: MergeRequestRecord | undefined
+  if (input.mergeRequestId) {
+    mr = (await getMergeRequest(input.mergeRequestId)) ?? undefined
+  } else {
+    mr = (await listMergeRequests(input.repositoryId)).find(
+      (row) =>
+        row.status === 'merged' &&
+        row.expectedSourceHead === input.binding.sourceHead &&
+        row.expectedTargetHead === input.binding.targetHead,
+    )
+  }
+  if (!mr) return []
+  const rows = await listCommitQcForRepo(input.repositoryId)
+  const ids = rows
+    .filter((r) => r.mergeRequestId === mr.id && (r.status === 'passed' || r.status === 'failed'))
+    .map((r) => r.commitId)
+  if (ids.length > 0) return [...new Set(ids)]
+  const tips = [input.binding.sourceHead, input.binding.targetHead]
+  if (mr.mergeCommitId) tips.push(mr.mergeCommitId)
+  return [...new Set(tips.filter(Boolean))]
+}
+
 async function blockOpenMergeRequests(input: {
   repositoryId: string | null
   mergeRequestId?: string
@@ -132,7 +184,7 @@ async function blockOpenMergeRequests(input: {
     if (mr && (mr.status === 'open' || mr.status === 'stale')) {
       await getDb()
         .update(mergeRequests)
-        .set({ status: 'blocked', updatedAt: new Date() })
+        .set({ status: 'rejected', updatedAt: new Date() })
         .where(eq(mergeRequests.id, mr.id))
       blocked.push(mr.id)
     }
@@ -147,7 +199,7 @@ async function blockOpenMergeRequests(input: {
     ) {
       await getDb()
         .update(mergeRequests)
-        .set({ status: 'blocked', updatedAt: new Date() })
+        .set({ status: 'rejected', updatedAt: new Date() })
         .where(eq(mergeRequests.id, mr.id))
       blocked.push(mr.id)
     }
@@ -211,4 +263,93 @@ export async function anyCommitQcFailed(
     if ((await getCommitQc(repositoryId, id)) === 'failed') return true
   }
   return false
+}
+
+export type ResolvedSignatureRef = {
+  signatureId: string
+  revoked: boolean
+}
+
+/**
+ * Locate the approval signature that completed this merge request (heads match).
+ * Uses the SQL signature_index (not a full ledger walk per candidate) so Merged-tab
+ * list enrichment stays fast (#93).
+ */
+export async function resolveSignatureForMergeRequest(
+  mr: Pick<
+    MergeRequestRecord,
+    'namespace' | 'repo' | 'expectedSourceHead' | 'expectedTargetHead' | 'mergeCommitId' | 'id'
+  >,
+  revokedIds?: Set<string>,
+): Promise<ResolvedSignatureRef | null> {
+  const rows = await getDb()
+    .select({
+      signatureId: signatureIndex.signatureId,
+      signedAt: signatureIndex.signedAt,
+    })
+    .from(signatureIndex)
+    .where(
+      and(
+        eq(signatureIndex.repo, `${mr.namespace}/${mr.repo}`),
+        eq(signatureIndex.sourceHead, mr.expectedSourceHead),
+        eq(signatureIndex.targetHead, mr.expectedTargetHead),
+      ),
+    )
+  if (rows.length === 0) return null
+  const revoked = revokedIds ?? (await (await signatureStore()).listRevokedSignatureIds())
+  // Prefer a still-active signature; then the newest match.
+  rows.sort((a, b) => (a.signedAt < b.signedAt ? 1 : -1))
+  let best: ResolvedSignatureRef | null = null
+  for (const row of rows) {
+    const ref = {
+      signatureId: row.signatureId,
+      revoked: revoked.has(row.signatureId),
+    }
+    if (!best || (best.revoked && !ref.revoked)) best = ref
+    if (!ref.revoked) break
+  }
+  return best
+}
+
+/**
+ * Signature that covers a commit (via QC merge-request link or tip binding).
+ * Used by validated-branch history Approver revoke-of-commit (#93).
+ */
+export async function resolveSignatureCoveringCommit(input: {
+  repositoryId: string
+  namespace: string
+  repo: string
+  commitId: string
+}): Promise<ResolvedSignatureRef | null> {
+  const commitId = input.commitId.trim()
+  if (!commitId) return null
+  const revoked = await (await signatureStore()).listRevokedSignatureIds()
+
+  const qcRows = await listCommitQcForRepo(input.repositoryId)
+  const qc = qcRows.find((r) => r.commitId === commitId)
+  if (qc?.mergeRequestId) {
+    const mr = await getMergeRequest(qc.mergeRequestId)
+    if (mr) {
+      const viaMr = await resolveSignatureForMergeRequest(mr, revoked)
+      if (viaMr) return viaMr
+    }
+  }
+
+  // Merge commit id on a merged MR.
+  for (const mr of await listMergeRequests(input.repositoryId)) {
+    if (mr.status === 'merged' && mr.mergeCommitId === commitId) {
+      const viaMr = await resolveSignatureForMergeRequest(mr, revoked)
+      if (viaMr) return viaMr
+    }
+  }
+
+  const store = await signatureStore()
+  const tipHits = await store.find({
+    repo: `${input.namespace}/${input.repo}`,
+    commit: commitId,
+  })
+  for (const row of tipHits) {
+    return { signatureId: row.id, revoked: revoked.has(row.id) }
+  }
+  return null
 }

@@ -16,7 +16,11 @@ export function useCommitQc(
   namespace: string,
   repo: string,
   commits: QcCommit[] | null | undefined,
-): { qc: Record<string, CommitQcStatus>; summary: QcFailureSummary } {
+): {
+  qc: Record<string, CommitQcStatus>
+  summary: QcFailureSummary
+  reload: () => void
+} {
   const ids = (commits ?? []).slice(0, COMMIT_QC_LIMIT).map((c) => c.id)
   const key = ids.join(',')
   const state = useAsync(
@@ -32,5 +36,5 @@ export function useCommitQc(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [key, qc],
   )
-  return { qc, summary }
+  return { qc, summary, reload: state.reload }
 }

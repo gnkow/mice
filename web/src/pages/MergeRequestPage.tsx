@@ -1,4 +1,5 @@
-import { Check, File as ActionFile, GitPullRequest, X } from 'lucide-react'
+import { Ban, Check, File as ActionFile, GitPullRequest, RefreshCw, RotateCcw, X } from 'lucide-react'
+import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
 import { useId, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
@@ -9,12 +10,16 @@ import { usePrincipalProfiles } from '../components/CommitEmail'
 import { UserRef } from '../components/UserRef'
 import { useAsync } from '../hooks/useAsync'
 import { fetchAuthMe } from '../lib/auth'
+import { fetchRepoPermissions } from '../lib/authzApi'
 import {
+  cancelMergeRequest,
   getMergeRequest,
   isSelfSignBlocked,
   mergeRefusalMessage,
   mergeRequestTitle,
   rejectMergeRequest,
+  reopenMergeRequest,
+  updateMergeRequestHeads,
 } from '../lib/mergeRequests'
 import { compareCommits, compareEntries, compareFile } from '../lib/oxen/api'
 import { askReason } from '../lib/reasonPrompt'
@@ -38,6 +43,12 @@ export function MergeRequestPage() {
     [mergeRequestId],
   )
   const me = useAsync((signal) => fetchAuthMe(signal), [])
+  const repoPerms = useAsync(
+    (signal) => fetchRepoPermissions(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const canWrite = repoPerms.kind === 'ok' && repoPerms.data.contentsWrite === true
+  const canApprove = repoPerms.kind === 'ok' && repoPerms.data.isApprover === true
 
   const source =
     mrState.kind === 'ok' ? mrState.data.sourceBranch : ''
@@ -93,6 +104,33 @@ export function MergeRequestPage() {
       ? `${base}/compare?base=${encodeURIComponent(target)}&head=${encodeURIComponent(source)}`
       : `${base}/compare`
 
+  async function onCancel() {
+    if (mrState.kind !== 'ok') return
+    setActionError(null)
+    setBusy(true)
+    try {
+      const path = `/auth/merge-requests/${encodeURIComponent(mergeRequestId)}/cancel`
+      const ceremony = await askReason({
+        changeSummary: `Cancel merge request ${mergeRequestTitle(mrState.data)} on ${namespace}/${repo}`,
+        detail: 'Withdraw this request. An electronic signature is required.',
+        method: 'POST',
+        path,
+        body: {},
+      })
+      if (!ceremony?.signatureId) return
+      await cancelMergeRequest(mergeRequestId, {
+        reason: ceremony.reason,
+        signatureId: ceremony.signatureId,
+        changeControlId: ceremony.changeControlId,
+      })
+      navigate(`${base}/merge-requests?status=cancelled`)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Cancel failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function onReject() {
     if (mrState.kind !== 'ok') return
     setActionError(null)
@@ -101,7 +139,7 @@ export function MergeRequestPage() {
       const path = `/auth/merge-requests/${encodeURIComponent(mergeRequestId)}/reject`
       const ceremony = await askReason({
         changeSummary: `Reject merge request ${mergeRequestTitle(mrState.data)} on ${namespace}/${repo}`,
-        detail: 'An electronic signature is required to reject this merge request',
+        detail: 'Refuse this request as Approver. An electronic signature is required.',
         method: 'POST',
         path,
         body: {},
@@ -112,9 +150,78 @@ export function MergeRequestPage() {
         signatureId: ceremony.signatureId,
         changeControlId: ceremony.changeControlId,
       })
-      navigate(`${base}/merge-requests`)
+      navigate(`${base}/merge-requests?status=rejected`)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Reject failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onReopen() {
+    if (mrState.kind !== 'ok') return
+    setActionError(null)
+    setBusy(true)
+    const revertingReject = mrState.data.status === 'rejected'
+    try {
+      const path = `/auth/merge-requests/${encodeURIComponent(mergeRequestId)}/reopen`
+      const ceremony = await askReason({
+        changeSummary: revertingReject
+          ? `Revert reject on merge request ${mergeRequestTitle(mrState.data)} on ${namespace}/${repo}`
+          : `Reopen merge request ${mergeRequestTitle(mrState.data)} on ${namespace}/${repo}`,
+        detail: revertingReject
+          ? 'Undo the Approver refuse so this request can be approved. An electronic signature is required.'
+          : 'Restore this cancelled request. An electronic signature is required.',
+        method: 'POST',
+        path,
+        body: { refreshExpected: true },
+      })
+      if (!ceremony?.signatureId) return
+      await reopenMergeRequest(mergeRequestId, {
+        reason: ceremony.reason,
+        signatureId: ceremony.signatureId,
+        changeControlId: ceremony.changeControlId,
+      })
+      mrState.reload()
+      navigate(`${base}/merge-requests/${encodeURIComponent(mergeRequestId)}`, {
+        replace: true,
+      })
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : revertingReject
+            ? 'Revert reject failed'
+            : 'Reopen failed',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onUpdate() {
+    if (mrState.kind !== 'ok') return
+    setActionError(null)
+    setBusy(true)
+    try {
+      const path = `/auth/merge-requests/${encodeURIComponent(mergeRequestId)}/resync`
+      const ceremony = await askReason({
+        changeSummary: `Update merge request ${mergeRequestTitle(mrState.data)} on ${namespace}/${repo}`,
+        detail:
+          'Source or target moved — refresh expected heads before Approve. An electronic signature is required.',
+        method: 'POST',
+        path,
+        body: { refreshExpected: true },
+      })
+      if (!ceremony?.signatureId) return
+      await updateMergeRequestHeads(mergeRequestId, {
+        reason: ceremony.reason,
+        signatureId: ceremony.signatureId,
+        changeControlId: ceremony.changeControlId,
+      })
+      mrState.reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Update failed')
     } finally {
       setBusy(false)
     }
@@ -141,7 +248,15 @@ export function MergeRequestPage() {
               {' → '}
               <span className="mono">{mrState.data.targetBranch}</span>
               {' · '}
-              <span className={`ns-tag ${mrState.data.status === 'open' ? 'ns-tag-accent' : 'ns-tag-muted'}`}>
+              <span
+                className={`ns-tag ${
+                  mrState.data.status === 'open'
+                    ? 'ns-tag-accent'
+                    : mrState.data.status === 'stale'
+                      ? 'ns-tag-warn'
+                      : 'ns-tag-muted'
+                }`}
+              >
                 {mrState.data.status}
               </span>
               {' · '}
@@ -336,14 +451,27 @@ export function MergeRequestPage() {
             </section>
 
             {(mrState.data.status === 'open' ||
-              mrState.data.status === 'stale') && (
+              mrState.data.status === 'stale' ||
+              mrState.data.status === 'cancelled' ||
+              mrState.data.status === 'rejected' ||
+              mrState.data.status === 'merged') && (
               <div className="mr-view-actions">
                 {actionError ? (
                   <p className="error" role="alert">
                     {actionError}
                   </p>
                 ) : null}
-                {selfSignBlocked ? (
+                {mrState.data.status === 'stale' ? (
+                  <p className="muted small" role="status">
+                    {mergeRefusalMessage(
+                      'stale',
+                      'Source or target moved — Update this request before Approve.',
+                    )}
+                  </p>
+                ) : null}
+                {selfSignBlocked &&
+                (mrState.data.status === 'open' ||
+                  mrState.data.status === 'stale') ? (
                   <p className="muted small" role="status">
                     {mergeRefusalMessage(
                       'self_merge',
@@ -352,40 +480,143 @@ export function MergeRequestPage() {
                   </p>
                 ) : null}
                 <div className="btn-row">
-                  <button
-                    type="button"
-                    className={
-                      selfSignBlocked
-                        ? 'btn primary is-disabled'
-                        : 'btn primary'
-                    }
-                    disabled={busy || selfSignBlocked}
-                    aria-disabled={selfSignBlocked || undefined}
-                    title={
-                      selfSignBlocked
-                        ? mergeRefusalMessage(
-                            'self_merge',
-                            'Self-merge forbidden (4-eyes principle)',
-                          )
-                        : undefined
-                    }
-                    onClick={() => {
-                      if (selfSignBlocked) return
-                      setSigning(true)
-                    }}
-                  >
-                    <Check size={14} aria-hidden="true" className="button-label-icon" />
-                    Sign
-                  </button>
-                  <button
-                    type="button"
-                    className="btn danger"
-                    disabled={busy}
-                    onClick={() => void onReject()}
-                  >
-                    <X size={14} aria-hidden="true" className="button-label-icon" />
-                    Reject
-                  </button>
+                  {mrState.data.status === 'cancelled' && canWrite ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      title="Reopen this cancelled merge request"
+                      onClick={() => void onReopen()}
+                    >
+                      <RotateCcw size={14} aria-hidden="true" className="button-label-icon" />
+                      Reopen
+                    </button>
+                  ) : null}
+                  {mrState.data.status === 'rejected' && canApprove ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      title="Revert reject — restore this request so it can be approved"
+                      onClick={() => void onReopen()}
+                    >
+                      <RotateCcw size={14} aria-hidden="true" className="button-label-icon" />
+                      Revert reject
+                    </button>
+                  ) : null}
+                  {mrState.data.status === 'stale' && canWrite ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      onClick={() => void onUpdate()}
+                    >
+                      <RefreshCw size={14} aria-hidden="true" className="button-label-icon" />
+                      Update
+                    </button>
+                  ) : null}
+                  {canApprove &&
+                  (mrState.data.status === 'open' ||
+                    mrState.data.status === 'stale') ? (
+                    <button
+                      type="button"
+                      className={
+                        selfSignBlocked || mrState.data.status === 'stale'
+                          ? 'btn primary is-disabled'
+                          : 'btn primary'
+                      }
+                      disabled={
+                        busy || selfSignBlocked || mrState.data.status === 'stale'
+                      }
+                      aria-disabled={
+                        selfSignBlocked || mrState.data.status === 'stale'
+                          ? true
+                          : undefined
+                      }
+                      title={
+                        mrState.data.status === 'stale'
+                          ? mergeRefusalMessage(
+                              'stale',
+                              'Source or target moved — Update this request before Approve.',
+                            )
+                          : selfSignBlocked
+                            ? mergeRefusalMessage(
+                                'self_merge',
+                                'Self-merge forbidden (4-eyes principle)',
+                              )
+                            : undefined
+                      }
+                      onClick={() => {
+                        if (selfSignBlocked || mrState.data.status === 'stale') return
+                        setSigning(true)
+                      }}
+                    >
+                      <Check size={14} aria-hidden="true" className="button-label-icon" />
+                      Approve
+                    </button>
+                  ) : null}
+                  {canApprove &&
+                  (mrState.data.status === 'open' ||
+                    mrState.data.status === 'stale') ? (
+                    <button
+                      type="button"
+                      className="btn danger"
+                      disabled={busy}
+                      title="Refuse this merge request as Approver"
+                      onClick={() => void onReject()}
+                    >
+                      <Ban size={14} aria-hidden="true" className="button-label-icon" />
+                      Reject
+                    </button>
+                  ) : null}
+                  {canWrite &&
+                  (mrState.data.status === 'open' ||
+                    mrState.data.status === 'stale') ? (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      disabled={busy}
+                      title="Withdraw this merge request"
+                      onClick={() => void onCancel()}
+                    >
+                      <X size={14} aria-hidden="true" className="button-label-icon" />
+                      Cancel
+                    </button>
+                  ) : null}
+                  {mrState.data.status === 'merged' &&
+                  canApprove &&
+                  mrState.data.signatureId &&
+                  !mrState.data.signatureRevoked ? (
+                    <div data-testid="mr-merged-revoke">
+                      <RevokeSignatureButton
+                        signatureId={mrState.data.signatureId}
+                        namespace={mrState.data.namespace}
+                        repo={mrState.data.repo}
+                        candidateCommits={[
+                          {
+                            id: mrState.data.expectedSourceHead,
+                            role: 'Incoming tip',
+                          },
+                          ...(mrState.data.mergeCommitId
+                            ? [
+                                {
+                                  id: mrState.data.mergeCommitId,
+                                  role: 'Merge commit',
+                                },
+                              ]
+                            : []),
+                        ]}
+                        onRevoked={() => mrState.reload()}
+                      />
+                    </div>
+                  ) : null}
+                  {mrState.data.status === 'merged' &&
+                  canApprove &&
+                  mrState.data.signatureRevoked ? (
+                    <span className="ns-tag ns-tag-warn" data-testid="signature-revoked-tag">
+                      Revoked
+                    </span>
+                  ) : null}
                 </div>
               </div>
             )}

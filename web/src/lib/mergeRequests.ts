@@ -4,7 +4,7 @@ import {
   SIGNATURE_HEADER,
 } from './reason'
 
-export type MergeRequestStatus = 'open' | 'stale' | 'merged' | 'blocked'
+export type MergeRequestStatus = 'open' | 'stale' | 'merged' | 'rejected' | 'cancelled'
 
 export type MergeRequest = {
   id: string
@@ -22,6 +22,9 @@ export type MergeRequest = {
   mergeCommitId: string | null
   createdAt: string
   updatedAt: string
+  /** Present on merged MRs when the completing signature is indexed (#93). */
+  signatureId?: string
+  signatureRevoked?: boolean
 }
 
 /** Display title when the API returns an empty legacy title. */
@@ -65,10 +68,11 @@ const REFUSAL_COPY: Record<string, string> = {
   not_approver: 'You need the Approver role for this repository to sign the merge.',
   self_merge:
     'Self-merge forbidden (4-eyes): you cannot approve this merge if you opened the request or authored commits in the range.',
-  head_mismatch: 'Source or target moved since this preview. Resync the merge request and try again.',
-  not_open: 'This merge request is not open (it may be stale, merged, or blocked).',
+  head_mismatch: 'Source or target moved since this preview. Update the merge request and try again.',
+  not_open: 'This merge request is not open (it may be stale, merged, or rejected).',
+  stale: 'Source or target moved — Update this request before Approve.',
   already_open:
-    'A merge request for this source and target branch is already open. Open that request instead of creating another.',
+    'A merge request for this source and target branch already exists. Open, reopen, or revert that request instead of creating another.',
   binding_mismatch: 'Content changed after display; the pending signature is invalid.',
   restore_test_required: 'A restore test must pass before the first regulated merge.',
   not_validated: 'Target branch is not validated; use the unsigned merge path.',
@@ -233,11 +237,12 @@ export async function fetchSigningPreview(
   return (await res.json()) as MergeSigningPreview
 }
 
-export async function rejectMergeRequest(
+async function closeMergeRequest(
   id: string,
+  action: 'reject' | 'cancel',
   ceremony: { reason: string; signatureId: string; changeControlId?: string },
 ): Promise<MergeRequest> {
-  const res = await fetch(`/auth/merge-requests/${encodeURIComponent(id)}/reject`, {
+  const res = await fetch(`/auth/merge-requests/${encodeURIComponent(id)}/${action}`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
@@ -253,7 +258,54 @@ export async function rejectMergeRequest(
   })
   if (!res.ok) {
     const err = await readError(res)
-    throw new Error(err.error)
+    throw Object.assign(new Error(mergeRefusalMessage(err.code, err.error)), {
+      code: err.code,
+    })
+  }
+  const body = (await res.json()) as { mergeRequest: MergeRequest }
+  return body.mergeRequest
+}
+
+/** Approver refuse → status rejected. */
+export async function rejectMergeRequest(
+  id: string,
+  ceremony: { reason: string; signatureId: string; changeControlId?: string },
+): Promise<MergeRequest> {
+  return closeMergeRequest(id, 'reject', ceremony)
+}
+
+/** Writer withdraw → status cancelled. */
+export async function cancelMergeRequest(
+  id: string,
+  ceremony: { reason: string; signatureId: string; changeControlId?: string },
+): Promise<MergeRequest> {
+  return closeMergeRequest(id, 'cancel', ceremony)
+}
+
+/** Writer reopen cancelled → open (server refreshes expected heads). */
+export async function reopenMergeRequest(
+  id: string,
+  ceremony: { reason: string; signatureId: string; changeControlId?: string },
+): Promise<MergeRequest> {
+  const res = await fetch(`/auth/merge-requests/${encodeURIComponent(id)}/reopen`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      [REASON_HEADER]: ceremony.reason,
+      [SIGNATURE_HEADER]: ceremony.signatureId,
+      ...(ceremony.changeControlId
+        ? { [CHANGE_CONTROL_HEADER]: ceremony.changeControlId }
+        : {}),
+    },
+    body: JSON.stringify({ refreshExpected: true }),
+  })
+  if (!res.ok) {
+    const err = await readError(res)
+    throw Object.assign(new Error(mergeRefusalMessage(err.code, err.error)), {
+      code: err.code,
+    })
   }
   const body = (await res.json()) as { mergeRequest: MergeRequest }
   return body.mergeRequest
@@ -261,7 +313,7 @@ export async function rejectMergeRequest(
 
 export async function resyncMergeRequest(
   id: string,
-  live: { liveSourceHead: string; liveTargetHead: string; refreshExpected?: boolean },
+  live: { liveSourceHead?: string; liveTargetHead?: string; refreshExpected?: boolean },
   ceremony: { reason: string; signatureId: string; changeControlId?: string },
 ): Promise<MergeRequest> {
   const res = await fetch(`/auth/merge-requests/${encodeURIComponent(id)}/resync`, {
@@ -284,6 +336,14 @@ export async function resyncMergeRequest(
   }
   const body = (await res.json()) as { mergeRequest: MergeRequest }
   return body.mergeRequest
+}
+
+/** Re-pin both expected heads to live tips (regulated Update / #158). */
+export async function updateMergeRequestHeads(
+  id: string,
+  ceremony: { reason: string; signatureId: string; changeControlId?: string },
+): Promise<MergeRequest> {
+  return resyncMergeRequest(id, { refreshExpected: true }, ceremony)
 }
 
 export async function completeSignedMergeRequest(

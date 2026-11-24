@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom'
+import type { CoveringSignature } from '../lib/authzApi'
 import type { Commit } from '../lib/oxen/types'
+import { dayKey, formatDayHeading, formatRelativeTime } from '../lib/time'
 import { MetaPills } from './MetaPills'
 import { usePrincipalProfiles } from './CommitEmail'
+import { RevokeSignatureButton } from './RevokeSignatureButton'
 import { UserRef } from './UserRef'
-import { dayKey, formatDayHeading, formatRelativeTime } from '../lib/time'
 
 type Props = {
   namespace: string
@@ -16,6 +18,11 @@ type Props = {
   qcFailed?: ReadonlySet<string>
   /** Commits that descend from a QC Failed commit. */
   qcDescendants?: ReadonlySet<string>
+  /** Approver may revoke validated (signed) commits from the list (#93). */
+  canRevoke?: boolean
+  /** Covering signature per commit id (only active / non-revoked entries). */
+  coveringByCommit?: ReadonlyMap<string, CoveringSignature>
+  onRevoked?: () => void
 }
 
 export function CommitList({
@@ -26,6 +33,9 @@ export function CommitList({
   linkSearch = '',
   qcFailed,
   qcDescendants,
+  canRevoke = false,
+  coveringByCommit,
+  onRevoked,
 }: Props) {
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
   const profiles = usePrincipalProfiles(commits.map((c) => c.author))
@@ -53,8 +63,14 @@ export function CommitList({
           <ul className="commit-list">
             {g.items.map((c) => {
               const selected = selectedId === c.id
+              const covering = coveringByCommit?.get(c.id)
+              const showRevoke =
+                canRevoke &&
+                covering != null &&
+                !covering.revoked &&
+                !qcFailed?.has(c.id)
               return (
-                <li key={c.id}>
+                <li key={c.id} className="commit-row-wrap">
                   <Link
                     className={
                       selected ? 'commit-row is-selected' : 'commit-row'
@@ -90,6 +106,22 @@ export function CommitList({
                     </span>
                     <span className="commit-sha mono">{c.id.slice(0, 7)}</span>
                   </Link>
+                  {showRevoke ? (
+                    <div
+                      className="commit-row-revoke"
+                      data-testid="commit-list-revoke"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <RevokeSignatureButton
+                        signatureId={covering.signatureId}
+                        namespace={namespace}
+                        repo={repo}
+                        commitIds={[c.id]}
+                        onRevoked={onRevoked}
+                      />
+                    </div>
+                  ) : null}
                 </li>
               )
             })}

@@ -4,6 +4,7 @@ import {
   decideManageRepoCollaborators,
   hasRepoPermission,
 } from './authz.js'
+import { decideIsApprover } from './authzApproverStore.js'
 import type { SessionUser } from './authentication/index.js'
 import { canEditEntity } from './metaAuthz.js'
 
@@ -21,6 +22,8 @@ export type RepoViewerPermissions = {
   viewSignedRecord: boolean
   /** Tip-changing file ops (upload/rename/move/copy/delete) need write collaborator. */
   contentsWrite: boolean
+  /** Explicit Approver seat (user or group); not implied by write/maintain/Owner. */
+  isApprover: boolean
 }
 
 export type RepoViewerPermissionsResult =
@@ -42,11 +45,13 @@ export async function decideRepoViewerPermissions(
   if (!read.ok && !administer) return { ok: false, status: 403 }
 
   const write = await hasRepoPermission(user, ns, repo, 'write')
-  const [manageCollaborators, manageApprovers, editMetadata] = await Promise.all([
-    decideManageRepoCollaborators(user, ns, repo),
-    decideManageApprovers(user, ns),
-    canEditEntity(user, { type: 'repo', id: `${ns}/${repo}`, namespace: ns, repo }),
-  ])
+  const [manageCollaborators, manageApprovers, editMetadata, approver] =
+    await Promise.all([
+      decideManageRepoCollaborators(user, ns, repo),
+      decideManageApprovers(user, ns),
+      canEditEntity(user, { type: 'repo', id: `${ns}/${repo}`, namespace: ns, repo }),
+      decideIsApprover(user, ns, repo),
+    ])
 
   return {
     ok: true,
@@ -60,6 +65,7 @@ export async function decideRepoViewerPermissions(
       // Readers may open signed-record / approvers / metadata views; mutate chrome is separate.
       viewSignedRecord: true,
       contentsWrite: write.ok && !write.bypass,
+      isApprover: approver.allow,
     },
   }
 }

@@ -9,7 +9,6 @@ import {
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Modal } from '../components/Modal'
-import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
 import { StateBlock } from '../components/StateBlock'
 import { SuggestField, type SuggestOption } from '../components/SuggestField'
 import { useAsync } from '../hooks/useAsync'
@@ -571,10 +570,9 @@ export function AuditPage() {
                       )}
                       <div className="audit-signature-actions btn-row">
                         <SignatureEvidence event={ev} />
-                        <SignatureRevoke
+                        <SignatureRevokedTag
                           event={ev}
                           revoked={revoked}
-                          onRevoked={() => state.reload()}
                         />
                       </div>
                     </td>
@@ -589,29 +587,23 @@ export function AuditPage() {
   )
 }
 
-/** Revoke control (or a "Revoked" tag) on signature rows (GxP #93). */
-function SignatureRevoke({
+/**
+ * Auditor observation only: show Revoked when a linked revocation exists.
+ * Approvers revoke from repo Settings → Signatures (#93); roles stay separate.
+ */
+function SignatureRevokedTag({
   event,
   revoked,
-  onRevoked,
 }: {
   event: AuditEvent
   revoked: Set<string>
-  onRevoked: () => void
 }) {
   const signatureId = revocableSignatureId(event.action, event.detail, event.signature_id)
-  if (!signatureId) return null
-  if (revoked.has(signatureId)) {
-    return (
-      <p className="small" data-testid="signature-revoked-tag">
-        <span className="ns-tag ns-tag-warn">Revoked</span>
-      </p>
-    )
-  }
+  if (!signatureId || !revoked.has(signatureId)) return null
   return (
-    <div className="small" data-testid="signature-revoke">
-      <RevokeSignatureButton signatureId={signatureId} onRevoked={onRevoked} />
-    </div>
+    <p className="small" data-testid="signature-revoked-tag">
+      <span className="ns-tag ns-tag-warn">Revoked</span>
+    </p>
   )
 }
 

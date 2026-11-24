@@ -3,13 +3,27 @@ import { getDb } from './db/database.js'
 import { mergeRequests } from './db/schema.js'
 import { principalKey } from './authentication/session/principal.js'
 
-export type MergeRequestStatus = 'open' | 'stale' | 'merged' | 'blocked'
+export type MergeRequestStatus = 'open' | 'stale' | 'merged' | 'rejected' | 'cancelled'
 
-/** An open or stale MR already covers this source→target pair. */
+/**
+ * Statuses that occupy a source→target pair. Only `merged` frees the pair for a
+ * new request; open/stale/cancelled/rejected must be updated, reopened, or
+ * reject-reverted on the existing row.
+ */
+const PAIR_BLOCKING_STATUSES: MergeRequestStatus[] = [
+  'open',
+  'stale',
+  'cancelled',
+  'rejected',
+]
+
+/** A non-merged MR already covers this source→target pair. */
 export class MergeRequestAlreadyOpenError extends Error {
   readonly code = 'already_open' as const
   constructor(readonly existingId: string) {
-    super('An open merge request already exists for this source and target branch')
+    super(
+      'A merge request for this source and target branch already exists. Open, reopen, or revert that request instead of creating another.',
+    )
     this.name = 'MergeRequestAlreadyOpenError'
   }
 }
@@ -47,7 +61,8 @@ function rowToRecord(row: typeof mergeRequests.$inferSelect): MergeRequestRecord
     targetBranch: row.targetBranch,
     expectedSourceHead: row.expectedSourceHead,
     expectedTargetHead: row.expectedTargetHead,
-    status: row.status as MergeRequestStatus,
+    // Legacy rows used `blocked`; normalize to `rejected`.
+    status: (row.status === 'blocked' ? 'rejected' : row.status) as MergeRequestStatus,
     openedBy: row.openedBy,
     title,
     description: row.description ?? '',
@@ -77,7 +92,7 @@ export async function openMergeRequest(input: {
         eq(mergeRequests.repositoryId, input.repositoryId),
         eq(mergeRequests.sourceBranch, input.sourceBranch),
         eq(mergeRequests.targetBranch, input.targetBranch),
-        inArray(mergeRequests.status, ['open', 'stale']),
+        inArray(mergeRequests.status, PAIR_BLOCKING_STATUSES),
       ),
     )
     .limit(1)
@@ -126,6 +141,65 @@ export async function listMergeRequests(repositoryId: string): Promise<MergeRequ
 }
 
 /**
+ * After a branch tip changes, mark open/stale MRs that pin that branch to a
+ * different expected head as `stale` (repositories/#158).
+ */
+export async function markOpenMergeRequestsStaleForTip(input: {
+  repositoryId: string
+  branch: string
+  newTip: string
+}): Promise<string[]> {
+  const tip = input.newTip.trim()
+  const branch = input.branch.trim()
+  if (!tip || !branch) return []
+
+  const candidates = await getDb()
+    .select()
+    .from(mergeRequests)
+    .where(
+      and(
+        eq(mergeRequests.repositoryId, input.repositoryId),
+        inArray(mergeRequests.status, ['open', 'stale']),
+      ),
+    )
+
+  const staleIds: string[] = []
+  const now = new Date()
+  for (const row of candidates) {
+    const asSource =
+      row.sourceBranch === branch && row.expectedSourceHead !== tip
+    const asTarget =
+      row.targetBranch === branch && row.expectedTargetHead !== tip
+    if (!asSource && !asTarget) continue
+    if (row.status === 'stale') {
+      staleIds.push(row.id)
+      continue
+    }
+    await getDb()
+      .update(mergeRequests)
+      .set({ status: 'stale', updatedAt: now })
+      .where(eq(mergeRequests.id, row.id))
+    staleIds.push(row.id)
+  }
+  return staleIds
+}
+
+/**
+ * Compare live tips to expected; mark stale when they diverge (no refresh).
+ * Used on list/detail so stale appears without an explicit resync call.
+ */
+export async function reconcileMergeRequestAgainstLiveTips(
+  mr: MergeRequestRecord,
+  live: { sourceHead: string; targetHead: string },
+): Promise<MergeRequestRecord> {
+  if (mr.status !== 'open' && mr.status !== 'stale') return mr
+  return resyncMergeRequest(mr.id, {
+    liveSourceHead: live.sourceHead,
+    liveTargetHead: live.targetHead,
+  })
+}
+
+/**
  * Compare live tips to expected heads. Target tip move → stale.
  * When `refreshExpected` is true on a stale MR, adopt live heads and reopen.
  */
@@ -135,7 +209,8 @@ export async function resyncMergeRequest(
 ): Promise<MergeRequestRecord> {
   const current = await getMergeRequest(id)
   if (!current) throw new Error('Merge request not found')
-  if (current.status === 'merged') return current
+  // Only open/stale participate in tip reconciliation; cancelled/rejected/merged stay put.
+  if (current.status !== 'open' && current.status !== 'stale') return current
 
   const headsMatch =
     live.liveSourceHead === current.expectedSourceHead &&
@@ -201,24 +276,118 @@ export async function markMergeRequestMerged(
   return rowToRecord(updated)
 }
 
-/**
- * Operator reject: open/stale → blocked. Merged MRs are left alone.
- */
+async function closeMergeRequest(
+  id: string,
+  status: 'rejected' | 'cancelled',
+): Promise<
+  | { ok: true; mergeRequest: MergeRequestRecord }
+  | { ok: false; code: 'not_found' | 'not_closeable' }
+> {
+  const current = await getMergeRequest(id)
+  if (!current) return { ok: false, code: 'not_found' }
+  if (current.status !== 'open' && current.status !== 'stale') {
+    return { ok: false, code: 'not_closeable' }
+  }
+  const [updated] = await getDb()
+    .update(mergeRequests)
+    .set({
+      status,
+      updatedAt: new Date(),
+    })
+    .where(eq(mergeRequests.id, id))
+    .returning()
+  if (!updated) return { ok: false, code: 'not_found' }
+  return { ok: true, mergeRequest: rowToRecord(updated) }
+}
+
+/** Approver refuse: open/stale → rejected. */
 export async function rejectMergeRequest(
   id: string,
 ): Promise<
   | { ok: true; mergeRequest: MergeRequestRecord }
   | { ok: false; code: 'not_found' | 'not_rejectable' }
 > {
-  const current = await getMergeRequest(id)
-  if (!current) return { ok: false, code: 'not_found' }
-  if (current.status !== 'open' && current.status !== 'stale') {
+  const result = await closeMergeRequest(id, 'rejected')
+  if (!result.ok && result.code === 'not_closeable') {
     return { ok: false, code: 'not_rejectable' }
   }
+  return result
+}
+
+/** Writer withdraw: open/stale → cancelled. */
+export async function cancelMergeRequest(
+  id: string,
+): Promise<
+  | { ok: true; mergeRequest: MergeRequestRecord }
+  | { ok: false; code: 'not_found' | 'not_cancellable' }
+> {
+  const result = await closeMergeRequest(id, 'cancelled')
+  if (!result.ok && result.code === 'not_closeable') {
+    return { ok: false, code: 'not_cancellable' }
+  }
+  return result
+}
+
+/**
+ * Restore a withdrawn or refused request to open (or stale when live tips diverge).
+ * - cancelled → writer reopen
+ * - rejected → Approver reverts the refuse (route enforces Approver)
+ * Optionally refresh expected heads from live tips (same idea as Update).
+ */
+export async function reopenMergeRequest(
+  id: string,
+  live?: { liveSourceHead?: string; liveTargetHead?: string; refreshExpected?: boolean },
+): Promise<
+  | { ok: true; mergeRequest: MergeRequestRecord }
+  | { ok: false; code: 'not_found' | 'not_reopenable' | 'already_open'; existingId?: string }
+> {
+  const current = await getMergeRequest(id)
+  if (!current) return { ok: false, code: 'not_found' }
+  if (current.status !== 'cancelled' && current.status !== 'rejected') {
+    return { ok: false, code: 'not_reopenable' }
+  }
+
+  // Another non-merged MR for the same pair blocks reopen (exclude self).
+  const conflict = await getDb()
+    .select({ id: mergeRequests.id })
+    .from(mergeRequests)
+    .where(
+      and(
+        eq(mergeRequests.repositoryId, current.repositoryId),
+        eq(mergeRequests.sourceBranch, current.sourceBranch),
+        eq(mergeRequests.targetBranch, current.targetBranch),
+        inArray(mergeRequests.status, PAIR_BLOCKING_STATUSES),
+      ),
+    )
+    .limit(1)
+  if (conflict[0] && conflict[0].id !== current.id) {
+    return { ok: false, code: 'already_open', existingId: conflict[0].id }
+  }
+
+  let expectedSourceHead = current.expectedSourceHead
+  let expectedTargetHead = current.expectedTargetHead
+  let nextStatus: MergeRequestStatus = 'open'
+  const liveSource = live?.liveSourceHead?.trim() ?? ''
+  const liveTarget = live?.liveTargetHead?.trim() ?? ''
+  if (liveSource && liveTarget) {
+    if (live?.refreshExpected) {
+      expectedSourceHead = liveSource
+      expectedTargetHead = liveTarget
+      nextStatus = 'open'
+    } else if (
+      liveSource !== expectedSourceHead ||
+      liveTarget !== expectedTargetHead
+    ) {
+      nextStatus = 'stale'
+    }
+  }
+
   const [updated] = await getDb()
     .update(mergeRequests)
     .set({
-      status: 'blocked',
+      status: nextStatus,
+      expectedSourceHead,
+      expectedTargetHead,
       updatedAt: new Date(),
     })
     .where(eq(mergeRequests.id, id))

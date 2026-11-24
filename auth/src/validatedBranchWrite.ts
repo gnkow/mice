@@ -8,7 +8,7 @@ import { isValidatedBranch } from './signedMergeComplete.js'
 export const VALIDATED_BRANCH_DIRECT_WRITE =
   'Validated branch is write-protected: open a merge request and have an Approver sign it'
 
-/** Mutations that add commits or move/delete the validated branch tip. */
+/** Mutations that add commits or move/delete a branch tip. */
 const TIP_CHANGING_ACTIONS = new Set([
   'file.write',
   'file.delete',
@@ -18,6 +18,10 @@ const TIP_CHANGING_ACTIONS = new Set([
   'branch.delete',
   'branch.update',
 ])
+
+export function isTipChangingAction(action: string): boolean {
+  return TIP_CHANGING_ACTIONS.has(action)
+}
 
 export type ValidatedBranchWriteDecision =
   | { allow: true }

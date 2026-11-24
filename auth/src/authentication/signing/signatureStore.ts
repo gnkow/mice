@@ -90,6 +90,8 @@ export type SignatureStore = {
       commitIds: string[]
     }>
   >
+  /** One ledger scan — signature ids that have at least one linked revocation. */
+  listRevokedSignatureIds(): Promise<Set<string>>
 }
 
 export type SignatureView = {
@@ -247,6 +249,15 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
         if (row.signatureId === signatureId) out.push(row)
       }
       return out
+    },
+    async listRevokedSignatureIds() {
+      const ids = new Set<string>()
+      for (const entry of await ledger.readAll()) {
+        if (!entry.key.includes('revocation/')) continue
+        const row = JSON.parse(entry.value) as { signatureId?: string }
+        if (row.signatureId) ids.add(row.signatureId)
+      }
+      return ids
     },
   }
 }
