@@ -25,6 +25,8 @@ type Props = {
    * Used from validated-branch history for a single commit (#93).
    */
   commitIds?: string[]
+  /** Merged MR id — whole-signature revoke resolves incoming range + merge commit (#94). */
+  mergeRequestId?: string
   /** Known commits covered by this signature (checkboxes in the modal). */
   candidateCommits?: RevokeCandidateCommit[]
   /** @deprecated Prefer candidateCommits — kept for callers that only have ids. */
@@ -53,6 +55,7 @@ export function RevokeSignatureButton({
   namespace = '',
   repo = '',
   commitIds: lockedCommitIds,
+  mergeRequestId,
   candidateCommits,
   candidateCommitIds,
   onRevoked,
@@ -165,9 +168,12 @@ export function RevokeSignatureButton({
     setBusy(true)
     setError(null)
     try {
+      const body: { commitIds?: string[]; mergeRequestId?: string } = {}
+      if (commitIds && commitIds.length > 0) body.commitIds = commitIds
+      if (mergeRequestId) body.mergeRequestId = mergeRequestId
       const res = await revokeSignature(
         signatureId,
-        commitIds && commitIds.length > 0 ? { commitIds } : undefined,
+        Object.keys(body).length > 0 ? body : undefined,
       )
       setDone({ blocked: res.blockedMergeRequestIds.length })
       onRevoked?.()

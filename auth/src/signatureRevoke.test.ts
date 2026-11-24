@@ -142,6 +142,43 @@ describe('signature revoke (gxp/07/08/09)', () => {
     assert.deepEqual(new Set(result.revocation.commitIds), new Set(['src-ws', 'c-mid', 'merge-ws']))
     assert.equal(await getCommitQc(repo.id, 'c-mid'), 'failed')
     assert.equal(await getCommitQc(repo.id, 'merge-ws'), 'failed')
+    // Pre-merge target tip is not "incoming" — must not be the only Failed commit.
+    assert.equal(await getCommitQc(repo.id, 'tgt-ws'), 'none')
+  })
+
+  it('whole-signature revoke with mergeRequestId fails incoming tip + merge, not target tip', async () => {
+    const { markMergeRequestMerged } = await import('./mergeRequestStore.js')
+    const { id } = await recordBoundSignature({ source: 'src-mr', target: 'tgt-mr' })
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'rev-ns',
+      repo: 'data',
+      sourceBranch: 'feature-mr',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-mr',
+      expectedTargetHead: 'tgt-mr',
+      openedBy: approver,
+    })
+    await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-mr' })
+    await markCommitsQc(repo.id, ['src-mr', 'c-in', 'merge-mr'], 'passed', {
+      mergeRequestId: mr.id,
+      allowFailedToPassed: true,
+    })
+    const result = await revokeSignature({
+      signatureId: id,
+      revoker: approver,
+      reason: 'Whole revoke via mergeRequestId',
+      changeControlId: 'CC-REV-MRID',
+      mergeRequestId: mr.id,
+      notify: async () => {},
+    })
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.equal(await getCommitQc(repo.id, 'src-mr'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 'c-in'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 'merge-mr'), 'failed')
+    assert.ok(!result.revocation.commitIds.includes('tgt-mr'))
+    assert.equal(await getCommitQc(repo.id, 'tgt-mr'), 'none')
   })
 
   it('does not propagate failure to unlisted commits of the same signature', async () => {

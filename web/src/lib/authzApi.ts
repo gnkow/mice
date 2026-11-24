@@ -1011,7 +1011,10 @@ export type SignatureRevocationResult = {
 }
 
 /** Append-only revoke; the reason ceremony runs through `authzFetch` → `withReason`. */
-export function revokeSignature(signatureId: string, input?: { commitIds?: string[]; mergeRequestId?: string }) {
+export function revokeSignature(
+  signatureId: string,
+  input?: { commitIds?: string[]; mergeRequestId?: string },
+) {
   return authzFetch<SignatureRevocationResult>(
     `/auth/signatures/${encodeURIComponent(signatureId)}/revoke`,
     { method: 'POST', body: JSON.stringify({ ...(input ?? {}) }) },

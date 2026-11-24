@@ -628,6 +628,7 @@ export function MergeRequestPage() {
                         signatureId={mrState.data.signatureId}
                         namespace={mrState.data.namespace}
                         repo={mrState.data.repo}
+                        mergeRequestId={mrState.data.id}
                         candidateCommits={[
                           {
                             id: mrState.data.expectedSourceHead,

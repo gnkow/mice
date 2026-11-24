@@ -73,6 +73,7 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
     binding: record.binding!,
     repositoryId,
     mergeRequestId: input.mergeRequestId,
+    signatureId: input.signatureId,
   })
 
   const saved = await store.revoke({
@@ -128,49 +129,89 @@ async function resolveRepositoryId(
 }
 
 /**
- * Explicit commit set wins. Otherwise prefer QC rows recorded for the signed
- * merge (range + merge commit), falling back to binding tip heads.
+ * Explicit commit set wins (partial revoke). Otherwise whole-signature revoke
+ * fails the signed merge's incoming commits + merge commit (gxp/08) — not the
+ * pre-merge target tip alone.
  */
 async function resolveAffectedCommitIds(input: {
   explicit?: string[]
   binding: { sourceHead: string; targetHead: string }
   repositoryId: string | null
   mergeRequestId?: string
+  signatureId?: string
 }): Promise<string[]> {
   if (input.explicit && input.explicit.length > 0) {
     return [...new Set(input.explicit)]
   }
-  const fromQc = await commitIdsFromSignedMergeQc(input)
-  if (fromQc.length > 0) return fromQc
-  return [input.binding.sourceHead, input.binding.targetHead].filter(Boolean)
+  const fromMerge = await commitIdsFromSignedMergeQc(input)
+  if (fromMerge.length > 0) return fromMerge
+  // Last resort: incoming tip only (never treat target tip as the sole Failed set).
+  return [input.binding.sourceHead].filter(Boolean)
+}
+
+async function findMergedMrForBinding(input: {
+  binding: { sourceHead: string; targetHead: string }
+  repositoryId: string
+  mergeRequestId?: string
+  signatureId?: string
+}): Promise<MergeRequestRecord | undefined> {
+  if (input.mergeRequestId) {
+    const mr = await getMergeRequest(input.mergeRequestId)
+    if (mr) return mr
+  }
+  const all = await listMergeRequests(input.repositoryId)
+  const byHeads = all.find(
+    (row) =>
+      row.status === 'merged' &&
+      row.expectedSourceHead === input.binding.sourceHead &&
+      row.expectedTargetHead === input.binding.targetHead,
+  )
+  if (byHeads) return byHeads
+
+  if (input.signatureId) {
+    for (const row of all.filter((r) => r.status === 'merged')) {
+      const ref = await resolveSignatureForMergeRequest(row)
+      if (ref?.signatureId === input.signatureId) return row
+    }
+  }
+
+  const bySource = all
+    .filter(
+      (r) => r.status === 'merged' && r.expectedSourceHead === input.binding.sourceHead,
+    )
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+  return bySource[0]
 }
 
 async function commitIdsFromSignedMergeQc(input: {
   binding: { sourceHead: string; targetHead: string }
   repositoryId: string | null
   mergeRequestId?: string
+  signatureId?: string
 }): Promise<string[]> {
   if (!input.repositoryId) return []
-  let mr: MergeRequestRecord | undefined
-  if (input.mergeRequestId) {
-    mr = (await getMergeRequest(input.mergeRequestId)) ?? undefined
-  } else {
-    mr = (await listMergeRequests(input.repositoryId)).find(
-      (row) =>
-        row.status === 'merged' &&
-        row.expectedSourceHead === input.binding.sourceHead &&
-        row.expectedTargetHead === input.binding.targetHead,
-    )
-  }
+  const mr = await findMergedMrForBinding({
+    binding: input.binding,
+    repositoryId: input.repositoryId,
+    mergeRequestId: input.mergeRequestId,
+    signatureId: input.signatureId,
+  })
   if (!mr) return []
+
   const rows = await listCommitQcForRepo(input.repositoryId)
-  const ids = rows
+  const fromQc = rows
     .filter((r) => r.mergeRequestId === mr.id && (r.status === 'passed' || r.status === 'failed'))
     .map((r) => r.commitId)
-  if (ids.length > 0) return [...new Set(ids)]
-  const tips = [input.binding.sourceHead, input.binding.targetHead]
-  if (mr.mergeCommitId) tips.push(mr.mergeCommitId)
-  return [...new Set(tips.filter(Boolean))]
+
+  // Incoming commits that entered the validated branch — never the pre-merge target tip.
+  const incoming = [
+    ...fromQc,
+    input.binding.sourceHead,
+    mr.expectedSourceHead,
+    mr.mergeCommitId,
+  ].filter((id): id is string => Boolean(id) && id !== input.binding.targetHead)
+
+  return [...new Set(incoming)]
 }
 
 async function blockOpenMergeRequests(input: {

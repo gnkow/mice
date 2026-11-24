@@ -55,21 +55,24 @@ export async function markCommitsQc(
       const restorePassed = status === 'passed' && opts?.allowFailedToPassed === true
       if (!restorePassed) continue
     }
+    const mergeRequestId =
+      opts && 'mergeRequestId' in opts ? (opts.mergeRequestId ?? null) : undefined
     await getDb()
       .insert(commitQcStatus)
       .values({
         repositoryId,
         commitId,
         status,
-        mergeRequestId: opts?.mergeRequestId ?? null,
+        mergeRequestId: mergeRequestId ?? null,
         updatedAt: now,
       })
       .onConflictDoUpdate({
         target: [commitQcStatus.repositoryId, commitQcStatus.commitId],
         set: {
           status,
-          mergeRequestId: opts?.mergeRequestId ?? null,
           updatedAt: now,
+          // Preserve existing MR link unless the caller sets mergeRequestId explicitly.
+          ...(mergeRequestId !== undefined ? { mergeRequestId } : {}),
         },
       })
   }

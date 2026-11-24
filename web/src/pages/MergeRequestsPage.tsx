@@ -272,6 +272,7 @@ function MergeRequestRow({
               signatureId={mr.signatureId}
               namespace={mr.namespace}
               repo={mr.repo}
+              mergeRequestId={mr.id}
               candidateCommits={[
                 { id: mr.expectedSourceHead, role: 'Incoming tip' },
                 ...(mr.mergeCommitId
