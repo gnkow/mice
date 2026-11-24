@@ -751,7 +751,7 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.goto('/settings')
       await page.getByRole('link', { name: 'Restore test', exact: true }).click()
       const section = page.locator('#restore-test')
-      await expect(section.getByText('Not passed yet')).toBeVisible()
+      await expect(page.getByTestId('restore-test-gate')).toContainText(/Not passed yet/)
 
       const record = section.getByRole('button', { name: 'Record restore test pass' })
       await expect(record).toBeEnabled()
@@ -759,7 +759,7 @@ test.describe('AuthZ + GxP deep UI', () => {
       await expect(
         section.getByRole('status').filter({ hasText: 'Restore test recorded as passed.' }),
       ).toBeVisible()
-      await expect(section.getByText('Passed', { exact: true })).toBeVisible()
+      await expect(page.getByTestId('restore-test-gate')).toContainText(/^Passed/)
       await expect(section.getByText(/mice-e2e\|operator/)).toBeVisible()
       await expect(record).toBeDisabled()
     })
@@ -774,6 +774,116 @@ test.describe('AuthZ + GxP deep UI', () => {
       const section = page.locator('#restore-test')
       await section.getByRole('button', { name: 'Record restore test pass' }).click()
       await expect(section.getByRole('alert')).toContainText('Instance admin required')
+    })
+
+    test('TC-GXP-101-03: signed merge refusal links to Settings → Restore test', async ({
+      page,
+    }) => {
+      const mrId = 'mr-101-restore'
+      const hash = 'a'.repeat(64)
+      await mintSession(page, {
+        role: 'admin',
+        sub: uniqueId('gxp101-appr'),
+        iss: 'mice-e2e',
+        name: 'Restore Approver',
+      })
+      await page.route(`**/auth/merge-requests/${mrId}`, (route) => {
+        if (route.request().method() !== 'GET') return route.fallback()
+        return route.fulfill({
+          json: {
+            mergeRequest: {
+              id: mrId,
+              namespace: 'demo',
+              repo: 'sample',
+              sourceBranch: 'feature',
+              targetBranch: 'main',
+              expectedSourceHead: 's'.repeat(40),
+              expectedTargetHead: 't'.repeat(40),
+              status: 'open',
+              openedBy: 'mice-e2e|other-opener',
+              title: 'Restore gate MR',
+              description: '',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        })
+      })
+      await page.route('**/auth/namespaces/demo/repos/sample/permissions', (route) =>
+        route.fulfill({
+          json: {
+            permissions: {
+              rename: false,
+              transfer: false,
+              manageCollaborators: false,
+              manageApprovers: false,
+              editMetadata: false,
+              deleteRepository: false,
+              viewSignedRecord: true,
+              contentsWrite: true,
+              isApprover: true,
+            },
+          },
+        }),
+      )
+      await page.route('**/api/repos/demo/sample/compare/**', (route) =>
+        route.fulfill({
+          json: { status: 'success', compare: { commits: [], entries: [], counts: { added: 0, removed: 0, modified: 0 } } },
+        }),
+      )
+      await page.route(`**/auth/merge-requests/${mrId}/signing-preview**`, (route) =>
+        route.fulfill({
+          json: {
+            hash,
+            content: 'manifest',
+            manifest: 'manifest',
+            validatedTarget: true,
+            meaning: 'Approved',
+            principal: { iss: 'mice-e2e', sub: 'gxp101', name: 'Restore Approver' },
+            binding: {
+              repo: 'demo/sample',
+              sourceHead: 's'.repeat(40),
+              targetHead: 't'.repeat(40),
+              manifestDigest: hash,
+            },
+            mergeRequest: {
+              id: mrId,
+              sourceBranch: 'feature',
+              targetBranch: 'main',
+              expectedSourceHead: 's'.repeat(40),
+              expectedTargetHead: 't'.repeat(40),
+            },
+          },
+        }),
+      )
+      await page.route('**/auth/sign/execute**', (route) =>
+        route.fulfill({
+          json: { signature: { id: 'sig-101', changeControlId: 'CC-20260101-e2e10101', hash } },
+        }),
+      )
+      await page.route(`**/auth/merge-requests/${mrId}/complete**`, (route) =>
+        route.fulfill({
+          status: 503,
+          json: { error: 'Restore test required', code: 'restore_test_required' },
+        }),
+      )
+
+      await page.goto(`/n/demo/r/sample/merge-requests/${mrId}`)
+      await page.getByRole('button', { name: 'Approve' }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible()
+      await dialog.getByLabel('Reason').fill('E2E restore-test refusal path coverage')
+      await dialog.getByLabel(/Change-control/i).fill('CC-20260101-e2e10101')
+      await dialog.getByRole('button', { name: 'Sign' }).click()
+      await expect(dialog.getByText(/Review before signing/i)).toBeVisible()
+      await dialog.getByRole('button', { name: 'Sign' }).click()
+      const alert = page.getByTestId('merge-sign-error')
+      await expect(alert).toBeVisible({ timeout: 30_000 })
+      await expect(alert).toContainText(/restore test must pass/i)
+      await expect(alert.getByRole('link', { name: /Settings → Restore test/i })).toHaveAttribute(
+        'href',
+        '/settings#restore-test',
+      )
     })
   })
 })

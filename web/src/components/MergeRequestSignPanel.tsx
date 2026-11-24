@@ -68,6 +68,7 @@ export function MergeRequestSignPanel({
   const [confirmedHash, setConfirmedHash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | undefined>()
   const [success, setSuccess] = useState<string | null>(null)
   const [challenge, setChallenge] = useState<SigningChallenge | null>(null)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
@@ -106,6 +107,7 @@ export function MergeRequestSignPanel({
       return
     }
     setError(null)
+    setErrorCode(undefined)
     setChallenge(null)
     setConfirmedHash(preview.data.hash)
   }
@@ -114,6 +116,7 @@ export function MergeRequestSignPanel({
     if (preview.kind !== 'ok' || !confirmedHash || busy) return
     const data = preview.data
     if (confirmedHash !== data.hash) {
+      setErrorCode('binding_mismatch')
       setError(
         mergeRefusalMessage(
           'binding_mismatch',
@@ -125,6 +128,7 @@ export function MergeRequestSignPanel({
     }
     setBusy(true)
     setError(null)
+    setErrorCode(undefined)
     setChallenge(null)
     try {
       let signature: { id: string; changeControlId?: string }
@@ -207,9 +211,12 @@ export function MergeRequestSignPanel({
           : 0
       // Prefer the refusal code from complete (e.g. restore_test_required). Only
       // fall back to audit_unavailable for opaque 503s with no code.
+      const refusalCode =
+        code ?? (status === 503 ? 'audit_unavailable' : undefined)
+      setErrorCode(refusalCode)
       setError(
         mergeRefusalMessage(
-          code ?? (status === 503 ? 'audit_unavailable' : undefined),
+          refusalCode,
           err instanceof Error ? err.message : 'Signed merge failed',
         ),
       )
@@ -356,9 +363,14 @@ export function MergeRequestSignPanel({
       ) : null}
 
       {error && !hashStale ? (
-        <p className="flash flash-error" role="alert">
-          {error}
-        </p>
+        <div className="flash flash-error" role="alert" data-testid="merge-sign-error">
+          <p>{error}</p>
+          {errorCode === 'restore_test_required' ? (
+            <p className="muted small" style={{ marginTop: '0.35rem' }}>
+              <Link to="/settings#restore-test">Open Settings → Restore test</Link>
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {success ? (
@@ -377,6 +389,7 @@ export function MergeRequestSignPanel({
               onClick={() => {
                 setConfirmedHash(null)
                 setError(null)
+                setErrorCode(undefined)
               }}
             >
               Back

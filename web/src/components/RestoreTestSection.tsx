@@ -63,8 +63,15 @@ export function RestoreTestSection() {
         <div className="ns-settings-grid">
           <div className="ns-settings-field">
             <span className="ns-settings-label">Gate</span>
-            <p className={status.passed ? 'flash flash-success' : 'flash flash-warn'}>
-              {status.passed ? 'Passed' : 'Not passed yet'}
+            <p
+              className={status.passed ? 'flash flash-success' : 'flash flash-warn'}
+              role="status"
+              aria-live="polite"
+              data-testid="restore-test-gate"
+            >
+              {status.passed
+                ? 'Passed — regulated merges may proceed'
+                : 'Not passed yet — first regulated merge is refused'}
             </p>
           </div>
           {status.passedAt ? (

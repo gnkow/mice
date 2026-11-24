@@ -74,7 +74,8 @@ const REFUSAL_COPY: Record<string, string> = {
   already_open:
     'A merge request for this source and target branch already exists. Open, reopen, or revert that request instead of creating another.',
   binding_mismatch: 'Content changed after display; the pending signature is invalid.',
-  restore_test_required: 'A restore test must pass before the first regulated merge.',
+  restore_test_required:
+    'A restore test must pass before the first regulated merge. An instance admin records the pass under Settings → Restore test.',
   not_validated: 'Target branch is not validated; use the unsigned merge path.',
   signature_invalid: 'The signature is missing, expired, or does not match this merge.',
   audit_unavailable: 'Audit is unavailable; nothing was saved. Try again when audit is healthy.',
