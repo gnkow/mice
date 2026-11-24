@@ -805,6 +805,106 @@ test.describe('AuthZ + GxP deep UI', () => {
     })
   })
 
+  test.describe('signed release manifest (#102)', () => {
+    test.beforeEach(async ({ page }) => {
+      await mintSession(page, { role: 'admin', sub: uniqueId('gxp102'), iss: 'mice-e2e' })
+    })
+
+    test('TC-GXP-102-01: Settings shows Match status, signature, and components', async ({
+      page,
+    }) => {
+      await page.route('**/auth/admin/release-manifest/status', (route) =>
+        route.fulfill({
+          json: {
+            present: true,
+            path: '/app/release-manifest.json',
+            releaseVersion: '2026.11.24',
+            signatureValid: true,
+            match: true,
+            mismatches: [],
+            components: {
+              idp: { expected: 'aa', actual: 'aa', version: '1' },
+              search: { expected: 'bb', actual: 'bb', version: '1' },
+              verifiers: { expected: 'cc', actual: 'cc', version: '1' },
+            },
+            checkedAt: new Date().toISOString(),
+          },
+        }),
+      )
+      await page.goto('/settings')
+      await page.getByRole('link', { name: 'Release manifest', exact: true }).click()
+      const section = page.getByTestId('release-manifest')
+      await expect(section.getByRole('heading', { name: 'Release manifest' })).toBeVisible()
+      await expect(section.getByTestId('release-manifest-result')).toContainText(/Match/)
+      await expect(section.getByTestId('release-manifest-signature')).toContainText('Valid')
+      await expect(section.getByTestId('release-manifest-components')).toContainText('idp')
+      await expect(section.getByTestId('release-manifest-mismatch')).toHaveCount(0)
+    })
+
+    test('TC-GXP-102-02: mismatch is role=alert; Check now refreshes status', async ({ page }) => {
+      let checked = false
+      await page.route('**/auth/admin/release-manifest/status', (route) =>
+        route.fulfill({
+          json: checked
+            ? {
+                present: true,
+                releaseVersion: '2026.11.24',
+                signatureValid: true,
+                match: true,
+                mismatches: [],
+                components: {
+                  idp: { expected: 'aa', actual: 'aa', version: '1' },
+                },
+                checkedAt: new Date().toISOString(),
+              }
+            : {
+                present: true,
+                releaseVersion: '2026.11.24',
+                signatureValid: true,
+                match: false,
+                mismatches: ['idp'],
+                components: {
+                  idp: { expected: 'aa', actual: 'zz', version: '1' },
+                },
+                checkedAt: new Date().toISOString(),
+              },
+        }),
+      )
+      await page.route('**/auth/admin/release-manifest/check', async (route) => {
+        checked = true
+        await route.fulfill({
+          json: {
+            present: true,
+            releaseVersion: '2026.11.24',
+            signatureValid: true,
+            match: true,
+            mismatches: [],
+            components: {
+              idp: { expected: 'aa', actual: 'aa', version: '1' },
+            },
+            checkedAt: new Date().toISOString(),
+            rechecked: true,
+          },
+        })
+      })
+
+      await page.goto('/settings')
+      await page.getByRole('link', { name: 'Release manifest', exact: true }).click()
+      const section = page.getByTestId('release-manifest')
+      await expect(section.getByTestId('release-manifest-mismatch')).toBeVisible()
+      await expect(section.getByTestId('release-manifest-mismatch')).toHaveAttribute(
+        'role',
+        'alert',
+      )
+      await expect(section.getByTestId('release-manifest-result')).toContainText(/Mismatch/)
+
+      await section.getByRole('button', { name: 'Check now' }).click()
+      await expect(section.getByRole('status').filter({ hasText: /matches this build/i })).toBeVisible()
+      await expect(section.getByTestId('release-manifest-result')).toContainText(/Match/)
+      await expect(section.getByTestId('release-manifest-mismatch')).toHaveCount(0)
+    })
+  })
+
   test.describe('settings operator UI (#122, #101)', () => {
     test.beforeEach(async ({ page }) => {
       await mintSession(page, { role: 'admin', sub: uniqueId('gxp-admin'), iss: 'mice-e2e' })

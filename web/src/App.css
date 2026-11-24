@@ -9654,6 +9654,14 @@ a.jobs-list-item:hover {
 .version-history-list {
   margin-top: 0.5rem;
 }
+.release-manifest-mismatches,
+.release-manifest-components {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
 .meta-scope-picker { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
 .meta-scope-picker label { display: grid; gap: 0.35rem; font-size: 0.8125rem; }
 .meta-scope-picker input, .meta-scope-picker select { max-width: 100%; min-width: 0; padding: 0.45rem; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 0.35rem; }

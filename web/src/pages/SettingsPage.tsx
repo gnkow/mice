@@ -26,7 +26,7 @@ import {
   DatabaseBackup,
   Copy as ActionCopy,
 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnnouncementsSection } from '../components/AnnouncementsSection'
 import { AdminRevocationSection } from '../components/AdminRevocationSection'
@@ -1580,17 +1580,19 @@ function ReleaseManifestSection() {
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const errorRef = useRef<HTMLDivElement>(null)
 
   const status = useAsync(async (signal) => {
-    try {
-      const res = await fetch('/auth/admin/release-manifest/status', { signal })
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-      return await res.json() as ReleaseManifestStatus
-    } catch (err) {
-      console.error('Failed to fetch release manifest status:', err)
-      return null
-    }
+    const res = await fetch('/auth/admin/release-manifest/status', { signal })
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return (await res.json()) as ReleaseManifestStatus
   }, [])
+
+  useEffect(() => {
+    if (!error) return
+    const t = window.setTimeout(() => errorRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
+  }, [error])
 
   async function triggerCheck() {
     setChecking(true)
@@ -1598,11 +1600,15 @@ function ReleaseManifestSection() {
     setSuccess(null)
     try {
       const res = await fetch('/auth/admin/release-manifest/check', { method: 'POST' })
-      const data = await res.json() as ReleaseManifestStatus & { error?: string }
+      const data = (await res.json()) as ReleaseManifestStatus & { error?: string }
       if (!res.ok) {
         setError(data.error || 'Check failed')
       } else {
-        setSuccess(data.match ? 'Release manifest matches this build' : 'Release manifest mismatch — see details')
+        setSuccess(
+          data.match
+            ? 'Release manifest matches this build'
+            : 'Release manifest mismatch — see details',
+        )
         status.reload()
       }
     } catch (err) {
@@ -1625,9 +1631,18 @@ function ReleaseManifestSection() {
       : data
         ? 'Missing or invalid'
         : null
+  const mismatchLive =
+    data && data.match === false
+      ? `Release manifest mismatch${data.mismatches.length ? `: ${data.mismatches.join(', ')}` : ''}`
+      : null
 
   return (
-    <section id="release-manifest" className="settings-section" aria-labelledby="release-manifest-heading">
+    <section
+      id="release-manifest"
+      className="settings-section"
+      aria-labelledby="release-manifest-heading"
+      data-testid="release-manifest"
+    >
       <div className="ns-settings-section-head">
         <div>
           <h2 id="release-manifest-heading">
@@ -1635,14 +1650,16 @@ function ReleaseManifestSection() {
             Release manifest
           </h2>
           <p className="muted small">
-            Signed digests of IdP configuration, search index, and custom verifiers verified at start.
-            A mismatch is audited and shown here; it does not refuse boot by itself.
+            Signed digests for IdP, search index, and verifiers — verified at start. Mismatch is
+            audited here; boot is not blocked.
           </p>
         </div>
         {resultLabel ? (
           <span
             className={`status-pill ${resultTone}`}
             role="status"
+            aria-atomic="true"
+            data-testid="release-manifest-result"
             aria-label={`Release manifest: ${resultLabel}${data?.releaseVersion ? `, release ${data.releaseVersion}` : ''}`}
           >
             {resultLabel}
@@ -1657,11 +1674,27 @@ function ReleaseManifestSection() {
         </p>
       ) : null}
 
+      {status.kind === 'error' ? (
+        <div className="flash flash-error" role="alert">
+          <h3 className="reason-prompt-heading">There is a problem</h3>
+          <p>{status.message}</p>
+          <button type="button" className="btn ghost small" onClick={() => status.reload()}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {mismatchLive ? (
+        <p className="flash flash-warn" role="alert" data-testid="release-manifest-mismatch">
+          {mismatchLive}
+        </p>
+      ) : null}
+
       {data ? (
         <dl className="ns-settings-facts" aria-label="Release manifest status">
           <div className="ns-settings-fact">
             <dt className="ns-settings-fact-label">Signature</dt>
-            <dd className="ns-settings-fact-value" role="status">
+            <dd className="ns-settings-fact-value">
               <span
                 className={
                   data.signatureValid === true
@@ -1670,6 +1703,7 @@ function ReleaseManifestSection() {
                       ? 'status-pill bad'
                       : 'status-pill neutral'
                 }
+                data-testid="release-manifest-signature"
               >
                 {data.signatureValid === true
                   ? 'Valid'
@@ -1697,11 +1731,13 @@ function ReleaseManifestSection() {
             <div className="ns-settings-fact ns-settings-fact-wide">
               <dt className="ns-settings-fact-label">Mismatches</dt>
               <dd className="ns-settings-fact-value">
-                {data.mismatches.map((m) => (
-                  <code key={m} className="inline-code">
-                    {m}
-                  </code>
-                ))}
+                <ul className="release-manifest-mismatches">
+                  {data.mismatches.map((m) => (
+                    <li key={m}>
+                      <code className="inline-code">{m}</code>
+                    </li>
+                  ))}
+                </ul>
               </dd>
             </div>
           ) : null}
@@ -1709,18 +1745,24 @@ function ReleaseManifestSection() {
             <div className="ns-settings-fact ns-settings-fact-wide">
               <dt className="ns-settings-fact-label">Components</dt>
               <dd className="ns-settings-fact-value">
-                {Object.entries(data.components).map(([id, c]) => {
-                  const ok = !(c.expected && c.expected !== c.actual)
-                  return (
-                    <span key={id} className="ns-tag ns-tag-muted">
-                      <code className="inline-code">{id}</code>
-                      <span className="muted">v{c.version}</span>
-                      <span className={ok ? 'status-pill ok' : 'status-pill warn'}>
-                        {ok ? 'ok' : 'digest differs'}
-                      </span>
-                    </span>
-                  )
-                })}
+                <ul
+                  className="release-manifest-components"
+                  aria-label="Pinned release components"
+                  data-testid="release-manifest-components"
+                >
+                  {Object.entries(data.components).map(([id, c]) => {
+                    const ok = !(c.expected && c.expected !== c.actual)
+                    return (
+                      <li key={id}>
+                        <code className="inline-code">{id}</code>
+                        <span className="muted"> v{c.version}</span>{' '}
+                        <span className={ok ? 'status-pill ok' : 'status-pill warn'}>
+                          {ok ? 'ok' : 'digest differs'}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
               </dd>
             </div>
           ) : null}
@@ -1731,8 +1773,8 @@ function ReleaseManifestSection() {
         <button
           className="btn primary"
           type="button"
-          onClick={triggerCheck}
-          disabled={checking}
+          onClick={() => void triggerCheck()}
+          disabled={checking || status.kind === 'loading'}
         >
           <Package size={14} aria-hidden="true" className="button-label-icon" />
           {checking ? 'Checking…' : 'Check now'}
@@ -1740,12 +1782,18 @@ function ReleaseManifestSection() {
       </div>
 
       {error ? (
-        <p className="flash flash-error" role="alert">
-          {error}
-        </p>
+        <div
+          ref={errorRef}
+          className="flash flash-error"
+          role="alert"
+          tabIndex={-1}
+        >
+          <h3 className="reason-prompt-heading">There is a problem</h3>
+          <p>{error}</p>
+        </div>
       ) : null}
       {success ? (
-        <p className="flash flash-success" role="status">
+        <p className="flash flash-success" role="status" aria-live="polite" aria-atomic="true">
           {success}
         </p>
       ) : null}
