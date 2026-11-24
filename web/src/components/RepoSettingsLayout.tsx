@@ -77,7 +77,7 @@ export function RepoSettingsLayout() {
     ...(perms?.manageCollaborators
       ? [{ path: 'collaborators/history', label: 'Collaborator history' }]
       : []),
-    ...(perms?.viewSignedRecord
+    ...(perms?.manageApprovers
       ? [{ path: 'approvers/history', label: 'Approver history' }]
       : []),
   ]

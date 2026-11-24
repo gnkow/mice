@@ -123,6 +123,30 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.getByRole('button', { name: 'Cancel' }).click()
       await expect(section.getByRole('alert')).toBeVisible()
     })
+
+    test('TC-GXP-124-01: repository Approver history lists versions next to Browse settings', async ({
+      page,
+      emptyRepo,
+    }) => {
+      const path = `/auth/namespaces/${encodeURIComponent(emptyRepo.namespace)}/repos/${encodeURIComponent(emptyRepo.repo)}/approvers`
+      await seedApprover(page, path, 'PUT', { sub: 'repo-a', iss: 'mice-e2e' })
+      await seedApprover(page, path, 'PUT', { sub: 'repo-b', iss: 'mice-e2e' })
+      await seedApprover(page, path, 'DELETE', { sub: 'repo-a', iss: 'mice-e2e' })
+
+      await page.goto(repoPath(emptyRepo, '/settings'))
+      await page
+        .getByRole('navigation', { name: 'Settings sections' })
+        .getByRole('link', { name: 'Approver history' })
+        .click()
+      await expect(page).toHaveURL(/\/settings\/approvers\/history$/)
+      await expect(page.getByRole('heading', { name: 'Approver history' })).toBeVisible()
+      const history = page.getByTestId('approver-history')
+      await expect(history.getByTestId('history-version')).toHaveCount(3)
+      await expect(history.getByTestId('history-version').last()).toContainText('current')
+      await expect(history.getByTestId('history-version').last()).toContainText('repo-b')
+      await expect(history.getByTestId('history-version').first()).toContainText('repo-a')
+      await expect(history.getByRole('status')).toContainText('3 versions')
+    })
   })
 
   test.describe('entity history (#108, #109, #110)', () => {

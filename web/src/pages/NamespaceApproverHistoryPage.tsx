@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { ApproverVersionSeats, VersionHistoryList } from '../components/VersionHistory'
 import { useAsync } from '../hooks/useAsync'
 import { fetchApproverHistory } from '../lib/authzApi'
@@ -6,6 +6,7 @@ import { fetchApproverHistory } from '../lib/authzApi'
 /** Approver-set history under `/n/:namespace/settings/approvers/history`. */
 export function NamespaceApproverHistoryPage() {
   const { namespace = '' } = useParams()
+  const settingsHref = `/n/${encodeURIComponent(namespace)}/settings#ns-approvers`
   const state = useAsync(
     (signal) => fetchApproverHistory({ ns: namespace }, signal),
     [namespace],
@@ -29,7 +30,12 @@ export function NamespaceApproverHistoryPage() {
       <VersionHistoryList
         state={state}
         label="Approver versions"
-        emptyMessage="No versions recorded."
+        emptyMessage="No versions recorded yet."
+        emptyAction={
+          <Link className="btn ghost small" to={settingsHref}>
+            Manage Approvers
+          </Link>
+        }
         renderBody={(v) => <ApproverVersionSeats approvers={v.approvers} />}
       />
     </section>
