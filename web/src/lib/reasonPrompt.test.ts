@@ -33,6 +33,10 @@ test('labels approver, signature revoke and seal-key mutations', () => {
     /Reject a merge request/,
   )
   assert.match(summarizeMutation('POST', '/auth/signatures/abcdef123456/revoke'), /Revoke signature abcdef12…/)
+  assert.match(
+    summarizeMutation('POST', '/auth/signatures/abcdef123456/revocations/rev-1/revert'),
+    /Revert revocation on signature abcdef12…/,
+  )
   assert.match(summarizeMutation('POST', '/auth/admin/seal-keys/rotate'), /Rotate the session cookie seal key/)
   assert.match(summarizeMutation('POST', '/auth/admin/seal-keys/rotate/emergency'), /Emergency-rotate/)
 })

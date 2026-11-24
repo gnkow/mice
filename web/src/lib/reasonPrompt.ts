@@ -208,6 +208,14 @@ export function summarizeMutation(
     if (parts[1] === 'signatures' && parts[3] === 'revoke' && parts[2]) {
       return `Revoke signature ${pathSeg(parts[2])!.slice(0, 8)}… (affected commits become QC Failed)`
     }
+    if (
+      parts[1] === 'signatures' &&
+      parts[3] === 'revocations' &&
+      parts[5] === 'revert' &&
+      parts[2]
+    ) {
+      return `Revert revocation on signature ${pathSeg(parts[2])!.slice(0, 8)}… (restore QC Passed)`
+    }
     if (parts[1] === 'announcements') {
       const title = bodyString(body, 'title')
       if (m === 'POST') {
