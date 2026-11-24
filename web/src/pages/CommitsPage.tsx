@@ -222,14 +222,6 @@ export function CommitsPage() {
         </div>
 
         <div className="history-toolbar">
-          {canViewSignedRecord ? (
-            <SignedRecordReportButton
-              namespace={namespace}
-              repo={repo}
-              className="btn ghost small"
-              compact
-            />
-          ) : null}
           <div className="history-mode">
             <span className="history-mode-spacer" aria-hidden>
               Mode
@@ -389,6 +381,14 @@ export function CommitsPage() {
                           <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />
                           Browse tree
                         </Link>
+                        {canViewSignedRecord ? (
+                          <SignedRecordReportButton
+                            namespace={namespace}
+                            repo={repo}
+                            className="btn ghost small"
+                            compact
+                          />
+                        ) : null}
                         {canRevoke &&
                         covering.kind === 'ok' &&
                         covering.data?.signature &&

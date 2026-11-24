@@ -6,6 +6,7 @@ import { formatRelativeTime } from '../lib/time'
 import { Modal } from './Modal'
 import { Pagination, paginate } from './Pagination'
 import { RevokeSignatureButton } from './RevokeSignatureButton'
+import { SignedRecordReportButton } from './SignedRecordReportButton'
 import { StateBlock } from './StateBlock'
 import { UserRef } from './UserRef'
 
@@ -86,10 +87,16 @@ export function RepoSignaturesSection({ namespace, repo, canRevoke }: Props) {
     >
       <h2 id="repo-signatures-heading">Signatures</h2>
       <p className="muted small">
-        Electronic signatures for merges into validated branches. Approvers can
-        revoke a signature (whole or selected commits); Auditors review the audit
-        trail separately.
+        Approvals and revocations for validated-branch merges. Approvers can revoke
+        here; export PDF or JSON for audit evidence.
       </p>
+      <div id="repo-signed-record" className="repo-signatures-export">
+        <SignedRecordReportButton
+          namespace={namespace}
+          repo={repo}
+          className="btn small"
+        />
+      </div>
       <StateBlock
         loading={state.kind === 'loading'}
         error={state.kind === 'error' ? state.message : null}

@@ -35,12 +35,6 @@ const SETTINGS_NAV_ITEMS: NavItem[] = [
     Icon: ActionFileSignature,
     requires: 'viewSignedRecord',
   },
-  {
-    id: 'repo-signed-record',
-    label: 'Signed-record report',
-    Icon: ActionFileSignature,
-    requires: 'viewSignedRecord',
-  },
   { id: 'repo-metadata', label: 'Metadata', Icon: ActionTags, requires: 'viewSignedRecord' },
   {
     id: 'repo-danger',

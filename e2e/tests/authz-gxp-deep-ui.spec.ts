@@ -689,11 +689,11 @@ test.describe('AuthZ + GxP deep UI', () => {
         })
       })
       await page.goto(repoPath(emptyRepo, '/settings'))
-      const section = page.getByTestId('signed-record-report')
-      const pdf = section.getByRole('button', { name: /Download signed-record report \(PDF\)/ })
+      await expect(page.getByRole('heading', { name: 'Signatures' })).toBeVisible()
+      const section = page.locator('#repo-signatures').getByTestId('signed-record-report')
+      const pdf = section.getByRole('button', { name: /^Download PDF$/ })
       const [download] = await Promise.all([page.waitForEvent('download'), pdf.click()])
       expect(download.suggestedFilename()).toBe('signed-record.pdf')
-      await expect(page.getByText('Downloaded signed-record.pdf.')).toBeVisible()
 
       fail = true
       await pdf.click()
@@ -702,7 +702,7 @@ test.describe('AuthZ + GxP deep UI', () => {
 
     test('TC-GXP-106-02: Settings offers JSON download; History gates PDF on viewSignedRecord', async ({
       page,
-      emptyRepo,
+      seededRepo,
     }) => {
       await page.route('**/auth/repos/*/*/signed-record-report*', (route) => {
         const url = route.request().url()
@@ -721,17 +721,16 @@ test.describe('AuthZ + GxP deep UI', () => {
         })
       })
 
-      await page.goto(repoPath(emptyRepo, '/settings'))
-      const settings = page.getByTestId('signed-record-report')
+      await page.goto(repoPath(seededRepo, '/settings'))
+      const settings = page.locator('#repo-signatures').getByTestId('signed-record-report')
       const [jsonDownload] = await Promise.all([
         page.waitForEvent('download'),
-        settings.getByRole('button', { name: /Download JSON/i }).click(),
+        settings.getByRole('button', { name: /^Download JSON$/ }).click(),
       ])
       expect(jsonDownload.suggestedFilename()).toMatch(/-signed-record\.json$/)
-      await expect(page.getByText(/Downloaded .+-signed-record\.json\./)).toBeVisible()
 
       await page.route(
-        `**/auth/namespaces/${emptyRepo.namespace}/repos/${emptyRepo.repo}/permissions**`,
+        `**/auth/namespaces/${seededRepo.namespace}/repos/${seededRepo.repo}/permissions**`,
         (route) =>
           route.fulfill({
             json: {
@@ -749,11 +748,13 @@ test.describe('AuthZ + GxP deep UI', () => {
             },
           }),
       )
-      await page.goto(repoPath(emptyRepo, '/commits'))
+      await page.goto(repoPath(seededRepo, '/commits'))
+      await page.locator('.history-list a').first().click()
+      await expect(page.getByRole('link', { name: /Browse tree/i })).toBeVisible()
       await expect(page.getByTestId('signed-record-report')).toHaveCount(0)
 
       await page.route(
-        `**/auth/namespaces/${emptyRepo.namespace}/repos/${emptyRepo.repo}/permissions**`,
+        `**/auth/namespaces/${seededRepo.namespace}/repos/${seededRepo.repo}/permissions**`,
         (route) =>
           route.fulfill({
             json: {
@@ -771,10 +772,12 @@ test.describe('AuthZ + GxP deep UI', () => {
             },
           }),
       )
-      await page.goto(repoPath(emptyRepo, '/commits'))
-      const history = page.getByTestId('signed-record-report')
-      await expect(history.getByRole('button', { name: /Download PDF/i })).toBeVisible()
-      await expect(history.getByRole('button', { name: /Download JSON/i })).toHaveCount(0)
+      await page.goto(repoPath(seededRepo, '/commits'))
+      await page.locator('.history-list a').first().click()
+      const detail = page.locator('.history-detail-actions')
+      await expect(detail.getByRole('link', { name: /Browse tree/i })).toBeVisible()
+      await expect(detail.getByRole('button', { name: /^Download PDF$/ })).toBeVisible()
+      await expect(detail.getByRole('button', { name: /^Download JSON$/ })).toHaveCount(0)
     })
   })
 

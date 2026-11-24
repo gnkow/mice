@@ -6,7 +6,6 @@ import { ApproversSection } from '../components/ApproversSection'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import type { RepoSettingsOutletContext } from '../components/RepoSettingsLayout'
 import { RepoSignaturesSection } from '../components/RepoSignaturesSection'
-import { SignedRecordReportButton } from '../components/SignedRecordReportButton'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import { PrincipalAddCard } from '../components/PrincipalAddCard'
 import { UserRef } from '../components/UserRef'
@@ -542,23 +541,6 @@ export function RepoSettingsPage() {
             repo={repo}
             canRevoke={perms.isApprover === true}
           />
-        ) : null}
-
-        {perms.viewSignedRecord ? (
-          <section
-            className="settings-section"
-            id="repo-signed-record"
-            aria-labelledby="repo-signed-record-heading"
-          >
-            <h2 id="repo-signed-record-heading">Signed-record report</h2>
-            <p className="muted small">
-              Per-repository report of electronic signatures, revocations and QC
-              status for audit and release evidence. Download PDF for humans or
-              JSON for machine-readable evidence. Requires the signed-record
-              permission (typically read).
-            </p>
-            <SignedRecordReportButton namespace={namespace} repo={repo} />
-          </section>
         ) : null}
 
         {perms.viewSignedRecord ? (

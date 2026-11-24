@@ -183,7 +183,7 @@ function MetaEditor({ type, id, scope, focus }: MetaTarget & { focus?: string })
             <button className="btn small" disabled={!key.trim()}><ActionTags size={14} aria-hidden="true" className="button-label-icon" />Add label</button>
           </form>}
         </div>
-        {view.canEdit && <button type="button" className="btn ghost small" disabled={!own} onClick={async () => {
+        {view.canEdit && <button type="button" className="btn ghost small meta-clear-all" disabled={!own} onClick={async () => {
           if (await confirmDelete({ title: 'Clear all metadata?', detail: 'Remove all tags and labels on this resource and scope.', requireTypedConfirm: false })) void run('delete')
         }}><ActionTrash2 size={14} aria-hidden="true" className="button-label-icon" />Clear all metadata</button>}
       </fieldset>}

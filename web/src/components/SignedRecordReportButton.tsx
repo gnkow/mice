@@ -25,14 +25,12 @@ export function SignedRecordReportButton({
   const errorRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState<SignedRecordReportFormat | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState<string | null>(null)
 
   async function onDownload(format: SignedRecordReportFormat) {
     setBusy(format)
     setError(null)
-    setDone(null)
     try {
-      setDone(await downloadSignedRecordReport(namespace, repo, format))
+      await downloadSignedRecordReport(namespace, repo, format)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed')
       window.setTimeout(() => errorRef.current?.focus(), 0)
@@ -43,7 +41,7 @@ export function SignedRecordReportButton({
 
   return (
     <div className="signed-record-report" data-testid="signed-record-report">
-      <div className="btn-row" role="group" aria-label="Signed-record report downloads">
+      <div className="btn-row" role="group" aria-label="Signed-record downloads">
         <button
           type="button"
           className={className}
@@ -52,22 +50,18 @@ export function SignedRecordReportButton({
           onClick={() => void onDownload('pdf')}
         >
           <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />
-          {busy === 'pdf'
-            ? 'Preparing report…'
-            : compact
-              ? 'Download PDF'
-              : 'Download signed-record report (PDF)'}
+          {busy === 'pdf' ? 'Preparing…' : 'Download PDF'}
         </button>
         {!compact ? (
           <button
             type="button"
-            className="btn ghost"
+            className={className.includes('small') ? 'btn ghost small' : 'btn ghost'}
             disabled={busy !== null}
             aria-describedby={error ? errorId : undefined}
             onClick={() => void onDownload('json')}
           >
             <ActionJson size={14} aria-hidden="true" className="button-label-icon" />
-            {busy === 'json' ? 'Preparing JSON…' : 'Download JSON'}
+            {busy === 'json' ? 'Preparing…' : 'Download JSON'}
           </button>
         ) : null}
       </div>
@@ -85,11 +79,6 @@ export function SignedRecordReportButton({
           </h3>
           <p>{error}</p>
         </div>
-      ) : null}
-      {done ? (
-        <p className="muted small" role="status" aria-live="polite">
-          Downloaded {done}.
-        </p>
       ) : null}
     </div>
   )

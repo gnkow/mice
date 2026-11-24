@@ -586,9 +586,12 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const format = c.req.query('format')
       const report = await buildSignedRecordReport(`${ns}/${repoName}`)
       if (format === 'pdf') {
-        return new Response(report.pdfText, {
+        return new Response(new Uint8Array(report.pdf), {
           status: 200,
-          headers: { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="signed-record.pdf"' },
+          headers: {
+            'content-type': 'application/pdf',
+            'content-disposition': 'attachment; filename="signed-record.pdf"',
+          },
         })
       }
       return c.json({ report })

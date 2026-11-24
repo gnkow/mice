@@ -1,4 +1,5 @@
 import { appendAudit } from './audit.js'
+import { textLinesToPdf } from './auditExport.js'
 import { signatureStore } from './authentication/signing/signatureStore.js'
 
 export type SignedRecordRow = {
@@ -25,8 +26,8 @@ export type SignedRecordReport = {
   generatedAt: string
   records: SignedRecordRow[]
   machineReadable: string
-  /** Minimal PDF-ish text payload suitable for download (not a full PDF engine). */
-  pdfText: string
+  /** Valid single-page Helvetica PDF (same builder as audit export). */
+  pdf: Buffer
 }
 
 /**
@@ -69,16 +70,21 @@ export async function buildSignedRecordReport(repository: string): Promise<Signe
 
   const generatedAt = new Date().toISOString()
   const machineReadable = JSON.stringify({ repository, generatedAt, records }, null, 2)
-  const pdfText = [
-    '%PDF-1.1',
-    `Mice signed-record report for ${repository}`,
-    `Generated ${generatedAt}`,
-    ...records.map(
-      (row) =>
-        `${row.kind.toUpperCase()} ${row.signatureId} ${row.printedName ?? ''} ${row.signedAt ?? row.revokedAt ?? ''} ${row.meaning ?? row.reason ?? ''}`,
-    ),
-    '%%EOF',
-  ].join('\n')
+  const pdfLines = [
+    'Mice signed-record report',
+    `Repository: ${repository}`,
+    `Generated: ${generatedAt}`,
+    `Records: ${records.length}`,
+    '',
+  ]
+  if (records.length === 0) {
+    pdfLines.push('No signatures recorded for this repository yet.')
+  } else {
+    for (const row of records) {
+      pdfLines.push(...signedRecordToPdfLines(row), '')
+    }
+  }
+  const pdf = textLinesToPdf(pdfLines)
 
   await appendAudit({
     actor: { sub: 'system', iss: 'mice', email: 'system@mice', name: 'Mice' },
@@ -91,5 +97,26 @@ export async function buildSignedRecordReport(repository: string): Promise<Signe
     detail: { repository, recordCount: records.length },
   })
 
-  return { repository, generatedAt, records, machineReadable, pdfText }
+  return { repository, generatedAt, records, machineReadable, pdf }
+}
+
+/** One record → labeled lines matching the machine-readable fields (human PDF). */
+export function signedRecordToPdfLines(row: SignedRecordRow): string[] {
+  const lines = [`--- ${row.kind.toUpperCase()} ---`, `Signature id: ${row.signatureId}`]
+  if (row.changeControlId) lines.push(`Change-control: ${row.changeControlId}`)
+  if (row.meaning) lines.push(`Meaning: ${row.meaning}`)
+  if (row.reason) lines.push(`Reason: ${row.reason}`)
+  if (row.printedName) lines.push(`Printed name: ${row.printedName}`)
+  if (row.iss || row.sub) {
+    lines.push(`Identity: ${[row.iss, row.sub].filter(Boolean).join(' | ')}`)
+  }
+  if (row.signedAt) lines.push(`Signed at: ${row.signedAt}`)
+  if (row.revokedAt) lines.push(`Revoked at: ${row.revokedAt}`)
+  if (row.binding) {
+    lines.push(`Binding repo: ${row.binding.repo}`)
+    lines.push(`Source head: ${row.binding.sourceHead}`)
+    lines.push(`Target head: ${row.binding.targetHead}`)
+    lines.push(`Manifest digest: ${row.binding.manifestDigest}`)
+  }
+  return lines
 }

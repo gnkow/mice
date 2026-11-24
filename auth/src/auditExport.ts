@@ -135,8 +135,75 @@ function pdfEscape(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
 }
 
+const PDF_LINE_WIDTH = 95
+/** Usable lines per page at 9pt / 12 leading from y=780 down to ~50. */
+const PDF_LINES_PER_PAGE = 60
+
+function wrapPdfLine(text: string, width = PDF_LINE_WIDTH): string[] {
+  if (text.length <= width) return [text]
+  const out: string[] = []
+  for (let i = 0; i < text.length; i += width) out.push(text.slice(i, i + width))
+  return out
+}
+
+function pageContentStream(lines: string[]): string {
+  const contentLines = ['BT', '/F1 9 Tf', '50 780 Td', '12 TL']
+  for (let i = 0; i < lines.length; i++) {
+    if (i === 0) contentLines.push(`(${pdfEscape(lines[i]!)}) Tj`)
+    else contentLines.push(`T* (${pdfEscape(lines[i]!)}) Tj`)
+  }
+  contentLines.push('ET')
+  return contentLines.join('\n')
+}
+
 /**
- * Minimal single-page Helvetica PDF listing events (Part 11 human-readable copy).
+ * Helvetica PDF from plain text lines (Part 11 human-readable copy).
+ * Multi-page when needed; no third-party PDF dependency.
+ */
+export function textLinesToPdf(lines: string[]): Buffer {
+  const wrapped = lines.flatMap((l) => wrapPdfLine(l))
+  const pages: string[][] = []
+  for (let i = 0; i < wrapped.length || pages.length === 0; i += PDF_LINES_PER_PAGE) {
+    pages.push(wrapped.slice(i, i + PDF_LINES_PER_PAGE))
+    if (wrapped.length === 0) break
+  }
+
+  // Object layout: 1 Catalog, 2 Pages, 3 Font, then per page: Page + Contents
+  const objects: string[] = new Array(3 + pages.length * 2)
+  const pageRefs = pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')
+  objects[0] = '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'
+  objects[1] =
+    `2 0 obj\n<< /Type /Pages /Kids [${pageRefs}] /Count ${pages.length} >>\nendobj\n`
+  objects[2] = '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n'
+
+  for (let i = 0; i < pages.length; i++) {
+    const pageObj = 4 + i * 2
+    const contentObj = pageObj + 1
+    const stream = pageContentStream(pages[i]!)
+    objects[pageObj - 1] =
+      `${pageObj} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentObj} 0 R /Resources << /Font << /F1 3 0 R >> >> >>\nendobj\n`
+    objects[contentObj - 1] =
+      `${contentObj} 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream\nendobj\n`
+  }
+
+  let pdf = '%PDF-1.4\n'
+  const offsets: number[] = [0]
+  for (const obj of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'))
+    pdf += obj
+  }
+  const xrefStart = Buffer.byteLength(pdf, 'utf8')
+  pdf += `xref\n0 ${objects.length + 1}\n`
+  pdf += '0000000000 65535 f \n'
+  for (let i = 1; i <= objects.length; i++) {
+    pdf += `${String(offsets[i]!).padStart(10, '0')} 00000 n \n`
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`
+  return Buffer.from(pdf, 'utf8')
+}
+
+/**
+ * Helvetica PDF listing events (Part 11 human-readable copy).
  * No third-party PDF dependency — inspectors get a readable attachment alongside CSV.
  */
 export function auditEventsToPdf(events: AuditEvent[]): Buffer {
@@ -154,35 +221,5 @@ export function auditEventsToPdf(events: AuditEvent[]): Buffer {
   if (events.length > 200) {
     rows.push(`… ${events.length - 200} more events (see CSV / machine bundle)`)
   }
-  const lines = [...header, ...rows].map((l) => l.slice(0, 110))
-  const contentLines = ['BT', '/F1 9 Tf', '50 780 Td', '12 TL']
-  for (let i = 0; i < lines.length; i++) {
-    if (i === 0) contentLines.push(`(${pdfEscape(lines[i]!)}) Tj`)
-    else contentLines.push(`T* (${pdfEscape(lines[i]!)}) Tj`)
-  }
-  contentLines.push('ET')
-  const stream = contentLines.join('\n')
-  const objects: string[] = []
-  objects.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
-  objects.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
-  objects.push(
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n',
-  )
-  objects.push(`4 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream\nendobj\n`)
-  objects.push('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n')
-
-  let pdf = '%PDF-1.4\n'
-  const offsets: number[] = [0]
-  for (const obj of objects) {
-    offsets.push(Buffer.byteLength(pdf, 'utf8'))
-    pdf += obj
-  }
-  const xrefStart = Buffer.byteLength(pdf, 'utf8')
-  pdf += `xref\n0 ${objects.length + 1}\n`
-  pdf += '0000000000 65535 f \n'
-  for (let i = 1; i <= objects.length; i++) {
-    pdf += `${String(offsets[i]!).padStart(10, '0')} 00000 n \n`
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`
-  return Buffer.from(pdf, 'utf8')
+  return textLinesToPdf([...header, ...rows])
 }
