@@ -13,7 +13,7 @@ const { preparePrincipal } = await import('./authz.js')
 const { grantApprover } = await import('./authzApproverStore.js')
 const { openMergeRequest, getMergeRequest } = await import('./mergeRequestStore.js')
 const { getCommitQc, markCommitsQc } = await import('./commitQcStore.js')
-const { revokeSignature } = await import('./signatureRevoke.js')
+const { revokeSignature, revertSignatureRevocation } = await import('./signatureRevoke.js')
 const { openSignatureStore, useSignatureStore } = await import('./authentication/signing/signatureStore.js')
 const { buildMergeManifest, mergeResultBinding } = await import('./authentication/signing/mergeManifest.js')
 const { immudbConfig, openLedger } = await import('./auditLedger.js')
@@ -284,5 +284,103 @@ describe('signature revoke (gxp/07/08/09)', () => {
     })
     assert.ok(viaMerge)
     assert.equal(viaMerge.signatureId, id)
+  })
+})
+
+describe('signature revocation revert (gxp/10a #159)', () => {
+  it('appends a linked revert, restores QC Passed, and keeps signature + revoke visible', async () => {
+    const { id } = await recordBoundSignature({ source: 's-rev', target: 't-rev' })
+    await markCommitsQc(repo.id, ['s-rev', 'c-rev'], 'passed')
+    const revoked = await revokeSignature({
+      signatureId: id,
+      revoker: approver,
+      reason: 'Batch failed assay',
+      changeControlId: 'CC-REVERT-REV',
+      commitIds: ['s-rev', 'c-rev'],
+      notify: async () => {},
+    })
+    assert.equal(revoked.ok, true)
+    if (!revoked.ok) return
+    assert.equal(await getCommitQc(repo.id, 's-rev'), 'failed')
+
+    const notified: Array<{ summary: string }> = []
+    const result = await revertSignatureRevocation({
+      signatureId: id,
+      revocationId: revoked.revocation.id,
+      reverter: approver,
+      reason: 'Assay re-run passed; restore QC',
+      changeControlId: 'CC-REVERT-1',
+      notify: async (event) => {
+        notified.push({ summary: event.summary })
+      },
+    })
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+
+    const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+    const store = await signatureStore()
+    assert.ok(await store.get(id), 'original signature must remain')
+    const revs = await store.listRevocations(id)
+    assert.equal(revs.length, 1, 'original revoke record stays')
+    const reverts = await store.listRevocationReverts(id)
+    assert.equal(reverts.length, 1)
+    assert.equal(reverts[0]?.revocationId, revoked.revocation.id)
+    assert.equal(await getCommitQc(repo.id, 's-rev'), 'passed')
+    assert.equal(await getCommitQc(repo.id, 'c-rev'), 'passed')
+    assert.equal((await store.listRevokedSignatureIds()).has(id), false)
+    assert.ok(notified.length >= 1)
+    assert.match(notified[0]!.summary, /revert/i)
+  })
+
+  it('refuses non-Approvers and double-revert', async () => {
+    const outsider = t.person('outsider')
+    await preparePrincipal(outsider)
+    await t.grantRole(outsider, 'user')
+    const { id } = await recordBoundSignature({ source: 's-deny', target: 't-deny' })
+    await markCommitsQc(repo.id, ['s-deny'], 'passed')
+    const revoked = await revokeSignature({
+      signatureId: id,
+      revoker: approver,
+      reason: 'Fail then deny revert',
+      changeControlId: 'CC-REVERT-DENY-R',
+      commitIds: ['s-deny'],
+      notify: async () => {},
+    })
+    assert.equal(revoked.ok, true)
+    if (!revoked.ok) return
+
+    const denied = await revertSignatureRevocation({
+      signatureId: id,
+      revocationId: revoked.revocation.id,
+      reverter: outsider,
+      reason: 'Not an Approver trying revert',
+      changeControlId: 'CC-REVERT-DENY',
+      notify: async () => {},
+    })
+    assert.equal(denied.ok, false)
+    if (denied.ok) return
+    assert.equal(denied.status, 403)
+
+    const first = await revertSignatureRevocation({
+      signatureId: id,
+      revocationId: revoked.revocation.id,
+      reverter: approver,
+      reason: 'First revert succeeds',
+      changeControlId: 'CC-REVERT-OK',
+      notify: async () => {},
+    })
+    assert.equal(first.ok, true)
+
+    const second = await revertSignatureRevocation({
+      signatureId: id,
+      revocationId: revoked.revocation.id,
+      reverter: approver,
+      reason: 'Second revert must fail',
+      changeControlId: 'CC-REVERT-2X',
+      notify: async () => {},
+    })
+    assert.equal(second.ok, false)
+    if (second.ok) return
+    assert.equal(second.status, 409)
   })
 })

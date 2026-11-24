@@ -303,6 +303,8 @@ test.describe('AuthZ + GxP deep UI', () => {
       changeControlId: 'CC-93',
       revoked,
       revocationCount: revoked ? 1 : 0,
+      revocationRevertCount: 0,
+      unrevertedRevocationIds: revoked ? [`rev-${id}`] : [],
     })
 
     test('TC-GXP-93-01: non-approver does not see revoke on Settings → Signatures', async ({
@@ -317,6 +319,7 @@ test.describe('AuthZ + GxP deep UI', () => {
       await expect(page.getByRole('heading', { name: 'Signatures' })).toBeVisible()
       await expect(page.getByTestId('repo-signature-row')).toHaveCount(1)
       await expect(page.getByRole('button', { name: 'Revoke signature' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Revert revocation' })).toHaveCount(0)
     })
 
     test('TC-GXP-93-07: Signatures list is searchable and paginated', async ({ page }) => {
@@ -365,7 +368,9 @@ test.describe('AuthZ + GxP deep UI', () => {
       await expect(dialog.getByLabel('Reason')).toBeVisible()
     })
 
-    test('TC-GXP-93-03: revoked signatures show Revoked and hide the button', async ({ page }) => {
+    test('TC-GXP-93-03: revoked signatures show Revoked and hide the revoke button', async ({
+      page,
+    }) => {
       await mintSession(page, { role: 'user', sub: uniqueId('revoke-approver'), iss: 'mice-e2e' })
       await mockRepoChrome(page, {
         isApprover: true,
@@ -374,6 +379,52 @@ test.describe('AuthZ + GxP deep UI', () => {
       await page.goto(settingsPath)
       await expect(page.getByTestId('signature-revoked-tag')).toBeVisible()
       await expect(page.getByRole('button', { name: 'Revoke signature' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Revert revocation' })).toBeVisible()
+    })
+
+    test('TC-GXP-159-01: Approver revert opens the signing ceremony', async ({ page }) => {
+      await mintSession(page, {
+        role: 'user',
+        sub: uniqueId('revert-approver'),
+        iss: 'mice-e2e',
+        mfa: true,
+      })
+      await mockRepoChrome(page, {
+        isApprover: true,
+        signatures: [signatureRow('sig-159-a', true)],
+      })
+      await page.route('**/auth/signatures/sig-159-a/revocations/*/revert', (route) =>
+        route.fulfill(ceremonyRejection),
+      )
+      await page.goto(settingsPath)
+      await page.getByRole('button', { name: 'Revert revocation' }).click()
+      await expect(page.getByTestId('signature-revert-modal')).toBeVisible()
+      await expect(page.getByRole('dialog', { name: 'Revert revocation' })).toBeVisible()
+      await Promise.all([
+        page.waitForResponse(
+          (res) =>
+            res.url().includes('/auth/signatures/sig-159-a/revocations/') &&
+            res.url().includes('/revert') &&
+            res.status() === 400,
+        ),
+        page.getByTestId('signature-revert-confirm').click(),
+      ])
+      const dialog = page.getByRole('dialog', { name: /Signature Required|Reason and signature/i })
+      await expect(dialog).toBeVisible()
+      await expect(dialog.getByLabel('Reason')).toBeVisible()
+    })
+
+    test('TC-GXP-159-02: non-Approver does not see Revert on revoked signatures', async ({
+      page,
+    }) => {
+      await mintSession(page, { role: 'user', sub: uniqueId('revert-writer'), iss: 'mice-e2e' })
+      await mockRepoChrome(page, {
+        isApprover: false,
+        signatures: [signatureRow('sig-159-b', true)],
+      })
+      await page.goto(settingsPath)
+      await expect(page.getByTestId('signature-revoked-tag')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Revert revocation' })).toHaveCount(0)
     })
 
     test('TC-GXP-93-04: Auditor audit trail shows Revoked without a revoke control', async ({

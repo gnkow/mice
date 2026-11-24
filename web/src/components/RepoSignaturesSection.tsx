@@ -5,6 +5,7 @@ import { fetchRepoSignatures, type RepoSignatureRow } from '../lib/authzApi'
 import { formatRelativeTime } from '../lib/time'
 import { Modal } from './Modal'
 import { Pagination, paginate } from './Pagination'
+import { RevertRevocationButton } from './RevertRevocationButton'
 import { RevokeSignatureButton } from './RevokeSignatureButton'
 import { SignedRecordReportButton } from './SignedRecordReportButton'
 import { StateBlock } from './StateBlock'
@@ -87,8 +88,8 @@ export function RepoSignaturesSection({ namespace, repo, canRevoke }: Props) {
     >
       <h2 id="repo-signatures-heading">Signatures</h2>
       <p className="muted small">
-        Approvals and revocations for validated-branch merges. Approvers can revoke
-        here; export PDF or JSON for audit evidence.
+        Approvals and revocations for validated-branch merges. Approvers can revoke or
+        revert a revocation here; export PDF or JSON for audit evidence.
       </p>
       <div id="repo-signed-record" className="repo-signatures-export">
         <SignedRecordReportButton
@@ -143,7 +144,7 @@ export function RepoSignaturesSection({ namespace, repo, canRevoke }: Props) {
                         namespace={namespace}
                         repo={repo}
                         canRevoke={canRevoke}
-                        onRevoked={() => state.reload()}
+                        onChanged={() => state.reload()}
                       />
                     ))}
                   </ul>
@@ -171,17 +172,20 @@ function SignatureRow({
   namespace,
   repo,
   canRevoke,
-  onRevoked,
+  onChanged,
 }: {
   row: RepoSignatureRow
   namespace: string
   repo: string
   canRevoke: boolean
-  onRevoked: () => void
+  onChanged: () => void
 }) {
   const [viewOpen, setViewOpen] = useState(false)
   const signerAuthor = `${row.signer.iss}|${row.signer.sub}`
   const signed = new Date(row.signedAt)
+  const unrevertedId = row.unrevertedRevocationIds?.[0]
+  const fullyRestored =
+    !row.revoked && (row.revocationCount ?? 0) > 0 && (row.revocationRevertCount ?? 0) > 0
 
   return (
     <li className="repo-signature-row" data-testid="repo-signature-row">
@@ -194,6 +198,11 @@ function SignatureRow({
           {row.revoked ? (
             <span className="ns-tag ns-tag-warn" data-testid="signature-revoked-tag">
               Revoked
+            </span>
+          ) : null}
+          {fullyRestored ? (
+            <span className="ns-tag" data-testid="signature-restored-tag">
+              Restored
             </span>
           ) : null}
           {row.changeControlId ? (
@@ -245,9 +254,16 @@ function SignatureRow({
               candidateCommits={
                 row.binding ? revocableCommitsFromBinding(row.binding) : undefined
               }
-              onRevoked={onRevoked}
+              onRevoked={onChanged}
             />
           </div>
+        ) : null}
+        {canRevoke && row.revoked && unrevertedId ? (
+          <RevertRevocationButton
+            signatureId={row.id}
+            revocationId={unrevertedId}
+            onReverted={onChanged}
+          />
         ) : null}
       </div>
 
@@ -268,7 +284,9 @@ function SignatureRow({
                 <dd>
                   {row.revoked
                     ? `Revoked (${row.revocationCount} record${row.revocationCount === 1 ? '' : 's'})`
-                    : 'Active'}
+                    : fullyRestored
+                      ? `Active (revocation reverted)`
+                      : 'Active'}
                 </dd>
               </div>
               <div>

@@ -21,6 +21,7 @@ import { allocateChangeControlId, CHANGE_CONTROL_HEADER } from './changeControl.
 import {
   resolveSignatureCoveringCommit,
   resolveSignatureForMergeRequest,
+  revertSignatureRevocation,
   revokeSignature,
 } from './signatureRevoke.js'
 import { signerAuthorKey } from './selfMerge.js'
@@ -615,6 +616,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         const found = await store.get(row.id)
         if (!found) continue
         const revs = await store.listRevocations(row.id)
+        const reverts = await store.listRevocationReverts(row.id)
+        const revertedIds = new Set(reverts.map((r) => r.revocationId))
+        const unreverted = revs.filter((r) => !revertedIds.has(r.id))
         signatures.push({
           id: found.record.id,
           meaning: found.record.meaning,
@@ -622,8 +626,10 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           signer: found.record.signer,
           binding: found.record.binding,
           changeControlId: found.record.changeControlId,
-          revoked: revs.length > 0,
+          revoked: unreverted.length > 0,
           revocationCount: revs.length,
+          revocationRevertCount: reverts.length,
+          unrevertedRevocationIds: unreverted.map((r) => r.id),
         })
       }
       signatures.sort((a, b) => (a.signedAt < b.signedAt ? 1 : -1))
@@ -693,6 +699,69 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         revocation: result.revocation,
         blockedMergeRequestIds: result.blockedMergeRequestIds,
       })
+    }),
+  )
+
+  // GxP #159 / story 10a — Approver revert of a prior revocation → QC Passed (append-only).
+  app.post(
+    '/auth/signatures/:id/revocations/:revocationId/revert',
+    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+      const { REASON_HEADER } = await import('./auditReason.js')
+      const reasonText = c.req.header(REASON_HEADER)?.trim() || ''
+      const body = raw as { changeControlId?: string }
+      const changeControlId =
+        (typeof body.changeControlId === 'string' && body.changeControlId.trim()) ||
+        c.req.header(CHANGE_CONTROL_HEADER)?.trim() ||
+        allocateChangeControlId()
+      let reverter = user
+      try {
+        reverter = await confirmPrivilegedGroups(user)
+      } catch (err) {
+        if (err && typeof err === 'object' && 'status' in err && err.status === 503) {
+          return c.json({ error: 'Directory unavailable' }, 503)
+        }
+        throw err
+      }
+      const result = await revertSignatureRevocation({
+        signatureId: c.req.param('id'),
+        revocationId: c.req.param('revocationId'),
+        reverter: {
+          iss: reverter.iss,
+          sub: reverter.sub,
+          name: reverter.name,
+          groups: reverter.groups,
+        },
+        reason: reasonText,
+        changeControlId,
+      })
+      if (!result.ok) {
+        await audit({
+          action: 'esign.revocation_revert_denied',
+          status: result.status,
+          message: result.detail,
+          detail: {
+            code: result.code,
+            signatureId: c.req.param('id'),
+            revocationId: c.req.param('revocationId'),
+          },
+        })
+        return c.json(
+          { error: result.detail, code: result.code },
+          result.status as 400 | 403 | 404 | 409,
+        )
+      }
+      await audit({
+        action: 'esign.revocation_reverted',
+        message: `Reverted revocation ${result.revert.revocationId} on signature ${result.revert.signatureId}`,
+        detail: {
+          signatureId: result.revert.signatureId,
+          revocationId: result.revert.revocationId,
+          revertId: result.revert.id,
+          restoredCommitIds: result.revert.restoredCommitIds,
+          changeControlId,
+        },
+      })
+      return c.json({ revert: result.revert })
     }),
   )
 

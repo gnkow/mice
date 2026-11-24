@@ -90,7 +90,28 @@ export type SignatureStore = {
       commitIds: string[]
     }>
   >
-  /** One ledger scan — signature ids that have at least one linked revocation. */
+  /** Append-only revert of a prior revocation (gxp/10a); original revoke stays. */
+  revertRevocation(input: {
+    signatureId: string
+    revocationId: string
+    revertedBy: { iss: string; sub: string; name?: string }
+    reason: string
+    changeControlId: string
+  }): Promise<{ id: string; seq: number }>
+  listRevocationReverts(signatureId: string): Promise<
+    Array<{
+      id: string
+      signatureId: string
+      revocationId: string
+      revertedAt: string
+      reason: string
+      changeControlId: string
+    }>
+  >
+  /**
+   * Signature ids with at least one unreverted revocation.
+   * Fully reverted signatures are omitted so covering/merge resolution treats them as active.
+   */
   listRevokedSignatureIds(): Promise<Set<string>>
 }
 
@@ -237,7 +258,8 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
         commitIds: string[]
       }> = []
       for (const entry of await ledger.readAll()) {
-        if (!entry.key.includes('revocation/')) continue
+        // Exact segment — exclude `revocation-revert/…` keys.
+        if (!entry.key.includes('revocation/') || entry.key.includes('revocation-revert/')) continue
         const row = JSON.parse(entry.value) as {
           id: string
           signatureId: string
@@ -250,12 +272,71 @@ export function openSignatureStore(ledger: Ledger): SignatureStore {
       }
       return out
     },
-    async listRevokedSignatureIds() {
-      const ids = new Set<string>()
+    async revertRevocation(input) {
+      const id = randomUUID()
+      const record = {
+        kind: 'esign.revocation_reverted' as const,
+        id,
+        signatureId: input.signatureId,
+        revocationId: input.revocationId,
+        revertedAt: new Date().toISOString(),
+        revertedBy: input.revertedBy,
+        reason: input.reason,
+        changeControlId: input.changeControlId,
+      }
+      const seq = await ledger.append(`revocation-revert/${id}`, JSON.stringify(record))
+      return { id, seq }
+    },
+    async listRevocationReverts(signatureId) {
+      const out: Array<{
+        id: string
+        signatureId: string
+        revocationId: string
+        revertedAt: string
+        reason: string
+        changeControlId: string
+      }> = []
       for (const entry of await ledger.readAll()) {
+        if (!entry.key.includes('revocation-revert/')) continue
+        const row = JSON.parse(entry.value) as {
+          id: string
+          signatureId: string
+          revocationId: string
+          revertedAt: string
+          reason: string
+          changeControlId: string
+        }
+        if (row.signatureId === signatureId) out.push(row)
+      }
+      return out
+    },
+    async listRevokedSignatureIds() {
+      const revokedBySig = new Map<string, Set<string>>()
+      const revertedRevocationIds = new Set<string>()
+      for (const entry of await ledger.readAll()) {
+        if (entry.key.includes('revocation-revert/')) {
+          const row = JSON.parse(entry.value) as { revocationId?: string }
+          if (row.revocationId) revertedRevocationIds.add(row.revocationId)
+          continue
+        }
         if (!entry.key.includes('revocation/')) continue
-        const row = JSON.parse(entry.value) as { signatureId?: string }
-        if (row.signatureId) ids.add(row.signatureId)
+        const row = JSON.parse(entry.value) as { id?: string; signatureId?: string }
+        if (!row.signatureId || !row.id) continue
+        let set = revokedBySig.get(row.signatureId)
+        if (!set) {
+          set = new Set()
+          revokedBySig.set(row.signatureId, set)
+        }
+        set.add(row.id)
+      }
+      const ids = new Set<string>()
+      for (const [signatureId, revocationIds] of revokedBySig) {
+        for (const revocationId of revocationIds) {
+          if (!revertedRevocationIds.has(revocationId)) {
+            ids.add(signatureId)
+            break
+          }
+        }
       }
       return ids
     },

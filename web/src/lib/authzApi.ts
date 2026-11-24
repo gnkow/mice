@@ -1021,6 +1021,26 @@ export function revokeSignature(
   )
 }
 
+export type SignatureRevocationRevertResult = {
+  revert: {
+    id: string
+    signatureId: string
+    revocationId: string
+    revertedAt: string
+    reason: string
+    changeControlId: string
+    restoredCommitIds: string[]
+  }
+}
+
+/** Append-only revert of a prior revocation (#159); ceremony via `authzFetch` → `withReason`. */
+export function revertSignatureRevocation(signatureId: string, revocationId: string) {
+  return authzFetch<SignatureRevocationRevertResult>(
+    `/auth/signatures/${encodeURIComponent(signatureId)}/revocations/${encodeURIComponent(revocationId)}/revert`,
+    { method: 'POST', body: JSON.stringify({}) },
+  )
+}
+
 export type RepoSignatureRow = {
   id: string
   meaning: string
@@ -1035,6 +1055,8 @@ export type RepoSignatureRow = {
   changeControlId?: string
   revoked: boolean
   revocationCount: number
+  revocationRevertCount?: number
+  unrevertedRevocationIds?: string[]
 }
 
 /** Repo-scoped signature index for Approver revoke chrome (#93). */

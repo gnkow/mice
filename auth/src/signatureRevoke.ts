@@ -41,6 +41,31 @@ export type RevokeSignatureResult =
   | { ok: true; revocation: SignatureRevocation; blockedMergeRequestIds: string[] }
   | { ok: false; status: number; code: string; detail: string }
 
+export type SignatureRevocationRevert = {
+  kind: 'esign.revocation_reverted'
+  id: string
+  signatureId: string
+  revocationId: string
+  revertedAt: string
+  revertedBy: { iss: string; sub: string; name?: string }
+  reason: string
+  changeControlId: string
+  restoredCommitIds: string[]
+}
+
+export type RevertSignatureRevocationInput = {
+  signatureId: string
+  revocationId: string
+  reverter: { iss: string; sub: string; name?: string; groups?: string[] }
+  reason: string
+  changeControlId: string
+  notify?: (event: NotificationEvent) => Promise<void>
+}
+
+export type RevertSignatureRevocationResult =
+  | { ok: true; revert: SignatureRevocationRevert }
+  | { ok: false; status: number; code: string; detail: string }
+
 /**
  * Append-only revoke: original signature stays; linked `esign.revoked` is written;
  * affected commits become QC Failed (gxp/07). Pre-merge revoke can block open MRs (gxp/08).
@@ -114,6 +139,141 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
   }
 
   return { ok: true, revocation, blockedMergeRequestIds }
+}
+
+/**
+ * Append-only revert of a prior revocation (gxp/10a #159).
+ * Original signature and revoke remain; commits failed only by that revocation return to QC Passed.
+ */
+export async function revertSignatureRevocation(
+  input: RevertSignatureRevocationInput,
+): Promise<RevertSignatureRevocationResult> {
+  const store = await signatureStore()
+  const found = await store.get(input.signatureId)
+  if (!found) {
+    return { ok: false, status: 404, code: 'not_found', detail: 'Signature not found' }
+  }
+  const record = found.record
+  const repoPath = record.binding?.repo
+  if (!repoPath?.includes('/')) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'no_binding',
+      detail: 'Signature has no repository binding to revert against',
+    }
+  }
+  const [ns, repoName] = repoPath.split('/') as [string, string]
+  const approver = await decideIsApprover(input.reverter, ns, repoName)
+  if (!approver.allow) {
+    return { ok: false, status: 403, code: 'not_approver', detail: approver.reason }
+  }
+
+  const revocations = await store.listRevocations(input.signatureId)
+  const target = revocations.find((r) => r.id === input.revocationId)
+  if (!target) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'revocation_not_found',
+      detail: 'Revocation not found for this signature',
+    }
+  }
+
+  const priorReverts = await store.listRevocationReverts(input.signatureId)
+  if (priorReverts.some((r) => r.revocationId === input.revocationId)) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'already_reverted',
+      detail: 'This revocation was already reverted',
+    }
+  }
+
+  const saved = await store.revertRevocation({
+    signatureId: input.signatureId,
+    revocationId: input.revocationId,
+    revertedBy: input.reverter,
+    reason: input.reason,
+    changeControlId: input.changeControlId,
+  })
+  const listed = await store.listRevocationReverts(input.signatureId)
+  const row = listed.find((r) => r.id === saved.id)
+
+  const revertedIds = new Set(listed.map((r) => r.revocationId))
+  const stillCovered = new Set<string>()
+  for (const rev of revocations) {
+    if (rev.id === input.revocationId) continue
+    if (revertedIds.has(rev.id)) continue
+    for (const commitId of rev.commitIds) stillCovered.add(commitId)
+  }
+  const restoredCommitIds = target.commitIds.filter((id) => !stillCovered.has(id))
+
+  const repositoryId = await resolveRepositoryId(ns, repoName, undefined)
+  if (repositoryId && restoredCommitIds.length > 0) {
+    await markCommitsQc(repositoryId, restoredCommitIds, 'passed', {
+      allowFailedToPassed: true,
+    })
+  }
+
+  const revert: SignatureRevocationRevert = {
+    kind: 'esign.revocation_reverted',
+    id: saved.id,
+    signatureId: input.signatureId,
+    revocationId: input.revocationId,
+    revertedAt: row?.revertedAt ?? new Date().toISOString(),
+    revertedBy: input.reverter,
+    reason: input.reason,
+    changeControlId: input.changeControlId,
+    restoredCommitIds,
+  }
+
+  const notify = input.notify ?? emitNotification
+  try {
+    await notifyRevocationRevert({ notify, ns, repo: repoName, signature: record, revert })
+  } catch {
+    // Notification failure must not roll back the revert record (align with gxp/09).
+  }
+
+  return { ok: true, revert }
+}
+
+async function notifyRevocationRevert(input: {
+  notify: (event: NotificationEvent) => Promise<void>
+  ns: string
+  repo: string
+  signature: SignatureRecord
+  revert: SignatureRevocationRevert
+}): Promise<void> {
+  const recipients: Array<{ iss: string; sub: string }> = []
+  for (const key of await listOwnerKeys(input.ns)) {
+    try {
+      recipients.push(parseUserKey(key))
+    } catch {
+      /* ignore */
+    }
+  }
+  recipients.push({
+    iss: input.signature.signer.iss,
+    sub: input.signature.signer.sub,
+  })
+  const unique = new Map(recipients.map((r) => [principalKey(r), r]))
+  await input.notify({
+    id: `sig-revert-${input.revert.id}`,
+    category: 'security',
+    title: 'Signature revocation reverted',
+    summary: `Revocation of signature ${input.revert.signatureId.slice(0, 8)}… on ${input.ns}/${input.repo} reverted: ${input.revert.reason}`,
+    createdAt: new Date().toISOString(),
+    audience: 'personal',
+    recipients: [...unique.values()],
+    resource: {
+      type: 'repository',
+      namespace: input.ns,
+      repo: input.repo,
+      id: `${input.ns}/${input.repo}`,
+    },
+    href: `/repos/${input.ns}/${input.repo}`,
+  })
 }
 
 async function resolveRepositoryId(

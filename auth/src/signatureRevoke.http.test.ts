@@ -44,7 +44,9 @@ registerMergeRequestRoutes(app, { audit: async () => {} })
 const cookie = async () =>
   sealedSessionCookie({ ...approver, sessionStart: Math.floor(Date.now() / 1000) })
 
+let httpSigCc = 0
 async function recordBoundSignature() {
+  httpSigCc += 1
   const merge = buildMergeManifest([])
   const { binding, manifest } = mergeResultBinding({
     repo: 'rev-http/data',
@@ -61,7 +63,7 @@ async function recordBoundSignature() {
     contentHash: binding.manifestDigest,
     binding,
     manifest,
-    changeControlId: 'CC-REV-HTTP',
+    changeControlId: `CC-REV-HTTP-${httpSigCc}`,
   })
 }
 
@@ -75,6 +77,24 @@ describe('POST /auth/signatures/:id/revoke (gxp/07 HTTP)', () => {
         cookie: await cookie(),
         'x-mice-reason': 'QC failure on assay batch - revoke for audit',
         // omit x-mice-signature-id
+      },
+      body: '{}',
+    })
+    assert.equal(res.status, 400)
+    const json = (await res.json()) as { code?: string }
+    assert.equal(json.code, 'signature_required')
+  })
+})
+
+describe('POST /auth/signatures/:id/revocations/:revocationId/revert (gxp/10a HTTP)', () => {
+  it('refuses without a mutation e-signature', async () => {
+    const { id } = await recordBoundSignature()
+    const res = await app.request(`/auth/signatures/${id}/revocations/rev-placeholder/revert`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: await cookie(),
+        'x-mice-reason': 'Assay re-run passed; restore QC Passed status',
       },
       body: '{}',
     })
