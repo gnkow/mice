@@ -59,6 +59,8 @@ export function CommitsPage() {
   )
   const canRevoke =
     repoPerms.kind === 'ok' && repoPerms.data.isApprover === true
+  const canViewSignedRecord =
+    repoPerms.kind === 'ok' && repoPerms.data.viewSignedRecord === true
 
   const history = useAsync(
     (signal) =>
@@ -220,7 +222,14 @@ export function CommitsPage() {
         </div>
 
         <div className="history-toolbar">
-          <SignedRecordReportButton namespace={namespace} repo={repo} className="btn ghost small" />
+          {canViewSignedRecord ? (
+            <SignedRecordReportButton
+              namespace={namespace}
+              repo={repo}
+              className="btn ghost small"
+              compact
+            />
+          ) : null}
           <div className="history-mode">
             <span className="history-mode-spacer" aria-hidden>
               Mode

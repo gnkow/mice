@@ -553,7 +553,9 @@ export function RepoSettingsPage() {
             <h2 id="repo-signed-record-heading">Signed-record report</h2>
             <p className="muted small">
               Per-repository report of electronic signatures, revocations and QC
-              status for audit and release evidence. Requires read access.
+              status for audit and release evidence. Download PDF for humans or
+              JSON for machine-readable evidence. Requires the signed-record
+              permission (typically read).
             </p>
             <SignedRecordReportButton namespace={namespace} repo={repo} />
           </section>
