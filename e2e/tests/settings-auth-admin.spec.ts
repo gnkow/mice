@@ -1,8 +1,15 @@
 import { test, expect, openSettings } from '../fixtures'
 import { mintSession } from '../helpers/session'
 
-async function openAdminSettings(page: Parameters<typeof openSettings>[0]) {
-  await mintSession(page, { sub: `e2e-admin-${Date.now()}`, role: 'admin' })
+async function openAdminSettings(
+  page: Parameters<typeof openSettings>[0],
+  opts: { mfa?: boolean } = {},
+) {
+  await mintSession(page, {
+    sub: `e2e-admin-${Date.now()}`,
+    role: 'admin',
+    ...(opts.mfa ? { mfa: true } : {}),
+  })
   await page.goto('/')
   await openSettings(page)
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
@@ -11,7 +18,7 @@ async function openAdminSettings(page: Parameters<typeof openSettings>[0]) {
 test.describe('Settings · User Revocation (Admin)', () => {
   test('admin can open Revocations and see revoke/suspend forms', async ({ page }) => {
     await openAdminSettings(page)
-    await page.getByRole('link', { name: 'Revocations', exact: true }).click()
+    await page.getByRole('link', { name: 'User Revocation', exact: true }).click()
 
     const section = page.getByTestId('admin-revocation')
     await expect(section).toBeVisible()
@@ -24,9 +31,8 @@ test.describe('Settings · User Revocation (Admin)', () => {
     await expect(section.getByTestId('admin-suspend-form')).toBeVisible()
     await expect(section.getByTestId('admin-pending-suspensions')).toBeVisible()
 
-    await expect(
-      section.getByText(/Access is not cut until confirmation/i),
-    ).toBeVisible()
+    await expect(section.getByText(/electronic signature ceremony/i)).toBeVisible()
+    await expect(section.getByText(/Access is cut only after confirmation/i)).toBeVisible()
     await expect(
       section.getByRole('button', { name: /Revoke All Sessions/i }),
     ).toBeVisible()
@@ -42,7 +48,7 @@ test.describe('Settings · User Revocation (Admin)', () => {
     page,
   }) => {
     await openAdminSettings(page)
-    await page.getByRole('link', { name: 'Revocations', exact: true }).click()
+    await page.getByRole('link', { name: 'User Revocation', exact: true }).click()
 
     const revoke = page.getByTestId('admin-revoke-form')
     const suspend = page.getByTestId('admin-suspend-form')
@@ -59,6 +65,45 @@ test.describe('Settings · User Revocation (Admin)', () => {
     await expect(suspend.getByRole('button', { name: /Initiate Suspension/i })).toBeDisabled()
     await suspend.getByPlaceholder(/account compromise/i).fill('e2e suspend reason')
     await expect(suspend.getByRole('button', { name: /Initiate Suspension/i })).toBeEnabled()
+  })
+
+  test('TC-GXP-121-01: revoke opens the electronic signature ceremony; cancel stays on the form', async ({
+    page,
+  }) => {
+    await openAdminSettings(page, { mfa: true })
+    await page.getByRole('link', { name: 'User Revocation', exact: true }).click()
+
+    const revoke = page.getByTestId('admin-revoke-form')
+    await revoke.getByPlaceholder(/user@example.com/i).fill('target@example.com')
+    await revoke.getByPlaceholder(/Security incident/i).fill('e2e revoke ceremony coverage')
+    await revoke.getByRole('button', { name: /Revoke All Sessions/i }).click()
+
+    const dialog = page.getByRole('dialog', {
+      name: /Reason and signature required|Signature Required|Electronic signature/i,
+    })
+    await expect(dialog).toBeVisible({ timeout: 15_000 })
+    await dialog.getByRole('button', { name: /Cancel/i }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByTestId('admin-revoke-form')).toBeVisible()
+  })
+
+  test('TC-GXP-121-02: initiate suspension opens the signature ceremony', async ({ page }) => {
+    await openAdminSettings(page, { mfa: true })
+    await page.getByRole('link', { name: 'User Revocation', exact: true }).click()
+
+    const suspend = page.getByTestId('admin-suspend-form')
+    await suspend.getByPlaceholder(/suspicious.user/i).fill('suspect@example.com')
+    await suspend
+      .getByPlaceholder(/account compromise/i)
+      .fill('e2e suspend ceremony coverage')
+    await suspend.getByRole('button', { name: /Initiate Suspension/i }).click()
+
+    const dialog = page.getByRole('dialog', {
+      name: /Reason and signature required|Signature Required|Electronic signature/i,
+    })
+    await expect(dialog).toBeVisible({ timeout: 15_000 })
+    await dialog.getByRole('button', { name: /Cancel/i }).click()
+    await expect(dialog).toHaveCount(0)
   })
 })
 
