@@ -9,6 +9,7 @@ import {
   withReason,
   type ReasonSubmission,
 } from '../lib/reason'
+import { DirectoryPicker } from './DirectoryPicker'
 
 /**
  * Feature 5: Admin Revocation UI
@@ -109,10 +110,18 @@ async function fetchPendingSuspensions(signal?: AbortSignal): Promise<PendingSus
 
 const REASON_MIN = 10
 
-export function AdminRevocationSection() {
-  const [revokePrincipal, setRevokePrincipal] = useState('')
+function principalKey(iss: string, sub: string): string {
+  const i = iss.trim()
+  const s = sub.trim()
+  return i && s ? `${i}|${s}` : ''
+}
+
+export function AdminRevocationSection({ signedInIss }: { signedInIss: string }) {
+  const [revokeSub, setRevokeSub] = useState('')
+  const [revokeIss, setRevokeIss] = useState(signedInIss)
   const [revokeReason, setRevokeReason] = useState('')
-  const [suspendPrincipal, setSuspendPrincipal] = useState('')
+  const [suspendSub, setSuspendSub] = useState('')
+  const [suspendIss, setSuspendIss] = useState(signedInIss)
   const [suspendReason, setSuspendReason] = useState('')
   const [confirmReasons, setConfirmReasons] = useState<Record<string, string>>({})
   const [busyAction, setBusyAction] = useState<'revoke' | 'suspend' | 'confirm' | null>(null)
@@ -124,6 +133,8 @@ export function AdminRevocationSection() {
 
   const pending = useAsync((signal) => fetchPendingSuspensions(signal), [])
   const busy = busyAction !== null
+  const revokePrincipal = principalKey(revokeIss || signedInIss, revokeSub)
+  const suspendPrincipal = principalKey(suspendIss || signedInIss, suspendSub)
 
   useEffect(() => {
     if (!message || message.type !== 'error') return
@@ -141,14 +152,15 @@ export function AdminRevocationSection() {
 
   async function handleRevoke(e: FormEvent) {
     e.preventDefault()
-    if (revokePrincipal.trim().length === 0 || revokeReason.trim().length < REASON_MIN) return
+    if (!revokePrincipal || revokeReason.trim().length < REASON_MIN) return
 
     setBusyAction('revoke')
     setMessage(null)
     try {
-      await revokeUser(revokePrincipal.trim(), revokeReason.trim())
-      setMessage({ type: 'success', text: `Revoked all sessions for ${revokePrincipal.trim()}` })
-      setRevokePrincipal('')
+      await revokeUser(revokePrincipal, revokeReason.trim())
+      setMessage({ type: 'success', text: `Revoked all sessions for ${revokePrincipal}` })
+      setRevokeSub('')
+      setRevokeIss(signedInIss)
       setRevokeReason('')
     } catch (err) {
       if (isCeremonyCancelled(err)) return
@@ -160,17 +172,18 @@ export function AdminRevocationSection() {
 
   async function handleSuspend(e: FormEvent) {
     e.preventDefault()
-    if (suspendPrincipal.trim().length === 0 || suspendReason.trim().length < REASON_MIN) return
+    if (!suspendPrincipal || suspendReason.trim().length < REASON_MIN) return
 
     setBusyAction('suspend')
     setMessage(null)
     try {
-      const result = await suspendUser(suspendPrincipal.trim(), suspendReason.trim())
+      const result = await suspendUser(suspendPrincipal, suspendReason.trim())
       setMessage({
         type: 'success',
-        text: `Suspension initiated for ${suspendPrincipal.trim()}. Request ID: ${result.requestId}. Requires confirmation within 24h.`,
+        text: `Suspension initiated for ${suspendPrincipal}. Request ID: ${result.requestId}. Requires confirmation within 24h.`,
       })
-      setSuspendPrincipal('')
+      setSuspendSub('')
+      setSuspendIss(signedInIss)
       setSuspendReason('')
       pending.reload()
     } catch (err) {
@@ -210,10 +223,8 @@ export function AdminRevocationSection() {
     }
   }
 
-  const revokeReady =
-    revokePrincipal.trim().length > 0 && revokeReason.trim().length >= REASON_MIN
-  const suspendReady =
-    suspendPrincipal.trim().length > 0 && suspendReason.trim().length >= REASON_MIN
+  const revokeReady = Boolean(revokePrincipal) && revokeReason.trim().length >= REASON_MIN
+  const suspendReady = Boolean(suspendPrincipal) && suspendReason.trim().length >= REASON_MIN
 
   return (
     <section
@@ -267,17 +278,19 @@ export function AdminRevocationSection() {
         </div>
         <form className="ns-member-form" onSubmit={handleRevoke}>
           <div className="ns-settings-grid">
-            <label className="ns-settings-field">
-              <span className="ns-settings-label">Principal (iss|sub or email)</span>
-              <input
-                value={revokePrincipal}
-                onChange={(e) => setRevokePrincipal(e.target.value)}
-                placeholder="https://idp.example.com|user123 or user@example.com"
+            <div className="ns-settings-field">
+              <DirectoryPicker
+                kind="user"
+                sub={revokeSub}
+                iss={revokeIss || signedInIss}
+                defaultIss={signedInIss}
                 disabled={busy}
-                required
-                autoComplete="off"
+                onChange={({ sub, iss }) => {
+                  setRevokeSub(sub)
+                  setRevokeIss(iss)
+                }}
               />
-            </label>
+            </div>
             <label className="ns-settings-field">
               <span className="ns-settings-label">Reason</span>
               <input
@@ -318,17 +331,19 @@ export function AdminRevocationSection() {
         </div>
         <form className="ns-member-form" onSubmit={handleSuspend}>
           <div className="ns-settings-grid">
-            <label className="ns-settings-field">
-              <span className="ns-settings-label">Principal (iss|sub or email)</span>
-              <input
-                value={suspendPrincipal}
-                onChange={(e) => setSuspendPrincipal(e.target.value)}
-                placeholder="suspicious.user@example.com"
+            <div className="ns-settings-field">
+              <DirectoryPicker
+                kind="user"
+                sub={suspendSub}
+                iss={suspendIss || signedInIss}
+                defaultIss={signedInIss}
                 disabled={busy}
-                required
-                autoComplete="off"
+                onChange={({ sub, iss }) => {
+                  setSuspendSub(sub)
+                  setSuspendIss(iss)
+                }}
               />
-            </label>
+            </div>
             <label className="ns-settings-field">
               <span className="ns-settings-label">Reason</span>
               <input

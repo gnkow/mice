@@ -167,7 +167,9 @@ export function DirectoryPicker(props: Props) {
               <button
                 type="button"
                 className="directory-picker-option"
-                onClick={() => {
+                onMouseDown={(e) => {
+                  // Prefer mousedown so selection wins before document click-away closes the list.
+                  e.preventDefault()
                   props.onChange({
                     sub: u.sub,
                     iss: u.iss,
@@ -197,7 +199,8 @@ export function DirectoryPicker(props: Props) {
               <button
                 type="button"
                 className="directory-picker-option"
-                onClick={() => {
+                onMouseDown={(e) => {
+                  e.preventDefault()
                   props.onChange({ group: g.group, name: g.name })
                   setQuery(g.name || g.group)
                   setOpen(false)

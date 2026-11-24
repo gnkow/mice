@@ -1,4 +1,4 @@
-import type { Locator, Page, Route } from '@playwright/test'
+import { expect, type Locator, type Page, type Route } from '@playwright/test'
 
 export type DirectoryUserHit = {
   kind: 'user'
@@ -54,11 +54,13 @@ export async function pickFromDirectory(
   query: string,
   optionText: string | RegExp,
 ) {
-  const search = root.getByLabel('Search directory').last()
+  const search = root.getByLabel('Search directory').first()
   await search.fill(query)
   const option = root
     .locator('.directory-picker-option')
     .filter({ hasText: optionText })
     .first()
+  await expect(option).toBeVisible()
   await option.click()
+  await expect(root.getByText(/Selected:/i)).toBeVisible()
 }

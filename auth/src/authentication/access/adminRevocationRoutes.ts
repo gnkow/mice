@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { guarded } from '../session/routeGuard.js'
-import { parsePrincipalKey, type PrincipalId } from '../session/principal.js'
+import { canonicalIssuer, type PrincipalId } from '../session/principal.js'
 import {
   revokeAll,
   suspend,
@@ -18,6 +18,13 @@ import type { AuditDep } from '../../routeDeps.js'
  * Exposes revocation and suspension functionality for admins.
  */
 
+/** Split `iss|sub` on the first bar (same convention as Mice suspension / directory pick). */
+function principalFrom(raw: string): PrincipalId | null {
+  const bar = raw.indexOf('|')
+  if (bar <= 0 || bar === raw.length - 1) return null
+  return { iss: canonicalIssuer(raw.slice(0, bar)), sub: raw.slice(bar + 1) }
+}
+
 export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): void {
   // Admin revoke-all (GxP ticket 03: revocation class → reason + ceremony)
   app.post('/auth/admin/revoke', guarded({ 
@@ -29,11 +36,9 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
     const principalKey = String(body.principal)
     const reason = String(body.reason)
 
-    let principal: PrincipalId
-    try {
-      principal = parsePrincipalKey(principalKey)
-    } catch {
-      return c.json({ error: 'Invalid principal format (use iss|sub or email)' }, 400)
+    const principal = principalFrom(principalKey)
+    if (!principal) {
+      return c.json({ error: 'Invalid principal format (use iss|sub)' }, 400)
     }
 
     try {
@@ -67,11 +72,9 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
     const principalKey = String(body.principal)
     const reason = String(body.reason)
 
-    let principal: PrincipalId
-    try {
-      principal = parsePrincipalKey(principalKey)
-    } catch {
-      return c.json({ error: 'Invalid principal format (use iss|sub or email)' }, 400)
+    const principal = principalFrom(principalKey)
+    if (!principal) {
+      return c.json({ error: 'Invalid principal format (use iss|sub)' }, 400)
     }
 
     let requestId: string

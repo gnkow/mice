@@ -263,7 +263,7 @@ export function SettingsPage() {
           </>}
           {isInstanceAdmin && <>
             <DelegatedPermissionsSection signedInIss={signedInIss} />
-            <AdminRevocationSection />
+            <AdminRevocationSection signedInIss={signedInIss} />
             <ReenableSection />
             <AccessReviewSection />
             <IdpBaselineSection />
