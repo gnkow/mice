@@ -355,7 +355,7 @@ function SignatureRow({
                   }
                   onRevoked={() => {
                     setViewOpen(false)
-                    onRevoked()
+                    onChanged()
                   }}
                 />
               ) : null}
