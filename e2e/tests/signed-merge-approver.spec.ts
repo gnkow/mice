@@ -210,7 +210,7 @@ async function approveMergeViaCeremony(
   try {
     await expect(form).toBeVisible({ timeout: 20_000 })
     await form.getByLabel('Reason').fill(reason)
-    await form.getByRole('button', { name: /^Sign$/ }).click()
+    await form.getByRole('button', { name: /Review signature/i }).click()
     await expect(form.getByRole('heading', { name: /Electronic signature/i })).toBeVisible({
       timeout: 15_000,
     })
@@ -229,14 +229,14 @@ async function approveMergeViaCeremony(
       }
       if (outcome === 'reason') {
         await form.getByLabel('Reason').fill(reason)
-        await form.getByRole('button', { name: /^Sign$/ }).click()
+        await form.getByRole('button', { name: /Review signature/i }).click()
         await expect(form.getByRole('heading', { name: /Electronic signature/i })).toBeVisible({
           timeout: 15_000,
         })
         continue
       }
       if (outcome === 'review') {
-        await form.getByRole('button', { name: /^Sign$/ }).click()
+        await form.getByRole('button', { name: /Sign and complete merge/i }).click()
       }
       // Wait out Signing… / network (manifest + MFA challenge).
       // Success may unmount the panel immediately via onComplete — treat that as done.

@@ -249,6 +249,72 @@ export function consumeSigningResumeNotice(
   }
 }
 
+/** Merge-request signing ceremony interrupted by step-up (panel is React state). */
+export const MERGE_SIGN_RESUME_KEY = 'mice.merge-sign.resume'
+
+export type MergeSignResume = {
+  kind: 'merge_sign'
+  /** Browser path so we only reopen on the same MR page (or list). */
+  path: string
+  mergeRequestId: string
+  at: number
+  draftReason?: string
+  draftChangeControlId?: string
+}
+
+function isMergeSignResume(value: unknown): value is MergeSignResume {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return (
+    v.kind === 'merge_sign' &&
+    typeof v.path === 'string' &&
+    typeof v.mergeRequestId === 'string' &&
+    typeof v.at === 'number'
+  )
+}
+
+/** Stash merge ceremony drafts before navigating to `/auth/reauth`. */
+export function stashMergeSignResume(
+  intent: Omit<MergeSignResume, 'kind' | 'at'> & { at?: number },
+): void {
+  try {
+    const payload: MergeSignResume = {
+      kind: 'merge_sign',
+      path: intent.path,
+      mergeRequestId: intent.mergeRequestId,
+      at: intent.at ?? Date.now(),
+      ...(intent.draftReason ? { draftReason: intent.draftReason } : {}),
+      ...(intent.draftChangeControlId
+        ? { draftChangeControlId: intent.draftChangeControlId }
+        : {}),
+    }
+    sessionStorage.setItem(MERGE_SIGN_RESUME_KEY, JSON.stringify(payload))
+  } catch {
+    /* private mode / quota — best-effort */
+  }
+}
+
+/**
+ * Read + clear a merge ceremony resume when the path matches.
+ * Call from the MR page/list so Approve reopens after step-up.
+ */
+export function takeMergeSignResume(
+  path: string = pageResumePath(),
+): MergeSignResume | null {
+  try {
+    const raw = sessionStorage.getItem(MERGE_SIGN_RESUME_KEY)
+    if (!raw) return null
+    sessionStorage.removeItem(MERGE_SIGN_RESUME_KEY)
+    const parsed = JSON.parse(raw) as unknown
+    if (!isMergeSignResume(parsed)) return null
+    if (Date.now() - parsed.at > TTL_MS) return null
+    if (!pathBasesMatch(parsed.path, path)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 /** Test helper: reset module resume state. */
 export function resetSigningResumeForTests(): void {
   heldIntent = undefined
@@ -256,6 +322,7 @@ export function resetSigningResumeForTests(): void {
   ceremonyDraft = null
   try {
     sessionStorage.removeItem(SIGNING_RESUME_KEY)
+    sessionStorage.removeItem(MERGE_SIGN_RESUME_KEY)
   } catch {
     /* ignore */
   }

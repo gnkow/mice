@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, it, mock } from 'node:test'
 import {
+  MERGE_SIGN_RESUME_KEY,
   SIGNING_RESUME_KEY,
   ensureResumeSignedMutation,
   pageResumePath,
   resetSigningResumeForTests,
+  stashMergeSignResume,
   stashPendingSignedMutation,
   takeCeremonyResumeDraft,
+  takeMergeSignResume,
 } from './signingResume'
 
 afterEach(() => {
@@ -69,5 +72,32 @@ describe('signing resume after MFA step-up', () => {
       body: { action: 'approve', expiresAt: 1 },
     })
     assert.equal(ensureResumeSignedMutation('/repositories'), null)
+  })
+
+  it('stashes and reopens a merge signing ceremony on the matching path', () => {
+    stashMergeSignResume({
+      path: '/n/demo/r/assay/merge-requests/mr-1',
+      mergeRequestId: 'mr-1',
+      draftReason: 'Approve assay feature into main for release',
+      draftChangeControlId: 'CC-20261124-test',
+    })
+    assert.ok(sessionStorage.getItem(MERGE_SIGN_RESUME_KEY))
+    const resume = takeMergeSignResume('/n/demo/r/assay/merge-requests/mr-1')
+    assert.ok(resume)
+    assert.equal(resume.kind, 'merge_sign')
+    assert.equal(resume.mergeRequestId, 'mr-1')
+    assert.equal(resume.draftReason, 'Approve assay feature into main for release')
+    assert.equal(resume.draftChangeControlId, 'CC-20261124-test')
+    assert.equal(sessionStorage.getItem(MERGE_SIGN_RESUME_KEY), null)
+    assert.equal(takeMergeSignResume('/n/demo/r/assay/merge-requests/mr-1'), null)
+  })
+
+  it('ignores merge sign resume on a different page', () => {
+    stashMergeSignResume({
+      path: '/n/demo/r/assay/merge-requests/mr-1',
+      mergeRequestId: 'mr-1',
+      draftReason: 'Approve assay feature into main for release',
+    })
+    assert.equal(takeMergeSignResume('/n/demo/r/assay/merge-requests'), null)
   })
 })

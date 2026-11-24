@@ -1,6 +1,6 @@
 import { Ban, Check, File as ActionFile, GitPullRequest, RefreshCw, RotateCcw, X } from 'lucide-react'
 import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
-import { useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
 import { CommitList } from '../components/CommitList'
@@ -26,6 +26,7 @@ import {
 } from '../lib/mergeRequests'
 import { compareCommits, compareEntries, compareFile } from '../lib/oxen/api'
 import { askReason } from '../lib/reasonPrompt'
+import { pageResumePath, takeMergeSignResume } from '../lib/signingResume'
 import { formatRelativeTime } from '../lib/time'
 
 /**
@@ -38,8 +39,24 @@ export function MergeRequestPage() {
   const titleId = useId()
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [signing, setSigning] = useState(false)
+  const [signDraft, setSignDraft] = useState<{
+    reason?: string
+    changeControlId?: string
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const resume = takeMergeSignResume(pageResumePath())
+    if (!resume || resume.mergeRequestId !== mergeRequestId) return
+    setSignDraft({
+      ...(resume.draftReason ? { reason: resume.draftReason } : {}),
+      ...(resume.draftChangeControlId
+        ? { changeControlId: resume.draftChangeControlId }
+        : {}),
+    })
+    setSigning(true)
+  }, [mergeRequestId])
 
   const mrState = useAsync(
     (signal) => getMergeRequest(mergeRequestId, signal),
@@ -667,9 +684,15 @@ export function MergeRequestPage() {
           namespace={namespace}
           repo={repo}
           embedded
-          onDismiss={() => setSigning(false)}
+          initialReason={signDraft?.reason}
+          initialChangeControlId={signDraft?.changeControlId}
+          onDismiss={() => {
+            setSigning(false)
+            setSignDraft(null)
+          }}
           onComplete={() => {
             setSigning(false)
+            setSignDraft(null)
             mrState.reload()
           }}
         />

@@ -21,7 +21,11 @@ import {
   classifySigningChallenge,
   type SigningChallenge,
 } from '../lib/signingChallenge'
-import { continueToSigningReauth, pageResumePath } from '../lib/signingResume'
+import {
+  continueToSigningReauth,
+  pageResumePath,
+  stashMergeSignResume,
+} from '../lib/signingResume'
 import {
   completeSignedMergeRequest,
   executeMergeSignature,
@@ -40,6 +44,9 @@ type Props = {
    * Page route uses the same form body without the overlay.
    */
   embedded?: boolean
+  /** Prefill after step-up resume (reason / change-control). */
+  initialReason?: string
+  initialChangeControlId?: string
   onDismiss?: () => void
   onComplete?: () => void
 }
@@ -53,6 +60,8 @@ export function MergeRequestSignPanel({
   namespace,
   repo,
   embedded = false,
+  initialReason,
+  initialChangeControlId,
   onDismiss,
   onComplete,
 }: Props) {
@@ -63,8 +72,10 @@ export function MergeRequestSignPanel({
     [mergeRequestId],
   )
 
-  const [reason, setReason] = useState('')
-  const [changeControlId, setChangeControlId] = useState(() => suggestChangeControlId())
+  const [reason, setReason] = useState(() => initialReason?.trim() || '')
+  const [changeControlId, setChangeControlId] = useState(
+    () => initialChangeControlId?.trim() || suggestChangeControlId(),
+  )
   const [confirmedHash, setConfirmedHash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,18 +83,27 @@ export function MergeRequestSignPanel({
   const [success, setSuccess] = useState<string | null>(null)
   const [challenge, setChallenge] = useState<SigningChallenge | null>(null)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
+  const errorRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const changeId = useId()
   const noticeId = useId()
   const reasonId = useId()
   const ccId = useId()
   const hashId = useId()
+  const bindingId = useId()
+  const errorTitleId = useId()
 
   useEffect(() => {
     if (!embedded || challenge) return
     const t = window.setTimeout(() => reasonRef.current?.focus(), 0)
     return () => window.clearTimeout(t)
   }, [embedded, challenge, preview.kind])
+
+  useEffect(() => {
+    if (!error) return
+    const t = window.setTimeout(() => errorRef.current?.focus(), 0)
+    return () => window.clearTimeout(t)
+  }, [error])
 
   function applyChallenge(status: number, body: unknown): boolean {
     const next = classifySigningChallenge(status, body, {
@@ -239,6 +259,37 @@ export function MergeRequestSignPanel({
       ? `Approve merge ${preview.data.mergeRequest.sourceBranch} → ${preview.data.mergeRequest.targetBranch} on ${namespace}/${repo}`
       : `Approve merge request on ${namespace}/${repo}`
 
+  const bindingBlock =
+    preview.kind === 'ok' ? (
+      <section
+        className="reason-prompt-change"
+        aria-labelledby={bindingId}
+        data-testid="merge-sign-binding"
+      >
+        <h3 id={bindingId} className="reason-prompt-heading">
+          Binding
+        </h3>
+        <p className="muted small">
+          Meaning <strong>Approved</strong> ·{' '}
+          <UserRef
+            author={`${preview.data.principal.iss}|${preview.data.principal.sub}`}
+            name={preview.data.principal.name}
+          />
+        </p>
+        <p className="muted small">
+          Heads {preview.data.mergeRequest.expectedSourceHead.slice(0, 8)} /{' '}
+          {preview.data.mergeRequest.expectedTargetHead.slice(0, 8)}
+        </p>
+        <p
+          className="muted small"
+          style={{ wordBreak: 'break-all' }}
+          data-testid="merge-sign-content-hash"
+        >
+          Content hash <code className="inline-code">{preview.data.hash}</code>
+        </p>
+      </section>
+    ) : null
+
   const form = (
     <form
       className={embedded ? 'modal reason-prompt' : 'reason-prompt'}
@@ -251,7 +302,7 @@ export function MergeRequestSignPanel({
       onSubmit={onReview}
     >
       <h2 id={titleId} className="modal-title">
-        {reviewing && !hashStale ? 'Electronic signature' : 'Signature Required'}
+        {reviewing && !hashStale ? 'Electronic signature' : 'Sign merge request'}
       </h2>
 
       <section className="reason-prompt-change" aria-labelledby={changeId}>
@@ -274,6 +325,8 @@ export function MergeRequestSignPanel({
           </p>
         ) : null}
       </section>
+
+      {!success && !reviewing ? bindingBlock : null}
 
       {hashStale ? (
         <div className="flash flash-error" role="alert">
@@ -363,7 +416,17 @@ export function MergeRequestSignPanel({
       ) : null}
 
       {error && !hashStale ? (
-        <div className="flash flash-error" role="alert" data-testid="merge-sign-error">
+        <div
+          ref={errorRef}
+          className="flash flash-error"
+          role="alert"
+          tabIndex={-1}
+          aria-labelledby={errorTitleId}
+          data-testid="merge-sign-error"
+        >
+          <h3 id={errorTitleId} className="reason-prompt-heading">
+            There is a problem
+          </h3>
           <p>{error}</p>
           {errorCode === 'restore_test_required' ? (
             <p className="muted small" style={{ marginTop: '0.35rem' }}>
@@ -410,7 +473,7 @@ export function MergeRequestSignPanel({
             {!reviewing ? (
               <button type="submit" className="btn primary" disabled={!canReview}>
                 <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
-                Sign
+                Review signature
               </button>
             ) : !hashStale ? (
               <button
@@ -420,7 +483,7 @@ export function MergeRequestSignPanel({
                 onClick={() => void onSignAndComplete()}
               >
                 <ActionCheck size={14} aria-hidden="true" className="button-label-icon" />
-                {busy ? 'Signing…' : 'Sign'}
+                {busy ? 'Signing…' : 'Sign and complete merge'}
               </button>
             ) : null}
             {preview.kind === 'ok' ? (
@@ -445,7 +508,18 @@ export function MergeRequestSignPanel({
           challenge={challenge}
           onDismiss={() => setChallenge(null)}
           onContinue={() => {
-            if (challenge.continueUrl) continueToSigningReauth(challenge.continueUrl)
+            if (!challenge.continueUrl) return
+            stashMergeSignResume({
+              path: pageResumePath(),
+              mergeRequestId,
+              ...(reason.trim()
+                ? {
+                    draftReason: reason.trim(),
+                    draftChangeControlId: changeControlId.trim() || undefined,
+                  }
+                : {}),
+            })
+            continueToSigningReauth(challenge.continueUrl)
           }}
         />
       ) : null}

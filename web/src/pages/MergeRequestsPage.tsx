@@ -1,5 +1,5 @@
 import { Ban, Check, Eye, GitPullRequest, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
 import { MergeRequestSignPanel } from '../components/MergeRequestSignPanel'
@@ -24,6 +24,7 @@ import {
   type MergeRequestStatus,
 } from '../lib/mergeRequests'
 import { askReason } from '../lib/reasonPrompt'
+import { pageResumePath, takeMergeSignResume } from '../lib/signingResume'
 import { formatRelativeTime } from '../lib/time'
 
 type StatusTab = 'open' | 'merged' | 'rejected' | 'cancelled'
@@ -312,10 +313,26 @@ export function MergeRequestsPage() {
   const signer =
     me.kind === 'ok' && me.data.authenticated ? me.data.user : null
   const [signId, setSignId] = useState<string | null>(null)
+  const [signDraft, setSignDraft] = useState<{
+    reason?: string
+    changeControlId?: string
+  } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [filter, setFilter] = useState(params.get('q') ?? '')
   const statusTab = parseStatusTab(params.get('status'))
+
+  useEffect(() => {
+    const resume = takeMergeSignResume(pageResumePath())
+    if (!resume) return
+    setSignDraft({
+      ...(resume.draftReason ? { reason: resume.draftReason } : {}),
+      ...(resume.draftChangeControlId
+        ? { changeControlId: resume.draftChangeControlId }
+        : {}),
+    })
+    setSignId(resume.mergeRequestId)
+  }, [])
 
   const pageParam = Number(params.get('page') || '1')
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
@@ -635,8 +652,17 @@ export function MergeRequestsPage() {
           namespace={namespace}
           repo={repo}
           embedded
-          onDismiss={() => setSignId(null)}
-          onComplete={() => state.reload()}
+          initialReason={signDraft?.reason}
+          initialChangeControlId={signDraft?.changeControlId}
+          onDismiss={() => {
+            setSignId(null)
+            setSignDraft(null)
+          }}
+          onComplete={() => {
+            setSignId(null)
+            setSignDraft(null)
+            state.reload()
+          }}
         />
       ) : null}
     </main>
