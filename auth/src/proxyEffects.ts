@@ -1,4 +1,5 @@
 import { actorFromUser, appendAudit, type AuditVia } from './audit.js'
+import { EMPTY_AUDIT_CHANGE } from './auditChange.js'
 import { decideInstanceAction } from './authz.js'
 import { ensureNamespaceForCreate, getNamespace } from './authzNamespaceStore.js'
 import { createOwnedRepository, ensureRepository } from './repositoryStore.js'
@@ -204,6 +205,7 @@ export async function recordAclBypassRead(input: {
     path: input.pathname,
     status: 0,
     action: 'acl_bypass_read',
+    change: EMPTY_AUDIT_CHANGE,
     namespace: input.namespace,
     repo: input.repo,
     detail: { reason: input.reason },

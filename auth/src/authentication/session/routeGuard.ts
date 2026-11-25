@@ -3,7 +3,10 @@ import {
   actorFromUser,
   appendAudit,
   appendOutcomeFor,
+  AuditChangeCaptureError,
   beginTrackedIntent,
+  EMPTY_AUDIT_CHANGE,
+  NoChangeError,
   trackedIntent,
 } from '../../audit.js'
 import { auditUnavailableJson } from '../../auditFailClosed.js'
@@ -77,6 +80,15 @@ export type GuardArgs = {
   readBody: (spec?: BodySpec, invalidBody?: string) => Promise<BodyResult>
 }
 
+/** 400 `no_change` for a no-op mutation; 503 when the before-state could not be captured (fail-closed). */
+export function changeCaptureResponse(err: unknown, c: Context): Response | null {
+  if (err instanceof NoChangeError) return c.json({ error: 'No change', code: 'no_change' }, 400)
+  if (err instanceof AuditChangeCaptureError) {
+    return c.json({ error: err.message, code: 'audit_change_unavailable' }, 503)
+  }
+  return null
+}
+
 async function parseBody(c: Context, spec: BodySpec, invalid = 'Invalid body'): Promise<BodyResult> {
   let body: unknown = {}
   try {
@@ -140,7 +152,13 @@ export function guarded(
         explicit: c.req.header(REASON_HEADER),
       })
       if (!resolved.ok) {
-        await appendAudit({ ...base, status: 400, action: 'request.rejected', detail: { reason: resolved.rejection.code } })
+        await appendAudit({
+          ...base,
+          status: 400,
+          action: 'request.rejected',
+          change: EMPTY_AUDIT_CHANGE,
+          detail: { reason: resolved.rejection.code },
+        })
         return c.json({ error: resolved.rejection.detail, code: resolved.rejection.code }, 400)
       }
       reason = resolved.value
@@ -161,6 +179,7 @@ export function guarded(
           ...base,
           status: 400,
           action: 'request.rejected',
+          change: EMPTY_AUDIT_CHANGE,
           detail: { reason: signed.rejection.code },
         })
         return c.json({ error: signed.rejection.detail, code: signed.rejection.code }, 400)
@@ -191,6 +210,7 @@ export function guarded(
           ...withSignatureDetail(),
           status: 0,
           action: 'bff.mutation',
+          change: EMPTY_AUDIT_CHANGE,
         })
       } catch (err) {
         if (err instanceof AuditDetailPolicyError) {
@@ -211,6 +231,7 @@ export function guarded(
           ...reasonFields,
           status: f.status ?? 200,
           action: f.action,
+          change: f.change ?? EMPTY_AUDIT_CHANGE,
           ...(f.message ? { message: f.message } : {}),
           ...(f.namespace ? { namespace: f.namespace } : {}),
           ...(f.repo ? { repo: f.repo } : {}),
@@ -230,6 +251,7 @@ export function guarded(
           ...withSignatureDetail(),
           status,
           action: 'bff.mutation',
+          change: EMPTY_AUDIT_CHANGE,
         })
       }
     }
@@ -237,7 +259,9 @@ export function guarded(
     try {
       res = await handler(args)
     } catch (err) {
-      const shaped = fail?.(err, c)
+      // Change-capture failures are shared across every route family, so they map here before `fail`.
+      // A no-op mutation is refused and never audited (the open intent closes with the 400 outcome).
+      const shaped = changeCaptureResponse(err, c) ?? fail?.(err, c)
       await closeIntent(shaped?.status ?? 500)
       if (shaped) return shaped
       throw err

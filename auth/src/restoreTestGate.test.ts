@@ -24,15 +24,17 @@ describe('restore test gate (gxp/15)', () => {
     assert.equal(decideRestoreTestGate().detail, RESTORE_TEST_REQUIRED)
     assert.equal(restoreTestStatus().passed, false)
 
+    const before = await queryAudit({ action: 'system.restore_test.passed', limit: 50 })
     const recorded = await recordRestoreTestPassed({ recordedBy: 'ops' })
     assert.equal(recorded.passed, true)
     assert.equal(decideRestoreTestGate().allow, true)
 
-    const { events } = await queryAudit({ action: 'system.restore_test.passed', limit: 5 })
-    assert.ok(events.some((e) => e.action === 'system.restore_test.passed'))
+    // Gate state is durable in Postgres — recording a pass does not write the ledger.
+    const after = await queryAudit({ action: 'system.restore_test.passed', limit: 50 })
+    assert.equal(after.events.length, before.events.length)
   })
 
-  it('recovers a prior pass from the audit trail after process reset', async () => {
+  it('recovers a prior pass from durable store after process reset', async () => {
     resetRestoreTestGate()
     await recordRestoreTestPassed({ recordedBy: 'ops-persist' })
     simulateRestoreTestProcessRestart()

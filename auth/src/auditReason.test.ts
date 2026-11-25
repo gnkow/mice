@@ -48,8 +48,25 @@ beforeEach(async () => {
   since = (await ledger.readAll()).reduce((m, r) => Math.max(m, r.seq), 0)
   upstream = []
   restoreUpstream = setUpstreamFetch(async (url, init) => {
+    const method = init?.method ?? 'GET'
+    const pathname = new URL(String(url)).pathname
+    if (method === 'GET' && /\/branches\/[^/]+$/.test(pathname)) {
+      return new Response(JSON.stringify({ branch: { commit_id: 'tip-before' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (method === 'GET' && pathname.includes('/meta/')) {
+      return new Response(JSON.stringify({ status: 'error' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     upstream.push({ url: String(url), headers: new Headers(init?.headers) })
-    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ status: 'ok', commit: { id: 'tip-after' } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
   })
 })
 afterEach(() => restoreUpstream())

@@ -26,6 +26,26 @@ import {
 } from './signatureRevoke.js'
 import { signerAuthorKey } from './selfMerge.js'
 import type { AuditDep } from './routeDeps.js'
+import { EMPTY_AUDIT_CHANGE, requireAuditChange } from './auditChange.js'
+import { captureBefore, pickSnapshot } from './auditCapture.js'
+
+const MR_SNAPSHOT_KEYS = [
+  'id',
+  'repositoryId',
+  'sourceBranch',
+  'targetBranch',
+  'expectedSourceHead',
+  'expectedTargetHead',
+  'status',
+  'title',
+  'description',
+  'mergeCommitId',
+] as const
+
+/** Merge-request state for audit deltas (status transitions, pinned heads, merge commit). */
+function mrSnapshot(mr: MergeRequestRecord | null): Record<string, unknown> | null {
+  return pickSnapshot(mr, MR_SNAPSHOT_KEYS)
+}
 
 let mergeExecutor:
   | ((
@@ -224,6 +244,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       }
       await audit({
         action: 'merge_request.open',
+        change: requireAuditChange(null, mrSnapshot(mr)),
         message: `Opened MR ${mr.id} ${body.sourceBranch}→${body.targetBranch}`,
         namespace: ns,
         repo: repoName,
@@ -301,6 +322,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       if (!liveSourceHead || !liveTargetHead) {
         return c.json({ error: 'liveSourceHead and liveTargetHead required' }, 400)
       }
+      const beforeResync = mrSnapshot(await captureBefore(() => getMergeRequest(mr.id)))
       const next = await resyncMergeRequest(mr.id, {
         liveSourceHead,
         liveTargetHead,
@@ -308,6 +330,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       })
       await audit({
         action: 'merge_request.resync',
+        change: requireAuditChange(beforeResync, mrSnapshot(next)),
         message: `Resynced MR ${mr.id} → ${next.status}`,
         namespace: mr.namespace,
         repo: mr.repo,
@@ -330,6 +353,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'write')).ok) {
         return c.json({ error: 'Forbidden' }, 403)
       }
+      const beforeCancel = mrSnapshot(await captureBefore(() => getMergeRequest(mr.id)))
       const result = await cancelMergeRequest(mr.id)
       if (!result.ok) {
         if (result.code === 'not_found') return c.json({ error: 'Not found' }, 404)
@@ -340,6 +364,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       }
       await audit({
         action: 'merge_request.cancel',
+        change: requireAuditChange(beforeCancel, mrSnapshot(result.mergeRequest)),
         message: `Cancelled MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
         namespace: mr.namespace,
         repo: mr.repo,
@@ -404,6 +429,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           liveTargetHead = tips.targetHead
         }
       }
+      const beforeReopen = mrSnapshot(await captureBefore(() => getMergeRequest(mr.id)))
       const result = await reopenMergeRequest(mr.id, {
         liveSourceHead: liveSourceHead || undefined,
         liveTargetHead: liveTargetHead || undefined,
@@ -431,6 +457,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       await audit({
         action:
           fromStatus === 'rejected' ? 'merge_request.reject_reverted' : 'merge_request.reopen',
+        change: requireAuditChange(beforeReopen, mrSnapshot(result.mergeRequest)),
         message:
           fromStatus === 'rejected'
             ? `Reverted reject on MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`
@@ -472,6 +499,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         })
         return c.json({ error: approver.reason ?? 'Approver role required', code: 'not_approver' }, 403)
       }
+      const beforeReject = mrSnapshot(await captureBefore(() => getMergeRequest(mr.id)))
       const result = await rejectMergeRequest(mr.id)
       if (!result.ok) {
         if (result.code === 'not_found') return c.json({ error: 'Not found' }, 404)
@@ -482,6 +510,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       }
       await audit({
         action: 'merge_request.reject',
+        change: requireAuditChange(beforeReject, mrSnapshot(result.mergeRequest)),
         message: `Rejected MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
         namespace: mr.namespace,
         repo: mr.repo,
@@ -535,11 +564,14 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const { isInstanceAdmin } = await import('./authzInstanceStore.js')
       if (!(await isInstanceAdmin(user))) return c.json({ error: 'Instance admin required' }, 403)
       const { recordRestoreTestPassed } = await import('./restoreTestGate.js')
+      const { loadRestoreTestStatus } = await import('./restoreTestGate.js')
+      const beforeRestore = await captureBefore(() => loadRestoreTestStatus())
       const status = await recordRestoreTestPassed({
         recordedBy: `${user.iss}|${user.sub}`,
       })
       await audit({
         action: 'system.restore_test.passed',
+        change: requireAuditChange({ ...beforeRestore }, { ...status }),
         message: 'Operator recorded restore test pass',
         detail: status,
       })
@@ -567,6 +599,8 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       const report = await runCrossStoreIntegrity({ notify: async () => {} })
       await audit({
         action: 'system.integrity_check',
+        // Report-only run: it records findings but changes no stored state.
+        change: EMPTY_AUDIT_CHANGE,
         message: `Integrity check ${report.runId}`,
         detail: { findings: report.findings.length },
       })
@@ -686,6 +720,13 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       }
       await audit({
         action: 'esign.revoked',
+        change: requireAuditChange(null, {
+          revocation_id: result.revocation.id,
+          signature_id: result.revocation.signatureId,
+          change_control_id: result.revocation.changeControlId,
+          commit_ids: result.revocation.commitIds,
+          commit_qc: 'failed',
+        }),
         message: `Revoked signature ${result.revocation.signatureId}`,
         detail: {
           signatureId: result.revocation.signatureId,
@@ -752,6 +793,14 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       }
       await audit({
         action: 'esign.revocation_reverted',
+        change: requireAuditChange(null, {
+          revert_id: result.revert.id,
+          revocation_id: result.revert.revocationId,
+          signature_id: result.revert.signatureId,
+          change_control_id: result.revert.changeControlId,
+          commit_ids: result.revert.restoredCommitIds,
+          commit_qc: 'passed',
+        }),
         message: `Reverted revocation ${result.revert.revocationId} on signature ${result.revert.signatureId}`,
         detail: {
           signatureId: result.revert.signatureId,
@@ -881,6 +930,8 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         }
         throw err
       }
+      // Fail-closed: snapshot the request before the merge runs.
+      const beforeComplete = mrSnapshot(await captureBefore(() => getMergeRequest(c.req.param('id'))))
       // Live tips, authors, commit ids and merge-result manifest are server-derived.
       let result
       try {
@@ -929,6 +980,10 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       }
       await audit({
         action: 'merge_request.complete',
+        change: requireAuditChange(beforeComplete, {
+          ...mrSnapshot(result.mergeRequest),
+          mergeCommitId: result.mergeCommitId,
+        }),
         message: `Signed merge completed ${result.mergeRequest.id}`,
         namespace: result.mergeRequest.namespace,
         repo: result.mergeRequest.repo,

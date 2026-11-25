@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { appendAudit } from './audit.js'
+import { appendAudit, requireAuditChange } from './audit.js'
 import { reasonRequiredActions } from './auditReason.js'
 import { immudbHaAttested } from './auditOutage.js'
 import { env } from './env.js'
@@ -200,6 +200,10 @@ export async function recordRegulatedConfigAtStart(
       status: 200,
       action: 'system.regulated_config.change',
       message: 'Regulated configuration changed since previous start',
+      change: requireAuditChange(
+        { config_digest: ev.previousDigest },
+        { config_digest: ev.digest },
+      ),
       detail: {
         config: ev.config,
         digest: ev.digest,
@@ -211,6 +215,14 @@ export async function recordRegulatedConfigAtStart(
 
   writeDigest(dataDir, ev.digest)
   return lastStatus
+}
+
+/** Audit snapshot of an arbitrary config value: objects pass through, scalars wrap, absent is null. */
+function configSnapshot(value: unknown): Record<string, unknown> | null {
+  if (value === undefined || value === null) return null
+  return typeof value === 'object' && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : { value }
 }
 
 /**
@@ -237,6 +249,8 @@ export async function recordRegulatedConfigChange(input: {
     status: 200,
     action: 'system.regulated_config.change',
     message: 'Regulated configuration changed',
+    // No-op changes throw NoChangeError here, before anything is audited.
+    change: requireAuditChange(configSnapshot(input.previous), configSnapshot(input.next)),
     namespace: input.namespace,
     detail: {
       source: input.source,

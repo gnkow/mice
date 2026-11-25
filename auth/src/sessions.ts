@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { appendAudit, actorFromUser } from './audit.js'
+import { appendAudit, actorFromUser, EMPTY_AUDIT_CHANGE, requireAuditChange } from './audit.js'
 import { authorizeInstanceAction, decideInstanceAction } from './authz.js'
 import { env } from './env.js'
 import { type SessionUser } from './authentication/index.js'
@@ -85,6 +85,31 @@ function mountAuditDetail(m: SessionMount) {
     ...(m.workspace_id
       ? { workspace_id: m.workspace_id, effective_mode: m.effective_mode ?? null, lease_id: m.lease_id ?? null }
       : {}),
+  }
+}
+
+/**
+ * Session state for audit deltas. Secrets (guest password, connect ticket, endpoints) and pure
+ * activity noise (`last_activity_at`) are left out; lifecycle status, timestamps and mounts stay.
+ */
+function sessionAuditSnapshot(s: DesktopSession | null): Record<string, unknown> | null {
+  if (!s) return null
+  return {
+    id: s.id,
+    status: s.status,
+    owner: `${s.owner.iss}|${s.owner.sub}`,
+    template_id: s.template_id,
+    image: s.image,
+    image_digest: s.image_digest,
+    provisioner: s.provisioner,
+    recording: s.recording,
+    mounts: workspaceMountsOf(s).map(mountAuditDetail),
+    runtime_id: s.runtime_id,
+    error: s.error,
+    ready_at: s.ready_at,
+    connected_at: s.connected_at,
+    stopped_at: s.stopped_at,
+    destroyed_at: s.destroyed_at,
   }
 }
 
@@ -347,6 +372,7 @@ export async function createDesktopSession(
     path: '/auth/sessions',
     status: 201,
     action: 'session.create',
+    change: requireAuditChange(null, sessionAuditSnapshot(session)),
     detail: {
       session_id: id,
       image,
@@ -394,7 +420,7 @@ async function provisionInBackground(id: string): Promise<void> {
     // On-demand workspaces: wait until ready, then lease them (§ Sessions 11a).
     if (!(await leasePendingMounts(id))) return
     const result = await provisioner.provision(await getSessionRecord(id) ?? session)
-    await updateSession(id, {
+    const ready = await updateSession(id, {
       status: 'ready',
       endpoints: result.endpoints,
       runtime_id: result.runtimeId,
@@ -410,13 +436,14 @@ async function provisionInBackground(id: string): Promise<void> {
       path: `/auth/sessions/${id}`,
       status: 200,
       action: 'session.ready',
+      change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(ready)),
       detail: { session_id: id, owner: { sub: session.owner.sub, iss: session.owner.iss } },
     })
     console.log(`[sessions] provision ${id} succeeded`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'provision failed'
     console.error(`[sessions] provision ${id} failed:`, msg)
-    await updateSession(id, {
+    const failed = await updateSession(id, {
       status: 'failed',
       error: msg,
       stopped_at: new Date().toISOString(),
@@ -429,6 +456,8 @@ async function provisionInBackground(id: string): Promise<void> {
       path: `/auth/sessions/${id}`,
       status: 500,
       action: 'session.create',
+      // The create failed; the failure is recorded by the session.fail state transition below.
+      change: EMPTY_AUDIT_CHANGE,
       message: msg,
       detail: { session_id: id, failed: true },
     })
@@ -439,6 +468,7 @@ async function provisionInBackground(id: string): Promise<void> {
       path: `/auth/sessions/${id}`,
       status: 200,
       action: 'session.fail',
+      change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(failed)),
       detail: { session_id: id, owner: { sub: session.owner.sub, iss: session.owner.iss } },
     })
   } finally {
@@ -535,6 +565,7 @@ export async function connectDesktopSession(
     path: `/auth/sessions/${id}/connect`,
     status: 200,
     action: 'session.connect',
+    change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(updated)),
     detail: {
       session_id: id,
       backend: connect.backend,
@@ -575,6 +606,7 @@ export async function stopDesktopSession(
     path: `/auth/sessions/${id}/stop`,
     status: 200,
     action: 'session.stop',
+    change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(updated)),
     detail: { session_id: id },
   })
   return publicSession(updated)
@@ -637,6 +669,7 @@ export async function retryDesktopSession(
     path: `/auth/sessions/${id}/retry`,
     status: 200,
     action: 'session.retry',
+    change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(updated)),
     detail: { session_id: id },
   })
   void provisionInBackground(id)
@@ -727,6 +760,7 @@ export async function remountDesktopSession(
     path: `/auth/sessions/${id}/remount`,
     status: 200,
     action: 'session.remount',
+    change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(updated)),
     detail: { session_id: id, mounts: out.mounts.filter(isWorkspaceMount).map(mountAuditDetail) },
   })
   void provisionInBackground(id)
@@ -830,6 +864,7 @@ export async function updateSessionMounts(
     path: `/auth/sessions/${id}/mounts`,
     status: 200,
     action: 'session.mounts.update',
+    change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(updated)),
     detail: { session_id: id, before, after: out.mounts.map(mountAuditDetail) },
   })
   void provisionInBackground(id)
@@ -867,6 +902,7 @@ export async function destroyDesktopSession(
     path: `/auth/sessions/${id}`,
     status: 200,
     action: 'session.destroy',
+    change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(updated)),
     detail: { session_id: id },
   })
   return publicSession(updated)
@@ -892,6 +928,7 @@ export async function markSessionDisconnect(
     path: `/auth/sessions/${id}/disconnect`,
     status: 200,
     action: 'session.disconnect',
+    change: requireAuditChange(sessionAuditSnapshot(session), sessionAuditSnapshot(updated)),
     detail: { session_id: id },
   })
   return updated ? publicSession(updated) : null
@@ -920,7 +957,7 @@ export function startSessionsLifecycleSweeper(): void {
           const provisioner = getSessionProvisioner(s.provisioner)
           await provisioner.destroy(s)
           await teardownWorkspaceMounts(s, provisioner, 'max_lifetime')
-          await updateSession(s.id, {
+          const destroyed = await updateSession(s.id, {
             status: 'destroyed',
             destroyed_at: new Date().toISOString(),
             error: 'max lifetime exceeded',
@@ -932,6 +969,7 @@ export function startSessionsLifecycleSweeper(): void {
             path: `/auth/sessions/${s.id}`,
             status: 200,
             action: 'session.destroy',
+            change: requireAuditChange(sessionAuditSnapshot(s), sessionAuditSnapshot(destroyed)),
             detail: {
               session_id: s.id,
               owner: { sub: s.owner.sub, iss: s.owner.iss },
@@ -954,7 +992,7 @@ export function startSessionsLifecycleSweeper(): void {
           const provisioner = getSessionProvisioner(s.provisioner)
           await provisioner.stop(s)
           await teardownWorkspaceMounts(s, provisioner, 'idle_timeout')
-          await updateSession(s.id, {
+          const idleStopped = await updateSession(s.id, {
             status: 'stopped',
             stopped_at: new Date().toISOString(),
             error: 'idle timeout',
@@ -966,6 +1004,7 @@ export function startSessionsLifecycleSweeper(): void {
             path: `/auth/sessions/${s.id}/stop`,
             status: 200,
             action: 'session.stop',
+            change: requireAuditChange(sessionAuditSnapshot(s), sessionAuditSnapshot(idleStopped)),
             detail: {
               session_id: s.id,
               owner: { sub: s.owner.sub, iss: s.owner.iss },

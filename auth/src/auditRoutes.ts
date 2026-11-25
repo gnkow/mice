@@ -1,12 +1,17 @@
 import type { Context, Hono } from 'hono'
 import { acknowledgeAuditBreak, actorFromUser, appendAudit, auditEventsToCsv, auditFacets, buildAuditExportBundle, queryAudit, queryAuditForExport, verifyAudit, type AuditQuery } from './audit.js'
+import { orphanAgingThresholdMs, orphanListAnnotation } from './auditOrphanAlert.js'
 import { auditEventsToPdf, auditExportPrivateKeyPem } from './auditExport.js'
 import { instanceGate } from './decisionHttp.js'
 import { auditActionLabel, knownAuditActions } from './auditLabels.js'
+import { getAuditVisibility } from './auditVisibility.js'
 import { authorizeAuditQuery, authorizeLineageQuery, authorizeLineageRebuild } from './authz.js'
+import { currentClock } from './clock.js'
+import { EMPTY_AUDIT_CHANGE, requireAuditChange } from './auditChange.js'
 import { env } from './env.js'
 import { deriveOpsFromPathHistory, queryLineage, type LineageKind, type PathVersionHint } from './lineage.js'
 import { guarded, type SessionUser } from './authentication/index.js'
+import { getUserRole } from './rbacStore.js'
 import type { AuditDep } from './routeDeps.js'
 
 /** The caller's audit scope + filters; returns a Response on denial. */
@@ -18,6 +23,9 @@ async function resolveAuditQuery(c: Context, session: SessionUser): Promise<{ er
   }
   if (gate.forceNamespace) namespace = gate.forceNamespace
   const via = c.req.query('via')
+  const role = await getUserRole(session)
+  const excludeActions =
+    role === 'auditor' ? (await getAuditVisibility()).hiddenActions : undefined
   return {
     query: {
       actor: c.req.query('actor') || undefined,
@@ -32,6 +40,8 @@ async function resolveAuditQuery(c: Context, session: SessionUser): Promise<{ er
       via: via === 'session' || via === 'pat' ? via : undefined,
       allowedNamespaces: gate.ownedOnly,
       includeChain: c.req.query('include') === 'chain',
+      orphansOnly: c.req.query('orphans') === '1' || c.req.query('orphans') === 'true',
+      ...(excludeActions && excludeActions.length > 0 ? { excludeActions } : {}),
     },
   }
 }
@@ -57,6 +67,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
       path: c.req.path,
       status: 200,
       action: 'audit.browse',
+      change: EMPTY_AUDIT_CHANGE,
       message: `Browsed ${events.length} audit events`,
       detail: {
         rows: events.length,
@@ -64,9 +75,16 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
         filters: { ...r.query, allowedNamespaces: undefined },
       },
     })
+    const now = currentClock.now()
+    const thresholdMs = orphanAgingThresholdMs()
     return c.json({
-      events: events.map((e) => ({ ...e, action_label: auditActionLabel(e.action) })),
+      events: events.map((e) => ({
+        ...e,
+        action_label: auditActionLabel(e.action),
+        ...orphanListAnnotation(e, now, thresholdMs),
+      })),
       nextCursor,
+      orphan_aging_sec: Math.round(thresholdMs / 1000),
     })
   }))
 
@@ -78,14 +96,18 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
       namespace: r.query.namespace,
       allowedNamespaces: r.query.allowedNamespaces,
     })
+    const actions = r.query.excludeActions?.length
+      ? knownAuditActions().filter((a) => !r.query.excludeActions!.includes(a.value))
+      : knownAuditActions()
     return c.json({
-      actions: knownAuditActions(),
+      actions,
       actors: f.actors,
       namespaces: f.namespaces,
       repos: f.repos,
       sessions: f.sessions,
       workspaces: f.workspaces,
       jobs: f.jobs,
+      orphan_aging_sec: env.auditOrphanAlertSec,
     })
   }))
 
@@ -97,6 +119,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     const csv = auditEventsToCsv(events)
     await audit({
       action: 'audit.export',
+      change: EMPTY_AUDIT_CHANGE,
       message: `Exported ${events.length} audit events to CSV`,
       detail: { rows: events.length, truncated, filters: { ...r.query, allowedNamespaces: undefined } },
     })
@@ -119,6 +142,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     const pdf = auditEventsToPdf(events)
     await audit({
       action: 'audit.export',
+      change: EMPTY_AUDIT_CHANGE,
       message: `Exported ${events.length} audit events to PDF`,
       detail: { rows: events.length, truncated, format: 'pdf', filters: { ...r.query, allowedNamespaces: undefined } },
     })
@@ -147,6 +171,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
       path: c.req.path,
       status: 200,
       action: 'audit.export',
+      change: EMPTY_AUDIT_CHANGE,
       message: 'Exported a audit bundle',
       detail: { format: 'bundle', filters },
     })
@@ -184,6 +209,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     if (!ack) return c.json({ error: 'The audit chain verifies; there is nothing to acknowledge' }, 409)
     await audit({
       action: 'audit.break.acknowledge',
+      change: requireAuditChange({ [`break.${ack.seq}.acknowledged`]: false }, { [`break.${ack.seq}.acknowledged`]: true }),
       message: `Acknowledged audit chain break at event ${ack.seq}`,
       detail: { seq: ack.seq, reason: ack.reason },
     })
@@ -341,6 +367,11 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
     const created = await deriveOpsFromPathHistory(namespace, repo, branch, hints)
     await auditMutation(c, session, 'session', {
       action: 'lineage.rebuild',
+      // Re-running a rebuild is a documented idempotent success (`idempotent: true`), so an empty
+      // rebuild is recorded as a non-mutation instead of being refused with no_change.
+      change: created.length
+        ? requireAuditChange(null, { lineage_operations: created.map((op) => op.id).sort() })
+        : EMPTY_AUDIT_CHANGE,
       namespace,
       repo,
       message: `Rebuilt lineage for ${path}`,

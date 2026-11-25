@@ -77,28 +77,31 @@ describe('docs/authorization-routes.md matches the enforced tables', () => {
     assert.equal(interpretRequest('POST', '/api/repos').minRole, 'write')
   })
 
-  it('documents transport authz remapping (audit other/commit.publish → authz push)', () => {
+  it('documents transport authz remapping (audit commit.upload/publish → authz push)', () => {
     const complete = interpretRequest('POST', '/api/repos/n/r/commits/abc/complete')
     assert.equal(complete.action, 'commit.publish')
     assert.equal(complete.authzAction, 'push')
     assert.equal(complete.minRole, 'write')
+    assert.equal(complete.recognized, true)
 
     const chunk = interpretRequest('POST', '/api/repos/n/r/commits/abc/chunks')
-    assert.equal(chunk.action, 'other')
+    assert.equal(chunk.action, 'commit.upload')
     assert.equal(chunk.authzAction, 'push')
     assert.equal(chunk.minRole, 'write')
+    assert.equal(chunk.recognized, true)
 
     const section = markdownSection(doc, 'Route Classification Table')
     assert.match(section, /authzActionForPath/)
     assert.match(section, /commit\.publish/)
-    assert.match(section, /\bother\b/)
   })
 })
 
 describe('unclassified routes fail closed (ADR 0002)', () => {
-  it('requires repo admin for unknown mutating routes and refuses unscoped ones', () => {
+  it('marks unknown mutating routes unrecognized so the proxy can refuse them', () => {
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
-      assert.equal(interpretRequest(method, '/api/repos/n/r/mystery').minRole, 'admin', method)
+      const r = interpretRequest(method, '/api/repos/n/r/mystery')
+      assert.equal(r.recognized, false, method)
+      assert.equal(r.action, 'unclassified', method)
     }
     assert.equal(interpretRequest('GET', '/api/mystery').kind, 'other')
   })

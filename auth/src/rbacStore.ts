@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt } from 'drizzle-orm'
-import { appendAudit, type AuditActor } from './audit.js'
+import { appendAudit, EMPTY_AUDIT_CHANGE, requireAuditChange, type AuditActor, type AuditChange } from './audit.js'
 import { ensurePrincipal } from './authentication/session/session.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { getDb } from './db/database.js'
@@ -58,7 +58,13 @@ async function recordRbacAudit(input: {
   reason: string
   target: UserKey
   detail: Record<string, unknown>
+  /** Role / permission state delta (membership deltas always: role null→role, etc.). */
+  change: AuditChange
+  /** System/seed grants are not ledger events — history tables still record them. */
+  bootstrap?: boolean
 }): Promise<void> {
+  // Bootstrap / null-actor grants are setup, not auditable human operations.
+  if (!input.actor || input.bootstrap) return
   const { actor, via } = await auditActorFor(input.actor)
   await appendAudit({
     actor,
@@ -68,6 +74,7 @@ async function recordRbacAudit(input: {
     status: 200,
     action: input.action,
     reason: input.reason,
+    change: input.change,
     detail: {
       target: { sub: input.target.sub, iss: canonicalIssuer(input.target.iss) },
       ...input.detail,
@@ -83,6 +90,11 @@ export type RoleHistoryEntry = {
   revokedAt: string | null
   revokeReason: string | null
   accessRequestId: string | null
+}
+
+/** Role seat snapshot for audit deltas (`role` null when the principal holds none). */
+function roleSnapshot(role: InstanceRole | null, expiresAt: Date | null): Record<string, unknown> {
+  return { role, expiresAt: expiresAt ? expiresAt.toISOString() : null }
 }
 
 function toExpiryDate(expiresAt: Date | number): Date {
@@ -110,6 +122,33 @@ export async function getUserRole(user: UserKey, now = Date.now()): Promise<Inst
   if (!row || !isInstanceRole(row.role)) return null
   if (row.expiresAt.getTime() <= now) return null
   return row.role
+}
+
+/** Active instance role seat as an audit snapshot (`role`/`expiresAt` null when none). */
+export async function getRoleAuditSnapshot(user: UserKey, now = Date.now()): Promise<Record<string, unknown>> {
+  const id = await principalIdOf(user)
+  if (id == null) return roleSnapshot(null, null)
+  const [row] = await getDb().select().from(principalRoles).where(eq(principalRoles.principalId, id)).limit(1)
+  if (!row || !isInstanceRole(row.role) || row.expiresAt.getTime() <= now) return roleSnapshot(null, null)
+  return roleSnapshot(row.role, row.expiresAt)
+}
+
+/** Active custom permissions as audit snapshot keys `permission.<name>` → expiry ISO (or null). */
+export async function getPermissionAuditSnapshot(
+  user: UserKey,
+  permissions: readonly string[],
+  now = Date.now(),
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+  for (const p of permissions) out[`permission.${p}`] = null
+  const id = await principalIdOf(user)
+  if (id == null) return out
+  const rows = await getDb().select().from(principalPermissions).where(eq(principalPermissions.principalId, id))
+  for (const r of rows) {
+    if (r.expiresAt.getTime() <= now) continue
+    if (permissions.includes(r.permission)) out[`permission.${r.permission}`] = r.expiresAt.toISOString()
+  }
+  return out
 }
 
 export async function listRoleHistory(user: UserKey): Promise<RoleHistoryEntry[]> {
@@ -248,6 +287,11 @@ export async function assignRole(input: {
       reason: input.reason,
       target: input.target,
       detail: { role: existing.role },
+      change: requireAuditChange(
+        roleSnapshot(existing.role, existing.expiresAt),
+        roleSnapshot(null, null),
+      ),
+      bootstrap: input.bootstrap,
     })
   }
 
@@ -292,6 +336,11 @@ export async function assignRole(input: {
       role: input.role,
       ...(input.accessRequestId ? { access_request_id: input.accessRequestId } : {}),
     },
+    change: requireAuditChange(
+      roleSnapshot(null, null),
+      roleSnapshot(input.role, expiresAt),
+    ),
+    bootstrap: input.bootstrap,
   })
   return { ok: true }
 }
@@ -333,6 +382,10 @@ export async function revokeRole(input: {
     reason: input.reason,
     target: input.target,
     detail: { role: existing.role },
+    change: requireAuditChange(
+      roleSnapshot(existing.role, existing.expiresAt),
+      roleSnapshot(null, null),
+    ),
   })
   return { ok: true }
 }
@@ -491,6 +544,22 @@ export async function grantCustomPermissions(input: {
   const grantedBy = input.actor ? await ensurePrincipal(input.actor) : null
   const grantedAt = new Date()
 
+  // Fail-closed: the before-state is read before any grant is written.
+  const beforeRows = await getDb()
+    .select()
+    .from(principalPermissions)
+    .where(eq(principalPermissions.principalId, targetId))
+  const beforeExpiry = new Map(beforeRows.map((r) => [r.permission, r.expiresAt] as const))
+  const grantBefore: Record<string, unknown> = {}
+  const grantAfter: Record<string, unknown> = {}
+  for (const permission of cleaned) {
+    const prior = beforeExpiry.get(permission)
+    grantBefore[`permission.${permission}`] = prior && prior.getTime() > Date.now() ? prior.toISOString() : null
+    grantAfter[`permission.${permission}`] = expiresAt.toISOString()
+  }
+  // Bootstrap seeds are idempotent and never audited, so a repeat seed is not a refusal.
+  const grantChange = input.bootstrap ? EMPTY_AUDIT_CHANGE : requireAuditChange(grantBefore, grantAfter)
+
   for (const permission of cleaned) {
     await getDb()
       .insert(principalPermissions)
@@ -530,6 +599,8 @@ export async function grantCustomPermissions(input: {
       permissions: cleaned,
       ...(input.accessRequestId ? { access_request_id: input.accessRequestId } : {}),
     },
+    change: grantChange,
+    bootstrap: input.bootstrap,
   })
   return { ok: true }
 }
@@ -559,6 +630,27 @@ export async function revokeCustomPermissions(input: {
 }): Promise<Result> {
   const targetId = await principalIdOf(input.target)
   if (targetId == null) return { ok: false, error: 'Not found' }
+  for (const permission of input.permissions) {
+    if (!isInstancePermission(permission)) {
+      return { ok: false, error: `Invalid permission: ${permission}` }
+    }
+  }
+  // Fail-closed + no-op refusal: read the before-state and refuse before anything is written.
+  const heldRows = await getDb()
+    .select()
+    .from(principalPermissions)
+    .where(eq(principalPermissions.principalId, targetId))
+  const heldExpiry = new Map(heldRows.map((r) => [r.permission, r.expiresAt] as const))
+  const revokeBefore: Record<string, unknown> = {}
+  const revokeAfter: Record<string, unknown> = {}
+  for (const permission of input.permissions) {
+    const held = heldExpiry.get(permission)
+    if (!held) continue
+    revokeBefore[`permission.${permission}`] = held.toISOString()
+    revokeAfter[`permission.${permission}`] = null
+  }
+  const revokeChange = requireAuditChange(revokeBefore, revokeAfter)
+
   const revokedBy = await ensurePrincipal(input.actor)
   const revokedAt = new Date()
 
@@ -604,6 +696,7 @@ export async function revokeCustomPermissions(input: {
     reason: input.reason,
     target: input.target,
     detail: { permissions: [...input.permissions].filter(isInstancePermission) },
+    change: revokeChange,
   })
   return { ok: true }
 }

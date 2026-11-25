@@ -133,6 +133,12 @@ export async function submitAccessRequest(input: {
   return { ok: true, request: toRequest(created) }
 }
 
+/** One access request by id (for audit before-state), or null. */
+export async function getAccessRequest(id: string): Promise<RbacAccessRequest | null> {
+  const [row] = await getDb().select().from(accessRequests).where(eq(accessRequests.id, id)).limit(1)
+  return row ? toRequest(row) : null
+}
+
 /** Caller's own pending access request, or null. */
 export async function getOwnPendingAccessRequest(
   user: UserRef,

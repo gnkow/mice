@@ -50,7 +50,10 @@ Minimum roles below are collaborator floors (`hasRepoPermission`), except lifecy
 | `DELETE /api/repos/:ns/:repo/branches/:branch` | DELETE | maintain | Delete branch |
 | `POST /api/repos/:ns/:repo/merge(s)` | POST | maintain | Merge branches (`/merge` or `/merges`) |
 | `POST /api/repos/:ns/:repo/workspaces` | POST | write | Create oxen workspace |
-| `POST /api/repos/:ns/:repo/workspaces/:id/**` | POST, PUT | write | Oxen workspace operations |
+| `POST /api/repos/:ns/:repo/workspaces/:id/commit/**` | POST | write | Commit workspace |
+| `POST /api/repos/:ns/:repo/workspaces/:id/merge/**` | POST | write | Merge workspace |
+| `PUT /api/repos/:ns/:repo/workspaces/:id/files/**` | PUT | write | Write workspace file |
+| `DELETE /api/repos/:ns/:repo/workspaces/:id/files/**` | DELETE | write | Delete workspace file |
 | `DELETE /api/repos/:ns/:repo/workspaces/:id` | DELETE | write | Delete oxen workspace |
 | `PATCH/PUT /api/repos/:ns/:repo` | PATCH, PUT | admin † | Update repo metadata |
 | `PATCH/PUT /api/repos/:ns/:repo/rename` | PATCH, PUT | admin † | Rename repository |
@@ -61,12 +64,12 @@ Minimum roles below are collaborator floors (`hasRepoPermission`), except lifecy
 
 | Pattern | Methods | Audit action | Authz action | Min Role | Description |
 |---------|---------|--------------|--------------|----------|-------------|
-| `POST/PUT /api/repos/:ns/:repo/commits/**` (not complete) | POST, PUT | `other` | `push` | write | Upload chunks |
+| `POST/PUT /api/repos/:ns/:repo/commits/**` (not complete) | POST, PUT | `commit.upload` | `push` | write | Upload chunks |
 | `POST /api/repos/:ns/:repo/commits/:id/complete` | POST | `commit.publish` | `push` | write | Publish commit |
-| `QUERY /api/repos/:ns/:repo/versions` | QUERY | `other` | `versions.query` | read | Query versions |
-| `POST /api/repos/:ns/:repo/versions/**` | POST | `other` | `push` | write | Version operations |
+| `QUERY /api/repos/:ns/:repo/versions` | QUERY | `versions.query` | `versions.query` | read | Query versions |
+| `POST /api/repos/:ns/:repo/versions/**` | POST | `commit.upload` | `push` | write | Version push transport |
 
-**Note**: `authzActionForPath` remaps transport paths for authorization. Intermediate uploads keep audit action `other`; only `…/complete` audits as `commit.publish`. Both authorize as `push` (write).
+**Note**: `authzActionForPath` remaps transport paths for authorization. Uploads audit as `commit.upload`; `…/complete` audits as `commit.publish`. Both authorize as `push` (write). Unknown mutating paths are **rejected** (not audited as a catch-all operation).
 
 ## Action Minimum Roles
 
@@ -89,7 +92,7 @@ The `ACTION_MIN_ROLE` table in `authzPathMap.ts` defines the minimum repo role p
 
 `repo.create` appears in `ACTION_MIN_ROLE` so `interpretRequest` can label `POST /api/repos`, but **authorization ignores that floor** and uses the namespace create gate instead.
 
-**Fallback for unclassified mutating routes**: If a POST/PUT/PATCH/DELETE request doesn't match any specific pattern, `minRole` falls to `admin` (denied unless the caller holds admin / Owner lifecycle for delete/metadata).
+**Fallback for unclassified mutating routes**: If a POST/PUT/PATCH/DELETE request doesn't match any recognized pattern, the proxy **rejects** it (`400`, `request.rejected`). It is never written as a ledger operation under a catch-all `other` action.
 
 ## Authorization Flow
 
@@ -139,7 +142,7 @@ not an inherited repo data role.
 
 - **Docs parity** (`auth/src/authzRoutesDocs.test.ts` + `auth/src/authzRouteDocs.ts`): Documentation tables match `ACTION_MIN_ROLE` and enforced min roles; Permission Composition matches collaborator SoT
 - **Contract test** (`auth/src/authzRoutesDocs.test.ts` + `auth/src/fixtures/oxen-server-routes.pinned.json`): Every pinned oxen-server route interprets to its documented minimum role; refresh the pin when upgrading `oxen/oxen-server` in compose
-- **Default-deny** (`auth/src/authzRoutesDocs.test.ts`, `auth/src/authz.test.ts`): Unclassified mutating routes require admin; unscoped unknown GETs are `other`
+- **Default-deny** (`auth/src/authzRoutesDocs.test.ts`, `auth/src/authz.test.ts`): Unclassified mutating routes are rejected by the proxy; unscoped unknown GETs stay route-kind `other` (denied)
 - **Matrix test**: Role × action × state coverage at HTTP boundary
 
 ## Maintenance

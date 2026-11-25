@@ -377,6 +377,35 @@ async function endWebSessions(user: Pick<SessionUser, 'sub' | 'iss'>): Promise<v
   await getDb().delete(webSessions).where(eq(webSessions.principalId, principal.id))
 }
 
+/**
+ * Audit state of the credential family a raw token (access or refresh) belongs to: revocation
+ * time, how many tokens were minted and the newest access-token expiry. Never includes secrets.
+ * Null when the token is unknown.
+ */
+export async function cliFamilyAuditState(rawToken: string): Promise<Record<string, unknown> | null> {
+  const db = getDb()
+  const [token] = await db
+    .select({ familyId: cliCredentialTokens.familyId })
+    .from(cliCredentialTokens)
+    .where(eq(cliCredentialTokens.tokenHash, hashToken(rawToken.trim())))
+  if (!token) return null
+  const [family] = await db
+    .select({ revokedAt: cliCredentialFamilies.revokedAt })
+    .from(cliCredentialFamilies)
+    .where(eq(cliCredentialFamilies.id, token.familyId))
+  const tokens = await db
+    .select({ kind: cliCredentialTokens.kind, expiresAt: cliCredentialTokens.expiresAt })
+    .from(cliCredentialTokens)
+    .where(eq(cliCredentialTokens.familyId, token.familyId))
+  const accessExpiries = tokens.filter((t) => t.kind === 'access').map((t) => t.expiresAt.getTime())
+  return {
+    family_id: token.familyId,
+    revoked_at: family?.revokedAt?.toISOString() ?? null,
+    tokens_minted: tokens.length,
+    latest_access_expires_at: accessExpiries.length ? new Date(Math.max(...accessExpiries)).toISOString() : null,
+  }
+}
+
 const live = createCliCredentials({
   clock: currentClock,
   idp: async (user) => {

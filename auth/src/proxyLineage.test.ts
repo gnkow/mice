@@ -33,7 +33,13 @@ function fakeOxen(opts: { entries: Array<unknown | null>; write: () => Response 
   let metaCalls = 0
   const restore = setUpstreamFetch(async (url, init) => {
     const u = String(url)
-    calls.push(`${init?.method ?? 'GET'} ${new URL(u).pathname}`)
+    const pathname = new URL(u).pathname
+    const method = init?.method ?? 'GET'
+    // Audit before-state: branch tip probe (not recorded as a lineage meta call sequence assert).
+    if (method === 'GET' && /\/branches\/[^/]+$/.test(pathname)) {
+      return json({ branch: { commit_id: 'tip-before' } })
+    }
+    calls.push(`${method} ${pathname}`)
     if (u.includes('/meta/')) {
       const entry = opts.entries[Math.min(metaCalls++, opts.entries.length - 1)]
       return entry ? json({ entry }) : json({ status: 'error' }, 404)
@@ -77,7 +83,7 @@ await describe('proxy lineage capture', async () => {
     } finally {
       oxen.restore()
     }
-    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'GET', 'PUT', 'GET'])
+    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'PUT', 'GET'])
     const op = (await queryLineage({ namespace: 'lin', repo: 'edit' })).operations[0]!
     assert.equal(op.kind, 'edit')
     assert.deepEqual(op.inputs.map((v) => [v.contentHash, v.commitId]), [['h1', 'c0']])
@@ -114,7 +120,7 @@ await describe('proxy lineage capture', async () => {
       oxen.restore()
     }
     assert.equal(res.status, 500)
-    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'GET', 'PUT'])
+    assert.deepEqual(oxen.calls.map((c) => c.split(' ')[0]), ['GET', 'PUT'])
     assert.equal((await queryLineage({ namespace: 'lin', repo: 'failed' })).operations.length, 0)
   })
 

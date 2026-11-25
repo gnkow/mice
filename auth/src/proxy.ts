@@ -1,5 +1,7 @@
 import type { Context } from 'hono'
 import { env } from './env.js'
+import { EMPTY_AUDIT_CHANGE, NoChangeError, requireAuditChange, type AuditChange } from './auditChange.js'
+import { proxyMutationChange, workspaceFilePathsFromPathname, workspaceIdFromAnswer } from './proxyChange.js'
 import { interpretRequest, type SessionUser } from './authentication/index.js'
 import {
   actorFromUser,
@@ -33,8 +35,6 @@ import {
   SIGNATURE_HEADER,
   type MutationSignatureRejection,
 } from './mutationSignature.js'
-import { mutationSignatureAuditDetail } from './authentication/signing/signingCeremony.js'
-import type { SignatureRecord as StoredSignature } from './authentication/signing/signatureStore.js'
 import { mutationSignatureAuditDetail } from './authentication/signing/signingCeremony.js'
 import type { SignatureRecord as StoredSignature } from './authentication/signing/signatureStore.js'
 import { createDatasetCapture, createLineageCapture, type DatasetVersions } from './proxyLineage.js'
@@ -117,6 +117,7 @@ async function rejectUnclassifiedWrite(
     path: pathname,
     status: 400,
     action: 'request.rejected',
+    change: EMPTY_AUDIT_CHANGE,
     ...(scope.namespace ? { namespace: scope.namespace } : {}),
     ...(scope.repo ? { repo: scope.repo } : {}),
     detail: { reason },
@@ -126,6 +127,36 @@ async function rejectUnclassifiedWrite(
       status: 'error',
       status_message: 'bad_request',
       error: { detail: 'Request body could not be classified' },
+    }),
+    { status: 400, headers: { 'content-type': 'application/json' } },
+  )
+}
+
+/** Mutating path that is not a known Oxen operation — refuse; do not write an operation audit. */
+async function rejectUnsupportedOperation(
+  user: SessionUser,
+  via: AuditVia,
+  method: string,
+  pathname: string,
+  scope: { namespace?: string; repo?: string } = {},
+): Promise<Response> {
+  await appendAudit({
+    actor: actorFromUser(user),
+    via,
+    method,
+    path: pathname,
+    status: 400,
+    action: 'request.rejected',
+    change: EMPTY_AUDIT_CHANGE,
+    ...(scope.namespace ? { namespace: scope.namespace } : {}),
+    ...(scope.repo ? { repo: scope.repo } : {}),
+    detail: { reason: 'unsupported_operation' },
+  })
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: 'bad_request',
+      error: { detail: 'Unsupported or unknown API operation' },
     }),
     { status: 400, headers: { 'content-type': 'application/json' } },
   )
@@ -146,6 +177,7 @@ async function rejectReason(
     path: pathname,
     status: 400,
     action: 'request.rejected',
+    change: EMPTY_AUDIT_CHANGE,
     ...(scope.namespace ? { namespace: scope.namespace } : {}),
     ...(scope.repo ? { repo: scope.repo } : {}),
     detail: { reason: rejection.code },
@@ -175,6 +207,7 @@ async function rejectSignature(
     path: pathname,
     status: 400,
     action: 'request.rejected',
+    change: EMPTY_AUDIT_CHANGE,
     ...(scope.namespace ? { namespace: scope.namespace } : {}),
     ...(scope.repo ? { repo: scope.repo } : {}),
     detail: { reason: rejection.code },
@@ -198,6 +231,30 @@ function auditChainBroken(): Response {
       error: { detail: 'Audit chain verification failed; dataset changes are blocked until an instance admin acknowledges it' },
     }),
     { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '300' } },
+  )
+}
+
+/** Before-state could not be read: refuse rather than audit a guessed change (fail closed). */
+function changeUnavailableResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: 'unavailable',
+      error: { detail: 'Audit change could not be captured', code: 'audit_change_unavailable' },
+    }),
+    { status: 503, headers: { 'content-type': 'application/json' } },
+  )
+}
+
+/** The mutation left the state as it was. */
+function noChangeResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      status_message: 'bad_request',
+      error: { detail: 'No change', code: 'no_change' },
+    }),
+    { status: 400, headers: { 'content-type': 'application/json' } },
   )
 }
 
@@ -259,6 +316,17 @@ export async function proxyToOxen(
       { status: 400, headers: { 'content-type': 'application/json' } },
     )
   }
+
+  const mutatingEarly = method !== 'GET' && method !== 'HEAD'
+  const classifiedEarly = interpretRequest(method, pathname)
+  // Unknown mutating routes are refused — never audited as a catch-all "other" operation.
+  if (mutatingEarly && !classifiedEarly.recognized) {
+    return rejectUnsupportedOperation(user, via, method, pathname, {
+      namespace: classifiedEarly.namespace,
+      repo: classifiedEarly.repo,
+    })
+  }
+
   const reqHeaders = filterRequestHeaders(c.req.raw.headers)
 
   const {
@@ -544,6 +612,10 @@ export async function proxyToOxen(
         { status: 400, headers: { 'content-type': 'application/json' } },
       )
     }
+    if (nextName === repo) {
+      if (intent) await appendOutcome(intent.id, { ...auditFields(400), change: EMPTY_AUDIT_CHANGE })
+      return noChangeResponse()
+    }
     const result = await renameRepository(ns, repo, nextName)
     if (!result.ok) {
       if (intent) await appendOutcome(intent.id, auditFields(400))
@@ -565,6 +637,7 @@ export async function proxyToOxen(
       await appendOutcome(intent.id, {
         ...auditFields(200),
         action: 'repo.rename',
+        change: requireAuditChange({ name: repo }, { name: nextName }),
         repo: nextName,
         detail: { previous_name: repo, name: nextName },
       })
@@ -580,6 +653,8 @@ export async function proxyToOxen(
   let upstreamBody = body
   let createdPhysical: { namespaceId: string; repositoryId: string } | null = null
   let initialCommitMessage: string | undefined
+  /** Physical ids of the repo the request targets (before-state of a delete). */
+  let physicalRepo: Awaited<ReturnType<typeof resolvePhysicalRepo>> | undefined
   if (
     (classified.action === 'repo.create' || (pathname === '/api/repos' && method === 'POST')) &&
     ns &&
@@ -613,6 +688,7 @@ export async function proxyToOxen(
     )
   } else if (ns && repo) {
     const physical = await resolvePhysicalRepo(ns, repo)
+    physicalRepo = physical
     upstreamPath = rewriteReposApiPathToPhysical(pathname, physical)
   } else if ((classified.kind === 'repo.list' || classified.action === 'repo.list') && ns) {
     const namespaceId = await resolveNamespaceId(ns)
@@ -623,6 +699,41 @@ export async function proxyToOxen(
   ) {
     const namespaceId = await resolveNamespaceId(ns)
     upstreamPath = rewriteNamespacePathToPhysical(pathname, namespaceId)
+  }
+
+  /** AuthZ settings snapshot for proxied `repo.metadata` (fail-closed when the repo is missing). */
+  let metadataBefore: Record<string, unknown> | undefined
+  let metadataAfter: Record<string, unknown> | undefined
+  if (classified.action === 'repo.metadata' && ns && repo) {
+    const { readRepository } = await import('./authzRepository.js')
+    const row = await readRepository(ns, repo)
+    if (!row) {
+      if (intent) await appendOutcome(intent.id, { ...auditFields(400), change: EMPTY_AUDIT_CHANGE })
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          status_message: 'bad_request',
+          error: { detail: 'Repository not found', code: 'audit_change_unavailable' },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    metadataBefore = { name: row.name, description: row.description ?? '' }
+    let nextDescription = row.description ?? ''
+    const src =
+      signatureBody && typeof signatureBody === 'object' && !Array.isArray(signatureBody)
+        ? (signatureBody as Record<string, unknown>)
+        : typeof body === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(body) as Record<string, unknown>
+              } catch {
+                return {}
+              }
+            })()
+          : {}
+    if (typeof src.description === 'string') nextDescription = src.description
+    metadataAfter = { name: row.name, description: nextDescription }
   }
 
   // Empty-repo branch create: materialize missing `from_name` as an empty tip
@@ -645,22 +756,35 @@ export async function proxyToOxen(
     await ensureBranchCreateSourceTip(ns, repo, fromName, user)
   }
 
-  let upstream: Response
+  // Fail closed: when the before-state of a mutation cannot be read, nothing reaches oxen.
+  let upstream: Response | undefined
+  let changeUnavailable = false
   try {
     await lineage.before()
     if (mutating) await datasetVersions.before()
-    upstream = await upstreamFetch(
-      `${env.oxenUpstream}${upstreamPath}${url.search}`,
-      {
-        method,
-        headers: reqHeaders,
-        body: upstreamBody,
-        redirect: 'manual',
-      },
-    )
+    changeUnavailable =
+      mutating &&
+      (datasetVersions.baseState() === 'unavailable' ||
+        lineage.beforeUnavailable() ||
+        (classified.action === 'repo.delete' && !physicalRepo))
+    if (!changeUnavailable) {
+      upstream = await upstreamFetch(
+        `${env.oxenUpstream}${upstreamPath}${url.search}`,
+        {
+          method,
+          headers: reqHeaders,
+          body: upstreamBody,
+          redirect: 'manual',
+        },
+      )
+    }
   } catch (err) {
     if (intent) await appendOutcome(intent.id, auditFields(502))
     throw err
+  }
+  if (!upstream) {
+    if (intent) await appendOutcome(intent.id, auditFields(503))
+    return changeUnavailableResponse()
   }
 
   let responseBody: BodyInit | null = upstream.body
@@ -686,9 +810,41 @@ export async function proxyToOxen(
       buffered = responseBody
     }
 
-    const outcomeFields = auditFields(upstream.status, datasetVersions.after(upstream, buffered))
+    const versions = datasetVersions.after(upstream, buffered)
+    let change: AuditChange
+    try {
+      change = proxyMutationChange({
+        action: classified.action,
+        upstreamOk: upstream.ok,
+        namespace: ns,
+        repo,
+        branch: datasetVersions.branch(),
+        base: datasetVersions.base(),
+        head: versions.dataset?.head,
+        fileDeltas: await lineage.fileDeltas(upstream),
+        paths: workspaceFilePathsFromPathname(pathname),
+        repositoryId:
+          classified.action === 'repo.create'
+            ? createdPhysical?.repositoryId
+            : physicalRepo?.repositoryId,
+        workspaceId:
+          (typeof classified.detail?.workspace_id === 'string' ? classified.detail.workspace_id : undefined) ??
+          bodyWorkspaceId ??
+          workspaceIdFromAnswer(buffered),
+        ...(metadataBefore && metadataAfter
+          ? { metadataBefore, metadataAfter }
+          : {}),
+      })
+    } catch (err) {
+      if (!(err instanceof NoChangeError)) throw err
+      // The upstream already answered, but nothing changed: refuse, and audit no mutation.
+      await appendOutcome(intent.id, { ...auditFields(400), change: EMPTY_AUDIT_CHANGE })
+      return noChangeResponse()
+    }
+    const outcomeFields = auditFields(upstream.status, versions)
     const auditEvent = await appendOutcome(intent.id, {
       ...outcomeFields,
+      change,
       detail: {
         ...outcomeFields.detail,
         ...(mergeAuthors

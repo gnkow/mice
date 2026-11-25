@@ -12,10 +12,12 @@ import { immudbConfig, openLedger, type Ledger } from './auditLedger.js'
 import { type SessionUser } from './authentication/index.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
 import { AuditDetailPolicyError, validateAuditDetail } from './auditDetailPolicy.js'
+import { auditResourceUri } from './auditResourceUri.js'
 import {
   CURRENT_AUDIT_SCHEMA_VERSION,
   upcastAuditEvent,
 } from './auditSchema.js'
+export { auditResourceUri } from './auditResourceUri.js'
 import {
   applyAuditQueryFilters,
   eventJobIds,
@@ -23,6 +25,16 @@ import {
   eventWorkspaceIds,
 } from './auditQueryFilters.js'
 import { createAuditIntentOutcome } from './auditIntentOutcome.js'
+import { EMPTY_AUDIT_CHANGE, type AuditChange } from './auditChange.js'
+export type { AuditChange } from './auditChange.js'
+export {
+  EMPTY_AUDIT_CHANGE,
+  auditChange,
+  isEmptyAuditChange,
+  requireAuditChange,
+  NoChangeError,
+  AuditChangeCaptureError,
+} from './auditChange.js'
 
 export type { AuditVerification } from './auditChainGate.js'
 export type { AuditReadiness } from './auditReadiness.js'
@@ -85,6 +97,16 @@ export type AuditEvent = {
   owner?: AuditActor
   /** Hashed IP (SHA-256(IP + daily_salt)) for anomaly detection while preserving privacy (U8). */
   hashed_ip?: string
+  /**
+   * Canonical primary resource (`type:id`, always set). Derived on write and filled on
+   * read upcast for older ledger rows.
+   */
+  resource_uri: string
+  /**
+   * What changed: field deltas, or null→full / full→null for create/delete.
+   * Non-mutations and Intents use `{ before: null, after: null }`.
+   */
+  change: AuditChange
   /** Event shape version; readers upcast older blobs (US11 / Q19). */
   schema_version: number
 }
@@ -111,6 +133,10 @@ export type AuditQuery = {
    * started and never completed. Set to see every intent.
    */
   includeChain?: boolean
+  /** When true, only unpaired Intent rows (honest gaps — no Outcome). */
+  orphansOnly?: boolean
+  /** Exact action names to omit (Auditor visibility). Still present on the ledger. */
+  excludeActions?: string[]
 }
 
 export type AuditResource = {
@@ -338,11 +364,16 @@ export function extractRepoCreateFromJson(
   return { namespace, repo }
 }
 
-export type AuditInput = Omit<AuditEvent, 'id' | 'ts' | 'phase' | 'intent_id' | 'via' | 'schema_version'> & {
+export type AuditInput = Omit<
+  AuditEvent,
+  'id' | 'ts' | 'phase' | 'intent_id' | 'via' | 'schema_version' | 'resource_uri' | 'change'
+> & {
   id?: string
   ts?: string
   via: AuditVia | 'system'
   schema_version?: number
+  /** Defaults to empty (non-mutation / Intent). Mutations must pass a real delta. */
+  change?: AuditChange
 }
 
 async function resolveEntityRefs(partial: AuditInput): Promise<{
@@ -390,6 +421,7 @@ async function resolveEntityRefs(partial: AuditInput): Promise<{
 
 async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' | 'intent_id'> | object = {}): Promise<AuditEvent> {
   const refs = await resolveEntityRefs(partial)
+  const withRefs = { ...partial, ...refs }
   return {
     id: partial.id ?? randomBytes(8).toString('hex'),
     ts: partial.ts ?? new Date().toISOString(),
@@ -400,6 +432,7 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
     status: partial.status,
     action: partial.action,
     schema_version: partial.schema_version ?? CURRENT_AUDIT_SCHEMA_VERSION,
+    resource_uri: auditResourceUri(withRefs),
     ...refs,
     ...(partial.message ? { message: partial.message } : {}),
     ...(partial.reason
@@ -417,6 +450,7 @@ async function buildEvent(partial: AuditInput, extra: Pick<AuditEvent, 'phase' |
       ? { detail: partial.detail }
       : {}),
     ...(partial.hashed_ip ? { hashed_ip: partial.hashed_ip } : {}),
+    change: partial.change ?? EMPTY_AUDIT_CHANGE,
     ...extra,
   }
 }
@@ -594,6 +628,12 @@ export async function queryAudit(q: AuditQuery): Promise<{
     MAX_LIMIT,
   )
   let events = await filterEvents(q)
+  if (q.orphansOnly) {
+    events = events.filter((e) => e.phase === 'intent')
+  }
+  // Surface unpaired Intents (aged first) at the top of each result set for auditors.
+  const { prioritizeOrphanIntents } = await import('./auditOrphanAlert.js')
+  events = prioritizeOrphanIntents(events, currentClock.now())
 
   if (q.cursor) {
     const idx = events.findIndex((e) => e.id === q.cursor)
@@ -701,6 +741,7 @@ export const AUDIT_CSV_COLUMNS = [
   'via',
   'action',
   'action_label',
+  'resource_uri',
   'namespace',
   'repo',
   'session_id',
@@ -744,6 +785,7 @@ export function auditEventsToCsv(events: AuditEvent[]): string {
         e.via,
         e.action,
         auditActionLabel(e.action),
+        e.resource_uri,
         e.namespace,
         e.repo,
         eventSessionIds(e).join(';'),

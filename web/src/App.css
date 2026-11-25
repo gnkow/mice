@@ -1697,6 +1697,33 @@ code {
   border-bottom-color: var(--accent);
 }
 
+.audit-visibility-tab-carousel {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.audit-visibility-tab-strip {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+
+.audit-visibility-tab-strip button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.audit-visibility-tab-nav {
+  flex: 0 0 auto;
+  align-self: center;
+  padding-inline: 0.35rem;
+}
+
 .tab-bar a {
   appearance: none;
   border: none;
@@ -7572,6 +7599,15 @@ p.ok {
 
 .audit-table td {
   vertical-align: top;
+}
+
+.audit-table tr.audit-row-orphan {
+  background: color-mix(in srgb, var(--warn, #b45309) 8%, transparent);
+}
+
+.audit-table tr.audit-row-orphan-aged {
+  background: color-mix(in srgb, var(--warn, #b45309) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--warn, #b45309);
 }
 
 .branch-pill {

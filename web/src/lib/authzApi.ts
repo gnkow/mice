@@ -1100,4 +1100,37 @@ export function recordRestoreTestPass() {
   })
 }
 
+// ── Audit visibility (Auditor list/export) ───────────────────────────────────
+
+export type AuditVisibilityAction = {
+  value: string
+  label: string
+  group: string
+  visible: boolean
+}
+
+export type AuditVisibilityResponse = {
+  actions: AuditVisibilityAction[]
+  updatedAt: string | null
+  usingDefaults?: boolean
+}
+
+export function fetchAuditVisibility(signal?: AbortSignal) {
+  return authzFetch<AuditVisibilityResponse>('/auth/admin/audit-visibility', { signal })
+}
+
+export function saveAuditVisibility(hiddenActions: string[]) {
+  return authzFetch<AuditVisibilityResponse>('/auth/admin/audit-visibility', {
+    method: 'PUT',
+    body: JSON.stringify({ hiddenActions }),
+  })
+}
+
+export function resetAuditVisibilityDefaults() {
+  return authzFetch<AuditVisibilityResponse>('/auth/admin/audit-visibility', {
+    method: 'PUT',
+    body: JSON.stringify({ reset: true }),
+  })
+}
+
 export type { AuthUser }

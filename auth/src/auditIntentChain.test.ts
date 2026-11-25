@@ -14,6 +14,8 @@ const base = {
   path: '/auth/x',
   status: 0,
   action: 'bff.mutation',
+  resource_uri: 'action:bff.mutation',
+  schema_version: 2,
 }
 
 describe('carryFromIntent', () => {

@@ -901,6 +901,25 @@ export const auditOutages = pgTable('audit_outages', {
 })
 
 /**
+ * Singleton: actions hidden from Auditor list/export views.
+ * Events are still written to the ledger; only Auditor display is filtered.
+ */
+export const auditVisibility = pgTable('audit_visibility', {
+  id: text('id').primaryKey(),
+  /** Exact action names not shown to Auditors. Empty = show all. */
+  hiddenActions: jsonb('hidden_actions').$type<string[]>().notNull(),
+  updatedAt: ts('updated_at').notNull(),
+})
+
+/** Singleton: GxP restore-test gate (not an audit event — setup/ops state). */
+export const restoreTestStatusTable = pgTable('restore_test_status', {
+  id: text('id').primaryKey(),
+  passed: boolean('passed').notNull(),
+  passedAt: ts('passed_at'),
+  recordedBy: text('recorded_by'),
+})
+
+/**
  * Derived Postgres index over immudb audit events for filtered reads (not evidence).
  * Rebuildable from the ledger; verify schedule detects drift.
  */

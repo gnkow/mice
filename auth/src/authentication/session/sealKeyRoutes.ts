@@ -66,6 +66,7 @@ export function registerSealKeyRoutes(app: Hono): void {
                 message: event.message,
                 detail: event.detail,
                 status: event.status,
+                change: event.change,
               })
             },
           },
@@ -111,6 +112,7 @@ export function registerSealKeyRoutes(app: Hono): void {
                 message: event.message,
                 detail: event.detail,
                 status: event.status,
+                change: event.change,
               })
             },
           },

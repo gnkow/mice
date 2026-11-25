@@ -1,7 +1,9 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import { instancePermissions } from '../../authzInstanceStore.js'
 import { membershipRefs } from '../../authzRepository.js'
 import { currentClock } from '../../clock.js'
+import { requireAuditChange, type AuditChange } from '../../auditChange.js'
+import { captureBefore } from '../../auditCapture.js'
 import { getDb } from '../../db/database.js'
 import { principalDisabledPeriods, principals } from '../../db/schema.js'
 import { isSuspended } from './miceSuspension.js'
@@ -116,6 +118,25 @@ export async function recordIdpDisabled(principal: PrincipalId & { name?: string
   })
 }
 
+/** Latest disabled period of a Principal as audit state (empty when it was never IdP-disabled). */
+export async function disabledPeriodAuditState(principal: PrincipalId): Promise<Record<string, unknown>> {
+  const row = await principalRow(principal)
+  if (!row) return {}
+  const [period] = await getDb()
+    .select()
+    .from(principalDisabledPeriods)
+    .where(eq(principalDisabledPeriods.principalId, row.id))
+    .orderBy(desc(principalDisabledPeriods.id))
+    .limit(1)
+  if (!period) return {}
+  return {
+    disabled_at: period.disabledAt.toISOString(),
+    re_enabled_at: period.reEnabledAt?.toISOString() ?? null,
+    restoration_type: period.restorationType ?? null,
+    confirmed_by: period.confirmedBy ?? null,
+  }
+}
+
 /** Open disabled periods. Confirmation is due only after the IdP enables the user past the window. */
 export async function listReenablePeriods(): Promise<ReenablePeriod[]> {
   const rows = await getDb()
@@ -146,6 +167,8 @@ export async function listReenablePeriods(): Promise<ReenablePeriod[]> {
 
 export type RestorationAudit = {
   message: string
+  /** Disabled-period delta; the caller of {@link confirmReenable} computes its own. */
+  change?: AuditChange
   detail: {
     principal: string
     disabledDurationMs: number
@@ -173,7 +196,14 @@ export async function considerReenable(
   if (!row) return 'allow'
   const principal = `${row.iss}|${row.sub}`
   const { grants, memberships } = await remainingGrants(user)
+  const reEnabledAt = new Date(currentClock.now())
+  const periodBefore = await captureBefore(() => disabledPeriodAuditState(user))
   const auditEventId = await audit({
+    change: requireAuditChange(periodBefore, {
+      ...periodBefore,
+      re_enabled_at: reEnabledAt.toISOString(),
+      restoration_type: 'automatic',
+    }),
     message: `Restored ${principal}`,
     detail: {
       principal,
@@ -184,7 +214,7 @@ export async function considerReenable(
     },
   })
   await closePeriod(decision.period.id, {
-    reEnabledAt: new Date(currentClock.now()),
+    reEnabledAt,
     restorationType: 'automatic',
     auditEventId,
   })

@@ -2,7 +2,6 @@ import { serve } from '@hono/node-server'
 import { createApp } from './app.js'
 import { closeMainDatabase, openMainDatabase } from './db/database.js'
 import { appendAudit, initAudit, listAllAuditEvents, setAuditObserver, startAuditVerifySchedule } from './audit.js'
-import { runOrphanAgingAlert } from './auditOrphanAlert.js'
 import { acquireDataDirLock } from './dataDirLock.js'
 import { assertIdpAssurance, assertProductionStartup, setAuthenticationObserver, startAccessReviewAlertSchedule, startClockDriftSchedule, startDirectorySyncSchedule, startIdpDriftSchedule, startSealKeyRotationSchedule } from './authentication/index.js'
 import { env, oidcConfigured } from './env.js'
@@ -39,7 +38,7 @@ export async function boot(): Promise<void> {
   if (!verification.ok) console.error('[mice-auth] audit verification FAILED at boot', verification.firstBreak)
   startAuditVerifySchedule({
     afterTick: async () => {
-      await runOrphanAgingAlert({ loadEvents: listAllAuditEvents })
+      // Orphan Intents are surfaced in the audit UI (no admin push notifications — SoD).
       const { readAuditAfterWithSeq } = await import('./audit.js')
       const { replayAuditQueryIndex, verifyAuditQueryIndex } = await import('./auditQueryIndex.js')
       await replayAuditQueryIndex(readAuditAfterWithSeq).catch((err) =>
@@ -83,6 +82,7 @@ export async function boot(): Promise<void> {
         action: event.action,
         message: event.message,
         detail: event.detail,
+        change: event.change,
       })
     },
   })

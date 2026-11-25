@@ -1,3 +1,4 @@
+import { EMPTY_AUDIT_CHANGE } from './auditChange.js'
 import { appendAudit } from './audit.js'
 import { textLinesToPdf } from './auditExport.js'
 import { signatureStore } from './authentication/signing/signatureStore.js'
@@ -93,6 +94,7 @@ export async function buildSignedRecordReport(repository: string): Promise<Signe
     path: '/auth/repos/signed-record-report',
     status: 200,
     action: 'system.signed_record_report',
+    change: EMPTY_AUDIT_CHANGE,
     message: `Signed-record report generated for ${repository}`,
     detail: { repository, recordCount: records.length },
   })

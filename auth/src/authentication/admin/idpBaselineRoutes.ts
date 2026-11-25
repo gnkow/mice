@@ -9,6 +9,7 @@ import {
 } from './idpBaselineCheck.js'
 import { env } from '../../env.js'
 import type { AuditDep } from '../../routeDeps.js'
+import { requireAuditChange } from '../../auditChange.js'
 
 /**
  * IdP Baseline Validation Routes (Ticket 14)
@@ -55,6 +56,12 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
 
       await audit(c, user, 'session', {
         action: 'admin.idp_baseline_check',
+        change: requireAuditChange(null, {
+          check_id: check.id,
+          checked_by: check.checkedBy,
+          mfa_available: check.mfaAvailable,
+          error: check.error,
+        }),
         message: 'IdP baseline check performed',
         detail: { checkId: check.id, issuer, mfaAvailable: check.mfaAvailable },
       })

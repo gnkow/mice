@@ -1,4 +1,4 @@
-import { actorFromUser, appendOutcomeFor, type AuditVia } from './audit.js'
+import { actorFromUser, appendOutcomeFor, EMPTY_AUDIT_CHANGE, type AuditVia } from './audit.js'
 import { callerVia, type SessionUser } from './authentication/index.js'
 import type { AuditFn } from './routeDeps.js'
 
@@ -11,6 +11,7 @@ export const auditMutation: AuditFn = async (c, user, via: AuditVia, fields) => 
     path: c.req.path,
     status: fields.status ?? 200,
     action: fields.action,
+    change: fields.change ?? EMPTY_AUDIT_CHANGE,
     ...(fields.message ? { message: fields.message } : {}),
     ...(fields.namespace ? { namespace: fields.namespace } : {}),
     ...(fields.repo ? { repo: fields.repo } : {}),

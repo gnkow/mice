@@ -18,6 +18,22 @@ import { confirmPrivilegedGroups } from '../../authz.js'
 import { env } from '../../env.js'
 import { adminRoleGate } from '../../decisionHttp.js'
 import type { AuditDep } from '../../routeDeps.js'
+import { EMPTY_AUDIT_CHANGE, requireAuditChange } from '../../auditChange.js'
+import type { AccessReviewReport } from './accessReview.js'
+
+/** Report state for audit deltas; `signed_*` stay null until the reviewer signs. */
+function accessReviewSnapshot(report: AccessReviewReport): Record<string, unknown> {
+  return {
+    report_id: report.reportId,
+    quarter: report.quarter,
+    generated_at: report.generatedAt,
+    principal_count: report.principals.length,
+    signed_by: report.reviewerSignature
+      ? `${report.reviewerSignature.principal.iss}|${report.reviewerSignature.principal.sub}`
+      : null,
+    signature_hash: report.reviewerSignature?.hash ?? null,
+  }
+}
 
 /**
  * Admin endpoints for quarterly access review reports.
@@ -36,12 +52,14 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
     if (result.outcome === 'read') {
       await audit({
         action: 'access-review.read',
+        change: EMPTY_AUDIT_CHANGE,
         message: `Opened access review report for ${quarter}`,
         detail: { reportId: result.report.reportId, quarter },
       })
     } else {
       await audit({
         action: 'access-review.generate',
+        change: requireAuditChange(null, accessReviewSnapshot(result.report)),
         message: `Generated access review report for ${quarter}`,
         detail: { reportId: result.report.reportId, principalCount: result.report.principals.length },
       })
@@ -65,6 +83,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
     if (!report) return c.json({ error: 'Access review report not found' }, 404)
     await audit({
       action: 'access-review.read',
+      change: EMPTY_AUDIT_CHANGE,
       message: `Opened access review report for ${quarter}`,
       detail: { reportId: report.reportId, quarter },
     })
@@ -130,6 +149,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
     await saveSignedAccessReview(quarter, sealed.report)
     await audit({
       action: 'access-review.sign',
+      change: requireAuditChange(accessReviewSnapshot(stored), accessReviewSnapshot(sealed.report)),
       message: `Signed access review ${sealed.report.reportId}`,
       detail: { reportId: sealed.report.reportId, reviewer: `${user.iss}|${user.sub}` },
     })

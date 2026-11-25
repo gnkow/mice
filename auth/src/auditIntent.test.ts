@@ -58,9 +58,30 @@ beforeEach(async () => {
   upstreamCalls = []
   auditSnapshotAtUpstream = []
   restoreUpstream = setUpstreamFetch(async (url, init) => {
-    upstreamCalls.push(`${init?.method} ${String(url)}`)
-    if (init?.method === 'PUT') auditSnapshotAtUpstream = await rows()
-    return new Response('{"status":"ok"}', { status: 200, headers: { 'content-type': 'application/json', 'x-mice-reason': 'Routine test change', 'x-mice-change-control-id': 'CC-2026-114' } })
+    const method = init?.method ?? 'GET'
+    const pathname = new URL(String(url)).pathname
+    if (method === 'GET' && /\/branches\/[^/]+$/.test(pathname)) {
+      return new Response(JSON.stringify({ branch: { commit_id: 'tip-before' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (method === 'GET' && pathname.includes('/meta/')) {
+      return new Response(JSON.stringify({ status: 'error' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    upstreamCalls.push(`${method} ${String(url)}`)
+    if (method === 'PUT') auditSnapshotAtUpstream = await rows()
+    return new Response(JSON.stringify({ status: 'ok', commit: { id: 'tip-after' } }), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'x-mice-reason': 'Routine test change',
+        'x-mice-change-control-id': 'CC-2026-114',
+      },
+    })
   })
 })
 afterEach(() => restoreUpstream())
@@ -107,7 +128,24 @@ describe('intent-first proxied mutations', () => {
 
   it('records the upstream failure status in the outcome', async () => {
     restoreUpstream()
-    restoreUpstream = setUpstreamFetch(async () => new Response('{}', { status: 409 }))
+    restoreUpstream = setUpstreamFetch(async (url, init) => {
+      const method = init?.method ?? 'GET'
+      const pathname = new URL(String(url)).pathname
+      // Before-state probes must succeed so fail-closed does not mask the upstream write status.
+      if (method === 'GET' && /\/branches\/[^/]+$/.test(pathname)) {
+        return new Response(JSON.stringify({ branch: { commit_id: 'tip-before' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (method === 'GET' && pathname.includes('/meta/')) {
+        return new Response(JSON.stringify({ status: 'error' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response('{}', { status: 409 })
+    })
     const res = await put()
     assert.equal(res.status, 409)
     assert.equal((await mutationRows()).find((r) => r.phase === 'outcome')!.status, 409)

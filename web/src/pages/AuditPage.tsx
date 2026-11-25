@@ -15,9 +15,11 @@ import { useAsync } from '../hooks/useAsync'
 import {
   actionLabel,
   eventResources,
+  resourceUriHref,
   AuditDeniedError,
   exportAudit,
   fetchAuditFacets,
+  agedOrphanIntentEvents,
   loadAudit,
   unpairedIntentEvents,
   verifyAuditChain,
@@ -124,21 +126,13 @@ function suggestFromEvents(events: AuditEvent[]): {
   }
 }
 
-function ResourceCell({ event }: { event: AuditEvent }) {
-  const r = eventResources(event)
-  const items: [string, string][] = []
-  if (r.sessionId) items.push(['Session', r.sessionId])
-  if (r.workspaceId) items.push(['Workspace', r.workspaceId])
-  for (const j of r.jobIds.slice(0, 3)) items.push(['Job', j])
-  if (r.jobIds.length > 3) items.push(['Jobs', `+${r.jobIds.length - 3} more`])
-  if (items.length === 0) return <span className="muted">—</span>
+function ResourceUriCell({ event }: { event: AuditEvent }) {
+  const uri = event.resource_uri
+  const href = resourceUriHref(uri)
+  const body = <span className="mono small">{uri}</span>
   return (
-    <div className="small">
-      {items.map(([k, v]) => (
-        <div key={`${k}:${v}`} title={v}>
-          <span className="muted">{k}</span> <span className="mono">{shortId(v)}</span>
-        </div>
-      ))}
+    <div data-testid="audit-resource" title={uri}>
+      {href ? <Link to={href}>{body}</Link> : body}
     </div>
   )
 }
@@ -160,33 +154,42 @@ function ChangeControlCell({ event }: { event: AuditEvent }) {
   )
 }
 
-function DatasetCell({ event }: { event: AuditEvent }) {
-  const { base, head } = event.dataset ?? {}
-  if (!base && !head) return <span className="muted">—</span>
-  return (
-    <div className="small" data-testid="audit-dataset">
-      {base ? (
-        <div title={base}>
-          <span className="muted">Base</span> <span className="mono">{shortId(base)}</span>
-        </div>
-      ) : null}
-      {head ? (
-        <div title={head}>
-          <span className="muted">Head</span> <span className="mono">{shortId(head)}</span>
-        </div>
-      ) : null}
-    </div>
-  )
+function formatChangeSide(side: Record<string, unknown> | null): string {
+  if (side === null) return 'null'
+  try {
+    return JSON.stringify(side)
+  } catch {
+    return String(side)
+  }
 }
 
-function RepoCell({ event }: { event: AuditEvent }) {
-  if (!event.namespace || !event.repo) {
-    return <span className="muted">—</span>
+/** First-class `change.before → change.after`; empty for non-mutations. */
+function changeSummary(event: AuditEvent): { text: string; title?: string; empty: boolean } {
+  const change = event.change
+  const empty =
+    !change ||
+    (change.before === null && change.after === null) ||
+    (change.before !== null &&
+      change.after !== null &&
+      Object.keys(change.before).length === 0 &&
+      Object.keys(change.after).length === 0)
+  if (empty) {
+    return { text: '—', title: 'No change recorded', empty: true }
   }
+  const text = `${formatChangeSide(change.before)} → ${formatChangeSide(change.after)}`
+  return { text, title: text, empty: false }
+}
+
+function ChangeCell({ event }: { event: AuditEvent }) {
+  const change = changeSummary(event)
   return (
-    <Link to={`/n/${encodeURIComponent(event.namespace)}/r/${encodeURIComponent(event.repo)}`}>
-      {event.namespace}/{event.repo}
-    </Link>
+    <div className="small" data-testid="audit-change" title={change.title}>
+      {change.empty ? (
+        <span className="muted">{change.text}</span>
+      ) : (
+        <span className="mono">{change.text}</span>
+      )}
+    </div>
   )
 }
 
@@ -208,6 +211,7 @@ export function AuditPage() {
       sessionId: params.get('session_id') || undefined,
       workspaceId: params.get('workspace_id') || undefined,
       jobId: params.get('job_id') || undefined,
+      orphansOnly: params.get('orphans') === '1' || params.get('orphans') === 'true',
     }),
     [params],
   )
@@ -222,6 +226,7 @@ export function AuditPage() {
       applied.sessionId,
       applied.workspaceId,
       applied.jobId,
+      applied.orphansOnly,
     ],
   )
   const facetState = useAsync((signal) => fetchAuditFacets({}, signal), [])
@@ -248,6 +253,7 @@ export function AuditPage() {
       const v = draft[k].trim()
       if (v) next.set(k, v)
     }
+    if (applied.orphansOnly) next.set('orphans', '1')
     setParams(next, { replace: true })
   }
 
@@ -256,8 +262,19 @@ export function AuditPage() {
     setParams({}, { replace: true })
   }
 
+  function toggleOrphansOnly() {
+    const next = new URLSearchParams(params)
+    if (applied.orphansOnly) next.delete('orphans')
+    else next.set('orphans', '1')
+    setParams(next, { replace: true })
+  }
+
   const denied = state.kind === 'ok' && state.data.kind === 'denied' ? state.data.reason : null
   const events = state.kind === 'ok' && state.data.kind === 'ok' ? state.data.data.events : null
+  const orphanAgingSec =
+    (state.kind === 'ok' && state.data.kind === 'ok' ? state.data.data.orphan_aging_sec : undefined) ??
+    facets?.orphan_aging_sec ??
+    15 * 60
   const eventSuggest = useMemo(() => suggestFromEvents(events ?? []), [events])
   const actorOptions = useMemo(
     () => mergeSuggestOptions(actorSuggestOptions(facets?.actors ?? []), eventSuggest.actors),
@@ -284,6 +301,7 @@ export function AuditPage() {
     [facets, eventSuggest],
   )
   const orphanIntents = useMemo(() => unpairedIntentEvents(events ?? []), [events])
+  const agedOrphans = useMemo(() => agedOrphanIntentEvents(events ?? []), [events])
   const revoked = useMemo(() => revokedSignatureIds(events ?? []), [events])
 
   async function onExport(format: AuditExportFormat) {
@@ -323,8 +341,9 @@ export function AuditPage() {
         <div>
           <h1>Audit</h1>
           <p className="lede">
-            Append-only log of mutations through the auth BFF (who / what / when
-            / which repo). Signature rows open IdP MFA evidence for auditors.
+            Who changed what, when, and on which resource. Entries cannot be
+            edited or deleted. Open a signature row to review sign-in and MFA
+            evidence.
           </p>
         </div>
         <div className="btn-row audit-actions" role="group" aria-label="Audit actions">
@@ -391,9 +410,20 @@ export function AuditPage() {
       )}
       {orphanIntents.length > 0 && (
         <p className="flash flash-warn" role="status" aria-atomic="true" data-testid="audit-orphan-summary">
-          {orphanIntents.length === 1
-            ? '1 Intent without Outcome is visible in this page — investigate before assuming the mutation finished.'
-            : `${orphanIntents.length} Intents without Outcome are visible in this page — investigate before assuming those mutations finished.`}
+          {agedOrphans.length > 0
+            ? `${agedOrphans.length} aged Intent${agedOrphans.length === 1 ? '' : 's'} without Outcome (older than ${Math.round(orphanAgingSec / 60)} min) — listed first for investigation.`
+            : orphanIntents.length === 1
+              ? '1 Intent without Outcome is visible — investigate before assuming the mutation finished.'
+              : `${orphanIntents.length} Intents without Outcome are visible — investigate before assuming those mutations finished.`}
+          {' '}
+          <button
+            type="button"
+            className="btn ghost small"
+            data-testid="audit-orphans-filter"
+            onClick={toggleOrphansOnly}
+          >
+            {applied.orphansOnly ? 'Show all events' : 'Show unpaired only'}
+          </button>
         </p>
       )}
 
@@ -497,15 +527,11 @@ export function AuditPage() {
                 <tr>
                   <th>When</th>
                   <th>Actor</th>
-                  <th>Via</th>
                   <th>Action</th>
-                  <th>Repo</th>
                   <th>Resource</th>
-                  <th>Status</th>
                   <th>Reason</th>
                   <th>Change control</th>
-                  <th>Dataset</th>
-                  <th>Message</th>
+                  <th>Change</th>
                 </tr>
               </thead>
               <tbody>
@@ -514,34 +540,41 @@ export function AuditPage() {
                     key={ev.id}
                     data-audit-id={ev.id}
                     data-audit-phase={ev.phase ?? ''}
-                    data-testid={ev.phase === 'intent' ? 'audit-orphan-intent' : undefined}
+                    data-orphan-aged={ev.orphan_aged ? 'true' : undefined}
+                    className={
+                      ev.orphan_aged
+                        ? 'audit-row-orphan audit-row-orphan-aged'
+                        : ev.phase === 'intent' || ev.orphan
+                          ? 'audit-row-orphan'
+                          : undefined
+                    }
+                    data-testid={ev.phase === 'intent' || ev.orphan ? 'audit-orphan-intent' : undefined}
                   >
                     <td className="mono small">{formatTs(ev.ts)}</td>
                     <td>
                       <div>{ev.actor.name}</div>
                       <div className="muted small">{ev.actor.email}</div>
                     </td>
-                    <td className="mono small">{ev.via}</td>
                     <td title={ev.action}>
                       <div>{actionLabel(ev)}</div>
                       <div className="muted small mono">{ev.action}</div>
-                      {ev.phase === 'intent' ? (
+                      {ev.phase === 'intent' || ev.orphan ? (
                         <span
-                          className="ns-tag ns-tag-warn"
-                          title="This Intent has no Outcome yet"
+                          className={`ns-tag ${ev.orphan_aged ? 'ns-tag-warn' : 'ns-tag-muted'}`}
+                          title={
+                            ev.orphan_aged
+                              ? `Unpaired Intent older than ${Math.round(orphanAgingSec / 60)} minutes`
+                              : 'This Intent has no Outcome yet'
+                          }
                           data-testid="audit-orphan-badge"
                         >
-                          No Outcome
+                          {ev.orphan_aged ? 'Aged orphan' : 'No Outcome'}
                         </span>
                       ) : null}
                     </td>
                     <td>
-                      <RepoCell event={ev} />
+                      <ResourceUriCell event={ev} />
                     </td>
-                    <td>
-                      <ResourceCell event={ev} />
-                    </td>
-                    <td className="mono small">{ev.status}</td>
                     <td className="small">
                       {ev.reason ? (
                         <>
@@ -558,16 +591,7 @@ export function AuditPage() {
                       <ChangeControlCell event={ev} />
                     </td>
                     <td>
-                      <DatasetCell event={ev} />
-                    </td>
-                    <td className="small">
-                      {ev.message || (
-                        <span className="muted">
-                          {typeof ev.detail?.path === 'string'
-                            ? ev.detail.path
-                            : '—'}
-                        </span>
-                      )}
+                      <ChangeCell event={ev} />
                       <div className="audit-signature-actions btn-row">
                         <SignatureEvidence event={ev} />
                         <SignatureRevokedTag

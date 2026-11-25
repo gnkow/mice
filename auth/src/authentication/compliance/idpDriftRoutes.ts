@@ -16,6 +16,26 @@ import {
   type IdpDriftFetchDeps,
 } from '../compliance/idpDriftDetection.js'
 import { appendAudit } from '../../audit.js'
+import { requireAuditChange } from '../../auditChange.js'
+import { captureBefore } from '../../auditCapture.js'
+import { env } from '../../env.js'
+
+/** Baseline config as audit state (identity/timestamps excluded so re-establishing the same config is a no-op). */
+function baselineSnapshot(config: {
+  mfaClaimsAvailable: unknown
+  requiredScopes: unknown
+  signatureAlgorithm: unknown
+  groupClaimFormat: unknown
+  issuer: unknown
+}): Record<string, unknown> {
+  return {
+    mfa_claims_available: config.mfaClaimsAvailable,
+    required_scopes: config.requiredScopes,
+    signature_algorithm: config.signatureAlgorithm,
+    group_claim_format: config.groupClaimFormat,
+    issuer: config.issuer,
+  }
+}
 
 const requireInstanceAdmin = {
   gate: async (user: { sub: string; iss: string }) =>
@@ -116,6 +136,13 @@ export function registerIdpDriftRoutes(app: Hono, deps: IdpDriftRouteDeps = {}):
         path: '/auth/admin/idp-drift/check',
         status: 200,
         action: 'idp_drift.check_performed',
+        change: requireAuditChange(null, {
+          report_id: report.id,
+          has_critical_drift: report.hasCriticalDrift,
+          has_non_critical_drift: report.hasNonCriticalDrift,
+          critical_drifts: report.criticalDrifts,
+          non_critical_drifts: report.nonCriticalDrifts,
+        }),
         message: 'IdP drift check performed',
         detail: {
           reportId: report.id,
@@ -170,6 +197,16 @@ export function registerIdpDriftRoutes(app: Hono, deps: IdpDriftRouteDeps = {}):
       }, 400)
     }
 
+    const requested = baselineSnapshot({
+      mfaClaimsAvailable,
+      requiredScopes,
+      signatureAlgorithm,
+      groupClaimFormat,
+      issuer: env.oidcIssuer,
+    })
+    const current = await captureBefore(() => getCurrentBaseline())
+    const baselineChange = requireAuditChange(current ? baselineSnapshot(current) : null, requested)
+
     try {
       const baseline = await establishBaseline(user.email, {
         mfaClaimsAvailable,
@@ -185,6 +222,7 @@ export function registerIdpDriftRoutes(app: Hono, deps: IdpDriftRouteDeps = {}):
         path: '/auth/admin/idp-drift/baseline',
         status: 200,
         action: 'idp_baseline.established',
+        change: baselineChange,
         message: 'New IdP baseline established',
         detail: {
           baselineId: baseline.id,

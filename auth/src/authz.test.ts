@@ -1084,17 +1084,20 @@ await describe('audit ACL and path classification', async () => {
       ['PUT', '/api/repos/n/r/workspaces/w1/files/a.txt', 'workspace.file.write'],
       ['DELETE', '/api/repos/n/r/workspaces/w1/files/a.txt', 'workspace.file.delete'],
       ['POST', '/api/repos/n/r/workspaces/w1/merge/main', 'workspace.merge'],
-      ['PUT', '/api/repos/n/r/workspaces/w1/other', 'workspace.other'],
     ]
     for (const [method, path, action] of cases) {
       const c = classifyPath(method, path)
       assert.equal(c.action, action, `${method} ${path}`)
+      assert.equal(c.recognized, true, `${method} ${path}`)
       assert.equal(c.namespace, 'n')
       assert.equal(c.repo, 'r')
       // Authz keys must be unchanged by the finer audit names.
       assert.equal(requiredRepoRoleForRequest(method, path), 'write')
       assert.equal(finePermissionForAction(method, c.action), 'workspaces')
     }
+    const mystery = classifyPath('PUT', '/api/repos/n/r/workspaces/w1/other')
+    assert.equal(mystery.recognized, false)
+    assert.equal(mystery.action, 'unclassified')
     assert.equal(classifyPath('POST', '/api/repos/n/r/workspaces/w1/commit/main').detail?.workspace_id, 'w1')
     assert.equal(
       requiredRepoRoleForRequest('DELETE', '/api/repos/n/r/file/main/a'),

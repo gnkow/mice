@@ -277,17 +277,32 @@ export async function fetchFileEntrySnapshot(
   filePath: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<FileEntrySnapshot | null> {
+  return (await readFileEntrySnapshot(namespace, repo, revision, filePath, fetchImpl)).snapshot
+}
+
+/**
+ * Like {@link fetchFileEntrySnapshot}, but tells "no such entry" (404) apart from "oxen could not
+ * answer" so an audit change can fail closed instead of recording a guessed before-state.
+ */
+export async function readFileEntrySnapshot(
+  namespace: string,
+  repo: string,
+  revision: string,
+  filePath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ snapshot: FileEntrySnapshot | null; unavailable: boolean }> {
   const resource = [revision, ...filePath.split('/').filter(Boolean)]
     .map((p) => encodeURIComponent(p))
     .join('/')
   const url = `${env.oxenUpstream}/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/meta/${resource}`
   try {
     const res = await fetchImpl(url)
-    if (!res.ok) return null
+    if (res.status === 404) return { snapshot: null, unavailable: false }
+    if (!res.ok) return { snapshot: null, unavailable: true }
     const json: unknown = await res.json()
-    return parseFileEntrySnapshot(json)
+    return { snapshot: parseFileEntrySnapshot(json), unavailable: false }
   } catch {
-    return null
+    return { snapshot: null, unavailable: true }
   }
 }
 

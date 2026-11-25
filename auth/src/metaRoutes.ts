@@ -1,6 +1,7 @@
 import type { Context, Hono } from 'hono'
 import { createHash } from 'node:crypto'
 import { actorFromUser } from './audit.js'
+import { NoChangeError, requireAuditChange } from './auditChange.js'
 import { getNamespace } from './authzNamespaceStore.js'
 import { readRepository, readRepositoryById } from './repositoryStore.js'
 import { env } from './env.js'
@@ -35,6 +36,7 @@ import {
 } from './metaTypes.js'
 import { type GuardArgs, guarded, type SessionUser } from './authentication/index.js'
 import { getSessionRecord } from './sessionsStore.js'
+import type { AuditChange } from './auditChange.js'
 
 export const lookup: MetaAuthzDeps = {
   sessionOwner: async (id) => {
@@ -210,15 +212,26 @@ function parseSearch(c: Context): MetaSearchQuery {
   }
 }
 
+/** Audit snapshot of an explicit metadata record: tags plus one `label.<key>` field per label. */
+function metaSnapshot(record: MetaRecord | null): Record<string, unknown> | null {
+  if (!record) return null
+  return {
+    tags: [...record.tags].sort(),
+    ...Object.fromEntries(Object.entries(record.labels).map(([k, v]) => [`label.${k}`, v])),
+  }
+}
+
 async function metaAudit(
   audit: GuardArgs['audit'],
   action: string,
   ref: EntityRef | null,
   message: string,
   detail: Record<string, unknown>,
+  change: AuditChange,
 ) {
   await audit({
     action,
+    change,
     ...(ref?.namespace ? { namespace: ref.namespace } : {}),
     ...(ref?.repo ? { repo: ref.repo } : {}),
     message,
@@ -292,7 +305,7 @@ export function registerMetaRoutes(app: Hono) {
       entity_id: ref.id,
       revision: after?.revision ?? next.revision,
       changed: diff(before, after),
-    })
+    }, requireAuditChange(metaSnapshot(before), metaSnapshot(after)))
     return c.json({ ok: true, own: after, revision: await getRevision(ref) })
   })
   app.put('/auth/meta', write)
@@ -310,15 +323,15 @@ export function registerMetaRoutes(app: Hono) {
     const revision = rawRevision === undefined ? undefined : Number(rawRevision)
     if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 0)) throw new MetaError(400, 'ifRevision must be a nonnegative integer')
     const { before } = await deleteOwnRecord(ref, actorFromUser(user), revision)
-    if (before) {
-      await metaAudit(audit, 'meta.delete', ref, `Removed metadata from ${ref.type} ${ref.id}`, {
-        entity_type: ref.type,
-        entity_id: ref.id,
-        revision: await getRevision(ref),
-        changed: diff(before, null),
-      })
-    }
-    return c.json({ ok: true, removed: !!before, revision: await getRevision(ref) })
+    // Nothing to remove is a no-op: refused (400 no_change) and not audited.
+    if (!before) throw new NoChangeError()
+    await metaAudit(audit, 'meta.delete', ref, `Removed metadata from ${ref.type} ${ref.id}`, {
+      entity_type: ref.type,
+      entity_id: ref.id,
+      revision: await getRevision(ref),
+      changed: diff(before, null),
+    }, requireAuditChange(metaSnapshot(before), null))
+    return c.json({ ok: true, removed: true, revision: await getRevision(ref) })
   }))
 
   app.get('/auth/meta/history', guarded(readPolicy, async ({ c, user }) => {

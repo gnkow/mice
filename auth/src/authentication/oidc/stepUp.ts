@@ -2,6 +2,7 @@ import type { Context, Hono } from 'hono'
 import { deleteCookie, setCookie } from 'hono/cookie'
 import { actorFromUser, appendAudit } from '../../audit.js'
 import { env } from '../../env.js'
+import { auditChange, EMPTY_AUDIT_CHANGE } from '../../auditChange.js'
 import { PKCE_COOKIE, startLogin, type LoginResult } from './loginFlow.js'
 import { getSession, setSessionCookie, type SessionUser } from '../session/session.js'
 
@@ -192,6 +193,7 @@ export async function handleReauthCallback(c: Context, result: LoginResult): Pro
         path: '/auth/callback',
         status: decision.status,
         action: 'auth.reauth.failed',
+        change: EMPTY_AUDIT_CHANGE,
         message: 'Step-up re-authentication failed or was cancelled',
         detail: { reason: decision.reason },
       })
@@ -202,6 +204,7 @@ export async function handleReauthCallback(c: Context, result: LoginResult): Pro
     return c.html(decision.html, decision.status)
   }
   // Keep the original absolute-expiry anchor; only the authentication time and its ID token are refreshed.
+  const authTimeBefore = current!.authTime ?? null
   await setSessionCookie(c, {
     ...current!,
     idToken: decision.idToken,
@@ -215,6 +218,11 @@ export async function handleReauthCallback(c: Context, result: LoginResult): Pro
     path: '/auth/callback',
     status: 200,
     action: 'auth.reauth',
+    // A refresh that lands on the same auth_time is not refused: the user is mid-ceremony.
+    change: auditChange(
+      { auth_time: authTimeBefore },
+      { auth_time: decision.nextAuthTime ?? authTimeBefore },
+    ),
     message: 'Step-up re-authentication succeeded',
   })
   return c.redirect(decision.dest)

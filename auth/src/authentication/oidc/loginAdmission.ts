@@ -8,6 +8,7 @@
 
 import type { Clock } from '../../clock.js'
 import { actorFromUser, appendAudit } from '../../audit.js'
+import { EMPTY_AUDIT_CHANGE } from '../../auditChange.js'
 import type { Directory } from '../directory/directoryTypes.js'
 import { isSuspended } from '../access/miceSuspension.js'
 import { considerReenable, recordIdpDisabled } from '../access/reenable.js'
@@ -113,6 +114,7 @@ export async function admitLoginAfterToken(input: {
       path: '/auth/callback',
       status: nameGate.status,
       action: 'auth.login.failed',
+      change: EMPTY_AUDIT_CHANGE,
       message: `Refused login ${iss}|${user.sub}`,
     })
     return failLogin(nameGate.status, nameGate.error, isReauth, 'empty_name')
@@ -125,6 +127,7 @@ export async function admitLoginAfterToken(input: {
       path: '/auth/callback',
       status: 200,
       action: 'auth.reenable.automatic',
+      change: event.change ?? EMPTY_AUDIT_CHANGE,
       message: event.message,
       detail: event.detail,
     })
@@ -142,6 +145,7 @@ export async function admitLoginAfterToken(input: {
       path: '/auth/callback',
       status: 403,
       action: 'auth.suspended',
+      change: EMPTY_AUDIT_CHANGE,
       message: `Refused login ${iss}|${user.sub}`,
     })
     return failLogin(403, 'Suspended', isReauth)

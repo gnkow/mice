@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { Hono } from 'hono'
-import { listInstanceAdmins, listInstancePermissionGrants, setInstancePermissions } from './authzInstanceStore.js'
+import { instancePermissions, listInstanceAdmins, listInstancePermissionGrants, setInstancePermissions } from './authzInstanceStore.js'
 import { matchesBootstrap } from './authzRepository.js'
 import type { InstancePermission } from './authzTypes.js'
 import { canonicalIssuer } from './authentication/session/principal.js'
@@ -11,6 +11,8 @@ import { principals } from './db/schema.js'
 import type { AuditDep } from './routeDeps.js'
 import { checkGroupBindingMode, getGroupBindingStatus } from './groupBindingStatusStore.js'
 import { authzEnforceReport } from './authzAlwaysOn.js'
+import { requireAuditChange } from './auditChange.js'
+import { captureBefore } from './auditCapture.js'
 
 async function adminViews() {
   const admins = await listInstanceAdmins()
@@ -40,6 +42,17 @@ async function adminViews() {
 const adminOnly = instanceGate('instance.admin')
 const target = (b: Record<string, unknown>) => ({ sub: b.sub as string, iss: b.iss as string })
 
+/** Active instance permissions of a principal: one `permission.<name>` key each, plus the grant expiry. */
+async function instancePermissionSnapshot(t: { sub: string; iss: string }): Promise<Record<string, unknown>> {
+  const perms = await instancePermissions(t)
+  if (perms.length === 0) return {}
+  const grant = (await listInstancePermissionGrants()).find((g) => g.sub === t.sub && g.iss === t.iss)
+  return {
+    ...Object.fromEntries([...perms].sort().map((p) => [`permission.${p}`, true])),
+    expiresAt: grant?.expiresAt ?? null,
+  }
+}
+
 /** Instance settings, instance admins and instance permission grants. */
 export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
   app.get(
@@ -67,6 +80,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
           : typeof body.expiresAt === 'string'
             ? Date.parse(body.expiresAt)
             : null
+      const beforePerms = await captureBefore(() => instancePermissionSnapshot(t))
       const result = await setInstancePermissions(user, t, permissions, expiresAt)
       if (!result.ok) {
         await audit(c, user, 'session', {
@@ -77,8 +91,10 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
         })
         return c.json({ error: result.error }, 403)
       }
+      const afterPerms = await instancePermissionSnapshot(t)
       await audit(c, user, 'session', {
         action: 'instance.permissions.update',
+        change: requireAuditChange(beforePerms, afterPerms),
         message: `Set instance permissions for ${t.sub}`,
         detail: { target: t, permissions, ...(expiresAt != null ? { expiresAt } : {}) },
       })
@@ -99,9 +115,15 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
         body && typeof body === 'object' && Array.isArray((body as { sampleGroups?: unknown }).sampleGroups)
           ? ((body as { sampleGroups: unknown[] }).sampleGroups.filter((g): g is string => typeof g === 'string'))
           : undefined
+      const beforeStatus = await captureBefore(() => getGroupBindingStatus())
       const status = await checkGroupBindingMode(sample)
       await audit(c, user, 'session', {
         action: 'instance.group_binding.check',
+        // The persisted readiness row (mode, message, checkedAt) is what this call mutates.
+        change: requireAuditChange(
+          { mode: beforeStatus.mode, message: beforeStatus.message, checkedAt: beforeStatus.checkedAt },
+          { mode: status.mode, message: status.message, checkedAt: status.checkedAt },
+        ),
         message: status.message,
         detail: { mode: status.mode, warning: status.warning },
       })

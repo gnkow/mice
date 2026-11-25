@@ -13,6 +13,7 @@ const signatureEvent = {
   status: 200,
   action: 'seal_key.rotated',
   action_label: 'Seal key rotated',
+  resource_uri: 'action:seal_key.rotated',
   message: 'Normal seal key rotation completed',
   signature_id: 'sig-auditor-13',
   detail: {

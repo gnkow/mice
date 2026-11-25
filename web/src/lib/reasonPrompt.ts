@@ -256,6 +256,9 @@ export function summarizeMutation(
         return 'Update access review'
       }
       if (parts[2] === 'idp-baseline') return 'Check IdP baseline'
+      if (parts[2] === 'audit-visibility') {
+        return 'Update Auditor audit visibility'
+      }
     }
     if (parts[1] === 'instance') {
       if (parts[2] === 'permissions') return 'Change instance permissions'

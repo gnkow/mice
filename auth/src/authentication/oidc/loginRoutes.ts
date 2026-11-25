@@ -3,6 +3,8 @@ import type { Context, Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { preparePrincipal } from '../../authz.js'
 import { env, oidcConfigured } from '../../env.js'
+import { requireAuditChange } from '../../auditChange.js'
+import { canonicalIssuer } from '../session/principal.js'
 import { recordAuthEvent } from '../audit/authEvents.js'
 import { PKCE_COOKIE, completeLogin, startLogin } from './loginFlow.js'
 import { buildEndSessionUrl } from './oidc.js'
@@ -79,6 +81,10 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
     })
     await auditMutation(c, sessionUser, 'session', {
       action: 'auth.login',
+      change: requireAuditChange(null, {
+        web_session: 'active',
+        principal: `${canonicalIssuer(sessionUser.iss)}|${sessionUser.sub}`,
+      }),
       message: 'Signed in via SSO',
     })
     return c.redirect(result.dest)
@@ -96,6 +102,10 @@ export function registerLoginRoutes(app: Hono, { audit: auditMutation }: AuditDe
       })
       await auditMutation(c, session, 'session', {
         action: 'auth.logout',
+        change: requireAuditChange(
+          { web_session: 'active', principal: `${canonicalIssuer(session.iss)}|${session.sub}` },
+          null,
+        ),
         message: 'Signed out',
       })
     }
