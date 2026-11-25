@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { knownAuditActions } from './auditLabels.js'
+import { defaultAuditorHiddenFromCatalog } from './auditTrailCatalog.js'
 import { getDb } from './db/database.js'
 import { auditVisibility } from './db/schema.js'
 
@@ -22,71 +23,16 @@ export type AuditVisibilityAction = {
 
 /**
  * Actions hidden from Auditors until an admin overrides visibility.
- * Criterion: not needed for a typical GxP data/change investigation.
+ * Derived from {@link defaultAuditorHiddenFromCatalog} (#154 trail policy).
  * Still written to the ledger; Security/admin can unhide any of these.
  */
-export const DEFAULT_AUDITOR_HIDDEN_ACTIONS: readonly string[] = [
-  // Routine auth / session noise
-  'auth.login',
-  'auth.login.failed',
-  'auth.reauth',
-  'auth.reauth.failed',
-  'auth.logout',
-  'token.refresh',
-  'token.create',
-  'device.approve',
-  'device.deny',
-  'device.redeem',
-  // Desktop session lifecycle (ops noise; mounts/force-release stay visible)
-  'session.create',
-  'session.ready',
-  'session.fail',
-  'session.connect',
-  'session.disconnect',
-  'session.stop',
-  'session.retry',
-  'session.remount',
-  'session.destroy',
-  'session.sync',
-  'session.mounts.update',
-  'session.evict',
-  // Lease chatter (force_release stays visible — security-relevant)
-  'workspace.lease.acquire',
-  'workspace.lease.release',
-  // Infra / store maintenance
-  'checkout.build',
-  'checkout.evict',
-  'checkout.corrupt',
-  'store.gc',
-  'store.scrub',
-  'store.full',
-  'workspace.retry',
-  'job.sync',
-  // Audit-of-audit volume (export / break / visibility stay visible)
-  'audit.browse',
-  'acl_bypass_read',
-  // Read-only dataset probes
-  'versions.query',
-  // Instance UX / diagnostics
-  'announcement.create',
-  'announcement.update',
-  'announcement.delete',
-  'instance.group_binding.check',
-  'directory.sync.failed',
-  'directory.sync.stale',
-  // Push transport chunks (complete/publish stays visible)
-  'commit.upload',
-  // Rejected bad requests (denials that matter for access stay via access/role events)
-  'request.rejected',
-  'request.cross_site_rejected',
-]
+export const DEFAULT_AUDITOR_HIDDEN_ACTIONS: readonly string[] = defaultAuditorHiddenFromCatalog()
 
 const knownValues = () => new Set(knownAuditActions().map((a) => a.value))
 
 /** Product default hidden set, filtered to the current catalogue. */
 export function defaultAuditorHiddenActions(): string[] {
-  const known = knownValues()
-  return DEFAULT_AUDITOR_HIDDEN_ACTIONS.filter((a) => known.has(a)).sort()
+  return defaultAuditorHiddenFromCatalog()
 }
 
 /** Normalize a caller-supplied hidden list to known catalogue actions only. */

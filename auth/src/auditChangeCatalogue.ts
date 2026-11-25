@@ -117,14 +117,6 @@ export const AUDIT_CHANGE_KIND: Readonly<Record<string, AuditChangeKind>> = Obje
   ),
 )
 
-/**
- * Mutations whose writer cannot yet capture a before/after state, so they still record an empty
- * change on success. Each is a known gap, not a design choice; the catalogue test pins the list so
- * closing a gap (or opening one) is a visible diff.
- *
- * - `repo.metadata`: the proxy records the change only when given `metadataBefore` / `metadataAfter`
- *   (`ProxyChangeInput`); the settings before-state is not wired in `proxy.ts` yet.
- */
 /** Mutations that still cannot capture a real change (must stay empty). Keep this empty. */
 export const AUDIT_CHANGE_CAPTURE_GAPS: ReadonlySet<string> = new Set()
 

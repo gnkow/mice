@@ -40,6 +40,7 @@ An Audit module over immudb with append, read range and verify. Every mutation w
 - Events reference repositories by stable id plus the name at event time.
 - Every export is audited (filters and row count); browsing reads are recorded as summary events.
 - Multi-instance safe: no instance-local queues.
+- **Event catalog / signal vs noise (#154):** trail write policy and Auditor default visibility live in `auth/src/auditTrailCatalog.ts` (see **Event catalog** below).
 - Chain anchor (no new platform infra): the IQP records the genesis immudb root (and the audit-export **public** key). Verify/export/admin health expose `{txid, root}` for IQ evidence and change-control filings. No WORM bucket or HSM required.
 - Export bundle: signed manifest (dedicated export key; pubkey in IQP) + CSV + PDF + verification/proofs.
 
@@ -388,10 +389,42 @@ Challenges: "Testing seam: BFF HTTP boundary, black-box, real containers".
 - **Depends on 04 (GxP Compliance)**: Legal-retention stance (Q13/00 Q8). Signature record format and size (04 Q8).
 - **Depends on 16 (Operations)**: Availability targets (Q5 alert threshold). Backup and restore as start gate (Q17/04 Q16/16 Q2). immudb pinning and auditor tool (Q11).
 
+## Event catalog (signal vs noise) — #154
+
+**Source of truth in code:** `auth/src/auditTrailCatalog.ts` (drives Auditor visibility defaults).
+
+| Policy | Meaning |
+| --- | --- |
+| **always** | Written to immudb. Mutations stay fail-closed (Intent → effect → Outcome). |
+| **summary** | Written as a compact US13 event (`audit.browse`, `audit.export`), not per-row noise. |
+| **omit** | Never written — **producer-side only** (RBAC bootstrap / null-actor grants; seed restore-test unlock). Not a catalogue action. |
+
+| Auditor default | Meaning |
+| --- | --- |
+| **show** | Visible in Auditor list/export by default (GxP investigation signal). |
+| **hide** | Still on the ledger; hidden from Auditors until an admin overrides (Settings → Audit Visibility). |
+
+**Explicit call-outs**
+
+| Action | Trail | Auditor | Rationale |
+| --- | --- | --- | --- |
+| `auth.login` / `auth.logout` / `auth.reauth*` | always | hide | Security trail kept; not a data mutation for typical GxP investigation. |
+| `session.*` lifecycle (create/ready/connect/stop/…) | always | hide | Ops noise; `workspace.lease.force_release` stays **show**. |
+| `audit.browse` | summary | hide | US13 audit-of-audit; hide so browse does not drown mutations. |
+| `audit.export` | summary | show | US13; export remains visible. |
+| Dataset / access / `esign.*` / merge / role / namespace | always | show | Investigation signal. |
+| `commit.upload` | always | hide | Transport chunks; `commit.publish` stays show. |
+
+**Producer changes vs UI-only**
+
+- **Omit (producer):** bootstrap RBAC and seed restore-test — no ledger write (already implemented).
+- **Filter (UI / visibility):** login, session lifecycle, browse, lease chatter, store GC, etc. — still audited; default-hidden for Auditors (`DEFAULT_AUDITOR_HIDDEN_ACTIONS` ← trail catalog).
+- Fail-closed mutations and US13 export/browse summaries stay intact.
+
 ## Open follow-ups (from authorization deep-manual #83)
 
-- **[#154](https://github.com/gnkow/mice/issues/154)** — Revisit the comprehensive audit event catalog (signal vs noise: `auth.login`, session lifecycle, `audit.browse`, etc.).
-- **[#155](https://github.com/gnkow/mice/issues/155)** — Fix Audit UI for investigation (filters, density; signature evidence modal pattern from #83).
+- ~~**[#154](https://github.com/gnkow/mice/issues/154)** — Revisit the comprehensive audit event catalog~~ — **decided** (see Event catalog above).
+- **[#155](https://github.com/gnkow/mice/issues/155)** — Fix Audit UI for investigation (filters, density; signature evidence modal pattern from #83); default filters should follow the trail catalog hide set.
 
 ## Cross-cutting impacts
 - **01 (Authentication)**: Audit of authentication events (login, logout, refresh, step-up, failure, revocation) with request id and Principal (authentication T7). No tokens/cookies logged; redaction tested (Q25).
