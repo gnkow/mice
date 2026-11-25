@@ -32,6 +32,7 @@ export function registerIdpBaselineRoutes(app: Hono, { audit }: AuditDep): void 
   app.post('/auth/admin/idp-baseline/check', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'admin.idp_baseline_check',
   }, async ({ c, user }) => {
     try {
       const issuer = env.oidcIssuer

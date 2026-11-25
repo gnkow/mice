@@ -25,7 +25,7 @@ describe('Outcome inherits Intent reason and change-control', () => {
     const intent = await beginTrackedIntent(request, {
       ...base,
       status: 0,
-      action: 'bff.mutation',
+      action: 'merge_request.open',
       reason: 'Adjusted namespace visibility for audit review',
       reason_source: 'explicit',
       change_control_id: 'CC-20261113-deadbeef',

@@ -73,8 +73,17 @@ describe('signature evidence rows (#13 auditor view + #53 identity)', () => {
         idp_issuer: 'https://idp.test',
       },
     })
+    assert.ok(rows.some((r) => r.label === 'Signature id' && r.value === 'sig-1'))
     assert.ok(rows.some((r) => r.label === 'Signed name' && r.value === 'Jane'))
     assert.ok(rows.some((r) => r.label === 'Auth context (acr)' && r.value === 'mfa'))
+  })
+
+  it('shows Signature for merge_request.complete that only recorded signatureId', () => {
+    const rows = signatureEvidenceRows('merge_request.complete', {
+      signatureId: 'sig-mr-1',
+      mergeRequestId: 'mr-1',
+    })
+    assert.deepEqual(rows, [{ label: 'Signature id', value: 'sig-mr-1' }])
   })
 
   it('also labels evidence for signature.created (auditor alias)', () => {

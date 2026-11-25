@@ -50,7 +50,7 @@ export function registerSealKeyRoutes(app: Hono): void {
   app.post(
     '/auth/admin/seal-keys/rotate',
     guarded(
-      { ...requireInstanceAdmin, reason: true, body: 'optional', mutates: true },
+      { ...requireInstanceAdmin, reason: true, body: 'optional', mutates: true, action: 'seal_key.rotated' },
       async ({ c, user, audit }) => {
         const { newKey } = await rotateSealKeyWithAudit(
           {
@@ -93,7 +93,7 @@ export function registerSealKeyRoutes(app: Hono): void {
   app.post(
     '/auth/admin/seal-keys/rotate/emergency',
     guarded(
-      { ...requireInstanceAdmin, reason: true, body: 'optional', mutates: true },
+      { ...requireInstanceAdmin, reason: true, body: 'optional', mutates: true, action: 'seal_key.emergency_rotation' },
       async ({ c, user, body, audit }) => {
         const reason =
           typeof body?.reason === 'string' ? body.reason : 'Emergency rotation requested'

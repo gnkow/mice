@@ -57,6 +57,7 @@ const MUTATION_FIXTURES: Record<string, Fixture> = {
   'approver.revoke': remove({ user: 'u1', approver: true }),
   // Signatures
   'esign.created': create({ signature_id: 's1', status: 'valid' }),
+  'esign.execute': create({ signature_id: 's1', meaning: 'Approved' }),
   'esign.revoked': update({ status: 'valid' }, { status: 'revoked' }),
   'esign.revocation_reverted': update({ status: 'revoked' }, { status: 'valid' }),
   // Merge requests

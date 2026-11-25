@@ -177,7 +177,18 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     }),
   )
 
-  app.post('/auth/access-requests/:id', guarded({ mutates: true, reason: true, body: 'json' }, async ({ c, user: session, body }) => {
+  app.post('/auth/access-requests/:id', guarded({
+    mutates: true,
+    // approve vs deny is the request's own choice; a body that names neither is refused before any Intent.
+    action: ({ c, body }) =>
+      body.action === 'approve'
+        ? 'access-request.approve'
+        : body.action === 'deny'
+          ? 'access-request.deny'
+          : c.json({ error: 'action required' }, 400),
+    reason: true,
+    body: 'json',
+  }, async ({ c, user: session, body }) => {
     if (!(await hasPermission(session, 'access_request:review'))) {
       return c.json({ error: 'Forbidden' }, 403)
     }
@@ -284,7 +295,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     return c.json({ ok: true, request: result.request })
   }))
 
-  app.post('/auth/training', guarded({ mutates: true, body: 'json' }, async ({ c, user: session, body: raw }) => {
+  app.post('/auth/training', guarded({ mutates: true, action: 'training.update', body: 'json' }, async ({ c, user: session, body: raw }) => {
     const body = raw as { sub?: string; iss?: string; completed?: boolean }
     const done = body.completed !== false
     const target = {
@@ -326,7 +337,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
    * Refresh IdP groups on this Session from the directory (Profile → Group membership).
    * Replaces session groups with the live directory list and returns display rows.
    */
-  app.post('/auth/me/groups/refresh', guarded({ mutates: true }, async ({ c, user: session, audit }) => {
+  app.post('/auth/me/groups/refresh', guarded({ mutates: true, action: 'auth.session.groups.refresh' }, async ({ c, user: session, audit }) => {
     const fetched = await fetchDirectoryGroupsForSession(session, directoryNow())
     if (!fetched.ok) {
       const message =
@@ -370,7 +381,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
   }))
 
   /** Revoke one of the caller's CLI credentials. */
-  app.delete('/auth/me/tokens/:id', guarded({ mutates: true }, async ({ c, user: session }) => {
+  app.delete('/auth/me/tokens/:id', guarded({ mutates: true, action: 'token.revoke' }, async ({ c, user: session }) => {
     const tokenId = c.req.param('id')
     const credentialBefore = (await captureBefore(() => listCliCredentials(session))).find((t) => t.id === tokenId)
     const revoked = await revokeCliCredentialFamily(session, tokenId)

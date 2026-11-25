@@ -46,7 +46,7 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
   app.post(
     '/auth/grants/role',
     guarded(
-      { mutates: true, reason: true, gate: reviewerOnly, body: { required: ['sub', 'iss', 'role'] } },
+      { mutates: true, action: 'access.grant.role', reason: true, gate: reviewerOnly, body: { required: ['sub', 'iss', 'role'] } },
       async ({ c, user, body }) => {
         const t = target(body)
         if (!t) return c.json({ error: 'sub and iss required' }, 400)
@@ -92,6 +92,7 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
     guarded(
       {
         mutates: true,
+        action: 'access.grant.permissions',
         reason: true,
         gate: reviewerOnly,
         body: { required: ['sub', 'iss', 'permissions'] },

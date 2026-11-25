@@ -44,6 +44,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
   app.post('/auth/admin/access-review/generate', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'access-review.generate',
     body: { required: ['quarter'] },
   }, async ({ c, body, audit }) => {
     const quarter = body.quarter as string
@@ -93,6 +94,7 @@ export function registerAccessReviewRoutes(app: Hono, { audit }: AuditDep): void
   app.post('/auth/admin/access-review/sign', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'access-review.sign',
     body: { required: ['quarter', 'expectedHash'] },
   }, async ({ c, user, body, audit }) => {
     try {

@@ -58,7 +58,7 @@ test.describe('Signature identity display (#53)', () => {
 
     await page.goto('/audit')
     const evidence = page.getByTestId('signature-evidence').first()
-    await evidence.getByRole('button', { name: 'Signature evidence' }).click()
+    await evidence.getByRole('button', { name: 'Signature' }).click()
     await expect(evidence).toContainText('Dr. Jane Smith')
     await expect(evidence).toContainText('mice-e2e')
     await expect(evidence).toContainText('signer')

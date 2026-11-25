@@ -3,7 +3,7 @@ import {
   Check,
   Clock,
   Download as ActionDownload,
-  FileSearch as ActionFileSearch,
+  FileSignature as ActionFileSignature,
   FileText as ActionFileText,
   Search as ActionSearch,
   ShieldCheck as ActionShieldCheck,
@@ -31,6 +31,7 @@ import {
   type AuditEvent,
   type AuditExportFormat,
   type AuditFacets,
+  type AuditFocus,
   type AuditResource,
   type AuditVerifyResult,
 } from '../lib/audit'
@@ -67,37 +68,31 @@ function localInputToIso(local: string): string | undefined {
   return d.toISOString()
 }
 
-/** Investigation presets (#155) — URL filters aligned with trail catalog signal. */
+/** Investigation Focus presets (#155) — server `?focus=` (not raw action prefixes). */
 const INVESTIGATION_PRESETS: readonly {
-  id: string
+  id: 'signatures' | 'files' | 'merges' | 'roles'
   label: string
   title: string
-  /** When set, applies this action prefix (server matches `action` / `action.*`). */
-  action?: string
 }[] = [
   {
     id: 'signatures',
     label: 'Signatures',
-    title: 'Show electronic signature events (esign.*)',
-    action: 'esign',
+    title: 'Show signed mutations and esign.* ceremony events',
   },
   {
     id: 'files',
     label: 'Files',
     title: 'Show file write/delete events',
-    action: 'file',
   },
   {
     id: 'merges',
     label: 'Merges',
-    title: 'Show branch merge events (merge / merge.*)',
-    action: 'merge',
+    title: 'Show branch merges and merge-request events',
   },
   {
     id: 'roles',
     label: 'Roles',
     title: 'Show instance role assign/revoke events',
-    action: 'role',
   },
 ]
 
@@ -284,11 +279,25 @@ function AuditStatusCell({ event }: { event: AuditEvent }) {
   )
 }
 
+/** Prefer first-class fields; fall back to detail for older Outcomes. */
+function eventReason(event: AuditEvent): string | undefined {
+  if (event.reason?.trim()) return event.reason
+  const fromDetail = event.detail?.reason
+  return typeof fromDetail === 'string' && fromDetail.trim() ? fromDetail : undefined
+}
+
+function eventChangeControlId(event: AuditEvent): string | undefined {
+  if (event.change_control_id?.trim()) return event.change_control_id
+  const fromDetail = event.detail?.changeControlId ?? event.detail?.change_control_id
+  return typeof fromDetail === 'string' && fromDetail.trim() ? fromDetail : undefined
+}
+
 function ChangeControlCell({ event }: { event: AuditEvent }) {
-  if (!event.change_control_id) return <span className="muted">—</span>
+  const id = eventChangeControlId(event)
+  if (!id) return <span className="muted">—</span>
   return (
-    <code className="mono small" data-testid="audit-change-control" title={event.change_control_id}>
-      {event.change_control_id}
+    <code className="mono small" data-testid="audit-change-control" title={id}>
+      {id}
     </code>
   )
 }
@@ -319,15 +328,61 @@ function changeSummary(event: AuditEvent): { text: string; title?: string; empty
   return { text, title: text, empty: false }
 }
 
+function formatChangePretty(side: Record<string, unknown> | null): string {
+  if (side === null) return 'null'
+  try {
+    return JSON.stringify(side, null, 2)
+  } catch {
+    return String(side)
+  }
+}
+
 function ChangeCell({ event }: { event: AuditEvent }) {
+  const [open, setOpen] = useState(false)
   const change = changeSummary(event)
-  return (
-    <div className="small" data-testid="audit-change" title={change.title}>
-      {change.empty ? (
+  if (change.empty) {
+    return (
+      <div className="small" data-testid="audit-change" title={change.title}>
         <span className="muted">{change.text}</span>
-      ) : (
-        <span className="mono">{change.text}</span>
-      )}
+      </div>
+    )
+  }
+  const before = event.change?.before ?? null
+  const after = event.change?.after ?? null
+  return (
+    <div className="small audit-change-trigger" data-testid="audit-change" title={change.title}>
+      <button
+        type="button"
+        className="audit-change-open mono"
+        aria-label="Open change detail"
+        onClick={() => setOpen(true)}
+      >
+        {change.text}
+      </button>
+      {open ? (
+        <Modal title="Change" onClose={() => setOpen(false)} wide>
+          <div className="audit-change-modal" data-testid="audit-change-modal">
+            <p className="muted small">
+              {actionLabel(event)}
+              <span className="mono"> · {event.action}</span>
+            </p>
+            <div className="audit-change-sides">
+              <section aria-labelledby="audit-change-before-h">
+                <h3 id="audit-change-before-h" className="muted small">
+                  Before
+                </h3>
+                <pre className="mono small audit-change-pre">{formatChangePretty(before)}</pre>
+              </section>
+              <section aria-labelledby="audit-change-after-h">
+                <h3 id="audit-change-after-h" className="muted small">
+                  After
+                </h3>
+                <pre className="mono small audit-change-pre">{formatChangePretty(after)}</pre>
+              </section>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   )
 }
@@ -341,21 +396,25 @@ export function AuditPage() {
   const [verifyResult, setVerifyResult] = useState<AuditVerifyResult | null>(null)
   const [verifyError, setVerifyError] = useState<string | null>(null)
 
-  const applied = useMemo(
-    () => ({
+  const applied = useMemo(() => {
+    const focusRaw = params.get('focus')
+    const focus = INVESTIGATION_PRESETS.some((p) => p.id === focusRaw)
+      ? (focusRaw as AuditFocus)
+      : undefined
+    return {
       since: params.get('since') || undefined,
       until: params.get('until') || undefined,
       actor: params.get('actor') || undefined,
       namespace: params.get('namespace') || undefined,
       repo: params.get('repo') || undefined,
       action: params.get('action') || undefined,
+      focus,
       sessionId: params.get('session_id') || undefined,
       workspaceId: params.get('workspace_id') || undefined,
       jobId: params.get('job_id') || undefined,
       orphansOnly: params.get('orphans') === '1' || params.get('orphans') === 'true',
-    }),
-    [params],
-  )
+    }
+  }, [params])
 
   const state = useAsync(
     (signal) => loadAudit({ ...applied, limit: 100 }, signal),
@@ -366,6 +425,7 @@ export function AuditPage() {
       applied.namespace,
       applied.repo,
       applied.action,
+      applied.focus,
       applied.sessionId,
       applied.workspaceId,
       applied.jobId,
@@ -401,6 +461,8 @@ export function AuditPage() {
       const v = draft[k].trim()
       if (v) next.set(k, v)
     }
+    // Manual Action overrides Focus; otherwise keep the active Focus chip.
+    if (!draft.action.trim() && applied.focus) next.set('focus', applied.focus)
     if (applied.orphansOnly) next.set('orphans', '1')
     setParams(next, { replace: true })
   }
@@ -412,7 +474,7 @@ export function AuditPage() {
 
   function applyPreset(preset: (typeof INVESTIGATION_PRESETS)[number]) {
     const next = new URLSearchParams()
-    if (preset.action) next.set('action', preset.action)
+    next.set('focus', preset.id)
     if (applied.orphansOnly) next.set('orphans', '1')
     setDraft(draftFromParams(next))
     setParams(next, { replace: true })
@@ -425,11 +487,7 @@ export function AuditPage() {
     setParams(next, { replace: true })
   }
 
-  const activePresetId = useMemo(() => {
-    const action = applied.action ?? ''
-    if (!action) return null
-    return INVESTIGATION_PRESETS.find((p) => p.action === action)?.id ?? null
-  }, [applied.action])
+  const activePresetId = applied.focus ?? null
 
   const denied = state.kind === 'ok' && state.data.kind === 'denied' ? state.data.reason : null
   const events = state.kind === 'ok' && state.data.kind === 'ok' ? state.data.data.events : null
@@ -596,7 +654,6 @@ export function AuditPage() {
           aria-label="Investigation focus"
           data-testid="audit-investigation-presets"
         >
-          <span className="muted small audit-presets-label">Focus</span>
           {INVESTIGATION_PRESETS.map((preset) => (
             <button
               key={preset.id}
@@ -740,7 +797,7 @@ export function AuditPage() {
                   <th>Reason</th>
                   <th>Change control</th>
                   <th>Change</th>
-                  <th className="audit-col-actions">Actions</th>
+                  <th className="audit-col-actions">Evidence</th>
                 </tr>
               </thead>
               <tbody>
@@ -788,18 +845,20 @@ export function AuditPage() {
                       <ResourceUriCell event={ev} />
                     </td>
                     <td className="small audit-reason">
-                      {ev.reason ? (
-                        <>
-                          {ev.category ? (
-                            <div className="muted small">{ev.category.replace(/_/g, ' ')}</div>
-                          ) : null}
-                          <div className="audit-reason-text" title={ev.reason}>
-                            {ev.reason}
-                          </div>
-                        </>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
+                      {(() => {
+                        const reason = eventReason(ev)
+                        if (!reason) return <span className="muted">—</span>
+                        return (
+                          <>
+                            {ev.category ? (
+                              <div className="muted small">{ev.category.replace(/_/g, ' ')}</div>
+                            ) : null}
+                            <div className="audit-reason-text" title={reason}>
+                              {reason}
+                            </div>
+                          </>
+                        )
+                      })()}
                     </td>
                     <td>
                       <ChangeControlCell event={ev} />
@@ -857,18 +916,28 @@ function evidenceTestId(label: string): string | undefined {
 
 function SignatureEvidence({ event }: { event: AuditEvent }) {
   const [open, setOpen] = useState(false)
-  const sections = signatureEvidenceSections(event.action, event.detail)
+  // Top-level signature_id counts even when producers only set that field.
+  const detail =
+    event.detail || event.signature_id
+      ? {
+          ...(event.detail ?? {}),
+          ...(event.signature_id && !(event.detail && 'signatureId' in event.detail)
+            ? { signatureId: event.signature_id }
+            : {}),
+        }
+      : undefined
+  const sections = signatureEvidenceSections(event.action, detail)
   if (sections.length === 0) return null
   return (
     <div className="signature-evidence-cell small" data-testid="signature-evidence">
       <button
         type="button"
         className="btn ghost small signature-evidence-open"
-        aria-label="Signature evidence"
+        aria-label="Signature"
         onClick={() => setOpen(true)}
       >
-        <ActionFileSearch size={12} aria-hidden="true" className="button-label-icon" />
-        Evidence
+        <ActionFileSignature size={12} aria-hidden="true" className="button-label-icon" />
+        Signature
       </button>
       {open ? (
         <Modal title="Signature evidence" onClose={() => setOpen(false)} wide>

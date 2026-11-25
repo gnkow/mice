@@ -14,6 +14,13 @@ export type AuditFields = {
   repo?: string
   detail?: Record<string, unknown>
   status?: number
+  /** Electronic signature id when this Outcome consumed a ceremony result. */
+  signature_id?: string
+  /** Free-text justification (first-class; shown in Audit Reason column). */
+  reason?: string
+  reason_source?: 'explicit' | 'commit-message'
+  /** Change-control id (first-class; shown in Audit Change control column). */
+  change_control_id?: string
 }
 
 /** Appends an audit event for a BFF-native mutation; injected so route modules need no whole-app setup. */

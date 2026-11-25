@@ -49,6 +49,22 @@ const ENTRIES: readonly AuditTrailEntry[] = [
   e('branch.delete', 'always', 'show', 'Dataset mutation'),
   e('commit.publish', 'always', 'show', 'Dataset mutation'),
   e('merge', 'always', 'show', 'Dataset mutation'),
+  e('merge_request.open', 'always', 'show', 'Merge request lifecycle'),
+  e('merge_request.resync', 'always', 'show', 'Merge request lifecycle'),
+  e('merge_request.cancel', 'always', 'show', 'Merge request lifecycle'),
+  e('merge_request.reopen', 'always', 'show', 'Merge request lifecycle'),
+  e('merge_request.reopen_denied', 'always', 'show', 'Merge request refuse'),
+  e('merge_request.reject', 'always', 'show', 'Merge request lifecycle'),
+  e('merge_request.reject_denied', 'always', 'show', 'Merge request refuse'),
+  e('merge_request.complete', 'always', 'show', 'Merge into validated branch'),
+  e('merge_request.complete_denied', 'always', 'show', 'Merge complete refuse'),
+  e('esign.execute', 'always', 'show', 'Signature ceremony (binding for later mutation)'),
+  e(
+    'bff.mutation',
+    'always',
+    'show',
+    'Legacy rows only: new Intents never use it (routes must name their operation). Kept visible so no ledger entry is hidden',
+  ),
   e('repo.create', 'always', 'show', 'Repository lifecycle'),
   e('repo.delete', 'always', 'show', 'Repository lifecycle'),
   e('repo.metadata', 'always', 'show', 'Repository settings'),
@@ -223,12 +239,17 @@ export function assertTrailCatalogComplete(): void {
     }
   }
   // US13 / fail-closed invariants
-  for (const mustShow of ['file.write', 'merge', 'esign.revoked', 'audit.export', 'audit.visibility.update']) {
+  for (const mustShow of ['file.write', 'merge', 'esign.revoked', 'audit.export', 'audit.visibility.update', 'bff.mutation']) {
     const row = BY_ACTION.get(mustShow)
     if (!row) problems.push(`missing required action ${mustShow}`)
     else if (row.auditor === 'hide') problems.push(`${mustShow} must stay Auditor-visible by default`)
   }
-  for (const mustHide of ['auth.login', 'auth.logout', 'audit.browse', 'session.create']) {
+  for (const mustHide of [
+    'auth.login',
+    'auth.logout',
+    'audit.browse',
+    'session.create',
+  ]) {
     const row = BY_ACTION.get(mustHide)
     if (!row) problems.push(`missing call-out action ${mustHide}`)
     else if (row.auditor !== 'hide') problems.push(`${mustHide} must default-hide for Auditors`)

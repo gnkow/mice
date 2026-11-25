@@ -57,7 +57,7 @@ test.describe('Signature evidence metadata (#26)', () => {
 
     await page.goto('/audit')
     const evidence = page.getByTestId('signature-evidence').first()
-    await evidence.getByRole('button', { name: 'Signature evidence' }).click()
+    await evidence.getByRole('button', { name: 'Signature' }).click()
 
     await expect(evidence.getByTestId('signature-evidence-acr')).toHaveText('mfa')
     await expect(evidence.getByTestId('signature-evidence-amr')).toHaveText('pwd, otp')

@@ -33,6 +33,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
   app.post('/auth/admin/revoke', guarded({ 
     gate: adminRoleGate, 
     mutates: true,
+    action: 'admin.revoke_all',
     reason: true,
     body: { required: ['principal', 'reason'] } 
   }, async ({ c, user, body }) => {
@@ -71,6 +72,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
   app.post('/auth/admin/suspend', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'admin.suspend_initiated',
     reason: true,
     body: { required: ['principal', 'reason'] }
   }, async ({ c, user, body }) => {
@@ -115,6 +117,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
   app.post('/auth/admin/suspend/:requestId/confirm', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'admin.suspend_confirmed',
     reason: true,
     body: { required: ['reason'] }
   }, async ({ c, user, body }) => {
@@ -160,6 +163,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
   // Panic: a Principal suspends their own account immediately.
   app.post('/auth/me/suspend', guarded({
     mutates: true,
+    action: 'auth.suspend.self',
     reason: true,
     body: { required: ['reason'] }
   }, async ({ c, user, body }) => {

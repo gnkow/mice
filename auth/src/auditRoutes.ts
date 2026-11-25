@@ -4,10 +4,11 @@ import { orphanAgingThresholdMs, orphanListAnnotation } from './auditOrphanAlert
 import { auditEventsToPdf, auditExportPrivateKeyPem } from './auditExport.js'
 import { instanceGate } from './decisionHttp.js'
 import { auditActionLabel, knownAuditActions } from './auditLabels.js'
-import { getAuditVisibility } from './auditVisibility.js'
+import { auditorExcludeActions, getAuditVisibility } from './auditVisibility.js'
 import { authorizeAuditQuery, authorizeLineageQuery, authorizeLineageRebuild } from './authz.js'
 import { currentClock } from './clock.js'
 import { EMPTY_AUDIT_CHANGE, requireAuditChange } from './auditChange.js'
+import { parseAuditFocus } from './auditQueryFilters.js'
 import { env } from './env.js'
 import { deriveOpsFromPathHistory, queryLineage, type LineageKind, type PathVersionHint } from './lineage.js'
 import { guarded, type SessionUser } from './authentication/index.js'
@@ -25,13 +26,16 @@ async function resolveAuditQuery(c: Context, session: SessionUser): Promise<{ er
   const via = c.req.query('via')
   const role = await getUserRole(session)
   const excludeActions =
-    role === 'auditor' ? (await getAuditVisibility()).hiddenActions : undefined
+    role === 'auditor'
+      ? auditorExcludeActions((await getAuditVisibility()).hiddenActions)
+      : undefined
   return {
     query: {
       actor: c.req.query('actor') || undefined,
       namespace,
       repo: c.req.query('repo') || undefined,
       action: c.req.query('action') || undefined,
+      focus: parseAuditFocus(c.req.query('focus')),
       since: c.req.query('since') || undefined,
       until: c.req.query('until') || undefined,
       sessionId: c.req.query('session_id') || undefined,
@@ -204,7 +208,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
    * An instance admin accepts a failed chain verification so dataset mutations resume. The break
    * stays in the trail; the acknowledgement (who, why, which break) is itself an audited event.
    */
-  app.post('/auth/audit/acknowledge', guarded({ gate: instanceGate('instance.admin'), mutates: true, reason: true, body: 'optional' }, async ({ c, audit }) => {
+  app.post('/auth/audit/acknowledge', guarded({ gate: instanceGate('instance.admin'), mutates: true, action: 'audit.break.acknowledge', reason: true, body: 'optional' }, async ({ c, audit }) => {
     const ack = await acknowledgeAuditBreak()
     if (!ack) return c.json({ error: 'The audit chain verifies; there is nothing to acknowledge' }, 409)
     await audit({
@@ -264,7 +268,7 @@ export function registerAuditRoutes(app: Hono, { audit: auditMutation }: AuditDe
    * Rebuild derived lineage for a path from oxen path-version history.
    * Body: { namespace, repo, branch?, path }
    */
-  app.post('/auth/lineage/rebuild', guarded({ mutates: true, reason: true, body: 'json', invalidBody: 'Invalid JSON body' }, async ({ c, user: session, body: raw }) => {
+  app.post('/auth/lineage/rebuild', guarded({ mutates: true, action: 'lineage.rebuild', reason: true, body: 'json', invalidBody: 'Invalid JSON body' }, async ({ c, user: session, body: raw }) => {
     const body = raw as {
       namespace?: string
       repo?: string

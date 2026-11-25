@@ -116,4 +116,46 @@ await describe('route guard', async () => {
     })
     assert.deepEqual([missing.status, await missing.json()], [400, { error: 'content required' }])
   })
+
+  await it('fails loudly at registration when a mutating route names no operation', () => {
+    const noop = () => Response.json({})
+    // Cast: the policy type already forbids these; JS callers and casts must fail at runtime too.
+    const bad = (action: unknown) => () =>
+      guarded({ mutates: true, action } as unknown as Parameters<typeof guarded>[0], noop)
+    assert.throws(bad(undefined), /must name its operation/)
+    assert.throws(bad(''), /must name its operation/)
+    assert.throws(bad('   '), /must name its operation/)
+    assert.throws(bad('bff.mutation'), /never be written as an Intent action/)
+    assert.doesNotThrow(bad('merge_request.open'))
+  })
+
+  await it('refuses before any Intent when an action resolver names no operation', async () => {
+    const decide = new Hono()
+    decide.post(
+      '/decide',
+      guarded(
+        {
+          mutates: true,
+          action: ({ c, body }) =>
+            body.action === 'approve' ? 'access-request.approve' : c.json({ error: 'action required' }, 400),
+          body: 'json',
+        },
+        () => Response.json({ ok: true }),
+      ),
+    )
+    const r = await decide.request('/decide', {
+      method: 'POST',
+      headers: { ...(await cookie('root')), ...json },
+      body: JSON.stringify({ action: 'nonsense' }),
+    })
+    assert.deepEqual([r.status, await r.json()], [400, { error: 'action required' }])
+  })
+
+  await it('fails loudly when an action resolver answers bff.mutation', async () => {
+    const bad = new Hono()
+    bad.post('/bad', guarded({ mutates: true, action: () => 'bff.mutation', body: 'optional' }, () => Response.json({})))
+    bad.onError((err, c) => c.json({ error: err.name }, 500))
+    const r = await bad.request('/bad', { method: 'POST', headers: await cookie('root') })
+    assert.deepEqual([r.status, await r.json()], [500, { error: 'IntentActionError' }])
+  })
 })

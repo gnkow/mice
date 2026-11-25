@@ -76,4 +76,40 @@ describe('applyAuditQueryFilters', () => {
     assert.equal(applyAuditQueryFilters(events, { sessionId: 'sess-1' })[0]?.id, 's')
     assert.equal(applyAuditQueryFilters(events, { jobId: 'job-9' })[0]?.id, 'j')
   })
+
+  it('focus=signatures includes ceremony rows and signature_id mutations', () => {
+    const events = [
+      ev({ id: 'sig-row', action: 'seal_key.rotated', signature_id: 'sig-1' }),
+      ev({ id: 'esign', action: 'esign.revoked' }),
+      ev({ id: 'plain', action: 'file.write' }),
+    ]
+    assert.deepEqual(
+      applyAuditQueryFilters(events, { focus: 'signatures' }).map((e) => e.id),
+      ['sig-row', 'esign'],
+    )
+  })
+
+  it('focus=merges matches merge and merge_request.*', () => {
+    const events = [
+      ev({ id: 'm', action: 'merge' }),
+      ev({ id: 'mr', action: 'merge_request.open' }),
+      ev({ id: 'f', action: 'file.write' }),
+    ]
+    assert.deepEqual(
+      applyAuditQueryFilters(events, { focus: 'merges' }).map((e) => e.id),
+      ['m', 'mr'],
+    )
+  })
+
+  it('comma-separated action filters OR together', () => {
+    const events = [
+      ev({ id: 'm', action: 'merge' }),
+      ev({ id: 'mr', action: 'merge_request.complete' }),
+      ev({ id: 'f', action: 'file.write' }),
+    ]
+    assert.deepEqual(
+      applyAuditQueryFilters(events, { action: 'merge,merge_request' }).map((e) => e.id),
+      ['m', 'mr'],
+    )
+  })
 })

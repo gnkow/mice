@@ -167,6 +167,7 @@ export function mutationSignatureAuditDetail(
     meaning: SignatureMeaning
     contentHash: string
     signedAt: string
+    changeControlId?: string
     mfaEvidence?: MfaEvidence
     verificationMetadata?: VerificationMetadata
   },
@@ -177,6 +178,9 @@ export function mutationSignatureAuditDetail(
     hash: record.contentHash,
     signedAt: record.signedAt,
     signer: record.signer,
+    ...(record.changeControlId?.trim()
+      ? { changeControlId: record.changeControlId.trim() }
+      : {}),
     ...signatureEvidenceFields(record),
   }
 }

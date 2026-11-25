@@ -28,7 +28,7 @@ export function registerAuditVisibilityRoutes(app: Hono, { audit }: AuditDep): v
 
   app.put(
     '/auth/admin/audit-visibility',
-    guarded({ mutates: true, reason: true, gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
+    guarded({ mutates: true, action: 'audit.visibility.update', reason: true, gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
       const raw = body && typeof body === 'object' ? (body as { hiddenActions?: unknown; reset?: unknown }) : {}
       const before = await captureBefore(() => getAuditVisibility())
       let state

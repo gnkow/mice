@@ -1090,10 +1090,13 @@ code {
   place-items: center;
   padding: 1.5rem;
   background: rgba(0, 0, 0, 0.55);
+  /* Modals may mount inside nowrap table cells (e.g. audit Actions). */
+  white-space: normal;
 }
 
 .modal {
   width: min(28rem, 100%);
+  max-width: 100%;
   max-height: min(90vh, 40rem);
   padding: 1.25rem 1.35rem;
   border: 1px solid var(--line);
@@ -1103,6 +1106,8 @@ code {
   display: grid;
   gap: 0.75rem;
   overflow: auto;
+  white-space: normal;
+  min-width: 0;
 }
 
 .modal.modal-wide {
@@ -7457,10 +7462,6 @@ p.ok {
   margin: 0 0 0.15rem;
 }
 
-.audit-presets-label {
-  margin-right: 0.15rem;
-}
-
 .audit-filters .audit-filter-datetime {
   display: flex;
   flex-direction: column;
@@ -7539,10 +7540,56 @@ p.ok {
 }
 
 .audit-table .audit-change-cell [data-testid='audit-change'] {
+  max-width: 18rem;
+}
+
+.audit-change-open {
+  display: block;
+  max-width: 18rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 18rem;
+}
+
+.audit-change-open:hover,
+.audit-change-open:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
+}
+
+.audit-change-sides {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.audit-change-sides h3 {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 0.72rem;
+}
+
+.audit-change-pre {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas-subtle);
+  overflow: auto;
+  max-height: min(50vh, 24rem);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .audit-table .audit-col-actions {
@@ -7661,6 +7708,15 @@ p.ok {
 
 .signature-evidence-lede {
   margin: 0 0 0.85rem;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.signature-evidence {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .signature-evidence-section + .signature-evidence-section {

@@ -68,7 +68,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
 
   app.put(
     '/auth/instance/permissions',
-    guarded({ mutates: true, reason: true, body: { required: [] } }, async ({ c, user, body }) => {
+    guarded({ mutates: true, action: 'instance.permissions.update', reason: true, body: { required: [] } }, async ({ c, user, body }) => {
       if (!body.sub || !body.iss || !Array.isArray(body.permissions)) {
         return c.json({ error: 'sub, iss, permissions required' }, 400)
       }
@@ -110,7 +110,7 @@ export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
   // Diagnostic: persists readiness only. Not an access grant — no e-sign / reason ceremony.
   app.post(
     '/auth/instance/group-binding/check',
-    guarded({ mutates: true, gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
+    guarded({ mutates: true, action: 'instance.group_binding.check', gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
       const sample =
         body && typeof body === 'object' && Array.isArray((body as { sampleGroups?: unknown }).sampleGroups)
           ? ((body as { sampleGroups: unknown[] }).sampleGroups.filter((g): g is string => typeof g === 'string'))

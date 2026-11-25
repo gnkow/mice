@@ -75,11 +75,15 @@ export type AuditVerifyResult =
   | { ok: true; events: number; verifiedAt: string; tip: { txid: number; root: string } }
   | { ok: false; events: number; verifiedAt: string; firstBreak: { seq: number; reason: string } }
 
+export type AuditFocus = 'signatures' | 'files' | 'merges' | 'roles'
+
 export type AuditQuery = {
   actor?: string
   namespace?: string
   repo?: string
   action?: string
+  /** Investigation Focus preset (signed rows, merges, files, roles). */
+  focus?: AuditFocus
   since?: string
   until?: string
   sessionId?: string
@@ -123,6 +127,7 @@ function buildParams(query: AuditQuery): URLSearchParams {
   if (query.namespace) params.set('namespace', query.namespace)
   if (query.repo) params.set('repo', query.repo)
   if (query.action) params.set('action', query.action)
+  if (query.focus) params.set('focus', query.focus)
   if (query.since) params.set('since', query.since)
   if (query.until) params.set('until', query.until)
   if (query.sessionId) params.set('session_id', query.sessionId)

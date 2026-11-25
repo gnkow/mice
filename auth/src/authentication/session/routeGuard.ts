@@ -3,9 +3,11 @@ import {
   actorFromUser,
   appendAudit,
   appendOutcomeFor,
+  assertIntentAction,
   AuditChangeCaptureError,
   beginTrackedIntent,
   EMPTY_AUDIT_CHANGE,
+  IntentActionError,
   NoChangeError,
   trackedIntent,
 } from '../../audit.js'
@@ -41,16 +43,25 @@ import type { SessionUser } from './session.js'
  */
 export type BodySpec = { required: string[] } | 'json' | 'optional'
 
-export type GuardPolicy = AuthPolicy & {
+/**
+ * The concrete operation a mutating route performs, named at Intent open time.
+ *
+ * - A catalogue action string (e.g. `merge_request.open`) when the route does one thing.
+ * - A resolver when the operation depends on the request (e.g. approve vs deny from the body). It
+ *   returns the action, or a `Response` that refuses the request before any Intent is written
+ *   (the request names no operation, so nothing was attempted).
+ *
+ * Never `bff.mutation`, blank or missing: that is a bug and fails loudly (see
+ * {@link assertIntentAction}), at route registration for strings and at request time for resolvers.
+ */
+export type GuardAction =
+  | string
+  | ((args: { c: GuardContext; body: Record<string, unknown> }) => string | Response)
+
+type GuardPolicyBase = AuthPolicy & {
   /** Returns a denial message (answered 403), or null to allow. Runs before the body is read. */
   gate?: (user: SessionUser) => string | null | Promise<string | null>
   body?: BodySpec
-  /**
-   * The route changes data or access. An intent event is appended before the handler runs (503
-   * when it cannot be stored, handler never runs) and every `audit` call becomes its outcome.
-   * A handler that audits nothing gets an outcome carrying the response status.
-   */
-  mutates?: boolean
   /**
    * The route changes admin or permission state, so it needs a reason (X-Mice-Reason header, at
    * least the configured minimum length). Rejected 400 before the intent is written.
@@ -61,6 +72,15 @@ export type GuardPolicy = AuthPolicy & {
   /** Maps an error thrown by the handler to this route family's response; null rethrows. */
   fail?: (err: unknown, c: Context) => Response | null
 }
+
+/**
+ * A mutating route (`mutates: true`) MUST name its operation: an Intent is appended before the
+ * handler runs (503 when it cannot be stored), under `action`. Every `audit` call becomes its
+ * Outcome; if the handler audits nothing, the Outcome is written under the same `action`.
+ * There is no generic fallback: a missing action is a type error and throws when the route registers.
+ */
+export type GuardPolicy = GuardPolicyBase &
+  ({ mutates: true; action: GuardAction } | { mutates?: false; action?: undefined })
 
 /** A request context whose path params are strings: a guarded route always matched its own pattern. */
 export type GuardContext = { req: { param(name: string): string } } & Context
@@ -123,7 +143,21 @@ export function guarded(
   policy: GuardPolicy,
   handler: (args: GuardArgs) => Response | Promise<Response>,
 ): Handler {
-  const { gate, body: bodyPolicy, invalidBody, fail, mutates, reason: needsReason, ...auth } = policy
+  const {
+    gate,
+    body: bodyPolicy,
+    invalidBody,
+    fail,
+    mutates,
+    reason: needsReason,
+    action: mutationAction,
+    ...auth
+  } = policy
+  // Fail loudly when the route is registered, not when the first request arrives.
+  const fixedAction =
+    mutates && typeof mutationAction !== 'function'
+      ? assertIntentAction(mutationAction, 'guarded({ mutates: true })')
+      : undefined
   return async (c) => {
     const authed = await authenticateOutcome(c, auth)
     if (!authed.ok) return c.json({ error: authed.error }, authed.status)
@@ -142,6 +176,13 @@ export function guarded(
       body = parsed.body
     }
     const base = { actor: actorFromUser(user), via, method: c.req.method, path: c.req.path }
+    // The operation this route performs, fixed before anything is written for the request.
+    let intentAction = fixedAction
+    if (mutates && typeof mutationAction === 'function') {
+      const resolved = mutationAction({ c: c as unknown as GuardContext, body })
+      if (resolved instanceof Response) return resolved
+      intentAction = assertIntentAction(resolved, `${c.req.method} ${c.req.path}`)
+    }
     let reason: ResolvedReason | undefined
     let changeControlId: string | undefined
     let signatureId: string | undefined
@@ -203,16 +244,19 @@ export function guarded(
         ? { detail: { ...signatureDetail, ...detail } }
         : {}
     if (mutates) {
+      // The Intent names the real operation; there is no generic fallback. No action here is a bug.
+      const action = assertIntentAction(intentAction, `${c.req.method} ${c.req.path}`)
       try {
         await beginTrackedIntent(c.req.raw, {
           ...base,
           ...reasonFields,
           ...withSignatureDetail(),
           status: 0,
-          action: 'bff.mutation',
+          action,
           change: EMPTY_AUDIT_CHANGE,
         })
       } catch (err) {
+        if (err instanceof IntentActionError) throw err
         if (err instanceof AuditDetailPolicyError) {
           return c.json({ error: err.message, code: err.code }, 400)
         }
@@ -235,13 +279,17 @@ export function guarded(
           ...(f.message ? { message: f.message } : {}),
           ...(f.namespace ? { namespace: f.namespace } : {}),
           ...(f.repo ? { repo: f.repo } : {}),
+          ...(f.signature_id ? { signature_id: f.signature_id } : {}),
+          ...(f.reason ? { reason: f.reason } : {}),
+          ...(f.reason_source ? { reason_source: f.reason_source } : {}),
+          ...(f.change_control_id ? { change_control_id: f.change_control_id } : {}),
           ...withSignatureDetail(f.detail),
         })
       },
       deny: (d) => denialResponse(c, d),
       readBody: (spec = 'json', invalid = invalidBody) => parseBody(c, spec, invalid),
     }
-    // A mutation whose handler audited nothing still gets its outcome, so no intent is left dangling.
+    // Handler audited nothing → the Outcome names the same operation the Intent did.
     const closeIntent = async (status: number) => {
       const tracked = trackedIntent(c.req.raw)
       if (tracked && tracked.outcomes === 0) {
@@ -250,7 +298,7 @@ export function guarded(
           ...reasonFields,
           ...withSignatureDetail(),
           status,
-          action: 'bff.mutation',
+          action: assertIntentAction(intentAction, `${c.req.method} ${c.req.path}`),
           change: EMPTY_AUDIT_CHANGE,
         })
       }

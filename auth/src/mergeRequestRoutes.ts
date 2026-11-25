@@ -185,7 +185,9 @@ async function defaultExecuteMerge(mr: {
 export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   app.post(
     '/auth/repos/:ns/:repo/merge-requests',
-    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+    guarded(
+      { mutates: true, action: 'merge_request.open', reason: true, body: 'optional' },
+      async ({ c, user, body: raw, audit }) => {
       const ns = c.req.param('ns')
       const repoName = c.req.param('repo')
       if (!(await hasRepoPermission(user, ns, repoName, 'write')).ok) {
@@ -296,7 +298,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
 
   app.post(
     '/auth/merge-requests/:id/resync',
-    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+    guarded(
+      { mutates: true, action: 'merge_request.resync', reason: true, body: 'optional' },
+      async ({ c, user, body: raw, audit }) => {
       const mr = await getMergeRequest(c.req.param('id'))
       if (!mr) return c.json({ error: 'Not found' }, 404)
       if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'write')).ok) {
@@ -347,7 +351,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // Writer withdraws the request (does not need Approver).
   app.post(
     '/auth/merge-requests/:id/cancel',
-    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, audit }) => {
+    guarded(
+      { mutates: true, action: 'merge_request.cancel', reason: true, body: 'optional' },
+      async ({ c, user, audit }) => {
       const mr = await getMergeRequest(c.req.param('id'))
       if (!mr) return c.json({ error: 'Not found' }, 404)
       if (!(await hasRepoPermission(user, mr.namespace, mr.repo, 'write')).ok) {
@@ -377,7 +383,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // Cancelled → writer reopen. Rejected → Approver reverts refuse (then may Approve).
   app.post(
     '/auth/merge-requests/:id/reopen',
-    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+    guarded(
+      { mutates: true, action: 'merge_request.reopen', reason: true, body: 'optional' },
+      async ({ c, user, body: raw, audit }) => {
       const mr = await getMergeRequest(c.req.param('id'))
       if (!mr) return c.json({ error: 'Not found' }, 404)
       if (mr.status === 'cancelled') {
@@ -477,7 +485,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // Approver refuses the request (Approver seat required).
   app.post(
     '/auth/merge-requests/:id/reject',
-    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, audit }) => {
+    guarded(
+      { mutates: true, action: 'merge_request.reject', reason: true, body: 'optional' },
+      async ({ c, user, audit }) => {
       const mr = await getMergeRequest(c.req.param('id'))
       if (!mr) return c.json({ error: 'Not found' }, 404)
       let actor = user
@@ -560,7 +570,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // GxP ticket 15 — operator records a passing restore test.
   app.post(
     '/auth/admin/restore-test/pass',
-    guarded({ mutates: true, body: 'optional' }, async ({ c, user, audit }) => {
+    guarded(
+      { mutates: true, action: 'system.restore_test.passed', body: 'optional' },
+      async ({ c, user, audit }) => {
       const { isInstanceAdmin } = await import('./authzInstanceStore.js')
       if (!(await isInstanceAdmin(user))) return c.json({ error: 'Instance admin required' }, 403)
       const { recordRestoreTestPassed } = await import('./restoreTestGate.js')
@@ -592,7 +604,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // GxP ticket 19 — report-only integrity run.
   app.post(
     '/auth/admin/integrity-check',
-    guarded({ mutates: true, body: 'optional' }, async ({ c, user, audit }) => {
+    guarded(
+      { mutates: true, action: 'system.integrity_check', body: 'optional' },
+      async ({ c, user, audit }) => {
       const { isInstanceAdmin } = await import('./authzInstanceStore.js')
       if (!(await isInstanceAdmin(user))) return c.json({ error: 'Instance admin required' }, 403)
       const { runCrossStoreIntegrity } = await import('./crossStoreIntegrity.js')
@@ -675,7 +689,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // reason:true enforces free-text reason + mutation e-signature (step-up via /auth/sign/*).
   app.post(
     '/auth/signatures/:id/revoke',
-    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+    guarded(
+      { mutates: true, action: 'esign.revoked', reason: true, body: 'optional' },
+      async ({ c, user, body: raw, audit }) => {
       const { REASON_HEADER } = await import('./auditReason.js')
       const reasonText = c.req.header(REASON_HEADER)?.trim() || ''
       const body = raw as {
@@ -746,7 +762,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // GxP #159 / story 10a — Approver revert of a prior revocation → QC Passed (append-only).
   app.post(
     '/auth/signatures/:id/revocations/:revocationId/revert',
-    guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+    guarded(
+      { mutates: true, action: 'esign.revocation_reverted', reason: true, body: 'optional' },
+      async ({ c, user, body: raw, audit }) => {
       const { REASON_HEADER } = await import('./auditReason.js')
       const reasonText = c.req.header(REASON_HEADER)?.trim() || ''
       const body = raw as { changeControlId?: string }
@@ -883,7 +901,9 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   // Uses a merge-bound signature (not the mutation-document ceremony from reason:true).
   app.post(
     '/auth/merge-requests/:id/complete',
-    guarded({ mutates: true, body: 'optional' }, async ({ c, user, body: raw, audit }) => {
+    guarded(
+      { mutates: true, action: 'merge_request.complete', body: 'optional' },
+      async ({ c, user, body: raw, audit }) => {
       const {
         resolveReason,
         REASON_HEADER,
@@ -978,6 +998,18 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           result.status as 400 | 403 | 404 | 409 | 502 | 503,
         )
       }
+      // Pack ceremony evidence onto the Outcome so Audit Evidence → Signature opens MFA/signer proof.
+      const { signatureStore } = await import('./authentication/signing/signatureStore.js')
+      const { mutationSignatureAuditDetail } = await import(
+        './authentication/signing/signingCeremony.js'
+      )
+      const storedSig = await (await signatureStore()).get(result.signatureId)
+      const ceremonyDetail = storedSig
+        ? mutationSignatureAuditDetail(result.signatureId, storedSig.record)
+        : { signatureId: result.signatureId }
+      const changeControlId =
+        (storedSig?.record.changeControlId && String(storedSig.record.changeControlId).trim()) ||
+        undefined
       await audit({
         action: 'merge_request.complete',
         change: requireAuditChange(beforeComplete, {
@@ -987,11 +1019,14 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
         message: `Signed merge completed ${result.mergeRequest.id}`,
         namespace: result.mergeRequest.namespace,
         repo: result.mergeRequest.repo,
+        signature_id: result.signatureId,
+        reason: reason.value.reason,
+        reason_source: reason.value.reason_source,
+        ...(changeControlId ? { change_control_id: changeControlId } : {}),
         detail: {
           mergeRequestId: result.mergeRequest.id,
-          signatureId: result.signatureId,
           mergeCommitId: result.mergeCommitId,
-          reason: reason.value.reason,
+          ...ceremonyDetail,
         },
       })
       return c.json({

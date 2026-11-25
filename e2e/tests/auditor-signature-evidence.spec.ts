@@ -71,7 +71,7 @@ test.describe('Auditor signature evidence (#13 / #18)', () => {
     await page.goto('/audit')
     const evidence = page.getByTestId('signature-evidence').first()
     await expect(evidence).toBeVisible({ timeout: 30_000 })
-    await evidence.getByRole('button', { name: 'Signature evidence' }).click()
+    await evidence.getByRole('button', { name: 'Signature' }).click()
     await expect(evidence.getByTestId('signature-evidence-acr')).toBeVisible()
     await expect(evidence.getByTestId('signature-evidence-amr')).toBeVisible()
     await expect(evidence.getByTestId('signature-evidence-auth-time')).toBeVisible()

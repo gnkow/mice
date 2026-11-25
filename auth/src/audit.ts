@@ -23,8 +23,11 @@ import {
   eventJobIds,
   eventSessionIds,
   eventWorkspaceIds,
+  type AuditFocus,
 } from './auditQueryFilters.js'
 import { createAuditIntentOutcome } from './auditIntentOutcome.js'
+import { assertIntentAction } from './auditIntentAction.js'
+export { assertIntentAction, IntentActionError, FORBIDDEN_INTENT_ACTIONS } from './auditIntentAction.js'
 import { EMPTY_AUDIT_CHANGE, type AuditChange } from './auditChange.js'
 export type { AuditChange } from './auditChange.js'
 export {
@@ -116,6 +119,8 @@ export type AuditQuery = {
   namespace?: string
   repo?: string
   action?: string
+  /** Investigation Focus preset (`signatures` | `files` | `merges` | `roles`). */
+  focus?: AuditFocus
   since?: string
   until?: string
   limit?: number
@@ -518,7 +523,9 @@ export async function appendAudit(partial: AuditInput): Promise<AuditEvent | nul
 }
 
 /** Written before a mutation runs. Throws when it cannot be stored; the caller must then refuse the mutation. */
-export function appendIntent(partial: AuditInput): Promise<AuditEvent> {
+export async function appendIntent(partial: AuditInput): Promise<AuditEvent> {
+  // Hard constraint: an Intent always names a concrete operation; `bff.mutation` is never written.
+  assertIntentAction(partial.action, 'appendIntent')
   return appendStored(partial, { phase: 'intent' })
 }
 

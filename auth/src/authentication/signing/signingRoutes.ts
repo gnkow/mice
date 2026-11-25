@@ -136,14 +136,15 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
   // Execute signature ceremony
   app.post('/auth/sign/execute', guarded({
     mutates: true,
+    action: 'esign.execute',
     body: { required: ['content', 'meaning', 'expectedHash'] }
-  }, async ({ c, user, body }) => {
+  }, async ({ c, user, body, audit: writeOutcome }) => {
     const unavailable = await directoryFailure(user)
     if (unavailable) return unavailable
     // Ticket 23: Check for critical IdP drift before signing
     const driftCheck = await isSigningBlockedByDrift()
     if (driftCheck.blocked) {
-      await audit(c, user, 'session', {
+      await writeOutcome({
         status: 503,
         action: 'signature.blocked_by_drift',
         message: 'Signature blocked: critical IdP drift detected',
@@ -171,7 +172,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     // Verify hash hasn't changed
     const prepared = prepareForSigning(content)
     if (prepared.hash !== expectedHash) {
-      await audit(c, user, 'session', {
+      await writeOutcome({
         status: 400,
         action: 'signature.hash_mismatch',
         message: 'Signature rejected: content changed after display',
@@ -197,7 +198,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
 
       // Refuse signing without verified MFA evidence (Part 11 §11.200 requirement)
       if (!evidence.ok) {
-        await audit(c, user, 'session', {
+        await writeOutcome({
           status: 403,
           action: 'signature.mfa_required',
           message: 'Electronic signature requires verified MFA evidence',
@@ -286,7 +287,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
           )
         }
         const reason = err instanceof Error ? err.message : 'signature record unavailable'
-        await audit(c, user, 'session', {
+        await writeOutcome({
           status: 503,
           action: 'esign.failed',
           message: `Signature not recorded: ${reason}`,
@@ -295,8 +296,18 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
         return c.json({ error: 'Signature could not be recorded' }, 503)
       }
 
-      // No standalone esign.created audit: evidence rides on the mutation outcome via signature_id.
-      // Failures still audit as esign.failed (no mutation row to attach to).
+      // Ceremony Outcome names esign.execute; consuming mutations still carry signature_id evidence.
+      await writeOutcome({
+        status: 200,
+        action: 'esign.execute',
+        message: 'Electronic signature ceremony completed',
+        detail: {
+          signatureId: saved.id,
+          meaning,
+          hash: signature.hash,
+          changeControlId,
+        },
+      })
       return c.json({
         signature: {
           id: saved.id,
@@ -311,7 +322,7 @@ export function registerSigningRoutes(app: Hono, { audit }: AuditDep): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Signature creation failed'
       
-      await audit(c, user, 'session', {
+      await writeOutcome({
         status: 400,
         action: 'esign.failed',
         message: `Signature failed: ${message}`,

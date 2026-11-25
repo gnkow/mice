@@ -49,6 +49,8 @@ export function signatureEvidenceSections(action: string, detail: Detail): Evide
   const ver = (detail.verificationMetadata ?? {}) as Record<string, unknown>
 
   const identity = rowsFromPairs([
+    ['Signature id', str(detail.signatureId)],
+    ['Meaning', str(detail.meaning)],
     ['Signed name', str(signer?.name)],
     ['Issuer (iss)', str(signer?.iss)],
     ['Subject (sub)', str(signer?.sub)],

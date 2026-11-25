@@ -136,6 +136,7 @@ const batchReadPolicy = {
 const writePolicy = {
   ...readPolicy,
   mutates: true,
+  action: 'meta.set',
   reason: true,
   body: 'json',
   invalidBody: 'Invalid JSON',
@@ -311,7 +312,7 @@ export function registerMetaRoutes(app: Hono) {
   app.put('/auth/meta', write)
   app.patch('/auth/meta', write)
 
-  app.delete('/auth/meta', guarded({ ...readPolicy, mutates: true, reason: true }, async ({ c, user, audit }) => {
+  app.delete('/auth/meta', guarded({ ...readPolicy, mutates: true, action: 'meta.delete', reason: true }, async ({ c, user, audit }) => {
     const q = refFromQuery(c)
     if (!q) return c.json({ error: 'type and id are required' }, 400)
     const ref = await resolveRef(q.type, q.id, queryScope(c))

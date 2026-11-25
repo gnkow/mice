@@ -24,7 +24,7 @@ describe('audit query filters integration', () => {
       method: 'POST',
       path: '/x',
       status: 0,
-      action: 'bff.mutation',
+      action: 'merge_request.open',
       namespace: 'qf-ns',
     })
     await appendOutcome(intent.id, {
@@ -33,7 +33,7 @@ describe('audit query filters integration', () => {
       method: 'POST',
       path: '/x',
       status: 200,
-      action: 'bff.mutation',
+      action: 'merge_request.open',
       namespace: 'qf-ns',
     })
     const orphan = await appendIntent({
@@ -42,7 +42,7 @@ describe('audit query filters integration', () => {
       method: 'POST',
       path: '/y',
       status: 0,
-      action: 'bff.mutation',
+      action: 'merge_request.open',
       namespace: 'qf-ns',
     })
     await appendAudit({
@@ -60,5 +60,32 @@ describe('audit query filters integration', () => {
     assert.ok(!ids.includes(intent.id), 'resolved intent hidden')
     assert.ok(ids.includes(orphan.id), 'orphan intent visible')
     assert.ok(events.every((e) => e.namespace === 'qf-ns'))
+  })
+
+  it('never writes bff.mutation as an Intent, under any condition', async () => {
+    const { IntentActionError } = await import('./auditIntentAction.js')
+    const base = { actor, via: 'session' as const, method: 'POST', path: '/x', status: 0, namespace: 'qf-ban' }
+    await assert.rejects(appendIntent({ ...base, action: 'bff.mutation' }), IntentActionError)
+    await assert.rejects(appendIntent({ ...base, action: ' bff.mutation ' }), IntentActionError)
+    await assert.rejects(appendIntent({ ...base, action: '' }), IntentActionError)
+    const { events } = await queryAudit({ namespace: 'qf-ban' })
+    assert.equal(events.length, 0, 'nothing reached the ledger')
+  })
+
+  it('keeps legacy bff.mutation rows visible to Auditors', async () => {
+    const { auditorExcludeActions } = await import('./auditVisibility.js')
+    assert.ok(!auditorExcludeActions([]).includes('bff.mutation'))
+    assert.deepEqual(auditorExcludeActions(['b', 'a', 'b']), ['a', 'b'])
+    const legacy = await appendAudit({
+      actor,
+      via: 'session',
+      method: 'POST',
+      path: '/legacy',
+      status: 200,
+      action: 'bff.mutation',
+      namespace: 'qf-legacy',
+    })
+    const { events } = await queryAudit({ namespace: 'qf-legacy', excludeActions: auditorExcludeActions([]) })
+    assert.ok(events.some((e) => e.id === legacy?.id), 'legacy row still listed')
   })
 })

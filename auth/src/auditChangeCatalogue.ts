@@ -26,7 +26,7 @@ const MUTATION = [
   'repo.collaborator.set', 'repo.collaborator.remove',
   'approver.grant', 'approver.revoke',
   // Signatures (only the outcomes that change a signature record)
-  'esign.created', 'esign.revoked', 'esign.revocation_reverted',
+  'esign.created', 'esign.execute', 'esign.revoked', 'esign.revocation_reverted',
   // Merge requests
   'merge_request.open', 'merge_request.resync', 'merge_request.cancel', 'merge_request.reopen',
   'merge_request.reject', 'merge_request.reject_reverted', 'merge_request.complete',
@@ -82,6 +82,7 @@ const NON_MUTATION = [
   // Reads, queries, rejections
   'repo.read', 'repo.list', 'versions.query', 'meta.read', 'lineage.read', 'unclassified',
   'acl_bypass_read', 'request.rejected', 'request.cross_site_rejected', 'request.missing_origin',
+  // Legacy placeholder: historic rows only; never written as an Intent (see auditIntentAction.ts)
   'bff.mutation',
   // Authentication events
   'auth.login', 'auth.login.failed', 'auth.reauth', 'auth.reauth.failed', 'auth.logout', 'auth.suspended',

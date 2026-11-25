@@ -10,6 +10,7 @@ export function registerRevocationRoutes(app: Hono): void {
     '/auth/instance/revoke-sessions',
     guarded({
       mutates: true,
+      action: 'session.revoke',
       reason: true,
       body: { required: ['sub', 'iss'] },
     }, async ({ c, user, body }) => {

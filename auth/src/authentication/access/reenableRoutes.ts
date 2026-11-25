@@ -24,6 +24,7 @@ export function registerReenableRoutes(app: Hono, _deps: AuditDep): void {
   app.post('/auth/admin/re-enable', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'auth.reenable.confirmed',
     reason: true,
     body: { required: ['principal'] },
   }, async ({ c, user, body, audit }) => {

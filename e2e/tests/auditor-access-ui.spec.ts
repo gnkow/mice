@@ -96,7 +96,7 @@ test.describe('Auditor access UI (#13)', () => {
     ).toBeVisible()
 
     const evidence = page.getByTestId('signature-evidence').first()
-    await evidence.getByRole('button', { name: 'Signature evidence' }).click()
+    await evidence.getByRole('button', { name: 'Signature' }).click()
     await expect(
       evidence.getByText(/Auditors use this to prove who signed/i),
     ).toBeVisible()

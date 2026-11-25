@@ -7,21 +7,21 @@ import { mintSession } from '../helpers/session'
  * #155 — Audit investigation UI: focus presets, density, evidence in Actions.
  */
 
-const esignEvent = {
+const signedMutationEvent = {
   id: 'sig-inv-155',
   seq: 10,
   ts: new Date().toISOString(),
   actor: { sub: 'signer', iss: 'mice-e2e', name: 'Sig Signer', email: 'signer@mice.local' },
   via: 'session',
   method: 'POST',
-  path: '/auth/signatures',
+  path: '/auth/admin/seal-keys/rotate',
   status: 200,
-  action: 'esign.created',
-  action_label: 'Electronic signature created',
-  resource_uri: 'action:esign.created',
-  message: 'Signature created',
+  action: 'seal_key.rotated',
+  action_label: 'Seal key rotated',
+  resource_uri: 'action:seal_key.rotated',
+  message: 'Normal seal key rotation completed',
   signature_id: 'sig-inv-155',
-  change: { before: null, after: { signatureId: 'sig-inv-155' } },
+  change: { before: null, after: { keyId: 'key-155' } },
   detail: {
     signatureId: 'sig-inv-155',
     meaning: 'Approved',
@@ -34,6 +34,25 @@ const esignEvent = {
       idp_issuer: 'https://idp.e2e/155',
     },
   },
+}
+
+const mergeRequestEvent = {
+  id: 'mr-inv-155',
+  seq: 11,
+  ts: new Date(Date.now() - 30_000).toISOString(),
+  actor: { sub: 'merger', iss: 'mice-e2e', name: 'Merger', email: 'merger@mice.local' },
+  via: 'session',
+  method: 'POST',
+  path: '/auth/repos/ns/repo/merge-requests',
+  status: 200,
+  action: 'merge_request.open',
+  action_label: 'Merge request opened',
+  resource_uri: 'repo:ns/repo',
+  namespace: 'ns',
+  repo: 'repo',
+  message: 'Opened merge request',
+  change: { before: null, after: { id: 'mr-1' } },
+  detail: {},
 }
 
 const fileEvent = {
@@ -56,7 +75,7 @@ const fileEvent = {
 }
 
 test.describe('Audit investigation UI (#155)', () => {
-  test('TC-AUDIT-INV-01: Signatures preset filters URL; Evidence opens from Actions', async ({
+  test('TC-AUDIT-INV-01: Focus presets filter signed / merge_request rows; Evidence opens', async ({
     page,
   }) => {
     await mintSession(page, {
@@ -68,15 +87,17 @@ test.describe('Audit investigation UI (#155)', () => {
 
     await page.route('**/auth/audit?*', async (route) => {
       const url = new URL(route.request().url())
-      const action = url.searchParams.get('action')
+      const focus = url.searchParams.get('focus')
       const res = await route.fetch()
       const body = await res.json()
       const injected =
-        action === 'esign'
-          ? [esignEvent]
-          : action === 'file'
-            ? [fileEvent]
-            : [esignEvent, fileEvent]
+        focus === 'signatures'
+          ? [signedMutationEvent]
+          : focus === 'merges'
+            ? [mergeRequestEvent]
+            : focus === 'files'
+              ? [fileEvent]
+              : [signedMutationEvent, mergeRequestEvent, fileEvent]
       await route.fulfill({
         response: res,
         json: { ...body, events: injected },
@@ -85,25 +106,31 @@ test.describe('Audit investigation UI (#155)', () => {
 
     await page.goto('/audit')
     await expect(page.getByTestId('audit-investigation-presets')).toBeVisible()
-    await expect(page.getByRole('columnheader', { name: 'Actions' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Evidence' })).toBeVisible()
 
     const signatures = page.getByTestId('audit-preset-signatures')
     await signatures.click()
-    await expect(page).toHaveURL(/action=esign/)
+    await expect(page).toHaveURL(/focus=signatures/)
     await expect(signatures).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.locator('.audit-table')).toContainText('esign.created')
+    await expect(page.locator('.audit-table')).toContainText('seal_key.rotated')
     await expect(page.locator('.audit-table')).not.toContainText('file.write')
 
     const actionsCell = page.locator('td.audit-col-actions').first()
     const evidence = actionsCell.getByTestId('signature-evidence')
     await expect(evidence).toBeVisible()
-    await evidence.getByRole('button', { name: 'Signature evidence' }).click()
+    await evidence.getByRole('button', { name: 'Signature' }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await expect(evidence.getByTestId('signature-evidence-acr')).toHaveText('mfa')
     await expect(evidence.getByTestId('signature-evidence-jwks-kid')).toHaveText('kid-e2e-155')
 
+    await page.getByTestId('audit-preset-merges').click()
+    await expect(page).toHaveURL(/focus=merges/)
+    await expect(page.getByTestId('audit-preset-merges')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.audit-table')).toContainText('merge_request.open')
+    await expect(page.locator('.audit-table')).not.toContainText('file.write')
+
     await page.getByTestId('audit-preset-files').click()
-    await expect(page).toHaveURL(/action=file/)
+    await expect(page).toHaveURL(/focus=files/)
     await expect(page.getByTestId('audit-preset-files')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('.audit-table')).toContainText('file.write')
     await expect(page.locator('td.audit-col-actions').first().getByTestId('signature-evidence')).toHaveCount(

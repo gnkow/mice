@@ -28,6 +28,15 @@ export type AuditVisibilityAction = {
  */
 export const DEFAULT_AUDITOR_HIDDEN_ACTIONS: readonly string[] = defaultAuditorHiddenFromCatalog()
 
+/**
+ * Hide-set applied to Auditor queries: exactly the Settings hide-set. Nothing is force-hidden;
+ * legacy `bff.mutation` rows stay visible (and labelled) so no ledger entry is suppressed.
+ * New Intents never carry that action (see `auditIntentAction.ts`).
+ */
+export function auditorExcludeActions(hiddenFromSettings: readonly string[]): string[] {
+  return [...new Set(hiddenFromSettings)].sort()
+}
+
 const knownValues = () => new Set(knownAuditActions().map((a) => a.value))
 
 /** Product default hidden set, filtered to the current catalogue. */

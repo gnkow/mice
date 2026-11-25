@@ -31,7 +31,7 @@ describe('audit Intent↔Outcome integration', () => {
       method: 'POST',
       path: '/auth/x',
       status: 0,
-      action: 'bff.mutation',
+      action: 'merge_request.open',
       reason: 'Routine settings correction for assay batch',
       reason_source: 'explicit',
       change_control_id: 'CC-20261113-aabbccdd',

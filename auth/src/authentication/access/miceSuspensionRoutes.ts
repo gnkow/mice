@@ -18,6 +18,7 @@ export function registerMiceSuspensionRoutes(app: Hono, _deps: AuditDep): void {
   app.post('/auth/admin/mice-suspension', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'admin.mice_suspension.set',
     reason: true,
     body: { required: ['principal', 'reason'] },
   }, async ({ c, user, body, audit }) => {
@@ -42,6 +43,7 @@ export function registerMiceSuspensionRoutes(app: Hono, _deps: AuditDep): void {
   app.post('/auth/admin/mice-suspension/lift', guarded({
     gate: adminRoleGate,
     mutates: true,
+    action: 'admin.mice_suspension.lift',
     reason: true,
     body: { required: ['principal', 'reason'] },
   }, async ({ c, user, body, audit }) => {

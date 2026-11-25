@@ -1,5 +1,16 @@
 import { auditActionMatches } from './auditSchema.js'
 
+/** Investigation Focus presets (`?focus=` from Audit UI). */
+export const AUDIT_FOCUS_VALUES = ['signatures', 'files', 'merges', 'roles'] as const
+export type AuditFocus = (typeof AUDIT_FOCUS_VALUES)[number]
+
+export function parseAuditFocus(raw: string | undefined | null): AuditFocus | undefined {
+  if (!raw) return undefined
+  return (AUDIT_FOCUS_VALUES as readonly string[]).includes(raw)
+    ? (raw as AuditFocus)
+    : undefined
+}
+
 /** Minimal event shape the filter pipeline needs (avoids importing audit.ts). */
 export type AuditFilterEvent = {
   id: string
@@ -11,6 +22,8 @@ export type AuditFilterEvent = {
   repo?: string
   phase?: string
   intent_id?: string
+  /** Ceremony / signed mutation rows carry this even when action is not esign.*. */
+  signature_id?: string
   detail?: Record<string, unknown>
 }
 
@@ -19,6 +32,12 @@ export type AuditFilterQuery = {
   namespace?: string
   repo?: string
   action?: string
+  /**
+   * Investigation Focus (#155): signatures = signed rows / esign.*;
+   * merges = merge + merge_request.*; files/roles = action prefix.
+   * Takes precedence over `action` when set.
+   */
+  focus?: AuditFocus
   since?: string
   until?: string
   sessionId?: string
@@ -29,6 +48,28 @@ export type AuditFilterQuery = {
   includeChain?: boolean
   /** Exact action names to omit (Auditor visibility). */
   excludeActions?: string[]
+}
+
+/** True when the row is a signature ceremony or a mutation that consumed one. */
+export function eventIsSigned(e: AuditFilterEvent): boolean {
+  if (e.signature_id) return true
+  if (e.action.startsWith('esign.') || e.action === 'signature.created') return true
+  return false
+}
+
+function eventMatchesFocus(e: AuditFilterEvent, focus: AuditFocus): boolean {
+  switch (focus) {
+    case 'signatures':
+      return eventIsSigned(e)
+    case 'files':
+      return auditActionMatches(e.action, 'file')
+    case 'merges':
+      return (
+        auditActionMatches(e.action, 'merge') || auditActionMatches(e.action, 'merge_request')
+      )
+    case 'roles':
+      return auditActionMatches(e.action, 'role')
+  }
 }
 
 /** Session ids an event refers to. */
@@ -109,9 +150,15 @@ export function applyAuditQueryFilters<T extends AuditFilterEvent>(
   if (q.repo) {
     events = events.filter((e) => e.repo === q.repo)
   }
-  if (q.action) {
-    const filter = q.action
-    events = events.filter((e) => auditActionMatches(e.action, filter))
+  if (q.focus) {
+    const focus = q.focus
+    events = events.filter((e) => eventMatchesFocus(e, focus))
+  } else if (q.action) {
+    const filters = q.action
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    events = events.filter((e) => filters.some((f) => auditActionMatches(e.action, f)))
   }
   if (q.excludeActions && q.excludeActions.length > 0) {
     const hidden = new Set(q.excludeActions)
