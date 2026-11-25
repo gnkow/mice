@@ -10,6 +10,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { appendAudit } from '../../audit.js'
+import { requireAuditChange, type AuditChange } from '../../auditChange.js'
 import { getDb } from '../../db/database.js'
 import { sealKeys } from '../../db/schema.js'
 import { eq, and, or, isNull, lte, gte, sql } from 'drizzle-orm'
@@ -234,6 +235,27 @@ export type SealKeyRotationAuditEvent = {
   action: 'seal_key.rotated' | 'seal_key.emergency_rotation'
   message: string
   detail: Record<string, unknown>
+  change: AuditChange
+}
+
+/**
+ * Primary-key handover as an audit delta. Key material is never recorded.
+ * `oldKey` is the retired primary (null when the ring was empty).
+ */
+export function sealKeyRotationChange(
+  oldKey: (Pick<SealKey, 'id'> & Partial<Pick<SealKey, 'validUntil' | 'revokedAt'>>) | null,
+  newKey: Pick<SealKey, 'id' | 'validFrom'> & Partial<Pick<SealKey, 'rotationType'>>,
+): AuditChange {
+  return requireAuditChange(
+    { primary_key_id: oldKey?.id ?? null },
+    {
+      primary_key_id: newKey.id,
+      primary_key_valid_from: newKey.validFrom,
+      primary_key_rotation_type: newKey.rotationType ?? null,
+      retired_key_valid_until: oldKey?.validUntil ?? null,
+      retired_key_revoked_at: oldKey?.revokedAt ?? null,
+    },
+  )
 }
 
 /** Pure audit payload for a completed rotation — routes/CLI/schedule share wording. */
@@ -255,6 +277,7 @@ export function buildSealKeyRotationAudit(
         rotationType: 'normal',
         validFrom: keys.newKey.validFrom,
       },
+      change: sealKeyRotationChange(keys.oldKey ?? null, keys.newKey),
     }
   }
   const reason = input.reason ?? 'Emergency rotation requested'
@@ -278,6 +301,7 @@ export function buildSealKeyRotationAudit(
       rotationType: 'emergency',
       reason,
     },
+    change: sealKeyRotationChange(oldKey, keys.newKey),
   }
 }
 
@@ -300,8 +324,8 @@ export async function rotateSealKeyWithAudit(
   const audit = deps.audit ?? ((event) => appendAudit(event))
 
   if (input.kind === 'normal') {
-    const { newKey } = await rotate('normal', at)
-    await audit(buildSealKeyRotationAudit(input, { newKey }))
+    const { oldKey, newKey } = await rotate('normal', at)
+    await audit(buildSealKeyRotationAudit(input, { oldKey, newKey }))
     return { kind: 'normal', newKey }
   }
 

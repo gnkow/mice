@@ -1,6 +1,7 @@
 import { notInArray } from 'drizzle-orm'
 import type { Context } from 'hono'
 import { appendAudit, type AuditActor } from '../../audit.js'
+import { EMPTY_AUDIT_CHANGE } from '../../auditChange.js'
 import {
   collectStorePrincipals,
   directoryIssuer,
@@ -118,6 +119,7 @@ export async function runDirectorySync(
         path: 'directory-sync',
         status: 502,
         action: 'directory.sync.failed',
+        change: EMPTY_AUDIT_CHANGE,
         message: 'Directory unreachable; nobody was revoked',
         detail: { source: 'directory-sync' },
       })
@@ -154,6 +156,7 @@ export async function runDirectorySync(
       path: 'directory-sync',
       status: 500,
       action: 'directory.sync.failed',
+      change: EMPTY_AUDIT_CHANGE,
       message: `Offboarding of ${p.sub} is incomplete; it will be retried`,
       detail: { source: 'directory-sync', subject: { sub: p.sub, iss: p.iss }, failed },
     })
@@ -188,6 +191,7 @@ export async function checkDirectorySyncStale(intervalSec: number = env.director
     path: 'directory-sync',
     status: 200,
     action: 'directory.sync.stale',
+    change: EMPTY_AUDIT_CHANGE,
     message: 'Directory sync has not succeeded for more than twice its interval',
     detail: { source: 'directory-sync', lastSuccessAt: state.lastSuccessAt ?? null },
   })

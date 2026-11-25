@@ -1,5 +1,6 @@
 import { asc, eq } from 'drizzle-orm'
 import { appendAudit } from '../../audit.js'
+import { requireAuditChange } from '../../auditChange.js'
 import { getDb } from '../../db/database.js'
 import { webSessions } from '../../db/schema.js'
 
@@ -69,6 +70,10 @@ export async function enforceWebSessionCap(input: {
       path: '/auth/session/seal',
       status: 200,
       action: 'session.evict',
+      change: requireAuditChange(
+        { session_id_hash: oldest.idHash, principal_id: input.principalId, session_start: oldest.sessionStart },
+        null,
+      ),
       message: `Session evicted: cap exceeded (${WEB_SESSION_CAP} concurrent sessions max)`,
       detail: {
         evictedSessionHash: oldest.idHash,

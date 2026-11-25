@@ -5,7 +5,16 @@ import {
   principalAccessFlags,
   suspensionRequests,
 } from '../../db/schema.js'
-import { appendIntent, appendOutcome, type AuditVia } from '../../audit.js'
+import {
+  appendIntent,
+  appendOutcome,
+  EMPTY_AUDIT_CHANGE,
+  NoChangeError,
+  requireAuditChange,
+  type AuditVia,
+} from '../../audit.js'
+import { captureBefore } from '../../auditCapture.js'
+import { principalAccessAuditSnapshot, principalsAccessAuditSnapshot } from './accessAudit.js'
 import {
   bumpAllCredentialsCutoff,
   bumpSessionsOnlyCutoff,
@@ -85,6 +94,14 @@ type AuditedMutation<T> = {
   detail?: Record<string, unknown>
   outcomeDetail?: Record<string, unknown>
   auditFailure?: boolean
+  /**
+   * State read around the write: `before` runs ahead of the Intent (fail-closed when it cannot be
+   * read), `after` once the write landed. Their delta is the Outcome's `change`; a no-op refuses.
+   */
+  capture: {
+    before: () => Promise<Record<string, unknown> | null>
+    after: (result: T) => Promise<Record<string, unknown> | null>
+  }
   mutate: () => Promise<T>
 }
 
@@ -100,6 +117,7 @@ const unavailable = () =>
 async function runAuditedAccessMutation<T>(args: AuditedMutation<T>): Promise<T> {
   if (args.auditFailure) throw unavailable()
   const detail = args.detail ?? {}
+  const beforeState = await captureBefore(args.capture.before)
   let intent
   try {
     intent = await appendIntent({
@@ -110,6 +128,7 @@ async function runAuditedAccessMutation<T>(args: AuditedMutation<T>): Promise<T>
       status: 0,
       action: args.action,
       message: args.intentMessage,
+      change: EMPTY_AUDIT_CHANGE,
       detail: { principal: principalKey(args.principal), ...detail },
     })
   } catch {
@@ -117,6 +136,27 @@ async function runAuditedAccessMutation<T>(args: AuditedMutation<T>): Promise<T>
   }
 
   const result = await args.mutate()
+
+  let change
+  try {
+    change = requireAuditChange(beforeState, await args.capture.after(result))
+  } catch (err) {
+    if (err instanceof NoChangeError) {
+      // Refused as a no-op: close the Intent without a mutation outcome so none is left dangling.
+      await appendOutcome(intent.id, {
+        actor: { ...args.actor, email: '', name: '' },
+        via: args.context.via ?? 'system',
+        method: 'POST',
+        path: args.context.path ?? '/auth/admin/revoke',
+        status: 400,
+        action: args.action,
+        message: 'No change',
+        change: EMPTY_AUDIT_CHANGE,
+        detail: { principal: principalKey(args.principal), reason: 'no_change' },
+      })
+    }
+    throw err
+  }
 
   await appendOutcome(intent.id, {
     actor: { ...args.actor, email: '', name: '' },
@@ -126,9 +166,18 @@ async function runAuditedAccessMutation<T>(args: AuditedMutation<T>): Promise<T>
     status: args.context.status ?? 200,
     action: args.action,
     message: args.outcomeMessage,
+    change,
     detail: { principal: principalKey(args.principal), ...(args.outcomeDetail ?? detail) },
   })
   return result
+}
+
+/** Before/after reader for a single Principal's credential and suspension state. */
+function accessCapture(principal: PrincipalId) {
+  return {
+    before: () => principalAccessAuditSnapshot(principal),
+    after: () => principalAccessAuditSnapshot(principal),
+  }
 }
 
 /** Bump the all-credentials cutoff and mark the Principal permanently revoked. */
@@ -182,6 +231,7 @@ export async function revokeAll(principal: PrincipalId, options: RevokeOptions):
     context: { via: options.via, path: options.path ?? '/auth/admin/revoke' },
     detail: { source: 'admin-revocation' },
     auditFailure: options.auditFailure,
+    capture: accessCapture(principal),
     mutate: () => inTransaction((tx) => applyPermanentRevocation(tx, principal, at)),
   })
 }
@@ -228,6 +278,16 @@ export async function suspend(principal: PrincipalId, options: SuspendOptions): 
     detail: { source: 'admin-suspension' },
     outcomeDetail: { source: 'admin-suspension', suspension_id: id },
     auditFailure: options.auditFailure,
+    // A suspension request is a created record (the suspension itself lands on confirm).
+    capture: {
+      before: async () => null,
+      after: async () => ({
+        suspension_id: id,
+        principal: principalKey(principal),
+        suspended_by: principalKey(options.suspendedBy),
+        expires_at: new Date(now + SUSPENSION_CONFIRM_WINDOW_MS).toISOString(),
+      }),
+    },
     mutate: async () => {
       await getDb().insert(suspensionRequests).values({
         id,
@@ -312,6 +372,16 @@ export async function confirmSuspension(
       path: options.path ?? `/auth/admin/suspend/${suspensionId}/confirm`,
     },
     detail: { source: 'admin-suspension', suspension_id: suspensionId },
+    capture: {
+      before: async () => ({
+        ...(await principalAccessAuditSnapshot(principal)),
+        request_confirmed: false,
+      }),
+      after: async () => ({
+        ...(await principalAccessAuditSnapshot(principal)),
+        request_confirmed: true,
+      }),
+    },
     mutate: () => inTransaction(async (tx) => {
       const [confirmed] = await tx
         .update(suspensionRequests)
@@ -343,6 +413,7 @@ export async function selfSuspend(
     outcomeMessage: `Suspended ${principalKey(principal)}`,
     context: { via: options.via, path: options.path ?? '/auth/me/suspend' },
     detail: { source: 'self-suspension' },
+    capture: accessCapture(principal),
     mutate: () => inTransaction((tx) =>
       applySuspension(tx, principal, at, principal, `Self-suspended: ${options.reason}`),
     ),
@@ -369,6 +440,10 @@ export async function revokeOnRoleChange(
     detail: {
       source: 'role-change',
       principals: unique.map(principalKey),
+    },
+    capture: {
+      before: () => principalsAccessAuditSnapshot(unique),
+      after: () => principalsAccessAuditSnapshot(unique),
     },
     mutate: () => inTransaction(async (tx) => {
       for (const principal of unique) {

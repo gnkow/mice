@@ -11,6 +11,9 @@ import {
 } from '../access/revocation.js'
 import { adminRoleGate } from '../../decisionHttp.js'
 import type { AuditDep } from '../../routeDeps.js'
+import { requireAuditChange } from '../../auditChange.js'
+import { captureBefore } from '../../auditCapture.js'
+import { principalAccessAuditSnapshot } from './accessAudit.js'
 
 /**
  * Feature 5: Admin Revocation Routes
@@ -42,6 +45,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
     }
 
     try {
+      const before = await captureBefore(() => principalAccessAuditSnapshot(principal))
       await revokeAll(principal, {
         revokedBy: { iss: user.iss, sub: user.sub },
         reason,
@@ -49,6 +53,7 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
 
       await audit(c, user, 'session', {
         action: 'admin.revoke_all',
+        change: requireAuditChange(before, await principalAccessAuditSnapshot(principal)),
         message: `Revoked all sessions for ${principalKey}`,
         detail: { principal: principalKey, reason },
       })
@@ -92,6 +97,13 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
 
     await audit(c, user, 'session', {
       action: 'admin.suspend_initiated',
+      // A suspension request is a created record; the suspension itself lands on confirm.
+      change: requireAuditChange(null, {
+        suspension_id: requestId,
+        principal: principalKey,
+        suspended_by: `${user.iss}|${user.sub}`,
+        expires_in_sec: 24 * 60 * 60,
+      }),
       message: `Initiated suspension for ${principalKey}`,
       detail: { principal: principalKey, reason, requestId },
     })
@@ -110,13 +122,22 @@ export function registerAdminRevocationRoutes(app: Hono, { audit }: AuditDep): v
     const reason = String(body.reason)
 
     try {
+      const pending = (await captureBefore(() => listPendingSuspensions())).find((s) => s.id === requestId)
+      const before = pending
+        ? { ...(await captureBefore(() => principalAccessAuditSnapshot(pending.principal))), request_confirmed: false }
+        : null
       await confirmSuspension(requestId, {
         confirmedBy: { iss: user.iss, sub: user.sub },
         reason,
       })
+      // An unknown/expired request makes confirmSuspension throw (404) before this point.
+      const after = pending
+        ? { ...(await principalAccessAuditSnapshot(pending.principal)), request_confirmed: true }
+        : null
 
       await audit(c, user, 'session', {
         action: 'admin.suspend_confirmed',
+        change: requireAuditChange(before, after),
         message: `Confirmed suspension request ${requestId}`,
         detail: { requestId, reason },
       })

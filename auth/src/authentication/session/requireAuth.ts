@@ -3,6 +3,7 @@ import { actorFromUser, appendAudit, type AuditVia } from '../../audit.js'
 import { sameOriginGuard } from './csrf.js'
 import { auditorMfaRefusal, preparePrincipal } from '../../authz.js'
 import { env } from '../../env.js'
+import { EMPTY_AUDIT_CHANGE } from '../../auditChange.js'
 import { getSession, touchSession, type SessionUser } from './session.js'
 import {
   can,
@@ -142,6 +143,7 @@ async function refuseSuspended(c: Context, user: SessionUser, via: 'session' | '
     path: c.req.path,
     status: 403,
     action: 'auth.suspended',
+    change: EMPTY_AUDIT_CHANGE,
     message: `Refused ${canonicalIssuer(user.iss)}|${user.sub}`,
   })
   return deny(403, 'Suspended')
@@ -185,6 +187,7 @@ export async function authenticate(c: Context, policy: AuthPolicy = {}): Promise
         path: c.req.path,
         status: 200,
         action: 'auth.reenable.automatic',
+        change: event.change ?? EMPTY_AUDIT_CHANGE,
         message: event.message,
         detail: event.detail,
       })

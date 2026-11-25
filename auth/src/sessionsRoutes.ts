@@ -16,6 +16,7 @@ import { peekConnectTicket } from './sessionsConnect.js'
 import { getSessionRecord } from './sessionsStore.js'
 import { listSessionTemplates } from './sessionsTemplates.js'
 import { guarded } from './authentication/index.js'
+import { changeCaptureResponse } from './authentication/session/routeGuard.js'
 
 export function registerSessionRoutes(app: Hono) {
   app.get('/auth/sessions/templates', guarded({ allowScoped: true }, async ({ c }) => {
@@ -45,6 +46,8 @@ export function registerSessionRoutes(app: Hono) {
       )
       return c.json({ session: publicSession(session) }, 201)
     } catch (err) {
+      const refused = changeCaptureResponse(err, c)
+      if (refused) return refused
       const msg = err instanceof Error ? err.message : 'create failed'
       const explicit = err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 0
       const status = explicit || (/Forbidden|requires repository/i.test(msg) ? 403 : 400)
@@ -81,6 +84,8 @@ export function registerSessionRoutes(app: Hono) {
       )
       return c.json(result)
     } catch (err) {
+      const refused = changeCaptureResponse(err, c)
+      if (refused) return refused
       const status =
         err && typeof err === 'object' && 'status' in err
           ? Number((err as { status: number }).status)
@@ -110,6 +115,8 @@ export function registerSessionRoutes(app: Hono) {
       )
       return c.json({ session })
     } catch (err) {
+      const refused = changeCaptureResponse(err, c)
+      if (refused) return refused
       const status =
         err && typeof err === 'object' && 'status' in err
           ? Number((err as { status: number }).status)
@@ -128,6 +135,8 @@ export function registerSessionRoutes(app: Hono) {
       const session = await updateSessionMounts(user, via, c.req.param('id'), parsed)
       return c.json({ session })
     } catch (err) {
+      const refused = changeCaptureResponse(err, c)
+      if (refused) return refused
       const status =
         err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 400
       const msg = err instanceof Error ? err.message : 'mount update failed'
@@ -145,6 +154,8 @@ export function registerSessionRoutes(app: Hono) {
       })
       return c.json({ session })
     } catch (err) {
+      const refused = changeCaptureResponse(err, c)
+      if (refused) return refused
       const status =
         err && typeof err === 'object' && 'status' in err ? Number((err as { status: number }).status) : 400
       const msg = err instanceof Error ? err.message : 'remount failed'
@@ -162,6 +173,8 @@ export function registerSessionRoutes(app: Hono) {
       )
       return c.json({ session })
     } catch (err) {
+      const refused = changeCaptureResponse(err, c)
+      if (refused) return refused
       const status =
         err && typeof err === 'object' && 'status' in err
           ? Number((err as { status: number }).status)
@@ -180,6 +193,8 @@ export function registerSessionRoutes(app: Hono) {
       )
       return c.json({ session })
     } catch (err) {
+      const refused = changeCaptureResponse(err, c)
+      if (refused) return refused
       const status =
         err && typeof err === 'object' && 'status' in err
           ? Number((err as { status: number }).status)

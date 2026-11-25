@@ -11,6 +11,7 @@ import {
   type AuditEvent,
   type AuditVia,
 } from './audit.js'
+import { auditChange, requireAuditChange } from './auditChange.js'
 import { env } from './env.js'
 import {
   appendLineage,
@@ -69,6 +70,39 @@ function redactEnv(envMap: Record<string, string>): Record<string, string> {
 }
 
 /** Branch name from resolved `branch:commit` source_ref. */
+/**
+ * Job state for audit deltas. `env` and `args` are left out on purpose (they may carry secrets);
+ * `inputs`/`outputs` carry the dataset paths and content hashes the job read and wrote.
+ */
+export function jobSnapshot(job: JobRun): Record<string, unknown> {
+  return {
+    id: job.id,
+    name: job.name,
+    status: job.status,
+    namespace: job.namespace,
+    repo: job.repo,
+    source_ref: job.source_ref,
+    pin_commit: job.pin_commit,
+    target_branch: job.target_branch,
+    sync_branch: job.sync_branch,
+    result_commit: job.result_commit,
+    result_branch: job.result_branch,
+    runner: job.runner,
+    image: job.image,
+    image_digest: job.image_digest,
+    command: job.command,
+    workdir: job.workdir,
+    input_globs: job.input_globs,
+    timeout_seconds: job.timeout_seconds,
+    exit_code: job.exit_code,
+    error: job.error,
+    inputs: job.inputs,
+    outputs: job.outputs,
+    started_at: job.started_at,
+    finished_at: job.finished_at,
+  }
+}
+
 export function branchFromSourceRef(sourceRef: string): string {
   const s = sourceRef.trim()
   const colon = s.indexOf(':')
@@ -228,6 +262,7 @@ export async function submitJob(
     path: '/auth/jobs',
     status: 201,
     action: 'job.submit',
+    change: requireAuditChange(null, jobSnapshot(job)),
     namespace: job.namespace,
     repo: job.repo,
     detail: {
@@ -365,6 +400,7 @@ export async function completeCliJob(
     path: `/auth/jobs/${id}/complete`,
     status: 200,
     action: updated.status === 'succeeded' ? 'job.complete' : 'job.fail',
+    change: requireAuditChange(jobSnapshot(job), jobSnapshot(updated)),
     namespace: job.namespace,
     repo: job.repo,
     detail: {
@@ -424,6 +460,8 @@ export async function publishSyncedCliJobs(
   const now = new Date().toISOString()
   const jobs: JobRun[] = []
   const maxLog = env.jobsDefaultMaxLogBytes
+  const publishBefore: Record<string, unknown> = {}
+  const publishAfter: Record<string, unknown> = {}
 
   for (const p of payloads) {
     let id: string
@@ -568,6 +606,8 @@ export async function publishSyncedCliJobs(
       sync_branch: branch,
     }
 
+    publishBefore[`job.${id}`] = existing ? jobSnapshot(existing) : null
+    publishAfter[`job.${id}`] = jobSnapshot(updated)
     await upsertJob(updated)
     if (updated.status === 'succeeded' && !existing) {
       await appendJobLineage(updated)
@@ -581,6 +621,7 @@ export async function publishSyncedCliJobs(
         status: 200,
         action: updated.status === 'succeeded' ? 'job.complete' :
           updated.status === 'failed' ? 'job.fail' : 'job.cancel',
+        change: requireAuditChange(existing ? jobSnapshot(existing) : null, jobSnapshot(updated)),
         namespace: updated.namespace,
         repo: updated.repo,
         detail: {
@@ -600,6 +641,9 @@ export async function publishSyncedCliJobs(
     path: '/auth/jobs/publish',
     status: 200,
     action: 'job.publish',
+    // Aggregate of every upserted job. Re-publishing identical jobs is idempotent (the push must not
+    // fail), so an unchanged publish records an empty change instead of being refused.
+    change: auditChange(publishBefore, publishAfter),
     detail: {
       job_ids: jobs.map((j) => j.id),
       push_branch: branch,
@@ -665,6 +709,7 @@ export async function cancelJob(
     path: `/auth/jobs/${id}/cancel`,
     status: 200,
     action: 'job.cancel',
+    change: requireAuditChange(jobSnapshot(job), jobSnapshot(updated)),
     namespace: job.namespace,
     repo: job.repo,
     detail: {
@@ -752,6 +797,7 @@ async function executeJob(id: string) {
       } catch {
         /* ignore */
       }
+      const failBefore = jobSnapshot(job)
       job = {
         ...job,
         status: 'failed',
@@ -770,6 +816,8 @@ async function executeJob(id: string) {
         path: `/auth/jobs/${id}`,
         status: 200,
         action: 'job.fail',
+        // Background worker: nothing to refuse, so a no-delta transition records an empty change.
+        change: auditChange(failBefore, jobSnapshot(job)),
         namespace: job.namespace,
         repo: job.repo,
         detail: {
@@ -910,6 +958,7 @@ async function executeJob(id: string) {
       }
     }
 
+    const completeBefore = jobSnapshot(job)
     job = {
       ...job,
       id: canonicalId,
@@ -937,6 +986,7 @@ async function executeJob(id: string) {
       path: `/auth/jobs/${canonicalId}`,
       status: terminal === 'succeeded' ? 200 : 500,
       action: terminal === 'succeeded' ? 'job.complete' : 'job.fail',
+      change: auditChange(completeBefore, jobSnapshot(job)),
       namespace: job.namespace,
       repo: job.repo,
       detail: {
@@ -962,6 +1012,7 @@ async function executeJob(id: string) {
       return
     }
     const message = err instanceof Error ? err.message : String(err)
+    const catchBefore = jobSnapshot((await getJob(id)) ?? job)
     job = {
       ...(await getJob(id) ?? job),
       status: 'failed',
@@ -976,6 +1027,7 @@ async function executeJob(id: string) {
       path: `/auth/jobs/${id}`,
       status: 500,
       action: 'job.fail',
+      change: auditChange(catchBefore, jobSnapshot(job)),
       namespace: job.namespace,
       repo: job.repo,
       detail: {

@@ -12,6 +12,9 @@ export const VERSIONED_ACTIONS = new Set([
   'workspace.merge',
 ])
 
+/** Actions whose branch head is read before the mutation, so the audit change can show it. */
+export const BASE_CAPTURED_ACTIONS = new Set([...VERSIONED_ACTIONS, 'branch.delete'])
+
 export type DatasetVersions = {
   dataset?: { base?: string; head?: string }
   unverified?: true
@@ -24,9 +27,23 @@ export type DatasetTarget = {
   publishedCommit?: string
 }
 
+/**
+ * What `before()` learned about the branch head.
+ * - `not_applicable`: nothing to capture (action or path has no branch).
+ * - `known` / `absent`: the head commit, or the branch does not exist yet.
+ * - `unavailable`: oxen could not answer — the change cannot be audited, so callers fail closed.
+ */
+export type DatasetBaseState = 'not_applicable' | 'known' | 'absent' | 'unavailable'
+
 export type DatasetCapture = {
   /** Reads the branch head the mutation starts from; never throws. */
   before(): Promise<void>
+  /** Outcome of `before()`. */
+  baseState(): DatasetBaseState
+  /** The branch head the mutation started from (`known` only). */
+  base(): string | undefined
+  /** Branch the mutation targets, when the path names one. */
+  branch(): string | undefined
   /** The versions for an answered mutation: nothing for a refusal, `unverified` when the new head is unknown. */
   after(upstream: Response, text: string | undefined): DatasetVersions
 }
@@ -114,19 +131,34 @@ export function createDatasetCapture(opts: {
   const applies = VERSIONED_ACTIONS.has(opts.action)
   const target = datasetTarget(opts.pathname)
   const upstreamBase = opts.oxenUpstream ?? env.oxenUpstream
+  const captures = BASE_CAPTURED_ACTIONS.has(opts.action)
   let base: string | undefined
+  let state: DatasetBaseState = 'not_applicable'
 
   return {
+    baseState: () => state,
+    base: () => base,
+    branch: () => target.branch,
+
     async before() {
-      if (!applies || !target.namespace || !target.repo || !target.branch) return
+      if (!captures || !target.namespace || !target.repo || !target.branch) return
+      state = 'unavailable'
       const url = `${upstreamBase}/api/repos/${encodeURIComponent(target.namespace)}/${encodeURIComponent(target.repo)}/branches/${encodeURIComponent(target.branch)}`
       try {
         const res = await (opts.fetchImpl ?? fetch)(url)
+        if (res.status === 404) {
+          state = 'absent'
+          return
+        }
         if (!res.ok) return
         const id = ((await res.json()) as { branch?: { commit_id?: unknown } }).branch?.commit_id
-        if (typeof id === 'string' && id) base = id
+        if (typeof id === 'string' && id) {
+          base = id
+          state = 'known'
+        }
+        // 2xx without a commit id: branch exists but we cannot audit the tip — stay unavailable.
       } catch {
-        /* the base stays unknown */
+        /* the base stays unknown and the state stays unavailable */
       }
     },
 

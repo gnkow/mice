@@ -1,7 +1,20 @@
 import type { AuditEvent } from './audit.js'
+import { EMPTY_AUDIT_CHANGE, type AuditChange } from './auditChange.js'
+import { auditResourceUri } from './auditResourceUri.js'
+
+function upcastChange(raw: unknown): AuditChange {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return EMPTY_AUDIT_CHANGE
+  const o = raw as { before?: unknown; after?: unknown }
+  const side = (v: unknown): AuditChange['before'] => {
+    if (v === null || v === undefined) return null
+    if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>
+    return null
+  }
+  return { before: side(o.before), after: side(o.after) }
+}
 
 /** Current on-write schema version for audit events. */
-export const CURRENT_AUDIT_SCHEMA_VERSION = 1
+export const CURRENT_AUDIT_SCHEMA_VERSION = 3
 
 /**
  * Historic action names → current canonical name (aliases only; never rename stored values).
@@ -64,10 +77,22 @@ export function upcastAuditEvent(raw: unknown): AuditEvent {
     ...(e.detail ? { detail: e.detail } : {}),
     ...(e.owner ? { owner: e.owner } : {}),
     ...(e.hashed_ip ? { hashed_ip: e.hashed_ip } : {}),
+    change: upcastChange(e.change),
+    resource_uri:
+      typeof e.resource_uri === 'string' && e.resource_uri.trim()
+        ? e.resource_uri.trim()
+        : auditResourceUri({
+            action: typeof e.action === 'string' ? e.action : 'other',
+            namespace: e.namespace,
+            repo: e.repo,
+            detail: e.detail,
+          }),
   }
 
   // v0 → v1: ensure schema_version stamped; action aliases remain as stored (readers use auditActionMatches).
-  if (version < 1) {
+  // v1 → v2: resource_uri always present (derived above when missing).
+  // v2 → v3: change always present (empty when missing on legacy rows).
+  if (version < CURRENT_AUDIT_SCHEMA_VERSION) {
     event = { ...event, schema_version: CURRENT_AUDIT_SCHEMA_VERSION }
   }
   return event

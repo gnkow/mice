@@ -20,8 +20,8 @@ export const ACTION_MIN_ROLE: Record<string, RepoRole> = {
 }
 
 /**
- * Authorization-only action for push/pull transport routes. Audit classification
- * is unchanged (intermediate uploads stay `other`); authz treats them as data writes.
+ * Authorization-only action for push/pull transport routes. Audit may use
+ * `commit.upload` / `commit.publish`; authz still treats the transport as `push`.
  */
 export function authzActionForPath(method: string, pathname: string, action: string): string {
   const m = method.toUpperCase()

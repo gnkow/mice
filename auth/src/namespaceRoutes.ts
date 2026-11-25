@@ -50,6 +50,8 @@ import {
   createCustomRepoRole,
   deleteCustomNamespaceRole,
   deleteCustomRepoRole,
+  getCustomNamespaceRole,
+  getCustomRepoRole,
   listCustomNamespaceRoles,
   listCustomRepoRoles,
   listCustomRoleVersions,
@@ -64,7 +66,20 @@ import type {
   RepoFinePermission,
 } from './authzTypes.js'
 import type { AuditDep } from './routeDeps.js'
+import { requireAuditChange } from './auditChange.js'
+import { captureBefore, pickSnapshot, principalRole, principalSeat } from './auditSnapshot.js'
 import { guarded } from './authentication/index.js'
+
+const NS_SNAPSHOT_KEYS = ['id', 'name', 'description', 'basePermission', 'membersCanCreateRepos'] as const
+const REPO_SNAPSHOT_KEYS = ['id', 'namespace', 'name', 'description'] as const
+
+function nsSnapshot(ns: Awaited<ReturnType<typeof getNamespace>>): Record<string, unknown> | null {
+  return pickSnapshot(ns, NS_SNAPSHOT_KEYS)
+}
+
+function repoSnapshot(repo: Awaited<ReturnType<typeof readRepository>>): Record<string, unknown> | null {
+  return pickSnapshot(repo, REPO_SNAPSHOT_KEYS)
+}
 
 function memberTarget(body: {
   kind?: 'user' | 'group'
@@ -113,8 +128,19 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     )
     if (!result.ok) return c.json({ error: result.error }, 400)
     const name = body.name.trim()
+    const created = await getNamespace(name)
     await auditMutation(c, session, 'session', {
       action: 'namespace.create',
+      change: requireAuditChange(
+        null,
+        nsSnapshot(created) ?? {
+          id: result.id,
+          name,
+          description,
+          basePermission: body.basePermission,
+          membersCanCreateRepos: body.membersCanCreateRepos ?? true,
+        },
+      ),
       namespace: name,
       message: `Created namespace ${name}`,
       detail: {
@@ -198,15 +224,18 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       basePermission: BasePermission
       membersCanCreateRepos: boolean
     }>
-    const previous = await getNamespace(ns)
+    const previous = await captureBefore(() => getNamespace(ns))
+    if (!previous) return c.json({ error: 'Not found' }, 404)
     const nextName = body.name?.trim()
     // Display-name rename only: oxen paths use stable namespace UUIDs (no transfer).
     const result = await updateNamespaceSettings(ns, body)
     if (!result.ok) return c.json({ error: result.error }, 400)
     const currentName = nextName || ns
     const updated = await getNamespace(currentName)
+    const settingsChange = requireAuditChange(nsSnapshot(previous), nsSnapshot(updated))
     await auditMutation(c, session, 'session', {
       action: 'namespace.settings.update',
+      change: settingsChange,
       namespace: currentName,
       message: `Updated settings for namespace ${currentName}`,
       detail: {
@@ -246,6 +275,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       typeof raw.deleteRepositories === 'boolean' ? raw.deleteRepositories : true
 
     const deletedRepos: string[] = []
+    const deletedRecords = new Map<string, Awaited<ReturnType<typeof readRepositoryById>>>()
     if (deleteRepositories) {
       try {
         const listRes = await fetch(
@@ -259,6 +289,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
           for (const r of repos) {
             const physicalRepo = r.name
             if (!physicalRepo) continue
+            // Fail-closed: snapshot the repository record before it is deleted.
+            deletedRecords.set(physicalRepo, await captureBefore(() => readRepositoryById(physicalRepo)))
             const delRes = await fetch(
               `${env.oxenUpstream}/api/repos/${encodeURIComponent(physicalNs)}/${encodeURIComponent(physicalRepo)}`,
               { method: 'DELETE' },
@@ -276,6 +308,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
             deletedRepos.push(displayRepo)
             await auditMutation(c, session, 'session', {
               action: 'repo.delete',
+              change: requireAuditChange(
+                repoSnapshot(deletedRecords.get(physicalRepo) ?? null) ?? {
+                  id: physicalRepo,
+                  namespace: ns,
+                  name: displayRepo,
+                  description: null,
+                },
+                null,
+              ),
               namespace: ns,
               repo: displayRepo,
               message: `Deleted repository ${ns}/${displayRepo} (namespace deletion)`,
@@ -316,6 +357,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
     await auditMutation(c, session, 'session', {
       action: 'namespace.delete',
+      change: requireAuditChange(nsSnapshot(settings), null),
       namespace: ns,
       message: `Deleted namespace ${ns}`,
       detail: { deletedRepos, deleteRepositories },
@@ -338,6 +380,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     }
     if (!body.role) return c.json({ error: 'role required' }, 400)
     const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
+    const beforeRole = principalRole(await captureBefore(() => listNamespaceMembers(ns)), body)
     if (kind === 'group') {
       if (!body.group) return c.json({ error: 'group required' }, 400)
       const result = await setNamespaceGroupMember(ns, body.group, body.role, {
@@ -355,13 +398,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       )
       if (!result.ok) return c.json({ error: result.error }, 400)
     }
+    const members = await listNamespaceMembers(ns)
     await auditMutation(c, session, 'session', {
       action: 'namespace.member.set',
+      change: requireAuditChange({ role: beforeRole }, { role: principalRole(members, body) ?? body.role }),
       namespace: ns,
       message: `Set namespace member role ${body.role}`,
       detail: { target: memberTarget(body), role: body.role },
     })
-    return c.json({ ok: true, members: await listNamespaceMembers(ns) })
+    return c.json({ ok: true, members })
   }))
 
   app.delete('/auth/namespaces/:ns/members', guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {
@@ -375,6 +420,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       group?: string
     }
     const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
+    const beforeRole = principalRole(await captureBefore(() => listNamespaceMembers(ns)), body)
     if (kind === 'group') {
       if (!body.group) return c.json({ error: 'group required' }, 400)
       const result = await removeNamespaceGroupMember(ns, body.group)
@@ -386,13 +432,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       const result = await removeNamespaceMember(ns, { sub: body.sub, iss: body.iss })
       if (!result.ok) return c.json({ error: result.error }, 400)
     }
+    const members = await listNamespaceMembers(ns)
     await auditMutation(c, session, 'session', {
       action: 'namespace.member.remove',
+      change: requireAuditChange({ role: beforeRole }, { role: principalRole(members, body) }),
       namespace: ns,
       message: 'Removed namespace member',
       detail: { target: memberTarget(body) },
     })
-    return c.json({ ok: true, members: await listNamespaceMembers(ns) })
+    return c.json({ ok: true, members })
   }))
 
   /** Read AuthZ repository record (description for About, etc.). Requires read. */
@@ -437,12 +485,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
         const next = body.name!.trim()
         if (!next) return c.json({ error: 'Repository name required' }, 400)
         if (next !== repo) {
+          const beforeRename = await captureBefore(() => readRepository(ns, repo))
+          if (!beforeRename) return c.json({ error: 'Repository not found' }, 400)
           const result = await renameRepository(ns, repo, next)
           if (!result.ok) return c.json({ error: result.error }, 400)
           currentName = next
           const updated = await readRepository(ns, next)
           await auditMutation(c, session, 'session', {
             action: 'repo.rename',
+            change: requireAuditChange(repoSnapshot(beforeRename), repoSnapshot(updated)),
             namespace: ns,
             repo: next,
             message: `Renamed repository ${ns}/${repo} → ${next}`,
@@ -453,11 +504,14 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
 
       if (hasDescription) {
         const description = body.description!.trim()
-        const before = await readRepository(ns, currentName)
+        const before = await captureBefore(() => readRepository(ns, currentName))
+        if (!before) return c.json({ error: 'Repository not found' }, 400)
         const result = await updateRepositoryDescription(ns, currentName, description)
         if (!result.ok) return c.json({ error: result.error }, 400)
+        const afterDescription = await readRepository(ns, currentName)
         await auditMutation(c, session, 'session', {
           action: 'repo.settings.update',
+          change: requireAuditChange(repoSnapshot(before), repoSnapshot(afterDescription)),
           namespace: ns,
           repo: currentName,
           message: `Updated description for ${ns}/${currentName}`,
@@ -541,6 +595,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     }
     if (!body.role) return c.json({ error: 'role required' }, 400)
     const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
+    const beforeRole = principalRole(await captureBefore(() => listRepoCollaborators(ns, repo)), body)
     if (kind === 'group') {
       if (!body.group) return c.json({ error: 'group required' }, 400)
       const result = await setRepoGroupCollaborator(ns, repo, body.group, body.role, {
@@ -559,14 +614,16 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       )
       if (!result.ok) return c.json({ error: result.error }, 400)
     }
+    const collaborators = await listRepoCollaborators(ns, repo)
     await auditMutation(c, session, 'session', {
       action: 'repo.collaborator.set',
+      change: requireAuditChange({ role: beforeRole }, { role: principalRole(collaborators, body) ?? body.role }),
       namespace: ns,
       repo,
       message: `Set repository collaborator role ${body.role}`,
       detail: { target: memberTarget(body), role: body.role },
     })
-    return c.json({ ok: true, collaborators: await listRepoCollaborators(ns, repo) })
+    return c.json({ ok: true, collaborators })
   }))
 
   app.delete('/auth/namespaces/:ns/repos/:repo/collaborators', guarded({ mutates: true, reason: true, body: 'optional' }, async ({ c, user: session, body: raw }) => {
@@ -581,6 +638,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       group?: string
     }
     const kind = body.kind ?? (body.group && !body.sub ? 'group' : 'user')
+    const beforeRole = principalRole(await captureBefore(() => listRepoCollaborators(ns, repo)), body)
     if (kind === 'group') {
       if (!body.group) return c.json({ error: 'group required' }, 400)
       await removeRepoGroupCollaborator(ns, repo, body.group)
@@ -590,14 +648,16 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       }
       await removeRepoCollaborator(ns, repo, { sub: body.sub, iss: body.iss })
     }
+    const collaborators = await listRepoCollaborators(ns, repo)
     await auditMutation(c, session, 'session', {
       action: 'repo.collaborator.remove',
+      change: requireAuditChange({ role: beforeRole }, { role: principalRole(collaborators, body) }),
       namespace: ns,
       repo,
       message: 'Removed repository collaborator',
       detail: { target: memberTarget(body) },
     })
-    return c.json({ ok: true, collaborators: await listRepoCollaborators(ns, repo) })
+    return c.json({ ok: true, collaborators })
   }))
 
   for (const base of ['/auth/namespaces/:ns/approvers', '/auth/namespaces/:ns/repos/:repo/approvers']) {
@@ -637,10 +697,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
       if (denied) return denied
       const body = raw as ApproverTargetBody
+      const beforeSeat = principalSeat(await captureBefore(() => listApprovers(scope)), body)
       const result = await mutateApproverSeat({ op: 'grant', scope, body })
       if (!result.ok) return c.json({ error: result.error }, result.status)
       await auditMutation(c, session, 'session', {
         action: 'approver.grant',
+        change: requireAuditChange(
+          { approver: beforeSeat ? 'seat' : null },
+          { approver: principalSeat(result.approvers, body) ? 'seat' : null },
+        ),
         namespace: scope.ns,
         ...(scope.repo ? { repo: scope.repo } : {}),
         message: 'Assigned approver role',
@@ -654,10 +719,15 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       const denied = denialResponse(c, await decideManageApprovers(session, scope.ns))
       if (denied) return denied
       const body = raw as ApproverTargetBody
+      const beforeSeat = principalSeat(await captureBefore(() => listApprovers(scope)), body)
       const result = await mutateApproverSeat({ op: 'revoke', scope, body })
       if (!result.ok) return c.json({ error: result.error }, result.status)
       await auditMutation(c, session, 'session', {
         action: 'approver.revoke',
+        change: requireAuditChange(
+          { approver: beforeSeat ? 'seat' : null },
+          { approver: principalSeat(result.approvers, body) ? 'seat' : null },
+        ),
         namespace: scope.ns,
         ...(scope.repo ? { repo: scope.repo } : {}),
         message: 'Removed approver role',
@@ -721,6 +791,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (!result.ok) return c.json({ error: result.error }, 400)
     await auditMutation(c, session, 'session', {
       action: 'custom-role.namespace.create',
+      change: requireAuditChange(null, { ...result.role }),
       namespace: ns,
       message: `Created namespace role ${body.name}`,
       detail: {
@@ -743,10 +814,13 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       permissions: NamespaceCapability[]
       baseRepositoryRole: BasePermission | null
     }>
+    const beforeRole = await captureBefore(() => getCustomNamespaceRole(ns, roleId))
+    if (!beforeRole) return c.json({ error: 'Not found' }, 404)
     const result = await updateCustomNamespaceRole(ns, roleId, body)
     if (!result.ok) return c.json({ error: result.error }, 400)
     await auditMutation(c, session, 'session', {
       action: 'custom-role.namespace.update',
+      change: requireAuditChange({ ...beforeRole }, { ...result.role }),
       namespace: ns,
       message: `Updated namespace role ${roleId}`,
       detail: { roleId, changes: body },
@@ -759,6 +833,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const roleId = c.req.param('roleId')
     const denied = denialResponse(c, await decideNamespaceAction(session, ns, 'namespace.roles.manage'))
     if (denied) return denied
+    const beforeRole = await captureBefore(() => getCustomNamespaceRole(ns, roleId))
+    if (!beforeRole) return c.json({ error: 'Not found' }, 404)
     const result = await deleteCustomNamespaceRole(
       ns,
       roleId,
@@ -767,6 +843,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (!result.ok) return c.json({ error: result.error }, 400)
     await auditMutation(c, session, 'session', {
       action: 'custom-role.namespace.delete',
+      change: requireAuditChange({ ...beforeRole }, null),
       namespace: ns,
       message: `Deleted namespace role ${roleId}`,
       detail: { roleId },
@@ -797,6 +874,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (!result.ok) return c.json({ error: result.error }, 400)
     await auditMutation(c, session, 'session', {
       action: 'custom-role.repo.create',
+      change: requireAuditChange(null, { ...result.role }),
       namespace: ns,
       message: `Created repository role ${body.name}`,
       detail: {
@@ -819,10 +897,13 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
       base: 'read' | 'triage' | 'write' | 'maintain'
       permissions: RepoFinePermission[]
     }>
+    const beforeRole = await captureBefore(() => getCustomRepoRole(ns, roleId))
+    if (!beforeRole) return c.json({ error: 'Not found' }, 404)
     const result = await updateCustomRepoRole(ns, roleId, body)
     if (!result.ok) return c.json({ error: result.error }, 400)
     await auditMutation(c, session, 'session', {
       action: 'custom-role.repo.update',
+      change: requireAuditChange({ ...beforeRole }, { ...result.role }),
       namespace: ns,
       message: `Updated repository role ${roleId}`,
       detail: { roleId, changes: body },
@@ -835,6 +916,8 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     const roleId = c.req.param('roleId')
     const denied = denialResponse(c, await decideNamespaceAction(session, ns, 'namespace.roles.manage'))
     if (denied) return denied
+    const beforeRole = await captureBefore(() => getCustomRepoRole(ns, roleId))
+    if (!beforeRole) return c.json({ error: 'Not found' }, 404)
     const result = await deleteCustomRepoRole(
       ns,
       roleId,
@@ -843,6 +926,7 @@ export function registerNamespaceRoutes(app: Hono, { audit: auditMutation }: Aud
     if (!result.ok) return c.json({ error: result.error }, 400)
     await auditMutation(c, session, 'session', {
       action: 'custom-role.repo.delete',
+      change: requireAuditChange({ ...beforeRole }, null),
       namespace: ns,
       message: `Deleted repository role ${roleId}`,
       detail: { roleId },

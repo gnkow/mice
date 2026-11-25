@@ -21,6 +21,8 @@ function ev(partial: Partial<AuditEvent> & Pick<AuditEvent, 'id' | 'action'>): A
     method: 'POST',
     path: '/x',
     status: 200,
+    resource_uri: `action:${partial.action}`,
+    schema_version: 2,
     ...partial,
   }
 }

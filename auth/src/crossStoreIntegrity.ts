@@ -1,3 +1,4 @@
+import { EMPTY_AUDIT_CHANGE } from './auditChange.js'
 import { appendAudit } from './audit.js'
 import { signatureStore } from './authentication/signing/signatureStore.js'
 import { emitNotification } from './notifications.js'
@@ -68,6 +69,7 @@ export async function runCrossStoreIntegrity(opts?: {
     path: '/auth/admin/integrity',
     status: findings.length ? 409 : 200,
     action: 'system.integrity_check',
+    change: EMPTY_AUDIT_CHANGE,
     message:
       findings.length === 0
         ? 'Cross-store integrity check clean'

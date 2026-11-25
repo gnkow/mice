@@ -3,10 +3,18 @@ import { env } from '../../env.js'
 import { parseCliScopes } from './cliScopes.js'
 import { guarded, type GuardPolicy } from '../session/routeGuard.js'
 import type { AuditDep } from '../../routeDeps.js'
+import { requireAuditChange } from '../../auditChange.js'
+import { captureBefore } from '../../auditCapture.js'
 import { authorizeCliDeviceApprove, isPendingUser, preparePrincipal } from '../../authz.js'
 import { getUserRole } from '../../rbacStore.js'
 import { approveDevice, denyDevice, lookupDeviceByUserCode, pollDevice, startDeviceAuth } from './cliDevice.js'
-import { cliRefreshReply, logoutCliCredential, refreshCliCredential } from './cliCredentials.js'
+import {
+  cliFamilyAuditState,
+  cliRefreshReply,
+  logoutCliCredential,
+  refreshCliCredential,
+  resolveCliCredential,
+} from './cliCredentials.js'
 import { bearerToken, resolveBearer } from '../session/requireAuth.js'
 import type { SessionUser } from '../session/session.js'
 import { fingerprintFromRequest, getDisplaySuffix, hashIp } from '../../ipHash.js'
@@ -18,6 +26,13 @@ import { enforceIpRateLimit } from '../rateLimit/rateLimitMiddleware.js'
 import { RATE_LIMIT_CONFIG } from '../rateLimit/rateLimit.js'
 
 /** Public CLI remote hint and the device-login pairing flow (no IdP device grant required). */
+/** Device authorization state for audit deltas: code, lifecycle status and device name (no tokens). */
+async function deviceAuditState(userCode: string): Promise<Record<string, unknown> | null> {
+  const found = await lookupDeviceByUserCode(userCode)
+  if (!found) return null
+  return { user_code: found.userCode, status: found.status, device_name: found.deviceName ?? null }
+}
+
 export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
   /** Public CLI remote hint (no secrets). */
   app.get('/auth/cli-info', async (c) => {
@@ -122,6 +137,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     }
 
     const deviceName = normalizeDeviceName(body.device_name)
+    const deviceBefore = await captureBefore(() => deviceAuditState(userCode))
     const result = await approveDevice(userCode, session, {
       ...(deviceName ? { deviceName } : {}),
     })
@@ -144,6 +160,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
 
     await auditMutation(c, session, 'session', {
       action: 'device.approve',
+      change: requireAuditChange(deviceBefore, await deviceAuditState(result.userCode)),
       message: `Approved device login: ${result.userCode}`,
       detail: {
         userCode: result.userCode,
@@ -159,6 +176,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
   app.post('/auth/cli/device/deny', guarded(deviceBody, async ({ c, user: session, body }) => {
     const userCode = String(body.user_code)
     if (!userCode.trim()) return c.json({ error: 'user_code required' }, 400)
+    const deviceBefore = await captureBefore(() => deviceAuditState(userCode))
     const result = await denyDevice(userCode)
     if (!result.ok) {
       const status = result.status === 404 ? 404 : 400
@@ -166,6 +184,7 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     }
     await auditMutation(c, session, 'session', {
       action: 'device.deny',
+      change: requireAuditChange(deviceBefore, await deviceAuditState(userCode)),
       message: `Denied device login: ${userCode.trim().toUpperCase()}`,
       detail: { userCode: userCode.trim().toUpperCase() },
     })
@@ -202,6 +221,13 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     }
     await auditMutation(c, result.user, 'pat', {
       action: 'device.redeem',
+      // Redeeming mints the CLI credential family: a created record (token values are never audited).
+      change: requireAuditChange(null, {
+        credential: 'cli',
+        principal: `${result.user.iss}|${result.user.sub}`,
+        expires_in_sec: result.expiresIn,
+        via: 'device_authorization',
+      }),
       message: 'CLI device login completed; token issued',
       detail: { expiresIn: result.expiresIn },
     })
@@ -228,7 +254,19 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
       return c.json({ error: 'Invalid body' }, 400)
     }
     if (!refreshToken.trim()) return c.json({ error: 'refresh_token required' }, 400)
-    const reply = cliRefreshReply(await refreshCliCredential(refreshToken))
+    const familyBefore = await captureBefore(() => cliFamilyAuditState(refreshToken))
+    const result = await refreshCliCredential(refreshToken)
+    const reply = cliRefreshReply(result)
+    if (!('error' in result)) {
+      const user = await resolveCliCredential(result.accessToken)
+      if (user) {
+        await auditMutation(c, user, 'pat', {
+          action: 'token.refresh',
+          change: requireAuditChange(familyBefore, await cliFamilyAuditState(refreshToken)),
+          message: 'CLI credential refreshed',
+        })
+      }
+    }
     return c.json(reply.body, reply.status)
   })
 
@@ -236,11 +274,13 @@ export function registerCliDeviceRoutes(app: Hono, { audit: auditMutation }: Aud
     const bearer = bearerToken(c)
     if (!bearer) return c.json({ error: 'Bearer token required' }, 401)
     const user = await resolveBearer(c)
+    const familyBefore = await captureBefore(() => cliFamilyAuditState(bearer))
     const ok = await logoutCliCredential(bearer)
     if (!ok) return c.json({ error: 'Token not found' }, 404)
     if (user) {
       await auditMutation(c, user, 'pat', {
         action: 'token.revoke',
+        change: requireAuditChange(familyBefore, await cliFamilyAuditState(bearer)),
         message: 'Revoked token via CLI logout',
       })
     }

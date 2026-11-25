@@ -148,8 +148,8 @@ describe('notification audit integration', () => {
         repo: 'repo',
         detail: { commit_id: 'abc' },
       })
-      assert.equal(classifyPath('POST', '/api/repos/ns/repo/commits/upload').action, 'other')
-      assert.equal(classifyPath('POST', '/api/repos/ns/repo/commits/abc').action, 'other')
+      assert.equal(classifyPath('POST', '/api/repos/ns/repo/commits/upload').action, 'commit.upload')
+      assert.equal(classifyPath('POST', '/api/repos/ns/repo/commits/abc').action, 'commit.upload')
     })
 
     it('projects appended events and exposes them for durable replay', async () => {

@@ -20,6 +20,7 @@ import {
   Ban,
   HeartPulse,
   Key,
+  Eye,
   UsersRound,
   Package,
   Scale,
@@ -39,6 +40,7 @@ import { ReenableSection } from '../components/ReenableSection'
 import { DisabledSignersSection } from '../components/DisabledSignersSection'
 import { UserRef } from '../components/UserRef'
 import { GroupBindingSection } from '../components/GroupBindingSection'
+import { AuditVisibilitySection } from '../components/AuditVisibilitySection'
 import { Pagination, paginate } from '../components/Pagination'
 import { SectionNav } from '../components/SectionNav'
 import { DirectoryPicker } from '../components/DirectoryPicker'
@@ -184,6 +186,7 @@ export function SettingsPage() {
             Icon: HeartPulse,
             items: [
               { id: 'audit-health', label: 'Audit health', Icon: HeartPulse },
+              { id: 'audit-visibility', label: 'Audit Visibility', Icon: Eye },
               { id: 'seal-key-rotation', label: 'Session cookie keys', Icon: Key },
               { id: 'restore-test', label: 'Restore test', Icon: DatabaseBackup },
             ],
@@ -272,6 +275,7 @@ export function SettingsPage() {
             <MiceSuspensionSection signedInIss={signedInIss} />
             <GroupBindingSection />
             <AuditHealthSection />
+            <AuditVisibilitySection />
             <SealKeyRotationSection />
             <RestoreTestSection />
             <RegulatedConfigSection />

@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { env } from '../../env.js'
+import { EMPTY_AUDIT_CHANGE } from '../../auditChange.js'
 import { actorFromUser, appendAudit } from '../../audit.js'
 import { getSession } from './session.js'
 
@@ -97,6 +98,7 @@ export const sameOriginGuard: MiddlewareHandler = async (c, next) => {
     path: c.req.path,
     status: 403,
     action: decision.action,
+    change: EMPTY_AUDIT_CHANGE,
   })
   return c.json(
     {

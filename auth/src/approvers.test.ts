@@ -139,10 +139,18 @@ describe('approver seat entity versions (#124)', () => {
     assert.deepEqual((await historyOf('owner', path)).body.versions, [])
 
     assert.equal((await call('owner', 'PUT', path, { sub: 'bob', iss: 'test' })).status, 200)
-    assert.equal((await call('owner', 'PUT', path, { sub: 'bob', iss: 'test' })).status, 200, 'idempotent grant')
+    assert.equal(
+      (await call('owner', 'PUT', path, { sub: 'bob', iss: 'test' })).status,
+      400,
+      'idempotent grant is no_change',
+    )
     assert.equal((await call('owner', 'PUT', path, { sub: 'carol', iss: 'test' })).status, 200)
     assert.equal((await call('owner', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200)
-    assert.equal((await call('owner', 'DELETE', path, { sub: 'bob', iss: 'test' })).status, 200, 'idempotent revoke')
+    assert.equal(
+      (await call('owner', 'DELETE', path, { sub: 'bob', iss: 'test' })).status,
+      400,
+      'idempotent revoke is no_change',
+    )
 
     const { status, body } = await historyOf('owner', path)
     assert.equal(status, 200)

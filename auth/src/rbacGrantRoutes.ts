@@ -4,7 +4,9 @@ import type { AuditDep } from './routeDeps.js'
 import { directGrantPermissions, directGrantRole } from './rbacDirectGrant.js'
 import { isInstancePermission } from './rbacCatalog.js'
 import { isInstanceRole } from './rbacRoles.js'
-import { getUserRole, listRbacUsers } from './rbacStore.js'
+import { getPermissionAuditSnapshot, getRoleAuditSnapshot, getUserRole, listRbacUsers } from './rbacStore.js'
+import { requireAuditChange } from './auditChange.js'
+import { captureBefore } from './auditCapture.js'
 
 function target(body: Record<string, unknown>): { sub: string; iss: string } | null {
   if (typeof body.sub !== 'string' || typeof body.iss !== 'string') return null
@@ -55,6 +57,7 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
         if (expiresAt == null) {
           return c.json({ error: 'expiresAt is required for delegated role grants' }, 400)
         }
+        const beforeSeat = await captureBefore(() => getRoleAuditSnapshot(t))
         const result = await directGrantRole({
           actor: user,
           target: t,
@@ -72,8 +75,10 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
           })
           return c.json({ error: result.error }, status)
         }
+        const afterSeat = await getRoleAuditSnapshot(t)
         await audit(c, user, 'session', {
           action: 'access.grant.role',
+          change: requireAuditChange(beforeSeat, afterSeat),
           message: `Granted role ${body.role} to ${t.sub}`,
           detail: { target: t, role: body.role, expiresAt },
         })
@@ -108,6 +113,7 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
         if (expiresAt == null) {
           return c.json({ error: 'expiresAt is required for delegated permission grants' }, 400)
         }
+        const beforePerms = await captureBefore(() => getPermissionAuditSnapshot(t, permissions))
         const result = await directGrantPermissions({
           actor: user,
           target: t,
@@ -125,8 +131,10 @@ export function registerRbacGrantRoutes(app: Hono, { audit }: AuditDep): void {
           })
           return c.json({ error: result.error }, status)
         }
+        const afterPerms = await getPermissionAuditSnapshot(t, permissions)
         await audit(c, user, 'session', {
           action: 'access.grant.permissions',
+          change: requireAuditChange(beforePerms, afterPerms),
           message: `Granted permissions to ${t.sub}`,
           detail: { target: t, permissions, expiresAt },
         })

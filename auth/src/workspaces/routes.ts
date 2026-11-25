@@ -1,7 +1,17 @@
 import { Readable } from 'node:stream'
 import { filterAsync } from '../asyncArray.js'
 import type { Context, Hono } from 'hono'
-import { actorFromUser, appendAudit, type AuditActor } from '../audit.js'
+import {
+  actorFromUser,
+  appendAudit,
+  AuditChangeCaptureError,
+  EMPTY_AUDIT_CHANGE,
+  NoChangeError,
+  requireAuditChange,
+  type AuditActor,
+  type AuditChange,
+} from '../audit.js'
+import { pickSnapshot } from '../auditCapture.js'
 import {
   authorizeStoreAdmin,
   authorizeRepoAction,
@@ -20,10 +30,11 @@ import {
 import { checkoutStatus, evictCheckout, listCheckouts, runGc, runScrub, sweepTmp } from './checkoutMaintenance.js'
 import { loadWorkspacesConfig } from './config.js'
 import { PathError } from './files.js'
-import { LeaseError, toPublicLease, type HolderKind } from './leases.js'
+import { LeaseError, toPublicLease, type HolderKind, type Lease } from './leases.js'
 import { mountSpecFor } from './mount.js'
+import { leaseEventChange, storeEventChange } from './systemAuditChange.js'
 import { httpOxenClient } from './oxenClient.js'
-import { getWorkspaceService, setWorkspaceService, validWorkspaceId, WorkspaceError, WorkspaceService } from './workspaces.js'
+import { getWorkspaceService, setWorkspaceService, validWorkspaceId, WorkspaceError, WorkspaceService, type WorkspaceState } from './workspaces.js'
 
 const SYSTEM_ACTOR: AuditActor = { sub: 'system', iss: 'mice', email: 'system@mice', name: 'Mice store' }
 
@@ -32,7 +43,25 @@ function requireAuth(c: Context) {
   return authenticateRequest(c, { allowScoped: true })
 }
 
+/** Workspace state for audit deltas; a deep copy, so later in-place mutation cannot alter it. */
+function workspaceSnapshot(st: WorkspaceState): Record<string, unknown> {
+  return structuredClone(
+    pickSnapshot(st, ['id', 'name', 'namespace', 'repo', 'kind', 'branch', 'source', 'status', 'last_error', 'retry_count']) ?? {},
+  )
+}
+
+function leaseSnapshot(lease: Lease): Record<string, unknown> {
+  return structuredClone({
+    lease_id: lease.id,
+    workspace_id: lease.workspace_id,
+    mode: lease.mode,
+    holder: lease.holder,
+  })
+}
+
 function fail(c: Context, err: unknown) {
+  if (err instanceof NoChangeError) return c.json({ error: 'No change', code: 'no_change' }, 400)
+  if (err instanceof AuditChangeCaptureError) return c.json({ error: err.message, code: 'audit_change_unavailable' }, 503)
   if (err instanceof LeaseError) {
     return c.json({ error: err.message, ...(err.holder ? { holder: err.holder } : {}), ...(err.code ? { code: err.code } : {}) }, err.status as 400)
   }
@@ -54,6 +83,7 @@ async function audit(
   status: number,
   where: { namespace?: string; repo?: string },
   detail: Record<string, unknown>,
+  change: AuditChange = EMPTY_AUDIT_CHANGE,
 ) {
   await appendAudit({
     actor: actorFromUser(a.user),
@@ -62,6 +92,7 @@ async function audit(
     path: c.req.path,
     status,
     action,
+    change,
     ...where,
     detail,
   })
@@ -81,6 +112,7 @@ export async function initWorkspaces(): Promise<{ store: CheckoutStore; svc: Wor
       path: '/auth/store',
       status: 200,
       action: e.action,
+      change: storeEventChange(e),
       ...(e.namespace ? { namespace: e.namespace } : {}),
       ...(e.repo ? { repo: e.repo } : {}),
       detail: e.detail,
@@ -104,6 +136,7 @@ export async function initWorkspaces(): Promise<{ store: CheckoutStore; svc: Wor
         path: '/auth/workspaces',
         status: 200,
         action: e.action,
+        change: leaseEventChange(e),
         namespace: e.namespace,
         repo: e.repo,
         detail: e.detail,
@@ -197,7 +230,15 @@ export function registerWorkspaceRoutes(app: Hono) {
         source,
         createdBy: { email: a.user.email, sub: a.user.sub },
       })
-      await audit(a, c, 'workspace.create', 202, { namespace, repo }, { workspace_id: ws.id, name: ws.name, source })
+      await audit(
+        a,
+        c,
+        'workspace.create',
+        202,
+        { namespace, repo },
+        { workspace_id: ws.id, name: ws.name, source },
+        requireAuditChange(null, { id: ws.id, name: ws.name, namespace, repo, source, status: ws.status ?? null }),
+      )
       return c.json({ workspace: ws }, 202)
     } catch (err) {
       return fail(c, err)
@@ -245,8 +286,17 @@ export function registerWorkspaceRoutes(app: Hono) {
     const w = await withWorkspace(c, true)
     if ('res' in w) return w.res
     try {
+      const before = workspaceSnapshot(w.st)
       await w.svc.delete(w.st.id)
-      await audit(w.a, c, 'workspace.delete', 200, { namespace: w.st.namespace, repo: w.st.repo }, { workspace_id: w.st.id, name: w.st.name })
+      await audit(
+        w.a,
+        c,
+        'workspace.delete',
+        200,
+        { namespace: w.st.namespace, repo: w.st.repo },
+        { workspace_id: w.st.id, name: w.st.name },
+        requireAuditChange(before, null),
+      )
       return c.json({ ok: true })
     } catch (err) {
       return fail(c, err)
@@ -257,7 +307,14 @@ export function registerWorkspaceRoutes(app: Hono) {
     const w = await withWorkspace(c, true)
     if ('res' in w) return w.res
     try {
-      return c.json({ workspace: await w.svc.retry(w.st.id) }, 202)
+      const before = workspaceSnapshot(w.st)
+      const workspace = await w.svc.retry(w.st.id)
+      const after = w.svc.getState(w.st.id)
+      await audit(w.a, c, 'workspace.retry', 202, { namespace: w.st.namespace, repo: w.st.repo }, {
+        workspace_id: w.st.id,
+        name: w.st.name,
+      }, requireAuditChange(before, after ? workspaceSnapshot(after) : null))
+      return c.json({ workspace }, 202)
     } catch (err) {
       return fail(c, err)
     }
@@ -297,7 +354,7 @@ export function registerWorkspaceRoutes(app: Hono) {
       })
       await audit(w.a, c, 'workspace.lease.acquire', 201, { namespace: w.st.namespace, repo: w.st.repo }, {
         workspace_id: w.st.id, lease_id: lease.id, mode, holder: lease.holder,
-      })
+      }, requireAuditChange(null, leaseSnapshot(lease)))
       return c.json({ lease: toPublicLease(lease) }, 201)
     } catch (err) {
       return fail(c, err)
@@ -328,10 +385,11 @@ export function registerWorkspaceRoutes(app: Hono) {
   app.delete('/auth/workspaces/:id/leases/:leaseId', async (c) => {
     const w = await withLease(c)
     if ('res' in w) return w.res
+    const releasedLease = leaseSnapshot(w.lease)
     await w.svc.leases.release(w.lease.id)
     await audit(w.a, c, w.forced ? 'workspace.lease.force_release' : 'workspace.lease.release', 200, { namespace: w.st.namespace, repo: w.st.repo }, {
       workspace_id: w.st.id, lease_id: w.lease.id, mode: w.lease.mode, holder: w.lease.holder,
-    })
+    }, requireAuditChange(releasedLease, null))
     return c.json({ ok: true })
   })
 
@@ -485,7 +543,15 @@ export function registerWorkspaceRoutes(app: Hono) {
     const r = await evictCheckout(store, ns, repo, commit)
     if (r === 'referenced') return c.json({ error: 'Checkout is referenced by a workspace or running build' }, 409)
     if (r === 'missing') return c.json({ error: 'Checkout not found' }, 404)
-    await audit(a, c, 'checkout.evict', 200, { namespace: ns, repo }, { commit, reason: 'manual' })
+    await audit(
+      a,
+      c,
+      'checkout.evict',
+      200,
+      { namespace: ns, repo },
+      { commit, reason: 'manual' },
+      requireAuditChange({ namespace: ns, repo, commit, status: 'ready' }, null),
+    )
     return c.json({ ok: true })
   })
 
@@ -497,7 +563,23 @@ export function registerWorkspaceRoutes(app: Hono) {
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
     const report = await runGc(store, { reason: 'manual' })
-    await audit(a, c, 'store.gc', 200, {}, { ...report })
+    // Evicted checkouts, deleted blobs and swept temp files are the state that went away; a run that
+    // found nothing to collect is a no-op (refused, not audited).
+    const gcBefore: Record<string, unknown> = {
+      blob_count: report.blob_count + report.blobs_deleted,
+      store_bytes: report.store_bytes + report.bytes_freed,
+      tmp_files: report.swept_tmp,
+    }
+    const gcAfter: Record<string, unknown> = {
+      blob_count: report.blob_count,
+      store_bytes: report.store_bytes,
+      tmp_files: 0,
+    }
+    for (const key of report.evicted) {
+      gcBefore[`checkout.${key}`] = 'ready'
+      gcAfter[`checkout.${key}`] = null
+    }
+    await audit(a, c, 'store.gc', 200, {}, { ...report }, requireAuditChange(gcBefore, gcAfter))
     return c.json(report)
   })
 
@@ -507,6 +589,27 @@ export function registerWorkspaceRoutes(app: Hono) {
     const z = await authorizeStoreAdmin(a.user)
     if (!z.allow) return c.json({ error: z.reason ?? 'Forbidden' }, 403)
     const { store } = await ctx(c)
-    return c.json(await runScrub(store, { all: true }))
+    const report = await runScrub(store, { all: true })
+    // Verification only unless blobs were quarantined (and their checkouts marked corrupt).
+    const scrubBefore: Record<string, unknown> = {}
+    const scrubAfter: Record<string, unknown> = {}
+    for (const sha of report.bad) {
+      scrubBefore[`blob.${sha}`] = 'present'
+      scrubAfter[`blob.${sha}`] = 'quarantined'
+    }
+    for (const key of report.corrupt) {
+      scrubBefore[`checkout.${key}`] = 'ready'
+      scrubAfter[`checkout.${key}`] = 'corrupt'
+    }
+    await audit(
+      a,
+      c,
+      'store.scrub',
+      200,
+      {},
+      { ...report },
+      report.bad.length > 0 ? requireAuditChange(scrubBefore, scrubAfter) : EMPTY_AUDIT_CHANGE,
+    )
+    return c.json(report)
   })
 }

@@ -1,3 +1,4 @@
+import { EMPTY_AUDIT_CHANGE } from './auditChange.js'
 import { accessSync, constants, mkdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { appendAudit } from './audit.js'
@@ -62,6 +63,7 @@ export async function recordBackupTargetCheck(target: string): Promise<void> {
     path: '/boot',
     status: 200,
     action: 'system.backup_target.check',
+    change: EMPTY_AUDIT_CHANGE,
     message: 'Backup target configured and reachable',
     detail: { target: ev.target },
   })

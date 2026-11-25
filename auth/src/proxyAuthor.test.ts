@@ -15,14 +15,24 @@ const upstream: Server = createServer((req, res) => {
   const chunks: Buffer[] = []
   req.on('data', (c: Buffer) => chunks.push(c))
   req.on('end', () => {
-    received.push({
-      method: req.method ?? '',
-      url: req.url ?? '',
-      contentType: String(req.headers['content-type'] ?? ''),
-      body: Buffer.concat(chunks).toString('utf8'),
-    })
+    const method = req.method ?? ''
+    const url = req.url ?? ''
+    // Branch-head probes (audit before-state) must return a tip; mutations get a generic ok.
+    const isBranchHeadProbe = method === 'GET' && /\/branches\/[^/?]+$/.test(url.split('?')[0] ?? '')
+    if (!isBranchHeadProbe) {
+      received.push({
+        method,
+        url,
+        contentType: String(req.headers['content-type'] ?? ''),
+        body: Buffer.concat(chunks).toString('utf8'),
+      })
+    }
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end('{"status":"ok"}')
+    res.end(
+      isBranchHeadProbe
+        ? JSON.stringify({ branch: { commit_id: 'tip-before' } })
+        : '{"status":"ok"}',
+    )
   })
 })
 await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r))

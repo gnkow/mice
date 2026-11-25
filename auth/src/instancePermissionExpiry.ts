@@ -1,3 +1,4 @@
+import { requireAuditChange, type AuditChange } from './auditChange.js'
 import {
   revokeExpiredInstancePermissions,
   type RevokedInstancePermissionGrant,
@@ -15,6 +16,7 @@ export type InstancePermissionExpiryAudit = (event: {
   action: string
   message: string
   detail: Record<string, unknown>
+  change: AuditChange
 }) => Promise<void>
 
 export type RevokeExpiredInstancePermissions = (
@@ -38,6 +40,14 @@ export async function runInstancePermissionExpiry(opts: {
   for (const grant of revoked) {
     await opts.audit({
       action: 'instance.permissions.expire',
+      // The grant is removed: its permissions and expiry go from set to null.
+      change: requireAuditChange(
+        {
+          ...Object.fromEntries([...grant.permissions].sort().map((p) => [`permission.${p}`, true])),
+          expiresAt: grant.expiresAt,
+        },
+        null,
+      ),
       message: `Expired instance permissions for ${grant.sub}`,
       detail: {
         target: { sub: grant.sub, iss: grant.iss },

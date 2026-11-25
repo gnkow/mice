@@ -1,3 +1,4 @@
+import { EMPTY_AUDIT_CHANGE } from './auditChange.js'
 import { createHash, createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -315,6 +316,7 @@ export async function recordReleaseManifestCheck(status: ReleaseManifestStatus):
     path: '/boot',
     status: status.match ? 200 : 409,
     action: 'system.release_manifest.check',
+    change: EMPTY_AUDIT_CHANGE,
     message: status.match
       ? 'Signed release manifest verified'
       : status.present

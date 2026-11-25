@@ -3,7 +3,9 @@ import { adminRoleGate } from '../../decisionHttp.js'
 import type { AuditDep } from '../../routeDeps.js'
 import { canonicalIssuer } from '../session/principal.js'
 import { guarded } from '../session/routeGuard.js'
-import { liftSuspension, suspendPrincipal, suspensionHistory } from './miceSuspension.js'
+import { isSuspended, liftSuspension, suspendPrincipal, suspensionHistory } from './miceSuspension.js'
+import { requireAuditChange } from '../../auditChange.js'
+import { captureBefore } from '../../auditCapture.js'
 
 /** Split `iss|sub` on the first bar. */
 function principalFrom(raw: string): { iss: string; sub: string } | null {
@@ -24,11 +26,13 @@ export function registerMiceSuspensionRoutes(app: Hono, _deps: AuditDep): void {
     if (!principal) return c.json({ error: 'Invalid principal format (use iss|sub)' }, 400)
     if (!reason) return c.json({ error: 'Reason required' }, 400)
 
+    const before = await captureBefore(() => isSuspended(principal))
     const found = await suspendPrincipal(principal, { reason, actor: user })
     if (!found) return c.json({ error: 'Principal not found' }, 404)
 
     await audit({
       action: 'admin.mice_suspension.set',
+      change: requireAuditChange({ mice_suspended: before }, { mice_suspended: await isSuspended(principal) }),
       message: `Suspended ${principal.iss}|${principal.sub}`,
       detail: { principal: `${principal.iss}|${principal.sub}`, reason, actor: `${user.iss}|${user.sub}` },
     })
@@ -46,11 +50,13 @@ export function registerMiceSuspensionRoutes(app: Hono, _deps: AuditDep): void {
     if (!principal) return c.json({ error: 'Invalid principal format (use iss|sub)' }, 400)
     if (!reason) return c.json({ error: 'Reason required' }, 400)
 
+    const before = await captureBefore(() => isSuspended(principal))
     const found = await liftSuspension(principal, { reason, actor: user })
     if (!found) return c.json({ error: 'Principal not found' }, 404)
 
     await audit({
       action: 'admin.mice_suspension.lift',
+      change: requireAuditChange({ mice_suspended: before }, { mice_suspended: await isSuspended(principal) }),
       message: `Lifted suspension of ${principal.iss}|${principal.sub}`,
       detail: { principal: `${principal.iss}|${principal.sub}`, reason, actor: `${user.iss}|${user.sub}` },
     })

@@ -12,139 +12,190 @@ export type RouteKind =
   | 'repo'
   | 'other'
 
-export type RequestInterpretation = {
+export type PathClassification = {
+  action: string
+  namespace?: string
+  repo?: string
+  detail?: Record<string, unknown>
+  /**
+   * False for unknown mutating routes: the proxy must reject them.
+   * They are never written as ledger operations (no `other` catch-all).
+   */
+  recognized: boolean
+}
+
+export type RequestInterpretation = PathClassification & {
   kind: RouteKind
   /** Namespace named by the path of namespace.detail / repo.list routes. */
   targetNamespace?: string
-  /** Audit label. */
-  action: string
   /** Action authorization keys on (push routes differ from the audit label). */
   authzAction: string
-  namespace?: string
-  repo?: string
-  detail?: Record<string, unknown>
-  /** Minimum repo role; unknown mutating routes fail closed to admin. */
+  /** Minimum repo role; unrecognized mutating routes are rejected before this applies. */
   minRole: RepoRole
 }
 
+const readMethod = (method: string) => {
+  const m = method.toUpperCase()
+  return m === 'GET' || m === 'HEAD'
+}
+
 /** Coarse audit action + ns/repo from oxen API path. */
-export function classifyPath(
-  method: string,
-  pathname: string,
-): {
-  action: string
-  namespace?: string
-  repo?: string
-  detail?: Record<string, unknown>
-} {
+export function classifyPath(method: string, pathname: string): PathClassification {
+  const m = method.toUpperCase()
   const path = pathname.replace(/\/+$/, '') || '/'
   const parts = path.split('/').filter(Boolean)
-  // Expect: api, repos, ns, repo, ...
+  const isRead = readMethod(m)
+
   if (parts[0] !== 'api') {
-    return { action: 'other' }
+    return { action: 'unclassified', recognized: isRead }
   }
 
-  if (parts[1] === 'repos' && parts.length === 2 && method === 'POST') {
-    return { action: 'repo.create' }
+  if (parts[1] === 'repos' && parts.length === 2 && m === 'POST') {
+    return { action: 'repo.create', recognized: true }
   }
 
   if (parts[1] === 'repos' && parts.length >= 4) {
-    const namespace = safeDecode(parts[2])
-    const repo = safeDecode(parts[3])
+    const namespace = safeDecode(parts[2]!)
+    const repo = safeDecode(parts[3]!)
     const rest = parts.slice(4)
+    const scoped = { namespace, repo }
 
-    if (rest[0] === 'commits' && rest.length === 3 &&
-        rest[2] === 'complete' && method === 'POST') {
-      return {
-        action: 'commit.publish',
-        namespace,
-        repo,
-        detail: { commit_id: safeDecode(rest[1]) },
+    if (rest[0] === 'commits') {
+      if (rest.length === 3 && rest[2] === 'complete' && m === 'POST') {
+        return {
+          action: 'commit.publish',
+          ...scoped,
+          recognized: true,
+          detail: { commit_id: safeDecode(rest[1]!) },
+        }
       }
+      // Oxen push transport (chunk upload before complete).
+      if (m === 'POST' && (rest[1] === 'upload' || rest.length >= 2)) {
+        return {
+          action: 'commit.upload',
+          ...scoped,
+          recognized: true,
+          detail: rest[1] && rest[1] !== 'upload' ? { commit_id: safeDecode(rest[1]) } : undefined,
+        }
+      }
+      if (isRead) return { action: 'repo.read', ...scoped, recognized: true }
+      return { action: 'unclassified', ...scoped, recognized: false }
     }
+
     if (rest[0] === 'file') {
+      if (isRead) {
+        return {
+          action: 'repo.read',
+          ...scoped,
+          recognized: true,
+          detail: {
+            ...(rest[1] ? { branch: safeDecode(rest[1]) } : {}),
+            ...(rest.length > 2 ? { path: rest.slice(2).map(safeDecode).join('/') } : {}),
+          },
+        }
+      }
       const branch = rest[1] ? safeDecode(rest[1]) : undefined
       const filePath = rest.slice(2).map(safeDecode).join('/')
       return {
-        action: method === 'DELETE' ? 'file.delete' : 'file.write',
-        namespace,
-        repo,
+        action: m === 'DELETE' ? 'file.delete' : 'file.write',
+        ...scoped,
+        recognized: true,
         detail: {
           ...(branch ? { branch } : {}),
           ...(filePath ? { path: filePath } : {}),
         },
       }
     }
+
     if (rest[0] === 'branches') {
       const branch = rest[1] ? safeDecode(rest[1]) : undefined
-      let action = 'branch.other'
-      if (method === 'POST' && rest.length === 1) action = 'branch.create'
-      else if (method === 'DELETE') action = 'branch.delete'
-      else if (method === 'PUT' || method === 'PATCH') action = 'branch.update'
-      return {
-        action,
-        namespace,
-        repo,
-        detail: branch ? { branch } : undefined,
+      if (m === 'POST' && rest.length === 1) {
+        return { action: 'branch.create', ...scoped, recognized: true, detail: branch ? { branch } : undefined }
       }
+      if (m === 'DELETE') {
+        return { action: 'branch.delete', ...scoped, recognized: true, detail: branch ? { branch } : undefined }
+      }
+      if (m === 'PUT' || m === 'PATCH') {
+        return { action: 'branch.update', ...scoped, recognized: true, detail: branch ? { branch } : undefined }
+      }
+      if (isRead) return { action: 'repo.read', ...scoped, recognized: true, detail: branch ? { branch } : undefined }
+      return { action: 'unclassified', ...scoped, recognized: false }
     }
+
     if (rest[0] === 'merge' || rest[0] === 'merges') {
+      if (isRead) return { action: 'repo.read', ...scoped, recognized: true }
       const range = rest[1] ? safeDecode(rest[1]) : undefined
       const target = range?.split('..')[0]?.trim()
       return {
         action: 'merge',
-        namespace,
-        repo,
+        ...scoped,
+        recognized: true,
         detail: target ? { branch: target } : undefined,
       }
     }
+
     if (rest[0] === 'workspaces') {
-      // All workspace.* actions share the `workspace` prefix, which authz keys on.
       const workspaceId = rest[1] ? safeDecode(rest[1]) : undefined
       const sub = rest[2]
       const branch = rest[3] ? safeDecode(rest[3]) : undefined
-      let action = 'workspace.other'
-      if (method === 'POST' && rest.length === 1) action = 'workspace.create'
-      else if (method === 'DELETE' && rest.length === 2) {
-        action = 'workspace.delete'
-      } else if (sub === 'commit') action = 'workspace.commit'
-      else if (sub === 'merge') action = 'workspace.merge'
-      else if (sub === 'files') {
-        action =
-          method === 'DELETE' ? 'workspace.file.delete' : 'workspace.file.write'
+      const detail = {
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
+        ...(branch && (sub === 'commit' || sub === 'merge') ? { branch } : {}),
       }
-      return {
-        action,
-        namespace,
-        repo,
-        detail: {
-          ...(workspaceId ? { workspace_id: workspaceId } : {}),
-          ...(branch && (sub === 'commit' || sub === 'merge') ? { branch } : {}),
-        },
+      if (m === 'POST' && rest.length === 1) {
+        return { action: 'workspace.create', ...scoped, recognized: true, detail }
       }
+      if (m === 'DELETE' && rest.length === 2) {
+        return { action: 'workspace.delete', ...scoped, recognized: true, detail }
+      }
+      if (sub === 'commit') return { action: 'workspace.commit', ...scoped, recognized: true, detail }
+      if (sub === 'merge') return { action: 'workspace.merge', ...scoped, recognized: true, detail }
+      if (sub === 'files' || sub === 'changes') {
+        return {
+          action: m === 'DELETE' ? 'workspace.file.delete' : isRead ? 'repo.read' : 'workspace.file.write',
+          ...scoped,
+          recognized: true,
+          detail,
+        }
+      }
+      if (isRead) return { action: 'repo.read', ...scoped, recognized: true, detail }
+      return { action: 'unclassified', ...scoped, recognized: false }
     }
-    if (method === 'DELETE' && rest.length === 0) {
-      return { action: 'repo.delete', namespace, repo }
+
+    if (rest[0] === 'versions') {
+      if (m === 'QUERY') return { action: 'versions.query', ...scoped, recognized: true }
+      // Push transport over the versions API (authz remaps to `push`).
+      if (m === 'POST' || m === 'PUT') return { action: 'commit.upload', ...scoped, recognized: true }
+      if (isRead) return { action: 'repo.read', ...scoped, recognized: true }
+      return { action: 'unclassified', ...scoped, recognized: false }
     }
-    // Repo-level metadata mutate (PATCH/PUT on repo root or settings-ish paths).
+
+    if (m === 'DELETE' && rest.length === 0) {
+      return { action: 'repo.delete', ...scoped, recognized: true }
+    }
+
     if (
-      (method === 'PATCH' || method === 'PUT') &&
+      (m === 'PATCH' || m === 'PUT') &&
       (rest.length === 0 ||
         rest[0] === 'settings' ||
         rest[0] === 'meta' ||
         rest[0] === 'rename' ||
         rest[0] === 'transfer')
     ) {
-      return { action: 'repo.metadata', namespace, repo }
+      return { action: 'repo.metadata', ...scoped, recognized: true }
     }
-    return { action: 'other', namespace, repo }
+
+    // Known repo scope, unknown sub-route: reads may proxy; mutations are refused.
+    if (isRead) return { action: 'repo.read', ...scoped, recognized: true }
+    return { action: 'unclassified', ...scoped, recognized: false }
   }
 
-  if (parts[1] === 'namespaces' && method === 'POST') {
-    return { action: 'namespace.create' }
+  if (parts[1] === 'namespaces' && m === 'POST') {
+    return { action: 'namespace.create', recognized: true }
   }
 
-  return { action: 'other' }
+  if (isRead) return { action: 'unclassified', recognized: true }
+  return { action: 'unclassified', recognized: false }
 }
 
 function safeDecode(s: string): string {

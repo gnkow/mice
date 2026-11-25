@@ -27,6 +27,8 @@ export type AuditFilterQuery = {
   via?: string
   allowedNamespaces?: string[]
   includeChain?: boolean
+  /** Exact action names to omit (Auditor visibility). */
+  excludeActions?: string[]
 }
 
 /** Session ids an event refers to. */
@@ -110,6 +112,10 @@ export function applyAuditQueryFilters<T extends AuditFilterEvent>(
   if (q.action) {
     const filter = q.action
     events = events.filter((e) => auditActionMatches(e.action, filter))
+  }
+  if (q.excludeActions && q.excludeActions.length > 0) {
+    const hidden = new Set(q.excludeActions)
+    events = events.filter((e) => !hidden.has(e.action))
   }
   if (q.via) {
     events = events.filter((e) => e.via === q.via)

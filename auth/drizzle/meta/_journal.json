@@ -127,6 +127,20 @@
       "when": 1795600000000,
       "tag": "0017_commit_attribution_message",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795700000000,
+      "tag": "0018_audit_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795800000000,
+      "tag": "0019_restore_test_status",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,10 @@ export type AuditEvent = {
   phase?: 'intent' | 'outcome'
   /** On an outcome: the Intent id it completes. */
   intent_id?: string
+  /** List annotation: unpaired Intent (not stored on the ledger). */
+  orphan?: boolean
+  /** List annotation: unpaired Intent older than orphan_aging_sec. */
+  orphan_aged?: boolean
   method: string
   path: string
   status: number
@@ -21,6 +25,8 @@ export type AuditEvent = {
   action_label?: string
   namespace?: string
   repo?: string
+  /** Canonical primary resource (`type:id`); always set by the server. */
+  resource_uri: string
   message?: string
   /** Free-text justification when the mutation required a reason. */
   reason?: string
@@ -33,12 +39,22 @@ export type AuditEvent = {
   signature_id?: string
   /** Dataset commit ids before and after a dataset mutation. */
   dataset?: AuditDataset
+  /**
+   * What changed: field deltas, or null→full / full→null for create/delete.
+   * Non-mutations use `{ before: null, after: null }`.
+   */
+  change?: { before: Record<string, unknown> | null; after: Record<string, unknown> | null }
   detail?: Record<string, unknown>
 }
 
 /** Unpaired Intent rows in a list page (honest gap — no Outcome yet). */
 export function unpairedIntentEvents(events: AuditEvent[]): AuditEvent[] {
-  return events.filter((e) => e.phase === 'intent')
+  return events.filter((e) => e.phase === 'intent' || e.orphan === true)
+}
+
+/** Aged unpaired Intents (past the server orphan-aging threshold). */
+export function agedOrphanIntentEvents(events: AuditEvent[]): AuditEvent[] {
+  return unpairedIntentEvents(events).filter((e) => e.orphan_aged === true)
 }
 
 export type AuditDataset = { base?: string; head?: string }
@@ -71,11 +87,14 @@ export type AuditQuery = {
   jobId?: string
   limit?: number
   cursor?: string
+  /** When true, only unpaired Intent rows. */
+  orphansOnly?: boolean
 }
 
 export type AuditListResponse = {
   events: AuditEvent[]
   nextCursor: string | null
+  orphan_aging_sec?: number
 }
 
 export type AuditActionOption = { value: string; label: string; group: string }
@@ -95,6 +114,7 @@ export type AuditFacets = {
   sessions: AuditResource[]
   workspaces: AuditResource[]
   jobs: AuditResource[]
+  orphan_aging_sec?: number
 }
 
 function buildParams(query: AuditQuery): URLSearchParams {
@@ -110,6 +130,7 @@ function buildParams(query: AuditQuery): URLSearchParams {
   if (query.jobId) params.set('job_id', query.jobId)
   if (query.cursor) params.set('cursor', query.cursor)
   if (query.limit != null) params.set('limit', String(query.limit))
+  if (query.orphansOnly) params.set('orphans', '1')
   return params
 }
 
@@ -117,7 +138,7 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined
 }
 
-/** Resource ids an event touched (for the Resource column). */
+/** Resource ids an event touched (filter facets / suggestions). */
 export function eventResources(ev: AuditEvent): {
   sessionId?: string
   workspaceId?: string
@@ -128,6 +149,37 @@ export function eventResources(ev: AuditEvent): {
     (x): x is string => !!x,
   )
   return { sessionId: str(d.session_id), workspaceId: str(d.workspace_id), jobIds }
+}
+
+/** Href for a resource URI when the entity has a UI route. */
+export function resourceUriHref(uri: string): string | null {
+  const m = /^(repo|namespace|session|job|workspace):(.+)$/.exec(uri)
+  if (!m) return null
+  const [, type, id] = m
+  switch (type) {
+    case 'namespace':
+      return `/n/${encodeURIComponent(id)}`
+    case 'repo': {
+      const slash = id.indexOf('/')
+      if (slash <= 0) return null
+      return `/n/${encodeURIComponent(id.slice(0, slash))}/r/${encodeURIComponent(id.slice(slash + 1))}`
+    }
+    case 'session':
+      return `/sessions/${encodeURIComponent(id)}`
+    case 'job':
+      return null
+    case 'workspace': {
+      const bang = id.indexOf('!')
+      const slash = id.indexOf('/')
+      if (bang <= 0 || slash <= 0 || slash > bang) return null
+      const ns = id.slice(0, slash)
+      const repo = id.slice(slash + 1, bang)
+      const wid = id.slice(bang + 1)
+      return `/n/${encodeURIComponent(ns)}/r/${encodeURIComponent(repo)}/workspaces/${encodeURIComponent(wid)}`
+    }
+    default:
+      return null
+  }
 }
 
 /** Fallback label if the server did not provide one. */

@@ -5,11 +5,13 @@ import { postgresReadiness } from './db/database.js'
 import { isStoreOutage } from './db/outage.js'
 import { applyGlobalGuards, authenticateOutcome, backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerDisabledSignerRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
 import { auditMutation } from './auditMutation.js'
+import { changeCaptureResponse } from './authentication/session/routeGuard.js'
 import { registerAnnouncementRoutes } from './announcementRoutes.js'
 import { registerAuditHealthRoutes } from './auditHealthRoutes.js'
 import { registerReleaseManifestRoutes } from './releaseManifestRoutes.js'
 import { registerRegulatedConfigRoutes } from './regulatedConfigRoutes.js'
 import { registerAuditRoutes } from './auditRoutes.js'
+import { registerAuditVisibilityRoutes } from './auditVisibilityRoutes.js'
 import { registerFavoritesRoutes } from './favoritesRoutes.js'
 import { registerInstanceRoutes } from './instanceRoutes.js'
 import { registerRbacGrantRoutes } from './rbacGrantRoutes.js'
@@ -42,6 +44,9 @@ export function createApp(deps: AppDeps = {}): Hono {
   const app = new Hono()
   applyGlobalGuards(app)
   app.onError((err, c) => {
+    // Handlers outside `guarded` still refuse no-op mutations and fail closed on change capture.
+    const changeRefusal = changeCaptureResponse(err, c)
+    if (changeRefusal) return changeRefusal
     if (isStoreOutage(err)) {
       console.error('[mice-auth] store unavailable', err instanceof Error ? err.message : 'unknown error')
       return c.json({ status: 'error', status_message: 'store_unavailable', error: { detail: 'A required store is unavailable' } }, 503)
@@ -73,12 +78,13 @@ export function createApp(deps: AppDeps = {}): Hono {
   registerNameHistoryRoutes(app)
   registerMeRoutes(app, { audit })
   registerAuditRoutes(app, { audit })
+  registerAuditVisibilityRoutes(app, { audit })
   registerAuditHealthRoutes(app, { audit })
   registerReleaseManifestRoutes(app, { audit })
   registerRegulatedConfigRoutes(app, { audit })
   registerStepUp(app)
   registerLoginRoutes(app, { audit })
-  registerWebSessionRoutes(app)
+  registerWebSessionRoutes(app, { audit })
   registerSealKeyRoutes(app)
   registerDevSessionRoutes(app)
 

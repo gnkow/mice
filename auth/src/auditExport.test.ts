@@ -15,6 +15,7 @@ import type { AuditEvent, AuditVerification } from './audit.js'
 const actor = { sub: 'a1', iss: 'test', email: 'a@example.com', name: 'A' }
 
 function event(partial: Partial<AuditEvent> & Pick<AuditEvent, 'id' | 'action'>): AuditEvent {
+  const action = partial.action
   return {
     ts: '2026-01-01T00:00:00.000Z',
     actor,
@@ -22,6 +23,8 @@ function event(partial: Partial<AuditEvent> & Pick<AuditEvent, 'id' | 'action'>)
     method: 'POST',
     path: '/x',
     status: 200,
+    resource_uri: `action:${action}`,
+    schema_version: 2,
     ...partial,
   }
 }

@@ -286,6 +286,7 @@ test.describe('audit log (PLAT-AUDIT)', () => {
       action_label: 'File written',
       namespace: 'ns',
       repo: 'repo',
+      resource_uri: 'repo:ns/repo',
       change_control_id: 'CC-2026-0042',
       dataset: { base: 'aaaaaaaaaaaaaaaa1111', head: 'bbbbbbbbbbbbbbbb2222' },
     }
@@ -319,18 +320,20 @@ test.describe('audit log (PLAT-AUDIT)', () => {
       await expect(page.getByRole('alert')).toContainText('signing key is not configured')
     })
 
-    test('TC-AUDIT-14: table shows change control and dataset base/head (#139, #138)', async ({ page }) => {
+    test('TC-AUDIT-14: table shows resource URI, change control and change base→head (#139, #138)', async ({ page }) => {
       await sessionLogin(page)
       await page.route('**/auth/audit?*', (route) =>
         route.fulfill({ json: { events: [mockedEvent], nextCursor: null } }),
       )
       await page.goto('/audit')
+      await expect(page.getByRole('columnheader', { name: 'Resource' })).toBeVisible()
       await expect(page.getByRole('columnheader', { name: 'Change control' })).toBeVisible()
-      await expect(page.getByRole('columnheader', { name: 'Dataset' })).toBeVisible()
+      await expect(page.getByRole('columnheader', { name: 'Change', exact: true })).toBeVisible()
       const row = page.locator('.audit-table tbody tr').first()
+      await expect(row.getByTestId('audit-resource')).toHaveText('repo:ns/repo')
       await expect(row.getByTestId('audit-change-control')).toHaveText('CC-2026-0042')
-      await expect(row.getByTestId('audit-dataset')).toContainText('aaaaaaaa…')
-      await expect(row.getByTestId('audit-dataset')).toContainText('bbbbbbbb…')
+      await expect(row.getByTestId('audit-change')).toContainText('aaaaaaaa…')
+      await expect(row.getByTestId('audit-change')).toContainText('bbbbbbbb…')
     })
 
     test('TC-AUDIT-15: Verify chain shows tip, and a break as role=alert (#135)', async ({ page }) => {
@@ -398,14 +401,18 @@ test.describe('audit log (PLAT-AUDIT)', () => {
                 ...mockedEvent,
                 id: 'orphan-intent-1',
                 phase: 'intent',
+                orphan: true,
+                orphan_aged: true,
                 status: 0,
                 action: 'workspace.merge',
                 action_label: 'Workspace merge',
+                resource_uri: 'repo:ns/repo',
                 change_control_id: undefined,
                 dataset: undefined,
               },
             ],
             nextCursor: null,
+            orphan_aging_sec: 900,
           },
         }),
       )
@@ -413,9 +420,10 @@ test.describe('audit log (PLAT-AUDIT)', () => {
       const summary = page.getByTestId('audit-orphan-summary')
       await expect(summary).toBeVisible({ timeout: 15_000 })
       await expect(summary).toHaveAttribute('role', 'status')
-      await expect(summary).toContainText('1 Intent without Outcome')
+      await expect(summary).toContainText('aged Intent')
       await expect(page.getByTestId('audit-orphan-intent')).toBeVisible()
-      await expect(page.getByTestId('audit-orphan-badge')).toHaveText('No Outcome')
+      await expect(page.getByTestId('audit-orphan-badge')).toHaveText('Aged orphan')
+      await expect(page.getByTestId('audit-orphans-filter')).toBeVisible()
     })
   })
 })

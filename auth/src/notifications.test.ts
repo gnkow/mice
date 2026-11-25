@@ -80,7 +80,7 @@ function audit(overrides: Partial<AuditEvent> = {}): AuditEvent {
   return {
     id: randomUUID(), ts: new Date().toISOString(), actor: admin, via: 'session', method: 'POST',
     path: '/api/repos/team/data/file/main/a', status: 200, action: 'file.write',
-    namespace: 'team', repo: 'data', ...overrides,
+    namespace: 'team', repo: 'data', resource_uri: 'repo:team/data', schema_version: 2, ...overrides,
   }
 }
 const journal = (e: AuditEvent) => ledger.append(e.id, JSON.stringify(e))

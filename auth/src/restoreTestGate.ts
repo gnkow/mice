@@ -1,4 +1,6 @@
-import { appendAudit } from './audit.js'
+import { eq } from 'drizzle-orm'
+import { getDb } from './db/database.js'
+import { restoreTestStatusTable } from './db/schema.js'
 
 export type RestoreTestStatus = {
   passed: boolean
@@ -6,24 +8,26 @@ export type RestoreTestStatus = {
   recordedBy?: string
 }
 
+const ROW_ID = 'instance'
+
 let status: RestoreTestStatus = { passed: false }
-/** Once we have checked the audit trail for a prior pass, skip re-querying. */
-let hydratedFromAudit = false
+/** Once we have checked durable state for a prior pass, skip re-querying. */
+let hydrated = false
 
 /**
- * Test helper: clear the in-process gate and **do not** re-read audit on the next
+ * Test helper: clear the in-process gate and **do not** re-read durable state on the next
  * {@link loadRestoreTestStatus}. Use {@link simulateRestoreTestProcessRestart} when
- * the test needs hydration from a prior audit pass.
+ * the test needs hydration from a prior pass.
  */
 export function resetRestoreTestGate(): void {
   status = { passed: false }
-  hydratedFromAudit = true
+  hydrated = true
 }
 
 /** Test helper: forget in-memory state as if the auth process just restarted. */
 export function simulateRestoreTestProcessRestart(): void {
   status = { passed: false }
-  hydratedFromAudit = false
+  hydrated = false
 }
 
 export function restoreTestStatus(): RestoreTestStatus {
@@ -31,62 +35,60 @@ export function restoreTestStatus(): RestoreTestStatus {
 }
 
 /**
- * Prefer the in-process flag; if unset, recover a prior pass from the audit trail
- * so auth restarts do not re-lock regulated merges after an operator already recorded one.
+ * Prefer the in-process flag; if unset, recover a prior pass from Postgres
+ * so auth restarts do not re-lock regulated merges (no audit trail required).
  */
 export async function loadRestoreTestStatus(): Promise<RestoreTestStatus> {
-  if (status.passed || hydratedFromAudit) return restoreTestStatus()
-  hydratedFromAudit = true
+  if (status.passed || hydrated) return restoreTestStatus()
+  hydrated = true
   try {
-    const { queryAudit } = await import('./audit.js')
-    const { events } = await queryAudit({
-      action: 'system.restore_test.passed',
-      limit: 1,
-    })
-    const ev = events[0]
-    if (!ev) return restoreTestStatus()
-    const detail = (ev.detail ?? {}) as { passedAt?: string; recordedBy?: string }
+    const [row] = await getDb()
+      .select()
+      .from(restoreTestStatusTable)
+      .where(eq(restoreTestStatusTable.id, ROW_ID))
+      .limit(1)
+    if (!row?.passed) return restoreTestStatus()
     status = {
       passed: true,
-      passedAt:
-        typeof detail.passedAt === 'string' && detail.passedAt
-          ? detail.passedAt
-          : ev.ts,
-      recordedBy:
-        typeof detail.recordedBy === 'string' && detail.recordedBy
-          ? detail.recordedBy
-          : 'system',
+      ...(row.passedAt ? { passedAt: row.passedAt.toISOString() } : {}),
+      ...(row.recordedBy ? { recordedBy: row.recordedBy } : {}),
     }
   } catch {
-    // Audit unavailable: leave closed; callers that need the gate will 503 separately.
+    // Store unavailable: leave closed; callers that need the gate will 503 separately.
   }
   return restoreTestStatus()
 }
 
 /**
- * Record that a restore test passed (operator / scheduled job).
- * Visible via `restoreTestStatus` and an audit event.
+ * Record that a restore test passed (operator / seed / scheduled job).
+ * Durable in Postgres — not written to the audit ledger (setup/ops state, not a GxP mutation).
+ * Operator-facing routes may still append their own human-attributed audit event.
  */
 export async function recordRestoreTestPassed(input?: {
   recordedBy?: string
   at?: string
 }): Promise<RestoreTestStatus> {
-  status = {
-    passed: true,
-    passedAt: input?.at ?? new Date().toISOString(),
-    recordedBy: input?.recordedBy ?? 'system',
-  }
-  hydratedFromAudit = true
-  await appendAudit({
-    actor: { sub: 'system', iss: 'mice', email: 'system@mice', name: 'Mice' },
-    via: 'system',
-    method: 'SYSTEM',
-    path: '/auth/admin/restore-test',
-    status: 200,
-    action: 'system.restore_test.passed',
-    message: 'Restore test passed; regulated actions unlocked',
-    detail: { passedAt: status.passedAt, recordedBy: status.recordedBy },
-  })
+  const passedAt = input?.at ?? new Date().toISOString()
+  const recordedBy = input?.recordedBy ?? 'system'
+  status = { passed: true, passedAt, recordedBy }
+  hydrated = true
+  const at = new Date(passedAt)
+  await getDb()
+    .insert(restoreTestStatusTable)
+    .values({
+      id: ROW_ID,
+      passed: true,
+      passedAt: Number.isFinite(at.getTime()) ? at : new Date(),
+      recordedBy,
+    })
+    .onConflictDoUpdate({
+      target: restoreTestStatusTable.id,
+      set: {
+        passed: true,
+        passedAt: Number.isFinite(at.getTime()) ? at : new Date(),
+        recordedBy,
+      },
+    })
   return restoreTestStatus()
 }
 

@@ -3,6 +3,8 @@ import { isInstanceAdmin } from '../../authzInstanceStore.js'
 import { revokeAllCliCredentials } from './cliCredentials.js'
 import { revokeSessionsFor, revokeSessionsOnlyFor } from './credentialRevocation.js'
 import type { SessionUser } from '../session/session.js'
+import { EMPTY_AUDIT_CHANGE, NoChangeError, requireAuditChange } from '../../auditChange.js'
+import { principalAccessAuditSnapshot } from '../access/accessAudit.js'
 
 export type OffboardCause = 'admin-revocation' | 'directory-sync' | 'self-service' | 'back-channel-logout'
 
@@ -42,6 +44,19 @@ export type OffboardResult =
       failed: Array<{ step: OffboardStep; error: string }>
     }
 
+/** The credential-state delta of an offboarding, or null when it was a no-op. */
+async function revocationChange(
+  principal: { iss: string; sub: string },
+  before: Record<string, unknown>,
+) {
+  try {
+    return requireAuditChange(before, await principalAccessAuditSnapshot(principal))
+  } catch (err) {
+    if (err instanceof NoChangeError) return null
+    throw err
+  }
+}
+
 /**
  * Ends a Principal's Sessions and, when `scope` is `all`, their other credentials.
  * Every path that revokes credentials goes through here.
@@ -60,7 +75,7 @@ export async function offboard(
 
   if (req.cause === 'admin-revocation' && !await isInstanceAdmin(actor)) {
     await appendAudit({
-      actor, ...audit, status: 403, action: 'session.revoke',
+      actor, ...audit, status: 403, action: 'session.revoke', change: EMPTY_AUDIT_CHANGE,
       message: 'Revoke sessions denied',
       detail: { ...req.detail, source: req.cause },
     })
@@ -104,7 +119,10 @@ export async function offboard(
     }
   }
 
+  let before: Record<string, unknown> = {}
   const cutoff = await attempt('revoke-credentials', async () => {
+    // Fail closed: when the before-state cannot be read, nothing is revoked (the step fails).
+    before = await principalAccessAuditSnapshot(principal)
     if (req.scope !== 'all') return revokeSessionsOnlyFor(principal, req.at)
     const cutoff = await revokeSessionsFor(principal)
     await revokeAllCliCredentials(principal)
@@ -112,8 +130,20 @@ export async function offboard(
   })
   if (cutoff === undefined) failed.push({ step: 'audit-revocation', error: 'skipped: revoke-credentials failed' })
   else if (strictIntent) {
-    await attempt('audit-revocation', () => appendOutcome(strictIntent!.id, auditEvent))
-  } else await attempt('audit-revocation', async () => await appendAudit(auditEvent))
+    await attempt('audit-revocation', async () => {
+      const change = await revocationChange(principal, before)
+      // A cut-off that was already in force changes nothing: close the Intent as a non-mutation.
+      return appendOutcome(strictIntent!.id, change
+        ? { ...auditEvent, change }
+        : { ...auditEvent, change: EMPTY_AUDIT_CHANGE, message: `${auditEvent.message} (no change)` })
+    })
+  } else {
+    await attempt('audit-revocation', async () => {
+      const change = await revocationChange(principal, before)
+      if (!change) return true // no change: nothing is audited
+      return await appendAudit({ ...auditEvent, change })
+    })
+  }
 
   const suspended: string[] = []
   if (failed.length) {

@@ -1,9 +1,14 @@
 import type { Context } from 'hono'
-import type { AuditVia } from './audit.js'
+import type { AuditChange, AuditVia } from './audit.js'
 import { type SessionUser } from './authentication/index.js'
 
 export type AuditFields = {
   action: string
+  /**
+   * What changed. Mutations must pass a real delta (create/delete/update).
+   * Omit or pass empty for non-mutations / refusals.
+   */
+  change?: AuditChange
   message?: string
   namespace?: string
   repo?: string

@@ -2,6 +2,9 @@ import type { Hono } from 'hono'
 import { env } from '../../env.js'
 import { guarded } from './routeGuard.js'
 import type { AuditDep } from '../../routeDeps.js'
+import { requireAuditChange } from '../../auditChange.js'
+import { captureBefore } from '../../auditCapture.js'
+import type { RbacAccessRequest } from '../../rbacAccessRequests.js'
 import { authenticate } from './requireAuth.js'
 import { isPendingUser } from '../../authz.js'
 import { canSearchDirectory, searchDirectory } from '../directory/directory.js'
@@ -13,6 +16,7 @@ import { currentProfilesByAuthor } from './session.js'
 import {
   approveAccessRequest,
   denyAccessRequest,
+  getAccessRequest,
   getOwnPendingAccessRequest,
   listAccessRequestsForReviewer,
   submitAccessRequest,
@@ -28,6 +32,25 @@ import {
   loadSessionGroupMembership,
 } from './sessionGroupMembership.js'
 import { updateCurrentSessionGroups } from './session.js'
+
+/** Access-request state for audit deltas (null request = it does not exist yet / any more). */
+function accessRequestSnapshot(
+  request: RbacAccessRequest | null,
+  granted?: { role: unknown; permissions: unknown },
+): Record<string, unknown> | null {
+  if (!request) return null
+  return {
+    id: request.id,
+    requester: `${request.iss}|${request.sub}`,
+    status: request.status,
+    requested_role: request.requestedRole,
+    requested_permissions: request.requestedPermissions,
+    resolved_at: request.resolvedAt ?? null,
+    resolved_by: request.resolvedBy ?? null,
+    granted_role: granted?.role ?? null,
+    granted_permissions: granted?.permissions ?? null,
+  }
+}
 
 /** The caller's own identity, AuthZ summary, directory search, access requests and training. */
 export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep): void {
@@ -130,6 +153,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     }
     await auditMutation(c, session, 'session', {
       action: 'access-request.submit',
+      change: requireAuditChange(null, accessRequestSnapshot(result.request)),
       message: 'Submitted access request',
       detail: {
         requestId: result.request.id,
@@ -166,6 +190,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     if (action === 'deny') {
       const reason = typeof body.reason === 'string' ? body.reason : ''
       if (!reason.trim()) return c.json({ error: 'Denial reason is required' }, 400)
+      const beforeDeny = await captureBefore(() => getAccessRequest(requestId))
       const result = await denyAccessRequest({ reviewer: session, requestId, reason })
       if (!result.ok) {
         const status = result.error === 'Not found' ? 404 : result.error.startsWith('Forbidden') ? 403 : 400
@@ -179,6 +204,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
       }
       await auditMutation(c, session, 'session', {
         action: 'access-request.deny',
+        change: requireAuditChange(accessRequestSnapshot(beforeDeny), accessRequestSnapshot(result.request)),
         message: 'Access request denied',
         detail: {
           requestId: result.request.id,
@@ -219,6 +245,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     }
     const signedReason = (c.req.header('x-mice-reason') ?? '').trim()
     const bodyReason = typeof body.reason === 'string' ? body.reason.trim() : ''
+    const beforeApprove = await captureBefore(() => getAccessRequest(requestId))
     const result = await approveAccessRequest({
       reviewer: session,
       requestId,
@@ -239,6 +266,13 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     }
     await auditMutation(c, session, 'session', {
       action: 'access-request.approve',
+      change: requireAuditChange(
+        accessRequestSnapshot(beforeApprove),
+        accessRequestSnapshot(result.request, {
+          role: grantedRole === undefined ? result.request.requestedRole : grantedRole,
+          permissions: grantedPermissions ?? result.request.requestedPermissions,
+        }),
+      ),
       message: 'Access request approved',
       detail: {
         requestId: result.request.id,
@@ -258,6 +292,7 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
       iss: body.iss ?? session.iss,
     }
     const self = target.sub === session.sub && target.iss === session.iss
+    const trainingBefore = await captureBefore(() => hasCompletedTraining(target))
     if (self) {
       await setTrainingCompletedSelf(session, done)
     } else {
@@ -274,6 +309,10 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     }
     await auditMutation(c, session, 'session', {
       action: 'training.update',
+      change: requireAuditChange(
+        { training_completed: trainingBefore },
+        { training_completed: await hasCompletedTraining(target) },
+      ),
       message: `Set training completed=${done} for ${self ? 'self' : target.sub}`,
       detail: { target, completed: done, self },
     })
@@ -314,6 +353,10 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
     const groups = await loadSessionGroupMembership(fetched.bindingKeys)
     await audit({
       action: 'auth.session.groups.refresh',
+      change: requireAuditChange(
+        { groups: [...(session.groups ?? [])].sort() },
+        { groups: [...fetched.bindingKeys].sort() },
+      ),
       status: 200,
       message: `Refreshed ${groups.length} IdP groups on session`,
       detail: { count: groups.length },
@@ -329,10 +372,20 @@ export function registerMeRoutes(app: Hono, { audit: auditMutation }: AuditDep):
   /** Revoke one of the caller's CLI credentials. */
   app.delete('/auth/me/tokens/:id', guarded({ mutates: true }, async ({ c, user: session }) => {
     const tokenId = c.req.param('id')
+    const credentialBefore = (await captureBefore(() => listCliCredentials(session))).find((t) => t.id === tokenId)
     const revoked = await revokeCliCredentialFamily(session, tokenId)
-    if (!revoked) return c.json({ error: 'Credential not found' }, 404)
+    if (!revoked || !credentialBefore) return c.json({ error: 'Credential not found' }, 404)
     await auditMutation(c, session, 'session', {
       action: 'token.revoke',
+      change: requireAuditChange(
+        {
+          id: credentialBefore.id,
+          device_name: credentialBefore.deviceName ?? null,
+          created_at: credentialBefore.createdAt,
+          expires_at: credentialBefore.expiresAt,
+        },
+        null,
+      ),
       message: `Revoked CLI credential ${tokenId}`,
       detail: { tokenId },
     })

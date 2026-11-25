@@ -1,5 +1,5 @@
 import { appendAudit, type AuditActor } from '../../audit.js'
-import { getCurrentSealKey, normalRotation, type SealKey } from './sealKeys.js'
+import { getCurrentSealKey, normalRotation, sealKeyRotationChange, type SealKey } from './sealKeys.js'
 
 /** Normal rotation is due when the current key is this old. */
 export const SEAL_KEY_ROTATION_SEC = 30 * 24 * 60 * 60
@@ -56,6 +56,7 @@ export async function runScheduledSealKeyRotation(
       rotationType: 'normal',
       validFrom: created.validFrom,
     },
+    change: sealKeyRotationChange(current, created),
   })
   return true
 }

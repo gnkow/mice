@@ -1,3 +1,4 @@
+import { EMPTY_AUDIT_CHANGE } from './auditChange.js'
 import { createHash } from 'node:crypto'
 import { appendAudit } from './audit.js'
 import {
@@ -91,6 +92,7 @@ export async function recordTraceabilityMatrixRelease(
     method: 'SYSTEM',
     path: '/boot',
     action: 'system.traceability_matrix.release',
+    change: EMPTY_AUDIT_CHANGE,
     status: 200,
     message: `Traceability matrix release artifact (${matrix.coverage.coveredRequirements}/${matrix.coverage.totalRequirements} covered)`,
     detail: {

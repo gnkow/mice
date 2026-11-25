@@ -1,4 +1,4 @@
-import { appendAudit } from './audit.js'
+import { appendAudit, requireAuditChange } from './audit.js'
 import { authorizeRepoAction } from './authz.js'
 import { type SessionUser } from './authentication/index.js'
 import { isWorkspaceMount } from './sessionsMounts.js'
@@ -116,6 +116,13 @@ async function auditLease(
   lease: Pick<Lease, 'id' | 'mode'>,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
+  // A lease is a created (acquire) or deleted (release) record on the workspace.
+  const leaseSnapshot = {
+    lease_id: lease.id,
+    workspace_id: ws?.id ?? null,
+    mode: lease.mode,
+    session_id: session.id,
+  }
   await appendAudit({
     actor: session.owner,
     via: session.via,
@@ -123,6 +130,10 @@ async function auditLease(
     path: `/auth/sessions/${session.id}`,
     status: 200,
     action,
+    change:
+      action === 'workspace.lease.acquire'
+        ? requireAuditChange(null, leaseSnapshot)
+        : requireAuditChange(leaseSnapshot, null),
     ...(ws ? { namespace: ws.namespace, repo: ws.repo } : {}),
     detail: { session_id: session.id, workspace_id: ws?.id, lease_id: lease.id, mode: lease.mode, ...extra },
   })
@@ -394,6 +405,13 @@ export async function createOnDemandWorkspaces(
         path: '/auth/sessions',
         status: 202,
         action: 'workspace.create',
+        change: requireAuditChange(null, {
+          workspace_id: ws.id,
+          name: ws.name,
+          namespace: nw.namespace,
+          repo: nw.repo,
+          source: nw.source,
+        }),
         namespace: nw.namespace,
         repo: nw.repo,
         detail: { workspace_id: ws.id, name: ws.name, source: nw.source, session_id: sessionId, on_demand: true },

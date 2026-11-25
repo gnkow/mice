@@ -30,6 +30,20 @@ describe('applyAuditQueryFilters', () => {
     assert.equal(chained.length, 3)
   })
 
+  it('excludes exact actions for Auditor visibility', () => {
+    const events = [
+      ev({ id: 'a', action: 'audit.browse' }),
+      ev({ id: 'b', action: 'file.write' }),
+      ev({ id: 'c', action: 'session.create' }),
+    ]
+    assert.deepEqual(
+      applyAuditQueryFilters(events, { excludeActions: ['audit.browse', 'session.create'] }).map(
+        (e) => e.id,
+      ),
+      ['b'],
+    )
+  })
+
   it('filters by namespace, action alias, actor substring, and time window', () => {
     const events = [
       ev({
