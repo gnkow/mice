@@ -341,8 +341,9 @@ export function AuditPage() {
         <div>
           <h1>Audit</h1>
           <p className="lede">
-            Append-only log of mutations through the auth BFF (who / what / when
-            / which repo). Signature rows open IdP MFA evidence for auditors.
+            Who changed what, when, and on which resource. Entries cannot be
+            edited or deleted. Open a signature row to review sign-in and MFA
+            evidence.
           </p>
         </div>
         <div className="btn-row audit-actions" role="group" aria-label="Audit actions">
@@ -528,7 +529,6 @@ export function AuditPage() {
                   <th>Actor</th>
                   <th>Action</th>
                   <th>Resource</th>
-                  <th>Status</th>
                   <th>Reason</th>
                   <th>Change control</th>
                   <th>Change</th>
@@ -575,7 +575,6 @@ export function AuditPage() {
                     <td>
                       <ResourceUriCell event={ev} />
                     </td>
-                    <td className="mono small">{ev.status}</td>
                     <td className="small">
                       {ev.reason ? (
                         <>
