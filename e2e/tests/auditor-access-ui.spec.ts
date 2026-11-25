@@ -92,7 +92,7 @@ test.describe('Auditor access UI (#13)', () => {
 
     await page.goto('/audit')
     await expect(
-      page.getByText(/Signature rows open IdP MFA evidence/i),
+      page.getByText(/Open a signature row to review sign-in and MFA evidence/i),
     ).toBeVisible()
 
     const evidence = page.getByTestId('signature-evidence').first()

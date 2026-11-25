@@ -7448,6 +7448,109 @@ p.ok {
   overflow: visible;
 }
 
+.audit-filters .audit-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.55rem;
+  grid-column: 1 / -1;
+  margin: 0 0 0.15rem;
+}
+
+.audit-presets-label {
+  margin-right: 0.15rem;
+}
+
+.audit-filters .audit-filter-datetime {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.audit-filters .audit-filter-datetime input {
+  font: inherit;
+  color: var(--fg);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 6px);
+  padding: 0.4rem 0.55rem;
+  min-height: 2.15rem;
+}
+
+.audit-table .audit-col-status {
+  width: 1%;
+  padding-inline: 0.45rem 0.25rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.audit-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.audit-status-icon.is-ok {
+  color: var(--success, #3d9a6a);
+}
+
+.audit-status-icon.is-fail {
+  color: var(--danger);
+}
+
+.audit-status-icon.is-signed {
+  color: var(--accent);
+}
+
+.audit-status-icon.is-revoked {
+  color: var(--danger);
+}
+
+.audit-status-icon.is-orphan {
+  color: color-mix(in srgb, #c69026 85%, var(--fg));
+}
+
+.audit-status-icon.is-intent {
+  color: var(--muted);
+}
+
+.audit-status-icon.is-muted {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.audit-table .audit-when {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.audit-table .audit-reason-text {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-table .audit-change-cell {
+  max-width: 18rem;
+}
+
+.audit-table .audit-change-cell [data-testid='audit-change'] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 18rem;
+}
+
+.audit-table .audit-col-actions {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .audit-filters label,
 .audit-filters .suggest-field > label {
   display: flex;
@@ -7598,7 +7701,7 @@ p.ok {
 }
 
 .audit-table td {
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .audit-table tr.audit-row-orphan {
@@ -8409,6 +8512,7 @@ button.btn[aria-disabled='true'] {
 .merge-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.6rem;
   margin-top: 1.15rem;
   padding-top: 1rem;

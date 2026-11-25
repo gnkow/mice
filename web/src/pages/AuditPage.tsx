@@ -1,10 +1,15 @@
 import {
+  AlertTriangle,
+  Check,
+  Clock,
   Download as ActionDownload,
   FileSearch as ActionFileSearch,
   FileText as ActionFileText,
   Search as ActionSearch,
   ShieldCheck as ActionShieldCheck,
+  ShieldOff,
   Trash2 as ActionTrash2,
+  X,
 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -33,6 +38,8 @@ import { signatureEvidenceSections } from '../lib/signatureEvidence'
 import { revocableSignatureId, revokedSignatureIds } from '../lib/signatureRevoke'
 
 const FILTER_KEYS = [
+  'since',
+  'until',
   'actor',
   'namespace',
   'repo',
@@ -44,8 +51,64 @@ const FILTER_KEYS = [
 type FilterKey = (typeof FILTER_KEYS)[number]
 type Draft = Record<FilterKey, string>
 
+/** `datetime-local` value ↔ ISO for `since` / `until` query params. */
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function localInputToIso(local: string): string | undefined {
+  const v = local.trim()
+  if (!v) return undefined
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return undefined
+  return d.toISOString()
+}
+
+/** Investigation presets (#155) — URL filters aligned with trail catalog signal. */
+const INVESTIGATION_PRESETS: readonly {
+  id: string
+  label: string
+  title: string
+  /** When set, applies this action prefix (server matches `action` / `action.*`). */
+  action?: string
+}[] = [
+  {
+    id: 'signatures',
+    label: 'Signatures',
+    title: 'Show electronic signature events (esign.*)',
+    action: 'esign',
+  },
+  {
+    id: 'files',
+    label: 'Files',
+    title: 'Show file write/delete events',
+    action: 'file',
+  },
+  {
+    id: 'merges',
+    label: 'Merges',
+    title: 'Show branch merge events (merge / merge.*)',
+    action: 'merge',
+  },
+  {
+    id: 'roles',
+    label: 'Roles',
+    title: 'Show instance role assign/revoke events',
+    action: 'role',
+  },
+]
+
 function draftFromParams(p: URLSearchParams): Draft {
-  return Object.fromEntries(FILTER_KEYS.map((k) => [k, p.get(k) ?? ''])) as Draft
+  return Object.fromEntries(
+    FILTER_KEYS.map((k) => {
+      const raw = p.get(k) ?? ''
+      if ((k === 'since' || k === 'until') && raw) return [k, isoToLocalInput(raw)]
+      return [k, raw]
+    }),
+  ) as Draft
 }
 
 function shortId(id: string): string {
@@ -139,10 +202,86 @@ function ResourceUriCell({ event }: { event: AuditEvent }) {
 
 function formatTs(ts: string): string {
   try {
-    return new Date(ts).toLocaleString()
+    // Compact fixed layout — avoid wrapping; full ISO in title.
+    const d = new Date(ts)
+    if (Number.isNaN(d.getTime())) return ts
+    return d.toLocaleString(undefined, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
   } catch {
     return ts
   }
+}
+
+type AuditStatusKind = 'ok' | 'fail' | 'signed' | 'revoked' | 'orphan' | 'intent' | 'muted'
+
+/** Leading status glyph for scanability (success / fail / signed / unpaired). */
+function auditStatus(event: AuditEvent): { kind: AuditStatusKind; label: string } {
+  if (event.orphan_aged) {
+    return { kind: 'orphan', label: 'Aged unpaired Intent' }
+  }
+  if (event.phase === 'intent' || event.orphan) {
+    return { kind: 'intent', label: 'Unpaired Intent (no Outcome yet)' }
+  }
+  if (event.action === 'esign.revoked' || event.action === 'esign.revocation_reverted') {
+    return {
+      kind: event.action === 'esign.revoked' ? 'revoked' : 'signed',
+      label: event.action === 'esign.revoked' ? 'Signature revoked' : 'Revocation reverted',
+    }
+  }
+  if (
+    event.signature_id ||
+    event.action.startsWith('esign.') ||
+    event.action === 'signature.created'
+  ) {
+    return { kind: 'signed', label: 'Signed' }
+  }
+  if (event.status >= 400) {
+    return { kind: 'fail', label: `Failed (HTTP ${event.status})` }
+  }
+  if (event.status >= 200 && event.status < 400) {
+    return { kind: 'ok', label: 'Succeeded' }
+  }
+  return { kind: 'muted', label: 'Recorded' }
+}
+
+function AuditStatusCell({ event }: { event: AuditEvent }) {
+  const { kind, label } = auditStatus(event)
+  const iconProps = { size: 14 as const, 'aria-hidden': true as const, strokeWidth: 2.25 }
+  const icon =
+    kind === 'ok' ? (
+      <Check {...iconProps} />
+    ) : kind === 'fail' ? (
+      <X {...iconProps} />
+    ) : kind === 'signed' ? (
+      <ActionShieldCheck {...iconProps} />
+    ) : kind === 'revoked' ? (
+      <ShieldOff {...iconProps} />
+    ) : kind === 'orphan' ? (
+      <AlertTriangle {...iconProps} />
+    ) : kind === 'intent' ? (
+      <Clock {...iconProps} />
+    ) : (
+      <Check {...iconProps} />
+    )
+  return (
+    <td className="audit-col-status" title={label}>
+      <span
+        className={`audit-status-icon is-${kind}`}
+        data-testid="audit-status"
+        data-status={kind}
+        aria-label={label}
+      >
+        {icon}
+      </span>
+    </td>
+  )
 }
 
 function ChangeControlCell({ event }: { event: AuditEvent }) {
@@ -204,6 +343,8 @@ export function AuditPage() {
 
   const applied = useMemo(
     () => ({
+      since: params.get('since') || undefined,
+      until: params.get('until') || undefined,
       actor: params.get('actor') || undefined,
       namespace: params.get('namespace') || undefined,
       repo: params.get('repo') || undefined,
@@ -219,6 +360,8 @@ export function AuditPage() {
   const state = useAsync(
     (signal) => loadAudit({ ...applied, limit: 100 }, signal),
     [
+      applied.since,
+      applied.until,
       applied.actor,
       applied.namespace,
       applied.repo,
@@ -250,6 +393,11 @@ export function AuditPage() {
     e.preventDefault()
     const next = new URLSearchParams()
     for (const k of FILTER_KEYS) {
+      if (k === 'since' || k === 'until') {
+        const iso = localInputToIso(draft[k])
+        if (iso) next.set(k, iso)
+        continue
+      }
       const v = draft[k].trim()
       if (v) next.set(k, v)
     }
@@ -262,12 +410,26 @@ export function AuditPage() {
     setParams({}, { replace: true })
   }
 
+  function applyPreset(preset: (typeof INVESTIGATION_PRESETS)[number]) {
+    const next = new URLSearchParams()
+    if (preset.action) next.set('action', preset.action)
+    if (applied.orphansOnly) next.set('orphans', '1')
+    setDraft(draftFromParams(next))
+    setParams(next, { replace: true })
+  }
+
   function toggleOrphansOnly() {
     const next = new URLSearchParams(params)
     if (applied.orphansOnly) next.delete('orphans')
     else next.set('orphans', '1')
     setParams(next, { replace: true })
   }
+
+  const activePresetId = useMemo(() => {
+    const action = applied.action ?? ''
+    if (!action) return null
+    return INVESTIGATION_PRESETS.find((p) => p.action === action)?.id ?? null
+  }, [applied.action])
 
   const denied = state.kind === 'ok' && state.data.kind === 'denied' ? state.data.reason : null
   const events = state.kind === 'ok' && state.data.kind === 'ok' ? state.data.data.events : null
@@ -428,6 +590,49 @@ export function AuditPage() {
       )}
 
       <form className="audit-filters" onSubmit={onFilter}>
+        <div
+          className="audit-presets"
+          role="group"
+          aria-label="Investigation focus"
+          data-testid="audit-investigation-presets"
+        >
+          <span className="muted small audit-presets-label">Focus</span>
+          {INVESTIGATION_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`btn small ${activePresetId === preset.id ? 'primary' : 'ghost'}`}
+              title={preset.title}
+              data-testid={`audit-preset-${preset.id}`}
+              aria-pressed={activePresetId === preset.id}
+              onClick={() => applyPreset(preset)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        <label className="audit-filter-datetime">
+          <span>From</span>
+          <input
+            type="datetime-local"
+            name="since"
+            value={draft.since}
+            onChange={(e) => set('since', e.target.value)}
+            data-testid="audit-filter-from"
+            aria-label="From date and time"
+          />
+        </label>
+        <label className="audit-filter-datetime">
+          <span>To</span>
+          <input
+            type="datetime-local"
+            name="until"
+            value={draft.until}
+            onChange={(e) => set('until', e.target.value)}
+            data-testid="audit-filter-to"
+            aria-label="To date and time"
+          />
+        </label>
         <SuggestField
           name="actor"
           label="Actor"
@@ -525,6 +730,9 @@ export function AuditPage() {
             <table className="branches-table audit-table">
               <thead>
                 <tr>
+                  <th className="audit-col-status" scope="col">
+                    <span className="visually-hidden">Status</span>
+                  </th>
                   <th>When</th>
                   <th>Actor</th>
                   <th>Action</th>
@@ -532,6 +740,7 @@ export function AuditPage() {
                   <th>Reason</th>
                   <th>Change control</th>
                   <th>Change</th>
+                  <th className="audit-col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -550,7 +759,10 @@ export function AuditPage() {
                     }
                     data-testid={ev.phase === 'intent' || ev.orphan ? 'audit-orphan-intent' : undefined}
                   >
-                    <td className="mono small">{formatTs(ev.ts)}</td>
+                    <AuditStatusCell event={ev} />
+                    <td className="mono small audit-when" title={ev.ts}>
+                      {formatTs(ev.ts)}
+                    </td>
                     <td>
                       <div>{ev.actor.name}</div>
                       <div className="muted small">{ev.actor.email}</div>
@@ -575,13 +787,15 @@ export function AuditPage() {
                     <td>
                       <ResourceUriCell event={ev} />
                     </td>
-                    <td className="small">
+                    <td className="small audit-reason">
                       {ev.reason ? (
                         <>
                           {ev.category ? (
                             <div className="muted small">{ev.category.replace(/_/g, ' ')}</div>
                           ) : null}
-                          <div>{ev.reason}</div>
+                          <div className="audit-reason-text" title={ev.reason}>
+                            {ev.reason}
+                          </div>
                         </>
                       ) : (
                         <span className="muted">—</span>
@@ -590,14 +804,13 @@ export function AuditPage() {
                     <td>
                       <ChangeControlCell event={ev} />
                     </td>
-                    <td>
+                    <td className="audit-change-cell">
                       <ChangeCell event={ev} />
+                    </td>
+                    <td className="audit-col-actions">
                       <div className="audit-signature-actions btn-row">
                         <SignatureEvidence event={ev} />
-                        <SignatureRevokedTag
-                          event={ev}
-                          revoked={revoked}
-                        />
+                        <SignatureRevokedTag event={ev} revoked={revoked} />
                       </div>
                     </td>
                   </tr>

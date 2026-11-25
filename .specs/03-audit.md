@@ -424,7 +424,7 @@ Challenges: "Testing seam: BFF HTTP boundary, black-box, real containers".
 ## Open follow-ups (from authorization deep-manual #83)
 
 - ~~**[#154](https://github.com/gnkow/mice/issues/154)** — Revisit the comprehensive audit event catalog~~ — **decided** (see Event catalog above).
-- **[#155](https://github.com/gnkow/mice/issues/155)** — Fix Audit UI for investigation (filters, density; signature evidence modal pattern from #83); default filters should follow the trail catalog hide set.
+- ~~**[#155](https://github.com/gnkow/mice/issues/155)** — Fix Audit UI for investigation~~ — **done**: Focus presets (`esign` / `file` / `merge` / `role`), Actions column for Evidence, denser When/Reason/Change cells; trail-catalog hide remains Settings → Audit Visibility.
 
 ## Cross-cutting impacts
 - **01 (Authentication)**: Audit of authentication events (login, logout, refresh, step-up, failure, revocation) with request id and Principal (authentication T7). No tokens/cookies logged; redaction tested (Q25).
