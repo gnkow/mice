@@ -4,7 +4,15 @@ import {
   VALIDATED_BRANCH_DIRECT_WRITE,
   branchTargetFromPath,
   decideValidatedBranchWrite,
+  isTipChangingAction,
 } from '../../src/packages/merge/lib/validatedBranchWrite.js'
+
+describe('isTipChangingAction', () => {
+  it('includes commit.publish so push completion fans out stale marks (#158)', () => {
+    assert.equal(isTipChangingAction('commit.publish'), true)
+    assert.equal(isTipChangingAction('commit.upload'), false)
+  })
+})
 
 describe('decideValidatedBranchWrite', () => {
   it('blocks tip-changing writes to the validated default branch', () => {
@@ -16,6 +24,7 @@ describe('decideValidatedBranchWrite', () => {
       'merge',
       'branch.delete',
       'branch.update',
+      'commit.publish',
     ]) {
       const d = decideValidatedBranchWrite({ action, branch: 'main' })
       assert.equal(d.allow, false)

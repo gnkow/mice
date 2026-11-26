@@ -65,6 +65,7 @@ export type {
 } from './lib/mergeRequestStore.js'
 export {
   markOpenMergeRequestsStaleForTip,
+  markOpenMergeRequestsStaleForPublishedCommit,
   reconcileMergeRequestAgainstLiveTips,
   resyncMergeRequest,
 } from './lib/mergeRequestTipSync.js'

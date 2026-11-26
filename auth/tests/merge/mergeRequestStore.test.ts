@@ -13,7 +13,6 @@ const {
   openMergeRequest,
   getMergeRequest,
   listMergeRequests,
-  resyncMergeRequest,
   markMergeRequestMerged,
   decideMergeRequestComplete,
   rejectMergeRequest,
@@ -21,6 +20,9 @@ const {
   reopenMergeRequest,
   MergeRequestAlreadyOpenError,
 } = await import('../../src/packages/merge/lib/mergeRequestStore.js')
+const { resyncMergeRequest, markOpenMergeRequestsStaleForTip } = await import(
+  '../../src/packages/merge/lib/mergeRequestTipSync.js'
+)
 
 const root = t.person('root')
 await t.grantRole(root, 'manager')
@@ -228,7 +230,6 @@ describe('merge request store (repositories/02)', () => {
   })
 
   it('proactively marks open MRs stale when a watched branch tip moves', async () => {
-    const { markOpenMergeRequestsStaleForTip } = await import('../../src/packages/merge/lib/mergeRequestStore.js')
     const intoMain = await openMergeRequest({
       repositoryId: repo.id,
       namespace: 'lab',

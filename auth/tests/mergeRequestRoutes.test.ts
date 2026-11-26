@@ -84,6 +84,30 @@ describe('merge request HTTP (repositories/02+03)', () => {
     assert.equal(stale.status, 200, staleText)
     const staleJson = JSON.parse(staleText) as { mergeRequest?: { status: string } }
     assert.equal(staleJson.mergeRequest?.status, 'stale')
+
+    // Update = resync with refreshExpected (write + reason + signature already on route).
+    const updateBody = {
+      liveSourceHead: 'src2',
+      liveTargetHead: 'tgt2',
+      refreshExpected: true,
+    }
+    const updateHeaders = await regulatedMutationHeaders(manager, {
+      method: 'POST',
+      path: resyncPath,
+      body: updateBody,
+    })
+    const updated = await app.request(resyncPath, {
+      method: 'POST',
+      headers: { ...updateHeaders, cookie: await cookie() },
+      body: JSON.stringify(updateBody),
+    })
+    const updatedJson = (await updated.json()) as {
+      mergeRequest?: { status: string; expectedSourceHead: string; expectedTargetHead: string }
+    }
+    assert.equal(updated.status, 200, JSON.stringify(updatedJson))
+    assert.equal(updatedJson.mergeRequest?.status, 'open')
+    assert.equal(updatedJson.mergeRequest?.expectedSourceHead, 'src2')
+    assert.equal(updatedJson.mergeRequest?.expectedTargetHead, 'tgt2')
   })
 
   it('rejects an open MR to rejected', async () => {

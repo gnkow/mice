@@ -17,6 +17,8 @@ const TIP_CHANGING_ACTIONS = new Set([
   'merge',
   'branch.delete',
   'branch.update',
+  // Oxen push lands via complete; no branch in the path — callers must resolve tip/branch.
+  'commit.publish',
 ])
 
 export function isTipChangingAction(action: string): boolean {

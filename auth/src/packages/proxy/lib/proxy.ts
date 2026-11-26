@@ -22,6 +22,7 @@ import {
   ensureBranchCreateSourceTip,
   filterNamespaceCatalog,
   finalizeProxiedRepoCreate,
+  markStaleAfterProxiedTipWrite,
   recordAclBypassRead,
   stampRepositoryIdOnRepoDetail,
 } from './proxyEffects.js'
@@ -32,7 +33,7 @@ import {
 } from '../../namespaces/index.js'
 import { renameRepository } from '../../authz/index.js'
 import { decideSelfMerge, selfMergeAuditDetail } from '../../merge/index.js'
-import { branchTargetFromPath, decideValidatedBranchWrite, isTipChangingAction } from '../../merge/index.js'
+import { branchTargetFromPath, decideValidatedBranchWrite } from '../../merge/index.js'
 import { filterRequestHeaders, HOP_BY_HOP } from './proxyHeaders.js'
 import {
   auditChainBroken,
@@ -561,34 +562,20 @@ export async function proxyToOxen(
     await lineage.after(upstream, buffered, auditEvent?.id)
 
     // Tip moved → mark open MRs that pin this branch as stale (#158).
-    if (
-      upstream.ok &&
-      mutating &&
-      ns &&
-      repo &&
-      isTipChangingAction(classified.action)
-    ) {
-      const branch =
-        (typeof classified.detail?.branch === 'string'
-          ? classified.detail.branch
-          : undefined) ?? branchTargetFromPath(pathname)
-      if (branch) {
-        try {
-          const { readRepository } = await import('../../authz/stores.js')
-          const { getBranchTip } = await import('../../jobs/index.js')
-          const { markOpenMergeRequestsStaleForTip } = await import('../../merge/index.js')
-          const repoRow = await readRepository(ns, repo)
-          const tip = await getBranchTip(ns, repo, branch)
-          if (repoRow && tip) {
-            await markOpenMergeRequestsStaleForTip({
-              repositoryId: repoRow.id,
-              branch,
-              newTip: tip,
-            })
-          }
-        } catch {
-          /* best-effort; list/detail reconcile is the safety net */
-        }
+    if (upstream.ok && mutating && ns && repo) {
+      try {
+        await markStaleAfterProxiedTipWrite({
+          namespace: ns,
+          repo,
+          action: classified.action,
+          pathname,
+          detailBranch:
+            typeof classified.detail?.branch === 'string'
+              ? classified.detail.branch
+              : undefined,
+        })
+      } catch {
+        /* best-effort; list/detail/signing-preview reconcile is the safety net */
       }
     }
 

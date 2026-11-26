@@ -140,13 +140,6 @@ export async function listMergeRequests(repositoryId: string): Promise<MergeRequ
   return rows.map(rowToRecord)
 }
 
-/** Tip sync lives in mergeRequestTipSync — re-exported for existing store imports. */
-export {
-  markOpenMergeRequestsStaleForTip,
-  reconcileMergeRequestAgainstLiveTips,
-  resyncMergeRequest,
-} from './mergeRequestTipSync.js'
-
 export function decideMergeRequestComplete(
   mr: Pick<MergeRequestRecord, 'status' | 'expectedSourceHead' | 'expectedTargetHead'>,
   live: { liveSourceHead: string; liveTargetHead: string },

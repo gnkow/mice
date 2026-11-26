@@ -2,6 +2,7 @@ import { actorFromUser } from '../../audit/index.js'
 import { appendAudit } from '../../audit/index.js'
 import type { AuditVia } from '../../audit/index.js'
 import { EMPTY_AUDIT_CHANGE } from '../../audit/change.js'
+import { datasetTarget } from '../../audit/index.js'
 import { decideInstanceAction } from '../../authz/index.js'
 import { ensureNamespaceForCreate } from '../../authz/index.js'
 import { getNamespace } from '../../authz/index.js'
@@ -13,6 +14,9 @@ import { ensureEmptyOxenBranch } from '../../namespaces/index.js'
 import { isPhysicalOxenKey } from '../../namespaces/index.js'
 import { displayNamespaceName, resolvePhysicalRepo } from '../../namespaces/index.js'
 import { readRepositoryById } from '../../authz/index.js'
+import { env } from '../../shared/index.js'
+import { branchTargetFromPath, isTipChangingAction } from '../../merge/index.js'
+import { getUpstreamFetch } from './proxyUpstream.js'
 
 /**
  * Narrow `GET /api/namespaces` to the caller's visible namespaces.
@@ -189,6 +193,71 @@ export async function stampRepositoryIdOnRepoDetail(
     return null
   }
   return attachRepositoryId(text, repositoryId)
+}
+
+/** Live tip via the same upstream transport the proxy uses (testable with setUpstreamFetch). */
+export async function resolveProxiedBranchTip(
+  namespace: string,
+  repo: string,
+  branch: string,
+): Promise<string | undefined> {
+  const physical = await resolvePhysicalRepo(namespace, repo)
+  if (!physical) return undefined
+  const res = await getUpstreamFetch()(
+    `${env.oxenUpstream}/api/repos/${encodeURIComponent(physical.namespaceId)}/${encodeURIComponent(physical.repositoryId)}/branches/${encodeURIComponent(branch)}`,
+  )
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined)
+    return undefined
+  }
+  const body = (await res.json()) as {
+    branch?: { commit_id?: string; commit?: { id?: string } }
+    commit_id?: string
+  }
+  return body.branch?.commit_id ?? body.branch?.commit?.id ?? body.commit_id
+}
+
+/**
+ * After a successful tip-changing proxy write, mark open MRs stale (#158).
+ * `commit.publish` has no branch in the path — resolve via live tips of open MRs.
+ */
+export async function markStaleAfterProxiedTipWrite(input: {
+  namespace: string
+  repo: string
+  action: string
+  pathname: string
+  detailBranch?: string
+}): Promise<void> {
+  if (!isTipChangingAction(input.action)) return
+  const { readRepository } = await import('../../authz/stores.js')
+  const {
+    markOpenMergeRequestsStaleForTip,
+    markOpenMergeRequestsStaleForPublishedCommit,
+  } = await import('../../merge/index.js')
+  const repoRow = await readRepository(input.namespace, input.repo)
+  if (!repoRow) return
+
+  const branch =
+    input.detailBranch?.trim() || branchTargetFromPath(input.pathname) || undefined
+  if (branch) {
+    const tip = await resolveProxiedBranchTip(input.namespace, input.repo, branch)
+    if (!tip) return
+    await markOpenMergeRequestsStaleForTip({
+      repositoryId: repoRow.id,
+      branch,
+      newTip: tip,
+    })
+    return
+  }
+
+  if (input.action !== 'commit.publish') return
+  const published = datasetTarget(input.pathname).publishedCommit?.trim()
+  if (!published) return
+  await markOpenMergeRequestsStaleForPublishedCommit({
+    repositoryId: repoRow.id,
+    publishedCommit: published,
+    resolveLiveTip: (b) => resolveProxiedBranchTip(input.namespace, input.repo, b),
+  })
 }
 
 /** Audit that a site admin was allowed through on the bypass, not on a grant. */

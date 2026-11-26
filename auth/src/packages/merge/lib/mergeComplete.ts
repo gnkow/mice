@@ -12,7 +12,7 @@ import {
   getMergeManifestResolver,
   getMergeRangeResolver,
 } from './mergeRequestOxen.js'
-import { captureMrSnapshot, mrSnapshot } from './mergeRequestView.js'
+import { captureMrSnapshot, mrSnapshot, reconcileOne } from './mergeRequestView.js'
 import { signerAuthorKey } from './selfMerge.js'
 import { json, type JsonOutcome } from './httpOutcome.js'
 
@@ -22,20 +22,30 @@ export async function signingPreviewUseCase(input: {
   user: SessionUser
   id: string
 }): Promise<JsonOutcome> {
-  const mr = await getMergeRequest(input.id)
-  if (!mr) return json(404, { error: 'Not found' })
-  if (!(await hasRepoPermission(input.user, mr.namespace, mr.repo, 'read')).ok) {
+  const loaded = await getMergeRequest(input.id)
+  if (!loaded) return json(404, { error: 'Not found' })
+  if (!(await hasRepoPermission(input.user, loaded.namespace, loaded.repo, 'read')).ok) {
     return json(403, { error: 'Forbidden' })
   }
+  // Same live-tip reconcile as list/get so Outdated appears before Approve (#158).
+  const mr = await reconcileOne(loaded)
   const { mergeResultBinding, manifestForMergeResult } = await import('../../authentication/signing.js')
   const { isValidatedBranch } = await import('./signedMergeComplete.js')
+  const mergeManifestResolver = getMergeManifestResolver()
   let merge
   try {
-    merge = await manifestForMergeResult(
-      { namespace: mr.namespace, repo: mr.repo },
-      mr.expectedSourceHead,
-      mr.expectedTargetHead,
-    )
+    merge = mergeManifestResolver
+      ? await mergeManifestResolver({
+          namespace: mr.namespace,
+          repo: mr.repo,
+          sourceHead: mr.expectedSourceHead,
+          targetHead: mr.expectedTargetHead,
+        })
+      : await manifestForMergeResult(
+          { namespace: mr.namespace, repo: mr.repo },
+          mr.expectedSourceHead,
+          mr.expectedTargetHead,
+        )
   } catch (err) {
     return json(503, {
       error: 'Merge-result manifest unavailable',

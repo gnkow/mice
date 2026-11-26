@@ -80,8 +80,27 @@ export function getLiveHeadsResolver(): LiveHeadsResolver | null {
 }
 
 export async function liveTipsFor(
-  mr: Pick<MergeRequestRecord, 'namespace' | 'repo' | 'sourceBranch' | 'targetBranch'>,
+  mr: Pick<
+    MergeRequestRecord,
+    'namespace' | 'repo' | 'sourceBranch' | 'targetBranch'
+  > &
+    Partial<Pick<MergeRequestRecord, 'expectedSourceHead' | 'expectedTargetHead'>>,
 ): Promise<{ sourceHead: string; targetHead: string } | null> {
+  const injected = getLiveHeadsResolver()
+  if (injected) {
+    try {
+      return await injected({
+        namespace: mr.namespace,
+        repo: mr.repo,
+        sourceBranch: mr.sourceBranch,
+        targetBranch: mr.targetBranch,
+        expectedSourceHead: mr.expectedSourceHead ?? '',
+        expectedTargetHead: mr.expectedTargetHead ?? '',
+      })
+    } catch {
+      return null
+    }
+  }
   const { getBranchTip } = await import('../../jobs/index.js')
   const [sourceHead, targetHead] = await Promise.all([
     getBranchTip(mr.namespace, mr.repo, mr.sourceBranch),
