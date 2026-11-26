@@ -2,15 +2,28 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   VALIDATED_BRANCH_DIRECT_WRITE,
+  branchFromMutationBody,
   branchTargetFromPath,
+  branchesMovedByPublish,
   decideValidatedBranchWrite,
   isTipChangingAction,
+  resolveValidatedBranchSet,
 } from '../../src/packages/merge/lib/validatedBranchWrite.js'
+import { isValidatedBranch } from '../../src/packages/merge/lib/signedMergeComplete.js'
 
 describe('isTipChangingAction', () => {
-  it('includes commit.publish so push completion fans out stale marks (#158)', () => {
+  it('includes commit.publish and commit.upload for the validated tip gate (#116)', () => {
     assert.equal(isTipChangingAction('commit.publish'), true)
-    assert.equal(isTipChangingAction('commit.upload'), false)
+    assert.equal(isTipChangingAction('commit.upload'), true)
+  })
+})
+
+describe('isValidatedBranch / registry set', () => {
+  it('treats only listed branches as validated', () => {
+    const set = ['main', 'feature']
+    assert.equal(isValidatedBranch('main', set), true)
+    assert.equal(isValidatedBranch('feature', set), true)
+    assert.equal(isValidatedBranch('develop', set), false)
   })
 })
 
@@ -25,6 +38,7 @@ describe('decideValidatedBranchWrite', () => {
       'branch.delete',
       'branch.update',
       'commit.publish',
+      'commit.upload',
     ]) {
       const d = decideValidatedBranchWrite({ action, branch: 'main' })
       assert.equal(d.allow, false)
@@ -41,6 +55,30 @@ describe('decideValidatedBranchWrite', () => {
       branch: 'feature',
     })
     assert.equal(d.allow, true)
+  })
+
+  it('refuses file.write on a marked branch while a sibling stays open', () => {
+    const validated = resolveValidatedBranchSet({
+      defaultBranch: 'main',
+      markedBranches: ['feature'],
+    })
+    assert.deepEqual(validated.sort(), ['feature', 'main'])
+    assert.equal(
+      decideValidatedBranchWrite({
+        action: 'file.write',
+        branch: 'feature',
+        validatedBranches: validated,
+      }).allow,
+      false,
+    )
+    assert.equal(
+      decideValidatedBranchWrite({
+        action: 'file.write',
+        branch: 'develop',
+        validatedBranches: validated,
+      }).allow,
+      true,
+    )
   })
 
   it('allows staging / metadata actions even when a branch is named', () => {
@@ -62,9 +100,19 @@ describe('decideValidatedBranchWrite', () => {
     })
     assert.equal(d.allow, false)
   })
+
+  it('refuses publish when any resolved tip branch is validated', () => {
+    const d = decideValidatedBranchWrite({
+      action: 'commit.publish',
+      branches: ['feature', 'main'],
+      validatedBranches: ['main'],
+    })
+    assert.equal(d.allow, false)
+    if (!d.allow) assert.equal(d.branch, 'main')
+  })
 })
 
-describe('branchTargetFromPath', () => {
+describe('branchTargetFromPath / body / publish resolution', () => {
   it('reads file, merge, workspace, and branch targets', () => {
     assert.equal(branchTargetFromPath('/api/repos/n/r/file/main/a.csv'), 'main')
     assert.equal(branchTargetFromPath('/api/repos/n/r/merge/main..feature'), 'main')
@@ -73,5 +121,26 @@ describe('branchTargetFromPath', () => {
       'main',
     )
     assert.equal(branchTargetFromPath('/api/repos/n/r/branches/main'), 'main')
+  })
+
+  it('reads branch from mutation body keys', () => {
+    assert.equal(branchFromMutationBody({ branch: 'feature' }), 'feature')
+    assert.equal(branchFromMutationBody({ branch_name: ' release ' }), 'release')
+    assert.equal(branchFromMutationBody({ new_branch: 'b' }), 'b')
+    assert.equal(branchFromMutationBody({}), undefined)
+  })
+
+  it('matches publish parents to live branch tips', () => {
+    assert.deepEqual(
+      branchesMovedByPublish({
+        publishedCommit: 'c-new',
+        parents: ['main-old'],
+        branchTips: [
+          { name: 'main', commit_id: 'main-old' },
+          { name: 'feature', commit_id: 'feat-old' },
+        ],
+      }),
+      ['main'],
+    )
   })
 })

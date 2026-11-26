@@ -1137,6 +1137,29 @@ export const commitQcStatus = pgTable(
 )
 
 /**
+ * repositories/01 — which branches are validated (signed-MR tip write gate).
+ * Default branch is seeded at repository create; Owner mark adds others;
+ * signed unmark (#119) sets `validated` false (row kept so lazy seed does not revive it).
+ */
+export const validatedBranches = pgTable(
+  'validated_branches',
+  {
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    branch: text('branch').notNull(),
+    /** False after signed unmark (#119); true when in the validated set. */
+    validated: boolean('validated').notNull().default(true),
+    markedAt: ts('marked_at').notNull().defaultNow(),
+    /** Null for create-time default seed; Principal key for Owner mark. */
+    markedBy: text('marked_by'),
+    reason: text('reason'),
+    changeControlId: text('change_control_id'),
+  },
+  (t) => [primaryKey({ columns: [t.repositoryId, t.branch] })],
+)
+
+/**
  * BFF-authoritative commit identity for empty-tip bootstrap commits.
  * oxen-server still writes Oxen/oxen@oxen.ai (and its init message) into the
  * blob; the proxy rewrites author/email/message from this table for every

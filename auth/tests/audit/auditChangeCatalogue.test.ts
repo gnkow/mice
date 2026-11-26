@@ -54,6 +54,14 @@ const MUTATION_FIXTURES: Record<string, Fixture> = {
   'repo.collaborator.set': create({ user: 'u1', role: 'editor' }),
   'repo.collaborator.remove': remove({ user: 'u1', role: 'editor' }),
   'approver.grant': create({ user: 'u1', approver: true }),
+  'validated_branch.mark': update(
+    { validated_branches: ['main'] },
+    { validated_branches: ['feature', 'main'] },
+  ),
+  'validated_branch.unmark': update(
+    { validated_branches: ['feature', 'main'] },
+    { validated_branches: ['main'] },
+  ),
   'approver.revoke': remove({ user: 'u1', approver: true }),
   // Signatures
   'esign.created': create({ signature_id: 's1', status: 'valid' }),

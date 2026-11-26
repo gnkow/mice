@@ -186,6 +186,40 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
     }),
   )
 
+  app.get(
+    '/auth/repos/:ns/:repo/validated-branches',
+    guarded({}, async ({ c, user }) => {
+      const { listValidatedBranchesUseCase } = await import('./validatedBranchMark.js')
+      const out = await listValidatedBranchesUseCase({
+        user,
+        ns: c.req.param('ns'),
+        repoName: c.req.param('repo'),
+      })
+      return c.json(out.body as never, out.status as never)
+    }),
+  )
+
+  app.post(
+    '/auth/repos/:ns/:repo/validated-branches',
+    guarded(
+      { mutates: true, action: 'validated_branch.mark', reason: true, body: 'optional' },
+      async ({ c, user, body, audit }) => {
+        const { REASON_HEADER } = await import('../../audit/index.js')
+        const { markBranchValidatedUseCase } = await import('./validatedBranchMark.js')
+        const out = await markBranchValidatedUseCase({
+          user,
+          ns: c.req.param('ns'),
+          repoName: c.req.param('repo'),
+          body,
+          reasonText: c.req.header(REASON_HEADER)?.trim() || '',
+          changeControlHeader: c.req.header(CHANGE_CONTROL_HEADER),
+          audit,
+        })
+        return c.json(out.body as never, out.status as never)
+      },
+    ),
+  )
+
   app.post(
     '/auth/signatures/:id/revoke',
     guarded(

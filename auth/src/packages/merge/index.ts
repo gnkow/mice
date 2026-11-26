@@ -135,11 +135,34 @@ export type {
 export {
   VALIDATED_BRANCH_DIRECT_WRITE,
   isTipChangingAction,
+  resolveValidatedBranchSet,
   decideValidatedBranchWrite,
   branchTargetFromPath,
+  branchFromMutationBody,
+  branchesMovedByPublish,
+  decideUnsignedTemplateSeed,
 } from './lib/validatedBranchWrite.js'
 export type {
   ValidatedBranchWriteDecision,
 } from './lib/validatedBranchWrite.js'
+export {
+  listValidatedBranches,
+  listValidatedBranchRows,
+  ensureDefaultBranchValidated,
+  markBranchValidated,
+  unmarkBranchValidated,
+} from './lib/validatedBranchStore.js'
+export type {
+  ValidatedBranchRow,
+} from './lib/validatedBranchStore.js'
+export {
+  MICE_DEFAULT_BRANCH,
+  resolveTipGateBranches,
+  decideProxiedValidatedBranchWrite,
+} from './lib/validatedBranchGate.js'
+export {
+  markBranchValidatedUseCase,
+  listValidatedBranchesUseCase,
+} from './lib/validatedBranchMark.js'
 
 export * from './lib/mergeSignatures.js'

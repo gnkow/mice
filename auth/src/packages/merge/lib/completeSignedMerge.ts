@@ -238,10 +238,12 @@ export async function completeSignedMerge(
     }
   }
 
+  const { listValidatedBranches } = await import('./validatedBranchStore.js')
+  const validatedBranches = await listValidatedBranches(mr.repositoryId)
   const decision = decideSignedMergeComplete({
     mr,
     isApprover: approver.allow,
-    isValidatedTarget: isValidatedBranch(mr.targetBranch),
+    isValidatedTarget: isValidatedBranch(mr.targetBranch, validatedBranches),
     liveSourceHead: live.sourceHead,
     liveTargetHead: live.targetHead,
     authors: range.authors,

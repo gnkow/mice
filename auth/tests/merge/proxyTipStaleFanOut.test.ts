@@ -7,7 +7,7 @@ import { isolatedAuth, regulatedMutationHeaders } from '../../src/packages/share
 /**
  * Seam: proxy tip-changing fan-out → TipSync (#158).
  * Catches: commit.publish (no branch in path) and branch-known tip writes mark open MRs stale.
- * Misses: validated-branch registry (#116); UI Outdated badge.
+ * Misses: UI Outdated badge (registry tip-gate covered in validatedBranch.proxyRefuse).
  */
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 after(() => iso.restore())

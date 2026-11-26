@@ -8,9 +8,9 @@ import {
 } from '../src/packages/merge/lib/validatedBranchWrite.js'
 
 describe('isTipChangingAction', () => {
-  it('includes commit.publish so push completion fans out stale marks (#158)', () => {
+  it('includes commit.publish and commit.upload for the validated tip gate (#116)', () => {
     assert.equal(isTipChangingAction('commit.publish'), true)
-    assert.equal(isTipChangingAction('commit.upload'), false)
+    assert.equal(isTipChangingAction('commit.upload'), true)
   })
 })
 
@@ -25,6 +25,7 @@ describe('decideValidatedBranchWrite', () => {
       'branch.delete',
       'branch.update',
       'commit.publish',
+      'commit.upload',
     ]) {
       const d = decideValidatedBranchWrite({ action, branch: 'main' })
       assert.equal(d.allow, false)

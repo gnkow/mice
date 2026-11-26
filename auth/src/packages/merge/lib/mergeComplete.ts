@@ -31,6 +31,7 @@ export async function signingPreviewUseCase(input: {
   const mr = await reconcileOne(loaded)
   const { mergeResultBinding, manifestForMergeResult } = await import('../../authentication/signing.js')
   const { isValidatedBranch } = await import('./signedMergeComplete.js')
+  const { listValidatedBranches } = await import('./validatedBranchStore.js')
   const mergeManifestResolver = getMergeManifestResolver()
   let merge
   try {
@@ -78,7 +79,10 @@ export async function signingPreviewUseCase(input: {
     binding,
     manifest,
     manifestEntries,
-    validatedTarget: isValidatedBranch(mr.targetBranch),
+    validatedTarget: isValidatedBranch(
+      mr.targetBranch,
+      await listValidatedBranches(mr.repositoryId),
+    ),
     principal: {
       iss: input.user.iss,
       sub: input.user.sub,

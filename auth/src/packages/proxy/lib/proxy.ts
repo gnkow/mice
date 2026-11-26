@@ -33,7 +33,7 @@ import {
 } from '../../namespaces/index.js'
 import { renameRepository } from '../../authz/index.js'
 import { decideSelfMerge, selfMergeAuditDetail } from '../../merge/index.js'
-import { branchTargetFromPath, decideValidatedBranchWrite } from '../../merge/index.js'
+import { decideProxiedValidatedBranchWrite } from '../../merge/index.js'
 import { filterRequestHeaders, HOP_BY_HOP } from './proxyHeaders.js'
 import {
   auditChainBroken,
@@ -228,15 +228,17 @@ export async function proxyToOxen(
     }
   }
 
-  // Validated default branch: no direct tip-changing writes (signed MR only).
+  // Validated branches: no direct tip-changing writes (signed MR only).
   if (mutating) {
-    const branch =
-      (typeof classified.detail?.branch === 'string'
-        ? classified.detail.branch
-        : undefined) ?? branchTargetFromPath(pathname)
-    const validated = decideValidatedBranchWrite({
+    const validated = await decideProxiedValidatedBranchWrite({
       action: classified.action,
-      branch,
+      pathname,
+      detailBranch:
+        typeof classified.detail?.branch === 'string' ? classified.detail.branch : undefined,
+      body: signatureBody,
+      namespace: ns,
+      repo,
+      fetchImpl: (input, init) => getUpstreamFetch()(input, init),
     })
     if (!validated.allow) {
       if (intent) {
@@ -248,6 +250,7 @@ export async function proxyToOxen(
             validated_branch: true,
             branch: validated.branch,
             reason: validated.reason,
+            default_branch: validated.defaultBranch,
           },
         })
       }

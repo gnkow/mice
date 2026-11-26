@@ -219,6 +219,13 @@ const BFF: ReasonPolicyEntry[] = [
     coverage: 'guarded reason:true on namespaceRoutes',
   },
   {
+    id: 'bff.validated-branch.mark',
+    surface: 'bff',
+    key: 'POST /auth/repos/:ns/:repo/validated-branches',
+    reason: 'required',
+    coverage: 'guarded reason:true on mergeRequestRoutes (#116)',
+  },
+  {
     id: 'bff.custom-role.ns.create',
     surface: 'bff',
     key: 'POST /auth/namespaces/:ns/custom-roles/namespace',

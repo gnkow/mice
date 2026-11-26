@@ -130,6 +130,14 @@ export const ENTITY_VERSION_INVENTORY: EntityVersionEntry[] = [
       'Mutable AuthZ seats without append-only versions yet — follow-on https://github.com/gnkow/mice/issues/124 to add entity history (large gap).',
     coverage: 'namespaceApprovers / repoApprovers live tables only; follow-on #124',
   },
+  {
+    id: 'validated.branches',
+    entity: 'Validated branch registry',
+    status: 'exempt',
+    rationale:
+      'Live registry of validated tip names (#116); mark/unmark audited. Append-only entity versions not required for this wave — unmark is #119.',
+    coverage: 'validated_branches table; validatedBranchStore; mark HTTP',
+  },
 
   // ── Exemptions ────────────────────────────────────────────────────────────
   {

@@ -90,6 +90,9 @@ export async function seedRepoCreate(
   if (!(await getNamespace(namespace))) return null
   const record = await createOwnedRepository(namespace, repo, userKey(user))
   if (!record) return null
+  // Default branch is validated from creation (repositories/01 / #116).
+  const { ensureDefaultBranchValidated } = await import('../../merge/index.js')
+  await ensureDefaultBranchValidated(record.id, 'main')
   return { repositoryId: record.id }
 }
 

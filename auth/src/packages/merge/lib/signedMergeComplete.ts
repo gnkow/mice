@@ -108,9 +108,18 @@ export function decideSignedMergeComplete(input: {
   return { ok: true }
 }
 
-/** Default branch is always validated from creation (repositories spec). */
-export function isValidatedBranch(branch: string, defaultBranch = 'main'): boolean {
-  return branch.trim() === defaultBranch
+/**
+ * True when `branch` is in the repository's validated set.
+ * The default branch is seeded at create; other branches join via Owner mark (#116).
+ * Signed unmark (#119) removes names from that set (including the default).
+ */
+export function isValidatedBranch(
+  branch: string,
+  validatedBranches: readonly string[],
+): boolean {
+  const name = branch.trim()
+  if (!name) return false
+  return validatedBranches.some((b) => b.trim() === name)
 }
 
 export { signerAuthorKey }
