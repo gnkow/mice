@@ -36,7 +36,24 @@ COMPOSE ?= $(CONTAINER) compose $(COMPOSE_FILES)
 # How long `make seed` waits for Postgres/immudb/Keycloak/auth after compose up.
 SEED_WAIT_SECONDS ?= 180
 
-.PHONY: db-secrets help up down install test smoke test-view test-ui test-unit test-cli reset clean clear readwatch wait-stack seed
+# Podman Desktop often leaves a stale machine SSH connection after sleep; `podman compose`
+# then fails with "could not find a matching machine for connection" while plain
+# `podman ps`/`exec` may still work. Start/refresh the machine before compose.
+ifeq ($(CONTAINER),podman)
+ensure-engine:
+	@podman machine start >/dev/null 2>&1 || true
+	@podman info >/dev/null 2>&1 || { \
+	  echo "Podman machine is not reachable."; \
+	  echo "  Fix: podman machine start"; \
+	  echo "  If that fails: podman machine stop && podman machine start"; \
+	  exit 1; \
+	}
+else
+ensure-engine:
+	@:
+endif
+
+.PHONY: db-secrets help up down install test smoke test-view test-ui test-unit test-cli reset clean clear readwatch wait-stack seed ensure-engine
 
 help:
 	@echo "Targets:"
@@ -75,7 +92,7 @@ readwatch:
 db-secrets:
 	node scripts/gen-db-secrets.mjs
 
-up: db-secrets
+up: ensure-engine db-secrets
 	@if [ ! -x auth/bin/linux-arm64/mice-readwatch ] || [ ! -x auth/bin/linux-amd64/mice-readwatch ]; then \
 	  $(MAKE) readwatch; \
 	fi
@@ -118,7 +135,7 @@ seed: wait-stack
 test-sessions: install
 	SESSIONS_PROVISIONER=mock npm test -- e2e/tests/sessions.spec.ts $(ARGS)
 
-down:
+down: ensure-engine
 	$(COMPOSE) down
 
 install:
@@ -151,7 +168,7 @@ test-ui: install
 # Removes: Postgres, immudb, Novu (mongo/redis), oxen repos, auth /data,
 # workspace store/overlays, host job/session dirs, leftover probe volumes.
 # Keeps: node_modules volumes, .secrets/ (dev passwords).
-reset:
+reset: ensure-engine
 	$(COMPOSE) down --remove-orphans
 	@for v in \
 		mice_postgres-data \
@@ -171,7 +188,7 @@ reset:
 
 # Tear down Compose (including data + node_modules volumes),
 # and remove local install / Playwright artifacts.
-clean clear:
+clean clear: ensure-engine
 	$(COMPOSE) down -v --remove-orphans
 	-@for v in $$($(CONTAINER) volume ls -q --filter name=mice-probe); do $(CONTAINER) volume rm "$$v"; done
 	-@for v in mice-store mice-workspaces; do $(CONTAINER) volume rm "$$v" 2>/dev/null || true; done

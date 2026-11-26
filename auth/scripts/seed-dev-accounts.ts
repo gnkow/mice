@@ -31,17 +31,17 @@
  * container so `--import-realm` picks up the new users.
  */
 
-import { ensureBootstrapKey } from '../src/authentication/session/sealKeys.js'
-import { canonicalIssuer } from '../src/authentication/session/principal.js'
-import { ensurePrincipal, type SessionUser } from '../src/authentication/session/session.js'
-import { grantApprover } from '../src/authzApproverStore.js'
-import { removeRepoCollaborator, setRepoCollaborator } from '../src/authzCollaboratorStore.js'
-import { setNamespaceMember } from '../src/authzMembershipStore.js'
-import { createNamespaceAuthz, getNamespace } from '../src/authzNamespaceStore.js'
-import { ensureRepository } from '../src/repositoryStore.js'
-import { submitAccessRequest } from '../src/rbacAccessRequests.js'
-import { assignRole } from '../src/rbacStore.js'
-import { isInstanceRole, type InstanceRole } from '../src/rbacRoles.js'
+import { ensureBootstrapKey } from '../src/packages/authentication/lib/session/sealKeys.js'
+import { canonicalIssuer } from '../src/packages/authentication/lib/session/principal.js'
+import { ensurePrincipal, type SessionUser } from '../src/packages/authentication/lib/session/session.js'
+import { grantApprover } from '../src/packages/authz/lib/authzApproverStore.js'
+import { removeRepoCollaborator, setRepoCollaborator } from '../src/packages/authz/lib/authzCollaboratorStore.js'
+import { setNamespaceMember } from '../src/packages/authz/lib/authzMembershipStore.js'
+import { createNamespaceAuthz, getNamespace } from '../src/packages/authz/lib/authzNamespaceStore.js'
+import { ensureRepository } from '../src/packages/authz/lib/authzRepoRepository.js'
+import { submitAccessRequest } from '../src/packages/authz/lib/rbacAccessRequests.js'
+import { assignRole } from '../src/packages/authz/lib/rbacStore.js'
+import { isInstanceRole, type InstanceRole } from '../src/packages/authz/lib/rbacRoles.js'
 
 /** Stable sample paths for local UI testing. */
 const SAMPLE_NAMESPACE = 'demo'

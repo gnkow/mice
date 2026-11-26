@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import {
   buildReleaseManifestBody,
   signReleaseManifest,
-} from '../src/releaseManifest.ts'
+} from '../src/packages/platform/lib/releaseManifest.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
