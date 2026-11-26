@@ -4,9 +4,9 @@ import { buildMergeManifest, manifestForMergeResult, mergeResultBinding, Manifes
 import {
   getMergeRequest,
   markMergeRequestMerged,
-  markOpenMergeRequestsStaleForTip,
   type MergeRequestRecord,
 } from './mergeRequestStore.js'
+import { markOpenMergeRequestsStaleForTip } from './mergeRequestTipSync.js'
 import { markCommitsQc } from './commitQcStore.js'
 import {
   decideSignedMergeComplete,

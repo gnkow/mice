@@ -13,14 +13,70 @@ import {
   openMergeRequest,
   rejectMergeRequest,
   reopenMergeRequest,
-  resyncMergeRequest,
 } from './mergeRequestStore.js'
-import { markCommitsQc } from './commitQcStore.js'
-import { liveTipsFor } from './mergeRequestOxen.js'
+import { resyncMergeRequest } from './mergeRequestTipSync.js'
+import { markCommitsQc, unmarkCommitsForMergeRequest } from './commitQcStore.js'
+import { getMergeRangeResolver, liveTipsFor } from './mergeRequestOxen.js'
 import { captureMrSnapshot, mrSnapshot, publicMergeRequest, reconcileOne } from './mergeRequestView.js'
 import { json, type JsonOutcome } from './httpOutcome.js'
 
 type AuditFn = (fields: AuditFields) => void | Promise<void>
+
+/**
+ * Prefer server-derived merge-range commit ids for QC Marked on open.
+ * Falls back to client-supplied commitIds when oxen range resolve is unavailable.
+ */
+async function resolveCommitIdsForOpen(
+  mr: {
+    namespace: string
+    repo: string
+    sourceBranch: string
+    targetBranch: string
+    expectedSourceHead: string
+    expectedTargetHead: string
+  },
+  clientCommitIds: unknown,
+): Promise<string[]> {
+  const fallback =
+    Array.isArray(clientCommitIds) && clientCommitIds.length > 0
+      ? clientCommitIds.map(String).map((id) => id.trim()).filter(Boolean)
+      : []
+
+  const injected = getMergeRangeResolver()
+  if (injected) {
+    try {
+      const range = await injected({
+        mr: {
+          namespace: mr.namespace,
+          repo: mr.repo,
+          sourceBranch: mr.sourceBranch,
+          targetBranch: mr.targetBranch,
+        },
+        sourceHead: mr.expectedSourceHead,
+        targetHead: mr.expectedTargetHead,
+      })
+      if (range.commitIds.length > 0) return [...new Set(range.commitIds.map(String))]
+    } catch {
+      /* fall through to oxen default / client ids */
+    }
+  }
+
+  try {
+    const { listMergeCommits } = await import('../../jobs/index.js')
+    const commits = await listMergeCommits(
+      mr.namespace,
+      mr.repo,
+      mr.targetBranch,
+      mr.sourceBranch,
+    )
+    const ids = commits.map((c) => c.id).filter(Boolean)
+    if (ids.length > 0) return [...new Set(ids)]
+  } catch {
+    /* oxen unavailable — client ids are the last resort */
+  }
+
+  return fallback
+}
 
 export async function openMergeRequestUseCase(input: {
   user: SessionUser
@@ -76,8 +132,9 @@ export async function openMergeRequestUseCase(input: {
     }
     throw err
   }
-  if (Array.isArray(body.commitIds) && body.commitIds.length > 0) {
-    await markCommitsQc(repo.id, body.commitIds.map(String), 'marked', {
+  const commitIds = await resolveCommitIdsForOpen(mr, body.commitIds)
+  if (commitIds.length > 0) {
+    await markCommitsQc(repo.id, commitIds, 'marked', {
       mergeRequestId: mr.id,
     })
   }
@@ -200,13 +257,18 @@ export async function cancelMergeRequestUseCase(input: {
       code: 'not_cancellable',
     })
   }
+  const unmarkedCommitIds = await unmarkCommitsForMergeRequest(mr.repositoryId, mr.id)
   await input.audit({
     action: 'merge_request.cancel',
     change: requireAuditChange(beforeCancel, mrSnapshot(result.mergeRequest)),
     message: `Cancelled MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
     namespace: mr.namespace,
     repo: mr.repo,
-    detail: { mergeRequestId: mr.id, status: result.mergeRequest.status },
+    detail: {
+      mergeRequestId: mr.id,
+      status: result.mergeRequest.status,
+      unmarkedCommitIds,
+    },
   })
   return json(200, { mergeRequest: result.mergeRequest })
 }
@@ -343,13 +405,18 @@ export async function rejectMergeRequestUseCase(input: {
       code: 'not_rejectable',
     })
   }
+  const unmarkedCommitIds = await unmarkCommitsForMergeRequest(mr.repositoryId, mr.id)
   await input.audit({
     action: 'merge_request.reject',
     change: requireAuditChange(beforeReject, mrSnapshot(result.mergeRequest)),
     message: `Rejected MR ${mr.id} ${mr.sourceBranch}→${mr.targetBranch}`,
     namespace: mr.namespace,
     repo: mr.repo,
-    detail: { mergeRequestId: mr.id, status: result.mergeRequest.status },
+    detail: {
+      mergeRequestId: mr.id,
+      status: result.mergeRequest.status,
+      unmarkedCommitIds,
+    },
   })
   return json(200, { mergeRequest: result.mergeRequest })
 }

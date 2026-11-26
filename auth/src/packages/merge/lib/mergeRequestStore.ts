@@ -140,110 +140,12 @@ export async function listMergeRequests(repositoryId: string): Promise<MergeRequ
   return rows.map(rowToRecord)
 }
 
-/**
- * After a branch tip changes, mark open/stale MRs that pin that branch to a
- * different expected head as `stale` (repositories/#158).
- */
-export async function markOpenMergeRequestsStaleForTip(input: {
-  repositoryId: string
-  branch: string
-  newTip: string
-}): Promise<string[]> {
-  const tip = input.newTip.trim()
-  const branch = input.branch.trim()
-  if (!tip || !branch) return []
-
-  const candidates = await getDb()
-    .select()
-    .from(mergeRequests)
-    .where(
-      and(
-        eq(mergeRequests.repositoryId, input.repositoryId),
-        inArray(mergeRequests.status, ['open', 'stale']),
-      ),
-    )
-
-  const staleIds: string[] = []
-  const now = new Date()
-  for (const row of candidates) {
-    const asSource =
-      row.sourceBranch === branch && row.expectedSourceHead !== tip
-    const asTarget =
-      row.targetBranch === branch && row.expectedTargetHead !== tip
-    if (!asSource && !asTarget) continue
-    if (row.status === 'stale') {
-      staleIds.push(row.id)
-      continue
-    }
-    await getDb()
-      .update(mergeRequests)
-      .set({ status: 'stale', updatedAt: now })
-      .where(eq(mergeRequests.id, row.id))
-    staleIds.push(row.id)
-  }
-  return staleIds
-}
-
-/**
- * Compare live tips to expected; mark stale when they diverge (no refresh).
- * Used on list/detail so stale appears without an explicit resync call.
- */
-export async function reconcileMergeRequestAgainstLiveTips(
-  mr: MergeRequestRecord,
-  live: { sourceHead: string; targetHead: string },
-): Promise<MergeRequestRecord> {
-  if (mr.status !== 'open' && mr.status !== 'stale') return mr
-  return resyncMergeRequest(mr.id, {
-    liveSourceHead: live.sourceHead,
-    liveTargetHead: live.targetHead,
-  })
-}
-
-/**
- * Compare live tips to expected heads. Target tip move → stale.
- * When `refreshExpected` is true on a stale MR, adopt live heads and reopen.
- */
-export async function resyncMergeRequest(
-  id: string,
-  live: { liveSourceHead: string; liveTargetHead: string; refreshExpected?: boolean },
-): Promise<MergeRequestRecord> {
-  const current = await getMergeRequest(id)
-  if (!current) throw new Error('Merge request not found')
-  // Only open/stale participate in tip reconciliation; cancelled/rejected/merged stay put.
-  if (current.status !== 'open' && current.status !== 'stale') return current
-
-  const headsMatch =
-    live.liveSourceHead === current.expectedSourceHead &&
-    live.liveTargetHead === current.expectedTargetHead
-
-  let nextStatus: MergeRequestStatus = current.status
-  let expectedSourceHead = current.expectedSourceHead
-  let expectedTargetHead = current.expectedTargetHead
-
-  if (!headsMatch) {
-    if (live.refreshExpected) {
-      expectedSourceHead = live.liveSourceHead
-      expectedTargetHead = live.liveTargetHead
-      nextStatus = 'open'
-    } else {
-      nextStatus = 'stale'
-    }
-  } else if (current.status === 'stale') {
-    nextStatus = 'open'
-  }
-
-  const [updated] = await getDb()
-    .update(mergeRequests)
-    .set({
-      status: nextStatus,
-      expectedSourceHead,
-      expectedTargetHead,
-      updatedAt: new Date(),
-    })
-    .where(eq(mergeRequests.id, id))
-    .returning()
-  return rowToRecord(updated!)
-}
+/** Tip sync lives in mergeRequestTipSync — re-exported for existing store imports. */
+export {
+  markOpenMergeRequestsStaleForTip,
+  reconcileMergeRequestAgainstLiveTips,
+  resyncMergeRequest,
+} from './mergeRequestTipSync.js'
 
 export function decideMergeRequestComplete(
   mr: Pick<MergeRequestRecord, 'status' | 'expectedSourceHead' | 'expectedTargetHead'>,

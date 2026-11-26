@@ -1,10 +1,7 @@
 import { captureBefore } from '../../audit/change.js'
 import { pickSnapshot } from '../../audit/change.js'
-import {
-  getMergeRequest,
-  reconcileMergeRequestAgainstLiveTips,
-  type MergeRequestRecord,
-} from './mergeRequestStore.js'
+import { getMergeRequest, type MergeRequestRecord } from './mergeRequestStore.js'
+import { reconcileMergeRequestAgainstLiveTips } from './mergeRequestTipSync.js'
 import { liveTipsFor } from './mergeRequestOxen.js'
 import { resolveSignatureForMergeRequest } from './signatureRevoke.js'
 

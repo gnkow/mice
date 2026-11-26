@@ -51,9 +51,6 @@ export {
   openMergeRequest,
   getMergeRequest,
   listMergeRequests,
-  markOpenMergeRequestsStaleForTip,
-  reconcileMergeRequestAgainstLiveTips,
-  resyncMergeRequest,
   decideMergeRequestComplete,
   markMergeRequestMerged,
   rejectMergeRequest,
@@ -64,6 +61,11 @@ export type {
   MergeRequestStatus,
   MergeRequestRecord,
 } from './lib/mergeRequestStore.js'
+export {
+  markOpenMergeRequestsStaleForTip,
+  reconcileMergeRequestAgainstLiveTips,
+  resyncMergeRequest,
+} from './lib/mergeRequestTipSync.js'
 export {
   SIGNATURE_HEADER,
   SIGNATURE_MAX_AGE_MS,

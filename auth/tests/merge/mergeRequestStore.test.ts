@@ -1,4 +1,4 @@
-import '../../../db/testSchema.js'
+import '../../src/db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { randomUUID } from 'node:crypto'
