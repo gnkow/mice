@@ -1,4 +1,4 @@
-import '../../../db/testSchema.js'
+import '../../src/db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, beforeEach, describe, it } from 'node:test'
 
@@ -8,7 +8,7 @@ process.env.SESSION_SECRET = 'test-secret'
 process.env.OXEN_UPSTREAM = 'http://oxen.invalid'
 
 const { Hono } = await import('hono')
-const { proxyToOxen, setUpstreamFetch } = await import('../../src/packages/platform/index.js')
+const { proxyToOxen, setUpstreamFetch } = await import('../../src/packages/proxy/index.js')
 const { preparePrincipal } = await import('../../src/packages/authz/lib/authz.js')
 const { setRepoCollaborator } = await import('../../src/packages/authz/lib/authzCollaboratorStore.js')
 const { createNamespaceAuthz } = await import('../../src/packages/authz/lib/authzNamespaceStore.js')
@@ -138,6 +138,110 @@ describe('proxy orchestration order (fake upstream)', () => {
     const renamed = await readRepository('po', 'renamed-ok')
     assert.ok(renamed)
     assert.equal(renamed.id, scratch.id)
+  })
+
+  it('create → rename → list keeps physical ids without an oxen move', async () => {
+    const { regulatedMutationHeaders } = await import('../../src/packages/shared/lib/testSupport.js')
+    const createUpstream: { namespace?: string; name?: string } = {}
+    const restoreCreate = setUpstreamFetch(async (_url, init) => {
+      calls.push({
+        url: String(_url),
+        method: String(init?.method),
+        headers: new Headers(init?.headers),
+        body: typeof init?.body === 'string' ? init.body : '',
+      })
+      const parsed = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        namespace?: string
+        name?: string
+      }
+      createUpstream.namespace = parsed.namespace
+      createUpstream.name = parsed.name
+      return new Response(
+        JSON.stringify({
+          status: 'success',
+          repository: { namespace: parsed.namespace, name: parsed.name },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    try {
+      const createPath = '/api/repos'
+      const createBody = { namespace: 'po', name: 'lifecycle' }
+      const createSigned = await regulatedMutationHeaders(admin, {
+        method: 'POST',
+        path: createPath,
+        body: createBody,
+        reason: 'Routine test change',
+      })
+      const createRes = await appFor(admin).request(createPath, {
+        method: 'POST',
+        headers: {
+          ...createSigned,
+          'content-type': 'application/json',
+          'x-mice-change-control-id': 'CC-2026-114',
+        },
+        body: JSON.stringify(createBody),
+      })
+      assert.equal(createRes.status, 200)
+      const created = await readRepository('po', 'lifecycle')
+      assert.ok(created)
+      assert.equal(createUpstream.namespace, created.namespaceId)
+      assert.equal(createUpstream.name, created.id)
+      const createCalls = calls.length
+
+      const renamePath = '/api/repos/po/lifecycle/rename'
+      const renameBody = { repo_name: 'lifecycle-renamed' }
+      const renameSigned = await regulatedMutationHeaders(admin, {
+        method: 'PATCH',
+        path: renamePath,
+        body: renameBody,
+        reason: 'Routine test change',
+      })
+      const renameRes = await appFor(admin).request(renamePath, {
+        method: 'PATCH',
+        headers: {
+          ...renameSigned,
+          'content-type': 'application/json',
+          'x-mice-change-control-id': 'CC-2026-114',
+        },
+        body: JSON.stringify(renameBody),
+      })
+      assert.equal(renameRes.status, 200)
+      assert.equal(calls.length, createCalls, 'rename must not contact oxen')
+      const renamed = await readRepository('po', 'lifecycle-renamed')
+      assert.ok(renamed)
+      assert.equal(renamed.id, created.id)
+      assert.equal(renamed.namespaceId, created.namespaceId)
+
+      const restoreList = setUpstreamFetch(async (url, init) => {
+        calls.push({
+          url: String(url),
+          method: String(init?.method),
+          headers: new Headers(init?.headers),
+          body: typeof init?.body === 'string' ? init.body : '',
+        })
+        return new Response(
+          JSON.stringify({
+            status: 'success',
+            repositories: [{ namespace: created.namespaceId, name: created.id }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      })
+      try {
+        const listRes = await appFor(admin).request('/api/repos/po')
+        assert.equal(listRes.status, 200)
+        assert.equal(calls.at(-1)?.url, `http://oxen.invalid/api/repos/${created.namespaceId}`)
+        const listBody = (await listRes.json()) as {
+          repositories: Array<{ namespace: string; name: string }>
+        }
+        assert.deepEqual(listBody.repositories, [{ namespace: 'po', name: 'lifecycle-renamed' }])
+      } finally {
+        restoreList()
+      }
+    } finally {
+      restoreCreate()
+    }
   })
 
   it('denies before contacting upstream (403)', async () => {

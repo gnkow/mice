@@ -61,4 +61,12 @@ export {
   displayNamespaceName,
   displayRepoRef,
   preparePhysicalRepoCreate,
+  mapDisplayRequestToPhysical,
+  mapPhysicalResponseToDisplay,
+} from './lib/oxenPhysicalResolve.js'
+export type {
+  DisplayRequestContext,
+  PhysicalUpstreamMapping,
+  MapDisplayRequestResult,
+  DisplayResponseHints,
 } from './lib/oxenPhysicalResolve.js'

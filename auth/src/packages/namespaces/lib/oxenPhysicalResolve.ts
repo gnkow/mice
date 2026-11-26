@@ -7,7 +7,15 @@ import { decideInstanceAction } from '../../authz/index.js'
 import { userKey } from '../../authz/index.js'
 import type { SessionUser } from '../../authentication/principal.js'
 import type { DisplayRepoRef, PhysicalRepoRef } from './oxenPhysicalKeys.js'
-import { isPhysicalOxenKey } from './oxenPhysicalKeys.js'
+import {
+  initialCommitMessageFromBody,
+  isPhysicalOxenKey,
+  physicalCreateBody,
+  rewriteNamespacePathToPhysical,
+  rewriteOxenJsonToDisplay,
+  rewriteRepoListPathToPhysical,
+  rewriteReposApiPathToPhysical,
+} from './oxenPhysicalKeys.js'
 
 export async function resolveNamespaceId(displayOrId: string): Promise<string | null> {
   if (isPhysicalOxenKey(displayOrId)) {
@@ -85,4 +93,151 @@ export async function preparePhysicalRepoCreate(
   const record = await createOwnedRepository(displayNamespace, displayRepo, userKey(user))
   if (!record) return null
   return { namespaceId: record.namespaceId, repositoryId: record.id }
+}
+
+/** Display-side request facts the BFF already classified; mapping owns resolve+rewrite. */
+export type DisplayRequestContext = {
+  pathname: string
+  body: string | undefined
+  signatureBody: unknown
+  user: SessionUser
+  ns: string | null | undefined
+  repo: string | null | undefined
+  kind: string
+  action: string
+}
+
+export type PhysicalUpstreamMapping = {
+  path: string
+  body: string | undefined
+  createdPhysical: PhysicalRepoRef | null
+  physicalRepo: PhysicalRepoRef | null | undefined
+  initialCommitMessage: string | undefined
+}
+
+export type MapDisplayRequestResult =
+  | ({ ok: true } & PhysicalUpstreamMapping)
+  | { ok: false; reason: 'create_blocked' }
+
+/**
+ * Resolve display names to physical oxen keys and rewrite the upstream path/body.
+ * Proxy stays a thin adapter over this seam.
+ */
+export async function mapDisplayRequestToPhysical(
+  ctx: DisplayRequestContext,
+): Promise<MapDisplayRequestResult> {
+  const { pathname, body, signatureBody, user, ns, repo, kind, action } = ctx
+  let path = pathname
+  let upstreamBody = body
+  let createdPhysical: PhysicalRepoRef | null = null
+  let physicalRepo: PhysicalRepoRef | null | undefined
+  let initialCommitMessage: string | undefined
+
+  if ((action === 'repo.create' || kind === 'repo.create') && ns && repo) {
+    createdPhysical = await preparePhysicalRepoCreate(user, ns, repo)
+    if (!createdPhysical) return { ok: false, reason: 'create_blocked' }
+    initialCommitMessage =
+      initialCommitMessageFromBody(signatureBody) ??
+      (typeof body === 'string'
+        ? (() => {
+            try {
+              return initialCommitMessageFromBody(JSON.parse(body))
+            } catch {
+              return undefined
+            }
+          })()
+        : undefined)
+    upstreamBody = physicalCreateBody(typeof body === 'string' ? body : undefined, createdPhysical)
+  } else if (ns && repo) {
+    const physical = await resolvePhysicalRepo(ns, repo)
+    physicalRepo = physical
+    path = rewriteReposApiPathToPhysical(pathname, physical)
+  } else if ((kind === 'repo.list' || action === 'repo.list') && ns) {
+    const namespaceId = await resolveNamespaceId(ns)
+    path = rewriteRepoListPathToPhysical(pathname, namespaceId)
+  } else if ((kind === 'namespace.detail' || pathname.startsWith('/api/namespaces/')) && ns) {
+    const namespaceId = await resolveNamespaceId(ns)
+    path = rewriteNamespacePathToPhysical(pathname, namespaceId)
+  }
+
+  return {
+    ok: true,
+    path,
+    body: upstreamBody,
+    createdPhysical,
+    physicalRepo,
+    initialCommitMessage,
+  }
+}
+
+export type DisplayResponseHints = {
+  createdPhysical?: PhysicalRepoRef | null
+  displayNs?: string | null
+  displayRepo?: string | null
+}
+
+/**
+ * Swap physical UUID keys in oxen JSON back to display names, resolving AuthZ as needed.
+ */
+export async function mapPhysicalResponseToDisplay(
+  body: string,
+  hints: DisplayResponseHints = {},
+): Promise<string> {
+  const displayNameCache = new Map<string, string>()
+  const displayRepoCache = new Map<string, DisplayRepoRef>()
+  const { createdPhysical, displayNs, displayRepo } = hints
+
+  if (createdPhysical && displayNs && displayRepo) {
+    displayNameCache.set(
+      createdPhysical.namespaceId,
+      (await displayNamespaceName(createdPhysical.namespaceId)) ?? displayNs,
+    )
+    displayRepoCache.set(`${createdPhysical.namespaceId}\0${createdPhysical.repositoryId}`, {
+      namespace: displayNs,
+      repo: displayRepo,
+    })
+  } else if (displayNs && displayRepo) {
+    const physical = await resolvePhysicalRepo(displayNs, displayRepo)
+    if (physical) {
+      displayNameCache.set(physical.namespaceId, displayNs)
+      displayRepoCache.set(`${physical.namespaceId}\0${physical.repositoryId}`, {
+        namespace: displayNs,
+        repo: displayRepo,
+      })
+    }
+  } else if (displayNs) {
+    const namespaceId = await resolveNamespaceId(displayNs)
+    if (namespaceId) displayNameCache.set(namespaceId, displayNs)
+  }
+
+  const pairRe =
+    /"namespace"\s*:\s*"([0-9a-f-]{36})"\s*,\s*"name"\s*:\s*"([0-9a-f-]{36})"/gi
+  let pair: RegExpExecArray | null
+  while ((pair = pairRe.exec(body))) {
+    const namespaceId = pair[1]!
+    const repositoryId = pair[2]!
+    const key = `${namespaceId}\0${repositoryId}`
+    if (displayRepoCache.has(key)) continue
+    const ref = await displayRepoRef(namespaceId, repositoryId)
+    if (ref) {
+      displayRepoCache.set(key, ref)
+      displayNameCache.set(namespaceId, ref.namespace)
+    }
+  }
+
+  const nsOnlyRe = /"namespace"\s*:\s*"([0-9a-f-]{36})"/gi
+  let nsOnly: RegExpExecArray | null
+  while ((nsOnly = nsOnlyRe.exec(body))) {
+    const id = nsOnly[1]!
+    if (displayNameCache.has(id)) continue
+    const name = await displayNamespaceName(id)
+    if (name) displayNameCache.set(id, name)
+  }
+
+  return rewriteOxenJsonToDisplay(
+    body,
+    (id) => displayNameCache.get(id) ?? null,
+    (namespaceId, repositoryId) =>
+      displayRepoCache.get(`${namespaceId}\0${repositoryId}`) ?? null,
+  )
 }

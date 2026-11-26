@@ -25,8 +25,11 @@ import {
   recordAclBypassRead,
   stampRepositoryIdOnRepoDetail,
 } from './proxyEffects.js'
-import { initialCommitMessageFromBody, physicalCreateBody, rewriteNamespacePathToPhysical, rewriteOxenJsonToDisplay, rewriteRepoListPathToPhysical, rewriteReposApiPathToPhysical } from '../../namespaces/index.js'
-import { displayNamespaceName, displayRepoRef, preparePhysicalRepoCreate, resolveNamespaceId, resolvePhysicalRepo } from '../../namespaces/index.js'
+import {
+  mapDisplayRequestToPhysical,
+  mapPhysicalResponseToDisplay,
+  type PhysicalRepoRef,
+} from '../../namespaces/index.js'
 import { renameRepository } from '../../authz/index.js'
 import { decideSelfMerge, selfMergeAuditDetail } from '../../merge/index.js'
 import { branchTargetFromPath, decideValidatedBranchWrite, isTipChangingAction } from '../../merge/index.js'
@@ -377,57 +380,32 @@ export async function proxyToOxen(
   }
 
   // Display names stay on the client/AuthZ path; oxen sees stable UUID keys.
-  let upstreamPath = pathname
-  let upstreamBody = body
-  let createdPhysical: { namespaceId: string; repositoryId: string } | null = null
-  let initialCommitMessage: string | undefined
-  /** Physical ids of the repo the request targets (before-state of a delete). */
-  let physicalRepo: Awaited<ReturnType<typeof resolvePhysicalRepo>> | undefined
-  if (
-    (classified.action === 'repo.create' || (pathname === '/api/repos' && method === 'POST')) &&
-    ns &&
-    repo
-  ) {
-    createdPhysical = await preparePhysicalRepoCreate(user, ns, repo)
-    if (!createdPhysical) {
-      return new Response(
-        JSON.stringify({
-          status: 'error',
-          status_message: 'forbidden',
-          error: { detail: 'Cannot create repository: AuthZ namespace is missing or create is blocked' },
-        }),
-        { status: 403, headers: { 'content-type': 'application/json' } },
-      )
-    }
-    initialCommitMessage =
-      initialCommitMessageFromBody(signatureBody) ??
-      (typeof body === 'string'
-        ? (() => {
-            try {
-              return initialCommitMessageFromBody(JSON.parse(body))
-            } catch {
-              return undefined
-            }
-          })()
-        : undefined)
-    upstreamBody = physicalCreateBody(
-      typeof body === 'string' ? body : undefined,
-      createdPhysical,
+  const mapped = await mapDisplayRequestToPhysical({
+    pathname,
+    body: typeof body === 'string' ? body : undefined,
+    signatureBody,
+    user,
+    ns,
+    repo,
+    kind: classified.kind,
+    action: classified.action,
+  })
+  if (!mapped.ok) {
+    return new Response(
+      JSON.stringify({
+        status: 'error',
+        status_message: 'forbidden',
+        error: { detail: 'Cannot create repository: AuthZ namespace is missing or create is blocked' },
+      }),
+      { status: 403, headers: { 'content-type': 'application/json' } },
     )
-  } else if (ns && repo) {
-    const physical = await resolvePhysicalRepo(ns, repo)
-    physicalRepo = physical
-    upstreamPath = rewriteReposApiPathToPhysical(pathname, physical)
-  } else if ((classified.kind === 'repo.list' || classified.action === 'repo.list') && ns) {
-    const namespaceId = await resolveNamespaceId(ns)
-    upstreamPath = rewriteRepoListPathToPhysical(pathname, namespaceId)
-  } else if (
-    (classified.kind === 'namespace.detail' || pathname.startsWith('/api/namespaces/')) &&
-    ns
-  ) {
-    const namespaceId = await resolveNamespaceId(ns)
-    upstreamPath = rewriteNamespacePathToPhysical(pathname, namespaceId)
   }
+  const upstreamPath = mapped.path
+  let upstreamBody: typeof body = mapped.body !== undefined ? mapped.body : body
+  const createdPhysical: PhysicalRepoRef | null = mapped.createdPhysical
+  const initialCommitMessage = mapped.initialCommitMessage
+  /** Physical ids of the repo the request targets (before-state of a delete). */
+  const physicalRepo = mapped.physicalRepo
 
   /** AuthZ settings snapshot for proxied `repo.metadata` (fail-closed when the repo is missing). */
   let metadataBefore: Record<string, unknown> | undefined
@@ -642,62 +620,11 @@ export async function proxyToOxen(
 
   // Swap physical UUID keys in oxen JSON back to display names for clients.
   if (typeof responseBody === 'string' && upstreamIsJson) {
-    const displayNameCache = new Map<string, string>()
-    const displayRepoCache = new Map<string, { namespace: string; repo: string }>()
-
-    if (createdPhysical && ns && repo) {
-      displayNameCache.set(
-        createdPhysical.namespaceId,
-        (await displayNamespaceName(createdPhysical.namespaceId)) ?? ns,
-      )
-      displayRepoCache.set(
-        `${createdPhysical.namespaceId}\0${createdPhysical.repositoryId}`,
-        { namespace: ns, repo },
-      )
-    } else if (ns && repo) {
-      const physical = await resolvePhysicalRepo(ns, repo)
-      if (physical) {
-        displayNameCache.set(physical.namespaceId, ns)
-        displayRepoCache.set(`${physical.namespaceId}\0${physical.repositoryId}`, {
-          namespace: ns,
-          repo,
-        })
-      }
-    } else if (ns) {
-      const namespaceId = await resolveNamespaceId(ns)
-      if (namespaceId) displayNameCache.set(namespaceId, ns)
-    }
-
-    const pairRe =
-      /"namespace"\s*:\s*"([0-9a-f-]{36})"\s*,\s*"name"\s*:\s*"([0-9a-f-]{36})"/gi
-    let pair: RegExpExecArray | null
-    while ((pair = pairRe.exec(responseBody))) {
-      const namespaceId = pair[1]!
-      const repositoryId = pair[2]!
-      const key = `${namespaceId}\0${repositoryId}`
-      if (displayRepoCache.has(key)) continue
-      const ref = await displayRepoRef(namespaceId, repositoryId)
-      if (ref) {
-        displayRepoCache.set(key, ref)
-        displayNameCache.set(namespaceId, ref.namespace)
-      }
-    }
-
-    const nsOnlyRe = /"namespace"\s*:\s*"([0-9a-f-]{36})"/gi
-    let nsOnly: RegExpExecArray | null
-    while ((nsOnly = nsOnlyRe.exec(responseBody))) {
-      const id = nsOnly[1]!
-      if (displayNameCache.has(id)) continue
-      const name = await displayNamespaceName(id)
-      if (name) displayNameCache.set(id, name)
-    }
-
-    responseBody = rewriteOxenJsonToDisplay(
-      responseBody,
-      (id) => displayNameCache.get(id) ?? null,
-      (namespaceId, repositoryId) =>
-        displayRepoCache.get(`${namespaceId}\0${repositoryId}`) ?? null,
-    )
+    responseBody = await mapPhysicalResponseToDisplay(responseBody, {
+      createdPhysical,
+      displayNs: ns,
+      displayRepo: repo,
+    })
     const { rewriteCommitAuthorsInOxenJson } = await import('../../merge/index.js')
     responseBody = await rewriteCommitAuthorsInOxenJson(responseBody)
   }

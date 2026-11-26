@@ -1,18 +1,18 @@
-import '../../../db/testSchema.js'
+import '../../src/db/testSchema.js'
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import { isolatedAuth } from '../../src/packages/shared/lib/testSupport.js'
 
 const iso = isolatedAuth({ OXEN_UPSTREAM: 'http://oxen.invalid' })
 const { createApp } = await import('../../src/app.js')
-const { setUpstreamFetch } = await import('../../src/packages/platform/index.js')
+const { setUpstreamFetch } = await import('../../src/packages/proxy/index.js')
 const { preparePrincipal } = await import('../../src/packages/authz/lib/authz.js')
 const { createNamespaceAuthz } = await import('../../src/packages/authz/lib/authzNamespaceStore.js')
 const { readRepository } = await import('../../src/packages/authz/lib/repositoryStore.js')
 
 const admin = iso.admin
 await preparePrincipal(admin)
-await iso.grantRole(admin, 'manager')
+await iso.grantRole(admin, 'admin')
 await createNamespaceAuthz(admin, 'rid-ns', 'none', true)
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
