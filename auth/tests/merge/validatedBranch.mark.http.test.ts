@@ -12,7 +12,7 @@ import {
 /**
  * Seam: Owner mark-validated HTTP (#116).
  * Catches: step-up signature required; Owner can mark; registry consulted by write gate.
- * Misses: signed unmark (#119); UI.
+ * Misses: UI.
  */
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
 after(() => t.restore())

@@ -135,8 +135,8 @@ export const ENTITY_VERSION_INVENTORY: EntityVersionEntry[] = [
     entity: 'Validated branch registry',
     status: 'exempt',
     rationale:
-      'Live registry of validated tip names (#116); mark/unmark audited. Append-only entity versions not required for this wave — unmark is #119.',
-    coverage: 'validated_branches table; validatedBranchStore; mark HTTP',
+      'Live registry of validated tip names (#116/#119); mark/unmark audited. Append-only entity versions not required for this wave.',
+    coverage: 'validated_branches table; validatedBranchStore; mark/unmark HTTP',
   },
 
   // ── Exemptions ────────────────────────────────────────────────────────────

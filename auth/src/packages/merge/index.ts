@@ -162,6 +162,7 @@ export {
 } from './lib/validatedBranchGate.js'
 export {
   markBranchValidatedUseCase,
+  unmarkBranchValidatedUseCase,
   listValidatedBranchesUseCase,
 } from './lib/validatedBranchMark.js'
 

@@ -7,7 +7,7 @@ import { isolatedAuth } from '../../src/packages/shared/lib/testSupport.js'
  * Seam: validated-branch registry (#116).
  * Catches: marking a non-default branch validates it for the tip-write gate;
  *          unmarked siblings stay writable; default is validated from create.
- * Misses: signed unmark (#119); UI chrome.
+ * Misses: UI chrome.
  */
 const iso = isolatedAuth()
 after(() => iso.restore())

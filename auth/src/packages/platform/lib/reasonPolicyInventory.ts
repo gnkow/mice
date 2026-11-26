@@ -226,6 +226,13 @@ const BFF: ReasonPolicyEntry[] = [
     coverage: 'guarded reason:true on mergeRequestRoutes (#116)',
   },
   {
+    id: 'bff.validated-branch.unmark',
+    surface: 'bff',
+    key: 'DELETE /auth/repos/:ns/:repo/validated-branches/:branch',
+    reason: 'required',
+    coverage: 'guarded reason:true on mergeRequestRoutes (#119)',
+  },
+  {
     id: 'bff.custom-role.ns.create',
     surface: 'bff',
     key: 'POST /auth/namespaces/:ns/custom-roles/namespace',

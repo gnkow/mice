@@ -220,6 +220,28 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
     ),
   )
 
+  app.delete(
+    '/auth/repos/:ns/:repo/validated-branches/:branch',
+    guarded(
+      { mutates: true, action: 'validated_branch.unmark', reason: true, body: 'optional' },
+      async ({ c, user, body, audit }) => {
+        const { REASON_HEADER } = await import('../../audit/index.js')
+        const { unmarkBranchValidatedUseCase } = await import('./validatedBranchMark.js')
+        const out = await unmarkBranchValidatedUseCase({
+          user,
+          ns: c.req.param('ns'),
+          repoName: c.req.param('repo'),
+          branch: c.req.param('branch'),
+          body,
+          reasonText: c.req.header(REASON_HEADER)?.trim() || '',
+          changeControlHeader: c.req.header(CHANGE_CONTROL_HEADER),
+          audit,
+        })
+        return c.json(out.body as never, out.status as never)
+      },
+    ),
+  )
+
   app.post(
     '/auth/signatures/:id/revoke',
     guarded(
