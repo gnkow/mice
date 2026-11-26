@@ -386,7 +386,7 @@ async function purgeUuidNamedRepos(namespace: string, keepId: string): Promise<v
   const { getDb } = await import('../src/db/database.js')
   const { repositories, namespaces } = await import('../src/db/schema.js')
   const { eq } = await import('drizzle-orm')
-  const { deleteRepositoryRecord } = await import('../src/repositoryStore.js')
+  const { deleteRepositoryRecord } = await import('../src/packages/authz/lib/authzRepoRepository.js')
   const rows = await getDb()
     .select({ id: repositories.id, name: repositories.name })
     .from(repositories)
@@ -481,7 +481,7 @@ async function seedSampleWorkspace(users: {
     `✓ Oxen physical path ${repo.namespaceId}/${repo.id} ↔ display ${SAMPLE_NAMESPACE}/${SAMPLE_REPO}`,
   )
   if (oxenReady) {
-    const { ensureEmptyOxenBranch } = await import('../src/oxenEmptyBranch.js')
+    const { ensureEmptyOxenBranch } = await import('../src/packages/namespaces/lib/oxenEmptyBranch.js')
     // Attribute empty tip to the namespace owner (manager), not oxen's hardcoded author.
     const emptyMain = await ensureEmptyOxenBranch(
       repo.namespaceId,
@@ -665,7 +665,7 @@ async function main() {
   // GxP restore-test gate: after reset, audit is empty so regulated merges refuse.
   // Record a pass so local/dev can sign into validated branches without a manual Settings step.
   const { recordRestoreTestPassed, restoreTestStatus } = await import(
-    '../src/restoreTestGate.js'
+    '../src/packages/platform/lib/restoreTestGate.js'
   )
   if (!restoreTestStatus().passed) {
     await recordRestoreTestPassed({ recordedBy: 'seed:dev' })
