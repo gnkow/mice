@@ -7,7 +7,9 @@ import { appendAudit, appendIntent, appendOutcome } from '../../audit/index.js'
 import { AUDIT_UNAVAILABLE_MESSAGE } from '../../audit/index.js'
 import type { AuditEvent, AuditVia } from '../../audit/index.js'
 import { auditChange } from '../../audit/change.js'
-import { requireAuditChange } from '../../audit/change.js'
+import { requireAuditChange, EMPTY_AUDIT_CHANGE } from '../../audit/change.js'
+import { ensureRepository } from '../../authz/index.js'
+import { assertPinAllowed, PinRefusedError } from '../../merge/index.js'
 import { env } from '../../shared/index.js'
 import { appendLineage, FileVersion } from '../../namespaces/index.js'
 import {
@@ -201,6 +203,33 @@ export async function submitJob(
   const { source_ref, pin_commit } = resolved
   /** Merge destination — only when submit included explicit `target`. */
   const target_branch = body.target?.trim() || ''
+
+  const repository = await ensureRepository(body.namespace, body.repo)
+  if (!repository) throw new Error(`unknown repository ${body.namespace}/${body.repo}`)
+  try {
+    await assertPinAllowed(repository.id, pin_commit)
+  } catch (err) {
+    if (err instanceof PinRefusedError) {
+      await appendAudit({
+        actor: actorFromUser(user),
+        via,
+        method: 'POST',
+        path: '/auth/jobs',
+        status: err.status,
+        action: 'request.rejected',
+        change: EMPTY_AUDIT_CHANGE,
+        namespace: body.namespace,
+        repo: body.repo,
+        detail: {
+          code: err.code,
+          pin_commit,
+          reason: err.message,
+        },
+      })
+      throw err
+    }
+    throw err
+  }
 
   const isCli = body.runner === 'cli'
   const runnerName = isCli ? 'cli' : getRunner().name
@@ -536,6 +565,36 @@ export async function publishSyncedCliJobs(
     }
     if (!p.source_ref?.trim() || !p.pin_commit?.trim()) {
       return { error: `source_ref/pin_commit required for job ${id}`, status: 400 }
+    }
+    const pinCommit = p.pin_commit.trim().toLowerCase()
+    const repository = await ensureRepository(namespace, repo)
+    if (!repository) {
+      return { error: `unknown repository ${namespace}/${repo}`, status: 400 }
+    }
+    try {
+      await assertPinAllowed(repository.id, pinCommit)
+    } catch (err) {
+      if (err instanceof PinRefusedError) {
+        await appendAudit({
+          actor: actorFromUser(user),
+          via,
+          method: 'POST',
+          path: '/auth/jobs/publish',
+          status: err.status,
+          action: 'request.rejected',
+          change: EMPTY_AUDIT_CHANGE,
+          namespace,
+          repo,
+          detail: {
+            code: err.code,
+            job_id: id,
+            pin_commit: pinCommit,
+            reason: err.message,
+          },
+        })
+        return { error: err.message, status: err.status }
+      }
+      throw err
     }
     if (!p.image?.trim() || !Array.isArray(p.command) || !p.command.length) {
       return { error: `image/command required for job ${id}`, status: 400 }

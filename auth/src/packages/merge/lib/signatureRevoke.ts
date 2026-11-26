@@ -4,7 +4,7 @@ import { readRepository } from '../../authz/index.js'
 import { parseUserKey } from '../../authz/index.js'
 import { principalKey } from '../../authentication/principal.js'
 import { signatureStore, SignatureRecord } from '../../authentication/signing.js'
-import { getCommitQc, listCommitQcForRepo, markCommitsQc } from './commitQcStore.js'
+import { getCommitQc, listCommitQcForRepo, markCommitsQc, unmarkCommitsForMergeRequest } from './commitQcStore.js'
 import { getDb } from '../../../db/database.js'
 import { mergeRequests, namespaceMembers, namespaces, signatureIndex } from '../../../db/schema.js'
 import {
@@ -387,6 +387,7 @@ async function blockOpenMergeRequests(input: {
         .update(mergeRequests)
         .set({ status: 'rejected', updatedAt: new Date() })
         .where(eq(mergeRequests.id, mr.id))
+      await unmarkCommitsForMergeRequest(mr.repositoryId, mr.id)
       blocked.push(mr.id)
     }
     return blocked
@@ -402,6 +403,7 @@ async function blockOpenMergeRequests(input: {
         .update(mergeRequests)
         .set({ status: 'rejected', updatedAt: new Date() })
         .where(eq(mergeRequests.id, mr.id))
+      await unmarkCommitsForMergeRequest(mr.repositoryId, mr.id)
       blocked.push(mr.id)
     }
   }

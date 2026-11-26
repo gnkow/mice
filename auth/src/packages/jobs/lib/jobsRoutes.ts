@@ -1,5 +1,6 @@
 import type { Hono } from 'hono'
 import { authorizeRepoAction } from '../../authz/index.js'
+import { PinRefusedError } from '../../merge/index.js'
 import {
   cancelJob,
   completeCliJob,
@@ -30,6 +31,9 @@ export function registerJobRoutes(app: Hono) {
       const job = await submitJob(user, via, parsed)
       return c.json({ job: publicJob(job) }, 201)
     } catch (err) {
+      if (err instanceof PinRefusedError) {
+        return c.json({ error: err.message, code: err.code }, err.status)
+      }
       const msg = err instanceof Error ? err.message : 'submit failed'
       return c.json({ error: msg }, 400)
     }

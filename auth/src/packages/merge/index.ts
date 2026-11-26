@@ -25,11 +25,13 @@ export {
   getCommitQc,
   listCommitQcForRepo,
   markCommitsQc,
+  unmarkCommitsForMergeRequest,
 } from './lib/commitQcStore.js'
 export type {
   CommitQc,
   CommitQcRow,
 } from './lib/commitQcStore.js'
+export { assertPinAllowed, PinRefusedError } from './lib/commitQcPin.js'
 export {
   completeSignedMerge,
 } from './lib/completeSignedMerge.js'

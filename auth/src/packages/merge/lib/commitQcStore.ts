@@ -77,3 +77,34 @@ export async function markCommitsQc(
       })
   }
 }
+
+/**
+ * Clear QC Marked for commits linked to this MR (cancel/reject/close without merge).
+ * Failed and Passed are left alone; returns the commit ids that were unmarked.
+ */
+export async function unmarkCommitsForMergeRequest(
+  repositoryId: string,
+  mergeRequestId: string,
+): Promise<string[]> {
+  const rows = await getDb()
+    .select({ commitId: commitQcStatus.commitId })
+    .from(commitQcStatus)
+    .where(
+      and(
+        eq(commitQcStatus.repositoryId, repositoryId),
+        eq(commitQcStatus.mergeRequestId, mergeRequestId),
+        eq(commitQcStatus.status, 'marked'),
+      ),
+    )
+  if (!rows.length) return []
+  await getDb()
+    .delete(commitQcStatus)
+    .where(
+      and(
+        eq(commitQcStatus.repositoryId, repositoryId),
+        eq(commitQcStatus.mergeRequestId, mergeRequestId),
+        eq(commitQcStatus.status, 'marked'),
+      ),
+    )
+  return rows.map((r) => r.commitId)
+}

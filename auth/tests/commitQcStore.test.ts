@@ -1,4 +1,4 @@
-import './db/testSchema.js'
+import '../src/db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { isolatedAuth } from '../src/packages/shared/lib/testSupport.js'
@@ -13,6 +13,7 @@ const {
   getCommitQc,
   markCommitsQc,
   listCommitQcForRepo,
+  unmarkCommitsForMergeRequest,
 } = await import('../src/packages/merge/lib/commitQcStore.js')
 
 const root = t.person('root')
@@ -58,5 +59,40 @@ describe('commit QC status (repositories/03)', () => {
 
     await markCommitsQc(repo.id, ['fail-1'], 'passed', { allowFailedToPassed: true })
     assert.equal(await getCommitQc(repo.id, 'fail-1'), 'passed')
+  })
+
+  it('unmarks Marked commits for a closed MR without wiping Failed or Passed', async () => {
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'qc-lab',
+      repo: 'data',
+      sourceBranch: 'unmark-src',
+      targetBranch: 'main',
+      expectedSourceHead: 'u-src',
+      expectedTargetHead: 'u-tgt',
+      openedBy: { iss: root.iss, sub: root.sub },
+    })
+    await markCommitsQc(repo.id, ['u-marked', 'u-also'], 'marked', { mergeRequestId: mr.id })
+    await markCommitsQc(repo.id, ['u-failed'], 'failed', { mergeRequestId: mr.id })
+    await markCommitsQc(repo.id, ['u-passed'], 'passed', { mergeRequestId: mr.id })
+    const other = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'qc-lab',
+      repo: 'data',
+      sourceBranch: 'unmark-other',
+      targetBranch: 'main',
+      expectedSourceHead: 'o-src',
+      expectedTargetHead: 'o-tgt',
+      openedBy: { iss: root.iss, sub: root.sub },
+    })
+    await markCommitsQc(repo.id, ['u-other-mr'], 'marked', { mergeRequestId: other.id })
+
+    const cleared = await unmarkCommitsForMergeRequest(repo.id, mr.id)
+    assert.deepEqual(cleared.sort(), ['u-also', 'u-marked'])
+    assert.equal(await getCommitQc(repo.id, 'u-marked'), 'none')
+    assert.equal(await getCommitQc(repo.id, 'u-also'), 'none')
+    assert.equal(await getCommitQc(repo.id, 'u-failed'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 'u-passed'), 'passed')
+    assert.equal(await getCommitQc(repo.id, 'u-other-mr'), 'marked')
   })
 })
