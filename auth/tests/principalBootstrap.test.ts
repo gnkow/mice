@@ -1,0 +1,104 @@
+import assert from 'node:assert/strict'
+import { after, describe, it } from 'node:test'
+import { isolatedAuth } from '../src/packages/shared/lib/testSupport.js'
+
+const iso = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'bootstrap@mice.local' })
+
+import './db/testSchema.js'
+
+const { preparePrincipal, isPendingUser } = await import('../src/packages/authz/lib/authz.js')
+const { decidePrincipalBootstrap, runPrincipalBootstrap } = await import('../src/packages/authz/lib/principalBootstrap.js')
+const { hasInstancePermission, isInstanceAdmin } = await import('../src/packages/authz/lib/authzInstanceStore.js')
+const { createNamespaceAuthz } = await import('../src/packages/authz/lib/authzNamespaceStore.js')
+const { listNamespaceMembers, setNamespaceGroupMember } = await import('../src/packages/authz/lib/authzMembershipStore.js')
+const { getUserRole } = await import('../src/packages/authz/lib/rbacStore.js')
+const { env } = await import('../src/packages/shared/lib/env.js')
+const { matchesBootstrap } = await import('../src/packages/authz/lib/authzRepository.js')
+
+after(() => iso.restore())
+
+const bootstrapAdmin = {
+  sub: 'boot',
+  iss: 'test',
+  email: 'bootstrap@mice.local',
+  emailVerified: true,
+  name: 'Bootstrap',
+}
+
+const groupedStranger = {
+  sub: 'grouped-stranger',
+  iss: 'test',
+  email: 'grouped-stranger@example.com',
+  name: 'Grouped Stranger',
+  groups: ['super-admins', 'engineering', 'owners'],
+}
+
+describe('principal bootstrap (#11): IdP groups never autoprovision', () => {
+  it('env no longer exposes AUTHZ_GROUP_BOOTSTRAP', () => {
+    assert.equal('authzGroupBootstrap' in env, false)
+    assert.equal('AUTHZ_GROUP_BOOTSTRAP' in process.env, false)
+  })
+
+  it('decidePrincipalBootstrap ignores IdP groups and only honors the allowlist', () => {
+    assert.deepEqual(decidePrincipalBootstrap(groupedStranger), {
+      action: 'none',
+      reason: 'not_on_allowlist',
+    })
+    assert.deepEqual(decidePrincipalBootstrap(bootstrapAdmin), { action: 'grant_admin' })
+    assert.deepEqual(
+      decidePrincipalBootstrap({
+        ...groupedStranger,
+        email: 'bootstrap@mice.local',
+        emailVerified: true,
+        groups: ['super-admins'],
+      }),
+      { action: 'grant_admin' },
+    )
+  })
+
+  it('preparePrincipal delegates only to allowlist bootstrap', async () => {
+    assert.equal(matchesBootstrap(groupedStranger), false)
+    assert.equal(await runPrincipalBootstrap(groupedStranger), false)
+    await preparePrincipal(groupedStranger)
+    assert.equal(await getUserRole(groupedStranger), null)
+    assert.equal(await isPendingUser(groupedStranger), true)
+    assert.equal(await isInstanceAdmin(groupedStranger), false)
+    assert.equal(await hasInstancePermission(groupedStranger, 'create_namespace'), false)
+  })
+
+  it('IdP groups do not create namespace user membership via preparePrincipal', async () => {
+    await preparePrincipal(bootstrapAdmin)
+    assert.equal(await isInstanceAdmin(bootstrapAdmin), true)
+
+    const ns = 'no-group-autoprovision'
+    assert.equal((await createNamespaceAuthz(bootstrapAdmin, ns, 'none', true)).ok, true)
+    assert.deepEqual(
+      await setNamespaceGroupMember(ns, '903a6de6-8703-4ff6-8a72-90481249265a', 'member'),
+      { ok: true },
+    )
+
+    await preparePrincipal(groupedStranger)
+
+    const members = await listNamespaceMembers(ns)
+    assert.equal(
+      members.some((m) => m.kind === 'user' && m.sub === groupedStranger.sub),
+      false,
+    )
+    assert.equal(await getUserRole(groupedStranger), null)
+    assert.equal(await isPendingUser(groupedStranger), true)
+  })
+
+  it('AUTHZ_BOOTSTRAP_ADMINS still grants Admin without IdP groups', async () => {
+    const bare = {
+      sub: 'bare-admin',
+      iss: 'test',
+      email: 'bootstrap@mice.local',
+      emailVerified: true,
+      name: 'Bare Admin',
+    }
+    assert.equal(matchesBootstrap(bare), true)
+    assert.equal(await runPrincipalBootstrap(bare), true)
+    assert.equal(await getUserRole(bare), 'admin')
+    assert.equal(await isInstanceAdmin(bare), true)
+  })
+})

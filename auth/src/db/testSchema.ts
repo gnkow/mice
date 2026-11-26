@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { postgresConfig } from './connection.js'
 import { useTestSchema } from './testDatabase.js'
-import { installAuditKeyPrefix } from '../auditTestIsolation.js'
+import { installAuditKeyPrefix } from '../packages/audit/lib/auditTestIsolation.js'
 
 /**
  * Import first in a test file: gives the file a private schema on the live PostgreSQL and drops it

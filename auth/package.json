@@ -7,10 +7,12 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node ../scripts/test-fail-fast.mjs --tsx --dir src",
+    "test": "node ../scripts/test-fail-fast.mjs --tsx --dir tests",
     "db:generate": "rm -rf drizzle && drizzle-kit generate --name baseline && node scripts/unqualify-baseline.mjs",
     "lint:async": "eslint src",
-    "seed:dev": "tsx scripts/seed-dev-accounts.ts"
+    "seed:dev": "tsx scripts/seed-dev-accounts.ts",
+    "lint:boundaries": "depcruise src/packages --config .dependency-cruiser.cjs",
+    "check": "npm run lint:boundaries && npm run typecheck"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^24.13.3",
     "@types/pg": "^8.23.1",
+    "dependency-cruiser": "^18.9.0",
     "drizzle-kit": "^0.31.11",
     "eslint": "^10.13.0",
     "typescript": "~6.0.2",

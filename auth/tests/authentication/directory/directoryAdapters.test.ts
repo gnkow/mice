@@ -1,0 +1,155 @@
+import '../../../../db/testSchema.js'
+import assert from 'node:assert/strict'
+import { after, describe, it } from 'node:test'
+import { fakeClock } from '../../../src/packages/shared/lib/clock.js'
+import { isolatedAuth } from '../../../src/packages/shared/lib/testSupport.js'
+
+const t = isolatedAuth()
+after(() => t.restore())
+
+const { createKeycloakDirectory } = await import('../../../src/packages/authentication/lib/directory/directoryKeycloak.js')
+const { createFakeDirectory } = await import('../../../src/packages/authentication/lib/directory/directoryFake.js')
+const { createDirectoryService } = await import('../../../src/packages/authentication/lib/directory/directory.js')
+const { setNamespaceMember } = await import('../../../src/packages/authz/lib/authzMembershipStore.js')
+const { createNamespaceAuthz } = await import('../../../src/packages/authz/lib/authzNamespaceStore.js')
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+describe('Keycloak directory adapter', () => {
+  const config = {
+    adminUrl: 'http://kc.test',
+    realm: 'mice',
+    clientId: 'mice-auth',
+    clientSecret: 's3cret',
+    issuer: 'http://kc.test/realms/mice',
+  }
+
+  function setup() {
+    const clock = fakeClock()
+    const calls: string[] = []
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/token')) return json({ access_token: 'tok', expires_in: 60 })
+      if (url.includes('/users/missing')) return json({}, 404)
+      if (url.includes('/users/off')) return json({ enabled: false })
+      if (url.includes('/users/on')) return json({ enabled: true })
+      if (url.includes('/users?')) {
+        return json([
+          { id: 'u1', username: 'ann', email: 'ann@x.io', firstName: 'Ann', lastName: 'Lee', enabled: true },
+          { id: 'u2', username: 'gone', enabled: false },
+        ])
+      }
+      if (url.includes('/groups?')) {
+        return json([
+          { id: 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111', name: 'Devs' },
+          { id: 'aaaaaaaa-bbbb-4ccc-8ddd-222222222222', name: 'ops', path: '/org/ops' },
+        ])
+      }
+      return json({}, 404)
+    }
+    return { clock, calls, directory: createKeycloakDirectory(config, { fetch: fetchFn, clock }) }
+  }
+
+  it('returns a user group object id and the current display name', async () => {
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input)
+      if (url.endsWith('/token')) return json({ access_token: 'tok', expires_in: 60 })
+      if (url.includes('/users/scientist/groups')) {
+        return json([
+          { id: '22222222-2222-4222-8222-222222222222', name: 'Quality Assurance', path: '/Quality Assurance' },
+        ])
+      }
+      return json({}, 404)
+    }
+    const directory = createKeycloakDirectory(config, { fetch: fetchFn })
+    assert.deepEqual(await directory.getUserGroups('scientist'), [
+      { id: '22222222-2222-4222-8222-222222222222', name: 'Quality Assurance' },
+    ])
+  })
+
+  it('treats a user unknown to the directory as having no groups but still fails on server errors', async () => {
+    const respond = (status: number): typeof fetch => async (input) =>
+      String(input).endsWith('/token') ? json({ access_token: 'tok', expires_in: 60 }) : json({}, status)
+    const unknown = createKeycloakDirectory(config, { fetch: respond(404) })
+    assert.deepEqual(await unknown.getUserGroups('ghost'), [])
+    const broken = createKeycloakDirectory(config, { fetch: respond(500) })
+    await assert.rejects(broken.getUserGroups('ghost'), /directory group lookup failed \(500\)/)
+  })
+
+  it('returns a group object id and the current display name', async () => {
+    const fetchFn: typeof fetch = async (input) => {
+      const url = String(input)
+      if (url.endsWith('/token')) return json({ access_token: 'tok', expires_in: 60 })
+      if (url.includes('/groups?')) {
+        return json([
+          { id: '11111111-1111-4111-8111-111111111111', name: 'Quality Assurance', path: '/org/Quality Assurance' },
+        ])
+      }
+      return json({}, 404)
+    }
+    const directory = createKeycloakDirectory(config, { fetch: fetchFn })
+    assert.deepEqual(await directory.searchGroups('q', 10), [
+      { kind: 'group', group: '11111111-1111-4111-8111-111111111111', name: 'Quality Assurance' },
+    ])
+  })
+
+  it('searches enabled users and maps groups to object ids', async () => {
+    const { directory } = setup()
+    assert.deepEqual(await directory.searchUsers('a', 10), [
+      { kind: 'user', sub: 'u1', iss: 'http://kc.test/realms/mice', email: 'ann@x.io', name: 'Ann Lee' },
+    ])
+    // Mock Keycloak returns the full group list; adapter maps object ids as grant keys.
+    assert.deepEqual(await directory.searchGroups('d', 10), [
+      { kind: 'group', group: 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111', name: 'Devs' },
+      { kind: 'group', group: 'aaaaaaaa-bbbb-4ccc-8ddd-222222222222', name: 'ops' },
+    ])
+  })
+
+  it('reports user status', async () => {
+    const { directory } = setup()
+    assert.deepEqual(await directory.userStatus('on'), { status: 'enabled', name: '' })
+    assert.deepEqual(await directory.userStatus('off'), { status: 'disabled', name: '' })
+    assert.deepEqual(await directory.userStatus('missing'), { status: 'missing', name: '' })
+  })
+
+  it('caches its token per instance until shortly before expiry', async () => {
+    const { clock, calls, directory } = setup()
+    await directory.searchUsers('a', 10)
+    await directory.searchUsers('a', 10)
+    assert.equal(calls.filter((c) => c.endsWith('/token')).length, 1)
+    clock.advance(56_000)
+    await directory.searchUsers('a', 10)
+    assert.equal(calls.filter((c) => c.endsWith('/token')).length, 2)
+  })
+
+  it('is unconfigured without an admin URL and answers error/empty', async () => {
+    const directory = createKeycloakDirectory({ ...config, adminUrl: '' })
+    assert.equal(directory.configured, false)
+    assert.deepEqual(await directory.searchUsers('a', 10), [])
+    assert.deepEqual(await directory.userStatus('x'), { status: 'error', name: '' })
+  })
+})
+
+describe('directory search service over a fake Directory', async () => {
+  const created = await createNamespaceAuthz({ ...t.admin }, 'ns-a', 'none', true)
+  assert.equal(created.ok, true)
+  await setNamespaceMember('ns-a', { sub: 'local-lee', iss: 'test' }, 'member')
+
+  it('merges directory and local hits as mixed', async () => {
+    const directory = createFakeDirectory({
+      users: [{ kind: 'user', sub: 'kc-lee', iss: 'test', email: 'lee@x.io', name: 'Lee K' }],
+    })
+    const res = await createDirectoryService(directory).search({ q: 'lee', kind: 'user', limit: 10 })
+    assert.equal(res.source, 'mixed')
+    assert.equal(res.providerConfigured, true)
+    assert.deepEqual(res.results.map((r) => r.kind === 'user' && r.sub).sort(), ['kc-lee', 'local-lee'])
+  })
+
+  it('falls back to the local projection when no provider is configured', async () => {
+    const res = await createDirectoryService(createFakeDirectory({ configured: false })).search({ q: 'lee' })
+    assert.equal(res.source, 'store')
+    assert.equal(res.providerConfigured, false)
+  })
+})

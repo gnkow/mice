@@ -1,0 +1,133 @@
+import { and, eq } from 'drizzle-orm'
+import type { Hono } from 'hono'
+import { instancePermissions, listInstanceAdmins, listInstancePermissionGrants, setInstancePermissions } from '../../authz/index.js'
+import { matchesBootstrap } from '../../authz/index.js'
+import type { InstancePermission } from '../../authz/types.js'
+import { canonicalIssuer } from '../../authentication/principal.js'
+import { instanceGate } from '../../authz/http.js'
+import { guarded } from '../../authentication/session.js'
+import { getDb } from '../../../db/database.js'
+import { principals } from '../../../db/schema.js'
+import type { AuditDep } from '../../shared/index.js'
+import { checkGroupBindingMode, getGroupBindingStatus } from '../../authz/index.js'
+import { authzEnforceReport } from '../../authz/index.js'
+import { requireAuditChange } from '../../audit/change.js'
+import { captureBefore } from '../../audit/change.js'
+
+async function adminViews() {
+  const admins = await listInstanceAdmins()
+  return Promise.all(admins.map(async (admin) => {
+    const [row] = await getDb()
+      .select({ email: principals.email, name: principals.name })
+      .from(principals)
+      .where(and(eq(principals.iss, canonicalIssuer(admin.iss)), eq(principals.sub, admin.sub)))
+      .limit(1)
+    const email = row?.email ?? ''
+    return {
+      sub: admin.sub,
+      iss: admin.iss,
+      email: email || null,
+      name: row?.name ?? null,
+      bootstrap: matchesBootstrap({
+        sub: admin.sub,
+        iss: admin.iss,
+        email,
+        emailVerified: email.length > 0,
+        name: row?.name ?? '',
+      }),
+    }
+  }))
+}
+
+const adminOnly = instanceGate('instance.admin')
+const target = (b: Record<string, unknown>) => ({ sub: b.sub as string, iss: b.iss as string })
+
+/** Active instance permissions of a principal: one `permission.<name>` key each, plus the grant expiry. */
+async function instancePermissionSnapshot(t: { sub: string; iss: string }): Promise<Record<string, unknown>> {
+  const perms = await instancePermissions(t)
+  if (perms.length === 0) return {}
+  const grant = (await listInstancePermissionGrants()).find((g) => g.sub === t.sub && g.iss === t.iss)
+  return {
+    ...Object.fromEntries([...perms].sort().map((p) => [`permission.${p}`, true])),
+    expiresAt: grant?.expiresAt ?? null,
+  }
+}
+
+/** Instance settings, instance admins and instance permission grants. */
+export function registerInstanceRoutes(app: Hono, { audit }: AuditDep): void {
+  app.get(
+    '/auth/instance',
+    guarded({ gate: adminOnly }, async ({ c }) =>
+      c.json({
+        ...authzEnforceReport(),
+        admins: await adminViews(),
+        permissions: await listInstancePermissionGrants(),
+      }),
+    ),
+  )
+
+  app.put(
+    '/auth/instance/permissions',
+    guarded({ mutates: true, action: 'instance.permissions.update', reason: true, body: { required: [] } }, async ({ c, user, body }) => {
+      if (!body.sub || !body.iss || !Array.isArray(body.permissions)) {
+        return c.json({ error: 'sub, iss, permissions required' }, 400)
+      }
+      const permissions = body.permissions as InstancePermission[]
+      const t = target(body)
+      const expiresAt =
+        typeof body.expiresAt === 'number'
+          ? body.expiresAt
+          : typeof body.expiresAt === 'string'
+            ? Date.parse(body.expiresAt)
+            : null
+      const beforePerms = await captureBefore(() => instancePermissionSnapshot(t))
+      const result = await setInstancePermissions(user, t, permissions, expiresAt)
+      if (!result.ok) {
+        await audit(c, user, 'session', {
+          action: 'instance.permissions.update',
+          status: 403,
+          message: `Instance permissions update denied: ${result.error}`,
+          detail: { target: t },
+        })
+        return c.json({ error: result.error }, 403)
+      }
+      const afterPerms = await instancePermissionSnapshot(t)
+      await audit(c, user, 'session', {
+        action: 'instance.permissions.update',
+        change: requireAuditChange(beforePerms, afterPerms),
+        message: `Set instance permissions for ${t.sub}`,
+        detail: { target: t, permissions, ...(expiresAt != null ? { expiresAt } : {}) },
+      })
+      return c.json({ ok: true })
+    }),
+  )
+
+  app.get(
+    '/auth/instance/group-binding',
+    guarded({ gate: adminOnly }, async ({ c }) => c.json(await getGroupBindingStatus())),
+  )
+
+  // Diagnostic: persists readiness only. Not an access grant — no e-sign / reason ceremony.
+  app.post(
+    '/auth/instance/group-binding/check',
+    guarded({ mutates: true, action: 'instance.group_binding.check', gate: adminOnly, body: 'json' }, async ({ c, user, body }) => {
+      const sample =
+        body && typeof body === 'object' && Array.isArray((body as { sampleGroups?: unknown }).sampleGroups)
+          ? ((body as { sampleGroups: unknown[] }).sampleGroups.filter((g): g is string => typeof g === 'string'))
+          : undefined
+      const beforeStatus = await captureBefore(() => getGroupBindingStatus())
+      const status = await checkGroupBindingMode(sample)
+      await audit(c, user, 'session', {
+        action: 'instance.group_binding.check',
+        // The persisted readiness row (mode, message, checkedAt) is what this call mutates.
+        change: requireAuditChange(
+          { mode: beforeStatus.mode, message: beforeStatus.message, checkedAt: beforeStatus.checkedAt },
+          { mode: status.mode, message: status.message, checkedAt: status.checkedAt },
+        ),
+        message: status.message,
+        detail: { mode: status.mode, warning: status.warning },
+      })
+      return c.json(status)
+    }),
+  )
+}

@@ -1,31 +1,36 @@
 import { Hono, type Context } from 'hono'
-import { auditReadiness } from './audit.js'
-import { diskReadiness } from './diskStore.js'
+import { applyGlobalGuards, authenticateOutcome } from './packages/authentication/session.js'
+import { backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerDisabledSignerRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, registerDevSessionRoutes } from './packages/authentication/routes.js'
+import { changeCaptureResponse } from './packages/authentication/session.js'
+import type { SessionUser } from './packages/authentication/principal.js'
+import { signOutEverywhere } from './packages/authentication/index.js'
+import { auditReadiness, auditMutation } from './packages/audit/index.js'
+import {
+  registerAuditRoutes,
+  registerAuditVisibilityRoutes,
+  registerAuditHealthRoutes,
+} from './packages/audit/routes.js'
+import { registerRbacGrantRoutes } from './packages/authz/routes.js'
+import { proxyToOxen } from './packages/proxy/index.js'
+import { registerJobRoutes } from './packages/jobs/routes.js'
+import { registerSessionRoutes } from './packages/desktop-sessions/routes.js'
+import { registerWorkspaceRoutes } from './packages/workspaces/routes.js'
+import { registerMergeRequestRoutes } from './packages/merge/routes.js'
+import { registerNamespaceRoutes } from './packages/namespaces/routes.js'
+import { notificationReadiness, registerNotificationRoutes } from './packages/notifications/index.js'
+import {
+  registerAnnouncementRoutes,
+  registerFavoritesRoutes,
+  registerInstanceRoutes,
+  registerOpsRoutes,
+  registerReasonRoutes,
+  registerRegulatedConfigRoutes,
+  registerReleaseManifestRoutes,
+  registerMetaRoutes,
+} from './packages/platform/routes.js'
+import { diskReadiness, type AuditFn } from './packages/shared/index.js'
 import { postgresReadiness } from './db/database.js'
 import { isStoreOutage } from './db/outage.js'
-import { applyGlobalGuards, authenticateOutcome, backChannelLogout, makeDirectorySyncRoute, registerAccessReviewRoutes, registerNameHistoryRoutes, registerAdminRevocationRoutes, registerMiceSuspensionRoutes, registerReenableRoutes, registerAuthEventRoutes, registerCliDeviceRoutes, registerIdpBaselineRoutes, registerIdpDriftRoutes, registerDisabledSignerRoutes, registerLoginRoutes, registerMeRoutes, registerRevocationRoutes, registerSealKeyRoutes, registerSigningRoutes, registerStepUp, registerWebSessionRoutes, type SessionUser, signOutEverywhere } from './authentication/index.js'
-import { auditMutation } from './auditMutation.js'
-import { changeCaptureResponse } from './authentication/session/routeGuard.js'
-import { registerAnnouncementRoutes } from './announcementRoutes.js'
-import { registerAuditHealthRoutes } from './auditHealthRoutes.js'
-import { registerReleaseManifestRoutes } from './releaseManifestRoutes.js'
-import { registerRegulatedConfigRoutes } from './regulatedConfigRoutes.js'
-import { registerAuditRoutes } from './auditRoutes.js'
-import { registerAuditVisibilityRoutes } from './auditVisibilityRoutes.js'
-import { registerFavoritesRoutes } from './favoritesRoutes.js'
-import { registerInstanceRoutes } from './instanceRoutes.js'
-import { registerRbacGrantRoutes } from './rbacGrantRoutes.js'
-import { registerJobRoutes } from './jobsRoutes.js'
-import { registerMetaRoutes } from './metaRoutes.js'
-import { registerNamespaceRoutes } from './namespaceRoutes.js'
-import { registerMergeRequestRoutes } from './mergeRequestRoutes.js'
-import { notificationReadiness, registerNotificationRoutes } from './notifications.js'
-import { proxyToOxen } from './proxy.js'
-import { registerReasonRoutes } from './reasonRoutes.js'
-import type { AuditFn } from './routeDeps.js'
-import { registerDevSessionRoutes } from './authentication/session/devSessionRoutes.js'
-import { registerSessionRoutes } from './sessionsRoutes.js'
-import { registerWorkspaceRoutes } from './workspaces/routes.js'
 
 export type AppDeps = {
   /** Audit sink for BFF-native mutations; defaults to the audit log. */
@@ -92,6 +97,7 @@ export function createApp(deps: AppDeps = {}): Hono {
   app.post('/auth/instance/directory-sync', makeDirectorySyncRoute())
   app.post('/auth/sessions/revoke-all', signOutEverywhere)
   registerInstanceRoutes(app, { audit })
+  registerOpsRoutes(app, { audit })
   registerRbacGrantRoutes(app, { audit })
   registerRevocationRoutes(app)
   registerReasonRoutes(app)

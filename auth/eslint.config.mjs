@@ -5,7 +5,7 @@ const INTERNALS = '**/authentication/**'
 const KEEP_FACADE = '!**/authentication/index.js'
 
 export default tseslint.config({
-  files: ['src/**/*.ts'],
+  files: ['src/**/*.ts', 'tests/**/*.ts'],
   languageOptions: {
     parser: tseslint.parser,
     parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
@@ -21,7 +21,7 @@ export default tseslint.config({
   },
 }, {
   // Authentication is reached only through its façade, `authentication/index.ts`.
-  files: ['src/**/*.ts'],
+  files: ['src/**/*.ts', 'tests/**/*.ts'],
   ignores: ['src/authentication/**'],
   rules: {
     'no-restricted-imports': ['error', {

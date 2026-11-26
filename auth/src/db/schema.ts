@@ -1,13 +1,13 @@
 import { sql } from 'drizzle-orm'
-import { type CliCredentialScope } from '../authentication/index.js'
-import type { AccessReviewReport } from '../authentication/compliance/accessReview.js'
-import type { JobRun } from '../jobsTypes.js'
-import type { LineageOp } from '../lineage.js'
-import type { DesktopSession } from '../sessionsTypes.js'
-import type { MetaRecord } from '../metaTypes.js'
-import type { MetaRevision } from '../metaStore.js'
-import type { NotificationUser } from '../notificationsStore.js'
-import type { NotificationPreferences } from '../notificationsTypes.js'
+import { type CliCredentialScope } from '../packages/authentication/index.js'
+import type { AccessReviewReport } from '../packages/authentication/lib/compliance/accessReview.js'
+import type { JobRun } from '../packages/jobs/lib/jobsTypes.js'
+import type { LineageOp } from '../packages/namespaces/lib/lineage.js'
+import type { DesktopSession } from '../packages/desktop-sessions/lib/sessionsTypes.js'
+import type { MetaRecord } from '../packages/platform/lib/metaTypes.js'
+import type { MetaRevision } from '../packages/platform/lib/metaStore.js'
+import type { NotificationUser } from '../packages/notifications/lib/notificationsStore.js'
+import type { NotificationPreferences } from '../packages/notifications/lib/notificationsTypes.js'
 import {
   bigint,
   boolean,

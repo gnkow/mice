@@ -1,0 +1,103 @@
+// Authentication public API
+// Per spec (respec/01-authentication/spec.md): "There are no PATs and no service principals"
+
+// Author injection
+export {
+  commitAuthor,
+  hasAuthorQueryParam,
+  injectAuthorFormData,
+  injectAuthorJson,
+  isAuthorFreeBinaryRoute,
+  stampOxenAuthorBody,
+} from './author.js'
+
+// CLI device flow (RFC 8628) - replaces PATs
+export { registerCliDeviceRoutes } from './credentials/cliDeviceRoutes.js'
+
+// Authentication event log
+export { registerAuthEventRoutes } from './audit/authEventRoutes.js'
+
+// Revocation
+export { registerRevocationRoutes } from './credentials/revocationRoutes.js'
+export { registerAdminRevocationRoutes } from './access/adminRevocationRoutes.js'
+export { registerMiceSuspensionRoutes } from './access/miceSuspensionRoutes.js'
+export { registerReenableRoutes } from './access/reenableRoutes.js'
+export { registerSigningRoutes } from './signing/signingRoutes.js'
+export { registerIdpBaselineRoutes } from './admin/idpBaselineRoutes.js'
+export { registerIdpDriftRoutes } from './compliance/idpDriftRoutes.js'
+export { registerDisabledSignerRoutes } from './compliance/disabledSignerRoutes.js'
+export { startIdpDriftSchedule } from './compliance/idpDriftSchedule.js'
+export { registerAccessReviewRoutes } from './compliance/accessReviewRoutes.js'
+export { registerNameHistoryRoutes } from './compliance/nameHistoryRoutes.js'
+export { startAccessReviewAlertSchedule } from './compliance/accessReviewAlert.js'
+export { startClockDriftSchedule } from './compliance/clockDriftAlert.js'
+export { signOutEverywhere } from './credentials/selfRevocation.js'
+
+// Directory sync
+export { makeDirectorySyncRoute, startDirectorySyncSchedule } from './directory/directorySync.js'
+
+// OIDC and login
+export { backChannelLogout } from './oidc/backChannelLogout.js'
+export { registerLoginRoutes } from './oidc/loginRoutes.js'
+export { registerStepUp } from './oidc/stepUp.js'
+
+// Session management
+export { registerMeRoutes } from './session/meRoutes.js'
+export { registerSealKeyRoutes } from './session/sealKeyRoutes.js'
+export { startSealKeyRotationSchedule } from './session/sealKeyRotationSchedule.js'
+export {
+  can,
+  decideServiceCallerAdmission,
+  isScopedCredential,
+  isServiceCaller,
+  kindOf,
+  matchesIdentityEntry,
+  parsePrincipalKey,
+  principalKey,
+} from './session/principal.js'
+export { classifyPath, interpretRequest } from './session/requestInterpretation.js'
+export { AuthenticationDenied, applyGlobalGuards, authenticate, authenticateOutcome, authenticateRequest, authenticateUser, callerVia, requirePrincipal, setAuthenticationObserver } from './session/requireAuth.js'
+export { guarded } from './session/routeGuard.js'
+export type { GuardArgs } from './session/routeGuard.js'
+export { sealSession, getSession, setSessionCookie, destroySession, clearSessionCookie } from './session/session.js'
+export type { CliCredentialScope, SessionUser } from './session/session.js'
+export type { AuthOutcome, AuthPolicy } from './session/requireAuth.js'
+export type Principal = import('./session/session.js').SessionUser
+export {
+  assertProductionStartup,
+  productionStartupProblems,
+} from './session/startupGate.js'
+export { assertIdpAssurance, assessIdpAssurance } from './session/idpAssuranceGate.js'
+export { registerWebSessionRoutes } from './session/webSessionRoutes.js'
+
+// REMOVED (per spec):
+// - PATs (Personal Access Tokens) - use device flow (mice login) instead
+// - Service Principals - Jobs use BFF-internal tokens
+// Token mint routes are not part of the BFF. CLI access is the device-flow credential.
+// - registerServicePrincipalRoutes, createServicePrincipal, serviceUser
+// - startServicePatExpirySchedule
+
+
+export { ensureBootstrapKey } from './session/sealKeys.js'
+export { setDirectoryFetchForTests, setDirectoryForTests, directoryNow } from './directory/directoryRuntime.js'
+export { sealSessionCookie } from './session/cookieSeal.js'
+export { ensurePrincipal } from './session/session.js'
+export { registerDevSessionRoutes } from './session/devSessionRoutes.js'
+
+export { signerAuthorKey, normalizePrincipalAuthorKey } from './session/principal.js'
+export type { PrincipalId } from './session/principal.js'
+export { humanCommitFields } from './commits/commitIdentity.js'
+export type { HumanCommitFields } from './commits/commitIdentity.js'
+export {
+  buildMergeManifest,
+  manifestForMergeResult,
+  mergeResultBinding,
+} from './signing/mergeManifest.js'
+export type { ManifestEntry, MergeManifest } from './signing/mergeManifest.js'
+export { signatureStore } from './signing/signatureStore.js'
+export type { SignatureRecord, SignatureBinding } from './signing/signatureStore.js'
+export { mutationSignatureAuditDetail } from './signing/signingCeremony.js'
+
+export { generateTraceabilityMatrix } from './compliance/validation.js'
+export type { RequirementTestMapping, TraceabilityMatrix } from './compliance/validation.js'
+export { SERVICE_ISSUER } from './session/principal.js'

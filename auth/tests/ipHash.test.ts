@@ -1,0 +1,197 @@
+import './db/testSchema.js'
+import { describe, it, beforeEach } from 'node:test'
+import assert from 'node:assert/strict'
+import { overrideEnv } from '../src/packages/shared/lib/env.js'
+
+/**
+ * Hashed IP Logging Tests (Ticket 16)
+ * 
+ * Round 8 decision U8: Log source IPs as SHA-256(IP + daily_salt) for anomaly
+ * detection while preserving privacy (GDPR minimization).
+ * 
+ * Daily salt rotation prevents long-term tracking. Same-day pattern detection
+ * enables distributed attack detection without storing raw IPs.
+ * 
+ * Related:
+ * - .scratch/authentication/issues/16-hashed-ip-logging.md
+ * - Round 8 decision U8
+ * - Part 11 §11.300(d) (device checks)
+ */
+
+describe('Hashed IP Logging (U8)', () => {
+  it('generates daily salt on first call', async () => {
+    const { getDailySalt } = await import('../src/packages/shared/lib/ipHash.js')
+    const salt = await getDailySalt()
+    
+    assert.ok(salt, 'Salt should be generated')
+    assert.ok(salt.length >= 32, 'Salt should be at least 32 characters')
+  })
+
+  it('returns same salt for same day', async () => {
+    const { getDailySalt } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const salt1 = await getDailySalt()
+    const salt2 = await getDailySalt()
+    
+    assert.equal(salt1, salt2, 'Salt should be consistent within same day')
+  })
+
+  it('hashes IP with daily salt', async () => {
+    const { hashIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const hash = await hashIp('192.168.1.100')
+    
+    assert.ok(hash, 'Hash should be generated')
+    assert.ok(hash.length === 64, 'SHA-256 hash should be 64 hex characters')
+  })
+
+  it('same IP produces same hash on same day', async () => {
+    const { hashIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const hash1 = await hashIp('192.168.1.100')
+    const hash2 = await hashIp('192.168.1.100')
+    
+    assert.equal(hash1, hash2, 'Same IP should hash to same value on same day')
+  })
+
+  it('different IPs produce different hashes', async () => {
+    const { hashIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const hash1 = await hashIp('192.168.1.100')
+    const hash2 = await hashIp('192.168.1.101')
+    
+    assert.notEqual(hash1, hash2, 'Different IPs should produce different hashes')
+  })
+
+  it('extracts last 4 hex chars for UI display', async () => {
+    const { hashIp, getDisplaySuffix } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const hash = await hashIp('192.168.1.100')
+    const suffix = getDisplaySuffix(hash)
+    
+    assert.ok(suffix, 'Display suffix should exist')
+    assert.equal(suffix.length, 4, 'Display suffix should be 4 hex characters')
+    assert.equal(suffix, hash.slice(-4), 'Suffix should be last 4 chars of hash')
+  })
+
+  it('handles IPv6 addresses', async () => {
+    const { hashIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const hash = await hashIp('2001:0db8:85a3:0000:0000:8a2e:0370:7334')
+    
+    assert.ok(hash, 'IPv6 should be hashable')
+    assert.ok(hash.length === 64, 'IPv6 hash should be 64 hex characters')
+  })
+
+  it('handles null or empty IP gracefully', async () => {
+    const { hashIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const hash1 = await hashIp(null)
+    const hash2 = await hashIp('')
+    const hash3 = await hashIp(undefined)
+    
+    assert.ok(hash1 === null, 'Null IP should return null hash')
+    assert.ok(hash2 === null, 'Empty IP should return null hash')
+    assert.ok(hash3 === null, 'Undefined IP should return null hash')
+  })
+
+  it('extracts IP from X-Forwarded-For header', async () => {
+    const { extractClientIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const headers = new Headers()
+    headers.set('x-forwarded-for', '203.0.113.195, 70.41.3.18, 150.172.238.178')
+    
+    const ip = extractClientIp(headers)
+    assert.equal(ip, '203.0.113.195', 'Should extract first IP from X-Forwarded-For')
+  })
+
+  it('extracts IP from X-Real-IP header', async () => {
+    const { extractClientIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const headers = new Headers()
+    headers.set('x-real-ip', '203.0.113.195')
+    
+    const ip = extractClientIp(headers)
+    assert.equal(ip, '203.0.113.195', 'Should extract IP from X-Real-IP')
+  })
+
+  it('prefers X-Forwarded-For over X-Real-IP', async () => {
+    const { extractClientIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const headers = new Headers()
+    headers.set('x-forwarded-for', '203.0.113.100')
+    headers.set('x-real-ip', '203.0.113.200')
+    
+    const ip = extractClientIp(headers)
+    assert.equal(ip, '203.0.113.100', 'X-Forwarded-For should take precedence')
+  })
+
+  it('returns null when no IP headers present', async () => {
+    const { extractClientIp } = await import('../src/packages/shared/lib/ipHash.js')
+    
+    const headers = new Headers()
+    const ip = extractClientIp(headers)
+    
+    assert.equal(ip, null, 'Should return null when no IP headers')
+  })
+
+  it('same IP hashes differently after the UTC day (salt) rotates', async () => {
+    const { createIpHash } = await import('../src/packages/shared/lib/ipHash.js')
+    let day = '2099-01-01'
+    const hasher = createIpHash({ utcDay: () => day })
+
+    const before = await hasher.hashIp('192.168.1.100')
+    day = '2099-01-02'
+    const after = await hasher.hashIp('192.168.1.100')
+
+    assert.ok(before)
+    assert.ok(after)
+    assert.notEqual(before, after, 'Salt rotation must change the hash')
+    assert.equal(hasher.displaySuffix(before), before!.slice(-4))
+  })
+
+  it('hashFromHeaders extracts the client IP then hashes it', async () => {
+    const { createIpHash } = await import('../src/packages/shared/lib/ipHash.js')
+    const hasher = createIpHash({ utcDay: () => '2099-06-15' })
+    const headers = new Headers()
+    headers.set('x-forwarded-for', '203.0.113.50, 10.0.0.1')
+
+    const fromHeaders = await hasher.hashFromHeaders(headers)
+    const direct = await hasher.hashIp('203.0.113.50')
+
+    assert.equal(fromHeaders, direct)
+    assert.equal(await hasher.hashFromHeaders(new Headers()), null)
+  })
+
+  it('resolveClientIp prefers headers then falls back to the TCP peer', async () => {
+    const { resolveClientIp } = await import('../src/packages/shared/lib/ipHash.js')
+    const headers = new Headers()
+    assert.equal(resolveClientIp(headers), null)
+    assert.equal(resolveClientIp(headers, '::ffff:127.0.0.1'), '127.0.0.1')
+    headers.set('x-forwarded-for', '203.0.113.9')
+    assert.equal(resolveClientIp(headers, '10.0.0.1'), '203.0.113.9')
+  })
+
+  it('computeIpHash is the pure SHA-256(IP + salt) formula', async () => {
+    const { computeIpHash } = await import('../src/packages/shared/lib/ipHash.js')
+    // Independent worked example: sha256('203.0.113.50' + 'aabbccdd11223344')
+    assert.equal(
+      computeIpHash('203.0.113.50', 'aabbccdd11223344'),
+      '07ee6a7386b2b73c3c5b81d38aeb383b0d941ddeeace59dba39040898ccb9029',
+    )
+  })
+
+  it('fingerprintFromHeaders returns store hash and 4-hex display suffix together', async () => {
+    const { createIpHash } = await import('../src/packages/shared/lib/ipHash.js')
+    const hasher = createIpHash({ utcDay: () => '2099-06-16' })
+    const headers = new Headers()
+    headers.set('x-forwarded-for', '203.0.113.50, 10.0.0.1')
+
+    const fp = await hasher.fingerprintFromHeaders(headers)
+    assert.ok(fp)
+    assert.equal(fp.hash.length, 64)
+    assert.equal(fp.suffix, fp.hash.slice(-4))
+    assert.equal(fp.hash, await hasher.hashIp('203.0.113.50'))
+    assert.equal(await hasher.fingerprintFromHeaders(new Headers()), null)
+  })
+})

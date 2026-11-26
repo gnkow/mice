@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+import {
+  authorsFromCommits,
+  decideSelfMerge,
+  evaluateSelfMergeFromCommits,
+  SELF_MERGE_FORBIDDEN,
+  SELF_MERGE_REQUESTER_FORBIDDEN,
+  selfMergeAuditDetail,
+} from '../src/packages/merge/lib/selfMerge.js'
+
+describe('decideSelfMerge', () => {
+  const alice = { iss: 'https://idp.example/', sub: 'alice' }
+  const aliceAuthor = 'https://idp.example|alice'
+  const bobAuthor = 'https://idp.example|bob'
+
+  it('allows merge when no commit author matches the signer', () => {
+    const d = decideSelfMerge(alice, [bobAuthor])
+    assert.equal(d.allow, true)
+  })
+
+  it('forbids merge when the signer authored a commit in the range', () => {
+    const d = decideSelfMerge(alice, [bobAuthor, aliceAuthor])
+    assert.equal(d.allow, false)
+    if (d.allow) return
+    assert.equal(d.reason, SELF_MERGE_FORBIDDEN)
+    assert.deepEqual(d.matchingAuthors, [aliceAuthor])
+  })
+
+  it('forbids merge when the signer matches any of several authors', () => {
+    const d = decideSelfMerge(alice, [bobAuthor, aliceAuthor, 'https://idp.example|carol'])
+    assert.equal(d.allow, false)
+    if (d.allow) return
+    assert.equal(d.reason, SELF_MERGE_FORBIDDEN)
+  })
+
+  it('treats trailing slash on issuer as the same Principal as commit author', () => {
+    const d = decideSelfMerge({ iss: 'https://idp.example', sub: 'alice' }, [aliceAuthor])
+    assert.equal(d.allow, false)
+  })
+
+  it('allows merge when the author list is empty', () => {
+    assert.equal(decideSelfMerge(alice, []).allow, true)
+  })
+
+  it('denies when the signer opened the merge request', () => {
+    const d = decideSelfMerge(alice, [bobAuthor], aliceAuthor)
+    assert.equal(d.allow, false)
+    if (!d.allow) assert.equal(d.reason, SELF_MERGE_REQUESTER_FORBIDDEN)
+  })
+
+  it('matches AuthZ openedBy keys that use the unit separator', () => {
+    const openedBy = `${alice.iss}\u001f${alice.sub}`
+    const d = decideSelfMerge(alice, [bobAuthor], openedBy)
+    assert.equal(d.allow, false)
+    if (!d.allow) assert.equal(d.reason, SELF_MERGE_REQUESTER_FORBIDDEN)
+  })
+})
+
+describe('evaluateSelfMergeFromCommits', () => {
+  const alice = { iss: 'https://idp.example/', sub: 'alice' }
+
+  it('extracts authors from commits and decides in one step', () => {
+    assert.equal(
+      evaluateSelfMergeFromCommits(alice, [
+        { author: 'https://idp.example|bob' },
+        { author: 'https://idp.example|alice' },
+      ]).allow,
+      false,
+    )
+    assert.equal(
+      evaluateSelfMergeFromCommits(alice, [{ author: 'https://idp.example|bob' }]).allow,
+      true,
+    )
+  })
+
+  it('ignores non-string author fields when extracting', () => {
+    assert.deepEqual(authorsFromCommits([{ author: 1 }, { author: '  x  ' }, {}]), ['x'])
+  })
+})
+
+describe('selfMergeAuditDetail', () => {
+  const alice = { iss: 'https://idp.example/', sub: 'alice' }
+  const aliceAuthor = 'https://idp.example|alice'
+  const bobAuthor = 'https://idp.example|bob'
+
+  it('records signer and authors on an approved merge', () => {
+    assert.deepEqual(selfMergeAuditDetail(alice, [bobAuthor], { allow: true }), {
+      self_merge: false,
+      signer: aliceAuthor,
+      authors: [bobAuthor],
+    })
+  })
+
+  it('records reason and matching authors on a denied self-merge', () => {
+    const denied = decideSelfMerge(alice, [bobAuthor, aliceAuthor])
+    assert.equal(denied.allow, false)
+    if (denied.allow) return
+    assert.deepEqual(selfMergeAuditDetail(alice, [bobAuthor, aliceAuthor], denied), {
+      self_merge: true,
+      signer: aliceAuthor,
+      authors: [bobAuthor, aliceAuthor],
+      reason: SELF_MERGE_FORBIDDEN,
+      matching_authors: [aliceAuthor],
+    })
+  })
+})

@@ -1,0 +1,98 @@
+/**
+ * Self-merge prevention (4-eyes): repositories compare the merge signer's
+ * identity to commit authors. Authorization only enforces the merge role floor;
+ * this module owns the author comparison.
+ *
+ * Commit `author` is the canonical `iss|sub` from author injection
+ * (`.scratch/authentication/issues/08-human-commit-author.md`).
+ */
+import { canonicalIssuer } from '../../authentication/principal.js'
+import { signerAuthorKey, normalizePrincipalAuthorKey } from '../../authentication/principal.js'
+export { signerAuthorKey, normalizePrincipalAuthorKey } from '../../authentication/index.js'
+
+export const SELF_MERGE_FORBIDDEN = 'Self-merge forbidden (4-eyes principle)'
+export const SELF_MERGE_REQUESTER_FORBIDDEN =
+  'Self-merge forbidden (4-eyes): you opened this request, so you cannot approve it'
+
+export type SelfMergeDecision =
+  | { allow: true }
+  | {
+      allow: false
+      reason: typeof SELF_MERGE_FORBIDDEN | typeof SELF_MERGE_REQUESTER_FORBIDDEN
+      matchingAuthors: string[]
+    }
+
+/**
+ * Deny when the Principal performing the merge authored any commit in the merge,
+ * or (for signed MR complete) is the requester who opened the merge request.
+ */
+export function decideSelfMerge(
+  signer: { iss: string; sub: string },
+  authors: readonly string[],
+  openedBy?: string | null,
+): SelfMergeDecision {
+  const key = signerAuthorKey(signer)
+  if (openedBy?.trim() && normalizePrincipalAuthorKey(openedBy) === key) {
+    return {
+      allow: false,
+      reason: SELF_MERGE_REQUESTER_FORBIDDEN,
+      matchingAuthors: [],
+    }
+  }
+  const matchingAuthors = [
+    ...new Set(
+      authors
+        .map((a) => normalizePrincipalAuthorKey(a))
+        .filter((a) => a === key),
+    ),
+  ]
+  if (matchingAuthors.length > 0) {
+    return { allow: false, reason: SELF_MERGE_FORBIDDEN, matchingAuthors }
+  }
+  return { allow: true }
+}
+
+export function authorsFromCommits(commits: readonly { author?: unknown }[]): string[] {
+  const out: string[] = []
+  for (const c of commits) {
+    if (typeof c.author === 'string' && c.author.trim()) out.push(c.author.trim())
+  }
+  return out
+}
+
+/**
+ * Single seam for the 4-eyes check over an oxen mergeable payload's commits list.
+ */
+export function evaluateSelfMergeFromCommits(
+  signer: { iss: string; sub: string },
+  commits: readonly { author?: unknown }[],
+): SelfMergeDecision {
+  return decideSelfMerge(signer, authorsFromCommits(commits))
+}
+
+/** Audit detail for approved and denied self-merge checks (signer + authors + reason). */
+export function selfMergeAuditDetail(
+  signer: { iss: string; sub: string },
+  authors: readonly string[],
+  decision: SelfMergeDecision,
+): {
+  self_merge: boolean
+  signer: string
+  authors: string[]
+  reason?: string
+  matching_authors?: string[]
+} {
+  const base = {
+    signer: signerAuthorKey(signer),
+    authors: [...authors],
+  }
+  if (!decision.allow) {
+    return {
+      ...base,
+      self_merge: true,
+      reason: decision.reason,
+      matching_authors: decision.matchingAuthors,
+    }
+  }
+  return { ...base, self_merge: false }
+}

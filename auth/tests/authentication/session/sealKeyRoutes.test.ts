@@ -1,0 +1,209 @@
+import '../../../../db/testSchema.js'
+import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, it, beforeEach } from 'node:test'
+
+process.env.AUTH_DATA_DIR = mkdtempSync(join(tmpdir(), 'mice-seal-key-routes-'))
+process.env.SESSION_SECRET = 'test-session-secret-for-seal-keys'
+process.env.AUTHZ_BOOTSTRAP_ADMINS = 'admin@test.io'
+process.env.DIRECTORY_PROVIDER = 'keycloak'
+process.env.KEYCLOAK_ADMIN_URL = 'http://directory.test'
+process.env.KEYCLOAK_REALM = 'mice'
+process.env.OIDC_CLIENT_ID = 'mice-auth'
+process.env.OIDC_CLIENT_SECRET = 'mice-auth-secret'
+process.env.OIDC_ISSUER_PUBLIC = 'https://idp.test'
+
+const { Hono } = await import('hono')
+const { registerSealKeyRoutes } = await import('../../../src/packages/authentication/lib/session/sealKeyRoutes.js')
+const { sealSession } = await import('../../../src/packages/authentication/lib/session/session.js')
+const { sealSessionCookie } = await import('../../../src/packages/authentication/lib/session/cookieSeal.js')
+const { ensureBootstrapKey, getCurrentSealKey, getSealKeyById } = await import('../../../src/packages/authentication/lib/session/sealKeys.js')
+const { env } = await import('../../../src/packages/shared/lib/env.js')
+const { maybeBootstrapInstanceAdmin } = await import('../../../src/packages/authz/lib/authzInstanceStore.js')
+const { queryAudit } = await import('../../../src/packages/audit/lib/audit.js')
+const { getDb } = await import('../../../src/db/database.js')
+const { sealKeys } = await import('../../../src/db/schema.js')
+const { setDirectoryFetchForTests } = await import('../../../src/packages/authentication/lib/directory/directory.js')
+const { regulatedMutationHeaders } = await import('../../../src/packages/shared/lib/testSupport.js')
+const { openSignatureStore, useSignatureStore } = await import('../../../src/packages/authentication/lib/signing/signatureStore.js')
+const { immudbConfig, openLedger } = await import('../../../src/packages/audit/lib/auditLedger.js')
+
+useSignatureStore(
+  openSignatureStore(
+    await openLedger({ ...immudbConfig(), prefix: `seal-rot/${randomBytes(4).toString('hex')}/` }),
+  ),
+)
+
+setDirectoryFetchForTests(async (input) => {
+  const url = String(input)
+  if (url.includes('/protocol/openid-connect/token')) {
+    return new Response(JSON.stringify({ access_token: 't', expires_in: 300 }), { status: 200 })
+  }
+  if (url.includes('/users/')) {
+    return new Response(JSON.stringify({ enabled: true, firstName: 'Ad', lastName: 'Min' }), {
+      status: 200,
+    })
+  }
+  return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+})
+
+const admin = {
+  sub: 'admin',
+  iss: 'https://idp.test',
+  email: 'admin@test.io',
+  name: 'Admin',
+  emailVerified: true,
+}
+
+await maybeBootstrapInstanceAdmin(admin)
+
+async function adminCookie() {
+  const id = await sealSession({
+    ...admin,
+    sessionStart: Math.floor(Date.now() / 1000) - 30,
+  })
+  return `${env.cookieName}=${await sealSessionCookie(id)}`
+}
+
+function app() {
+  const api = new Hono()
+  registerSealKeyRoutes(api)
+  return api
+}
+
+describe('Seal key rotation HTTP seam (Ticket 17)', () => {
+  beforeEach(async () => {
+    await getDb().delete(sealKeys)
+    await ensureBootstrapKey()
+  })
+
+  it('GXP-R-013 POST /auth/admin/seal-keys/rotate refuses without ceremony and accepts with it', async () => {
+    const api = app()
+    const path = '/auth/admin/seal-keys/rotate'
+    const before = await getCurrentSealKey()
+    assert.ok(before)
+
+    const bare = await api.request(path, {
+      method: 'POST',
+      headers: {
+        cookie: await adminCookie(),
+        origin: 'http://localhost',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    })
+    assert.equal(bare.status, 400)
+    assert.equal(((await bare.json()) as { code?: string }).code, 'reason_required')
+
+    const headers = await regulatedMutationHeaders(admin, {
+      method: 'POST',
+      path,
+      body: {},
+      reason: 'Scheduled seal-key rotation after quarterly review',
+    })
+    const res = await api.request(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: await adminCookie(), origin: 'http://localhost' },
+      body: '{}',
+    })
+    const text = await res.text()
+    assert.equal(res.status, 200, text)
+    const body = JSON.parse(text) as {
+      success: boolean
+      key: { id: string; rotationType: string; validUntil: number | null }
+    }
+    assert.equal(body.success, true)
+    assert.equal(body.key.rotationType, 'normal')
+    assert.equal(body.key.validUntil, null)
+    assert.notEqual(body.key.id, before!.id)
+
+    const retired = await getSealKeyById(before!.id)
+    assert.ok(retired?.validUntil, 'previous key keeps 7-day overlap')
+
+    const { events } = await queryAudit({ action: 'seal_key.rotated', limit: 10 })
+    const rotated = events.find((e) => e.detail?.newKeyId === body.key.id)
+    assert.ok(rotated)
+    assert.ok(rotated.signature_id, 'ceremony signature_id is on the mutation row')
+    assert.equal(rotated.detail?.signatureId, rotated.signature_id)
+  })
+
+
+  it('GXP-R-013 POST /auth/admin/seal-keys/rotate/emergency refuses without ceremony and accepts with it', async () => {
+    const api = app()
+    const path = '/auth/admin/seal-keys/rotate/emergency'
+    const before = await getCurrentSealKey()
+    assert.ok(before)
+    const reqBody = { reason: 'Compromise suspected in lab' }
+
+    const bare = await api.request(path, {
+      method: 'POST',
+      headers: {
+        cookie: await adminCookie(),
+        origin: 'http://localhost',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(reqBody),
+    })
+    assert.equal(bare.status, 400)
+    assert.equal(((await bare.json()) as { code?: string }).code, 'reason_required')
+
+    const headers = await regulatedMutationHeaders(admin, {
+      method: 'POST',
+      path,
+      body: reqBody,
+      reason: 'Compromise suspected in lab - emergency seal rotation',
+    })
+    const res = await api.request(path, {
+      method: 'POST',
+      headers: { ...headers, cookie: await adminCookie(), origin: 'http://localhost' },
+      body: JSON.stringify(reqBody),
+    })
+    const text = await res.text()
+    assert.equal(res.status, 200, text)
+    const body = JSON.parse(text) as {
+      success: boolean
+      oldKey: { id: string; revokedAt: number; gracePeriodUntil: number }
+      newKey: { id: string; rotationType: string }
+    }
+    assert.equal(body.success, true)
+    assert.equal(body.oldKey.id, before!.id)
+    assert.ok(body.oldKey.revokedAt)
+    assert.ok(body.oldKey.gracePeriodUntil)
+    assert.equal(body.newKey.rotationType, 'emergency')
+
+    const eightHours = 8 * 60 * 60
+    assert.ok(
+      Math.abs(body.oldKey.gracePeriodUntil - (body.oldKey.revokedAt + eightHours)) < 5,
+      'grace is ~8 hours from revoke',
+    )
+
+    const { events } = await queryAudit({ action: 'seal_key.emergency_rotation', limit: 10 })
+    assert.ok(
+      events.some(
+        (e) =>
+          e.detail?.oldKeyId === before!.id &&
+          e.detail?.newKeyId === body.newKey.id &&
+          String(e.message).includes('Compromise suspected'),
+      ),
+    )
+  })
+
+  it('GET /auth/admin/seal-keys lists keys without key material', async () => {
+    const api = app()
+    const res = await api.request('/auth/admin/seal-keys', {
+      headers: { cookie: await adminCookie(), origin: 'http://localhost' },
+    })
+    const text = await res.text()
+    assert.equal(res.status, 200, text)
+    const body = JSON.parse(text) as { keys: Array<Record<string, unknown>> }
+    assert.ok(body.keys.length >= 1)
+    for (const key of body.keys) {
+      assert.equal('keyMaterial' in key, false)
+      assert.ok(typeof key.id === 'string')
+      assert.ok(typeof key.status === 'string')
+    }
+  })
+})
