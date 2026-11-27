@@ -8,6 +8,7 @@ import { mintSessionCookie, type MintedSession } from './session'
 
 const OXEN_URL = process.env.OXEN_URL ?? 'http://127.0.0.1:3001'
 const BFF_URL = process.env.MICE_BASE_URL ?? 'http://localhost:5173'
+const AUTH_URL = process.env.AUTH_URL ?? 'http://localhost:8080'
 
 export type Json = Record<string, unknown>
 
@@ -104,6 +105,119 @@ export async function createNamespace(
     throw new Error(`createNamespace failed ${status}: ${JSON.stringify(body)}`)
   }
   return body
+}
+
+/**
+ * Claim a namespace as a specific minted session (e.g. a different Owner than the
+ * suite identity). Does not change the cached suite cookie used by other helpers.
+ */
+export async function createNamespaceAs(
+  session: MintedSession,
+  name: string,
+  opts?: { basePermission?: string; membersCanCreateRepos?: boolean },
+) {
+  const cookie = `${session.cookieName}=${session.cookieValue}`
+  const res = await fetch(`${BFF_URL}/auth/namespaces`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      cookie,
+      origin: BFF_URL,
+      'x-mice-reason': 'e2e: create namespace as alternate owner',
+    },
+    body: JSON.stringify({
+      name,
+      basePermission: opts?.basePermission ?? 'none',
+      membersCanCreateRepos: opts?.membersCanCreateRepos ?? true,
+    }),
+  })
+  const text = await res.text()
+  let body: Json = {}
+  if (text) {
+    try {
+      body = JSON.parse(text) as Json
+    } catch {
+      body = { raw: text }
+    }
+  }
+  if (res.status >= 400 && res.status !== 409) {
+    throw new Error(`createNamespaceAs failed ${res.status}: ${JSON.stringify(body)}`)
+  }
+  return body
+}
+
+/** Delete a repo using a specific session (e.g. dest Owner after transfer). */
+export async function deleteRepoAs(
+  session: MintedSession,
+  namespace: string,
+  name: string,
+) {
+  const cookie = `${session.cookieName}=${session.cookieValue}`
+  await fetch(
+    `${BFF_URL}/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        cookie,
+        origin: BFF_URL,
+        'x-mice-reason': 'e2e: delete repo as alternate owner',
+      },
+    },
+  )
+}
+
+/**
+ * Seat a user as a non-owner namespace member (so the ns appears in their
+ * transfer target list without making them dest Owner / one-shot eligible).
+ */
+export async function putNamespaceMemberAs(
+  session: MintedSession,
+  ns: string,
+  member: { sub: string; iss: string; role: 'member' },
+) {
+  const cookie = `${session.cookieName}=${session.cookieValue}`
+  const path = `/auth/namespaces/${encodeURIComponent(ns)}/members`
+  const body = {
+    kind: 'user' as const,
+    sub: member.sub,
+    iss: member.iss,
+    role: member.role,
+  }
+  const reason = 'e2e: seat transfer proposer as dest namespace member'
+  const sigRes = await fetch(`${AUTH_URL}/auth/dev/mutation-signature`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      cookie,
+      origin: BFF_URL,
+      'x-mice-reason': reason,
+    },
+    body: JSON.stringify({ method: 'PUT', path, reason, body }),
+  })
+  if (!sigRes.ok) {
+    throw new Error(
+      `putNamespaceMemberAs signature failed ${sigRes.status}: ${await sigRes.text()}`,
+    )
+  }
+  const { signatureId } = (await sigRes.json()) as { signatureId: string }
+  const put = await fetch(`${AUTH_URL}${path}`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json',
+      cookie,
+      origin: BFF_URL,
+      'x-mice-reason': reason,
+      'x-mice-signature-id': signatureId,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!put.ok) {
+    throw new Error(
+      `putNamespaceMemberAs failed ${put.status}: ${await put.text()}`,
+    )
+  }
 }
 
 /** Create via BFF so AuthZ physical UUID keys match oxen. Namespace must already exist. */
