@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApproversSection } from '../components/ApproversSection'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import { CustomRolesSection } from '../components/CustomRolesSection'
+import { IncomingTransfersSection } from '../components/IncomingTransfersSection'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import { PrincipalAddCard } from '../components/PrincipalAddCard'
 import { StateBlock } from '../components/StateBlock'
@@ -412,6 +413,11 @@ export function NamespaceSettingsPage() {
             </section>
 
             <ApproversSection namespace={namespace} canManage={perms.manageApprovers} />
+
+            <IncomingTransfersSection
+              namespace={namespace}
+              canManage={perms.manageSettings}
+            />
 
             <CustomRolesSection namespace={namespace} canManage={perms.manageCustomRoles} />
 

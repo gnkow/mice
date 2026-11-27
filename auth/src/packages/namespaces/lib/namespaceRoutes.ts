@@ -12,6 +12,7 @@ import {
   updateNamespaceUseCase,
 } from './namespaceLifecycle.js'
 import { registerNamespaceAccessRoutes } from './namespaceAccess.js'
+import { registerRepoTransferRoutes } from './repoTransferRoutes.js'
 
 function mapOutcome(c: { json: (body: unknown, status?: number) => Response }, outcome: import('./httpOutcome.js').HttpOutcome) {
   if (isResponse(outcome)) return outcome.response
@@ -101,4 +102,5 @@ export function registerNamespaceRoutes(app: Hono, deps: AuditDep): void {
   )
 
   registerNamespaceAccessRoutes(app, deps)
+  registerRepoTransferRoutes(app, deps)
 }

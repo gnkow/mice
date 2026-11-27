@@ -114,7 +114,26 @@ export {
   submitAccessRequest as submitRbacAccessRequest,
 } from './lib/rbacAccessRequests.js'
 export type { RbacAccessRequest } from './lib/rbacAccessRequests.js'
-export { ensureRepository } from './lib/repositoryStore.js'
+export {
+  ensureRepository,
+  transferRepository,
+  previewRepositoryTransfer,
+  proposeRepositoryTransfer,
+  acceptRepositoryTransfer,
+  rejectRepositoryTransfer,
+  cancelRepositoryTransfer,
+  getPendingRepositoryTransfer,
+  listIncomingPendingTransfers,
+  expirePendingTransfers,
+  partitionTransferAccess,
+  TRANSFER_PENDING_TTL_MS,
+} from './lib/repositoryStore.js'
+export type {
+  RepositoryTransferRecord,
+  TransferAccessDiff,
+  TransferCompleteResult,
+  TransferProposeResult,
+} from './lib/repositoryStore.js'
 
 
 export { defaultGroupIssuer, setGroupIssuerOverride } from './lib/groupIssuer.js'

@@ -218,8 +218,9 @@ export async function decideManageApprovers(user: SessionUser, ns: string): Prom
 }
 
 /**
- * Namespace Owner (or admin collaborator) may rename, transfer, delete, or
- * edit About — lifecycle admin, not a data-plane write grant.
+ * Namespace Owner (or admin collaborator) may rename, delete, or edit About —
+ * lifecycle admin, not a data-plane write grant. Transfer propose/one-shot is
+ * Owner-only (see repoViewerPermissions.transfer).
  */
 export async function canAdministerRepository(
   user: SessionUser,

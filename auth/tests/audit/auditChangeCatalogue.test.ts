@@ -51,6 +51,10 @@ const MUTATION_FIXTURES: Record<string, Fixture> = {
   // Repositories
   'repo.rename': update({ name: 'old' }, { name: 'new' }),
   'repo.settings.update': update({ description: 'old' }, { description: 'new' }),
+  'repo.transfer': update({ namespace: 'src' }, { namespace: 'dst' }),
+  'repo.transfer.accept': update({ namespace: 'src' }, { namespace: 'dst' }),
+  'repo.transfer.reject': update({ status: 'pending' }, { status: 'rejected' }),
+  'repo.transfer.cancel': update({ status: 'pending' }, { status: 'cancelled' }),
   'repo.collaborator.set': create({ user: 'u1', role: 'editor' }),
   'repo.collaborator.remove': remove({ user: 'u1', role: 'editor' }),
   'approver.grant': create({ user: 'u1', approver: true }),

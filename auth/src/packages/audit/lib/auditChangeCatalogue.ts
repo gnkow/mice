@@ -23,6 +23,7 @@ const MUTATION = [
   'commit.publish', 'merge',
   // Repositories
   'repo.create', 'repo.delete', 'repo.metadata', 'repo.rename', 'repo.settings.update',
+  'repo.transfer', 'repo.transfer.accept', 'repo.transfer.reject', 'repo.transfer.cancel',
   'repo.collaborator.set', 'repo.collaborator.remove',
   'approver.grant', 'approver.revoke',
   'validated_branch.mark', 'validated_branch.unmark', 'commit.disposition',

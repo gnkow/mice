@@ -62,6 +62,24 @@ test.describe('Repo settings viewer permissions (#148)', () => {
         body: JSON.stringify({ namespaceRoles: [], repoRoles: [] }),
       })
     })
+    await page.route(`**/auth/namespaces/${ns}/repos/${repo}/transfer**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ transfer: null }),
+      })
+    })
+    await page.route('**/auth/namespaces', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ namespaces: [] }),
+      })
+    })
     await page.route('**/auth/meta**', async (route) => {
       await route.fulfill({
         status: 200,

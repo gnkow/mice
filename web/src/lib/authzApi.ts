@@ -534,6 +534,241 @@ export function updateRepoDescriptionAuthz(ns: string, repo: string, description
   })
 }
 
+// ── Repository transfer (AuthZ namespace re-point; no oxen move) ──────────────
+
+export type TransferAccessSeat =
+  | { kind: 'user'; key: string; role?: string; seat: 'collaborator' | 'approver' }
+  | { kind: 'group'; key: string; role?: string; seat: 'collaborator' | 'approver' }
+
+export type TransferAccessDiff = {
+  kept: TransferAccessSeat[]
+  dropped: TransferAccessSeat[]
+  newlyInheriting: Array<{
+    kind: 'user' | 'group'
+    key: string
+    viaBasePermission: BasePermission
+  }>
+}
+
+export type RepositoryTransferRecord = {
+  id: string
+  repositoryId: string
+  repositoryName: string
+  sourceNamespace: string
+  sourceNamespaceId: string
+  targetNamespace: string
+  targetNamespaceId: string
+  proposedBy: string
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled' | 'expired'
+  createdAt: string
+  resolvedAt: string | null
+  resolvedBy: string | null
+  expiresAt: string
+}
+
+function transferRepoPath(ns: string, repo: string, suffix = '') {
+  return `/auth/namespaces/${encodeURIComponent(ns)}/repos/${encodeURIComponent(repo)}/transfer${suffix}`
+}
+
+function normalizeAccessDiff(raw: unknown): TransferAccessDiff {
+  const d = (raw && typeof raw === 'object' ? raw : {}) as Partial<TransferAccessDiff> & {
+    inheriting?: TransferAccessDiff['newlyInheriting']
+  }
+  return {
+    kept: Array.isArray(d.kept) ? d.kept : [],
+    dropped: Array.isArray(d.dropped) ? d.dropped : [],
+    newlyInheriting: Array.isArray(d.newlyInheriting)
+      ? d.newlyInheriting
+      : Array.isArray(d.inheriting)
+        ? d.inheriting
+        : [],
+  }
+}
+
+/** True when the AuthZ transfer routes are not mounted yet (UI/API overlap). */
+function isTransferRouteMissing(err: unknown): boolean {
+  return err instanceof AuthzError && (err.status === 404 || err.status === 501)
+}
+
+/** GET pending transfer for a repo; null when none or routes not ready. */
+export async function fetchPendingRepoTransfer(
+  ns: string,
+  repo: string,
+  signal?: AbortSignal,
+): Promise<RepositoryTransferRecord | null> {
+  try {
+    const data = await authzFetch<{
+      transfer?: RepositoryTransferRecord | null
+    }>(transferRepoPath(ns, repo), { signal })
+    return data.transfer ?? null
+  } catch (err) {
+    if (isTransferRouteMissing(err)) return null
+    throw err
+  }
+}
+
+/** Incoming pending transfers for a destination namespace. */
+export async function fetchIncomingTransfers(
+  ns: string,
+  signal?: AbortSignal,
+): Promise<RepositoryTransferRecord[]> {
+  try {
+    const data = await authzFetch<{ transfers?: RepositoryTransferRecord[] }>(
+      `/auth/namespaces/${encodeURIComponent(ns)}/transfers/incoming`,
+      { signal },
+    )
+    return Array.isArray(data.transfers) ? data.transfers : []
+  } catch (err) {
+    if (isTransferRouteMissing(err)) return []
+    // Non-owners are forbidden — treat as empty inbox rather than a page flash.
+    if (err instanceof AuthzError && err.status === 403) return []
+    throw err
+  }
+}
+
+/** Access-diff preview before propose / one-shot (and useful again on accept). */
+export async function previewRepoTransfer(
+  ns: string,
+  repo: string,
+  targetNamespace: string,
+): Promise<TransferAccessDiff> {
+  try {
+    const data = await authzFetch<{
+      accessDiff?: TransferAccessDiff
+      kept?: TransferAccessSeat[]
+      dropped?: TransferAccessSeat[]
+      newlyInheriting?: TransferAccessDiff['newlyInheriting']
+      inheriting?: TransferAccessDiff['newlyInheriting']
+    }>(
+      `${transferRepoPath(ns, repo, '/preview')}?targetNamespace=${encodeURIComponent(targetNamespace)}`,
+    )
+    if (data.accessDiff) return normalizeAccessDiff(data.accessDiff)
+    return normalizeAccessDiff(data)
+  } catch (err) {
+    if (isTransferRouteMissing(err)) {
+      return { kept: [], dropped: [], newlyInheriting: [] }
+    }
+    throw err
+  }
+}
+
+export type ProposeRepoTransferResult =
+  | {
+      mode: 'one-shot'
+      repository: AuthzRepository
+      accessDiff: TransferAccessDiff
+    }
+  | {
+      mode: 'pending'
+      transfer: RepositoryTransferRecord
+      accessDiff: TransferAccessDiff
+    }
+
+/** Propose or one-shot transfer (reason + e-sign via authzFetch). */
+export async function proposeRepoTransfer(
+  ns: string,
+  repo: string,
+  targetNamespace: string,
+): Promise<ProposeRepoTransferResult> {
+  const data = await authzFetch<{
+    mode?: 'one-shot' | 'pending'
+    ok?: boolean
+    repository?: AuthzRepository
+    transfer?: RepositoryTransferRecord
+    accessDiff?: TransferAccessDiff
+  }>(transferRepoPath(ns, repo), {
+    method: 'POST',
+    body: JSON.stringify({ targetNamespace }),
+  })
+  const accessDiff = normalizeAccessDiff(data.accessDiff)
+  if (data.mode === 'pending' || data.transfer) {
+    if (!data.transfer) {
+      throw new AuthzError('Transfer pending but no transfer record returned', 500)
+    }
+    return { mode: 'pending', transfer: data.transfer, accessDiff }
+  }
+  if (!data.repository) {
+    throw new AuthzError('Transfer completed but no repository returned', 500)
+  }
+  return { mode: 'one-shot', repository: data.repository, accessDiff }
+}
+
+/** Dest Owner accept (reason + e-sign). Body may include targetNamespace for resume navigation. */
+export async function acceptRepoTransfer(
+  ns: string,
+  repo: string,
+  opts?: { targetNamespace?: string },
+) {
+  return authzFetch<{
+    ok?: boolean
+    mode?: 'accept' | 'one-shot'
+    repository: AuthzRepository
+    accessDiff?: TransferAccessDiff
+  }>(transferRepoPath(ns, repo, '/accept'), {
+    method: 'POST',
+    body: JSON.stringify({
+      ...(opts?.targetNamespace ? { targetNamespace: opts.targetNamespace } : {}),
+    }),
+  })
+}
+
+/**
+ * Reason-only mutation (no e-sign). Used for reject/cancel.
+ * Caller supplies a trimmed reason (≥ server min length).
+ */
+async function authzFetchReasonOnly<T>(
+  path: string,
+  init: RequestInit,
+  reason: string,
+): Promise<T> {
+  const trimmed = reason.trim()
+  if (trimmed.length < 10) {
+    throw new AuthzError('Reason must be at least 10 characters', 400, 'reason_too_short')
+  }
+  const res = await fetch(path, {
+    credentials: 'same-origin',
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...init.headers,
+      [REASON_HEADER]: trimmed,
+    },
+  })
+  const text = await res.text()
+  let body: unknown = {}
+  if (text) {
+    try {
+      body = JSON.parse(text)
+    } catch {
+      body = { raw: text }
+    }
+  }
+  if (!res.ok) {
+    const err = body as { error?: string; code?: string }
+    throw new AuthzError(err.error || `AuthZ ${res.status}`, res.status, err.code)
+  }
+  return body as T
+}
+
+/** Dest Owner reject — reason only. */
+export function rejectRepoTransfer(ns: string, repo: string, reason: string) {
+  return authzFetchReasonOnly<{ ok?: boolean; transfer?: RepositoryTransferRecord }>(
+    transferRepoPath(ns, repo, '/reject'),
+    { method: 'POST', body: JSON.stringify({}) },
+    reason,
+  )
+}
+
+/** Source Owner cancel — reason only. */
+export function cancelRepoTransfer(ns: string, repo: string, reason: string) {
+  return authzFetchReasonOnly<{ ok?: boolean; transfer?: RepositoryTransferRecord }>(
+    transferRepoPath(ns, repo, '/cancel'),
+    { method: 'POST', body: JSON.stringify({}) },
+    reason,
+  )
+}
+
 export async function fetchRepoCollaborators(
   ns: string,
   repo: string,

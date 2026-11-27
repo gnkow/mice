@@ -47,8 +47,14 @@ type GuardPolicyBase = AuthPolicy & {
   /**
    * The route changes admin or permission state, so it needs a reason (X-Mice-Reason header, at
    * least the configured minimum length). Rejected 400 before the intent is written.
+   * When true, an e-signature is also required unless `signature: false`.
    */
   reason?: boolean
+  /**
+   * When `reason` is true, require a mutation e-signature (default true). Set false for
+   * reason-only mutations (e.g. transfer reject/cancel).
+   */
+  signature?: boolean
   /** The 400 message for an unparseable body (default `Invalid body`). */
   invalidBody?: string
   /** Maps an error thrown by the handler to this route family's response; null rethrows. */
@@ -132,9 +138,11 @@ export function guarded(
     fail,
     mutates,
     reason: needsReason,
+    signature: signaturePolicy,
     action: mutationAction,
     ...auth
   } = policy
+  const needsSignature = Boolean(needsReason) && signaturePolicy !== false
   // Fail loudly when the route is registered, not when the first request arrives.
   const fixedAction =
     mutates && typeof mutationAction !== 'function'
@@ -189,28 +197,30 @@ export function guarded(
         id: c.req.header(CHANGE_CONTROL_HEADER) || declaredChangeControlId(user),
         required: false,
       })
-      const signed = await resolveMutationSignature({
-        id: c.req.header(SIGNATURE_HEADER),
-        signer: user,
-        method: c.req.method,
-        path: c.req.path,
-        reason: reason.reason,
-        body,
-      })
-      if (!signed.ok) {
-        await appendAudit({
-          ...base,
-          status: 400,
-          action: 'request.rejected',
-          change: EMPTY_AUDIT_CHANGE,
-          detail: { reason: signed.rejection.code },
+      if (needsSignature) {
+        const signed = await resolveMutationSignature({
+          id: c.req.header(SIGNATURE_HEADER),
+          signer: user,
+          method: c.req.method,
+          path: c.req.path,
+          reason: reason.reason,
+          body,
         })
-        return c.json({ error: signed.rejection.detail, code: signed.rejection.code }, 400)
+        if (!signed.ok) {
+          await appendAudit({
+            ...base,
+            status: 400,
+            action: 'request.rejected',
+            change: EMPTY_AUDIT_CHANGE,
+            detail: { reason: signed.rejection.code },
+          })
+          return c.json({ error: signed.rejection.detail, code: signed.rejection.code }, 400)
+        }
+        signatureId = signed.signatureId
+        signatureRecord = signed.record
+        changeControlId =
+          changeControlId || signed.record.changeControlId || allocateChangeControlId()
       }
-      signatureId = signed.signatureId
-      signatureRecord = signed.record
-      changeControlId =
-        changeControlId || signed.record.changeControlId || allocateChangeControlId()
     }
     const reasonFields = intentReasonFields({
       reason,

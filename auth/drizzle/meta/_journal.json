@@ -162,6 +162,13 @@
       "when": 1796100000000,
       "tag": "0022_commit_qc_events",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1796200000000,
+      "tag": "0023_repository_transfers",
+      "breakpoints": true
     }
   ]
 }

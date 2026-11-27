@@ -188,6 +188,27 @@ export function summarizeMutation(
             ? `Remove a collaborator from ${scope}`
             : `Change collaborators on ${scope}`
         }
+        if (parts[5] === 'transfer') {
+          const target = bodyString(body, 'targetNamespace')
+          if (parts[6] === 'accept') {
+            return target
+              ? `Accept transfer of ${scope} → ${target}`
+              : `Accept transfer of ${scope}`
+          }
+          if (parts[6] === 'reject') return `Reject transfer of ${scope}`
+          if (parts[6] === 'cancel') return `Cancel transfer of ${scope}`
+          if (parts[6] === 'preview') {
+            return target
+              ? `Preview transfer of ${scope} → ${target}`
+              : `Preview transfer of ${scope}`
+          }
+          return target
+            ? `Transfer ${scope} → ${target}`
+            : `Transfer ${scope}`
+        }
+      }
+      if (parts[3] === 'transfers') {
+        return 'List incoming repository transfers'
       }
       if (parts[3] === 'custom-roles') {
         const kind = parts[4] === 'repo' ? 'repository' : 'namespace'

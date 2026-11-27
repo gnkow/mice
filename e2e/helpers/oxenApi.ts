@@ -87,6 +87,25 @@ export function uniqueId(prefix = 'mice-e2e'): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+/** Claim AuthZ ownership of a namespace for the suite identity (idempotent on 409). */
+export async function createNamespace(
+  name: string,
+  opts?: { basePermission?: string; membersCanCreateRepos?: boolean },
+) {
+  const { status, body } = await bffApi('/auth/namespaces', {
+    method: 'POST',
+    body: JSON.stringify({
+      name,
+      basePermission: opts?.basePermission ?? 'none',
+      membersCanCreateRepos: opts?.membersCanCreateRepos ?? true,
+    }),
+  })
+  if (status >= 400 && status !== 409) {
+    throw new Error(`createNamespace failed ${status}: ${JSON.stringify(body)}`)
+  }
+  return body
+}
+
 /** Create via BFF so AuthZ physical UUID keys match oxen. Namespace must already exist. */
 export async function createRepo(namespace: string, name: string) {
   const { status, body } = await bffApi('/api/repos', {

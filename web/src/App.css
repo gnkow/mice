@@ -2847,6 +2847,161 @@ p.ok {
   min-width: 0;
 }
 
+.repo-transfer-form {
+  gap: 1.25rem;
+}
+
+.repo-transfer-form > .ns-settings-field {
+  max-width: 22rem;
+}
+
+.repo-transfer-actions {
+  justify-content: flex-end;
+}
+
+.transfer-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  overflow: hidden;
+}
+
+.transfer-diff > .tab-bar {
+  margin: 0;
+  padding: 0 0.35rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+
+.transfer-diff-tab-count {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.transfer-diff .tab-bar button.active .transfer-diff-tab-count {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg);
+}
+
+.transfer-diff .tab-bar button.transfer-diff-tab-warn {
+  color: color-mix(in srgb, #9a6700 70%, var(--fg));
+}
+
+.transfer-diff-panel {
+  padding: 0.9rem 1rem 1rem;
+  min-width: 0;
+}
+
+.transfer-diff-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 560px) {
+  .transfer-diff-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+
+  .transfer-diff-group + .transfer-diff-group {
+    padding-left: 1.25rem;
+    border-left: 1px solid var(--line);
+  }
+}
+
+.transfer-diff-group-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.transfer-diff-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.transfer-diff-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.transfer-diff-list li {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.transfer-diff-principal {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.transfer-diff-principal .user-ref {
+  max-width: 100%;
+  flex-shrink: 1;
+}
+
+.transfer-diff-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.transfer-diff-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.transfer-diff-pager .btn {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.transfer-diff-pager-status {
+  min-width: 2.5rem;
+  text-align: center;
+}
+
+.transfer-inbox-list .transfer-inbox-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.transfer-inbox-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.transfer-inbox-title {
+  margin: 0;
+  font-weight: 600;
+}
+
 .validated-branches-mark-form {
   margin-top: 1rem;
   align-items: flex-end;

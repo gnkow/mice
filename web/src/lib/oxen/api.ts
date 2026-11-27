@@ -116,22 +116,6 @@ export function renameRepository(
   )
 }
 
-export function transferRepository(
-  namespace: string,
-  repo: string,
-  targetNamespace: string,
-  signal?: AbortSignal,
-) {
-  return oxenFetch<RepositoryDataTypesResponse>(
-    `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}/transfer`,
-    {
-      method: 'PATCH',
-      body: { namespace: targetNamespace },
-      signal,
-    },
-  )
-}
-
 export function getRepositoryStats(
   namespace: string,
   repo: string,

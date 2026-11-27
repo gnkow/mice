@@ -9,28 +9,44 @@ import type { RepoSettingsOutletContext } from '../components/RepoSettingsLayout
 import { RepoSignaturesSection } from '../components/RepoSignaturesSection'
 import { GroupPrincipalLabel } from '../components/GroupPrincipalLabel'
 import { PrincipalAddCard } from '../components/PrincipalAddCard'
+import { TransferAccessDiffView } from '../components/TransferAccessDiff'
 import { UserRef } from '../components/UserRef'
-import { deleteRepository, transferRepository } from '../lib/oxen/api'
+import { deleteRepository } from '../lib/oxen/api'
 import { confirmDelete } from '../lib/confirmDelete'
 import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import { OxenApiError } from '../lib/oxen/types'
 import {
   AuthzError,
+  cancelRepoTransfer,
   deleteRepoCollaborator,
   fetchAuthzRepository,
   fetchCustomRoles,
+  fetchPendingRepoTransfer,
   fetchRepoCollaborators,
+  listAuthzNamespaces,
+  previewRepoTransfer,
+  proposeRepoTransfer,
   putRepoCollaborator,
   renameRepoAuthz,
   updateRepoDescriptionAuthz,
   type CollaboratorPrincipal,
   type CollaboratorRoleRef,
+  type TransferAccessDiff,
 } from '../lib/authzApi'
 import { useAsync } from '../hooks/useAsync'
 import {
   SIGNED_MUTATION_COMPLETE_EVENT,
   type PendingSignedMutation,
 } from '../lib/signingResume'
+
+function bodyString(
+  body: unknown,
+  key: string,
+): string {
+  if (!body || typeof body !== 'object' || !(key in body)) return ''
+  const value = (body as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
 
 /**
  * After MFA/step-up resume, the original form await is gone — navigate from the
@@ -48,13 +64,7 @@ export function navigateAfterRepoMutation(
   const oxenRepo = `/api/repos/${encodeURIComponent(namespace)}/${encodeURIComponent(repo)}`
 
   if (method === 'PATCH' && apiPath === authzRepo) {
-    const name =
-      intent.body &&
-      typeof intent.body === 'object' &&
-      'name' in intent.body &&
-      typeof (intent.body as { name: unknown }).name === 'string'
-        ? (intent.body as { name: string }).name.trim()
-        : ''
+    const name = bodyString(intent.body, 'name')
     if (!name || name === repo) return false
     navigate(
       `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(name)}/tree/main`,
@@ -62,15 +72,20 @@ export function navigateAfterRepoMutation(
     return true
   }
 
-  if (method === 'PATCH' && apiPath === `${oxenRepo}/transfer`) {
-    const targetNs =
-      intent.body &&
-      typeof intent.body === 'object' &&
-      'namespace' in intent.body &&
-      typeof (intent.body as { namespace: unknown }).namespace === 'string'
-        ? (intent.body as { namespace: string }).namespace.trim()
-        : ''
+  if (method === 'POST' && apiPath === `${authzRepo}/transfer/accept`) {
+    const targetNs = bodyString(intent.body, 'targetNamespace')
     if (!targetNs) return false
+    navigate(
+      `/n/${encodeURIComponent(targetNs)}/r/${encodeURIComponent(repo)}/tree/main`,
+    )
+    return true
+  }
+
+  if (method === 'POST' && apiPath === `${authzRepo}/transfer`) {
+    const targetNs = bodyString(intent.body, 'targetNamespace')
+    if (!targetNs) return false
+    // One-shot lands on dest; pending stays on source settings (async resume
+    // path may briefly hit dest — form await handles the common case).
     navigate(
       `/n/${encodeURIComponent(targetNs)}/r/${encodeURIComponent(repo)}/tree/main`,
     )
@@ -85,6 +100,43 @@ export function navigateAfterRepoMutation(
   return false
 }
 
+/**
+ * Resume handler that distinguishes one-shot vs pending after propose.
+ * Returns a promise so the page can await pending-status before navigating.
+ */
+export async function navigateAfterTransferPropose(
+  intent: PendingSignedMutation,
+  namespace: string,
+  repo: string,
+  navigate: (to: string) => void,
+): Promise<boolean> {
+  const apiPath = intent.apiPath.split('?')[0] ?? intent.apiPath
+  if (
+    intent.method.toUpperCase() !== 'POST' ||
+    apiPath !==
+      `/auth/namespaces/${encodeURIComponent(namespace)}/repos/${encodeURIComponent(repo)}/transfer`
+  ) {
+    return false
+  }
+  const targetNs = bodyString(intent.body, 'targetNamespace')
+  if (!targetNs) return false
+  try {
+    const pending = await fetchPendingRepoTransfer(namespace, repo)
+    if (pending) {
+      navigate(
+        `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}/settings#repo-transfer`,
+      )
+      return true
+    }
+  } catch {
+    /* fall through to dest navigate */
+  }
+  navigate(
+    `/n/${encodeURIComponent(targetNs)}/r/${encodeURIComponent(repo)}/tree/main`,
+  )
+  return true
+}
+
 export function RepoSettingsPage() {
   const { namespace = '', repo = '' } = useParams()
   const navigate = useNavigate()
@@ -96,14 +148,32 @@ export function RepoSettingsPage() {
   const [description, setDescription] = useState('')
   const [descriptionSaved, setDescriptionSaved] = useState(false)
   const [targetNs, setTargetNs] = useState('')
+  const [transferDiff, setTransferDiff] = useState<TransferAccessDiff | null>(null)
+  const [transferDiffBusy, setTransferDiffBusy] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
   const authzRepo = useAsync(
     (signal) => fetchAuthzRepository(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const namespacesState = useAsync(
+    (signal) => listAuthzNamespaces(signal),
+    [],
+  )
+  const pendingTransfer = useAsync(
+    (signal) => fetchPendingRepoTransfer(namespace, repo, signal),
     [namespace, repo],
   )
   const collabState = useAsync(
     (signal) => fetchRepoCollaborators(namespace, repo, signal),
     [namespace, repo],
   )
+  const namespaceOptions = useMemo(() => {
+    if (namespacesState.kind !== 'ok') return []
+    return namespacesState.data.namespaces
+      .map((n) => n.name)
+      .filter((n) => n !== namespace)
+      .sort((a, b) => a.localeCompare(b))
+  }, [namespacesState, namespace])
   const collaborators =
     collabState.kind === 'ok' ? collabState.data.collaborators : []
   const [collabRole, setCollabRole] = useState<CollaboratorRoleRef>('read')
@@ -133,11 +203,54 @@ export function RepoSettingsPage() {
     function onComplete(e: Event) {
       const intent = (e as CustomEvent<PendingSignedMutation>).detail
       if (!intent) return
+      const apiPath = intent.apiPath.split('?')[0] ?? intent.apiPath
+      if (
+        intent.method.toUpperCase() === 'POST' &&
+        apiPath ===
+          `/auth/namespaces/${encodeURIComponent(namespace)}/repos/${encodeURIComponent(repo)}/transfer`
+      ) {
+        void navigateAfterTransferPropose(intent, namespace, repo, navigate).then(
+          (handled) => {
+            if (handled) pendingTransfer.reload()
+          },
+        )
+        return
+      }
       navigateAfterRepoMutation(intent, namespace, repo, navigate)
     }
     window.addEventListener(SIGNED_MUTATION_COMPLETE_EVENT, onComplete)
     return () => window.removeEventListener(SIGNED_MUTATION_COMPLETE_EVENT, onComplete)
+    // pendingTransfer.reload is stable enough for this page lifetime
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namespace, repo, navigate])
+
+  useEffect(() => {
+    setTransferDiff(null)
+    setCancelReason('')
+  }, [targetNs, namespace, repo])
+
+  useEffect(() => {
+    const next = targetNs.trim()
+    if (!next || next === namespace) {
+      setTransferDiff(null)
+      return
+    }
+    let cancelled = false
+    setTransferDiffBusy(true)
+    void previewRepoTransfer(namespace, repo, next)
+      .then((diff) => {
+        if (!cancelled) setTransferDiff(diff)
+      })
+      .catch(() => {
+        if (!cancelled) setTransferDiff(null)
+      })
+      .finally(() => {
+        if (!cancelled) setTransferDiffBusy(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [namespace, repo, targetNs])
 
   useEffect(() => {
     let cancelled = false
@@ -205,11 +318,32 @@ export function RepoSettingsPage() {
 
   function onTransfer(e: FormEvent) {
     e.preventDefault()
+    const dest = targetNs.trim()
+    if (!dest || dest === namespace) return
     void run(async () => {
-      const res = await transferRepository(namespace, repo, targetNs.trim())
-      navigate(
-        `/n/${encodeURIComponent(res.repository.namespace)}/r/${encodeURIComponent(res.repository.name)}/tree/main`,
-      )
+      const res = await proposeRepoTransfer(namespace, repo, dest)
+      if (res.mode === 'one-shot') {
+        navigate(
+          `/n/${encodeURIComponent(res.repository.namespace)}/r/${encodeURIComponent(res.repository.name)}/tree/main`,
+        )
+        return
+      }
+      setTargetNs('')
+      setTransferDiff(null)
+      pendingTransfer.reload()
+    })
+  }
+
+  function onCancelTransfer() {
+    const reason = cancelReason.trim()
+    if (reason.length < 10) {
+      setActionError('Cancel reason must be at least 10 characters')
+      return
+    }
+    void run(async () => {
+      await cancelRepoTransfer(namespace, repo, reason)
+      setCancelReason('')
+      pendingTransfer.reload()
     })
   }
 
@@ -346,22 +480,93 @@ export function RepoSettingsPage() {
           >
             <h2 id="repo-transfer-heading">Transfer</h2>
             <p className="muted small">
-              Move this repository to another namespace.
+              Move this repository to another existing namespace (source namespace
+              Owner). If you also own the destination, the transfer completes
+              immediately; otherwise it stays pending until a destination Owner
+              accepts it from namespace settings.
             </p>
-            <form
-              className="inline-form settings-inline-form"
-              onSubmit={onTransfer}
-            >
-              <input
-                value={targetNs}
-                onChange={(e) => setTargetNs(e.target.value)}
-                placeholder="Target namespace"
-                required
-              />
-              <button className="btn ghost" type="submit" disabled={busy}>
-                <ActionMoveRight size={14} aria-hidden="true" className="button-label-icon" />Transfer
-              </button>
-            </form>
+
+            {pendingTransfer.kind === 'ok' && pendingTransfer.data ? (
+              <div className="flash flash-warn" role="status">
+                <p>
+                  Pending transfer to{' '}
+                  <code>{pendingTransfer.data.targetNamespace}</code>
+                  {' · '}proposed{' '}
+                  {new Date(pendingTransfer.data.createdAt).toLocaleString()}
+                  {pendingTransfer.data.expiresAt
+                    ? ` · expires ${new Date(pendingTransfer.data.expiresAt).toLocaleString()}`
+                    : null}
+                </p>
+                <label className="ns-settings-field">
+                  <span className="ns-settings-label">Cancel reason</span>
+                  <input
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="At least 10 characters"
+                    disabled={busy}
+                    minLength={10}
+                  />
+                </label>
+                <div className="btn-row">
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    disabled={busy || cancelReason.trim().length < 10}
+                    onClick={() => onCancelTransfer()}
+                  >
+                    Cancel transfer
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form className="form repo-transfer-form" onSubmit={onTransfer}>
+                <label className="ns-settings-field">
+                  <span className="ns-settings-label">Target namespace</span>
+                  <select
+                    value={targetNs}
+                    onChange={(e) => setTargetNs(e.target.value)}
+                    required
+                    disabled={busy || namespacesState.kind === 'loading'}
+                    aria-label="Target namespace"
+                  >
+                    <option value="">Select a namespace…</option>
+                    {namespaceOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {namespacesState.kind === 'error' ? (
+                  <p className="flash flash-error" role="status">
+                    {namespacesState.message}
+                  </p>
+                ) : null}
+                <TransferAccessDiffView
+                  diff={transferDiff}
+                  loading={transferDiffBusy}
+                />
+                <div className="btn-row repo-transfer-actions">
+                  <button
+                    className="btn ghost"
+                    type="submit"
+                    disabled={
+                      busy ||
+                      !targetNs.trim() ||
+                      targetNs.trim() === namespace ||
+                      transferDiffBusy
+                    }
+                  >
+                    <ActionMoveRight
+                      size={14}
+                      aria-hidden="true"
+                      className="button-label-icon"
+                    />
+                    Transfer
+                  </button>
+                </div>
+              </form>
+            )}
           </section>
         ) : null}
 

@@ -310,6 +310,29 @@ export async function proxyToOxen(
     mergeAuthors = loaded.authors
   }
 
+  // Physical UUID keys must never move — AuthZ transfer is a namespace re-point only.
+  if (
+    mutating &&
+    ns &&
+    repo &&
+    (method === 'PATCH' || method === 'PUT') &&
+    /\/transfer\/?$/.test(pathname.replace(/\/+$/, '') || '/')
+  ) {
+    if (intent) await appendOutcome(intent.id, auditFields(400))
+    return new Response(
+      JSON.stringify({
+        status: 'error',
+        status_message: 'bad_request',
+        error: {
+          code: 'oxen_transfer_refused',
+          detail:
+            'Physical repository transfer is disabled; use AuthZ POST /auth/namespaces/:ns/repos/:repo/transfer',
+        },
+      }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )
+  }
+
   // Display-name rename only: oxen physical keys are stable UUIDs (no in-place oxen rename).
   if (
     mutating &&

@@ -57,7 +57,7 @@ Minimum roles below are collaborator floors (`hasRepoPermission`), except lifecy
 | `DELETE /api/repos/:ns/:repo/workspaces/:id` | DELETE | write | Delete oxen workspace |
 | `PATCH/PUT /api/repos/:ns/:repo` | PATCH, PUT | admin † | Update repo metadata |
 | `PATCH/PUT /api/repos/:ns/:repo/rename` | PATCH, PUT | admin † | Rename repository |
-| `PATCH/PUT /api/repos/:ns/:repo/transfer` | PATCH, PUT | admin † | Transfer repository namespace |
+| `PATCH/PUT /api/repos/:ns/:repo/transfer` | PATCH, PUT | — | Refused (`oxen_transfer_refused`); use AuthZ transfer |
 | `DELETE /api/repos/:ns/:repo` | DELETE | admin † | Delete repository |
 
 ### Push/Pull Transport Routes
@@ -122,8 +122,9 @@ User's effective repository role is the **maximum** of:
 Namespace Owner / Member / custom namespace roles govern **namespace** concerns
 only (settings, membership, create repositories, assign approvers). Separately,
 a Namespace Owner may manage the collaborator list and repository lifecycle
-(rename, transfer, delete, About) without holding a collaborator seat; that is
-not an inherited repo data role.
+(rename, delete, About) without holding a collaborator seat; that is
+not an inherited repo data role. **Transfer propose/one-shot** requires source
+namespace Owner (not mere repo admin); accept/reject require destination Owner.
 
 **Role hierarchy**: `admin > maintain > write > triage > read > none`
 
@@ -179,6 +180,20 @@ Repo-scoped rows use `authorizeRepoAction` → `workspace.read` (read floor) or 
 | `DELETE /auth/checkouts/:ns/:repo/:commit` | DELETE | store admin | Evict checkout |
 | `POST /auth/store/gc` | POST | store admin | Garbage collect store |
 | `POST /auth/store/scrub` | POST | store admin | Scrub store |
+
+### Repository transfer (AuthZ)
+
+Namespace re-point on stable repository id; no oxen move. Ceremony: propose/one-shot/accept need reason + e-sign; reject/cancel need reason only.
+
+| Pattern | Methods | Decision | Description |
+|---------|---------|----------|-------------|
+| `GET …/repos/:repo/transfer/preview?targetNamespace=` | GET | source Owner, or dest Owner of pending | Access-diff preview |
+| `GET …/repos/:repo/transfer` | GET | source or dest Owner | Pending transfer (+ accessDiff) |
+| `GET …/namespaces/:ns/transfers/incoming` | GET | dest namespace Owner | Inbox of pending transfers |
+| `POST …/repos/:repo/transfer` | POST | source namespace Owner | Propose or one-shot complete |
+| `POST …/repos/:repo/transfer/accept` | POST | dest namespace Owner | Accept (`:ns/:repo` still source) |
+| `POST …/repos/:repo/transfer/reject` | POST | dest namespace Owner | Reject (reason only) |
+| `POST …/repos/:repo/transfer/cancel` | POST | source namespace Owner | Cancel (reason only) |
 
 ## Related Files
 

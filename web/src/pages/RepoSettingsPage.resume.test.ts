@@ -47,7 +47,39 @@ describe('navigateAfterRepoMutation', () => {
     assert.deepEqual(calls, [])
   })
 
-  it('sends transfer to the target namespace tree', () => {
+  it('sends AuthZ transfer propose to the target namespace tree', () => {
+    const calls: string[] = []
+    const ok = navigateAfterRepoMutation(
+      intent({
+        method: 'POST',
+        apiPath: '/auth/namespaces/demo/repos/sample/transfer',
+        body: { targetNamespace: 'other' },
+      }),
+      'demo',
+      'sample',
+      (to) => calls.push(to),
+    )
+    assert.equal(ok, true)
+    assert.deepEqual(calls, ['/n/other/r/sample/tree/main'])
+  })
+
+  it('sends AuthZ transfer accept to the target namespace tree', () => {
+    const calls: string[] = []
+    const ok = navigateAfterRepoMutation(
+      intent({
+        method: 'POST',
+        apiPath: '/auth/namespaces/demo/repos/sample/transfer/accept',
+        body: { targetNamespace: 'other' },
+      }),
+      'demo',
+      'sample',
+      (to) => calls.push(to),
+    )
+    assert.equal(ok, true)
+    assert.deepEqual(calls, ['/n/other/r/sample/tree/main'])
+  })
+
+  it('ignores legacy oxen transfer resume paths', () => {
     const calls: string[] = []
     const ok = navigateAfterRepoMutation(
       intent({
@@ -59,8 +91,8 @@ describe('navigateAfterRepoMutation', () => {
       'sample',
       (to) => calls.push(to),
     )
-    assert.equal(ok, true)
-    assert.deepEqual(calls, ['/n/other/r/sample/tree/main'])
+    assert.equal(ok, false)
+    assert.deepEqual(calls, [])
   })
 
   it('sends delete to the repositories list', () => {

@@ -369,6 +369,37 @@ export const repositoryTombstones = pgTable(
   (t) => [primaryKey({ columns: [t.namespaceId, t.name] })],
 )
 
+/** Pending / resolved repository transfers (AuthZ namespace re-point; no oxen move). */
+export const repositoryTransfers = pgTable(
+  'repository_transfers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    sourceNamespaceId: uuid('source_namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    targetNamespaceId: uuid('target_namespace_id')
+      .notNull()
+      .references(() => namespaces.id, { onDelete: 'cascade' }),
+    proposedBy: text('proposed_by').notNull(),
+    status: text('status').notNull(),
+    createdAt: ts('created_at').notNull(),
+    resolvedAt: ts('resolved_at'),
+    resolvedBy: text('resolved_by'),
+  },
+  (t) => [
+    uniqueIndex('repository_transfers_one_pending')
+      .on(t.repositoryId)
+      .where(sql`${t.status} = 'pending'`),
+    index('repository_transfers_target_pending_idx')
+      .on(t.targetNamespaceId)
+      .where(sql`${t.status} = 'pending'`),
+    index('repository_transfers_repo_idx').on(t.repositoryId),
+  ],
+)
+
 export const accessRequests = pgTable(
   'access_requests',
   {

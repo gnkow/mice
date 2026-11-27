@@ -86,6 +86,10 @@ _Avoid_: Task, run
 The commit or content hash a Job or Desktop Session is tied to.
 _Avoid_: Snapshot, version lock
 
+**Repository transfer**:
+Moving a repository to another existing namespace by re-pointing AuthZ `namespaceId` on the stable repository id. Source namespace Owner proposes (one-shot when also dest Owner); otherwise dest Owner accepts. Collaborators and repo-scoped Approvers are kept only if they already hold a dest membership seat. Physical oxen keys do not move.
+_Avoid_: Oxen transfer, copy+delete move
+
 ### Validated branches and QC
 
 **Validated branch**:

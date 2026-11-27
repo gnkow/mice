@@ -1,5 +1,6 @@
 import {
   History as ActionHistory,
+  Inbox as ActionInbox,
   Pencil as ActionPencil,
   Settings as ActionSettings,
   ShieldCheck as ActionShieldCheck,
@@ -26,6 +27,12 @@ const SETTINGS_NAV_ITEMS: NavItem[] = [
   { id: 'ns-rename', label: 'Rename', Icon: ActionPencil, requires: 'manageSettings' },
   { id: 'ns-members', label: 'Members', Icon: ActionUsers },
   { id: 'ns-approvers', label: 'Approvers', Icon: ActionShieldCheck },
+  {
+    id: 'ns-incoming-transfers',
+    label: 'Incoming transfers',
+    Icon: ActionInbox,
+    requires: 'manageSettings',
+  },
   { id: 'ns-custom-roles', label: 'Custom roles', Icon: ActionWrench, requires: 'manageCustomRoles' },
   { id: 'ns-metadata', label: 'Metadata', Icon: ActionTags },
   { id: 'ns-danger', label: 'Danger zone', Icon: ActionShieldAlert, requires: 'deleteNamespace' },

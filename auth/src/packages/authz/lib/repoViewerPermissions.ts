@@ -4,6 +4,7 @@ import {
   decideManageRepoCollaborators,
   hasRepoPermission,
 } from './authz.js'
+import { resolveNamespaceRole } from './authzMembershipStore.js'
 import { decideIsApprover } from './authzApproverStore.js'
 import type { SessionUser } from '../../authentication/principal.js'
 import { canEditEntity } from '../../platform/index.js'
@@ -45,19 +46,21 @@ export async function decideRepoViewerPermissions(
   if (!read.ok && !administer) return { ok: false, status: 403 }
 
   const write = await hasRepoPermission(user, ns, repo, 'write')
-  const [manageCollaborators, manageApprovers, editMetadata, approver] =
+  const [manageCollaborators, manageApprovers, editMetadata, approver, nsRole] =
     await Promise.all([
       decideManageRepoCollaborators(user, ns, repo),
       decideManageApprovers(user, ns),
       canEditEntity(user, { type: 'repo', id: `${ns}/${repo}`, namespace: ns, repo }),
       decideIsApprover(user, ns, repo),
+      resolveNamespaceRole(ns, user),
     ])
 
   return {
     ok: true,
     permissions: {
       rename: administer,
-      transfer: administer,
+      // Propose/one-shot requires source namespace Owner (not mere repo admin).
+      transfer: nsRole === 'owner',
       manageCollaborators: manageCollaborators.allow,
       manageApprovers: manageApprovers.allow,
       editMetadata,

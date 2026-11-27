@@ -29,7 +29,7 @@ assert.equal((await setRepoCollaborator(NS, REPO, approver, 'write')).ok, true)
 assert.equal((await grantApprover({ ns: NS, repo: REPO }, approver)).ok, true)
 
 describe('decideRepoViewerPermissions (#148)', () => {
-  it('gives the Owner mutate chrome for rename/transfer/collaborators/approvers/delete', async () => {
+  it('gives the Owner mutate chrome for rename/transfer (Owner-only)/collaborators/approvers/delete', async () => {
     const r = await decideRepoViewerPermissions(owner, NS, REPO)
     assert.equal(r.ok, true)
     if (!r.ok) return
