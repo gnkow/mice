@@ -64,7 +64,9 @@ export function decideSignedMergeComplete(input: {
       detail: 'Approver role required',
     }
   }
-  const self = decideSelfMerge(input.signer, input.authors, input.mr.openedBy)
+  // ADR 0009: authorship self-Valid is enforced via the disposition map, not a
+  // blanket author ban. Still refuse when the requester tries to complete their own MR.
+  const self = decideSelfMerge(input.signer, [], input.mr.openedBy)
   if (!self.allow) {
     return { ok: false, code: SIGNED_MERGE_REFUSALS.self_merge, detail: self.reason }
   }

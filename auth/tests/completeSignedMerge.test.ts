@@ -1,4 +1,4 @@
-import './db/testSchema.js'
+import '../src/db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { randomBytes } from 'node:crypto'
@@ -64,11 +64,22 @@ function pinHeads(sourceHead: string, targetHead: string) {
 }
 
 function pinRange(authors: string[], commitIds: string[]) {
-  setMergeRangeResolverForTests(async () => ({ authors, commitIds }))
+  setMergeRangeResolverForTests(async () => ({
+    authors,
+    commitIds,
+    authorsByCommitId: Object.fromEntries(commitIds.map((id) => [id, [...authors]])),
+  }))
+}
+
+function dispositionBody(commitIds: string[], mergeCommitDisposition: 'valid' | 'invalid' = 'valid') {
+  return {
+    disposition: Object.fromEntries(commitIds.map((id) => [id, 'valid' as const])),
+    mergeCommitDisposition,
+  }
 }
 
 describe('complete signed merge (gxp/05 HTTP)', () => {
-  it('completes an open MR with a bound Approved signature and marks QC Passed', async () => {
+  it('completes an open MR with a bound Approved signature and disposition map', async () => {
     const mr = await openMergeRequest({
       repositoryId: repo.id,
       namespace: 'gxp5',
@@ -118,6 +129,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         authors: [],
         commitIds: [],
         signatureId: id,
+        ...dispositionBody(['c1', 'c2']),
       }),
     })
     const json = (await res.json()) as {
@@ -129,11 +141,11 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
     assert.equal(res.status, 200, JSON.stringify(json))
     assert.equal(json.mergeRequest?.status, 'merged')
     assert.equal(json.mergeCommitId, 'merge-sha-1')
-    assert.equal(await getCommitQc(repo.id, 'c1'), 'passed')
-    assert.equal(await getCommitQc(repo.id, 'merge-sha-1'), 'passed')
+    assert.equal(await getCommitQc(repo.id, 'c1'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'merge-sha-1'), 'valid')
   })
 
-  it('refuses self-merge using server-derived authors, ignoring body authors', async () => {
+  it('refuses when disposition would Valid the signer\'s own Unset commit', async () => {
     let executed = 0
     setMergeExecutorForTests(async () => {
       executed += 1
@@ -174,17 +186,19 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       headers: {
         'content-type': 'application/json',
         cookie: await cookie(),
-        'x-mice-reason': 'Self-merge attempt should be refused',
+        'x-mice-reason': 'Self-Valid disposition attempt should be refused',
       },
       body: JSON.stringify({
         authors: [],
         commitIds: [],
         signatureId: id,
+        disposition: { 'c-self': 'valid' },
+        mergeCommitDisposition: 'valid',
       }),
     })
     const json = (await res.json()) as { code?: string }
     assert.equal(res.status, 403, JSON.stringify(json))
-    assert.equal(json.code, 'self_merge')
+    assert.equal(json.code, 'self_valid')
     assert.equal(executed, 0)
     assert.equal(await store.isConsumed(id), false)
     setMergeExecutorForTests(async () => ({ mergeCommitId: 'merge-sha-1' }))
@@ -383,7 +397,7 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
         cookie: await cookie(),
         'x-mice-reason': 'Merge will fail after consume',
       },
-      body: JSON.stringify({ signatureId: id }),
+      body: JSON.stringify({ signatureId: id, disposition: { 'c-fail': 'valid' }, mergeCommitDisposition: 'valid' }),
     })
     const json = (await res.json()) as { code?: string; error?: string }
     assert.equal(res.status, 502, JSON.stringify(json))
@@ -444,33 +458,29 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
     assert.equal(json.code, 'not_approver')
   })
 
-  it('refuses complete when a range commit is QC Failed (gxp/08)', async () => {
-    let executed = 0
-    setMergeExecutorForTests(async () => {
-      executed += 1
-      return { mergeCommitId: 'should-not-run' }
-    })
+  it('completes with mixed Valid/Invalid disposition (Invalid soft)', async () => {
+    setMergeExecutorForTests(async () => ({ mergeCommitId: 'merge-mixed' }))
     const mr = await openMergeRequest({
       repositoryId: repo.id,
       namespace: 'gxp5',
       repo: 'assay',
-      sourceBranch: 'feature-qc-fail',
+      sourceBranch: 'feature-mixed',
       targetBranch: 'main',
-      expectedSourceHead: 'src-qf',
-      expectedTargetHead: 'tgt-qf',
+      expectedSourceHead: 'src-mx',
+      expectedTargetHead: 'tgt-mx',
       openedBy: { iss: requester.iss, sub: requester.sub },
     })
-    await markCommitsQc(repo.id, ['c-qf'], 'failed')
+    await markCommitsQc(repo.id, ['c-already-invalid'], 'invalid')
     const merge = buildMergeManifest([])
     const { binding, manifest } = mergeResultBinding({
       repo: 'gxp5/assay',
-      sourceHead: 'src-qf',
-      targetHead: 'tgt-qf',
+      sourceHead: 'src-mx',
+      targetHead: 'tgt-mx',
       merge,
     })
     setMergeManifestResolverForTests(async () => merge)
-    pinHeads('src-qf', 'tgt-qf')
-    pinRange(['https://other|scientist'], ['c-qf'])
+    pinHeads('src-mx', 'tgt-mx')
+    pinRange(['https://other|scientist'], ['c-mx', 'c-already-invalid'])
     const { signatureStore } = await import('../src/packages/authentication/lib/signing/signatureStore.js')
     const store = await signatureStore()
     const { id } = await store.record({
@@ -479,23 +489,78 @@ describe('complete signed merge (gxp/05 HTTP)', () => {
       contentHash: binding.manifestDigest,
       binding,
       manifest,
-      changeControlId: 'CC-qf',
+      changeControlId: 'CC-mx',
     })
     const res = await app.request(`/auth/merge-requests/${mr.id}/complete`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         cookie: await cookie(),
-        'x-mice-reason': 'Merge with QC Failed commit must be refused',
+        'x-mice-reason': 'Merge with mixed Valid and Invalid disposition',
       },
-      body: JSON.stringify({ signatureId: id }),
+      body: JSON.stringify({
+        signatureId: id,
+        disposition: { 'c-mx': 'valid', 'c-already-invalid': 'invalid' },
+        mergeCommitDisposition: 'valid',
+      }),
+    })
+    const json = (await res.json()) as { code?: string; error?: string; mergeCommitId?: string }
+    assert.equal(res.status, 200, JSON.stringify(json))
+    assert.equal(await getCommitQc(repo.id, 'c-mx'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'c-already-invalid'), 'invalid')
+    assert.equal(await getCommitQc(repo.id, 'merge-mixed'), 'valid')
+    setMergeExecutorForTests(async () => ({ mergeCommitId: 'merge-sha-1' }))
+  })
+
+  it('allows Invalid on the signer\'s own Unset commit', async () => {
+    setMergeExecutorForTests(async () => ({ mergeCommitId: 'merge-self-inv' }))
+    const mr = await openMergeRequest({
+      repositoryId: repo.id,
+      namespace: 'gxp5',
+      repo: 'assay',
+      sourceBranch: 'feature-self-inv',
+      targetBranch: 'main',
+      expectedSourceHead: 'src-si',
+      expectedTargetHead: 'tgt-si',
+      openedBy: { iss: requester.iss, sub: requester.sub },
+    })
+    const merge = buildMergeManifest([])
+    const { binding, manifest } = mergeResultBinding({
+      repo: 'gxp5/assay',
+      sourceHead: 'src-si',
+      targetHead: 'tgt-si',
+      merge,
+    })
+    setMergeManifestResolverForTests(async () => merge)
+    pinHeads('src-si', 'tgt-si')
+    pinRange([signerAuthorKey(approver)], ['c-si'])
+    const { signatureStore } = await import('../src/packages/authentication/lib/signing/signatureStore.js')
+    const { id } = await (
+      await signatureStore()
+    ).record({
+      signer: { iss: approver.iss, sub: approver.sub, name: approver.name },
+      meaning: 'Approved',
+      contentHash: binding.manifestDigest,
+      binding,
+      manifest,
+      changeControlId: 'CC-si',
+    })
+    const res = await app.request(`/auth/merge-requests/${mr.id}/complete`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: await cookie(),
+        'x-mice-reason': 'Approver Invalids their own Unset commit',
+      },
+      body: JSON.stringify({
+        signatureId: id,
+        disposition: { 'c-si': 'invalid' },
+        mergeCommitDisposition: 'valid',
+      }),
     })
     const json = (await res.json()) as { code?: string; error?: string }
-    assert.equal(res.status, 409, JSON.stringify(json))
-    assert.equal(json.code, 'not_open')
-    assert.match(json.error ?? '', /QC Failed/i)
-    assert.equal(executed, 0)
-    assert.equal(await store.isConsumed(id), false)
+    assert.equal(res.status, 200, JSON.stringify(json))
+    assert.equal(await getCommitQc(repo.id, 'c-si'), 'invalid')
     setMergeExecutorForTests(async () => ({ mergeCommitId: 'merge-sha-1' }))
   })
 })

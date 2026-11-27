@@ -66,7 +66,7 @@ describe('merge request HTTP (repositories/02+03)', () => {
       headers: { cookie: await cookie() },
     })
     assert.equal(qc.status, 200)
-    assert.equal(((await qc.json()) as { status: string }).status, 'marked')
+    assert.equal(((await qc.json()) as { status: string }).status, 'unset')
 
     const resyncPath = `/auth/merge-requests/${mergeRequest.id}/resync`
     const resyncBody = { liveSourceHead: 'src1', liveTargetHead: 'tgt2' }

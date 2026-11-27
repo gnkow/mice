@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
 import { CommitList } from '../components/CommitList'
-import { QcFailedWarning } from '../components/QcFailedWarning'
+import { QcInvalidWarning } from '../components/QcInvalidWarning'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { useCommitQc } from '../hooks/useCommitQc'
@@ -198,7 +198,7 @@ export function MergePage() {
     repo,
     mergeData?.commits ?? null,
   )
-  const qcFailed = useMemo(() => new Set(qcSummary.failed), [qcSummary])
+  const qcInvalid = useMemo(() => new Set(qcSummary.invalid), [qcSummary])
   const qcDescendants = useMemo(() => new Set(qcSummary.descendants), [qcSummary])
   const baseTip =
     branches.kind === 'ok'
@@ -370,18 +370,18 @@ export function MergePage() {
                   <p className="muted">Nothing to merge.</p>
                 ) : (
                   <>
-                    <QcFailedWarning
+                    <QcInvalidWarning
                       namespace={namespace}
                       repo={repo}
                       summary={qcSummary}
                       scope="the commits to merge"
-                      advice="Review the revoked signature before merging these commits."
+                      advice="Review Invalid commits before merging; disposition is set on Approve."
                     />
                     <CommitList
                       namespace={namespace}
                       repo={repo}
                       commits={mergeData.commits}
-                      qcFailed={qcFailed}
+                      qcInvalid={qcInvalid}
                       qcDescendants={qcDescendants}
                     />
                   </>

@@ -6,12 +6,21 @@ import { BranchesSubNav } from '../components/BranchesSubNav'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import { UserRef } from '../components/UserRef'
 import { CommitSelector } from '../components/CommitSelector'
+import { DispositionTable } from '../components/DispositionTable'
 import { Modal } from '../components/Modal'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
+import { fetchAuthMe } from '../lib/auth'
 import { fetchRepoPermissions } from '../lib/authzApi'
 import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import { confirmDelete } from '../lib/confirmDelete'
+import {
+  coerceDispositionForSigner,
+  defaultDispositionMap,
+  listUnsetTipCommits,
+  type DispositionCommitRow,
+  type DispositionMap,
+} from '../lib/disposition'
 import { resolveDefaultBranch } from '../lib/lastBranch'
 import {
   compareCommits,
@@ -28,6 +37,10 @@ import { ListToolbar } from '../components/ListToolbar'
 import { useListSort, type SortFields } from '../components/SortControl'
 import { useFavorites } from '../lib/favorites'
 import { FavoriteStar } from '../components/FavoriteStar'
+import {
+  fetchValidatedBranches,
+  markBranchValidated,
+} from '../lib/validatedBranches'
 
 type SourceType = 'branch' | 'commit'
 
@@ -79,8 +92,19 @@ export function BranchesPage() {
     (signal) => fetchRepoPermissions(namespace, repo, signal),
     [namespace, repo],
   )
+  const validated = useAsync(
+    (signal) => fetchValidatedBranches(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const validatedSet = useMemo(() => {
+    if (validated.kind !== 'ok') return new Set<string>()
+    return new Set(validated.data.validatedBranches)
+  }, [validated])
   const canWrite =
     repoPerms.kind === 'ok' && repoPerms.data.contentsWrite === true
+  const canMarkValidated =
+    repoPerms.kind === 'ok' && repoPerms.data.manageCollaborators === true
+  const isApprover = repoPerms.kind === 'ok' && repoPerms.data.isApprover === true
 
   const [filter, setFilter] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -88,10 +112,16 @@ export function BranchesPage() {
   const [fromName, setFromName] = useState('main')
   const [sourceType, setSourceType] = useState<SourceType>('branch')
   const [fromCommit, setFromCommit] = useState('')
+  const [markValidated, setMarkValidated] = useState(false)
+  const [unsetRows, setUnsetRows] = useState<DispositionCommitRow[]>([])
+  const [disposition, setDisposition] = useState<DispositionMap>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [metaByName, setMetaByName] = useState<Record<string, BranchMeta>>({})
+  const me = useAsync((signal) => fetchAuthMe(signal), [])
+  const signer =
+    me.kind === 'ok' && me.data.authenticated ? me.data.user : null
   const profiles = usePrincipalProfiles(
     Object.values(metaByName).map((m) => m.commit?.author ?? ''),
   )
@@ -228,22 +258,75 @@ export function BranchesPage() {
     }
   }
 
+  function resetCreateForm() {
+    setNewName('')
+    setFromCommit('')
+    setSourceType('branch')
+    setFromName(defaultBranch)
+    setMarkValidated(false)
+    setUnsetRows([])
+    setDisposition({})
+  }
+
+  const tipRevisionForMark =
+    sourceType === 'commit' && fromCommit.trim()
+      ? fromCommit.trim()
+      : fromName
+
+  useEffect(() => {
+    if (!createOpen || !markValidated || !canMarkValidated) {
+      setUnsetRows([])
+      setDisposition({})
+      return
+    }
+    let cancelled = false
+    void listUnsetTipCommits(namespace, repo, tipRevisionForMark)
+      .then((rows) => {
+        if (cancelled) return
+        setUnsetRows(rows)
+        setDisposition(defaultDispositionMap(rows.map((r) => r.id)))
+      })
+      .catch(() => {
+        if (cancelled) return
+        setUnsetRows([])
+        setDisposition({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    createOpen,
+    markValidated,
+    canMarkValidated,
+    namespace,
+    repo,
+    tipRevisionForMark,
+  ])
+
   function onCreate(e: FormEvent) {
     e.preventDefault()
     if (!canCreate) return
     const source = sourceBranch
+    const name = newName.trim()
+    const wantValidated = canMarkValidated && markValidated
     void run(async () => {
       if (sourceType === 'commit') {
-        const name = newName.trim()
         await createBranch(namespace, repo, name, source)
         await updateBranch(namespace, repo, name, fromCommit)
       } else {
-        await createBranch(namespace, repo, newName.trim(), source)
+        await createBranch(namespace, repo, name, source)
       }
-      setNewName('')
-      setFromCommit('')
-      setSourceType('branch')
-      setFromName(defaultBranch)
+      if (wantValidated) {
+        const map =
+          Object.keys(disposition).length > 0
+            ? coerceDispositionForSigner(disposition, unsetRows, signer)
+            : undefined
+        await markBranchValidated(namespace, repo, name, {
+          disposition: map,
+        })
+        validated.reload()
+      }
+      resetCreateForm()
       setCreateOpen(false)
     }, source)
   }
@@ -333,6 +416,7 @@ export function BranchesPage() {
                 <tbody>
                   {ordered.map((b) => {
                     const isDefault = b.name === defaultBranch
+                    const isValidated = validatedSet.has(b.name)
                     const meta = metaByName[b.name]
                     const ahead = meta?.ahead
                     const commit = meta?.commit
@@ -375,6 +459,14 @@ export function BranchesPage() {
                             {isDefault && (
                               <span className="pill default-branch">
                                 default
+                              </span>
+                            )}
+                            {isValidated && (
+                              <span
+                                className="pill validated-branch"
+                                title="Tip writes refused; content arrives via signed merge"
+                              >
+                                validated
                               </span>
                             )}
                           </div>
@@ -498,7 +590,13 @@ export function BranchesPage() {
       </StateBlock>
 
       {createOpen && (
-        <Modal title="Create a branch" onClose={() => setCreateOpen(false)}>
+        <Modal
+          title="Create a branch"
+          onClose={() => {
+            resetCreateForm()
+            setCreateOpen(false)
+          }}
+        >
           <form className="form" onSubmit={onCreate}>
             <label>
               Branch name
@@ -566,11 +664,45 @@ export function BranchesPage() {
                 label="Commit"
               />
             )}
+            {canMarkValidated ? (
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={markValidated}
+                  disabled={busy}
+                  onChange={(e) => setMarkValidated(e.target.checked)}
+                  data-testid="create-branch-validated"
+                />
+                <span>
+                  Mark as validated
+                  <span className="muted small">
+                    {' '}
+                    — tip writes refused; Unset tip commits signed via disposition map
+                    {!isApprover
+                      ? '; Approver required when the tip has Unset history'
+                      : ''}
+                  </span>
+                </span>
+              </label>
+            ) : null}
+            {canMarkValidated && markValidated && unsetRows.length > 0 ? (
+              <DispositionTable
+                rows={unsetRows}
+                value={disposition}
+                onChange={setDisposition}
+                signer={signer}
+                disabled={busy}
+                heading="Unset tip commits"
+              />
+            ) : null}
             <div className="btn-row modal-actions">
               <button
                 type="button"
                 className="btn ghost"
-                onClick={() => setCreateOpen(false)}
+                onClick={() => {
+                  resetCreateForm()
+                  setCreateOpen(false)
+                }}
               >
                 <ActionX size={14} aria-hidden="true" className="button-label-icon" />Cancel
               </button>

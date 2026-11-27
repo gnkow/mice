@@ -25,7 +25,7 @@ const MUTATION = [
   'repo.create', 'repo.delete', 'repo.metadata', 'repo.rename', 'repo.settings.update',
   'repo.collaborator.set', 'repo.collaborator.remove',
   'approver.grant', 'approver.revoke',
-  'validated_branch.mark', 'validated_branch.unmark',
+  'validated_branch.mark', 'validated_branch.unmark', 'commit.disposition',
   // Signatures (only the outcomes that change a signature record)
   'esign.created', 'esign.execute', 'esign.revoked', 'esign.revocation_reverted',
   // Merge requests

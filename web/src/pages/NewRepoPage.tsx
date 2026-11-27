@@ -37,12 +37,29 @@ type PendingCollaborator =
   | { kind: 'user'; sub: string; iss: string; role: RepoRole }
   | { kind: 'group'; group: string; name?: string; role: RepoRole }
 
+type PendingBranch = {
+  id: string
+  name: string
+  isDefault: boolean
+  validated: boolean
+}
+
 const emptyNsSettings = (): NamespaceCreateSettingsValue => ({
   name: '',
   basePermission: 'none',
   membersCanCreateRepos: true,
   members: [],
 })
+
+function newBranchRow(partial?: Partial<PendingBranch>): PendingBranch {
+  return {
+    id: crypto.randomUUID(),
+    name: 'main',
+    isDefault: true,
+    validated: true,
+    ...partial,
+  }
+}
 
 export function NewRepoPage() {
   const [params] = useSearchParams()
@@ -60,6 +77,9 @@ export function NewRepoPage() {
   const [initialCommitMessage, setInitialCommitMessage] = useState(
     'Initialized Repo',
   )
+  const [branches, setBranches] = useState<PendingBranch[]>(() => [
+    newBranchRow({ name: 'main', isDefault: true, validated: true }),
+  ])
   const [showMore, setShowMore] = useState(false)
   const [collaborators, setCollaborators] = useState<PendingCollaborator[]>(
     [],
@@ -180,14 +200,38 @@ export function NewRepoPage() {
         }
       }
 
+      const branchPlan = branches
+        .map((b) => ({
+          name: b.name.trim(),
+          default: b.isDefault,
+          validated: b.validated,
+        }))
+        .filter((b) => b.name.length > 0)
+      // Empty plan → bare create (`branches: []`); omit is not used from this form.
+      if (branchPlan.length > 0) {
+        if (!branchPlan.some((b) => b.default)) {
+          setError('Choose one default branch')
+          setBusy(false)
+          return
+        }
+        const names = branchPlan.map((b) => b.name)
+        if (new Set(names).size !== names.length) {
+          setError('Branch names must be unique')
+          setBusy(false)
+          return
+        }
+      }
+
       const res = await createRepository({
         namespace: ns,
         name: repoName,
         description: desc || undefined,
         initial_commit_message: initialCommitMessage.trim() || 'Initialized Repo',
+        branches: branchPlan,
       })
       const createdNs = res.repository.namespace
       const createdName = res.repository.name
+      const repoBase = `/n/${encodeURIComponent(createdNs)}/r/${encodeURIComponent(createdName)}`
 
       try {
         for (const c of collaborators) {
@@ -200,9 +244,13 @@ export function NewRepoPage() {
         // Repo exists; open it even if collaborators / approvers partially failed.
       }
 
-      navigate(
-        `/n/${encodeURIComponent(createdNs)}/r/${encodeURIComponent(createdName)}/tree/main`,
-      )
+      if (branchPlan.length === 0) {
+        navigate(`${repoBase}/branches`)
+      } else {
+        const defaultBranch =
+          branchPlan.find((b) => b.default)?.name ?? branchPlan[0]!.name
+        navigate(`${repoBase}/tree/${encodeURIComponent(defaultBranch)}`)
+      }
     } catch (err) {
       setError(
         err instanceof OxenApiError
@@ -295,6 +343,128 @@ export function NewRepoPage() {
 
           {showMore && (
             <div className="new-repo-more">
+              <div
+                className="new-repo-branches"
+                data-testid="new-repo-branches"
+              >
+                <div className="new-repo-seat-head">
+                  <h3 className="new-repo-subhead">Branches</h3>
+                  <p className="muted small new-repo-seat-lede">
+                    Optional starting branches. Leave empty for a bare repo. Pick one
+                    default when you add any. Validated branches only accept signed
+                    merges.
+                  </p>
+                </div>
+                {branches.length === 0 ? (
+                  <p className="muted small" data-testid="new-repo-branches-empty">
+                    No starting branches — create will leave the repository bare.
+                  </p>
+                ) : (
+                  <ul className="new-repo-branch-list" data-testid="new-repo-branch-list">
+                    {branches.map((row) => (
+                      <li key={row.id} className="new-repo-branch-row">
+                        <label className="new-repo-branch-name">
+                          <span className="sr-only">Branch name</span>
+                          <input
+                            value={row.name}
+                            onChange={(e) => {
+                              const next = e.target.value
+                              setBranches((prev) =>
+                                prev.map((b) =>
+                                  b.id === row.id ? { ...b, name: next } : b,
+                                ),
+                              )
+                            }}
+                            placeholder="branch-name"
+                            autoComplete="off"
+                            pattern="[A-Za-z0-9._/-]+"
+                            title="Letters, numbers, dots, underscores, hyphens, slashes"
+                            disabled={busy}
+                            required
+                          />
+                        </label>
+                        <label className="new-repo-branch-flag">
+                          <input
+                            type="radio"
+                            name="new-repo-default-branch"
+                            checked={row.isDefault}
+                            disabled={busy}
+                            onChange={() => {
+                              setBranches((prev) =>
+                                prev.map((b) => ({
+                                  ...b,
+                                  isDefault: b.id === row.id,
+                                })),
+                              )
+                            }}
+                          />
+                          Default
+                        </label>
+                        <label className="new-repo-branch-flag">
+                          <input
+                            type="checkbox"
+                            checked={row.validated}
+                            disabled={busy}
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              setBranches((prev) =>
+                                prev.map((b) =>
+                                  b.id === row.id ? { ...b, validated: checked } : b,
+                                ),
+                              )
+                            }}
+                          />
+                          Validated
+                        </label>
+                        <button
+                          type="button"
+                          className="btn ghost small"
+                          disabled={busy}
+                          aria-label={`Remove branch ${row.name || 'row'}`}
+                          onClick={() => {
+                            setBranches((prev) => {
+                              const next = prev.filter((b) => b.id !== row.id)
+                              if (
+                                next.length > 0 &&
+                                !next.some((b) => b.isDefault)
+                              ) {
+                                next[0] = { ...next[0]!, isDefault: true }
+                              }
+                              return next
+                            })
+                          }}
+                        >
+                          <ActionTrash2
+                            size={14}
+                            aria-hidden="true"
+                            className="button-label-icon"
+                          />
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  disabled={busy}
+                  data-testid="new-repo-add-branch"
+                  onClick={() =>
+                    setBranches((prev) => [
+                      ...prev,
+                      newBranchRow({
+                        name: '',
+                        isDefault: prev.length === 0,
+                        validated: false,
+                      }),
+                    ])
+                  }
+                >
+                  Add branch
+                </button>
+              </div>
+
               <div className="new-repo-collab">
                 <div className="new-repo-seat-head">
                   <h3 className="new-repo-subhead">Collaborators</h3>

@@ -48,12 +48,24 @@ export type MergeSigningPreview = {
   manifestEntries: Array<{ path: string; contentHash: string }>
   validatedTarget: boolean
   principal: { iss: string; sub: string; name: string }
+  /**
+   * Incoming commits for disposition (when auth Slice A includes them).
+   * UI falls back to oxen compare when absent.
+   */
+  dispositionCommits?: Array<{
+    id: string
+    message?: string
+    author?: string
+    currentQc?: string
+  }>
 }
 
 export type MergeRefusalCode =
   | 'not_open'
   | 'not_approver'
   | 'self_merge'
+  | 'self_valid'
+  | 'disposition_required'
   | 'head_mismatch'
   | 'binding_mismatch'
   | 'meaning'
@@ -68,6 +80,10 @@ const REFUSAL_COPY: Record<string, string> = {
   not_approver: 'You need the Approver role for this repository to sign the merge.',
   self_merge:
     'Self-merge forbidden (4-eyes): you cannot approve this merge if you opened the request or authored commits in the range.',
+  self_valid:
+    'You cannot set Valid on commits you authored. Mark those Invalid or have another Approver complete the merge.',
+  disposition_required:
+    'A disposition map is required for every Unset commit in the incoming range (and the merge commit).',
   head_mismatch: 'Source or target moved since this preview. Update the merge request and try again.',
   not_open: 'This merge request is not open (it may be stale, merged, or rejected).',
   stale: 'Source or target moved — Update this request before Approve.',
@@ -353,6 +369,8 @@ export async function completeSignedMergeRequest(
     signatureId: string
     reason: string
     changeControlId?: string
+    /** commitId → valid|invalid (include MERGE_COMMIT_DISPOSITION_KEY for the merge commit). */
+    disposition?: Record<string, 'valid' | 'invalid'>
   },
 ): Promise<{ mergeRequest: MergeRequest; mergeCommitId: string }> {
   const res = await fetch(`/auth/merge-requests/${encodeURIComponent(id)}/complete`, {
@@ -370,6 +388,9 @@ export async function completeSignedMergeRequest(
     // Heads, authors and commit ids are server-derived from oxen — never send them.
     body: JSON.stringify({
       signatureId: input.signatureId,
+      ...(input.disposition && Object.keys(input.disposition).length > 0
+        ? { disposition: input.disposition }
+        : {}),
     }),
   })
   if (!res.ok) {

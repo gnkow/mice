@@ -206,7 +206,7 @@ export function summarizeMutation(
       }
     }
     if (parts[1] === 'signatures' && parts[3] === 'revoke' && parts[2]) {
-      return `Revoke signature ${pathSeg(parts[2])!.slice(0, 8)}… (affected commits become QC Failed)`
+      return `Revoke signature ${pathSeg(parts[2])!.slice(0, 8)}… (ledger only; QC disposition unchanged)`
     }
     if (
       parts[1] === 'signatures' &&
@@ -214,7 +214,13 @@ export function summarizeMutation(
       parts[5] === 'revert' &&
       parts[2]
     ) {
-      return `Revert revocation on signature ${pathSeg(parts[2])!.slice(0, 8)}… (restore QC Passed)`
+      return `Revert revocation on signature ${pathSeg(parts[2])!.slice(0, 8)}… (ledger only; QC disposition unchanged)`
+    }
+    if (parts[1] === 'repos' && parts[4] === 'commits' && parts[5] === 'disposition') {
+      const ns = pathSeg(parts[2])
+      const repo = pathSeg(parts[3])
+      const scope = ns && repo ? `${ns}/${repo}` : 'repository'
+      return `Sign commit disposition map on ${scope}`
     }
     if (parts[1] === 'announcements') {
       const title = bodyString(body, 'title')
@@ -294,6 +300,23 @@ export function summarizeMutation(
     }
     if (parts[1] === 'audit' && parts[2] === 'acknowledge') {
       return 'Acknowledge an audit outage'
+    }
+    if (parts[1] === 'repos' && parts[4] === 'validated-branches') {
+      const ns = pathSeg(parts[2])
+      const repo = pathSeg(parts[3])
+      const scope = ns && repo ? `${ns}/${repo}` : 'repository'
+      const branch =
+        pathSeg(parts[5]) || bodyString(body, 'branch') || bodyString(body, 'name')
+      if (m === 'DELETE') {
+        return branch
+          ? `Unmark validated branch “${branch}” on ${scope}`
+          : `Unmark a validated branch on ${scope}`
+      }
+      if (m === 'POST') {
+        return branch
+          ? `Mark branch “${branch}” validated on ${scope}`
+          : `Mark a branch validated on ${scope}`
+      }
     }
     if (parts[1] === 'merge-requests') {
       if (parts[3] === 'complete') return 'Complete a signed merge'

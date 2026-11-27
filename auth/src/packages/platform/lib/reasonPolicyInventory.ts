@@ -233,6 +233,13 @@ const BFF: ReasonPolicyEntry[] = [
     coverage: 'guarded reason:true on mergeRequestRoutes (#119)',
   },
   {
+    id: 'bff.commit.disposition',
+    surface: 'bff',
+    key: 'POST /auth/repos/:ns/:repo/commits/disposition',
+    reason: 'required',
+    coverage: 'guarded reason:true on mergeRequestRoutes (ADR 0009)',
+  },
+  {
     id: 'bff.custom-role.ns.create',
     surface: 'bff',
     key: 'POST /auth/namespaces/:ns/custom-roles/namespace',

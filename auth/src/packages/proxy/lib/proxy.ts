@@ -408,6 +408,7 @@ export async function proxyToOxen(
   let upstreamBody: typeof body = mapped.body !== undefined ? mapped.body : body
   const createdPhysical: PhysicalRepoRef | null = mapped.createdPhysical
   const initialCommitMessage = mapped.initialCommitMessage
+  const createBranches = mapped.createBranches
   /** Physical ids of the repo the request targets (before-state of a delete). */
   const physicalRepo = mapped.physicalRepo
 
@@ -592,6 +593,8 @@ export async function proxyToOxen(
     ) {
       responseBody = await finalizeProxiedRepoCreate(user, ns, repo, responseBody, {
         initialCommitMessage,
+        branches: createBranches,
+        signatureId,
       })
     }
   }

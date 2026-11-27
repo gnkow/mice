@@ -2,15 +2,25 @@ import { Check as ActionCheck, X as ActionX } from 'lucide-react'
 import {
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
 } from 'react'
 import { Link } from 'react-router-dom'
+import { DispositionTable } from './DispositionTable'
 import { SigningChallengeInterstitial } from './SigningChallengeInterstitial'
 import { StateBlock } from './StateBlock'
 import { UserRef } from './UserRef'
 import { useAsync } from '../hooks/useAsync'
+import { fetchCommitsQc, normalizeCommitQc } from '../lib/commitQc'
+import {
+  MERGE_COMMIT_DISPOSITION_KEY,
+  coerceDispositionForSigner,
+  defaultDispositionMap,
+  type DispositionCommitRow,
+  type DispositionMap,
+} from '../lib/disposition'
 import {
   CEREMONY_NOTICE,
   CHANGE_CONTROL_ID_HINT,
@@ -32,6 +42,7 @@ import {
   fetchSigningPreview,
   mergeRefusalMessage,
 } from '../lib/mergeRequests'
+import { compareCommits } from '../lib/oxen/api'
 
 const PLACEHOLDER = 'Why are you approving this merge into the validated branch?'
 
@@ -72,16 +83,93 @@ export function MergeRequestSignPanel({
     [mergeRequestId],
   )
 
+  const dispositionRows = useAsync(
+    async (signal): Promise<DispositionCommitRow[]> => {
+      if (preview.kind !== 'ok') return []
+      const data = preview.data
+      const fromPreview = data.dispositionCommits
+      let rows: DispositionCommitRow[]
+      if (fromPreview && fromPreview.length > 0) {
+        rows = fromPreview.map((c) => ({
+          id: c.id,
+          message: c.message?.trim() || '(no message)',
+          author: c.author?.trim() || '',
+          currentQc: c.currentQc ? normalizeCommitQc(c.currentQc) : undefined,
+        }))
+      } else {
+        const mr = data.mergeRequest
+        const cmp = await compareCommits(
+          namespace,
+          repo,
+          mr.expectedTargetHead,
+          mr.expectedSourceHead,
+          signal,
+        )
+        const commits = cmp.compare.commits
+        const qc = await fetchCommitsQc(
+          namespace,
+          repo,
+          commits.map((c) => c.id),
+          signal,
+        )
+        rows = commits.map((c) => ({
+          id: c.id,
+          message: c.message,
+          author: c.author,
+          currentQc: qc[c.id],
+        }))
+      }
+      // Synthetic merge-commit row (id remapped by auth after oxen merge).
+      rows = [
+        ...rows,
+        {
+          id: MERGE_COMMIT_DISPOSITION_KEY,
+          message: 'Merge commit (created on complete)',
+          author: '',
+          isMergeCommit: true,
+        },
+      ]
+      return rows
+    },
+    [
+      preview.kind,
+      preview.kind === 'ok' ? preview.data.hash : '',
+      namespace,
+      repo,
+      mergeRequestId,
+    ],
+  )
+
   const [reason, setReason] = useState(() => initialReason?.trim() || '')
   const [changeControlId, setChangeControlId] = useState(
     () => initialChangeControlId?.trim() || suggestChangeControlId(),
   )
+  const [disposition, setDisposition] = useState<DispositionMap>({})
   const [confirmedHash, setConfirmedHash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | undefined>()
   const [success, setSuccess] = useState<string | null>(null)
   const [challenge, setChallenge] = useState<SigningChallenge | null>(null)
+
+  const dispositionRowList =
+    dispositionRows.kind === 'ok' ? dispositionRows.data : []
+  const dispositionIds = useMemo(
+    () => dispositionRowList.map((r) => r.id),
+    [dispositionRowList],
+  )
+
+  useEffect(() => {
+    if (dispositionIds.length === 0) return
+    setDisposition((prev) => {
+      const next = defaultDispositionMap(dispositionIds)
+      // Preserve prior picks when the same ids reload.
+      for (const id of dispositionIds) {
+        if (prev[id] === 'valid' || prev[id] === 'invalid') next[id] = prev[id]!
+      }
+      return next
+    })
+  }, [dispositionIds.join(',')])
   const reasonRef = useRef<HTMLTextAreaElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -214,6 +302,15 @@ export function MergeRequestSignPanel({
         reason: reason.trim(),
         changeControlId:
           signature.changeControlId?.trim() || changeControlId.trim(),
+        ...(data.validatedTarget && Object.keys(disposition).length > 0
+          ? {
+              disposition: coerceDispositionForSigner(
+                disposition,
+                dispositionRowList,
+                data.principal,
+              ),
+            }
+          : {}),
       })
       setSuccess(
         `Signed merge completed · ${result.mergeCommitId.slice(0, 8)}`,
@@ -327,6 +424,23 @@ export function MergeRequestSignPanel({
       </section>
 
       {!success && !reviewing ? bindingBlock : null}
+
+      {!success &&
+      !reviewing &&
+      preview.kind === 'ok' &&
+      preview.data.validatedTarget &&
+      dispositionRowList.length > 0 ? (
+        <DispositionTable
+          rows={dispositionRowList}
+          value={disposition}
+          onChange={setDisposition}
+          signer={{
+            iss: preview.data.principal.iss,
+            sub: preview.data.principal.sub,
+          }}
+          disabled={busy}
+        />
+      ) : null}
 
       {hashStale ? (
         <div className="flash flash-error" role="alert">

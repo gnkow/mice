@@ -52,7 +52,7 @@ export function RevertRevocationButton({ signatureId, revocationId, onReverted }
   if (done) {
     return (
       <p className="flash flash-success small" role="status" data-testid="signature-revocation-reverted">
-        Revocation reverted — covered commits return to QC Passed.
+        Revocation reverted (ledger only; QC disposition unchanged).
       </p>
     )
   }
@@ -77,9 +77,9 @@ export function RevertRevocationButton({ signatureId, revocationId, onReverted }
         <Modal title="Revert revocation" onClose={() => { if (!busy) setOpen(false) }}>
           <div className="signature-revert-modal" data-testid="signature-revert-modal">
             <p>
-              Restore QC Passed for commits failed by this revocation on signature{' '}
-              <span className="mono">{shortSha(signatureId)}</span>. The original signature and
-              revoke records stay visible (append-only).
+              Revert this revocation on signature{' '}
+              <span className="mono">{shortSha(signatureId)}</span>. QC disposition is unchanged
+              (ADR 0009); the original signature and revoke records stay visible (append-only).
             </p>
             <p className="muted small">
               Confirm opens the electronic signature ceremony. Owners and the original signer are

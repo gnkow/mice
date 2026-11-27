@@ -50,7 +50,7 @@ export function SignedRecordReportButton({
           onClick={() => void onDownload('pdf')}
         >
           <ActionDownload size={14} aria-hidden="true" className="button-label-icon" />
-          {busy === 'pdf' ? 'Preparing…' : 'Download PDF'}
+          {busy === 'pdf' ? 'Preparing…' : compact ? 'PDF' : 'Download PDF'}
         </button>
         {!compact ? (
           <button

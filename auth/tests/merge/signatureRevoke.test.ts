@@ -1,4 +1,4 @@
-import '../../../db/testSchema.js'
+import '../../src/db/testSchema.js'
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { randomBytes } from 'node:crypto'
@@ -56,9 +56,9 @@ async function recordBoundSignature(heads: { source: string; target: string }) {
 }
 
 describe('signature revoke (gxp/07/08/09)', () => {
-  it('writes a linked revocation, marks QC Failed, and keeps the original signature', async () => {
+  it('writes a linked revocation without flipping QC, and keeps the original signature', async () => {
     const { id } = await recordBoundSignature({ source: 's1', target: 't1' })
-    await markCommitsQc(repo.id, ['s1', 'c-range'], 'passed')
+    await markCommitsQc(repo.id, ['s1', 'c-range'], 'valid')
 
     const notified: Array<{ summary: string; recipients?: unknown }> = []
     const result = await revokeSignature({
@@ -80,8 +80,8 @@ describe('signature revoke (gxp/07/08/09)', () => {
     const revs = await store.listRevocations(id)
     assert.equal(revs.length, 1)
     assert.equal(revs[0]?.reason, 'QC failure on assay batch')
-    assert.equal(await getCommitQc(repo.id, 's1'), 'failed')
-    assert.equal(await getCommitQc(repo.id, 'c-range'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 's1'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'c-range'), 'valid')
     assert.ok(notified.length >= 1)
     assert.match(notified[0]!.summary, /revoked/i)
   })
@@ -112,8 +112,8 @@ describe('signature revoke (gxp/07/08/09)', () => {
     assert.equal((await getMergeRequest(mr.id))?.status, 'rejected')
   })
 
-  it('whole-signature revoke marks merge-range and merge commit QC Failed, not only tip heads', async () => {
-    const { markMergeRequestMerged } = await import('../../src/packages/platform/index.js')
+  it('whole-signature revoke resolves merge-range commit ids without flipping QC', async () => {
+    const { markMergeRequestMerged } = await import('../../src/packages/merge/index.js')
     const { id } = await recordBoundSignature({ source: 'src-ws', target: 'tgt-ws' })
     const mr = await openMergeRequest({
       repositoryId: repo.id,
@@ -126,9 +126,8 @@ describe('signature revoke (gxp/07/08/09)', () => {
       openedBy: approver,
     })
     await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-ws' })
-    await markCommitsQc(repo.id, ['src-ws', 'c-mid', 'merge-ws'], 'passed', {
+    await markCommitsQc(repo.id, ['src-ws', 'c-mid', 'merge-ws'], 'valid', {
       mergeRequestId: mr.id,
-      allowFailedToPassed: true,
     })
     const result = await revokeSignature({
       signatureId: id,
@@ -140,14 +139,14 @@ describe('signature revoke (gxp/07/08/09)', () => {
     assert.equal(result.ok, true)
     if (!result.ok) return
     assert.deepEqual(new Set(result.revocation.commitIds), new Set(['src-ws', 'c-mid', 'merge-ws']))
-    assert.equal(await getCommitQc(repo.id, 'c-mid'), 'failed')
-    assert.equal(await getCommitQc(repo.id, 'merge-ws'), 'failed')
-    // Pre-merge target tip is not "incoming" — must not be the only Failed commit.
-    assert.equal(await getCommitQc(repo.id, 'tgt-ws'), 'none')
+    assert.equal(await getCommitQc(repo.id, 'c-mid'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'merge-ws'), 'valid')
+    // Pre-merge target tip is not "incoming".
+    assert.equal(await getCommitQc(repo.id, 'tgt-ws'), 'unset')
   })
 
   it('whole-signature revoke with mergeRequestId fails incoming tip + merge, not target tip', async () => {
-    const { markMergeRequestMerged } = await import('../../src/packages/platform/index.js')
+    const { markMergeRequestMerged } = await import('../../src/packages/merge/index.js')
     const { id } = await recordBoundSignature({ source: 'src-mr', target: 'tgt-mr' })
     const mr = await openMergeRequest({
       repositoryId: repo.id,
@@ -160,9 +159,8 @@ describe('signature revoke (gxp/07/08/09)', () => {
       openedBy: approver,
     })
     await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-mr' })
-    await markCommitsQc(repo.id, ['src-mr', 'c-in', 'merge-mr'], 'passed', {
+    await markCommitsQc(repo.id, ['src-mr', 'c-in', 'merge-mr'], 'valid', {
       mergeRequestId: mr.id,
-      allowFailedToPassed: true,
     })
     const result = await revokeSignature({
       signatureId: id,
@@ -174,16 +172,16 @@ describe('signature revoke (gxp/07/08/09)', () => {
     })
     assert.equal(result.ok, true)
     if (!result.ok) return
-    assert.equal(await getCommitQc(repo.id, 'src-mr'), 'failed')
-    assert.equal(await getCommitQc(repo.id, 'c-in'), 'failed')
-    assert.equal(await getCommitQc(repo.id, 'merge-mr'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 'src-mr'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'c-in'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'merge-mr'), 'valid')
     assert.ok(!result.revocation.commitIds.includes('tgt-mr'))
-    assert.equal(await getCommitQc(repo.id, 'tgt-mr'), 'none')
+    assert.equal(await getCommitQc(repo.id, 'tgt-mr'), 'unset')
   })
 
-  it('does not propagate failure to unlisted commits of the same signature', async () => {
+  it('partial revoke lists only requested commits and does not flip QC', async () => {
     const { id } = await recordBoundSignature({ source: 'only-a', target: 'tgt-x' })
-    await markCommitsQc(repo.id, ['only-a', 'sibling'], 'passed')
+    await markCommitsQc(repo.id, ['only-a', 'sibling'], 'valid')
     const result = await revokeSignature({
       signatureId: id,
       revoker: approver,
@@ -193,12 +191,12 @@ describe('signature revoke (gxp/07/08/09)', () => {
       notify: async () => {},
     })
     assert.equal(result.ok, true)
-    assert.equal(await getCommitQc(repo.id, 'only-a'), 'failed')
-    assert.equal(await getCommitQc(repo.id, 'sibling'), 'passed')
+    assert.equal(await getCommitQc(repo.id, 'only-a'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'sibling'), 'valid')
   })
 
-  it('revoking individual commits leaves the merge commit QC unchanged (gxp/08)', async () => {
-    const { markMergeRequestMerged } = await import('../../src/packages/platform/index.js')
+  it('revoking individual commits leaves QC unchanged (ADR 0009)', async () => {
+    const { markMergeRequestMerged } = await import('../../src/packages/merge/index.js')
     const { id } = await recordBoundSignature({ source: 'src-ind', target: 'tgt-ind' })
     const mr = await openMergeRequest({
       repositoryId: repo.id,
@@ -211,9 +209,8 @@ describe('signature revoke (gxp/07/08/09)', () => {
       openedBy: approver,
     })
     await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-ind' })
-    await markCommitsQc(repo.id, ['src-ind', 'merge-ind'], 'passed', {
+    await markCommitsQc(repo.id, ['src-ind', 'merge-ind'], 'valid', {
       mergeRequestId: mr.id,
-      allowFailedToPassed: true,
     })
     const result = await revokeSignature({
       signatureId: id,
@@ -224,13 +221,14 @@ describe('signature revoke (gxp/07/08/09)', () => {
       notify: async () => {},
     })
     assert.equal(result.ok, true)
-    assert.equal(await getCommitQc(repo.id, 'src-ind'), 'failed')
-    assert.equal(await getCommitQc(repo.id, 'merge-ind'), 'passed')
+    assert.equal(await getCommitQc(repo.id, 'src-ind'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'merge-ind'), 'valid')
   })
 
   it('resolveSignatureForMergeRequest finds the bound approval signature', async () => {
-    const { resolveSignatureForMergeRequest } = await import('../../src/packages/platform/index.js')
-    const { markMergeRequestMerged } = await import('../../src/packages/platform/index.js')
+    const { resolveSignatureForMergeRequest, markMergeRequestMerged } = await import(
+      '../../src/packages/merge/index.js'
+    )
     const { id } = await recordBoundSignature({ source: 'src-res', target: 'tgt-res' })
     const mr = await openMergeRequest({
       repositoryId: repo.id,
@@ -250,8 +248,9 @@ describe('signature revoke (gxp/07/08/09)', () => {
   })
 
   it('resolveSignatureCoveringCommit resolves via QC merge-request link', async () => {
-    const { resolveSignatureCoveringCommit } = await import('../../src/packages/platform/index.js')
-    const { markMergeRequestMerged } = await import('../../src/packages/platform/index.js')
+    const { resolveSignatureCoveringCommit, markMergeRequestMerged } = await import(
+      '../../src/packages/merge/index.js'
+    )
     const { id } = await recordBoundSignature({ source: 'src-cov', target: 'tgt-cov' })
     const mr = await openMergeRequest({
       repositoryId: repo.id,
@@ -264,9 +263,8 @@ describe('signature revoke (gxp/07/08/09)', () => {
       openedBy: approver,
     })
     await markMergeRequestMerged(mr.id, { mergeCommitId: 'merge-cov' })
-    await markCommitsQc(repo.id, ['src-cov', 'merge-cov'], 'passed', {
+    await markCommitsQc(repo.id, ['src-cov', 'merge-cov'], 'valid', {
       mergeRequestId: mr.id,
-      allowFailedToPassed: true,
     })
     const viaRange = await resolveSignatureCoveringCommit({
       repositoryId: repo.id,
@@ -288,9 +286,9 @@ describe('signature revoke (gxp/07/08/09)', () => {
 })
 
 describe('signature revocation revert (gxp/10a #159)', () => {
-  it('appends a linked revert, restores QC Passed, and keeps signature + revoke visible', async () => {
+  it('appends a linked revert without flipping QC, and keeps signature + revoke visible', async () => {
     const { id } = await recordBoundSignature({ source: 's-rev', target: 't-rev' })
-    await markCommitsQc(repo.id, ['s-rev', 'c-rev'], 'passed')
+    await markCommitsQc(repo.id, ['s-rev', 'c-rev'], 'valid')
     const revoked = await revokeSignature({
       signatureId: id,
       revoker: approver,
@@ -301,7 +299,7 @@ describe('signature revocation revert (gxp/10a #159)', () => {
     })
     assert.equal(revoked.ok, true)
     if (!revoked.ok) return
-    assert.equal(await getCommitQc(repo.id, 's-rev'), 'failed')
+    assert.equal(await getCommitQc(repo.id, 's-rev'), 'valid')
 
     const notified: Array<{ summary: string }> = []
     const result = await revertSignatureRevocation({
@@ -325,8 +323,8 @@ describe('signature revocation revert (gxp/10a #159)', () => {
     const reverts = await store.listRevocationReverts(id)
     assert.equal(reverts.length, 1)
     assert.equal(reverts[0]?.revocationId, revoked.revocation.id)
-    assert.equal(await getCommitQc(repo.id, 's-rev'), 'passed')
-    assert.equal(await getCommitQc(repo.id, 'c-rev'), 'passed')
+    assert.equal(await getCommitQc(repo.id, 's-rev'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'c-rev'), 'valid')
     assert.equal((await store.listRevokedSignatureIds()).has(id), false)
     assert.ok(notified.length >= 1)
     assert.match(notified[0]!.summary, /revert/i)
@@ -337,7 +335,7 @@ describe('signature revocation revert (gxp/10a #159)', () => {
     await preparePrincipal(outsider)
     await t.grantRole(outsider, 'user')
     const { id } = await recordBoundSignature({ source: 's-deny', target: 't-deny' })
-    await markCommitsQc(repo.id, ['s-deny'], 'passed')
+    await markCommitsQc(repo.id, ['s-deny'], 'valid')
     const revoked = await revokeSignature({
       signatureId: id,
       revoker: approver,

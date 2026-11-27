@@ -85,3 +85,33 @@ _Avoid_: Task, run
 **Pin**:
 The commit or content hash a Job or Desktop Session is tied to.
 _Avoid_: Snapshot, version lock
+
+### Validated branches and QC
+
+**Validated branch**:
+A branch whose tip may change only through a signed merge (or registry mark/unmark); tip ancestry must have no Unset commits.
+_Avoid_: Protected branch, sealed branch, release branch
+
+**Commit QC disposition**:
+The branch-invariant quality state of a commit: Unset, Valid, or Invalid. Changed only by a signed disposition map; orthogonal to whether a branch is validated.
+_Avoid_: QC Passed, QC Failed, QC Marked, approval status, CI status
+
+**Unset**:
+No Approver-or-eligible disposition has been recorded for the commit yet. Forbidden on validated tip ancestry; allowed indefinitely on non-validated branches.
+_Avoid_: None, unmarked, pending
+
+**Valid**:
+A signed disposition that the commit is acceptable for regulated use. Must not be set by an author or co-author of that commit, except the empty-tip bootstrap at repository create (creator’s create e-signature Valids the file-less tip when the branch is marked validated).
+_Avoid_: QC Passed, approved, passed
+
+**Invalid**:
+A signed disposition that the commit is not acceptable. Authors may Invalid their own commits; Pins and Jobs may still use Invalid commits.
+_Avoid_: QC Failed, rejected, revoked
+
+**Disposition map**:
+The set of commit→Valid|Invalid assignments bound into one e-signature for a merge complete, mark-validated, or ad-hoc disposition ceremony.
+_Avoid_: Approval list, QC batch, verdict sheet
+
+**Approver**:
+A Principal granted the orthogonal Approver seat for a namespace or repository; required to complete merges into validated branches and to fill Unset commits when marking a branch validated.
+_Avoid_: Reviewer, maintainer (alone), QA role

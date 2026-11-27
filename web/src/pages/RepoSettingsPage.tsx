@@ -3,6 +3,7 @@ import { MetaBody } from '../components/MetaPanel'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { ApproversSection } from '../components/ApproversSection'
+import { ValidatedBranchesSection } from '../components/ValidatedBranchesSection'
 import { usePrincipalProfiles } from '../components/CommitEmail'
 import type { RepoSettingsOutletContext } from '../components/RepoSettingsLayout'
 import { RepoSignaturesSection } from '../components/RepoSignaturesSection'
@@ -533,6 +534,13 @@ export function RepoSettingsPage() {
           namespace={namespace}
           repo={repo}
           canManage={perms.manageApprovers}
+        />
+
+        <ValidatedBranchesSection
+          namespace={namespace}
+          repo={repo}
+          canManage={perms.manageCollaborators}
+          isApprover={perms.isApprover === true}
         />
 
         {perms.viewSignedRecord ? (

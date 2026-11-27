@@ -95,12 +95,25 @@ export type RepoSizeFile = {
   size: number
 }
 
+/** Branch plan on create (Mice-only; stripped before oxen). */
+export type CreateRepoBranchInput = {
+  name: string
+  /** Exactly one should be true. */
+  default?: boolean
+  validated?: boolean
+}
+
 export type CreateRepoInput = {
   namespace: string
   name: string
   description?: string
   /** Empty-tip commit message; BFF default is "Initialized Repo". */
   initial_commit_message?: string
+  /**
+   * Empty tips to materialize; validated flags seed the registry.
+   * Omit for legacy `main` + validated. `[]` for bare (no tips).
+   */
+  branches?: CreateRepoBranchInput[]
 }
 
 export type Commit = {

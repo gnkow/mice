@@ -15,6 +15,7 @@ Do **not** create or keep a local `.scratch/` ticket tree — that tracker is re
 
 - Triage state is a GitHub label (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, `deferred`). See `triage-labels.md`.
 - Area is a GitHub label `area:<slug>` (e.g. `area:authentication`).
+- Lane completion: `deepened-with-api` means `/deep-api` finished its API-lane work for that implementation ticket (create the label on first use if missing). Distinct from triage and from Closed.
 - Closed work uses GitHub issue state Closed (Done on the project board). `wontfix` / `deferred` keep those labels.
 
 ## When a skill says "publish to the issue tracker"

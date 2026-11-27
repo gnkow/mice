@@ -4,9 +4,7 @@ import { after, afterEach, describe, it } from 'node:test'
 import { isolatedAuth } from '../../src/packages/shared/lib/testSupport.js'
 
 /**
- * Seam: open MR use-case QC Marked.
- * Catches: server-side merge-range resolve marks commits without client commitIds.
- * Misses: oxen listMergeCommits I/O (injected via setMergeRangeResolverForTests).
+ * Seam: open MR must not write QC (ADR 0009 — no Marked).
  */
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
 after(() => t.restore())
@@ -33,8 +31,8 @@ await setRepoCollaborator('qc-ns', 'assay', writer, 'write')
 
 afterEach(() => setMergeRangeResolverForTests(null))
 
-describe('open MR QC Marked (server-side range)', () => {
-  it('marks range commits QC Marked without client commitIds', async () => {
+describe('open MR does not write QC (ADR 0009)', () => {
+  it('leaves range commits Unset even when range resolve returns ids', async () => {
     setMergeRangeResolverForTests(async () => ({
       authors: ['alice'],
       commitIds: ['range-a', 'range-b'],
@@ -53,29 +51,7 @@ describe('open MR QC Marked (server-side range)', () => {
       audit: async () => {},
     })
     assert.equal(out.status, 201, JSON.stringify(out.body))
-    assert.equal(await getCommitQc(repo.id, 'range-a'), 'marked')
-    assert.equal(await getCommitQc(repo.id, 'range-b'), 'marked')
-  })
-
-  it('falls back to client commitIds when range resolve is unavailable', async () => {
-    setMergeRangeResolverForTests(async () => {
-      throw new Error('oxen unavailable')
-    })
-
-    const out = await openMergeRequestUseCase({
-      user: writer,
-      ns: 'qc-ns',
-      repoName: 'assay',
-      body: {
-        sourceBranch: 'fallback-feat',
-        targetBranch: 'main',
-        expectedSourceHead: 'fb-s',
-        expectedTargetHead: 'fb-t',
-        commitIds: ['client-only'],
-      },
-      audit: async () => {},
-    })
-    assert.equal(out.status, 201, JSON.stringify(out.body))
-    assert.equal(await getCommitQc(repo.id, 'client-only'), 'marked')
+    assert.equal(await getCommitQc(repo.id, 'range-a'), 'unset')
+    assert.equal(await getCommitQc(repo.id, 'range-b'), 'unset')
   })
 })

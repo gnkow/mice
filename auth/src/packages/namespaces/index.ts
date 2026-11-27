@@ -50,10 +50,15 @@ export {
   rewriteOxenJsonToDisplay,
   physicalCreateBody,
   initialCommitMessageFromBody,
+  createBranchPlanFromBody,
+  createBranchesOptionFromBody,
+  miceCreateOptionsFromBodies,
 } from './lib/oxenPhysicalKeys.js'
 export type {
   PhysicalRepoRef,
   DisplayRepoRef,
+  CreateBranchPlan,
+  CreateBranchesOption,
 } from './lib/oxenPhysicalKeys.js'
 export {
   resolveNamespaceId,

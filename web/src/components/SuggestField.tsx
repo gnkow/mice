@@ -14,6 +14,11 @@ type Props = {
   placeholder?: string
   /** Accessible description when the field is empty (e.g. "All sessions"). */
   emptyHint?: string
+  /** Visually hide the label; still exposed to assistive tech. */
+  hideLabel?: boolean
+  disabled?: boolean
+  id?: string
+  'data-testid'?: string
 }
 
 /**
@@ -28,6 +33,10 @@ export function SuggestField({
   options,
   placeholder,
   emptyHint,
+  hideLabel = false,
+  disabled = false,
+  id,
+  'data-testid': dataTestId,
 }: Props) {
   const listId = useId()
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -91,8 +100,9 @@ export function SuggestField({
   return (
     <div className="suggest-field" ref={wrapRef}>
       <label>
-        {label}
+        <span className={hideLabel ? 'sr-only' : undefined}>{label}</span>
         <input
+          id={id}
           name={name}
           role="combobox"
           aria-expanded={open}
@@ -102,6 +112,8 @@ export function SuggestField({
           value={value}
           placeholder={placeholder ?? emptyHint ?? 'All'}
           autoComplete="off"
+          disabled={disabled}
+          data-testid={dataTestId}
           onChange={(e) => {
             onChange(e.target.value)
             setOpen(true)
@@ -111,7 +123,7 @@ export function SuggestField({
           onKeyDown={onKeyDown}
         />
       </label>
-      {open && (
+      {open && !disabled ? (
         <ul id={listId} className="suggest-field-list" role="listbox" aria-label={`${label} suggestions`}>
           {filtered.length === 0 ? (
             <li className="suggest-field-empty muted small" role="presentation">
@@ -143,7 +155,7 @@ export function SuggestField({
             ))
           )}
         </ul>
-      )}
+      ) : null}
     </div>
   )
 }

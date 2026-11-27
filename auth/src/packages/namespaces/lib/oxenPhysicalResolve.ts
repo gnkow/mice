@@ -6,10 +6,14 @@ import { getNamespace } from '../../authz/index.js'
 import { decideInstanceAction } from '../../authz/index.js'
 import { userKey } from '../../authz/index.js'
 import type { SessionUser } from '../../authentication/principal.js'
-import type { DisplayRepoRef, PhysicalRepoRef } from './oxenPhysicalKeys.js'
+import type {
+  CreateBranchesOption,
+  DisplayRepoRef,
+  PhysicalRepoRef,
+} from './oxenPhysicalKeys.js'
 import {
-  initialCommitMessageFromBody,
   isPhysicalOxenKey,
+  miceCreateOptionsFromBodies,
   physicalCreateBody,
   rewriteNamespacePathToPhysical,
   rewriteOxenJsonToDisplay,
@@ -113,6 +117,7 @@ export type PhysicalUpstreamMapping = {
   createdPhysical: PhysicalRepoRef | null
   physicalRepo: PhysicalRepoRef | null | undefined
   initialCommitMessage: string | undefined
+  createBranches: CreateBranchesOption
 }
 
 export type MapDisplayRequestResult =
@@ -132,21 +137,17 @@ export async function mapDisplayRequestToPhysical(
   let createdPhysical: PhysicalRepoRef | null = null
   let physicalRepo: PhysicalRepoRef | null | undefined
   let initialCommitMessage: string | undefined
+  let createBranches: CreateBranchesOption = { kind: 'omit' }
 
   if ((action === 'repo.create' || kind === 'repo.create') && ns && repo) {
     createdPhysical = await preparePhysicalRepoCreate(user, ns, repo)
     if (!createdPhysical) return { ok: false, reason: 'create_blocked' }
-    initialCommitMessage =
-      initialCommitMessageFromBody(signatureBody) ??
-      (typeof body === 'string'
-        ? (() => {
-            try {
-              return initialCommitMessageFromBody(JSON.parse(body))
-            } catch {
-              return undefined
-            }
-          })()
-        : undefined)
+    const miceOpts = miceCreateOptionsFromBodies(
+      signatureBody,
+      typeof body === 'string' ? body : undefined,
+    )
+    initialCommitMessage = miceOpts.initialCommitMessage
+    createBranches = miceOpts.branches
     upstreamBody = physicalCreateBody(typeof body === 'string' ? body : undefined, createdPhysical)
   } else if (ns && repo) {
     const physical = await resolvePhysicalRepo(ns, repo)
@@ -167,6 +168,7 @@ export async function mapDisplayRequestToPhysical(
     createdPhysical,
     physicalRepo,
     initialCommitMessage,
+    createBranches,
   }
 }
 

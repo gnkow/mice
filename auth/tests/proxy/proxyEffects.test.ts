@@ -1,4 +1,4 @@
-import '../../../db/testSchema.js'
+import '../../src/db/testSchema.js'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
@@ -13,7 +13,7 @@ const {
   finalizeProxiedRepoCreate,
   seedRepoCreate,
   stampRepositoryIdOnRepoDetail,
-} = await import('../../src/packages/platform/index.js')
+} = await import('../../src/packages/proxy/index.js')
 const { preparePrincipal } = await import('../../src/packages/authz/lib/authz.js')
 const { getRepoCollaboratorRole, setRepoCollaborator } = await import('../../src/packages/authz/lib/authzCollaboratorStore.js')
 const { createNamespaceAuthz, getNamespace } = await import('../../src/packages/authz/lib/authzNamespaceStore.js')
@@ -125,6 +125,23 @@ describe('finalizeProxiedRepoCreate', () => {
     assert.equal(body.repository.repository_id, body.repository_id)
     assert.equal(body.repository.repo_uuid, 'oxen-1')
     assert.equal(await getRepoCollaboratorRole('pe-finalize', 'assay', admin), null)
+  })
+
+  it('bare create plants a validated=false sentinel so rematerialize stays off', async () => {
+    const { listValidatedBranches } = await import('../../src/packages/merge/index.js')
+    const { readRepository } = await import('../../src/packages/authz/lib/repositoryStore.js')
+    const upstream = JSON.stringify({
+      status: 'success',
+      repository: { namespace: 'pe-bare', name: 'empty', repo_uuid: 'oxen-bare' },
+    })
+    const out = await finalizeProxiedRepoCreate(admin, 'pe-bare', 'empty', upstream, {
+      branches: { kind: 'bare' },
+    })
+    const body = JSON.parse(out)
+    assert.match(body.repository_id, UUID_RE)
+    const row = await readRepository('pe-bare', 'empty')
+    assert.ok(row)
+    assert.deepEqual(await listValidatedBranches(row.id), [])
   })
 
   it('returns the upstream body unchanged when AuthZ cannot seed', async () => {

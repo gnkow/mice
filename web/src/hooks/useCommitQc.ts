@@ -2,23 +2,23 @@ import { useMemo } from 'react'
 import {
   COMMIT_QC_LIMIT,
   fetchCommitsQc,
-  summarizeQcFailures,
+  summarizeQcInvalid,
   type CommitQcStatus,
   type QcCommit,
-  type QcFailureSummary,
+  type QcInvalidSummary,
 } from '../lib/commitQc'
 import { useAsync } from './useAsync'
 
 const EMPTY: Record<string, CommitQcStatus> = {}
 
-/** QC status + failure summary for the newest commits in a list (GxP #94). */
+/** QC status + Invalid summary for the newest commits in a list (ADR 0009). */
 export function useCommitQc(
   namespace: string,
   repo: string,
   commits: QcCommit[] | null | undefined,
 ): {
   qc: Record<string, CommitQcStatus>
-  summary: QcFailureSummary
+  summary: QcInvalidSummary
   reload: () => void
 } {
   const ids = (commits ?? []).slice(0, COMMIT_QC_LIMIT).map((c) => c.id)
@@ -32,7 +32,7 @@ export function useCommitQc(
   )
   const qc = state.kind === 'ok' ? state.data : EMPTY
   const summary = useMemo(
-    () => summarizeQcFailures((commits ?? []).slice(0, COMMIT_QC_LIMIT), qc),
+    () => summarizeQcInvalid((commits ?? []).slice(0, COMMIT_QC_LIMIT), qc),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [key, qc],
   )

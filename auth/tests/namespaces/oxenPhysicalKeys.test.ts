@@ -47,17 +47,66 @@ describe('oxenPhysicalKeys', () => {
     )
   })
 
-  it('strips Mice-only initial_commit_message from create bodies', () => {
+  it('strips Mice-only initial_commit_message and branches from create bodies', () => {
     assert.equal(
       physicalCreateBody(
         JSON.stringify({
           namespace: 'demo',
           name: 'assay',
           initial_commit_message: 'Bootstrapped',
+          branches: [{ name: 'main', default: true, validated: true }],
         }),
         { namespaceId: NS, repositoryId: REPO },
       ),
       JSON.stringify({ namespace: NS, name: REPO }),
+    )
+  })
+
+  it('parses create branch plans and forces a single default', async () => {
+    const { createBranchPlanFromBody, createBranchesOptionFromBody } = await import(
+      '../../src/packages/namespaces/lib/oxenPhysicalKeys.js'
+    )
+    assert.deepEqual(
+      createBranchPlanFromBody({
+        branches: [
+          { name: 'main', default: true, validated: true },
+          { name: 'dev', default: true, validated: false },
+        ],
+      }),
+      [
+        { name: 'main', isDefault: true, validated: true },
+        { name: 'dev', isDefault: false, validated: false },
+      ],
+    )
+    assert.deepEqual(createBranchesOptionFromBody({}), { kind: 'omit' })
+    assert.deepEqual(createBranchesOptionFromBody({ branches: [] }), { kind: 'bare' })
+    assert.equal(
+      createBranchesOptionFromBody({
+        branches: [{ name: 'main', default: true, validated: true }],
+      }).kind,
+      'plan',
+    )
+  })
+
+  it('prefers explicit branches from signature over raw body', async () => {
+    const { miceCreateOptionsFromBodies } = await import(
+      '../../src/packages/namespaces/lib/oxenPhysicalKeys.js'
+    )
+    assert.equal(
+      miceCreateOptionsFromBodies({ branches: [] }, JSON.stringify({ namespace: 'n', name: 'r' }))
+        .branches.kind,
+      'bare',
+    )
+    assert.equal(
+      miceCreateOptionsFromBodies({}, JSON.stringify({ branches: [] })).branches.kind,
+      'bare',
+    )
+    assert.equal(
+      miceCreateOptionsFromBodies(
+        { branches: [{ name: 'dev', default: true }] },
+        JSON.stringify({ branches: [] }),
+      ).branches.kind,
+      'plan',
     )
   })
 

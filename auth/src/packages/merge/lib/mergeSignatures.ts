@@ -153,7 +153,6 @@ export async function revokeSignatureUseCase(input: {
       signature_id: result.revocation.signatureId,
       change_control_id: result.revocation.changeControlId,
       commit_ids: result.revocation.commitIds,
-      commit_qc: 'failed',
     }),
     message: `Revoked signature ${result.revocation.signatureId}`,
     detail: {
@@ -226,7 +225,6 @@ export async function revertSignatureRevocationUseCase(input: {
       signature_id: result.revert.signatureId,
       change_control_id: result.revert.changeControlId,
       commit_ids: result.revert.restoredCommitIds,
-      commit_qc: 'passed',
     }),
     message: `Reverted revocation ${result.revert.revocationId} on signature ${result.revert.signatureId}`,
     detail: {

@@ -1126,14 +1126,37 @@ export const commitQcStatus = pgTable(
       .notNull()
       .references(() => repositories.id, { onDelete: 'cascade' }),
     commitId: text('commit_id').notNull(),
-    /** none | marked | passed | failed */
+    /** unset | valid | invalid (ADR 0009; missing row ≡ unset) */
     status: text('status').notNull(),
     mergeRequestId: uuid('merge_request_id').references(() => mergeRequests.id, {
       onDelete: 'set null',
     }),
+    /** Covering e-signature (signed merge or mark-validated blessing). */
+    signatureId: text('signature_id'),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.repositoryId, t.commitId] })],
+  (t) => [
+    primaryKey({ columns: [t.repositoryId, t.commitId] }),
+    index('commit_qc_status_signature_idx').on(t.signatureId),
+  ],
+)
+
+/** Append-only disposition history (ADR 0009); current status remains on commit_qc_status. */
+export const commitQcEvents = pgTable(
+  'commit_qc_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    repositoryId: uuid('repository_id')
+      .notNull()
+      .references(() => repositories.id, { onDelete: 'cascade' }),
+    commitId: text('commit_id').notNull(),
+    /** valid | invalid */
+    status: text('status').notNull(),
+    signatureId: text('signature_id').notNull(),
+    actorKey: text('actor_key').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('commit_qc_events_commit_idx').on(t.repositoryId, t.commitId, t.createdAt)],
 )
 
 /**

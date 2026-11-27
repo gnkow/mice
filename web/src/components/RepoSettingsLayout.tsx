@@ -29,6 +29,7 @@ const SETTINGS_NAV_ITEMS: NavItem[] = [
   // Always listed: seats are visible read-only when the caller cannot change them.
   { id: 'repo-collaborators', label: 'Collaborators', Icon: ActionUsers },
   { id: 'repo-approvers', label: 'Approvers', Icon: ActionShieldCheck },
+  { id: 'repo-validated-branches', label: 'Validated branches', Icon: ActionShieldCheck },
   {
     id: 'repo-signatures',
     label: 'Signatures',

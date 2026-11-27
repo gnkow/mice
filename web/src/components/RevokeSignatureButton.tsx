@@ -281,8 +281,8 @@ export function RevokeSignatureButton({
     return (
       <p className="flash flash-success small" role="status" data-testid="signature-revoked">
         {locked
-          ? 'Commit marked QC Failed'
-          : 'Signature revoked. Affected commits are now QC Failed'}
+          ? 'Signature revoked for this commit (QC disposition unchanged)'
+          : 'Signature revoked (ledger only; QC disposition unchanged)'}
         {done.blocked > 0
           ? `; ${done.blocked} open merge request${done.blocked === 1 ? '' : 's'} blocked`
           : ''}
@@ -339,7 +339,7 @@ export function RevokeSignatureButton({
                   />
                   <span>
                     Whole signature
-                    <span className="muted small"> — all covered commits become QC Failed</span>
+                    <span className="muted small"> — revoke the whole signature (QC disposition unchanged)</span>
                   </span>
                 </label>
                 <label className="signature-revoke-option" htmlFor={scopeSelectedId}>

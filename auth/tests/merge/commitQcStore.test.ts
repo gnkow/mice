@@ -8,12 +8,11 @@ after(() => t.restore())
 
 const { createNamespaceAuthz } = await import('../../src/packages/authz/lib/authzNamespaceStore.js')
 const { ensureRepository } = await import('../../src/packages/authz/lib/repositoryStore.js')
-const { openMergeRequest } = await import('../../src/packages/merge/lib/mergeRequestStore.js')
 const {
   getCommitQc,
   markCommitsQc,
   listCommitQcForRepo,
-  unmarkCommitsForMergeRequest,
+  applyDispositionMap,
 } = await import('../../src/packages/merge/lib/commitQcStore.js')
 
 const root = t.person('root')
@@ -22,77 +21,31 @@ assert.equal((await createNamespaceAuthz(root, 'qc-lab', 'none')).ok, true)
 const repo = await ensureRepository('qc-lab', 'data')
 assert.ok(repo)
 
-describe('commit QC status (repositories/03)', () => {
-  it('defaults to none and marks commits when an MR opens', async () => {
-    assert.equal(await getCommitQc(repo.id, 'c1'), 'none')
-    const mr = await openMergeRequest({
-      repositoryId: repo.id,
-      namespace: 'qc-lab',
-      repo: 'data',
-      sourceBranch: 'f',
-      targetBranch: 'main',
-      expectedSourceHead: 'c2',
-      expectedTargetHead: 'c0',
-      openedBy: { iss: root.iss, sub: root.sub },
-    })
-    await markCommitsQc(repo.id, ['c1', 'c2'], 'marked', { mergeRequestId: mr.id })
-    assert.equal(await getCommitQc(repo.id, 'c1'), 'marked')
-    assert.equal(await getCommitQc(repo.id, 'c2'), 'marked')
+describe('commit QC disposition (ADR 0009)', () => {
+  it('defaults to unset', async () => {
+    assert.equal(await getCommitQc(repo.id, 'c1'), 'unset')
+  })
+
+  it('upserts valid/invalid via markCommitsQc', async () => {
+    await markCommitsQc(repo.id, ['m1', 'merge-sha'], 'valid')
+    assert.equal(await getCommitQc(repo.id, 'm1'), 'valid')
+    assert.equal(await getCommitQc(repo.id, 'merge-sha'), 'valid')
     const listed = await listCommitQcForRepo(repo.id)
-    assert.ok(listed.some((r) => r.commitId === 'c1' && r.status === 'marked'))
+    assert.ok(listed.some((r) => r.commitId === 'm1' && r.status === 'valid'))
   })
 
-  it('promotes marked commits to passed after a signed merge', async () => {
-    await markCommitsQc(repo.id, ['m1'], 'marked')
-    await markCommitsQc(repo.id, ['m1', 'merge-sha'], 'passed')
-    assert.equal(await getCommitQc(repo.id, 'm1'), 'passed')
-    assert.equal(await getCommitQc(repo.id, 'merge-sha'), 'passed')
-  })
+  it('allows override of invalid→valid via disposition map', async () => {
+    await markCommitsQc(repo.id, ['fail-1'], 'invalid')
+    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'invalid')
 
-  it('keeps QC Failed until a new signature allows Failed→Passed (gxp/08)', async () => {
-    await markCommitsQc(repo.id, ['fail-1'], 'failed')
-    await markCommitsQc(repo.id, ['fail-1'], 'marked')
-    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'failed')
-
-    await markCommitsQc(repo.id, ['fail-1'], 'passed')
-    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'failed')
-
-    await markCommitsQc(repo.id, ['fail-1'], 'passed', { allowFailedToPassed: true })
-    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'passed')
-  })
-
-  it('unmarks Marked commits for a closed MR without wiping Failed or Passed', async () => {
-    const mr = await openMergeRequest({
+    const applied = await applyDispositionMap({
       repositoryId: repo.id,
-      namespace: 'qc-lab',
-      repo: 'data',
-      sourceBranch: 'unmark-src',
-      targetBranch: 'main',
-      expectedSourceHead: 'u-src',
-      expectedTargetHead: 'u-tgt',
-      openedBy: { iss: root.iss, sub: root.sub },
+      map: { 'fail-1': 'valid' },
+      signatureId: 'sig-restore',
+      actor: root,
+      authorsByCommitId: { 'fail-1': ['https://other|scientist'] },
     })
-    await markCommitsQc(repo.id, ['u-marked', 'u-also'], 'marked', { mergeRequestId: mr.id })
-    await markCommitsQc(repo.id, ['u-failed'], 'failed', { mergeRequestId: mr.id })
-    await markCommitsQc(repo.id, ['u-passed'], 'passed', { mergeRequestId: mr.id })
-    const other = await openMergeRequest({
-      repositoryId: repo.id,
-      namespace: 'qc-lab',
-      repo: 'data',
-      sourceBranch: 'unmark-other',
-      targetBranch: 'main',
-      expectedSourceHead: 'o-src',
-      expectedTargetHead: 'o-tgt',
-      openedBy: { iss: root.iss, sub: root.sub },
-    })
-    await markCommitsQc(repo.id, ['u-other-mr'], 'marked', { mergeRequestId: other.id })
-
-    const cleared = await unmarkCommitsForMergeRequest(repo.id, mr.id)
-    assert.deepEqual(cleared.sort(), ['u-also', 'u-marked'])
-    assert.equal(await getCommitQc(repo.id, 'u-marked'), 'none')
-    assert.equal(await getCommitQc(repo.id, 'u-also'), 'none')
-    assert.equal(await getCommitQc(repo.id, 'u-failed'), 'failed')
-    assert.equal(await getCommitQc(repo.id, 'u-passed'), 'passed')
-    assert.equal(await getCommitQc(repo.id, 'u-other-mr'), 'marked')
+    assert.equal(applied.ok, true)
+    assert.equal(await getCommitQc(repo.id, 'fail-1'), 'valid')
   })
 })

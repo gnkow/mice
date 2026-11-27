@@ -29,6 +29,7 @@ import {
 import { isCeremonyCancelled } from '../lib/ceremonyCancelled'
 import { confirmDelete } from '../lib/confirmDelete'
 import { fetchRepoPermissions } from '../lib/authzApi'
+import { fetchValidatedBranches } from '../lib/validatedBranches'
 import { formatBytes } from '../lib/oxen/client'
 import {
   lastBranch,
@@ -356,7 +357,15 @@ export function TreePage() {
     repo,
   )
   const writeBranch = onCommitRef ? defaultBranch : branch
-  const onValidatedBranch = !onCommitRef && writeBranch === defaultBranch
+  const validatedState = useAsync(
+    (signal) => fetchValidatedBranches(namespace, repo, signal),
+    [namespace, repo],
+  )
+  const validatedSet =
+    validatedState.kind === 'ok'
+      ? validatedState.data.validatedBranches
+      : [defaultBranch]
+  const onValidatedBranch = !onCommitRef && validatedSet.includes(writeBranch)
 
   const repoPerms = useAsync(
     (signal) => fetchRepoPermissions(namespace, repo, signal),
@@ -459,7 +468,7 @@ export function TreePage() {
           </>
         ) : onValidatedBranch ? (
           <>
-            The validated branch <code>{defaultBranch}</code> cannot be written
+            The validated branch <code>{writeBranch}</code> cannot be written
             directly. Open a request from another branch to add the first files.
           </>
         ) : (

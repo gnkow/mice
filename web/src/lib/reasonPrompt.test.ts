@@ -25,6 +25,19 @@ test('labels namespace rename from settings patch body', () => {
   )
 })
 
+test('labels validated-branch mark and unmark', () => {
+  assert.equal(
+    summarizeMutation('POST', '/auth/repos/demo/assay/validated-branches', {
+      branch: 'release',
+    }),
+    'Mark branch “release” validated on demo/assay',
+  )
+  assert.equal(
+    summarizeMutation('DELETE', '/auth/repos/demo/assay/validated-branches/main'),
+    'Unmark validated branch “main” on demo/assay',
+  )
+})
+
 test('labels approver, signature revoke and seal-key mutations', () => {
   assert.match(summarizeMutation('PUT', '/auth/namespaces/demo/approvers'), /Assign an approver in namespace/)
   assert.match(summarizeMutation('DELETE', '/auth/namespaces/demo/repos/assay/approvers'), /Remove an approver from demo\/assay/)
@@ -36,6 +49,12 @@ test('labels approver, signature revoke and seal-key mutations', () => {
   assert.match(
     summarizeMutation('POST', '/auth/signatures/abcdef123456/revocations/rev-1/revert'),
     /Revert revocation on signature abcdef12…/,
+  )
+  assert.equal(
+    summarizeMutation('POST', '/auth/repos/demo/assay/commits/disposition', {
+      disposition: { abc: 'valid' },
+    }),
+    'Sign commit disposition map on demo/assay',
   )
   assert.match(summarizeMutation('POST', '/auth/admin/seal-keys/rotate'), /Rotate the session cookie seal key/)
   assert.match(summarizeMutation('POST', '/auth/admin/seal-keys/rotate/emergency'), /Emergency-rotate/)

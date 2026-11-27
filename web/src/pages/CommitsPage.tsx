@@ -1,31 +1,22 @@
-import { FolderOpen as ActionFolderOpen, History as ActionHistory, Trash2 as ActionTrash2 } from 'lucide-react'
-import { MetaPanel } from '../components/MetaPanel'
+import { History as ActionHistory, Trash2 as ActionTrash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Link,
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from 'react-router-dom'
-import { UserRef } from '../components/UserRef'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Breadcrumbs, repoCrumbs } from '../components/Breadcrumbs'
+import { CommitDetailExpand } from '../components/CommitDetailExpand'
 import { CommitList } from '../components/CommitList'
-import { QcFailedWarning } from '../components/QcFailedWarning'
-import { RevokeSignatureButton } from '../components/RevokeSignatureButton'
-import { SignedRecordReportButton } from '../components/SignedRecordReportButton'
+import { QcInvalidWarning } from '../components/QcInvalidWarning'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { useCommitQc } from '../hooks/useCommitQc'
+import { fetchAuthMe } from '../lib/auth'
 import { fetchCoveringSignature, fetchRepoPermissions } from '../lib/authzApi'
 import {
-  getCommit,
   getRootCommit,
   listAllCommits,
   listBranches,
   listCommitHistory,
 } from '../lib/oxen/api'
 import { looksLikeCommitId } from '../lib/oxen/paths'
-import { formatRelativeTime } from '../lib/time'
 
 export function CommitsPage() {
   const { namespace = '', repo = '', commitId = '' } = useParams()
@@ -57,8 +48,13 @@ export function CommitsPage() {
     (signal) => fetchRepoPermissions(namespace, repo, signal),
     [namespace, repo],
   )
+  const me = useAsync((signal) => fetchAuthMe(signal), [])
+  const signer =
+    me.kind === 'ok' && me.data.authenticated ? me.data.user : null
   const canRevoke =
     repoPerms.kind === 'ok' && repoPerms.data.isApprover === true
+  const canWrite =
+    repoPerms.kind === 'ok' && repoPerms.data.contentsWrite === true
   const canViewSignedRecord =
     repoPerms.kind === 'ok' && repoPerms.data.viewSignedRecord === true
 
@@ -92,70 +88,33 @@ export function CommitsPage() {
     repo,
     active.kind === 'ok' ? active.data.commits : null,
   )
-  const qcFailed = useMemo(() => new Set(qcSummary.failed), [qcSummary])
+  const qcInvalid = useMemo(() => new Set(qcSummary.invalid), [qcSummary])
   const qcDescendants = useMemo(() => new Set(qcSummary.descendants), [qcSummary])
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
   const linkSearch = params.toString() ? `?${params.toString()}` : ''
   const listHref = `${base}/commits${linkSearch}`
 
-  // Desktop: always keep a commit selected so the inspector isn’t empty.
-  // Narrow: stay on the list until the user picks one.
+  // Drop selection when the commit leaves the current list (filter / mode change).
   useEffect(() => {
-    if (active.kind !== 'ok') return
-    const commits = active.data.commits
-    if (commits.length === 0) return
-    const stillVisible = Boolean(
-      commitId && commits.some((c) => c.id === commitId),
-    )
-    if (stillVisible) return
-
-    const narrow =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(max-width: 900px)').matches
-
-    if (narrow) {
-      if (commitId) navigate(listHref, { replace: true })
-      return
-    }
-
-    const next = commits[0]!
-    navigate(
-      `${base}/commits/${encodeURIComponent(next.id)}${linkSearch}`,
-      { replace: true },
-    )
-  }, [active, commitId, base, linkSearch, listHref, navigate])
-
-  const detail = useAsync(
-    (signal) =>
-      commitId
-        ? getCommit(namespace, repo, commitId, signal)
-        : Promise.resolve(null),
-    [namespace, repo, commitId],
-  )
-
-  /** Detail pane: any validated commit (signed), on any branch. */
-  const covering = useAsync(
-    (signal) =>
-      commitId && canRevoke
-        ? fetchCoveringSignature(namespace, repo, commitId, signal)
-        : Promise.resolve(null),
-    [namespace, repo, commitId, canRevoke],
-  )
+    if (active.kind !== 'ok' || !commitId) return
+    const stillVisible = active.data.commits.some((c) => c.id === commitId)
+    if (!stillVisible) navigate(listHref, { replace: true })
+  }, [active, commitId, listHref, navigate])
 
   const listCommits =
     active.kind === 'ok' ? active.data.commits : null
-  const passedCommitKey = useMemo(() => {
+  const validCommitKey = useMemo(() => {
     if (!canRevoke || !listCommits) return ''
     return listCommits
-      .filter((c) => qc[c.id] === 'passed')
+      .filter((c) => qc[c.id] === 'valid')
       .map((c) => c.id)
       .join(',')
   }, [canRevoke, listCommits, qc])
 
-  /** List rows: covering signatures for QC Passed commits (branch-invariant). */
+  /** List rows: covering signatures for Valid commits (branch-invariant). */
   const listCovering = useAsync(
     async (signal) => {
-      const ids = passedCommitKey ? passedCommitKey.split(',').filter(Boolean) : []
+      const ids = validCommitKey ? validCommitKey.split(',').filter(Boolean) : []
       const map = new Map<string, { signatureId: string; revoked: boolean }>()
       if (!canRevoke || ids.length === 0) return map
       await Promise.all(
@@ -172,7 +131,7 @@ export function CommitsPage() {
       )
       return map
     },
-    [namespace, repo, canRevoke, passedCommitKey],
+    [namespace, repo, canRevoke, validCommitKey],
   )
   const coveringByCommit =
     listCovering.kind === 'ok' ? listCovering.data : undefined
@@ -187,16 +146,8 @@ export function CommitsPage() {
     ? revision
     : `${revision.slice(0, 8)}${revision.length > 8 ? '…' : ''}`
 
-  const commit = detail.kind === 'ok' ? detail.data?.commit ?? null : null
-
   return (
-    <main
-      className={
-        commitId
-          ? 'page wide history-page has-detail'
-          : 'page wide history-page'
-      }
-    >
+    <main className="page wide history-page">
       <header className="history-page-head">
         <div className="history-page-head-main">
           <Breadcrumbs
@@ -317,7 +268,7 @@ export function CommitsPage() {
         </p>
       )}
 
-      <QcFailedWarning
+      <QcInvalidWarning
         namespace={namespace}
         repo={repo}
         summary={qcSummary}
@@ -327,147 +278,55 @@ export function CommitsPage() {
       {active.kind === 'error' ? (
         <StateBlock error={active.message} errorPurpose="view commits" />
       ) : (
-        <div className="history-layout">
-          <section className="history-list" aria-label="Commit list">
-            <StateBlock
-              loading={active.kind === 'loading'}
-              empty={active.kind === 'ok' && active.data.commits.length === 0}
-              emptyMessage={
-                mode === 'history' && pathFilter.trim()
-                  ? `No commits touch “${pathFilter.trim()}” on ${revisionLabel}.`
-                  : 'No commits yet.'
-              }
-            >
-              {active.kind === 'ok' && (
-                <CommitList
-                  namespace={namespace}
-                  repo={repo}
-                  commits={active.data.commits}
-                  selectedId={commitId || undefined}
-                  linkSearch={linkSearch}
-                  qcFailed={qcFailed}
-                  qcDescendants={qcDescendants}
-                  canRevoke={canRevoke}
-                  coveringByCommit={coveringByCommit}
-                  onRevoked={() => {
-                    covering.reload()
-                    listCovering.reload()
-                    reloadQc()
-                  }}
-                />
-              )}
-            </StateBlock>
-          </section>
-
-          {commitId && (
-            <aside className="history-detail" aria-label="Commit detail">
-              <Link className="history-detail-back muted small" to={listHref}>
-                ← All commits
-              </Link>
-
-              <StateBlock
-                loading={detail.kind === 'loading'}
-                error={detail.kind === 'error' ? detail.message : null}
-              >
-                {commit && (
-                  <>
-                    <div className="history-detail-top">
-                      <h2 className="history-detail-title">{commit.message}</h2>
-                      <div className="history-detail-actions">
-                        <Link
-                          className="btn ghost small"
-                          to={`${base}/tree/${commit.id}`}
-                        >
-                          <ActionFolderOpen size={14} aria-hidden="true" className="button-label-icon" />
-                          Browse tree
-                        </Link>
-                        {canViewSignedRecord ? (
-                          <SignedRecordReportButton
-                            namespace={namespace}
-                            repo={repo}
-                            className="btn ghost small"
-                            compact
-                          />
-                        ) : null}
-                        {canRevoke &&
-                        covering.kind === 'ok' &&
-                        covering.data?.signature &&
-                        !covering.data.signature.revoked &&
-                        qc[commit.id] !== 'failed' ? (
-                          <div
-                            className="history-commit-revoke"
-                            data-testid="history-commit-revoke"
-                          >
-                            <RevokeSignatureButton
-                              signatureId={covering.data.signature.signatureId}
-                              namespace={namespace}
-                              repo={repo}
-                              commitIds={[commit.id]}
-                              onRevoked={() => {
-                                covering.reload()
-                                listCovering.reload()
-                                reloadQc()
-                              }}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="history-detail-identity">
-                      <UserRef
-                        author={commit.author}
-                        storedEmail={commit.email}
-                      />
-                      <p className="history-detail-byline muted small">
-                        <time
-                          dateTime={commit.timestamp}
-                          title={new Date(commit.timestamp).toLocaleString()}
-                        >
-                          {formatRelativeTime(commit.timestamp)}
-                        </time>
-                      </p>
-                    </div>
-
-                    <p className="history-detail-meta muted small">
-                      <span className="commit-sha mono" title={commitId}>
-                        {commitId.slice(0, 12)}
-                      </span>
-                      <span className="history-parents">
-                        <span>Parents</span>
-                        {commit.parent_ids.length === 0 ? (
-                          <span>—</span>
-                        ) : (
-                          <span className="history-parent-links">
-                            {commit.parent_ids.map((id) => (
-                              <Link
-                                key={id}
-                                className="mono"
-                                to={`${base}/commits/${encodeURIComponent(id)}${linkSearch}`}
-                              >
-                                {id.slice(0, 8)}
-                              </Link>
-                            ))}
-                          </span>
-                        )}
-                      </span>
-                    </p>
-                    {qc[commit.id] === 'failed' ? (
-                      <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-failed">
-                        This commit is <strong>QC Failed</strong>: a signature covering it was revoked.
-                      </p>
-                    ) : qcDescendants.has(commit.id) ? (
-                      <p className="flash flash-warn qc-failed-warning" role="status" data-testid="commit-detail-qc-descendant">
-                        This commit descends from a <strong>QC Failed</strong> commit.
-                      </p>
-                    ) : null}
-                    <MetaPanel key={commit.id} type="commit" id={`${namespace}/${repo}#${commit.id}`} />
-                  </>
+        <section className="history-list" aria-label="Commit list">
+          <StateBlock
+            loading={active.kind === 'loading'}
+            empty={active.kind === 'ok' && active.data.commits.length === 0}
+            emptyMessage={
+              mode === 'history' && pathFilter.trim()
+                ? `No commits touch “${pathFilter.trim()}” on ${revisionLabel}.`
+                : 'No commits yet.'
+            }
+          >
+            {active.kind === 'ok' && (
+              <CommitList
+                namespace={namespace}
+                repo={repo}
+                commits={active.data.commits}
+                selectedId={commitId || undefined}
+                listHref={listHref}
+                linkSearch={linkSearch}
+                qcByCommit={qc}
+                qcInvalid={qcInvalid}
+                qcDescendants={qcDescendants}
+                canRevoke={canRevoke}
+                coveringByCommit={coveringByCommit}
+                onRevoked={() => {
+                  listCovering.reload()
+                  reloadQc()
+                }}
+                renderExpanded={(c) => (
+                  <CommitDetailExpand
+                    namespace={namespace}
+                    repo={repo}
+                    commit={c}
+                    listQc={qc[c.id]}
+                    descendsFromInvalid={qcDescendants.has(c.id)}
+                    canWrite={canWrite}
+                    canRevoke={canRevoke}
+                    canViewSignedRecord={canViewSignedRecord}
+                    signer={signer}
+                    linkSearch={linkSearch}
+                    onQcChanged={() => {
+                      listCovering.reload()
+                      reloadQc()
+                    }}
+                  />
                 )}
-              </StateBlock>
-            </aside>
-          )}
-        </div>
+              />
+            )}
+          </StateBlock>
+        </section>
       )}
     </main>
   )

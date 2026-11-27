@@ -1539,6 +1539,46 @@ code {
   margin-top: 0.25rem;
 }
 
+.new-repo-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.new-repo-branch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.new-repo-branch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.new-repo-branch-name {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+
+.new-repo-branch-name input {
+  width: 100%;
+}
+
+.new-repo-branch-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
 .new-repo-more {
   display: grid;
   gap: 1rem;
@@ -1991,7 +2031,7 @@ code {
   gap: 0.45rem;
 }
 
-.commit-list a {
+.commit-list a:not(.btn) {
   display: grid;
   gap: 0.2rem;
   padding: 0.75rem 0.9rem;
@@ -2002,7 +2042,7 @@ code {
   text-decoration: none;
 }
 
-.commit-list a:hover {
+.commit-list a:not(.btn):hover {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   text-decoration: none;
 }
@@ -2805,6 +2845,29 @@ p.ok {
 .settings-inline-form input {
   flex: 1;
   min-width: 0;
+}
+
+.validated-branches-mark-form {
+  margin-top: 1rem;
+  align-items: flex-end;
+  max-width: 32rem;
+}
+
+.validated-branches-mark-form .suggest-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.validated-branches-mark-form .suggest-field > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  width: 100%;
+}
+
+.validated-branches-mark-form .suggest-field input {
+  width: 100%;
 }
 
 .ns-settings-grid {
@@ -6917,6 +6980,14 @@ p.ok {
   flex: 1;
 }
 
+.commit-row-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .commit-sha {
   border: 1px solid var(--line);
   border-radius: 0.3rem;
@@ -7008,16 +7079,16 @@ p.ok {
   margin: -0.5rem 0 1.25rem;
 }
 
-.history-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem);
-  gap: 2rem 2.5rem;
-  align-items: start;
+/* Container so the list/detail split reacts to content width (repo aside), not only viewport. */
+.history-page {
+  container-type: inline-size;
+  container-name: history-page;
 }
 
-.history-list,
-.history-detail {
+.history-list {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .history-list .commit-day:first-child .commit-day-heading {
@@ -7028,7 +7099,7 @@ p.ok {
   gap: 0;
 }
 
-.history-list .commit-list a {
+.history-list .commit-list a:not(.btn) {
   border: none;
   border-radius: 0;
   border-bottom: 1px solid var(--line);
@@ -7036,7 +7107,7 @@ p.ok {
   padding: 0.7rem 0.35rem;
 }
 
-.history-list .commit-list a:hover {
+.history-list .commit-list a:not(.btn):hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
   border-color: var(--line);
 }
@@ -7051,51 +7122,6 @@ p.ok {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.history-detail {
-  position: sticky;
-  top: 1rem;
-  padding-top: 0.15rem;
-}
-
-.history-detail-back {
-  display: none;
-  margin: 0 0 0.85rem;
-  text-decoration: none;
-}
-
-.history-detail-back:hover {
-  text-decoration: underline;
-}
-
-.history-detail-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem 1rem;
-  margin-bottom: 1rem;
-}
-
-.history-detail-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-  flex-shrink: 0;
-}
-
-.history-detail-title {
-  margin: 0;
-  flex: 1;
-  min-width: 10rem;
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
 .commit-row-wrap {
   display: flex;
   flex-wrap: wrap;
@@ -7108,6 +7134,210 @@ p.ok {
   min-width: 0;
 }
 
+.commit-row-wrap.is-expanded {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+  margin: 0.35rem 0;
+  overflow: clip;
+}
+
+.commit-row-wrap.is-expanded > .commit-row {
+  flex: 1 1 auto;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
+}
+
+.commit-row-wrap.is-expanded > .commit-row-revoke {
+  margin: 0.35rem 0.75rem 0 auto;
+}
+
+.commit-detail-expand {
+  padding: 0.75rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.commit-detail-expand > .tab-bar {
+  margin: 0;
+}
+
+.commit-detail-details-tab,
+.commit-detail-disposition-tab,
+.commit-detail-meta-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.commit-detail-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.commit-detail-message-subject {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.commit-detail-message-body {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.commit-detail-changed-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.commit-detail-changed-files .section-label {
+  margin: 0;
+}
+
+.commit-detail-files-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 65%, transparent);
+}
+
+.commit-detail-files-empty > p {
+  margin: 0;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.commit-detail-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.commit-detail-file-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+  min-width: 0;
+}
+
+.commit-detail-file-list .file-name-link {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.commit-detail-tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line);
+}
+
+.commit-detail-tab-actions.is-end {
+  justify-content: flex-end;
+}
+
+.commit-detail-tab-actions .signed-record-report,
+.commit-detail-tab-actions .signed-record-report .btn-row {
+  display: contents;
+}
+
+.commit-detail-expand-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+
+.commit-detail-expand-facts > div {
+  min-width: 0;
+}
+
+.commit-detail-expand-facts > .commit-detail-fact-wide {
+  grid-column: 1 / -1;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.commit-detail-expand-facts dt {
+  margin: 0 0 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.commit-detail-expand-facts dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.commit-detail-copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.commit-detail-copy-row .mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 40rem) {
+  .commit-detail-expand-facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+.commit-detail-expand-disposition {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+}
+
 .commit-row-revoke {
   display: inline-flex;
   align-items: center;
@@ -7116,59 +7346,10 @@ p.ok {
   padding-right: 0.15rem;
 }
 
-.history-detail-identity {
-  display: flex;
-  gap: 0.65rem;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.history-detail-byline {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.55rem;
-  line-height: 1.4;
-}
-
-.history-detail-meta {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem 1.1rem;
-}
-
-.history-parents {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.5rem;
-}
-
 .history-parent-links {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0.35rem;
-}
-
-@media (max-width: 900px) {
-  .history-layout {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
-
-  .history-page.has-detail .history-list {
-    display: none;
-  }
-
-  .history-detail-back {
-    display: inline-block;
-  }
-
-  .history-detail {
-    position: static;
-  }
 }
 
 .blob-code {
@@ -7346,6 +7527,24 @@ p.ok {
   letter-spacing: 0;
   border-radius: 999px;
   color: var(--muted);
+}
+
+.validated-branch {
+  text-transform: none;
+  letter-spacing: 0;
+  border-radius: 999px;
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.validated-branch-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .branch-title-row {
@@ -10146,16 +10345,202 @@ a.jobs-list-item:hover {
   background: var(--line);
 }
 
-/* GxP #94 — QC Failed warnings above commit lists */
+/* ADR 0009 — QC Invalid warnings above commit lists */
+.qc-invalid-warning,
 .qc-failed-warning {
   margin: 0.75rem 0;
   padding: 0.75rem 1rem;
 }
 
+.qc-invalid-warning p,
 .qc-failed-warning p {
   margin: 0;
 }
 
+.qc-invalid-warning p + p,
 .qc-failed-warning p + p {
   margin-top: 0.35rem;
+}
+
+.disposition-table-section {
+  margin: 0.75rem 0 1rem;
+}
+
+.disposition-table .disposition-row-msg {
+  display: inline;
+}
+
+.disposition-radios {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.disposition-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+
+.disposition-author-note {
+  margin: 0;
+}
+
+.commit-disposition-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.commit-disposition-lead {
+  margin: 0;
+}
+
+.commit-disposition-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.55rem 0.85rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 70%, var(--canvas-subtle, transparent));
+}
+
+.commit-disposition-summary > div {
+  min-width: 0;
+}
+
+.commit-disposition-summary dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.commit-disposition-summary dd {
+  margin: 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.disposition-choice-grid {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.disposition-choice-grid > .section-label {
+  margin: 0 0 0.15rem;
+}
+
+.disposition-choice {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.disposition-choice:hover:not(:has(input:disabled)) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+}
+
+.disposition-choice.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.disposition-choice.is-selected.is-warn {
+  border-color: color-mix(in srgb, var(--warning, var(--danger)) 65%, var(--line));
+  background: color-mix(in srgb, var(--warning, var(--danger)) 8%, var(--panel));
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--warning, var(--danger)) 28%, transparent);
+}
+
+.disposition-choice:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.disposition-choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.disposition-choice:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.disposition-choice-icon {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--muted);
+}
+
+.disposition-choice.is-selected .disposition-choice-icon.is-valid {
+  color: var(--accent);
+}
+
+.disposition-choice.is-selected .disposition-choice-icon.is-invalid {
+  color: var(--warning, var(--danger));
+}
+
+.disposition-choice-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.disposition-choice-copy strong {
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.commit-disposition-history {
+  margin: 1rem 0;
+}
+
+.disposition-history-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.disposition-history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
 }

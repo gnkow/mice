@@ -60,7 +60,7 @@ describe('decideSignedMergeComplete (gxp/05)', () => {
     if (!d.ok) assert.equal(d.code, SIGNED_MERGE_REFUSALS.not_approver)
   })
 
-  it('refuses self-merge when the signer authored a commit in range', () => {
+  it('allows author-in-range at the gate (self-Valid enforced via disposition map)', () => {
     const d = decideSignedMergeComplete({
       mr,
       isApprover: true,
@@ -72,8 +72,7 @@ describe('decideSignedMergeComplete (gxp/05)', () => {
       signature: { meaning: 'Approved', binding, changeControlId: 'CC-1' },
       expectedManifestDigest: 'deadbeef',
     })
-    assert.equal(d.ok, false)
-    if (!d.ok) assert.equal(d.code, SIGNED_MERGE_REFUSALS.self_merge)
+    assert.equal(d.ok, true)
   })
 
   it('refuses when the Approver signer also opened the request', () => {

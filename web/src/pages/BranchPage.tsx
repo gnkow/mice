@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { BranchesSubNav } from '../components/BranchesSubNav'
 import { UserRef } from '../components/UserRef'
 import { MetaPanel } from '../components/MetaPanel'
-import { QcFailedWarning } from '../components/QcFailedWarning'
+import { QcInvalidWarning } from '../components/QcInvalidWarning'
 import { StateBlock } from '../components/StateBlock'
 import { useAsync } from '../hooks/useAsync'
 import { useCommitQc } from '../hooks/useCommitQc'
@@ -13,6 +13,7 @@ import { resolveDefaultBranch } from '../lib/lastBranch'
 import { compareCommits, deleteBranch, getCommit, listBranches, listCommitHistory, mergeCommitIntoBranch, updateBranch } from '../lib/oxen/api'
 import { formatRelativeTime } from '../lib/time'
 import { FavoriteStar } from '../components/FavoriteStar'
+import { fetchValidatedBranches } from '../lib/validatedBranches'
 
 export function BranchPage() {
   const { namespace = '', repo = '', branch = '' } = useParams()
@@ -25,12 +26,20 @@ function BranchDetail({ namespace, repo, branch }: { namespace: string; repo: st
   const base = `/n/${encodeURIComponent(namespace)}/r/${encodeURIComponent(repo)}`
   const encodedBranch = encodeURIComponent(branch)
   const state = useAsync(async signal => {
-    const branches = await listBranches(namespace, repo, signal)
+    const [branches, validated] = await Promise.all([
+      listBranches(namespace, repo, signal),
+      fetchValidatedBranches(namespace, repo, signal),
+    ])
     const detail = branches.branches.find(b => b.name === branch)
     if (!detail) throw new Error(`Branch "${branch}" not found`)
     const defaultBranch = resolveDefaultBranch(branches.branches.map(b => b.name), namespace, repo)
     const commit = await getCommit(namespace, repo, detail.commit_id, signal)
-    return { branch: detail, commit: commit.commit, defaultBranch }
+    return {
+      branch: detail,
+      commit: commit.commit,
+      defaultBranch,
+      isValidated: validated.validatedBranches.includes(branch),
+    }
   }, [namespace, repo, branch])
   const [commitId, setCommitId] = useState('')
   const [clientCommitId, setClientCommitId] = useState('')
@@ -96,11 +105,25 @@ function BranchDetail({ namespace, repo, branch }: { namespace: string; repo: st
     {error && <p className="flash flash-error" role="alert">{error}</p>}
     <StateBlock loading={state.kind === 'loading'} error={state.kind === 'error' ? state.message : null} onRetry={state.reload}>
       {data && <>
-        <QcFailedWarning namespace={namespace} repo={repo} summary={qcSummary} scope={`branch ${branch}`} advice="Its tip is built on revoked signatures; review before merging or releasing." />
+        <QcInvalidWarning namespace={namespace} repo={repo} summary={qcSummary} scope={`branch ${branch}`} advice="Review Invalid commits before merging or releasing." />
         <section className="panel" aria-labelledby="branch-info-heading">
           <h2 id="branch-info-heading">Branch info</h2>
           <dl>
-            <dt>Name</dt><dd className="mono">{branch} {branch === data.defaultBranch && <span className="pill default-branch">default</span>}</dd>
+            <dt>Name</dt>
+            <dd className="mono">
+              {branch}{' '}
+              {branch === data.defaultBranch && (
+                <span className="pill default-branch">default</span>
+              )}{' '}
+              {data.isValidated && (
+                <span
+                  className="pill validated-branch"
+                  title="Tip writes refused; content arrives via signed merge"
+                >
+                  validated
+                </span>
+              )}
+            </dd>
             <dt>Tip commit</dt><dd><Link className="mono" to={`${base}/commits/${encodeURIComponent(data.commit.id)}`}>{data.commit.id}</Link></dd>
             <dt>Message</dt><dd>{data.commit.message}</dd>
             <dt>Author</dt>

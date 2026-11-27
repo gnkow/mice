@@ -136,7 +136,75 @@ export function rewriteOxenJsonToDisplay(
 }
 
 /** Mice-only create fields that must not be forwarded to oxen. */
-const MICE_CREATE_KEYS = new Set(['initial_commit_message'])
+const MICE_CREATE_KEYS = new Set(['initial_commit_message', 'branches'])
+
+/** Optional branch plan on create (empty tips + validated registry). */
+export type CreateBranchPlan = {
+  name: string
+  /** Exactly one should be true; defaults to main when omitted. */
+  isDefault: boolean
+  validated: boolean
+}
+
+/**
+ * How create should seed tips / validated registry.
+ * - omit: no `branches` key → legacy default (`main` empty + validated)
+ * - bare: `branches: []` → oxen-style empty repo, no tips
+ * - plan: explicit branch rows
+ */
+export type CreateBranchesOption =
+  | { kind: 'omit' }
+  | { kind: 'bare' }
+  | { kind: 'plan'; plan: CreateBranchPlan[] }
+
+/**
+ * Parse `branches` from a create-repo JSON body.
+ */
+export function createBranchesOptionFromBody(body: unknown): CreateBranchesOption {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { kind: 'omit' }
+  if (!('branches' in (body as object))) return { kind: 'omit' }
+  const raw = (body as Record<string, unknown>).branches
+  if (!Array.isArray(raw)) return { kind: 'omit' }
+  if (raw.length === 0) return { kind: 'bare' }
+  const plans: CreateBranchPlan[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const row = item as Record<string, unknown>
+    const name = typeof row.name === 'string' ? row.name.trim() : ''
+    if (!name || !/^[A-Za-z0-9._/-]+$/.test(name)) continue
+    plans.push({
+      name,
+      isDefault: row.default === true || row.isDefault === true,
+      validated: row.validated === true,
+    })
+  }
+  if (plans.length === 0) return { kind: 'bare' }
+  // Deduplicate by name (last wins flags).
+  const byName = new Map<string, CreateBranchPlan>()
+  for (const p of plans) byName.set(p.name, p)
+  const unique = [...byName.values()]
+  if (!unique.some((p) => p.isDefault)) {
+    const main = unique.find((p) => p.name === 'main')
+    if (main) main.isDefault = true
+    else unique[0]!.isDefault = true
+  } else {
+    let seen = false
+    for (const p of unique) {
+      if (p.isDefault) {
+        if (seen) p.isDefault = false
+        else seen = true
+      }
+    }
+  }
+  return { kind: 'plan', plan: unique }
+}
+
+/** @deprecated Prefer createBranchesOptionFromBody */
+export function createBranchPlanFromBody(body: unknown): CreateBranchPlan[] | undefined {
+  const opt = createBranchesOptionFromBody(body)
+  if (opt.kind === 'plan') return opt.plan
+  return undefined
+}
 
 /** Build oxen create body using physical keys; keep other fields. */
 export function physicalCreateBody(
@@ -167,4 +235,39 @@ export function initialCommitMessageFromBody(body: unknown): string | undefined 
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
   const value = (body as Record<string, unknown>).initial_commit_message
   return typeof value === 'string' ? value : undefined
+}
+
+function preferBranchesOption(
+  a: CreateBranchesOption,
+  b: CreateBranchesOption,
+): CreateBranchesOption {
+  if (a.kind !== 'omit') return a
+  return b
+}
+
+/** Read Mice create fields from signature body or raw JSON string. */
+export function miceCreateOptionsFromBodies(
+  signatureBody: unknown,
+  rawBody: string | undefined,
+): { initialCommitMessage?: string; branches: CreateBranchesOption } {
+  const fromSig =
+    signatureBody && typeof signatureBody === 'object' && !Array.isArray(signatureBody)
+      ? signatureBody
+      : undefined
+  let fromRaw: unknown
+  if (rawBody) {
+    try {
+      fromRaw = JSON.parse(rawBody)
+    } catch {
+      fromRaw = undefined
+    }
+  }
+  return {
+    initialCommitMessage:
+      initialCommitMessageFromBody(fromSig) ?? initialCommitMessageFromBody(fromRaw),
+    branches: preferBranchesOption(
+      createBranchesOptionFromBody(fromSig),
+      createBranchesOptionFromBody(fromRaw),
+    ),
+  }
 }

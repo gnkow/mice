@@ -69,6 +69,24 @@ test.describe('Repo settings viewer permissions (#148)', () => {
         body: JSON.stringify({ canEdit: false, tags: [], labels: [] }),
       })
     })
+    await page.route(`**/auth/repos/${ns}/${repo}/validated-branches**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          defaultBranch: 'main',
+          validatedBranches: ['main'],
+          branches: [],
+        }),
+      })
+    })
+    await page.route(`**/api/repos/${ns}/${repo}/branches**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success', status_message: 'ok', branches: [] }),
+      })
+    })
 
     await page.goto(`/n/${encodeURIComponent(ns)}/r/${encodeURIComponent(repo)}/settings`)
     await expect(page.getByRole('heading', { name: 'Approvers', exact: true })).toBeVisible({

@@ -10,8 +10,8 @@ import {
 } from '../../src/packages/shared/lib/testSupport.js'
 
 /**
- * Seam: Owner mark-validated HTTP (#116).
- * Catches: step-up signature required; Owner can mark; registry consulted by write gate.
+ * Seam: mark-validated HTTP (#116).
+ * Catches: step-up signature required; Owner/maintain can mark; writer denied; write gate.
  * Misses: UI.
  */
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
@@ -54,6 +54,11 @@ const writer = t.person('vb-mark-writer')
 await preparePrincipal(writer)
 await t.grantRole(writer, 'user')
 await setRepoCollaborator('vb-mark', 'assay', writer, 'write')
+
+const manager = t.person('vb-mark-manager')
+await preparePrincipal(manager)
+await t.grantRole(manager, 'user')
+await setRepoCollaborator('vb-mark', 'assay', manager, 'maintain')
 
 const app = new Hono()
 registerMergeRequestRoutes(app, { audit: async () => {} })
@@ -123,14 +128,14 @@ describe('POST /auth/repos/:ns/:repo/validated-branches (#116)', () => {
     )
   })
 
-  it('non-Owner writer cannot mark a branch validated', async () => {
+  it('write collaborator cannot mark a branch validated', async () => {
     const path = '/auth/repos/vb-mark/assay/validated-branches'
     const body = { branch: 'develop' }
     const headers = await regulatedMutationHeaders(writer, {
       method: 'POST',
       path,
       body,
-      reason: 'Writer attempts to mark develop validated without Owner seat',
+      reason: 'Writer attempts to mark develop validated without manager seat',
     })
     const res = await app.request(path, {
       method: 'POST',
@@ -142,5 +147,28 @@ describe('POST /auth/repos/:ns/:repo/validated-branches (#116)', () => {
       body: JSON.stringify(body),
     })
     assert.equal(res.status, 403)
+  })
+
+  it('maintain collaborator can mark a branch validated', async () => {
+    const path = '/auth/repos/vb-mark/assay/validated-branches'
+    const body = { branch: 'develop' }
+    const headers = await regulatedMutationHeaders(manager, {
+      method: 'POST',
+      path,
+      body,
+      reason: 'Manager promotes develop to validated assay line',
+    })
+    const res = await app.request(path, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        cookie: await cookie(manager),
+        'x-mice-change-control-id': 'CC-2026-116-maintain',
+      },
+      body: JSON.stringify(body),
+    })
+    const json = (await res.json()) as { validatedBranches?: string[]; error?: string }
+    assert.equal(res.status, 200, JSON.stringify(json))
+    assert.ok(json.validatedBranches?.includes('develop'))
   })
 })

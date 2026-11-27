@@ -74,6 +74,7 @@ const ENTRIES: readonly AuditTrailEntry[] = [
   e('approver.revoke', 'always', 'show', 'SoD / merge gate'),
   e('validated_branch.mark', 'always', 'show', 'Validated branch registry'),
   e('validated_branch.unmark', 'always', 'show', 'Validated branch registry'),
+  e('commit.disposition', 'always', 'show', 'Commit QC disposition map'),
   e('esign.created', 'always', 'show', 'Part 11 signature'),
   e('esign.failed', 'always', 'show', 'Signature ceremony failure'),
   e('esign.revoked', 'always', 'show', 'Signature revocation'),

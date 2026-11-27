@@ -62,6 +62,10 @@ const MUTATION_FIXTURES: Record<string, Fixture> = {
     { validated_branches: ['feature', 'main'] },
     { validated_branches: ['main'] },
   ),
+  'commit.disposition': update(
+    { disposition: { c1: 'unset' } },
+    { disposition: { c1: 'valid' } },
+  ),
   'approver.revoke': remove({ user: 'u1', approver: true }),
   // Signatures
   'esign.created': create({ signature_id: 's1', status: 'valid' }),

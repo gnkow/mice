@@ -1,0 +1,5 @@
+interface:
+  display_name: "Deep Manual"
+  short_description: "Serial API → UI → browser manual → tests per ticket"
+policy:
+  allow_implicit_invocation: false

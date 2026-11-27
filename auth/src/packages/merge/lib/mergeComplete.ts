@@ -107,7 +107,12 @@ export async function completeMergeRequestUseCase(input: {
   if (!reason.ok) {
     return json(400, { error: reason.rejection.detail, code: reason.rejection.code })
   }
-  const body = input.body as { signatureId?: string }
+  const body = input.body as {
+    signatureId?: string
+    disposition?: unknown
+    dispositionMap?: unknown
+    mergeCommitDisposition?: unknown
+  }
   const signatureId =
     (typeof body.signatureId === 'string' && body.signatureId.trim()) ||
     input.signatureHeader?.trim() ||
@@ -128,6 +133,24 @@ export async function completeMergeRequestUseCase(input: {
       code: 'signature_invalid',
     })
   }
+  const { parseDispositionMap, splitMergeCommitDisposition } = await import('./commitQcStore.js')
+  const rawMap = body.disposition ?? body.dispositionMap
+  const parsedMap =
+    rawMap === undefined || rawMap === null ? {} : parseDispositionMap(rawMap)
+  if (parsedMap === null) {
+    return json(400, {
+      error: 'disposition map must be { commitId: "valid"|"invalid" }',
+      code: 'disposition_invalid',
+    })
+  }
+  const explicitMerge =
+    body.mergeCommitDisposition === 'valid' || body.mergeCommitDisposition === 'invalid'
+      ? body.mergeCommitDisposition
+      : undefined
+  const { rangeMap: dispositionMap, mergeCommitDisposition } = splitMergeCommitDisposition(
+    parsedMap,
+    explicitMerge,
+  )
   let signer = input.user
   try {
     signer = await confirmPrivilegedGroups(input.user)
@@ -152,6 +175,8 @@ export async function completeMergeRequestUseCase(input: {
         groups: signer.groups,
       },
       signatureId,
+      dispositionMap,
+      mergeCommitDisposition,
       ...(mergeManifestResolver ? { resolveMergeManifest: mergeManifestResolver } : {}),
       ...(liveHeadsResolver ? { resolveLiveHeads: liveHeadsResolver } : {}),
       ...(mergeRangeResolver ? { resolveMergeRange: mergeRangeResolver } : {}),
@@ -179,9 +204,14 @@ export async function completeMergeRequestUseCase(input: {
         signatureId,
         ...(result.signatureConsumed ? { signatureConsumed: true } : {}),
         ...(result.authors ? { authors: result.authors, signer: signerAuthorKey(signer) } : {}),
+        ...(result.commitIds ? { commitIds: result.commitIds } : {}),
       },
     })
-    return json(result.status, { error: result.detail, code: result.code })
+    return json(result.status, {
+      error: result.detail,
+      code: result.code,
+      ...(result.commitIds ? { commitIds: result.commitIds } : {}),
+    })
   }
   const { signatureStore } = await import('../../authentication/signing.js')
   const { mutationSignatureAuditDetail } = await import('../../authentication/signing.js')

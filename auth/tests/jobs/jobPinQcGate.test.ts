@@ -23,7 +23,6 @@ const { ensureRepository } = await import('../../src/packages/authz/lib/reposito
 const { preparePrincipal } = await import('../../src/packages/authz/lib/authz.js')
 const { markCommitsQc } = await import('../../src/packages/merge/lib/commitQcStore.js')
 const { publishSyncedCliJobs } = await import('../../src/packages/jobs/lib/jobs.js')
-const { queryAudit } = await import('../../src/packages/audit/lib/audit.js')
 
 const admin = {
   sub: 'admin',
@@ -37,12 +36,12 @@ assert.equal((await createNamespaceAuthz(admin, 'pin-job', 'none')).ok, true)
 const repo = await ensureRepository('pin-job', 'data')
 assert.ok(repo)
 
-const failedPin = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const invalidPin = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const okPin = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 
-describe('Job pin bind refuses QC Failed', () => {
-  it('publishSyncedCliJobs returns 409 and audits when pin is QC Failed', async () => {
-    await markCommitsQc(repo.id, [failedPin], 'failed')
+describe('Job pin bind allows Invalid (ADR 0009)', () => {
+  it('publishSyncedCliJobs allows a QC Invalid pin', async () => {
+    await markCommitsQc(repo.id, [invalidPin], 'invalid')
 
     const result = await publishSyncedCliJobs(
       admin,
@@ -52,8 +51,8 @@ describe('Job pin bind refuses QC Failed', () => {
           id: 'abcdef0123456789',
           namespace: 'pin-job',
           repo: 'data',
-          source_ref: `main:${failedPin}`,
-          pin_commit: failedPin,
+          source_ref: `main:${invalidPin}`,
+          pin_commit: invalidPin,
           image: 'alpine:3.20',
           command: ['true'],
           status: 'succeeded',
@@ -61,24 +60,13 @@ describe('Job pin bind refuses QC Failed', () => {
       ],
       'mice/cli-sync',
     )
-    assert.ok('error' in result)
-    assert.equal(result.status, 409)
-    assert.match(result.error, /QC Failed/i)
-
-    const { events } = await queryAudit({ action: 'request.rejected', limit: 20 })
-    assert.ok(
-      events.some(
-        (e) =>
-          e.detail &&
-          typeof e.detail === 'object' &&
-          (e.detail as { pin_commit?: string }).pin_commit === failedPin,
-      ),
-      'expected pin refusal audit',
-    )
+    assert.ok(!('error' in result), JSON.stringify(result))
+    assert.equal(result.jobs.length, 1)
+    assert.equal(result.jobs[0]?.pin_commit, invalidPin)
   })
 
-  it('publishSyncedCliJobs allows a non-failed pin', async () => {
-    await markCommitsQc(repo.id, [okPin], 'passed')
+  it('publishSyncedCliJobs allows a Valid pin', async () => {
+    await markCommitsQc(repo.id, [okPin], 'valid')
     const result = await publishSyncedCliJobs(
       admin,
       'session',

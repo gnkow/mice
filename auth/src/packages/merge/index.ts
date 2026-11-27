@@ -24,13 +24,26 @@ export type {
 export {
   getCommitQc,
   listCommitQcForRepo,
+  listCommitQcForSignature,
   markCommitsQc,
   unmarkCommitsForMergeRequest,
+  applyDispositionMap,
+  applyBootstrapEmptyTipValid,
+  parseDispositionMap,
+  splitMergeCommitDisposition,
+  MERGE_COMMIT_DISPOSITION_KEY,
+  listCommitQcEvents,
 } from './lib/commitQcStore.js'
 export type {
   CommitQc,
   CommitQcRow,
+  CommitQcEventRow,
+  DispositionMap,
+  DispositionVerdict,
+  ApplyDispositionMapInput,
+  ApplyDispositionMapResult,
 } from './lib/commitQcStore.js'
+export { dispositionCommitsUseCase } from './lib/commitDisposition.js'
 export { assertPinAllowed, PinRefusedError } from './lib/commitQcPin.js'
 export {
   completeSignedMerge,
@@ -161,9 +174,13 @@ export {
   decideProxiedValidatedBranchWrite,
 } from './lib/validatedBranchGate.js'
 export {
+  markRequiresApprover,
+  listUnsignedTipHistory,
+  setTipHistoryResolverForTests,
   markBranchValidatedUseCase,
   unmarkBranchValidatedUseCase,
   listValidatedBranchesUseCase,
 } from './lib/validatedBranchMark.js'
+export type { TipCommit, UnsignedTipHistory } from './lib/validatedBranchMark.js'
 
 export * from './lib/mergeSignatures.js'

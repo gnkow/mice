@@ -29,6 +29,8 @@ export {
   setLiveHeadsResolverForTests,
 } from './mergeRequestOxen.js'
 
+export { setTipHistoryResolverForTests } from './validatedBranchMark.js'
+
 /**
  * repositories/02 — BFF merge-request routes (open / list / get / resync).
  * Complete-with-signature lands with gxp-compliance/05.
@@ -161,6 +163,40 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
   )
 
   app.get(
+    '/auth/repos/:ns/:repo/commits/:commitId/disposition',
+    guarded({}, async ({ c, user }) => {
+      const { getCommitDispositionUseCase } = await import('./mergeQc.js')
+      const out = await getCommitDispositionUseCase({
+        user,
+        ns: c.req.param('ns'),
+        repoName: c.req.param('repo'),
+        commitId: c.req.param('commitId'),
+      })
+      return c.json(out.body as never, out.status as never)
+    }),
+  )
+
+  app.post(
+    '/auth/repos/:ns/:repo/commits/disposition',
+    guarded(
+      { mutates: true, action: 'commit.disposition', reason: true, body: 'optional' },
+      async ({ c, user, body, audit }) => {
+        const { SIGNATURE_HEADER } = await import('./mutationSignature.js')
+        const { dispositionCommitsUseCase } = await import('./commitDisposition.js')
+        const out = await dispositionCommitsUseCase({
+          user,
+          ns: c.req.param('ns'),
+          repoName: c.req.param('repo'),
+          body,
+          signatureId: c.req.header(SIGNATURE_HEADER)?.trim() || '',
+          audit,
+        })
+        return c.json(out.body as never, out.status as never)
+      },
+    ),
+  )
+
+  app.get(
     '/auth/repos/:ns/:repo/signed-record-report',
     guarded({}, async ({ c, user }) => {
       const out = await signedRecordReportUseCase({
@@ -205,6 +241,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
       { mutates: true, action: 'validated_branch.mark', reason: true, body: 'optional' },
       async ({ c, user, body, audit }) => {
         const { REASON_HEADER } = await import('../../audit/index.js')
+        const { SIGNATURE_HEADER } = await import('./mutationSignature.js')
         const { markBranchValidatedUseCase } = await import('./validatedBranchMark.js')
         const out = await markBranchValidatedUseCase({
           user,
@@ -213,6 +250,7 @@ export function registerMergeRequestRoutes(app: Hono, _deps: AuditDep): void {
           body,
           reasonText: c.req.header(REASON_HEADER)?.trim() || '',
           changeControlHeader: c.req.header(CHANGE_CONTROL_HEADER),
+          signatureId: c.req.header(SIGNATURE_HEADER)?.trim() || undefined,
           audit,
         })
         return c.json(out.body as never, out.status as never)

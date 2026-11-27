@@ -9,6 +9,9 @@ import {
   sealedSessionCookie,
 } from '../../src/packages/shared/lib/testSupport.js'
 
+/**
+ * Seam: cancel/reject no longer clear QC Marked (ADR 0009 — open never writes Marked).
+ */
 const t = isolatedAuth({ AUTHZ_BOOTSTRAP_ADMINS: 'root@x.io' })
 after(() => t.restore())
 
@@ -48,7 +51,7 @@ registerMergeRequestRoutes(app, { audit: async () => {} })
 const cookie = async () =>
   sealedSessionCookie({ ...manager, sessionStart: Math.floor(Date.now() / 1000) })
 
-async function openMarkedMr(sourceBranch: string, commitIds: string[]) {
+async function openMr(sourceBranch: string, commitIds: string[]) {
   const path = '/auth/repos/unmark-ns/study/merge-requests'
   const body = {
     sourceBranch,
@@ -67,10 +70,10 @@ async function openMarkedMr(sourceBranch: string, commitIds: string[]) {
   return ((await created.json()) as { mergeRequest: { id: string } }).mergeRequest
 }
 
-describe('MR cancel/reject unmarks QC Marked', () => {
-  it('cancel clears Marked for the MR commits and audits unmarked ids', async () => {
-    const mr = await openMarkedMr('cancel-unmark', ['cu-a', 'cu-b'])
-    assert.equal(await getCommitQc(repo.id, 'cu-a'), 'marked')
+describe('MR cancel/reject leave QC Unset (no Marked)', () => {
+  it('cancel does not invent QC rows and audits empty unmarked ids', async () => {
+    const mr = await openMr('cancel-unmark', ['cu-a', 'cu-b'])
+    assert.equal(await getCommitQc(repo.id, 'cu-a'), 'unset')
 
     const cancelPath = `/auth/merge-requests/${mr.id}/cancel`
     const cancelHeaders = await regulatedMutationHeaders(manager, {
@@ -84,8 +87,7 @@ describe('MR cancel/reject unmarks QC Marked', () => {
       body: JSON.stringify({}),
     })
     assert.equal(cancelled.status, 200, await cancelled.clone().text())
-    assert.equal(await getCommitQc(repo.id, 'cu-a'), 'none')
-    assert.equal(await getCommitQc(repo.id, 'cu-b'), 'none')
+    assert.equal(await getCommitQc(repo.id, 'cu-a'), 'unset')
 
     const { events } = await queryAudit({ action: 'merge_request.cancel', limit: 20 })
     const hit = events.find(
@@ -96,12 +98,12 @@ describe('MR cancel/reject unmarks QC Marked', () => {
     )
     assert.ok(hit, 'expected merge_request.cancel audit')
     const ids = ((hit.detail as { unmarkedCommitIds?: string[] }).unmarkedCommitIds ?? []).slice()
-    assert.deepEqual(ids.sort(), ['cu-a', 'cu-b'])
+    assert.deepEqual(ids, [])
   })
 
-  it('reject clears Marked for the MR commits and audits unmarked ids', async () => {
-    const mr = await openMarkedMr('reject-unmark', ['ru-a'])
-    assert.equal(await getCommitQc(repo.id, 'ru-a'), 'marked')
+  it('reject similarly leaves QC Unset', async () => {
+    const mr = await openMr('reject-unmark', ['ru-a'])
+    assert.equal(await getCommitQc(repo.id, 'ru-a'), 'unset')
 
     const rejectPath = `/auth/merge-requests/${mr.id}/reject`
     const rejectHeaders = await regulatedMutationHeaders(manager, {
@@ -115,17 +117,6 @@ describe('MR cancel/reject unmarks QC Marked', () => {
       body: JSON.stringify({}),
     })
     assert.equal(rejected.status, 200, await rejected.clone().text())
-    assert.equal(await getCommitQc(repo.id, 'ru-a'), 'none')
-
-    const { events } = await queryAudit({ action: 'merge_request.reject', limit: 20 })
-    const hit = events.find(
-      (e) =>
-        e.detail &&
-        typeof e.detail === 'object' &&
-        (e.detail as { mergeRequestId?: string }).mergeRequestId === mr.id,
-    )
-    assert.ok(hit, 'expected merge_request.reject audit')
-    const ids = ((hit.detail as { unmarkedCommitIds?: string[] }).unmarkedCommitIds ?? []).slice()
-    assert.deepEqual(ids, ['ru-a'])
+    assert.equal(await getCommitQc(repo.id, 'ru-a'), 'unset')
   })
 })

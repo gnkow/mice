@@ -4,7 +4,12 @@ import { readRepository } from '../../authz/index.js'
 import { parseUserKey } from '../../authz/index.js'
 import { principalKey } from '../../authentication/principal.js'
 import { signatureStore, SignatureRecord } from '../../authentication/signing.js'
-import { getCommitQc, listCommitQcForRepo, markCommitsQc, unmarkCommitsForMergeRequest } from './commitQcStore.js'
+import {
+  getCommitQc,
+  listCommitQcForRepo,
+  listCommitQcForSignature,
+  unmarkCommitsForMergeRequest,
+} from './commitQcStore.js'
 import { getDb } from '../../../db/database.js'
 import { mergeRequests, namespaceMembers, namespaces, signatureIndex } from '../../../db/schema.js'
 import {
@@ -67,8 +72,9 @@ export type RevertSignatureRevocationResult =
   | { ok: false; status: number; code: string; detail: string }
 
 /**
- * Append-only revoke: original signature stays; linked `esign.revoked` is written;
- * affected commits become QC Failed (gxp/07). Pre-merge revoke can block open MRs (gxp/08).
+ * Append-only revoke: original signature stays; linked `esign.revoked` is written.
+ * ADR 0009: revoke does not flip QC status (disposition maps supersede).
+ * Pre-merge revoke can still block open MRs (gxp/08).
  */
 export async function revokeSignature(input: RevokeSignatureInput): Promise<RevokeSignatureResult> {
   const store = await signatureStore()
@@ -77,16 +83,35 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
     return { ok: false, status: 404, code: 'not_found', detail: 'Signature not found' }
   }
   const record = found.record
+  let ns: string
+  let repoName: string
   const repoPath = record.binding?.repo
-  if (!repoPath?.includes('/')) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'no_binding',
-      detail: 'Signature has no repository binding to revoke against',
+  if (repoPath?.includes('/')) {
+    ;[ns, repoName] = repoPath.split('/') as [string, string]
+  } else {
+    // Mark-validated blessings link commits via QC.signatureId (no merge binding).
+    const covered = await listCommitQcForSignature(input.signatureId)
+    if (!covered.length) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'no_binding',
+        detail: 'Signature has no repository binding to revoke against',
+      }
     }
+    const { readRepositoryById } = await import('../../authz/index.js')
+    const repo = await readRepositoryById(covered[0]!.repositoryId)
+    if (!repo) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'no_binding',
+        detail: 'Signature has no repository binding to revoke against',
+      }
+    }
+    ns = repo.namespace
+    repoName = repo.name
   }
-  const [ns, repoName] = repoPath.split('/') as [string, string]
   const approver = await decideIsApprover(input.revoker, ns, repoName)
   if (!approver.allow) {
     return { ok: false, status: 403, code: 'not_approver', detail: approver.reason }
@@ -95,7 +120,7 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
   const repositoryId = await resolveRepositoryId(ns, repoName, input.mergeRequestId)
   const commitIds = await resolveAffectedCommitIds({
     explicit: input.commitIds,
-    binding: record.binding!,
+    binding: record.binding ?? { sourceHead: '', targetHead: '' },
     repositoryId,
     mergeRequestId: input.mergeRequestId,
     signatureId: input.signatureId,
@@ -121,10 +146,6 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
     commitIds,
   }
 
-  if (repositoryId) {
-    await markCommitsQc(repositoryId, commitIds, 'failed')
-  }
-
   const blockedMergeRequestIds = await blockOpenMergeRequests({
     repositoryId,
     mergeRequestId: input.mergeRequestId,
@@ -143,7 +164,7 @@ export async function revokeSignature(input: RevokeSignatureInput): Promise<Revo
 
 /**
  * Append-only revert of a prior revocation (gxp/10a #159).
- * Original signature and revoke remain; commits failed only by that revocation return to QC Passed.
+ * Original signature and revoke remain. ADR 0009: revert does not flip QC status.
  */
 export async function revertSignatureRevocation(
   input: RevertSignatureRevocationInput,
@@ -154,16 +175,34 @@ export async function revertSignatureRevocation(
     return { ok: false, status: 404, code: 'not_found', detail: 'Signature not found' }
   }
   const record = found.record
+  let ns: string
+  let repoName: string
   const repoPath = record.binding?.repo
-  if (!repoPath?.includes('/')) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'no_binding',
-      detail: 'Signature has no repository binding to revert against',
+  if (repoPath?.includes('/')) {
+    ;[ns, repoName] = repoPath.split('/') as [string, string]
+  } else {
+    const covered = await listCommitQcForSignature(input.signatureId)
+    if (!covered.length) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'no_binding',
+        detail: 'Signature has no repository binding to revert against',
+      }
     }
+    const { readRepositoryById } = await import('../../authz/index.js')
+    const repo = await readRepositoryById(covered[0]!.repositoryId)
+    if (!repo) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'no_binding',
+        detail: 'Signature has no repository binding to revert against',
+      }
+    }
+    ns = repo.namespace
+    repoName = repo.name
   }
-  const [ns, repoName] = repoPath.split('/') as [string, string]
   const approver = await decideIsApprover(input.reverter, ns, repoName)
   if (!approver.allow) {
     return { ok: false, status: 403, code: 'not_approver', detail: approver.reason }
@@ -208,13 +247,6 @@ export async function revertSignatureRevocation(
     for (const commitId of rev.commitIds) stillCovered.add(commitId)
   }
   const restoredCommitIds = target.commitIds.filter((id) => !stillCovered.has(id))
-
-  const repositoryId = await resolveRepositoryId(ns, repoName, undefined)
-  if (repositoryId && restoredCommitIds.length > 0) {
-    await markCommitsQc(repositoryId, restoredCommitIds, 'passed', {
-      allowFailedToPassed: true,
-    })
-  }
 
   const revert: SignatureRevocationRevert = {
     kind: 'esign.revocation_reverted',
@@ -303,6 +335,14 @@ async function resolveAffectedCommitIds(input: {
   if (input.explicit && input.explicit.length > 0) {
     return [...new Set(input.explicit)]
   }
+  if (input.signatureId) {
+    const fromSig = await listCommitQcForSignature(input.signatureId)
+    const ids = fromSig
+      .filter((r) => r.status === 'valid' || r.status === 'invalid')
+      .filter((r) => !input.repositoryId || r.repositoryId === input.repositoryId)
+      .map((r) => r.commitId)
+    if (ids.length > 0) return [...new Set(ids)]
+  }
   const fromMerge = await commitIdsFromSignedMergeQc(input)
   if (fromMerge.length > 0) return fromMerge
   // Last resort: incoming tip only (never treat target tip as the sole Failed set).
@@ -360,7 +400,7 @@ async function commitIdsFromSignedMergeQc(input: {
 
   const rows = await listCommitQcForRepo(input.repositoryId)
   const fromQc = rows
-    .filter((r) => r.mergeRequestId === mr.id && (r.status === 'passed' || r.status === 'failed'))
+    .filter((r) => r.mergeRequestId === mr.id && (r.status === 'valid' || r.status === 'invalid'))
     .map((r) => r.commitId)
 
   // Incoming commits that entered the validated branch — never the pre-merge target tip.
@@ -457,13 +497,13 @@ async function notifyRevocation(input: {
   })
 }
 
-/** Used by complete path (gxp/08): refuse if any listed commit is already QC Failed. */
+/** @deprecated ADR 0009: Invalid is soft; complete no longer refuses on Invalid. */
 export async function anyCommitQcFailed(
   repositoryId: string,
   commitIds: string[],
 ): Promise<boolean> {
   for (const id of commitIds) {
-    if ((await getCommitQc(repositoryId, id)) === 'failed') return true
+    if ((await getCommitQc(repositoryId, id)) === 'invalid') return true
   }
   return false
 }
@@ -515,7 +555,8 @@ export async function resolveSignatureForMergeRequest(
 }
 
 /**
- * Signature that covers a commit (via QC merge-request link or tip binding).
+ * Signature that covers a commit (via QC merge-request link, QC.signatureId
+ * from mark-validated blessing, or tip binding).
  * Used by validated-branch history Approver revoke-of-commit (#93).
  */
 export async function resolveSignatureCoveringCommit(input: {
@@ -536,6 +577,9 @@ export async function resolveSignatureCoveringCommit(input: {
       const viaMr = await resolveSignatureForMergeRequest(mr, revoked)
       if (viaMr) return viaMr
     }
+  }
+  if (qc?.signatureId) {
+    return { signatureId: qc.signatureId, revoked: revoked.has(qc.signatureId) }
   }
 
   // Merge commit id on a merged MR.

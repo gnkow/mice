@@ -7,14 +7,18 @@ import {
   type MergeRequestRecord,
 } from './mergeRequestStore.js'
 import { markOpenMergeRequestsStaleForTip } from './mergeRequestTipSync.js'
-import { markCommitsQc } from './commitQcStore.js'
+import {
+  applyDispositionMap,
+  getCommitQc,
+  type DispositionMap,
+  type DispositionVerdict,
+} from './commitQcStore.js'
 import {
   decideSignedMergeComplete,
   isValidatedBranch,
   SIGNED_MERGE_REFUSALS,
   type SignedMergeRefusalCode,
 } from './signedMergeComplete.js'
-import { anyCommitQcFailed } from './signatureRevoke.js'
 import { decideRestoreTestGate, loadRestoreTestStatus } from '../../platform/index.js'
 import { authorsFromCommits, signerAuthorKey } from './selfMerge.js'
 import { getBranchTip, listMergeCommits } from '../../jobs/index.js'
@@ -22,6 +26,8 @@ import { getBranchTip, listMergeCommits } from '../../jobs/index.js'
 export type MergeRangeSnapshot = {
   authors: string[]
   commitIds: string[]
+  /** Per-commit author keys for disposition self-Valid checks. */
+  authorsByCommitId?: Record<string, string[]>
 }
 
 export type LiveHeadsSnapshot = {
@@ -34,6 +40,13 @@ export type CompleteSignedMergeInput = {
   /** Session identity; include IdP groups so group approver seats resolve. */
   signer: { iss: string; sub: string; name?: string; groups?: string[] }
   signatureId: string
+  /**
+   * Disposition for Unset commits in the incoming range (and optional overrides).
+   * Merge commit disposition is supplied separately (id unknown until after oxen merge).
+   */
+  dispositionMap?: DispositionMap
+  /** Required when completing into a validated branch (new merge commit starts Unset). */
+  mergeCommitDisposition?: DispositionVerdict
   /**
    * Test-only override of the merge-result manifest. Production callers omit this so the
    * server computes the overlay of live source/target tip trees.
@@ -77,10 +90,14 @@ export type CompleteSignedMergeResult =
         | 'signature_invalid'
         | 'manifest_unavailable'
         | 'merge_failed'
+        | 'disposition_required'
+        | 'disposition_invalid'
+        | 'self_valid'
       detail: string
       /** Present when the signature was consumed before a later failure. */
       signatureConsumed?: boolean
       authors?: string[]
+      commitIds?: string[]
     }
 
 async function defaultResolveLiveHeads(mr: MergeRequestRecord): Promise<LiveHeadsSnapshot> {
@@ -107,15 +124,30 @@ async function defaultResolveMergeRange(input: {
     input.mr.targetBranch,
     input.mr.sourceBranch,
   )
+  const authorsByCommitId: Record<string, string[]> = {}
+  for (const c of commits) {
+    const author = typeof c.author === 'string' ? c.author.trim() : ''
+    authorsByCommitId[c.id] = author ? [author] : []
+  }
   return {
     authors: authorsFromCommits(commits),
     commitIds: commits.map((c) => c.id),
+    authorsByCommitId,
   }
 }
 
+function authorsForDisposition(
+  range: MergeRangeSnapshot,
+): Record<string, readonly string[]> {
+  if (range.authorsByCommitId) return range.authorsByCommitId
+  // Legacy injectors: apply the flat author list to every commit.
+  const flat = range.authors
+  return Object.fromEntries(range.commitIds.map((id) => [id, flat]))
+}
+
 /**
- * Orchestrate gxp/05: gate → consume bound signature → oxen merge → MR merged + QC Passed.
- * Authors, commit ids and live heads are always server-derived (injectable in tests).
+ * Orchestrate gxp/05: gate → disposition map → consume bound signature → oxen merge →
+ * apply disposition (ADR 0009). Authors, commit ids and live heads are always server-derived.
  */
 export async function completeSignedMerge(
   input: CompleteSignedMergeInput,
@@ -229,15 +261,6 @@ export async function completeSignedMerge(
     }
   }
 
-  if (await anyCommitQcFailed(mr.repositoryId, range.commitIds)) {
-    return {
-      ok: false,
-      status: 409,
-      code: SIGNED_MERGE_REFUSALS.not_open,
-      detail: 'Merge blocked: one or more commits are QC Failed',
-    }
-  }
-
   const { listValidatedBranches } = await import('./validatedBranchStore.js')
   const validatedBranches = await listValidatedBranches(mr.repositoryId)
   const decision = decideSignedMergeComplete({
@@ -290,6 +313,57 @@ export async function completeSignedMerge(
     }
   }
 
+  const dispositionMap = input.dispositionMap ?? {}
+  const mergeCommitDisposition = input.mergeCommitDisposition
+  if (mergeCommitDisposition !== 'valid' && mergeCommitDisposition !== 'invalid') {
+    return {
+      ok: false,
+      status: 400,
+      code: 'disposition_required',
+      detail: 'mergeCommitDisposition (valid|invalid) is required',
+    }
+  }
+
+  const missingUnset: string[] = []
+  for (const commitId of range.commitIds) {
+    if ((await getCommitQc(mr.repositoryId, commitId)) !== 'unset') continue
+    if (dispositionMap[commitId] !== 'valid' && dispositionMap[commitId] !== 'invalid') {
+      missingUnset.push(commitId)
+    }
+  }
+  if (missingUnset.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'disposition_required',
+      detail: 'Disposition map must cover every Unset commit in the merge range',
+      commitIds: missingUnset,
+    }
+  }
+
+  const authorsByCommitId = authorsForDisposition(range)
+  {
+    const actorKey = signerAuthorKey(input.signer)
+    const { normalizePrincipalAuthorKey } = await import('../../authentication/principal.js')
+    const blocked: string[] = []
+    for (const [commitId, verdict] of Object.entries(dispositionMap)) {
+      if (verdict !== 'valid') continue
+      const authors = authorsByCommitId[commitId] ?? []
+      if (authors.some((a) => normalizePrincipalAuthorKey(a) === actorKey)) {
+        blocked.push(commitId)
+      }
+    }
+    if (blocked.length > 0) {
+      return {
+        ok: false,
+        status: 403,
+        code: 'self_valid',
+        detail: 'Cannot set Valid on commits you authored or co-authored',
+        commitIds: blocked,
+      }
+    }
+  }
+
   // Consume before merge so the same signature cannot race two merges. If oxen
   // fails afterward the signature stays burned — surface that explicitly.
   await store.consume(input.signatureId)
@@ -306,13 +380,31 @@ export async function completeSignedMerge(
     }
   }
   const merged = await markMergeRequestMerged(mr.id, { mergeCommitId })
-  const passed = [...new Set([...range.commitIds, mergeCommitId])]
-  if (passed.length > 0) {
-    await markCommitsQc(mr.repositoryId, passed, 'passed', {
-      mergeRequestId: mr.id,
-      allowFailedToPassed: true,
-    })
+
+  const fullMap: DispositionMap = {
+    ...dispositionMap,
+    [mergeCommitId]: mergeCommitDisposition,
   }
+  const applied = await applyDispositionMap({
+    repositoryId: mr.repositoryId,
+    map: fullMap,
+    signatureId: input.signatureId,
+    actor: input.signer,
+    authorsByCommitId,
+    mergeRequestId: mr.id,
+  })
+  if (!applied.ok) {
+    // Signature already consumed and merge landed; surface the disposition failure.
+    return {
+      ok: false,
+      status: applied.status,
+      code: applied.code === 'signature_required' ? 'disposition_invalid' : applied.code,
+      detail: applied.detail,
+      signatureConsumed: true,
+      commitIds: applied.commitIds,
+    }
+  }
+
   // Other open MRs into this target are now stale (tips moved).
   await markOpenMergeRequestsStaleForTip({
     repositoryId: mr.repositoryId,

@@ -114,6 +114,21 @@ export function attachRepositoryId(body: string, repositoryId: string): string {
 export type FinalizeRepoCreateOptions = {
   /** Empty-tip commit message (BFF rewrite; default "Initialized Repo"). */
   initialCommitMessage?: string
+  /**
+   * Create-ceremony e-signature id. Required to Valid empty tips on branches
+   * marked validated at create (ADR 0009 empty-tip carve-out).
+   */
+  signatureId?: string
+  /**
+   * Branch seed policy:
+   * - omit / undefined → legacy `main` empty + validated
+   * - bare → no tips (oxen-style empty repo); registry blocked from rematerializing
+   * - plan → materialize listed empty tips + validated flags
+   */
+  branches?:
+    | { kind: 'omit' }
+    | { kind: 'bare' }
+    | { kind: 'plan'; plan: Array<{ name: string; isDefault: boolean; validated: boolean }> }
 }
 
 /**
@@ -129,14 +144,106 @@ export async function finalizeProxiedRepoCreate(
 ): Promise<string> {
   const seeded = await seedRepoCreate(user, namespace, repo)
   if (!seeded) return responseBody
-  // Default branch starts empty (GxP): materialize oxen tip with no files.
   const physical = await resolvePhysicalRepo(namespace, repo)
   if (physical) {
-    await ensureEmptyOxenBranch(physical.namespaceId, physical.repositoryId, 'main', user, {
-      message: options?.initialCommitMessage,
-    })
+    const {
+      markBranchValidated,
+      unmarkBranchValidated,
+      applyBootstrapEmptyTipValid,
+    } = await import('../../merge/index.js')
+    const { principalKey } = await import('../../authentication/principal.js')
+    const branchesOpt = options?.branches ?? { kind: 'omit' as const }
+    const tipOpts = { message: options?.initialCommitMessage }
+    const signatureId = options?.signatureId?.trim() || ''
+
+    if (branchesOpt.kind === 'bare') {
+      // No oxen tips. Plant a registry sentinel so listValidatedBranches does not
+      // rematerialize `main` as validated on first read.
+      await unmarkBranchValidated(seeded.repositoryId, 'main')
+    } else {
+      const plan =
+        branchesOpt.kind === 'plan' && branchesOpt.plan.length > 0
+          ? branchesOpt.plan
+          : [{ name: 'main', isDefault: true, validated: true }]
+      for (const row of plan) {
+        await ensureEmptyOxenBranch(
+          physical.namespaceId,
+          physical.repositoryId,
+          row.name,
+          user,
+          tipOpts,
+        )
+      }
+      const validated = plan.filter((b) => b.validated).map((b) => b.name)
+      const defaultName = plan.find((b) => b.isDefault)?.name ?? plan[0]?.name ?? 'main'
+      if (validated.length === 0) {
+        await unmarkBranchValidated(seeded.repositoryId, defaultName)
+      } else {
+        for (const name of validated) {
+          await markBranchValidated({
+            repositoryId: seeded.repositoryId,
+            branch: name,
+            markedBy: principalKey(user),
+            reason: 'Repository create',
+            changeControlId: 'create',
+          })
+        }
+        // Empty tips on validated branches must not stay Unset (glossary).
+        // Creator e-signature Valids them (create carve-out for self-Valid).
+        if (signatureId) {
+          const tipIds: string[] = []
+          for (const name of validated) {
+            const tip = await fetchOxenBranchTip(
+              physical.namespaceId,
+              physical.repositoryId,
+              name,
+            )
+            if (tip) tipIds.push(tip)
+          }
+          if (tipIds.length > 0) {
+            await applyBootstrapEmptyTipValid({
+              repositoryId: seeded.repositoryId,
+              commitIds: tipIds,
+              signatureId,
+              actor: user,
+            })
+          }
+        }
+      }
+    }
   }
   return attachRepositoryId(responseBody, seeded.repositoryId)
+}
+
+/** Physical oxen tip commit id for a branch (create finalize). */
+async function fetchOxenBranchTip(
+  namespaceId: string,
+  repositoryId: string,
+  branch: string,
+): Promise<string | null> {
+  const upstream = env.oxenUpstream.replace(/\/$/, '')
+  try {
+    const res = await fetch(
+      `${upstream}/api/repos/${encodeURIComponent(namespaceId)}/${encodeURIComponent(repositoryId)}/branches/${encodeURIComponent(branch)}`,
+      { headers: { Accept: 'application/json' } },
+    )
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined)
+      return null
+    }
+    const body = (await res.json()) as {
+      branch?: { commit_id?: string; commit?: { id?: string } }
+      commit_id?: string
+    }
+    return (
+      body.branch?.commit_id?.trim() ||
+      body.branch?.commit?.id?.trim() ||
+      body.commit_id?.trim() ||
+      null
+    )
+  } catch {
+    return null
+  }
 }
 
 /**
